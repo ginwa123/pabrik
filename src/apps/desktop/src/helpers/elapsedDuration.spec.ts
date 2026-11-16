@@ -27,16 +27,14 @@ describe('formatElapsedDuration', () => {
   })
 
   it('returns empty for non-finite or negative input', () => {
-    // Clock skew between the backend stamp and the browser clock is the
-    // realistic source; an empty chip is the honest rendering.
+    // Clock skew between the backend stamp and the browser clock is the realistic source; an empty chip is the honest rendering.
     expect(formatElapsedDuration(-1)).toBe('')
     expect(formatElapsedDuration(Number.NaN)).toBe('')
     expect(formatElapsedDuration(Number.POSITIVE_INFINITY)).toBe('')
   })
 
   it('matches the buckets SpawnSubAgent.vue already renders for sub-agents', () => {
-    // The private formatElapsed there produced "12s" and "1m 03s"; the
-    // shared helper must not drift from what users already see.
+    // The private formatElapsed there produced "12s" and "1m 03s"; the shared helper must not drift from what users already see.
     expect(formatElapsedDuration(12_000)).toBe('12s')
     expect(formatElapsedDuration(63_000)).toBe('1m 03s')
   })
@@ -59,8 +57,7 @@ describe('isWorkerStale', () => {
   })
 
   it('sits below the 600s stale-worker cron reap', () => {
-    // The UI must warn BEFORE the backend deletes the row, otherwise the
-    // amber state is never observable.
+    // The UI must warn BEFORE the backend deletes the row, otherwise the amber state is never observable.
     expect(WORKER_STALE_SECONDS).toBeLessThan(600)
   })
 

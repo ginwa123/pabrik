@@ -1,5 +1,4 @@
-/** `useDesignHistory` — core composable for design-mode undo/redo. Owns the push/pop API + capture
- * helpers. */
+/** `useDesignHistory` — core composable for design-mode undo/redo. */
 import { computed, type ComputedRef } from 'vue'
 import { useDesignHistoryStore, type HistoryEntry } from '../stores/designHistory'
 import { useWorkspacesStore } from '../stores/workspaces'
@@ -22,16 +21,13 @@ export interface UseDesignHistory {
 
 let nextEntryId = 1
 function generateEntryId(): string {
-  // Monotonic integer-based id; we don't need ULIDs here because the in-memory store doesn't
-  // deduplicate. Stable across localStorage round-trips would need a ULID; v1 doesn't promise
-  // cross-session dedup.
+  // Monotonic integer-based id; we don't need ULIDs here because the in-memory store doesn't deduplicate.
   return `entry_${Date.now()}_${nextEntryId++}`
 }
 
 function diffElement(before: DesignElement, after: DesignElement): Partial<DesignElement> {
   const changed: Partial<DesignElement> = {}
-  // Compare every column we know about. Skip non-payload fields like
-  // `created_at` / `updated_at` (those change on every UPDATE).
+  // Compare every column we know about.
   const tracked: Array<keyof DesignElement> = [
     'name',
     'type',
@@ -54,8 +50,7 @@ function diffElement(before: DesignElement, after: DesignElement): Partial<Desig
   ]
   for (const key of tracked) {
     if (before[key] !== after[key]) {
-      // Type assertion: we're writing a known field of DesignElement
-      // by name. Safe because `tracked` is a literal list.
+      // Type assertion: we're writing a known field of DesignElement by name.
       ;(changed as Record<string, unknown>)[key as string] = after[key]
     }
   }
@@ -66,9 +61,7 @@ export function useDesignHistory(pageId: ComputedRef<string>): UseDesignHistory 
   const historyStore = useDesignHistoryStore()
   const workspacesStore = useWorkspacesStore()
 
-  // Pre-state is captured synchronously at gesture start (pointerdown,
-  // keydown, dialog open). It's held in a closure ref so the
-  // matching capturePostState can diff against it.
+  // Pre-state is captured synchronously at gesture start (pointerdown, keydown, dialog open).
   let preState: Map<string, DesignElement> = new Map()
 
   function findElement(id: string): DesignElement | null {
@@ -87,8 +80,7 @@ export function useDesignHistory(pageId: ComputedRef<string>): UseDesignHistory 
     scheduleSave()
   }
 
-  // Debounced localStorage save. The 500ms window batches bursts
-  // of pushes (e.g. arrow-key nudge) into one write.
+  // Debounced localStorage save.
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   function scheduleSave(): void {
     if (saveTimer) clearTimeout(saveTimer)
@@ -146,9 +138,7 @@ export function useDesignHistory(pageId: ComputedRef<string>): UseDesignHistory 
     elements: Array<{ element: DesignElement; htmlBody: string | null }>,
   ): Promise<void> {
     if (elements.length === 0) return
-    // Chunk 6 (undo/redo plan): if the caller didn't provide an HTML body, fetch it from the
-    // backend BEFORE the delete happens. The captured body is what `applyInverse` will PATCH back
-    // on undo.
+    // Chunk 6 (undo/redo plan): if the caller didn't provide an HTML body, fetch it from the backend BEFORE the delete happens.
     const enriched = await Promise.all(
       elements.map(async (e) => {
         if (e.htmlBody !== null) return e
@@ -296,14 +286,11 @@ export function useDesignHistory(pageId: ComputedRef<string>): UseDesignHistory 
         break
       case 'reorder':
         if (entry.reorderOp) {
-          // Inverse of a reorder is... another reorder with the before/after swapped. We don't
-          // currently have an "absolute set order" API; the closest is reorderDesignElements with
-          // `bring_forward` / `send_backward`.
+          // Inverse of a reorder is... another reorder with the before/after swapped.
         }
         break
       case 'group':
-        // Inverse of group = ungroup. No endpoint exists yet
-        // (see Chunk 9 deferred list). No-op for v1.
+        // Inverse of group = ungroup.
         break
       case 'html_edit':
         if (entry.changes && entry.changes[0]) {

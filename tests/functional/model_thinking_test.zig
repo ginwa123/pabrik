@@ -1,5 +1,4 @@
-// Functional tests for the model-thinking knobs (plan
-// 2026-08-23-model-thinking).
+// Functional tests for the model-thinking knobs (plan 2026-08-23-model-thinking).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,22 +7,16 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixture
-// ============================================================================
 
-/// Python `config_harness` fixture: boot with `stub_llm_profile=True` so
-/// the harness pre-installs a `stub` profile.
+/// Python `config_harness` fixture: boot with `stub_llm_profile=True` so the harness pre-installs a `stub` profile.
 fn bootConfigHarness() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
 
-// ============================================================================
 // HTTP + assertion helpers
-// ============================================================================
 
-/// `PUT /api/config/pabrik` with the given JSON body, status NOT
-/// asserted. Owned body; the caller frees the response.
+/// `PUT /api/config/pabrik` with the given JSON body, status NOT asserted.
 fn putConfig(h: *Harness, body: []const u8) !harness.Response {
     return h.http(io, .PUT, "/api/config/pabrik", .{
         .json_body = body,
@@ -61,9 +54,7 @@ fn renderKeys(obj: std.json.ObjectMap) ![]u8 {
     return std.mem.join(gpa, ", ", keys.items);
 }
 
-/// Python `assert alpha.get("thinking_budget_tokens") is None` — true
-/// for an explicit `null` AND for an absent key (Python's `dict.get`
-/// returns `None` for both, and the wire does not distinguish them here).
+/// Python `assert alpha.get("thinking_budget_tokens") is None` — true for an explicit `null` AND for an absent key (Python's `dict.get` returns `None` for both …
 fn expectNullOrAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse return;
     switch (v) {
@@ -117,9 +108,7 @@ fn expectStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, ctx: []
     }
 }
 
-/// Assert a PUT returned 200, printing the body when it did not — the
-/// handler's error text is the only thing that distinguishes the three
-/// validators (`InvalidThinkingBudgetTokens`, `InvalidReasoningEffort`, and
+/// Assert a PUT returned 200, printing the body when it did not — the handler's error text is the only thing that distinguishes the three validators …
 fn expectPutOk(r: *const harness.Response, ctx: []const u8) !void {
     if (r.status == 200) return;
     const excerpt: []const u8 = if (r.body.len > 400) r.body[0..400] else r.body;
@@ -127,8 +116,7 @@ fn expectPutOk(r: *const harness.Response, ctx: []const u8) !void {
     return error.TestUnexpectedResult;
 }
 
-/// The `profiles` OBJECT of a config GET, or null when absent / not an
-/// object — Python's `r.get("profiles") or {}`.
+/// The `profiles` OBJECT of a config GET, or null when absent / not an object — Python's `r.get("profiles") or {}`.
 fn profilesMap(doc: *const harness.Json) ?std.json.ObjectMap {
     const root = switch (doc.value().*) {
         .object => |o| o,
@@ -141,22 +129,18 @@ fn profilesMap(doc: *const harness.Json) ?std.json.ObjectMap {
     };
 }
 
-/// Parse a `GET /api/config/pabrik` body into an OWNED, SELF-CONTAINED
-/// document the caller `deinit`s.
+/// Parse a `GET /api/config/pabrik` body into an OWNED, SELF-CONTAINED document the caller `deinit`s.
 fn parseConfigDoc(config_body: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(
         std.json.Value,
         gpa,
         config_body,
-        // `.alloc_always` so no string borrows `config_body`: with the
-        // default `.alloc_if_needed` an unescaped value points INTO the
-        // caller's buffer rather than into this document's own arena.
+        // `.alloc_always` so no string borrows `config_body`: with the default `.alloc_if_needed` an unescaped value points INTO the caller's buffer rather than into …
         .{ .allocate = .alloc_always },
     ) };
 }
 
 /// The named profile object out of a `GET /api/config/pabrik` document.
-/// Python: `profiles = r.get("profiles") or {}` then `profiles["alpha"]`.
 fn profileObject(doc: *const harness.Json, name: []const u8) !std.json.ObjectMap {
     const profiles = profilesMap(doc) orelse {
         std.debug.print("PUT'd profile missing from GET: no `profiles` object\n", .{});
@@ -178,7 +162,6 @@ fn profileObject(doc: *const harness.Json, name: []const u8) !std.json.ObjectMap
 }
 
 /// The profile map out of a config GET, as a sorted CSV of names.
-/// Owned; used for the "all 5 user profiles survive" assertion.
 fn profileNamesCsv(config_body: []const u8) ![]u8 {
     var doc = try parseConfigDoc(config_body);
     defer doc.deinit();
@@ -191,8 +174,7 @@ fn profileNamesCsv(config_body: []const u8) ![]u8 {
     return std.mem.join(gpa, ", ", names.items);
 }
 
-/// `body` must mention `needle` (case-insensitive) — Python's
-/// `"x" in body.lower()`.
+/// `body` must mention `needle` (case-insensitive) — Python's `"x" in body.lower()`.
 fn expectBodyMentions(body: []const u8, needles: []const []const u8, ctx: []const u8) !void {
     for (needles) |needle| {
         if (containsIgnoreCase(body, needle)) return;
@@ -216,9 +198,7 @@ fn containsIgnoreCase(haystack: []const u8, needle_lower: []const u8) bool {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced fn body is never
-    // type-checked, so a stdlib rename inside one hides until a caller
-    // appears.
+    // Body-analysis barrier: an unreferenced fn body is never type-checked, so a stdlib rename inside one hides until a caller appears.
     _ = bootConfigHarness;
     _ = expectPutOk;
     _ = putConfig;
@@ -230,13 +210,9 @@ comptime {
     _ = expectBodyMentions;
 }
 
-// ============================================================================
 // Test 1: PUT round-trips thinking_budget_tokens + reasoning_effort
-// ============================================================================
 
-// PUT a profile with both new knobs -> GET returns the same values. This is
-// the core "the wire shape works" test for the feature. Without it, a
-// frontend save would silently drop the user's configuration.
+// PUT a profile with both new knobs -> GET returns the same values.
 test "profile_thinking_budget_and_effort_round_trip" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -266,12 +242,9 @@ test "profile_thinking_budget_and_effort_round_trip" {
     try expectStr(alpha_obj, "reasoning_effort", "high", "profile alpha");
 }
 
-// ============================================================================
 // Test 2: PUT rejects thinking_budget_tokens=0
-// ============================================================================
 
-// thinking_budget_tokens=0 violates Anthropic's 1024 floor. Backend
-// rejects with HTTP 400 and an error body mentioning the field name.
+// thinking_budget_tokens=0 violates Anthropic's 1024 floor.
 test "profile_thinking_budget_zero_rejected" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -284,9 +257,7 @@ test "profile_thinking_budget_zero_rejected" {
         \\ "profiles":{"alpha":{"model":"claude-test","base_url":"https://api.example.com","api_key":"alpha-key",
         \\ "url_style":"anthropic","thinking_budget_tokens":0}}}
     ;
-    // We don't pin the exact error code/message — the handler returns
-    // error.InvalidThinkingBudgetTokens which the HTTP layer maps to 400 with
-    // a body.
+    // We don't pin the exact error code/message — the handler returns error.InvalidThinkingBudgetTokens which the HTTP layer maps to 400 with a body.
     var r = try putConfig(&h, put_body);
     defer r.deinit();
     if (r.status != 400) {
@@ -300,13 +271,9 @@ test "profile_thinking_budget_zero_rejected" {
     try expectBodyMentions(r.body, &.{ "thinking_budget", "invalidthinking" }, "thinking_budget_tokens=0");
 }
 
-// ============================================================================
 // Test 3: PUT rejects thinking_budget_tokens > 2_000_000
-// ============================================================================
 
-// thinking_budget_tokens > 2_000_000 would violate Anthropic's
-// strict-less-than-max_tokens rule for any reasonable max_tokens.
-// Backend rejects with HTTP 400.
+// thinking_budget_tokens > 2_000_000 would violate Anthropic's strict-less-than-max_tokens rule for any reasonable max_tokens.
 test "profile_thinking_budget_too_large_rejected" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -332,12 +299,9 @@ test "profile_thinking_budget_too_large_rejected" {
     try expectBodyMentions(r.body, &.{"thinking_budget"}, "thinking_budget_tokens=3000000");
 }
 
-// ============================================================================
 // Test 4: PUT rejects garbage reasoning_effort
-// ============================================================================
 
 // reasoning_effort outside {low, medium, high, auto} is rejected.
-// Backend returns HTTP 400 with InvalidReasoningEffort in the body.
 test "profile_reasoning_effort_invalid_value_rejected" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -363,12 +327,9 @@ test "profile_reasoning_effort_invalid_value_rejected" {
     try expectBodyMentions(r.body, &.{ "reasoning_effort", "invalidreasoning" }, "reasoning_effort=\"super\"");
 }
 
-// ============================================================================
 // Test 5: omitted fields default to null on round-trip
-// ============================================================================
 
-// Backward compatibility: a profile without the new fields must
-// parse cleanly with both fields as null (not missing).
+// Backward compatibility: a profile without the new fields must parse cleanly with both fields as null (not missing).
 test "profile_thinking_knobs_default_to_null_when_omitted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -392,19 +353,14 @@ test "profile_thinking_knobs_default_to_null_when_omitted" {
     var doc = try parseConfigDoc(body);
     defer doc.deinit();
     const alpha_obj = try profileObject(&doc, "alpha");
-    // On the wire, the field IS present (we default to null) so the
-    // form has something to bind to on the next edit.
+    // On the wire, the field IS present (we default to null) so the form has something to bind to on the next edit.
     try expectNullOrAbsent(alpha_obj, "thinking_budget_tokens", "profile alpha");
     try expectNullOrAbsent(alpha_obj, "reasoning_effort", "profile alpha");
 }
 
-// ============================================================================
 // Test 6: explicit JSON null for the new fields is accepted
-// ============================================================================
 
-// Single profile with `thinking_budget_tokens: null` (and a valid
-// `reasoning_effort` string) round-trips through PUT -> GET. Pre-fix
-// this returned 400 InvalidThinkingBudgetTokens.
+// Single profile with `thinking_budget_tokens: null` (and a valid `reasoning_effort` string) round-trips through PUT -> GET.
 test "profile_thinking_budget_null_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -432,9 +388,7 @@ test "profile_thinking_budget_null_is_accepted" {
     try expectStr(alpha_obj, "reasoning_effort", "high", "profile alpha");
 }
 
-// Single profile with `reasoning_effort: null` (and a valid
-// `thinking_budget_tokens` integer) round-trips through PUT -> GET.
-// Pre-fix this returned 400 InvalidReasoningEffort.
+// Single profile with `reasoning_effort: null` (and a valid `thinking_budget_tokens` integer) round-trips through PUT -> GET.
 test "profile_reasoning_effort_null_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();
@@ -462,9 +416,7 @@ test "profile_reasoning_effort_null_is_accepted" {
     try expectNullOrAbsent(beta_obj, "reasoning_effort", "profile beta");
 }
 
-// The user's exact bug case: 5 profiles where most have
-// `thinking_budget_tokens: null` (and `reasoning_effort: null`). Only one
-// profile sets non-null values.
+// The user's exact bug case: 5 profiles where most have `thinking_budget_tokens: null` (and `reasoning_effort: null`).
 test "multiple_profiles_with_null_thinking_budget_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootConfigHarness();

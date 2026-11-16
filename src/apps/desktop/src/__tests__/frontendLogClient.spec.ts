@@ -1,5 +1,4 @@
-/** frontendLogClient.spec.ts Unit tests for `helpers/frontendLogClient.ts`. Covers the 10
- * behaviours required by: 1. */
+/** frontendLogClient.spec.ts Unit tests for `helpers/frontendLogClient.ts`. */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import {
@@ -7,9 +6,7 @@ import {
   type FrontendLogClientHandle,
 } from '../helpers/frontendLogClient'
 
-// ─── Minimal FakeWindow ────────────────────────────────────────────────── Mirrors what
-// `installFrontendLogClient` actually reads from the target: `addEventListener` (3 event types),
-// `removeEventListener` (3 types), `console.{error,warn,log,info,debug}` (only `error` + `warn`.
+// ─── Minimal FakeWindow ──────────────────────────────────────────────────
 interface FakeWindow {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
@@ -84,8 +81,7 @@ function fireListeners(
 describe('frontendLogClient', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   let beaconMock: ReturnType<typeof vi.fn>
-  // Mutable context sources so test 10 can prove getContext() is called
-  // per-flush (the closures capture the variables, not the values).
+  // Mutable context sources so test 10 can prove getContext() is called per-flush (the closures capture the variables, not the values).
   let routePath: string | null
   let sessionId: string | null
   let handle: FrontendLogClientHandle | null = null
@@ -155,9 +151,7 @@ describe('frontendLogClient', () => {
     makeHandle(window)
 
     const err = new Error('rejected')
-    // jsdom's PromiseRejectionEvent constructor requires `reason` and
-    // `promise`. Use Promise.reject so the test doesn't leak an
-    // unhandled rejection after the assertion.
+    // jsdom's PromiseRejectionEvent constructor requires `reason` and `promise`.
     const promise = Promise.reject(err)
     promise.catch(() => {}) // mark the rejection as handled for jsdom
     const event = new PromiseRejectionEvent('unhandledrejection', {
@@ -184,9 +178,7 @@ describe('frontendLogClient', () => {
     const { window, originalErrorSpy } = makeFakeWindow()
     makeHandle(window)
 
-    // The fake window's console.error is a vi.fn() (originalErrorSpy) that the install function
-    // captured as `originalError` (bound to console). Calling the (now-patched)
-    // window.console.error should: (a) enqueue a console_error event, (b) call the original spy.
+    // The fake window's console.error is a vi.fn() (originalErrorSpy) that the install function captured as `originalError` (bound to console).
     window.console.error('boom')
 
     await vi.runAllTimersAsync()
@@ -251,8 +243,7 @@ describe('frontendLogClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const body = JSON.parse(init.body as string)
-    // 100 events trigger queue overflow at MAX_QUEUE_SIZE=50 — the module drops the oldest 25 and
-    // enqueues a `console_warn` overflow marker on each overflow.
+    // 100 events trigger queue overflow at MAX_QUEUE_SIZE=50 — the module drops the oldest 25 and enqueues a `console_warn` overflow marker on each overflow.
     expect(body.events.length).toBeGreaterThan(0)
     expect(body.events.length).toBeLessThanOrEqual(100)
     for (const ev of body.events) {
@@ -265,8 +256,7 @@ describe('frontendLogClient', () => {
     const { window, unloadListeners } = makeFakeWindow()
     makeHandle(window)
 
-    // Fire a real event (sendBeacon gets a Blob built from JSON.stringify
-    // of the batch; the Blob constructor takes the JSON string).
+    // Fire a real event (sendBeacon gets a Blob built from JSON.stringify of the batch; the Blob constructor takes the JSON string).
     window.console.error('before-unload')
     fireListeners(unloadListeners, new Event('pagehide'))
 
@@ -291,8 +281,7 @@ describe('frontendLogClient', () => {
 
     await vi.runAllTimersAsync()
 
-    // fetchFn was invoked exactly once; the rejection is caught inside flush() and the batch is
-    // silently dropped (no retry, no second POST).
+    // fetchFn was invoked exactly once; the rejection is caught inside flush() and the batch is silently dropped (no retry, no second POST).
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -301,9 +290,7 @@ describe('frontendLogClient', () => {
     const { window } = makeFakeWindow()
     makeHandle(window)
 
-    // 60 console.error calls. - Calls 1..50 fill the queue to 50. - Call 51 overflows: drop 25 →
-    // 25, +1 warn → 26, +1 event → 27. - Calls 52..60 fill queue from 27 → 36. Final queue size
-    // after 60 calls = 36 (35 console_error + 1 console_warn).
+    // 60 console.error calls. - Calls 1..50 fill the queue to 50. - Call 51 overflows: drop 25 → 25, +1 warn → 26, +1 event → 27. - Calls 52..60 fill queue from 27 → …
     for (let i = 0; i < 60; i++) {
       window.console.error('x')
     }
@@ -339,8 +326,7 @@ describe('frontendLogClient', () => {
     expect(body.events[0].route_path).toBe('/app')
     expect(body.events[0].session_id).toBe('session_xyz')
 
-    // Mutate the captured variables; subsequent getContext() calls
-    // must see the new values.
+    // Mutate the captured variables; subsequent getContext() calls must see the new values.
     routePath = '/app/changed'
     sessionId = 'session_def'
 

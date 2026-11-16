@@ -5,12 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The wire contract, pinned. These payloads are copied from what
- * `workspaces_list.zig` and `buildSessionListJson` actually emit — the point is
- * that a rename on the backend shows up here as a failing test rather than as a
- * silently empty sidebar on a phone.
- */
+/** The wire contract, pinned. */
 class RecentsApiTest {
 
     @Test
@@ -81,19 +76,15 @@ class RecentsApiTest {
 
         val chat = RecentsApi.parseChats(body, "ws_1").single()
 
-        // The ORDER key is plain `updated_at` — the column the server was
-        // asked to sort by. If this ever becomes the human-touch stamp, a
-        // running session stops floating to the top of the list.
+        // The ORDER key is plain `updated_at` — the column the server was asked to sort by.
         assertEquals(1_790_399_557_000L, chat.updatedAtEpochMillis)
-        // The LABEL key is the human's own last visit, so the pill does not
-        // claim the human just came back while the agent works.
+        // The LABEL key is the human's own last visit, so the pill does not claim the human just came back while the agent works.
         assertEquals(1_790_399_254_000L, chat.lastHumanTouchedAtEpochMillis)
     }
 
     @Test
     fun parseChatsLabelsFallBackToUpdatedAtWhenHumanTouchedIsEmpty() {
-        // Pre-Migration-082 rows ship an empty `last_human_touched_at`. The
-        // desktop falls back to `updated_at`; so must the label.
+        // Pre-Migration-082 rows ship an empty `last_human_touched_at`.
         val body = sessionJson(
             lastHumanTouched = "",
             updated = "2026-09-26 05:12:37",
@@ -165,8 +156,7 @@ class RecentsApiTest {
     fun chatsPathEncodesAWorkspaceIdWithQueryUnsafeCharacters() {
         val path = RecentsApi.chatsPath("ws a&b")
 
-        // Unencoded, the '&' would start a second query parameter and silently
-        // scope the list to the wrong (or no) workspace.
+        // Unencoded, the '&' would start a second query parameter and silently scope the list to the wrong (or no) workspace.
         assertTrue(path, path.contains("workspace_id=ws+a%26b"))
     }
 
@@ -180,9 +170,7 @@ class RecentsApiTest {
 
     @Test
     fun parseTimestampEpochMillisReadsSqliteDatetimeAsUtc() {
-        // 2026-09-26 05:07:34 UTC. The absolute value is the assertion: parsing
-        // this as device-local time would shift every sidebar label by the
-        // device's offset, which a "looks about right" test would not catch.
+        // 2026-09-26 05:07:34 UTC.
         assertEquals(
             1_790_399_254_000L,
             RecentsApi.parseTimestampEpochMillis("2026-09-26 05:07:34"),
@@ -226,15 +214,13 @@ class RecentsApiTest {
     fun chatsPathCarriesTheCursorSoTheNextPageCanBeAskedFor() {
         val path = RecentsApi.chatsPath("ws_1", cursor = "2026-09-26 05:12:37")
 
-        // The space has to be encoded or the query parser truncates the cursor
-        // at the first space and pages from the wrong position.
+        // The space has to be encoded or the query parser truncates the cursor at the first space and pages from the wrong position.
         assertTrue(path, path.contains("cursor=2026-09-26+05%3A12%3A37"))
     }
 
     @Test
     fun chatsPathOmitsTheCursorForTheFirstPageAndForABlankOne() {
-        // A blank cursor is indistinguishable from "no cursor" to the server,
-        // which would restart the list at page 1 and re-serve what is on screen.
+        // A blank cursor is indistinguishable from "no cursor" to the server, which would restart the list at page 1 and re-serve what is on screen.
         assertTrue(!RecentsApi.chatsPath("ws_1").contains("cursor="))
         assertTrue(!RecentsApi.chatsPath("ws_1", cursor = null).contains("cursor="))
         assertTrue(!RecentsApi.chatsPath("ws_1", cursor = "   ").contains("cursor="))
@@ -244,8 +230,7 @@ class RecentsApiTest {
     fun chatsPathClampsThePageSize() {
         val path = RecentsApi.chatsPath("ws_1", limit = 0)
 
-        // limit=0 would be parsed server-side as a fallback to 50, which is not
-        // what the caller asked for and not something to discover at runtime.
+        // limit=0 would be parsed server-side as a fallback to 50, which is not what the caller asked for and not something to discover at runtime.
         assertTrue(path, path.contains("&limit=1&"))
     }
 
@@ -268,9 +253,7 @@ class RecentsApiTest {
 
     @Test
     fun parseChatsPageStopsOnTotalEvenWhenTheServerStillSaysHasMore() {
-        // `has_more` is `len == limit`, so a final page that happens to be
-        // exactly full reports true. Without the `total` backstop the sidebar
-        // would spend one more round-trip to be told the same thing.
+        // `has_more` is `len == limit`, so a final page that happens to be exactly full reports true.
         val body = """
             {"sessions":[
               {"session_id":"task_1","updated_at":"2026-09-26 05:12:37"},
@@ -285,8 +268,7 @@ class RecentsApiTest {
 
     @Test
     fun parseChatsPageStillTrustsHasMoreWhenTheServerSendsNoTotal() {
-        // An older server that omits `total` reports 0. Reading that as "we have
-        // them all" would silently truncate every list to its first page.
+        // An older server that omits `total` reports 0.
         val body = """
             {"sessions":[{"session_id":"task_1","updated_at":"2026-09-26 05:12:37"}],
              "has_more":true,"next_cursor":"2026-09-26 05:12:37"}
@@ -300,8 +282,7 @@ class RecentsApiTest {
 
     @Test
     fun parseChatsPageTreatsABlankOrNullCursorAsAbsent() {
-        // A blank cursor would be dropped from the query, which silently
-        // restarts the list at page 1 — duplicates instead of older chats.
+        // A blank cursor would be dropped from the query, which silently restarts the list at page 1 — duplicates instead of older chats.
         assertNull(
             RecentsApi.parseChatsPage(
                 """{"sessions":[],"total":0,"has_more":false,"next_cursor":"  "}""",
@@ -318,9 +299,7 @@ class RecentsApiTest {
 
     @Test
     fun parseChatsPageKeepsACursorEvenWhenItIsTheLastPage() {
-        // The server emits `next_cursor` whenever the page was non-empty, so a
-        // non-null cursor says nothing about there being more. `has_more` is
-        // the only terminator and this pins that they are read independently.
+        // The server emits `next_cursor` whenever the page was non-empty, so a non-null cursor says nothing about there being more.
         val body = """
             {"sessions":[{"session_id":"task_1","updated_at":"2026-09-26 05:12:37"}],
              "total":1,"has_more":false,"next_cursor":"2026-09-26 05:12:37"}
@@ -334,9 +313,7 @@ class RecentsApiTest {
 
     @Test
     fun mergeChatsByIdDropsRowsTheSidebarAlreadyShows() {
-        // A session touched between pages moves up the ordering, so a page
-        // boundary can legitimately hand back a row already on screen. Two rows
-        // for one chat would both be selectable and look like a rendering bug.
+        // A session touched between pages moves up the ordering, so a page boundary can legitimately hand back a row already on screen.
         val current = listOf(
             ChatSummary("task_1", "ws_1", "First", 2_000L),
             ChatSummary("task_2", "ws_1", "Second", 1_000L),
@@ -349,8 +326,7 @@ class RecentsApiTest {
         val merged = RecentsApi.mergeChatsById(current, incoming)
 
         assertEquals(listOf("task_1", "task_2", "task_3"), merged.map { it.id })
-        // A same-id row is replaced, not skipped: a renamed chat must show the
-        // new name, and the merge must not leave two competing rows.
+        // A same-id row is replaced, not skipped: a renamed chat must show the new name, and the merge must not leave two competing rows.
         assertEquals("Second, renamed", merged[1].title)
     }
 
@@ -363,14 +339,7 @@ class RecentsApiTest {
 
     @Test
     fun aRunningSessionLandsAtTheTopOfTheParsedAndSortedList() {
-        // The end-to-end guard for the reported bug, and the only one that
-        // spans both halves: the parser decides what goes into the order key,
-        // and the comparator sorts on it. Either half alone is untestable
-        // against the symptom.
-        //
-        // `task_running` is the session the agent is working on — the newest
-        // `updated_at`, and the human has not been there since 04:00. The
-        // desktop puts it at the top of Recent for exactly that reason.
+        // The end-to-end guard for the reported bug, and the only one that spans both halves: the parser decides what goes into the order key, and the comparator sorts …
         val body = """
             {"sessions":[
               {"session_id":"task_running","session_name":"Agent is working",
@@ -385,11 +354,9 @@ class RecentsApiTest {
             "ws_1",
         )
 
-        // Order follows `updated_at`; the human-touch stamp must not demote a
-        // session that is genuinely the most active one.
+        // Order follows `updated_at`; the human-touch stamp must not demote a session that is genuinely the most active one.
         assertEquals(listOf("task_running", "task_you_were_here"), ordered.map { it.id })
-        // …while the pill still tells the truth about the human: last there
-        // 05:12 minus 04:00 is 1h12m, which the compact label rounds to 1h.
+        // …while the pill still tells the truth about the human: last there 05:12 minus 04:00 is 1h12m, which the compact label rounds to 1h.
         assertEquals(
             "1h",
             formatRelativeTime(ordered.first().lastHumanTouchedAtEpochMillis, 1_790_399_557_000L),
@@ -412,11 +379,6 @@ class RecentsApiTest {
     """.trimIndent()
 
     // ── The project a session belongs to ───────────────────────────────────
-    //
-    // `GET /api/session` scopes its list by `workspace_id`, which the server
-    // resolves down to a set of task ids and then throws the project away. So
-    // this field is the only thing that lets a client holding the recents say
-    // "this project has work in flight" without loading every project's chats.
 
     @Test
     fun parseChatsReadsTheProjectOffTheWire() {
@@ -430,9 +392,7 @@ class RecentsApiTest {
 
     @Test
     fun aSessionInNoProjectHasNoProjectRatherThanABlankOne() {
-        // The server COALESCEs to "" and a chat outside any project is normal,
-        // so blank must collapse to null — the answer "this cannot light a
-        // project spinner", not a project whose id is the empty string.
+        // The server COALESCEs to "" and a chat outside any project is normal, so blank must collapse to null — the answer "this cannot light a project spinner", not a …
         assertNull(
             RecentsApi.parseChats(sessionJson(workspaceItemId = null), "ws_1").single().projectId,
         )
@@ -443,9 +403,7 @@ class RecentsApiTest {
 
     @Test
     fun anOlderServerWithNoProjectFieldStillParses() {
-        // The field is additive on the wire, so a client that meets a server
-        // predating it must get rows, not a crash — and rows it cannot
-        // attribute, which is exactly the old behaviour.
+        // The field is additive on the wire, so a client that meets a server predating it must get rows, not a crash — and rows it cannot attribute, which is exactly the …
         val legacy = """{"sessions":[{"session_id":"task_1","session_name":"A chat"}],
             "total":1,"has_more":false,"next_cursor":null}"""
 

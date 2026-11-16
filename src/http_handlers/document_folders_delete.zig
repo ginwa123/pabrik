@@ -1,6 +1,4 @@
-//! `DELETE …/document-folders/:folder_id`. Deletes the folder, never its
-//! contents: children move one level up, and the count in the response lets the
-//! UI promise "0 documents deleted" and be right.
+//! `DELETE …/document-folders/:folder_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

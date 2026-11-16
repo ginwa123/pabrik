@@ -1,6 +1,4 @@
-/**  * Behavioural tests for the persistent git-status cache (SWR paint). The cache's contract: keyed by
- * cwd, survives reloads (localStorage), fail-silent on every storage failure, and never returns a
- * shape that ChatView's chip cannot render (corrupt/foreign JSON → null). */
+/** Behavioural tests for the persistent git-status cache (SWR paint). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitStatus } from '@/api'
@@ -15,8 +13,7 @@ const STATUS: GitStatus = {
   status: 'modified',
 }
 
-// jsdom in this project's Vitest does not reliably provide localStorage
-// (same guard as ChatView.worktreeSidebar.spec.ts / nav.spec.ts).
+// jsdom in this project's Vitest does not reliably provide localStorage (same guard as ChatView.worktreeSidebar.spec.ts / nav.spec.ts).
 function ensureLocalStorage(): void {
   if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
     const store: Record<string, string> = {}
@@ -72,9 +69,7 @@ describe('gitStatusCache', () => {
   })
 
   it('normalizes wire nulls to the declared GitStatus strings', () => {
-    // The backend's GitStatusResponse declares branch/status as ?[]const u8
-    // — a detached non-repo payload may carry nulls. ChatView renders
-    // `branch || 'detached'`, so empty string is equivalent and typed.
+    // The backend's GitStatusResponse declares branch/status as ?[]const u8 — a detached non-repo payload may carry nulls.
     localStorage.setItem(
       'pabrik-git-status:v1:/repo/nulls',
       JSON.stringify({ is_git_repo: false, branch: null, status: null, has_changes: false }),
@@ -114,8 +109,7 @@ describe('gitStatusCache', () => {
         throw new Error('denied')
       },
     }
-    // Cast via unknown: the stub only implements the three methods the
-    // helper touches, which intentionally overlap Storage only partially.
+    // Cast via unknown: the stub only implements the three methods the helper touches, which intentionally overlap Storage only partially.
     vi.stubGlobal('localStorage', broken as unknown as Storage)
     expect(() => writeGitStatusCache('/repo/a', STATUS)).not.toThrow()
     expect(readGitStatusCache('/repo/a')).toBeNull()

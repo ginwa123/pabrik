@@ -68,8 +68,7 @@ describe('useDesignHistoryStore', () => {
       pageId: 'page_1',
       kind: 'update',
     })
-    // Move one entry to future manually (the public popPast API does
-    // not push to future; only the composable's undo() does that).
+    // Move one entry to future manually (the public popPast API does not push to future; only the composable's undo() does that).
     const popped = store.popPast('page_1')
     if (popped) store.getStack('page_1').future.push(popped)
     expect(store.getStack('page_1').future.length).toBe(1)

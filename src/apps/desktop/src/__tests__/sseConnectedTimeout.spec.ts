@@ -72,7 +72,6 @@ describe('SSE connected timeout (handshake deadline)', () => {
     expect(instances.length).toBe(1)
     expect(client.getState()).toBe('connecting')
     // Heartbeats/pings must NOT satisfy the deadline — only `connected` does.
-    // (No events at all here; the timer alone must fire.)
     vi.advanceTimersByTime(1000)
     expect(client.getState()).toBe('failed')
     expect(states).toContain('failed')

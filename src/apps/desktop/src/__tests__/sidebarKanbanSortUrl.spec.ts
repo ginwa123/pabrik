@@ -1,5 +1,4 @@
-/** Behavioural tests for Sidebar's handleSelectItem when the user clicks a kanban workspace item
- * (kanban default-URL, 2026-08-06). Why. */
+/** Behavioural tests for Sidebar's handleSelectItem when the user clicks a kanban workspace item (kanban default-URL, 2026-08-06). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, createApp } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
@@ -14,8 +13,6 @@ import {
 } from '../helpers/sseBus'
 import * as api from '../api'
 
-// Local SseClient stub — mirrors the pattern in sidebarActiveState.spec.ts. The real SseClient type
-// isn't exported from sseBus, so the stub is typed `any` to match `__setSseBusGlobalClient`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeStubClient(initial: 'connecting'): any {
   const stub = {
@@ -31,9 +28,7 @@ function makeStubClient(initial: 'connecting'): any {
   return stub
 }
 
-// Stub the router so we don't pull in a real Router. handleSelectItem
-// doesn't call the router directly — it emits `navigate` which
-// AppLayout handles. Here we only need Sidebar's emit to be observed.
+// Stub the router so we don't pull in a real Router. handleSelectItem doesn't call the router directly — it emits `navigate` which AppLayout handles.
 const { useRouterMock } = vi.hoisted(() => ({
   useRouterMock: vi.fn(() => ({ replace: vi.fn(), push: vi.fn() })),
 }))
@@ -97,9 +92,7 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
       writable: true,
       configurable: true,
     })
-    // ChatsList (a child of Sidebar) calls useSseBus() in setup. We
-    // install a stub bus before mount so its session listener
-    // registration succeeds.
+    // ChatsList (a child of Sidebar) calls useSseBus() in setup.
     __resetSseBus()
     const busApp = createApp({})
     installSseBus(busApp)
@@ -111,9 +104,7 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
       next_cursor: null,
       total: 0,
     })
-    // Stub listKanbanColumns (used by the click handler when
-    // columns aren't loaded). Returns columns matching the kanban
-    // item fixture so the URL gets the expected sorts param.
+    // Stub listKanbanColumns (used by the click handler when columns aren't loaded).
     vi.spyOn(api, 'listKanbanColumns').mockResolvedValue({
       columns: [
         { id: 'col_a', name: 'todo', workspace_item_id: KANBAN_ID, position: 0, created_at: '2026-01-01' },
@@ -139,14 +130,12 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
         items: [makeFolderItem()],
        
       },
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
 
  
 
     const wrapper = mountSidebar()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layout = wrapper.vm as any
 
@@ -175,12 +164,10 @@ describe('Sidebar.handleSelectItem — kanban default-URL emits sortsParam (2026
         items: [makeDesignItem()],
       },
      
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
 
     const wrapper = mountSidebar()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layout = wrapper.vm as any
 

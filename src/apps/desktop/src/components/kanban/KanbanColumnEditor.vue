@@ -30,8 +30,7 @@ const props = defineProps<{
   show: boolean
   mode: Mode
   initialName?: string
-  /** Pre-fill the description field. Only used in 'add' (rarely)
-   * and 'rename' modes. Empty string when absent. */
+  /** Pre-fill the description field. */
   initialDescription?: string
   /** Pre-fill the completing-column flag (rename mode only). */
   initialIsDone?: boolean
@@ -49,18 +48,13 @@ const name = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 const description = ref('')
 const descriptionInput = ref<HTMLTextAreaElement | null>(null)
-// Completing-column flag (rename mode only). Tasks in an
-// `is_done` column no longer block their dependents.
+// Completing-column flag (rename mode only).
 const isDone = ref(false)
 
-// 500-char cap matches the project's convention for short text fields. The textarea enforces it via
-// `maxlength`; the backend does NOT re-validate the cap (Zig error sets grow with every constraint;
-// we accept "client says 500, server trusts it" for v1).
+// 500-char cap matches the project's convention for short text fields.
 const DESCRIPTION_MAX = 500
 
 // ─── Computed labels & description per mode ────────────────────────────────
-// Single source of truth for the header + description text. Keeps the
-// template branch-free and ensures all 3 modes stay visually consistent.
 const headerText = computed(() => {
   if (props.mode === 'add') return 'Add Column'
   if (props.mode === 'rename') return 'Rename Column'
@@ -83,8 +77,7 @@ const headerIcon = computed<UiIconName>(() => {
   return 'clipboard'
 })
 
-// Show the name input for add / rename modes only; the delete mode
-// shows a static confirmation message instead.
+// Show the name input for add / rename modes only; the delete mode shows a static confirmation message instead.
 const showNameInput = computed(() => props.mode === 'add' || props.mode === 'rename')
 
 const submitLabel = computed(() => {
@@ -93,8 +86,7 @@ const submitLabel = computed(() => {
   return 'Delete'
 })
 
-// Whether the submit button is destructive (red). Only the delete
-// mode is destructive; add / rename use the standard gradient.
+// Whether the submit button is destructive (red).
 const isDestructive = computed(() => props.mode === 'delete')
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
@@ -106,15 +98,12 @@ const handleSubmit = () => {
   }
   const trimmed = name.value.trim()
   if (!trimmed) return
-  // Description is optional; trim but allow empty (the backend's
-  // "no description" sentinel is the empty string).
+  // Description is optional; trim but allow empty (the backend's "no description" sentinel is the empty string).
   const trimmedDescription = description.value.trim()
   if (props.mode === 'add') {
     emit('add', trimmed, trimmedDescription)
   } else if (props.mode === 'rename') {
-    // For rename, we still emit even if the name equals the initial
-    // — the parent can choose to no-op. We deliberately do NOT skip
-    // the emit because the user explicitly clicked Save.
+    // For rename, we still emit even if the name equals the initial — the parent can choose to no-op.
     emit('rename', trimmed, trimmedDescription, isDone.value)
   }
   handleClose()
@@ -130,9 +119,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ───────────────────────────────────────────────────────────── Seed the name field
-// on first render (so a rename modal opened with show=true at mount time has the column's name
-// pre-filled, not an empty string), and reset + refocus on every subsequent open via the open-sync.
+// ─── Lifecycle ─────────────────────────────────────────────────────────────
 name.value = props.initialName ?? ''
 isDone.value = props.initialIsDone ?? false
 const handleOpen = async () => {
@@ -140,8 +127,7 @@ const handleOpen = async () => {
   description.value = props.initialDescription ?? ''
   isDone.value = props.initialIsDone ?? false
   await nextTick()
-  // Focus the name input when it exists; in delete mode there is
-  // no input to focus, but focusing the dialog itself is harmless.
+  // Focus the name input when it exists; in delete mode there is no input to focus, but focusing the dialog itself is harmless.
   if (showNameInput.value) {
     nameInput.value?.focus()
     nameInput.value?.select()
@@ -152,9 +138,7 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

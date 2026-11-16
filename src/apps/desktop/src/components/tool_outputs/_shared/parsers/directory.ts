@@ -7,9 +7,7 @@ import {
   unwrapDataRecord,
 } from './internal'
 
-// ─── list_directory ───────────────────────────────────────────────────────── Parses the JSON
-// `data` payload produced by `execute_list_directory` + `toJSON` in
-// `src/modules/agent/tools/list_directory.zig`: {"path":"/proj","count":3,"entries":[.
+// ─── list_directory ─────────────────────────────────────────────────────────
 export interface ParsedListDirectoryEntry {
   name: string
   path: string

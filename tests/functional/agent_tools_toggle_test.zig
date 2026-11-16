@@ -1,6 +1,4 @@
-// Functional tests for the Agent Mode tool toggle wire. Zig port of
-// `tests/functional/agent_tools_toggle_test.py` (same test names, same
-// order).
+// Functional tests for the Agent Mode tool toggle wire.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Expected tool lists — mirrors tests/functional/default_tools.py
-// ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the
-/// wire order of `GET /api/agents/:agent_id/tools`.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_skill",
     "command",
@@ -53,9 +48,7 @@ const EXPECTED_DEFAULTS = [_][]const u8{
     "write_file",
 };
 
-/// An in-registry tool that is NEVER seeded, so enabling it is a clean
-/// "one extra row" delta against the defaults. Python called this
-/// `NON_DEFAULT_TOOL`.
+/// An in-registry tool that is NEVER seeded, so enabling it is a clean "one extra row" delta against the defaults.
 const NON_DEFAULT_TOOL = "preview_design_page";
 
 fn isSorted(list: []const []const u8) bool {
@@ -78,13 +71,9 @@ comptime {
     }
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// An owned list of strings copied out of a JSON response. A `harness.Json`
-/// BORROWS from the `Response`'s body buffer, so a helper cannot hand one
-/// back to the caller (rule 7).
+/// An owned list of strings copied out of a JSON response.
 const NameList = struct {
     items: [][]const u8,
 
@@ -99,16 +88,14 @@ fn freeNameSlice(slice: [][]const u8) void {
     gpa.free(slice);
 }
 
-/// Sorted union of `base` and `extras` — the Zig spelling of Python's
-/// `sorted(EXPECTED_DEFAULTS + picked)`.
+/// Sorted union of `base` and `extras` — the Zig spelling of Python's `sorted(EXPECTED_DEFAULTS + picked)`.
 fn sortedUnion(base: []const []const u8, extras: []const []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer out.deinit(gpa);
     try out.appendSlice(gpa, base);
     try out.appendSlice(gpa, extras);
 
-    // Insertion sort by name — n is ~35, so this is the cheapest
-    // correct thing and it does not need `base` to be pre-sorted.
+    // Insertion sort by name — n is ~35, so this is the cheapest correct thing and it does not need `base` to be pre-sorted.
     var i: usize = 1;
     while (i < out.items.len) : (i += 1) {
         var j = i;
@@ -170,8 +157,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     });
 }
 
-/// `POST /api/workspaces/:ws/items/agent` → the agent id (owned), after
-/// asserting the `{item, agent}` envelope and the 1-1 id invariant.
+/// `POST /api/workspaces/:ws/items/agent` → the agent id (owned), after asserting the `{item, agent}` envelope and the 1-1 id invariant.
 fn createAgent(h: *Harness, ws_id: []const u8, name: []const u8, path: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -230,8 +216,7 @@ fn createAgent(h: *Harness, ws_id: []const u8, name: []const u8, path: []const u
     return gpa.dupe(u8, item_id);
 }
 
-/// The default agent path for this suite, derived from the harness
-/// tempdir (see the header note on `isAbsolute`).
+/// The default agent path for this suite, derived from the harness tempdir (see the header note on `isAbsolute`).
 fn agentPath(h: *Harness) ![]u8 {
     return harness.harnessPath(gpa, h.temp_dir, &.{"agent-tools-toggle-test"});
 }
@@ -267,9 +252,7 @@ fn listTools(h: *Harness, agent_id: []const u8) !NameList {
     return .{ .items = try out.toOwnedSlice(gpa) };
 }
 
-/// The `AgentToolRow` a successful enable returned, copied out so it outlives
-/// the response body. Wire shape: the backend returns the row DIRECTLY (not
-/// wrapped in `{tool: ...}`) — see the Python docstring on `_enable_tool`.
+/// The `AgentToolRow` a successful enable returned, copied out so it outlives the response body.
 const EnabledTool = struct {
     tool_name: []u8,
     enabled: i64,
@@ -341,9 +324,7 @@ fn disableTool(h: *Harness, agent_id: []const u8, tool_name: []const u8) !void {
     }
 }
 
-/// `GET /api/agent-tools/registry` → every canonical tool name (owned). Used
-/// to pick tool_names we KNOW are valid, so the enable-unknown cases are
-/// intentional rather than accidental.
+/// `GET /api/agent-tools/registry` → every canonical tool name (owned).
 fn registryTools(h: *Harness) !NameList {
     var r = try h.http(io, .GET, "/api/agent-tools/registry", .{ .expect = &.{200} });
     defer r.deinit();
@@ -384,9 +365,7 @@ fn isDefaultTool(name: []const u8) bool {
     return false;
 }
 
-/// The registry names that are NOT seeded defaults, copied out as a
-/// borrowed-name slice valid while `registry` lives. Python: `[n for n in
-/// registry if n not in EXPECTED_DEFAULTS]`.
+/// The registry names that are NOT seeded defaults, copied out as a borrowed-name slice valid while `registry` lives.
 fn nonDefaultCandidates(registry: NameList) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer out.deinit(gpa);
@@ -396,9 +375,7 @@ fn nonDefaultCandidates(registry: NameList) ![][]const u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// ============================================================================
 // TestEnableTool — POST /api/agents/:agent_id/tools
-// ============================================================================
 
 // POST /tools inserts a row and returns the flat AgentToolRow envelope.
 test "post_inserts_row_and_returns_envelope" {
@@ -426,8 +403,7 @@ test "post_inserts_row_and_returns_envelope" {
         return error.TestUnexpectedResult;
     }
 
-    // The DB row persists beyond the create call — list now reflects
-    // defaults + the new tool (sorted ASC).
+    // The DB row persists beyond the create call — list now reflects defaults + the new tool (sorted ASC).
     const expected = try sortedUnion(&EXPECTED_DEFAULTS, &.{NON_DEFAULT_TOOL});
     defer freeNameSlice(expected);
     var got = try listTools(&h, agent_id);
@@ -435,8 +411,7 @@ test "post_inserts_row_and_returns_envelope" {
     try expectNames(got, expected, "after enabling a non-default tool");
 }
 
-// A second POST with the same (agent_id, tool_name) hits the UNIQUE
-// index → 409 Conflict, and leaves the state untouched.
+// A second POST with the same (agent_id, tool_name) hits the UNIQUE index → 409 Conflict, and leaves the state untouched.
 test "post_rejects_duplicate_with_409" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -486,8 +461,7 @@ test "post_rejects_unknown_tool_with_400" {
     const agent_id = try createAgent(&h, ws_id, "test-agent", path);
     defer gpa.free(agent_id);
 
-    // `this_tool_definitely_does_not_exist_xyz` is not in the registry
-    // by construction.
+    // `this_tool_definitely_does_not_exist_xyz` is not in the registry by construction.
     const tools_path = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
     defer gpa.free(tools_path);
     var bad = try h.http(io, .POST, tools_path, .{
@@ -526,9 +500,7 @@ test "post_rejects_empty_tool_name_with_400" {
     r.deinit();
 }
 
-// ============================================================================
 // TestListTools — GET /api/agents/:agent_id/tools
-// ============================================================================
 
 // Fresh agents are born with DEFAULT_AGENT_TOOLS, sorted ASC.
 test "defaults_seeded_on_create" {
@@ -550,9 +522,7 @@ test "defaults_seeded_on_create" {
     try expectNames(got, &EXPECTED_DEFAULTS, "fresh agent");
 }
 
-// Enabling three non-default tools in REVERSE alphabetical order still
-// lists them ASC — the agent-loop filter and the frontend list both
-// depend on that.
+// Enabling three non-default tools in REVERSE alphabetical order still lists them ASC — the agent-loop filter and the frontend list both depend on that.
 test "returns_sorted_ascending" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -592,13 +562,9 @@ test "returns_sorted_ascending" {
     try expectNames(listed, expected, "GET /tools after reverse-order enables");
 }
 
-// ============================================================================
 // TestDisableTool — DELETE /api/agents/:agent_id/tools/:tool_name
-// ============================================================================
 
-// DELETE removes the row; the list drops back to the seeded defaults. The
-// DELETE path param is `:tool_name` (the plan's Task 1+2 rename), so this
-// route would 404 against the old `:tool_id` spelling.
+// DELETE removes the row; the list drops back to the seeded defaults.
 test "delete_removes_row" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -660,8 +626,7 @@ test "delete_is_idempotent" {
         try expectNames(got, &EXPECTED_DEFAULTS, "after the first delete");
     }
 
-    // Second delete is a no-op (200, not 404) — matches the useCase's
-    // scope-by-agent_id design + handler semantics.
+    // Second delete is a no-op (200, not 404) — matches the useCase's scope-by-agent_id design + handler semantics.
     try disableTool(&h, agent_id, NON_DEFAULT_TOOL);
     var got = try listTools(&h, agent_id);
     defer got.deinit();
@@ -690,9 +655,7 @@ test "delete_unknown_tool_name_no_ops" {
     try expectNames(got, &EXPECTED_DEFAULTS, "after a no-op delete");
 }
 
-// The empty path segment resolves to `tools/<empty>`, which the router
-// happily matches with `tool_name=""`; the handler validates it and
-// answers 400 — NOT 404.
+// The empty path segment resolves to `tools/<empty>`, which the router happily matches with `tool_name=""`; the handler validates it and answers 400 — NOT 404.
 test "delete_rejects_empty_tool_name" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -713,9 +676,7 @@ test "delete_rejects_empty_tool_name" {
     r.deinit();
 }
 
-// ============================================================================
 // TestToolToggleLifecycle — end-to-end enable/list/delete
-// ============================================================================
 
 // enable a → list → enable b → delete a → delete b → re-enable a.
 test "full_lifecycle" {
@@ -756,8 +717,7 @@ test "full_lifecycle" {
         try expectNames(got, want, "step 1: after enabling tool_a");
     }
 
-    // 2. Enable tool_b (mixed alphabetical order — proves the list
-    //    returns ASC sorted regardless of insertion order).
+    // 2.
     {
         var t = try enableTool(&h, agent_id, tool_b);
         t.deinit();
@@ -788,8 +748,7 @@ test "full_lifecycle" {
         try expectNames(got, &EXPECTED_DEFAULTS, "step 4: after disabling tool_b");
     }
 
-    // 5. State survives: re-enabling tool_a starts fresh — no UNIQUE
-    //    violation, because the row was deleted.
+    // 5.
     {
         var t = try enableTool(&h, agent_id, tool_a);
         t.deinit();
@@ -801,9 +760,7 @@ test "full_lifecycle" {
     try expectNames(final_got, want, "step 5: after re-enabling tool_a");
 }
 
-// Tool toggles on agent_A do not affect agent_B. Both agents live in separate
-// workspaces (isolation proof; a same-workspace second create also works
-// since the workspace_item_id fix in workspace_items_create_agent.zig).
+// Tool toggles on agent_A do not affect agent_B.
 test "scoped_to_agent_id" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -833,8 +790,7 @@ test "scoped_to_agent_id" {
     const want_a = try sortedUnion(&EXPECTED_DEFAULTS, &.{NON_DEFAULT_TOOL});
     defer freeNameSlice(want_a);
 
-    // agent_B keeps its own seeded defaults — proving no cross-agent
-    // leakage regardless of workspace.
+    // agent_B keeps its own seeded defaults — proving no cross-agent leakage regardless of workspace.
     {
         var got_b = try listTools(&h, agent_b);
         defer got_b.deinit();
@@ -846,16 +802,14 @@ test "scoped_to_agent_id" {
         try expectNames(got_a, want_a, "agent_A after its own enable");
     }
 
-    // DELETE scoping: deleting the extra tool from agent_B is a no-op
-    // (agent_B never had it), and agent_A's row is untouched.
+    // DELETE scoping: deleting the extra tool from agent_B is a no-op (agent_B never had it), and agent_A's row is untouched.
     try disableTool(&h, agent_b, NON_DEFAULT_TOOL);
     var got_a = try listTools(&h, agent_a);
     defer got_a.deinit();
     try expectNames(got_a, want_a, "agent_A after a no-op delete on agent_B");
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = boot;
     _ = createWorkspace;

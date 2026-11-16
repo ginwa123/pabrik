@@ -1,5 +1,4 @@
-//! Data model for the `llm_history` entity table. One row per chat message in
-//! a session.
+//! Data model for the `llm_history` entity table.
 
 const std = @import("std");
 
@@ -11,18 +10,14 @@ model: []u8,
 response_content: ?[]u8 = null,
 tool_calls_json: ?[]u8 = null,
 finish_reason: ?[]u8 = null,
-/// Raw JSON of the OpenAI/Anthropic usage object. The flat
-/// `prompt_tokens` / `completion_tokens` / `total_tokens` columns
-/// are derived from this for indexed SUM() queries.
+/// Raw JSON of the OpenAI/Anthropic usage object.
 usage_json: ?[]u8 = null,
 created_at: []u8,
-/// One of `"user"` | `"assistant"` | `"tool"` | `"system"` |
-/// `"unknown"`. The DB column has no CHECK constraint.
+/// One of `"user"` | `"assistant"` | `"tool"` | `"system"` | `"unknown"`.
 role: []u8,
 reasoning_content: ?[]u8 = null,
 is_feed_to_llm: bool = true,
-/// Default `"Agent"`. Sub-agent names like `"code-reviewer"` etc.
-/// are stored verbatim.
+/// Default `"Agent"`.
 agent: []u8 = &.{},
 loop_index: i64 = 0,
 temperature: f64 = 0.2,
@@ -39,18 +34,13 @@ diffview_before: ?[]u8 = null,
 diffview_after: ?[]u8 = null,
 image_url: ?[]u8 = null,
 tool_call_id: ?[]u8 = null,
-/// ISO-8601 mirror of `created_at`. Populated by Migration 071 to
-/// avoid client-side `new Date(...)` parsing of the SQLite
-/// DATETIME string.
+/// ISO-8601 mirror of `created_at`.
 created_iso: ?[]u8 = null,
-/// Migration 071 — `true` while the streaming response for this
-/// row is still in flight.
+/// Migration 071 — `true` while the streaming response for this row is still in flight.
 is_loading: bool = false,
-/// Migration 071 — Anthropic cache-write tokens. Charge at ~1.25×
-/// input rate.
+/// Migration 071 — Anthropic cache-write tokens.
 cache_creation_input_tokens: i64 = 0,
-/// Migration 071 — Anthropic cache-read tokens. Charge at ~0.1×
-/// input rate.
+/// Migration 071 — Anthropic cache-read tokens.
 cache_read_input_tokens: i64 = 0,
 
 const Self = @This();

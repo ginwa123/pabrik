@@ -31,8 +31,7 @@ describe('TextReplace.vue — diff fallback + filtered Arguments', () => {
       old_str: 'line1\nline2',
       new_str: 'line1\nLINE2-EDITED',
     })
-    // Error path: ChatView passes the full envelope as content, so
-    // normalizeToolContent yields data=null + error message.
+    // Error path: ChatView passes the full envelope as content, so normalizeToolContent yields data=null + error message.
     const envelope = JSON.stringify({
       tool: 'text_replace',
       parameters: JSON.parse(params),
@@ -58,8 +57,6 @@ describe('TextReplace.vue — diff fallback + filtered Arguments', () => {
 
   it('MissingField error does not render a partial diff from the replacement', async () => {
     // The LLM used `old_string` instead of the tool schema's `old_str`.
-    // The backend rejects the call before touching the file; rendering the
-    // still-present `new_str` would incorrectly look like a pure insertion.
     const params = JSON.stringify({
       path: '/proj/a.txt',
       old_string: 'line1\\nline2',
@@ -131,9 +128,7 @@ describe('TextReplace.vue — diff fallback + filtered Arguments', () => {
     expect(wrapper.html()).toContain('Before')
   })
 
-  // Regression: the DB diffview_* columns are NULL (backend only fills them from legacy XML), so
-  // ChatView passes explicit null props. Null must fall through to the envelope data — passing it
-  // into DiffView crashes splitLines (Cannot read properties of null).
+  // Regression: the DB diffview_* columns are NULL (backend only fills them from legacy XML), so ChatView passes explicit null props.
   it('explicit null diffview props fall through to envelope data (no crash)', async () => {
     const params = JSON.stringify({
       path: '/tmp/pabrik_dummy_test.txt',

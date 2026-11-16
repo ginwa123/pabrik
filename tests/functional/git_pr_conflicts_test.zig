@@ -1,5 +1,4 @@
-// GET /api/git/pr/conflicts against a real conflicting work tree. Zig port of
-// `tests/functional/git_pr_conflicts_test.py` (same test names, same order).
+// GET /api/git/pr/conflicts against a real conflicting work tree.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,16 +7,12 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The PR under test. Never fetched — the computation is purely local;
-/// the URL only proves it round-trips through the query string.
+/// The PR under test.
 const PR_URL = "https://github.com/acme/app/pull/4242";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Run `git` in `cwd` with the fixture identity baked in, so the repo never
-/// depends on the machine's global git config (which CI does not set).
+/// Run `git` in `cwd` with the fixture identity baked in, so the repo never depends on the machine's global git config (which CI does not set).
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -53,8 +48,7 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
 }
 
 
-/// Build the `conflict-proj` fixture: two branches that conflict in two
-/// different ways, plus two files that do not.
+/// Build the `conflict-proj` fixture: two branches that conflict in two different ways, plus two files that do not.
 fn buildConflictingRepo(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "conflict-proj" });
     errdefer gpa.free(repo);
@@ -89,8 +83,7 @@ fn buildConflictingRepo(scratch: []const u8) ![]u8 {
     return repo;
 }
 
-/// Build a repo at `<scratch>/a repo with spaces` whose two branches
-/// genuinely conflict on the same line.
+/// Build a repo at `<scratch>/a repo with spaces` whose two branches genuinely conflict on the same line.
 fn buildSpacedRepo(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "a repo with spaces" });
     errdefer gpa.free(repo);
@@ -117,8 +110,7 @@ fn buildSpacedRepo(scratch: []const u8) ![]u8 {
     return repo;
 }
 
-/// Boot a harness + a scratch dir; `*h` and `*scratch` are for the
-/// caller's `defer`s.
+/// Boot a harness + a scratch dir; `*h` and `*scratch` are for the caller's `defer`s.
 fn bootWithScratch(h: *Harness, scratch: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -149,9 +141,7 @@ fn conflictCount(doc: *const harness.Json) !usize {
     return files.items.len;
 }
 
-// ============================================================================
 // Test 1: the conflicting files are named on the wire
-// ============================================================================
 
 // Exactly the two genuinely-conflicting files — and nothing else.
 test "conflicting_files_are_named_on_the_wire" {
@@ -180,8 +170,7 @@ test "conflicting_files_are_named_on_the_wire" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // git sorts the conflicted-file section; assert on the set plus the
-    // count so an added spurious entry fails on content and not ordering.
+    // git sorts the conflicted-file section; assert on the set plus the count so an added spurious entry fails on content and not ordering.
     if (!try namesConflict(&doc, "shared.txt")) {
         std.debug.print("shared.txt is not named: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -215,8 +204,7 @@ test "conflicting_files_are_named_on_the_wire" {
         return error.TestUnexpectedResult;
     }
 
-    // Provenance: the client renders this next to an empty list, so it
-    // must be present and must be the ref we actually merged against.
+    // Provenance: the client renders this next to an empty list, so it must be present and must be the ref we actually merged against.
     const base_ref = doc.str("base_ref") orelse {
         std.debug.print("response has no string `base_ref`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -237,9 +225,7 @@ test "conflicting_files_are_named_on_the_wire" {
     try testing.expectEqualStrings(PR_URL, got_url);
 }
 
-// ============================================================================
 // Test 2: repo paths carry spaces
-// ============================================================================
 
 // Repo paths carry spaces; `%20` in the query must decode to one path.
 test "path_with_spaces_survives_url_encoding" {
@@ -274,13 +260,9 @@ test "path_with_spaces_survives_url_encoding" {
     }
 }
 
-// ============================================================================
 // Test 3: a clean merge is an empty list, not an error
-// ============================================================================
 
-// A 200 with `conflicting_files: []` is the "clean" answer. The client
-// distinguishes it from a failure by the absence of `error`, so this case
-// must not degrade into a 4xx/5xx.
+// A 200 with `conflicting_files: []` is the "clean" answer.
 test "clean_merge_is_an_empty_list_not_an_error" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;
@@ -319,12 +301,9 @@ test "clean_merge_is_an_empty_list_not_an_error" {
     }
 }
 
-// ============================================================================
 // Test 4: missing parameters and bad provider
-// ============================================================================
 
-// Every rejection carries an `error` the client can act on, and the
-// unresolvable base ref is 422 ("you can fix this by fetching"), not 502.
+// Every rejection carries an `error` the client can act on, and the unresolvable base ref is 422 ("you can fix this by fetching"), not 502.
 test "missing_parameters_and_bad_provider_are_rejected" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;
@@ -338,9 +317,7 @@ test "missing_parameters_and_bad_provider_are_rejected" {
 
     const url = PR_URL;
 
-    // Python's `conflicting_repo / ".." / ".."` does NOT normalise: it yields
-    // a literal `<repo>/../..`. Reproduced byte for byte — the handler has to
-    // see the traversal, and a clean join would hand it a different string.
+    // Python's `conflicting_repo / ".." / ".."` does NOT normalise: it yields a literal `<repo>/../..`.
     const not_a_repo = try std.fmt.allocPrint(
         gpa,
         "{s}{s}..{s}..",
@@ -418,8 +395,7 @@ test "missing_parameters_and_bad_provider_are_rejected" {
         gpa.free(no_such_base);
     }
 
-    // A copied body outlives its Response, so each is re-parsed here
-    // rather than borrowing from a `Json` that is already gone.
+    // A copied body outlives its Response, so each is re-parsed here rather than borrowing from a `Json` that is already gone.
     try expectErrorMentions(missing_path, "path");
     try expectErrorMentions(missing_url, "pr_url");
     try expectErrorMentions(bad_provider, "provider");

@@ -1,6 +1,4 @@
-/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. Used by the kanban
- * tree to edit a task's name + description with optional metadata (column, type, pinned). Mount
- * pattern: same as KanbanSettingsDialog.spec.ts. */
+/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -35,9 +33,7 @@ function setInputValue(selector: string, value: string) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-// ─── Edit-mode cwd picker (plan: 2026-08-14-kanban-task-detail-edit-cwd) The cwd picker was lifted
-// out of the create-mode block so it renders in BOTH modes. In edit mode the picker fires
-// `update-cwd` so the host can persist the change immediately (mirrors `update-unattended`).
+// ─── Edit-mode cwd picker (plan: 2026-08-14-kanban-task-detail-edit-cwd) The cwd picker was lifted out of the create-mode block so it renders in BOTH modes.
 describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
   let wrapper: VueWrapper | null = null
 
@@ -72,8 +68,7 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     await flushPromises()
     const picker = findInDom<HTMLElement>('[data-testid="kanban-task-detail-cwd-picker"]')
     expect(picker).not.toBeNull()
-    // The picker text reflects the cwd — NOT the create-mode "Skip"
-    // placeholder.
+    // The picker text reflects the cwd — NOT the create-mode "Skip" placeholder.
     expect(picker!.textContent).toContain('/home/foo/bar')
     expect(picker!.textContent).not.toContain('Skip (no project root)')
     // Title attribute carries the path for hover-tooltip.
@@ -85,19 +80,15 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     await flushPromises()
     const picker = findInDom<HTMLElement>('[data-testid="kanban-task-detail-cwd-picker"]')
     expect(picker).not.toBeNull()
-    // The chip label uses "(none)" for the cwd slot when unset (new
-    // "Project root" + value layout — see the cwd-picker chip).
+    // The chip label uses "(none)" for the cwd slot when unset (new "Project root" + value layout — see the cwd-picker chip).
     expect(picker!.textContent).toContain('Project root')
     expect(picker!.textContent).toContain('(none)')
-    // The title for the empty state in edit mode tells the user they
-    // can click to set one (different from create-mode "optional").
+    // The title for the empty state in edit mode tells the user they can click to set one (different from create-mode "optional").
     expect(picker!.getAttribute('title') ?? '').toMatch(/no project root/i)
   })
 
   it('edit mode: picker button shows the empty-state placeholder when task.cwd is undefined (legacy)', async () => {
-    // Legacy tasks predating Migration 070 don't have a `cwd` field at
-    // all — verify the picker's `task?.cwd ?? ''` coerce handles
-    // `undefined` (not just '').
+    // Legacy tasks predating Migration 070 don't have a `cwd` field at all — verify the picker's `task?.cwd ??
     const legacyTask = { ...TASK }
     delete (legacyTask as { cwd?: string }).cwd
     mountEditDialogWithCwd(legacyTask)
@@ -121,9 +112,7 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     expect(dropdown).not.toBeNull()
   })
 
-  // Regression for "click Browse → picker closes immediately". The cwd picker mounts a
-  // FilePickerDialog via `<Teleport to="body">` so the dialog's DOM is NOT a descendant of the cwd
-  // picker's template ref.
+  // Regression for "click Browse → picker closes immediately".
   it('edit mode: clicking the Browse tab does NOT close the picker', async () => {
     mountEditDialogWithCwd(TASK)
     await flushPromises()
@@ -134,23 +123,17 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     await flushPromises()
     // The picker dropdown wrapper must still be in the DOM.
     expect(findInDom('[data-testid="kanban-task-detail-cwd-picker-dropdown"]')).not.toBeNull()
-    // And the Search input (Browse-only toolbar) is now visible
-    // — proves the tab actually switched to Browse, not just that
-    // the dropdown stayed open.
+    // And the Search input (Browse-only toolbar) is now visible — proves the tab actually switched to Browse, not just that the dropdown stayed open.
     expect(findInDom('[data-testid="file-picker-search"]')).not.toBeNull()
   })
 
-  // Regression for "click outside picker → picker closes immediately". User feedback: clicking on
-  // the kanban column body, on another card, or anywhere outside the picker dropdown was silently
-  // closing the picker while the user was just reading context.
+  // Regression for "click outside picker → picker closes immediately".
   it('edit mode: clicking outside the picker does NOT close it', async () => {
     mountEditDialogWithCwd(TASK)
     await flushPromises()
     findInDom<HTMLElement>('[data-testid="kanban-task-detail-cwd-picker"]')!.click()
     await flushPromises()
-    // Picker is now open. Synthesise a click somewhere completely outside the picker and outside
-    // the dialog (the kanban column body — a typical place the user might click while context-
-    // reading). The picker must NOT close on this click.
+    // Picker is now open.
     const outside = document.createElement('div')
     outside.setAttribute('data-testid', 'kanban-column-body-fixture')
     document.body.appendChild(outside)
@@ -160,9 +143,7 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     outside.remove()
   })
 
-  // Companion test: clicking the picker trigger again (toggle)
-  // DOES close the dropdown, since the user explicitly wants to
-  // dismiss the picker.
+  // Companion test: clicking the picker trigger again (toggle) DOES close the dropdown, since the user explicitly wants to dismiss the picker.
   it('edit mode: clicking the picker trigger again toggles the picker closed', async () => {
     mountEditDialogWithCwd(TASK)
     await flushPromises()
@@ -170,23 +151,17 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     picker.click()
     await flushPromises()
     expect(findInDom('[data-testid="kanban-task-detail-cwd-picker-dropdown"]')).not.toBeNull()
-    // Click the trigger again — this should close it (the toggle
-    // handler runs the same logic but the trigger click is INSIDE
-    // the ref so the close-on-outside check doesn't fire).
+    // Click the trigger again — this should close it (the toggle handler runs the same logic but the trigger click is INSIDE the ref so the close-on-outside check …
     picker.click()
     await flushPromises()
     expect(findInDom('[data-testid="kanban-task-detail-cwd-picker-dropdown"]')).toBeNull()
   })
 
   it('edit mode: emits update-cwd with the picked path on folder select', async () => {
-    // Drive the picker directly via its exposed handler. The FilePickerDialog is a Teleport-to-body
-    // component that uses an internal fetch pipeline — testing the full UI flow would mock global
-    // fetch (a brittle pattern).
+    // Drive the picker directly via its exposed handler.
     const w = mountEditDialogWithCwd({ ...TASK, cwd: '/home/old' })
     await flushPromises()
-    // Grab a ref to the picker button — the FilePickerDialog's
-    // @select="selectCwd" handler is wired in the template, so we
-    // invoke selectCwd via the component instance.
+    // Grab a ref to the picker button — the FilePickerDialog's @select="selectCwd" handler is wired in the template, so we invoke selectCwd via the component …
     const vm = w!.vm as unknown as {
       selectCwd: (p: string) => void
     }
@@ -195,15 +170,13 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
     const emitted = w!.emitted('update-cwd')
     expect(emitted).toBeTruthy()
     expect(emitted![0]).toEqual([{ cwd: '/home/new/path' }])
-    // And the picker's local `cwdSession` updated to the new path
-    // (the picker label reflects it).
+    // And the picker's local `cwdSession` updated to the new path (the picker label reflects it).
     const picker = findInDom<HTMLElement>('[data-testid="kanban-task-detail-cwd-picker"]')
     expect(picker?.textContent).toContain('/home/new/path')
   })
 
   it('edit mode: emitting update-cwd clears the cwd when the user picks ""', async () => {
-    // The picker emits `''` when the user explicitly clears the per-task cwd (walks back to
-    // "kanban-level fallback" semantics).
+    // The picker emits `''` when the user explicitly clears the per-task cwd (walks back to "kanban-level fallback" semantics).
     const w = mountEditDialogWithCwd({ ...TASK, cwd: '/home/some/path' })
     await flushPromises()
     const vm = w!.vm as unknown as {
@@ -217,8 +190,7 @@ describe('KanbanTaskDetailDialog — edit-mode cwd picker', () => {
   })
 })
 
-// ─── Create-mode tests (kanban-add-task-via-detail-dialog) ─────────────── The unattended-mode
-// toggle lives inside the edit-mode dialog (rendered only when `mode !== 'create'`).
+// ─── Create-mode tests (kanban-add-task-via-detail-dialog) ───────────────
 describe('KanbanTaskDetailDialog — unattended mode toggle', () => {
   let wrapper: VueWrapper | null = null
 
@@ -269,9 +241,7 @@ describe('KanbanTaskDetailDialog — unattended mode toggle', () => {
   })
 
   it('renders the toggle in create mode (Option A: atomic create-with-session)', async () => {
-    // The toggle used to be hidden in create mode because no session row existed yet. As of the
-    // unattended-mode Option A fix, the create payload carries is_auto_retry_until_stop and the
-    // backend atomically inserts a sessions row + sets the flag in one transaction.
+    // The toggle used to be hidden in create mode because no session row existed yet.
     document.body.innerHTML = ''
     wrapper = mount(KanbanTaskDetailDialog, {
       attachTo: document.body,
@@ -310,14 +280,12 @@ describe('KanbanTaskDetailDialog — unattended mode toggle', () => {
     toggle!.dispatchEvent(new Event('change', { bubbles: true }))
     await flushPromises()
     const saveBtn = findInDom<HTMLButtonElement>('[data-testid="kanban-task-detail-save"]')
-    // The toggle is its own immediate-save action; Save stays
-    // disabled until name/description actually change.
+    // The toggle is its own immediate-save action; Save stays disabled until name/description actually change.
     expect(saveBtn?.hasAttribute('disabled')).toBe(true)
   })
 })
 
-// The same KanbanTaskDetailDialog renders the "+ Add" flow in kanban mode. The host passes
-// `mode="create"` and `task={null}`; the form starts empty and submit emits `create` (not `save`).
+// The same KanbanTaskDetailDialog renders the "+ Add" flow in kanban mode.
 describe('KanbanTaskDetailDialog — create mode', () => {
   let wrapper: VueWrapper | null = null
 
@@ -344,18 +312,14 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   }
 
   it('renders the dialog with task=null (would be hidden in edit mode)', async () => {
-    // The whole point of the create-mode change: the dialog must render even when task is null,
-    // because in edit mode the v-if="show && task" guard hides it. The new guard is `show && (task
-    // || isCreateMode)`.
+    // The whole point of the create-mode change: the dialog must render even when task is null, because in edit mode the v-if="show && task" guard hides it.
     mountCreateDialog()
     await flushPromises()
     expect(findInDom('[data-testid="kanban-task-detail-dialog"]')).not.toBeNull()
   })
 
   it('starts the form empty even if a task is passed (caller contract: pass null)', async () => {
-    // Defensive: in create mode the form MUST start blank regardless of the task prop. The host's
-    // contract is `task=null`, but if a future refactor accidentally passes a stale task, the
-    // dialog should still present a blank form.
+    // Defensive: in create mode the form MUST start blank regardless of the task prop.
     document.body.innerHTML = ''
     wrapper = mount(KanbanTaskDetailDialog, {
       attachTo: document.body,
@@ -386,9 +350,7 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   it('hides the type + pinned badges in create mode (they only apply to existing tasks)', async () => {
     mountCreateDialog()
     await flushPromises()
-    // Even if column is null, the metadata strip is hidden in create mode when no column is
-    // provided. The type/pinned badges are explicitly gated off for create mode in the template
-    // (`v-if="!isCreateMode && ..."`).
+    // Even if column is null, the metadata strip is hidden in create mode when no column is provided.
     const strip = findInDom('[data-testid="kanban-task-detail-metadata"]')
     expect(strip).toBeNull()
   })
@@ -396,18 +358,14 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   it('the flat "Create task" button is disabled when name is empty', async () => {
     mountCreateDialog()
     await flushPromises()
-    // Create mode's two commit buttons are flat siblings: the plain
-    // create under this testid, next to ▶ Create task & run agent.
-    // Both are gated on a non-empty name.
+    // Create mode's two commit buttons are flat siblings: the plain create under this testid, next to ▶ Create task & run agent.
     const saveBtn = findInDom<HTMLButtonElement>('[data-testid="kanban-task-detail-save"]')
     expect(saveBtn?.textContent?.trim()).toBe('Create task')
     expect(saveBtn?.hasAttribute('disabled')).toBe(true)
   })
 
   it('Save button enables when name is non-empty (no "dirty" gate in create mode)', async () => {
-    // isDirty returns isValid in create mode (any non-empty name
-    // is ready to submit). Without this, the Save button would
-    // stay disabled and the user couldn't submit a fresh create.
+    // isDirty returns isValid in create mode (any non-empty name is ready to submit).
     mountCreateDialog()
     await flushPromises()
     setInputValue('[data-testid="kanban-task-detail-create-name"]', 'My task')
@@ -417,8 +375,7 @@ describe('KanbanTaskDetailDialog — create mode', () => {
   })
 
   it('emits create (not save) with { mode: "create", name, description, is_auto_retry_until_stop, pendingFiles }', async () => {
-    // The create payload now carries is_auto_retry_until_stop (Option A: backend atomically inserts
-    // a sessions row when this is '1'). Default value at dialog open is '1' (on).
+    // The create payload now carries is_auto_retry_until_stop (Option A: backend atomically inserts a sessions row when this is '1').
     const w = mountCreateDialog()
     await flushPromises()
     setInputValue('[data-testid="kanban-task-detail-create-name"]', '  New task  ')
@@ -448,20 +405,16 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         selectedAgent: '',
         // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
         pendingFiles: [],
-        // NEW (Migration 070 — kanban-cwd-session-optional plan). Empty string = no per-task cwd
-        // (falls back to kanban path + sandbox). The dialog's cwd picker was added in create mode;
-        // this test doesn't drive the picker so the field carries the default '' value.
+        // NEW (Migration 070 — kanban-cwd-session-optional plan).
         cwdSession: '',
         // NEW (Migration 112 — kanban task skills selector).
-        // Empty array = no skill (the canonical sentinel).
         skillNames: [],
       },
     ])
   })
 
   it('emits create with is_auto_retry_until_stop: "1" when the toggle is flipped on', async () => {
-    // Flips the unattended toggle BEFORE clicking Create. The
-    // emitted payload should carry the flipped value.
+    // Flips the unattended toggle BEFORE clicking Create.
     const w = mountCreateDialog()
     await flushPromises()
     setInputValue('[data-testid="kanban-task-detail-create-name"]', 'Overnight run')
@@ -496,11 +449,8 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
         pendingFiles: [],
         // NEW (Migration 070 — kanban-cwd-session-optional plan).
-        // Empty string = no per-task cwd. See comment on the
-        // earlier "emits create" test for the full rationale.
         cwdSession: '',
         // NEW (Migration 112 — kanban task skills selector).
-        // Empty array = no skill (the canonical sentinel).
         skillNames: [],
       },
     ])

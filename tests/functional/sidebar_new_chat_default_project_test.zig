@@ -1,5 +1,4 @@
-// Functional tests for the per-workspace default project and the New Chat
-// flow.
+// Functional tests for the per-workspace default project and the New Chat flow.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Wire helpers
-// ============================================================================
 
 /// Python's `_create_workspace` → the new workspace's id (OWNED).
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -152,9 +149,7 @@ fn theDefault(rows: []const ItemRow) !*const ItemRow {
     return defaults[0];
 }
 
-// ============================================================================
 // sqlite3 CLI helpers (see the header note)
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -185,9 +180,7 @@ fn requireSqlite3Cli() !void {
     }
 }
 
-/// Run one statement against `db_path`. `.timeout 5000` is the `busy_timeout`
-/// the server's WAL connection needs; a bare CLI invocation would otherwise
-/// fail with SQLITE_BUSY.
+/// Run one statement against `db_path`.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", db_path, sql },
@@ -285,13 +278,9 @@ fn storedItemName(db: []const u8, item_id: []const u8) ![]u8 {
     return gpa.dupe(u8, trimmed);
 }
 
-// ============================================================================
 // The invariant
-// ============================================================================
 
-// POST /api/workspaces creates the default eagerly. Not required for the
-// invariant (the list read would heal it) but it is what makes the Projects
-// section show the default on first paint instead of only after a refetch.
+// POST /api/workspaces creates the default eagerly.
 test "a_new_workspace_already_has_a_default_project" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -320,8 +309,7 @@ test "a_new_workspace_already_has_a_default_project" {
     }
 }
 
-// The invariant, asserted over the wire: a miss creates, a hit returns. Two
-// calls must yield one row and the same id.
+// The invariant, asserted over the wire: a miss creates, a hit returns.
 test "the_default_project_endpoint_is_idempotent" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -382,9 +370,7 @@ test "the_default_project_endpoint_is_idempotent" {
     }
 }
 
-// D12: the LIST read creates the default when the lookup misses. This is the
-// enforcement point — both clients already call this endpoint, so neither
-// needs a "does the default exist?" branch.
+// D12: the LIST read creates the default when the lookup misses.
 test "reading_the_items_list_heals_a_workspace_with_no_default" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -396,8 +382,7 @@ test "reading_the_items_list_heals_a_workspace_with_no_default" {
     const ws_id = try createWorkspace(&h, "default-ws");
     defer gpa.free(ws_id);
 
-    // Delete every item, which removes the default too. The workspace itself
-    // stays, so this is exactly the "miss" the invariant has to heal.
+    // Delete every item, which removes the default too.
     {
         const rows = try listItems(&h, ws_id);
         defer freeItems(rows);
@@ -417,8 +402,7 @@ test "reading_the_items_list_heals_a_workspace_with_no_default" {
     }
 }
 
-// The orphan guard — the one way a write-on-read goes wrong. `useCaseList`
-// does NOT 404 for an unknown workspace; it returns `[]`.
+// The orphan guard — the one way a write-on-read goes wrong.
 test "reading_an_unknown_workspace_creates_nothing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -432,8 +416,7 @@ test "reading_an_unknown_workspace_creates_nothing" {
 
     const ghost = "ws_does_not_exist";
 
-    // 200 + [] is preserved on purpose: making this a 404 would be a
-    // wire-contract change no caller asked for.
+    // 200 + [] is preserved on purpose: making this a 404 would be a wire-contract change no caller asked for.
     {
         const url = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items", .{ghost});
         defer gpa.free(url);
@@ -472,9 +455,7 @@ test "reading_an_unknown_workspace_creates_nothing" {
     }
 }
 
-// Both clients' fast path is a local find over this response. The field has
-// to be on EVERY row, not just the default's, or a client cannot distinguish
-// "ordinary project" from "a default it has not seen".
+// Both clients' fast path is a local find over this response.
 test "every_item_reports_is_default_so_clients_can_find_it" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -509,8 +490,7 @@ test "every_item_reports_is_default_so_clients_can_find_it" {
         return error.TestUnexpectedResult;
     }
 
-    // `listItems` already asserted every row carries an `is_default`
-    // integer; the count is the remaining assertion.
+    // `listItems` already asserted every row carries an `is_default` integer; the count is the remaining assertion.
     var default_count: usize = 0;
     for (rows) |row| {
         if (row.is_default) default_count += 1;
@@ -523,12 +503,9 @@ test "every_item_reports_is_default_so_clients_can_find_it" {
     }
 }
 
-// ============================================================================
 // The point of the whole thing: the chat runs in $HOME
-// ============================================================================
 
-// A New Chat inside the default project runs with $HOME as its cwd. This is
-// the assertion the feature exists for.
+// A New Chat inside the default project runs with $HOME as its cwd.
 test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -548,8 +525,7 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
     };
     defer gpa.free(default_id);
 
-    // Exactly what the clients send for a New Chat: a name, a type, and
-    // no cwd.
+    // Exactly what the clients send for a New Chat: a name, a type, and no cwd.
     const task_id = blk: {
         const url = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items/{s}/tasks", .{ ws_id, default_id });
         defer gpa.free(url);
@@ -577,8 +553,7 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
     };
     defer gpa.free(task_id);
 
-    // The session create, with cwd_session deliberately empty so the server
-    // has to resolve it from the project's path.
+    // The session create, with cwd_session deliberately empty so the server has to resolve it from the project's path.
     {
         const body = try std.fmt.allocPrint(
             gpa,
@@ -633,9 +608,7 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
         return error.TestUnexpectedResult;
     }
 
-    // Stated explicitly because it is the failure that looks like success: a
-    // sandbox path is a perfectly valid absolute path, so nothing above would
-    // complain.
+    // Stated explicitly because it is the failure that looks like success: a sandbox path is a perfectly valid absolute path, so nothing above would complain.
     const sandbox_suffix = try std.fmt.allocPrint(gpa, ".local/share/pabrik/data/apps/{s}", .{task_id});
     defer gpa.free(sandbox_suffix);
     if (std.mem.endsWith(u8, cwd, sandbox_suffix)) {
@@ -645,8 +618,6 @@ test "a_chat_in_the_default_project_resolves_its_cwd_to_home" {
 }
 
 // A default project whose name was corrupted by the old build heals itself.
-// The allocator bug wrote 0xAA poison bytes into the name, which the sidebar
-// rendered as `[ 170, 170, … ]`.
 test "a_corrupted_default_name_is_repaired_over_the_wire" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -673,8 +644,7 @@ test "a_corrupted_default_name_is_repaired_over_the_wire" {
     const id_lit = try sqlLit(default_id);
     defer gpa.free(id_lit);
 
-    // `b"\xaa" * 8` bound as a parameter — a BLOB, not TEXT. The CAST is
-    // what forces it: a TEXT-affinity column leaves a BLOB alone.
+    // `b"\xaa" * 8` bound as a parameter — a BLOB, not TEXT.
     {
         const sql = try std.fmt.allocPrint(
             gpa,
@@ -759,9 +729,7 @@ test "a_corrupted_default_name_is_repaired_over_the_wire" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one is invisible until a
-    // caller appears.
+    // Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one is invisible until a caller appears.
     _ = createWorkspace;
     _ = listItems;
     _ = defaultsOf;

@@ -28,8 +28,7 @@ describe('ImagePreview', () => {
   afterEach(() => {
     wrapper?.unmount()
     wrapper = null
-    // Force-remove any teleported overlay that survived the unmount so
-    // tests don't bleed into each other through the document body.
+    // Force-remove any teleported overlay that survived the unmount so tests don't bleed into each other through the document body.
     document.querySelectorAll(`.${OVERLAY_CLASS}`).forEach((el) => el.remove())
     document.body.style.overflow = ''
     delete document.body.dataset.imagePreviewPreviousOverflow

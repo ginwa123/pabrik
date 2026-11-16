@@ -1,16 +1,13 @@
-//! Data model for the `agents` entity table. One row per Agent workspace
-//! item.
+//! Data model for the `agents` entity table.
 
 const std = @import("std");
 
 pub const EntityId = []u8;
 
 id: EntityId,
-/// The workspace_item this agent belongs to. Same string as `id` per
-/// the 1-1 invariant.
+/// The workspace_item this agent belongs to.
 workspace_item_id: EntityId,
-/// Free-form description. Empty slice is the canonical "no description"
-/// sentinel (matches `workspace_item_tasks.description` from Migration 062).
+/// Free-form description.
 description: []u8 = &.{},
 created_at: ?[]u8 = null,
 updated_at: ?[]u8 = null,
@@ -43,8 +40,7 @@ pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     if (self.updated_at) |ua| allocator.free(ua);
 }
 
-/// Deep-copy constructor. Useful for callers that need an owned copy
-/// of an existing instance (e.g. a row pulled from a query result).
+/// Deep-copy constructor.
 pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
     return .init(allocator, .{
         .id = self.id,

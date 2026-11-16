@@ -1,6 +1,4 @@
-/** The centre-diff TOOLBAR, asserted through a real ChatView mount: the two global controls that
- * the whole feature hangs off. - `Unified | Split` — the LAYOUT axis, every section at once -
- * `Expand all / Collapse all` — one state-aware button. */
+/** The centre-diff TOOLBAR, asserted through a real ChatView mount: the two global controls that the whole feature hangs off. - `Unified | Split` — the LAYOUT … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -25,8 +23,7 @@ if (typeof proto.scrollTo === 'undefined') {
   }
 }
 if (typeof proto.scrollIntoView === 'undefined') {
-  // …and no scrollIntoView either, which `scrollToSectionElement` calls on
-  // every sidebar-row click (the expand-before-scroll path).
+  // …and no scrollIntoView either, which `scrollToSectionElement` calls on every sidebar-row click (the expand-before-scroll path).
   proto.scrollIntoView = function () {
     // no-op
   }

@@ -1,6 +1,4 @@
-/** ChatView's CACHED mount and older-history pagination: the tail refresh (`cursor + asc`) describes
- * the NEWER direction, so its `has_more` / `next_cursor` must never reach the older-direction state.
- */
+/** ChatView's CACHED mount and older-history pagination: the tail refresh (`cursor + asc`) describes the NEWER direction, so its `has_more` / `next_cursor` must … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -216,9 +214,7 @@ describe('ChatView cached mount — scroll-back stays armed', () => {
     })
   }
 
-  /** What the VirtualScroller does when the reader arrives at the top of the transcript. The open
-   * auto-sticks to the bottom, and that stick suppresses scroll-back for `AUTO_STICK_GATE_MS`; a
-   * reader travelling to the top takes longer than the gate, so wait it out first. */
+  /** What the VirtualScroller does when the reader arrives at the top of the transcript. */
   async function readerReachesTop(w: VueWrapper): Promise<void> {
     await new Promise((r) => setTimeout(r, AUTO_STICK_GATE_MS + 100))
     const scroller = w.findComponent(VirtualScroller)

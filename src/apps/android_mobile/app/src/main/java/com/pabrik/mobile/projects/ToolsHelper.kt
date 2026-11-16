@@ -1,7 +1,6 @@
 package com.pabrik.mobile.projects
 
-// Tools helpers. Pure logic so they are unit-testable without a ViewModel
-// or a network.
+// Tools helpers.
 object ToolsHelper {
 
     fun isValidName(name: String): Boolean = name.trim().isNotEmpty()

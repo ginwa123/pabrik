@@ -86,12 +86,10 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     workspacesStore,
   } = session
 
-  // True for the newest transcript group only. Pads that ONE row so the final message scrolls clear
-  // of the floating composer.
+  // True for the newest transcript group only.
   const isLastGroup = (index: number) => index === messageGroups.value.length - 1
 
-  // Timestamp (ms since epoch) of the most recent auto-stick assignment. See
-  // `helpers/autoStickGate.ts` for the gating math.
+  // Timestamp (ms since epoch) of the most recent auto-stick assignment.
   const lastAutoStickAt = ref(0)
 
   // State
@@ -99,25 +97,17 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
   const isSendingAttachments = ref(false)
   const isLoadingMore = ref(false)
   const error = ref<string | null>(null)
-  // True while the REMOTE half of the transcript load is still outstanding. The load has two halves:
-  // the cache prime (IndexedDB, fast) and the network page/delta (slow — bound by
-  // `INITIAL_HISTORY_TIMEOUT_MS`, currently 45 s, plus the retry schedule).
+  // True while the REMOTE half of the transcript load is still outstanding. The load has two halves
   const isRemoteLoadPending = ref(false)
   const hasMoreMessages = ref(true)
   const isAtBottom = ref(true)
 
-  // File previews render inline inside the chat bubble (see PresentFiles.vue +
-  // PreviewContentRenderer.vue). There is no side panel — wide HTML content offers an "Open in new
-  // tab" action instead.
+  // File previews render inline inside the chat bubble (see PresentFiles.vue + PreviewContentRenderer.vue).
   const scrollerIsScrollable = ref(false)
   const sessionCwd = ref('')
   // Bound git worktree path (empty string when no worktree is bound).
-  // Updated by loadChatHistory() from the API response and by the
-  // sessions SSE stream when the LLM calls set_git_worktree.
   const gitWorktreeCwd = ref('')
-  // The cwd we run git status against. Prefers the worktree when set
-  // (so the branch display reflects the worktree's branch, not the
-  // session's original cwd). Falls back to the session's original cwd.
+  // The cwd we run git status against.
   const effectiveCwd = computed(() => gitWorktreeCwd.value || sessionCwd.value)
   // Branch for the right sidebar.
   const sidebarBranch = computed(() =>
@@ -166,9 +156,7 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     checkGitStatus: () => checkGitStatus(),
   })
 
-  // The agent that answers here: the sub-agent's name, else the composer's
-  // cascade. Filled by the session read below; the transcript spends it on a
-  // thread that has only one author.
+  // The agent that answers here: the sub-agent's name, else the composer's cascade.
   const sessionAuthor = ref('')
   const authorLabel = (): string => sessionAuthor.value || effectiveAgent.value || ''
 

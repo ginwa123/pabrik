@@ -7,9 +7,7 @@ const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
-/// Migration 090 — `workspace_item_tasks.video_urls` +
-/// `llm_history.video_url` + `session_queue_messages.video_url` for full
-/// video upload to LLM.
+/// Migration 090 — `workspace_item_tasks.video_urls` + `llm_history.video_url` + `session_queue_messages.video_url` for full video upload to LLM.
 pub const Migration090AddVideoUrls = struct {
     pub const version: u32 = 90;
     pub const name = "add_video_urls";

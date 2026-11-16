@@ -1,6 +1,4 @@
 //! `GET /api/workspaces/:ws_id/items/:item_id/kanban/tags?limit=N&offset=K`.
-//! Returns one page of distinct tags from tasks belonging to the given kanban
-//! workspace item, ordered by frequency DESC then most-recent usage DESC.
 
 const std = @import("std");
 const testing = std.testing;
@@ -27,9 +25,7 @@ pub const KanbanTagsListInput = struct {
 
 pub const KanbanTagsListResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub fn useCase(
     allocator: std.mem.Allocator,
@@ -63,9 +59,7 @@ pub fn useCase(
     );
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn kanbanTagsListHandler(
     ctx: gserverz.HttpContext,
@@ -92,8 +86,7 @@ pub fn kanbanTagsListHandler(
     else
         limit_parsed;
 
-    // Parse `offset` query param. Default 0. No upper clamp (a
-    // user-paginating past the end just gets an empty page).
+    // Parse `offset` query param.
     const offset_str = req.query.get("offset") orelse "0";
     const offset = std.fmt.parseInt(u32, offset_str, 10) catch 0;
 
@@ -121,8 +114,7 @@ pub fn kanbanTagsListHandler(
 
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
-// ===================================================================== Tests
-// for useCase
+// ===================================================================== Tests for useCase
 
 fn setupDbWithTagsForHandler() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;

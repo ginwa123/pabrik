@@ -8,15 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The event-stream reader.
- *
- * The backend pretty-prints every SSE payload with a 4-space indent and then
- * prefixes *each resulting line* with `data: `. A parser that treats the stream
- * as a sequence of complete JSON documents throws on the very first indented
- * line and the chat silently never updates — so these cases are the ones that
- * decide whether streaming works at all.
- */
+/** The event-stream reader. */
 class SseFrameParserTest {
 
     private fun parse(raw: String): List<SseFrame> {
@@ -50,8 +42,7 @@ class SseFrameParserTest {
         val frame = parse(raw).single()
 
         assertEquals("llm_full", frame.event)
-        // Byte-for-byte what the server serialised, which is what makes the
-        // result parseable as JSON.
+        // Byte-for-byte what the server serialised, which is what makes the result parseable as JSON.
         assertEquals("{\n    \"content\": \"hello\",\n    \"session_id\": \"sess_1\"\n}", frame.data)
     }
 
@@ -74,8 +65,7 @@ class SseFrameParserTest {
 
     @Test
     fun `a stream that ends mid-frame still dispatches what it has`() {
-        // A connection dropped mid-frame must not swallow a complete-looking
-        // payload, or the last turn before a network blip is lost.
+        // A connection dropped mid-frame must not swallow a complete-looking payload, or the last turn before a network blip is lost.
         val parser = SseFrameParser()
         parser.accept("event: llm_full")
         parser.accept("""data: {"id":"m1"}""")
@@ -131,8 +121,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a reasoning chunk shares the chunk type and is told apart by its field`() {
-        // `type: "chunk"` is overloaded across content and reasoning, so
-        // branching on the type alone loses every thinking delta.
+        // `type: "chunk"` is overloaded across content and reasoning, so branching on the type alone loses every thinking delta.
         val decoded = decodeChatFrame(
             frame(
                 "llm_chunk",
@@ -151,11 +140,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a final chunk carries no message`() {
-        // `total_tokens` is nested under `usage`, not at the top level — the
-        // backend's `FinalChunkJson` is `{index, type, finish_reason, usage,
-        // session_id}` and `usage` is `{prompt_tokens, completion_tokens,
-        // total_tokens}`. The fixture that used to read it from the top level
-        // was the only thing keeping the wrong read green.
+        // `total_tokens` is nested under `usage`, not at the top level — the backend's `FinalChunkJson` is `{index, type, finish_reason, usage, session_id}` and `usage` …
         val decoded = decodeChatFrame(
             frame(
                 "llm_chunk",
@@ -170,8 +155,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a final chunk with no usage reports no token count`() {
-        // The emitter leaves `usage` null whenever the provider sent no usage
-        // block, which is the normal case for a turn that was cut short.
+        // The emitter leaves `usage` null whenever the provider sent no usage block, which is the normal case for a turn that was cut short.
         val decoded = decodeChatFrame(
             frame(
                 "llm_chunk",
@@ -199,8 +183,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a contentless tool row is still a real turn`() {
-        // Gating on content alone used to silently drop every tool result and
-        // every image-only echo, which looked like the agent doing nothing.
+        // Gating on content alone used to silently drop every tool result and every image-only echo, which looked like the agent doing nothing.
         val decoded = decodeChatFrame(
             frame(
                 "llm_full",
@@ -218,13 +201,7 @@ class ChatStreamEventTest {
         )
     }
 
-    /**
-     * Sub-agent pings ride the `llm_full` channel with a synthetic role and an
-     * empty body. Handled as a generic row they would insert a phantom turn
-     * into the transcript that the next revalidate then has to erase — and,
-     * worse, they would never fire, because an empty body with no tool name is
-     * filtered out as a blank bubble.
-     */
+    /** Sub-agent pings ride the `llm_full` channel with a synthetic role and an empty body. */
     @Test
     fun `a sub-agent progress ping is routed before the generic row handling`() {
         val decoded = decodeChatFrame(
@@ -257,24 +234,17 @@ class ChatStreamEventTest {
         ) as ChatStreamEvent.SubAgentProgress
 
         assertEquals(ChatStreamEvent.SubAgentProgress.STATUS_FAILED, decoded.status)
-        // The index is what tells two nameless agents in one batch apart, so it
-        // is the one field the running count cannot do without.
+        // The index is what tells two nameless agents in one batch apart, so it is the one field the running count cannot do without.
         assertEquals(1, decoded.agentIndex)
     }
 
-    /**
-     * A tool row's `content` is the result envelope, and the two frames for one
-     * row — the placeholder and the result — share an `id`. Keying on anything
-     * else appends a duplicate.
-     */
+    /** A tool row's `content` is the result envelope, and the two frames for one row — the placeholder and the result — share an `id`. */
     @Test
     fun `the placeholder and the result of one tool share a row id`() {
         val row = { content: String ->
             frame(
                 "llm_full",
-                // The row fields the backend sends, with the envelope supplied
-                // per-frame: the placeholder carries `data: null`, the result
-                // carries the payload, and the `id` is the same in both.
+                // The row fields the backend sends, with the envelope supplied per-frame: the placeholder carries `data: null`, the result carries the payload, and the `id` is …
                 """{"type":"full","id":"row_7","session_id":"sess_1","role":"tool",""" +
                     """"finish_reason":"tool","tool_call_id":"call_1",""" +
                     """"tool_name":"read_file","content":""" + JSONObject.quote(content) + "}",
@@ -293,19 +263,14 @@ class ChatStreamEventTest {
             ),
         ) as ChatStreamEvent.Full
 
-        // One row, two frames: the store upserts by id, and anything else
-        // renders the same tool twice.
+        // One row, two frames: the store upserts by id, and anything else renders the same tool twice.
         assertEquals(placeholder.message.id, result.message.id)
         assertTrue(ToolCard.from(placeholder.message).pending)
         assertFalse(ToolCard.from(result.message).pending)
         assertEquals("hi", (ToolCard.from(result.message).body as ToolBody.ReadFile).content)
     }
 
-    /**
-     * An assistant turn that only calls tools has an empty body. Without the
-     * `tool_calls_json` it is filtered out as a blank bubble, so the reader
-     * never learns the tools ran at all.
-     */
+    /** An assistant turn that only calls tools has an empty body. */
     @Test
     fun `an assistant tool-call turn survives its empty body`() {
         val decoded = decodeChatFrame(
@@ -321,15 +286,7 @@ class ChatStreamEventTest {
         assertEquals(1, ToolCalls.parse(decoded.message.toolCallsJson).size)
     }
 
-    /**
-     * The regression that a "draws something" gate would introduce.
-     *
-     * A declaration draws nothing once its result card has landed, so it is
-     * tempting to filter it out at the frame gate alongside the other empty
-     * rows. But the window where a declaration is the *only* thing on screen is
-     * exactly the window between it arriving and its result arriving — drop it
-     * here and a tool call in flight is invisible for its whole run.
-     */
+    /** The regression that a "draws something" gate would introduce. */
     @Test
     fun `a declaration is kept by the stream even though it draws nothing`() {
         val message = ChatMessage(
@@ -362,10 +319,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `an auth_error surfaces instead of looking like a flaky network`() {
-        // The response is already committed as text/event-stream by the time
-        // auth runs, so the server cannot answer 401 — it sends this and closes.
-        // Without handling it, an expired cookie looks exactly like a dropped
-        // connection and the app retries forever.
+        // The response is already committed as text/event-stream by the time auth runs, so the server cannot answer 401 — it sends this and closes.
         val decoded = decodeChatFrame(frame("auth_error", """{"error":"Unauthenticated"}"""))
 
         assertEquals("Unauthenticated", (decoded as ChatStreamEvent.Failed).message)
@@ -380,9 +334,7 @@ class ChatStreamEventTest {
             ),
         ) as ChatStreamEvent.SessionChanged
 
-        // `session_updated` is load-bearing: the auto-rename cascade used to
-        // arrive as `session_unknown`, which nothing handled, so titles stayed
-        // "New Chat" until a manual refresh.
+        // `session_updated` is load-bearing: the auto-rename cascade used to arrive as `session_unknown`, which nothing handled, so titles stayed "New Chat" until a …
         assertEquals("updated", updated.action)
         assertEquals("Renamed by the auto-title pass", updated.name)
     }
@@ -399,10 +351,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a queued turn carries the row the reader has to be shown`() {
-        // The whole reason this is not a +1/-1: a composer that can queue a
-        // turn must be able to say *which* turn is waiting, and a count cannot.
-        // The text is in the payload (`insert_queue_message.zig`) and reading
-        // only the id would leave the panel showing blank rows.
+        // The whole reason this is not a +1/-1: a composer that can queue a turn must be able to say *which* turn is waiting, and a count cannot.
         val queued = decodeChatFrame(
             frame(
                 "queue_queued",
@@ -416,9 +365,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a drained turn is identified by its id and carries no text`() {
-        // `queue_deleted` is `{action, id, session_id}` — no `message` key at
-        // all. Reading it as a nullable string is what keeps a JSON null from
-        // arriving as the four characters "null".
+        // `queue_deleted` is `{action, id, session_id}` — no `message` key at all.
         val deleted = decodeChatFrame(
             frame("queue_deleted", """{"action":"deleted","id":"q1","session_id":"sess_1"}"""),
         ) as ChatStreamEvent.QueueChanged
@@ -430,9 +377,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a queue frame with no id is dropped rather than published unmatchable`() {
-        // Every later delete is matched on the id, so a row without one could
-        // only ever be appended and never removed — it would sit in the panel
-        // for the rest of the session.
+        // Every later delete is matched on the id, so a row without one could only ever be appended and never removed — it would sit in the panel for the rest of the …
         assertNull(
             decodeChatFrame(frame("queue_queued", """{"action":"queued","session_id":"sess_1"}""")),
         )
@@ -460,9 +405,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a worker_deleted frame falls back to id because session_id is empty`() {
-        // All three delete emitters send `"session_id": ""` and put the session
-        // in `id`. Reading `session_id` alone removes nothing, and a spinner
-        // that cannot be turned off is worse than no spinner.
+        // All three delete emitters send `"session_id": ""` and put the session in `id`.
         val deleted = decodeChatFrame(
             frame("worker_deleted", """{"action":"deleted","id":"sess_7","session_id":""}"""),
         ) as ChatStreamEvent.WorkerChanged
@@ -473,9 +416,7 @@ class ChatStreamEventTest {
 
     @Test
     fun `a worker_updated frame resolves from session_id when the upsert sent it`() {
-        // The two `updated` emitters differ: `updateWorker` sends both fields,
-        // `updateWorkerActivityWithDescription` sends only `id`. The preferred
-        // field wins when present, so the two produce the same session.
+        // The two `updated` emitters differ: `updateWorker` sends both fields, `updateWorkerActivityWithDescription` sends only `id`.
         val populated = decodeChatFrame(
             frame("worker_updated", """{"action":"updated","id":"sess_7","session_id":"sess_7"}"""),
         ) as ChatStreamEvent.WorkerChanged

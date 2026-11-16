@@ -1,5 +1,4 @@
-/** The busy indicator for the SELECTED workspace lives in the Projects section header as a dot + "N
- * running" text — never an elapsed time pill. */
+/** The busy indicator for the SELECTED workspace lives in the Projects section header as a dot + "N running" text — never an elapsed time pill. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -36,8 +35,7 @@ function mountProjectsList(workspace: Workspace | null) {
     },
     global: {
       provide: { processingState, workerActivity, workerNow },
-      // Render the real WorkspaceItem so its (stubbed-key) presence
-      // matches production; the chip under test is in the header.
+      // Render the real WorkspaceItem so its (stubbed-key) presence matches production; the chip under test is in the header.
       stubs: { WorkspaceItem: WorkspaceItem },
     },
   })
@@ -112,8 +110,7 @@ describe('ProjectsList section-header running indicator', () => {
     setBusy(['task_a'])
     await nextTick()
     expect(visibleHeaderSpinners(wrapper)).toHaveLength(0)
-    // One run renders one pill: the pill lives on the owning row, so the
-    // header must never render an elapsed chip.
+    // One run renders one pill: the pill lives on the owning row, so the header must never render an elapsed chip.
     expect(visibleHeaderChips(wrapper)).toHaveLength(0)
     expect(visibleRunningIndicator(wrapper)).toHaveLength(1)
     expect(visibleRunningIndicator(wrapper)[0]!.text()).toContain('1 running')

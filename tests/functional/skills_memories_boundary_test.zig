@@ -1,5 +1,4 @@
-// Functional tests for the skills/memories filesystem boundary (plan
-// 2026-09-25, W2.6).
+// Functional tests for the skills/memories filesystem boundary (plan 2026-09-25, W2.6).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawWithCookie(
@@ -74,8 +71,6 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         return error.TestUnexpectedResult;
     }
     // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`.
-    // `harness.afterFirst` returns the text AFTER the delimiter, which
-    // here would be the attribute list — wrong direction, hence the split.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -88,9 +83,7 @@ fn cookieHeader(token: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "pabrik_session={s}", .{token});
 }
 
-/// Two admins on one server. Python's `_two_users`. Returned BY VALUE so the
-/// caller owns the harness and must `deinit` it; a helper that only handed
-/// back tokens would leak the server.
+/// Two admins on one server.
 const TwoUsers = struct {
     h: Harness,
     tok_a: []u8,
@@ -129,8 +122,7 @@ fn writeLocalMemory(cwd: []const u8, name: []const u8, body: []const u8) !void {
     try f.writeStreamingAll(io, body);
 }
 
-/// Assert `body` contains `needle`, printing the first 300 bytes when it
-/// does not (Python's `body[:300]` in the failure message).
+/// Assert `body` contains `needle`, printing the first 300 bytes when it does not (Python's `body[:300]` in the failure message).
 fn expectContains(body: []const u8, needle: []const u8, what: []const u8) !void {
     if (std.mem.indexOf(u8, body, needle) != null) return;
     const excerpt = if (body.len > 300) body[0..300] else body;
@@ -157,12 +149,9 @@ fn expectStatus(r: *const harness.Response, accepted: []const u16, what: []const
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // tests
-// ============================================================================
 
-// GLOBAL-SHARED — the global dir is one per OS account, so both users see the
-// same entries.
+// GLOBAL-SHARED — the global dir is one per OS account, so both users see the same entries.
 test "global_skills_and_memories_are_shared_across_users" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -177,9 +166,7 @@ test "global_skills_and_memories_are_shared_across_users" {
     const cookie_b = try cookieHeader(tu.tok_b);
     defer gpa.free(cookie_b);
 
-    // A creates a global memory via the API. (`\\n` are literal
-    // backslash-n in the JSON body: markdown newlines inside a JSON
-    // string.)
+    // A creates a global memory via the API.
     {
         var r = try rawWithCookie(
             &tu.h,
@@ -214,17 +201,13 @@ test "global_skills_and_memories_are_shared_across_users" {
     }
 }
 
-// LOCAL-CWD — `?cwd=` is caller-supplied, so B can read A's workspace
-// `.pabrik/` files.
+// LOCAL-CWD — `?cwd=` is caller-supplied, so B can read A's workspace `.pabrik/` files.
 test "local_memories_follow_the_caller_supplied_cwd" {
     try harness.requirePabrikBin(io, gpa);
 
-    // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a child
-    // of it — `makeScratchDir` gives the suite its own `pabrik-fix-`
-    // namespace that the orphan reaper (which only matches `pabrik-func-`)
+    // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a child of it — `makeScratchDir` gives the suite its own `pabrik-fix-` namespace that the …
     const scratch = try harness.makeScratchDir(gpa);
-    // DEFER ORDER IS LIFO: `free` is registered FIRST so it runs LAST —
-    // `cleanupExtraDir` reads `scratch` to delete it.
+    // DEFER ORDER IS LIFO: `free` is registered FIRST so it runs LAST — `cleanupExtraDir` reads `scratch` to delete it.
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
@@ -312,9 +295,7 @@ test "skills_and_memories_auth_off_is_unchanged" {
         defer r.deinit();
         try expectStatus(&r, &.{200}, "auth-off workspace-scoped skills");
 
-        // Python: `json.loads(body) == {"skills": []}` — an exact dict
-        // equality, so the object must carry the ONE key and the array
-        // must be empty.
+        // Python: `json.loads(body) == {"skills": []}` — an exact dict equality, so the object must carry the ONE key and the array must be empty.
         var doc = try r.json();
         defer doc.deinit();
         const obj = doc.object("") orelse doc.value().object;
@@ -353,8 +334,7 @@ test "skills_and_memories_auth_off_is_unchanged" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = rawWithCookie;
     _ = bootAuth;

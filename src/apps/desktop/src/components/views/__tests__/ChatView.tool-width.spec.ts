@@ -20,9 +20,7 @@ const progressiveSrc = readFileSync(
 
 describe('ChatView tool-width consistency', () => {
   it('tool-group container fills the column (flex-1 w-full), not shrink-to-fit', () => {
-    // The transcript row wrapper carries `min-w-0` statically and takes its width from the group's
-    // role: a user turn is a right-aligned bubble, everything else — tool sequences included —
-    // fills the column, so collapsed and expanded rows share the same width.
+    // The transcript row wrapper carries `min-w-0` statically and takes its width from the group's role: a user turn is a right-aligned bubble, everything else — …
     expect(chatViewSrc).toMatch(/class="min-w-0"\s*\n\s*:class="/)
     expect(chatViewSrc).toMatch(/: 'flex-1 w-full max-w-full'/)
   })
@@ -41,8 +39,7 @@ describe('ChatView tool-width consistency', () => {
   })
 
   it('ToolCardHeader primary truncates inside fixed width (min-w-0)', () => {
-    // flex-1 truncate without min-w-0 never ellipsizes in a flex row — a long
-    // tool name/path forces the header wider instead.
+    // flex-1 truncate without min-w-0 never ellipsizes in a flex row — a long tool name/path forces the header wider instead.
     expect(headerSrc).toMatch(
       /flex-1[^"]*min-w-0[^"]*truncate|flex-1[^"]*truncate[^"]*min-w-0|min-w-0[^"]*flex-1[^"]*truncate/,
     )

@@ -1,5 +1,4 @@
-/** SkillsSettings.vue — the selected skill in the URL. The router is mocked
- * at the boundary; the assertions read the navigation calls. */
+/** SkillsSettings.vue — the selected skill in the URL. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -89,8 +88,7 @@ describe('SkillsSettings — the selected skill is a URL param', () => {
     seedWorkspace()
     await mountWithQuery({ skill: 'behavior-unit-tests' })
 
-    // The detail pane loads the row the URL names, so a refresh or a
-    // shared link lands on the same skill.
+    // The detail pane loads the row the URL names, so a refresh or a shared link lands on the same skill.
     expect(getSkillDetailMock).toHaveBeenCalledWith(WS_ID, 'behavior-unit-tests')
   })
 
@@ -107,16 +105,14 @@ describe('SkillsSettings — the selected skill is a URL param', () => {
 
   it('keeps the other query params when it writes the selection', async () => {
     seedWorkspace()
-    // A query that keeps the row on screen — the list honours `?q=` on
-    // mount, so a query that excluded the row would leave nothing to click.
+    // A query that keeps the row on screen — the list honours `?q=` on mount, so a query that excluded the row would leave nothing to click.
     const wrapper = await mountWithQuery({ section: 'skills', q: 'behavior' })
     replaceMock.mockClear()
 
     await wrapper.find('[data-skill-name="behavior-unit-tests"]').trigger('click')
     await flushPromises()
 
-    // `section` is what keeps this page on the Skills tab; dropping it
-    // would navigate the user somewhere else entirely.
+    // `section` is what keeps this page on the Skills tab; dropping it would navigate the user somewhere else entirely.
     const query = lastReplaceQuery()
     expect(query.section).toBe('skills')
     expect(query.q).toBe('behavior')

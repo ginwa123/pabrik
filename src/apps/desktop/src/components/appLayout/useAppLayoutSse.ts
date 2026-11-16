@@ -9,19 +9,14 @@ export interface UseAppLayoutSseReturn {
 
 /** The three event-bus subscriptions AppLayout owns for its whole lifetime. */
 export function useAppLayoutSse(): UseAppLayoutSseReturn {
-  // Subscribe to /api/kanban/events so live kanban mutations (column create / update / delete /
-  // reorder, task move / assign / unassign) refresh the visible board in real time without a manual
-  // reload.
+  // Subscribe to /api/kanban/events so live kanban mutations (column create / update / delete /reorder, task move / assign / unassign) refresh the visible board in …
   const kanbanSseStore = useKanbanSseStore()
-  // ─── Design SSE — mirror the kanban pattern ───────────────────────────── Bus-backed design-event
-  // subscription (Chunk 6 of design-mode-redesign plan).
+  // ─── Design SSE — mirror the kanban pattern ─────────────────────────────
   const designSseStore = useDesignSseStore()
   // Document mutations, from the AGENT TOOLS only (agentic_loop/document_events.zig).
   const documentsSseStore = useDocumentsSseStore()
 
-  // Merged SSE init (replaces the old kanban + design activeWorkspaceId
-  // watchers): ONE connection pair for the app lifetime, filter updates on
-  // workspace switches. Runs from onMounted + the store subscription pump.
+  // Merged SSE init (replaces the old kanban + design activeWorkspaceId watchers): ONE connection pair for the app lifetime, filter updates on workspace switches.
   let didInitSse = false
   const initSseStores = async (newId: string) => {
     if (!newId) return

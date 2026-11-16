@@ -3,9 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { useContextMenu } from '../composables/useContextMenu'
 
-/** Root-cause reproduction for "the right-click context menu sometimes suddenly closes".
- * `useContextMenu` used to attach a capture-phase `wheel` listener and a capture-phase `scroll`
- * listener that BOTH called `close()` unconditionally. */
+/** Root-cause reproduction for "the right-click context menu sometimes suddenly closes". */
 const Host = defineComponent({
   setup() {
     const { menuPos, openAt, openAtPoint, close } = useContextMenu()
@@ -18,8 +16,7 @@ function mountHost() {
   return mount(Host, { attachTo: document.body })
 }
 
-/**  * Open the menu the way a real `@contextmenu.prevent` handler does: the event's `currentTarget` is
- * the row the handler is bound to, and that is what the scoped scroll dismiss keys off. */
+/** Open the menu the way a real `@contextmenu.prevent` handler does: the event's `currentTarget` is the row the handler is bound to, and that is what the scoped … */
 function openMenuFrom(wrapper: ReturnType<typeof mountHost>, anchor: HTMLElement) {
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'currentTarget', { value: anchor, configurable: true })
@@ -40,8 +37,7 @@ describe('useContextMenu — dismiss paths', () => {
     await nextTick()
     expect(wrapper.vm.menuPos).not.toBeNull()
 
-    // A trackpad nudge, a two-finger scroll, or an inertial scroll tail
-    // over an unrelated pane. The user never touched the menu.
+    // A trackpad nudge, a two-finger scroll, or an inertial scroll tail over an unrelated pane.
     window.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true }))
     await nextTick()
 
@@ -57,8 +53,7 @@ describe('useContextMenu — dismiss paths', () => {
     await nextTick()
     expect(wrapper.vm.menuPos).not.toBeNull()
 
-    // A scroll inside the chat transcript, the file tree, or the right
-    // sidebar. The menu is still exactly where the user put it.
+    // A scroll inside the chat transcript, the file tree, or the right sidebar.
     const unrelated = document.createElement('div')
     unrelated.style.overflow = 'auto'
     document.body.appendChild(unrelated)
@@ -77,9 +72,7 @@ describe('useContextMenu — dismiss paths', () => {
     await nextTick()
     expect(wrapper.vm.menuPos).not.toBeNull()
 
-    // VirtualScroller's measureItems compensation, endPreserve's restore,
-    // ChatView's scrollToBottom re-stick — all write scrollTop themselves
-    // and fire a native scroll event. None of them invalidate the menu.
+    // VirtualScroller's measureItems compensation, endPreserve's restore, ChatView's scrollToBottom re-stick — all write scrollTop themselves and fire a native …
     const appContainer = document.createElement('div')
     appContainer.style.overflowY = 'auto'
     document.body.appendChild(appContainer)
@@ -98,9 +91,7 @@ describe('useContextMenu — dismiss paths', () => {
     openMenuFrom(wrapper, anchor)
     await nextTick()
 
-    // The kanban "Move to column" submenu is `max-h-[320px] overflow-y-auto`
-    // (KanbanTaskContextMenu.vue:452). Scrolling a long column list inside
-    // the menu is a deliberate act that must keep the menu open.
+    // The kanban "Move to column" submenu is `max-h-[320px] overflow-y-auto` (KanbanTaskContextMenu.vue:452).
     const menu = document.createElement('div')
     menu.setAttribute('data-context-menu', '')
     menu.style.overflowY = 'auto'
@@ -122,8 +113,7 @@ describe('useContextMenu — dismiss paths', () => {
     await nextTick()
     expect(wrapper.vm.menuPos).not.toBeNull()
 
-    // The row moved under a `fixed` menu, so the menu now points at
-    // nothing.
+    // The row moved under a `fixed` menu, so the menu now points at nothing.
     anchor.dispatchEvent(new Event('scroll', { bubbles: true }))
     await nextTick()
 
@@ -157,9 +147,7 @@ describe('useContextMenu — dismiss paths', () => {
     await nextTick()
     expect(wrapper.vm.menuPos).not.toBeNull()
 
-    // A VirtualScroller unmounts rows outside its window. The menu is
-    // teleported to body, so it survives the unmount — but it is now
-    // orphaned over unrelated content and must close.
+    // A VirtualScroller unmounts rows outside its window.
     anchor.remove()
     document.body.dispatchEvent(new Event('scroll', { bubbles: true }))
     await nextTick()
@@ -226,8 +214,7 @@ describe('useContextMenu — dismiss paths', () => {
     await nextTick()
     expect(wrapper.vm.menuPos).not.toBeNull()
 
-    // Before the fix this path assigned menuPos directly and attached no
-    // listener at all, so Escape did nothing.
+    // Before the fix this path assigned menuPos directly and attached no listener at all, so Escape did nothing.
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await nextTick()
 

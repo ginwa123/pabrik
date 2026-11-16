@@ -120,9 +120,7 @@ describe('parseSpawnSubAgentArgs', () => {
       id: 'call_xxx', type: 'function',
       function: { name: 'spawn_sub_agent', arguments: args }
     }])
-    // The parser filters out invalid sub-agents and returns an empty
-    // array (not null) when the matching call was found but every
-    // sub-agent is invalid. `null` is reserved for "no matching call".
+    // The parser filters out invalid sub-agents and returns an empty array (not null) when the matching call was found but every sub-agent is invalid.
     expect(parseSpawnSubAgentArgs(json, 'call_xxx')).toEqual([])
   })
 
@@ -137,9 +135,7 @@ describe('parseSpawnSubAgentArgs', () => {
     expect(parseSpawnSubAgentArgs(json, 'call_xxx')).toEqual([])
   })
 
-  // 2026-09-12 tools-required: `tools` is no longer optional — the backend rejects
-  // missing/empty/"all" at parse time, so the display parser drops such entries instead of
-  // rendering cards for a spawn that will never execute.
+  // 2026-09-12 tools-required: `tools` is no longer optional — the backend rejects missing/empty/"all" at parse time, so the display parser drops such entries …
   it('filters out sub-agents missing the required tools (no throw)', () => {
     const args = JSON.stringify({
       sub_agents: [{ agent_name: 'reviewer', instruction: 'x' }]  // no tools
@@ -193,8 +189,6 @@ describe('parseSpawnSubAgentArgs', () => {
   })
 
   // 2026-08-14 pwsh-tool: pwsh is a valid tool name in sub_agents.tools.
-  // Locks the public contract — if a future refactor hardcodes valid
-  // tool names this regression test catches the broken pwsh acceptance.
   it('accepts pwsh as a valid tool name in the sub_agents.tools array', () => {
     const args = JSON.stringify({
       sub_agents: [
@@ -224,9 +218,7 @@ describe('parseSpawnSubAgentArgs', () => {
     ])
   })
 
-  // unify-command Phase C: `command` is a valid tool name in
-  // sub_agents.tools (bash/pwsh stay accepted — no valid-names gate in
-  // the parser, this locks the pass-through contract for the new name).
+  // unify-command Phase C: `command` is a valid tool name in sub_agents.tools (bash/pwsh stay accepted — no valid-names gate in the parser, this locks the …
   it('accepts command as a valid tool name in the sub_agents.tools array', () => {
     const args = JSON.stringify({
       sub_agents: [

@@ -11,11 +11,9 @@ const props = withDefaults(
   defineProps<{
     workspaces: Workspace[]
     activeWorkspaceId?: string | null
-    /**      * Collapsed-sidebar mode: monogram trigger + the panel is teleported to <body> (fixed position)
-     * so it escapes the narrow sidebar's overflow. */
+    /** Collapsed-sidebar mode: monogram trigger + the panel is teleported to <body> (fixed position) so it escapes the narrow sidebar's overflow. */
     collapsed?: boolean
-    /** Pending invitations addressed to the signed-in account. Rendered only
-     * when non-empty: an "Invitations" heading with nothing under it is noise. */
+    /** Pending invitations addressed to the signed-in account. */
     invitations?: WorkspaceInvitation[]
   }>(),
   { activeWorkspaceId: null, collapsed: false, invitations: () => [] },
@@ -36,8 +34,7 @@ const open = ref(false)
 /** Index into `workspaces` for keyboard navigation (-1 = none). */
 const activeIndex = ref(-1)
 const rootRef = ref<HTMLElement | null>(null)
-/** The dropdown panel — in collapsed mode it is teleported to
- *  <body>, so outside-click detection must accept it separately. */
+/** The dropdown panel — in collapsed mode it is teleported to <body>, so outside-click detection must accept it separately. */
 const panelRef = ref<HTMLElement | null>(null)
 
 const activeWorkspace = computed(
@@ -45,8 +42,7 @@ const activeWorkspace = computed(
 )
 const triggerLabel = computed(() => activeWorkspace.value?.name ?? 'Select workspace')
 
-/**  * 1–2 letter monogram for the collapsed trigger (algorithm moved from Sidebar's removed workspace
- * tiles — keep in sync with the old workspaceMonogram contract). */
+/** 1–2 letter monogram for the collapsed trigger (algorithm moved from Sidebar's removed workspace tiles — keep in sync with the old workspaceMonogram contract). */
 const monogram = (name: string): string => {
   const cleaned = name.replace(/[^a-zA-Z0-9]/g, '')
   if (cleaned.length === 0) return '?'
@@ -80,9 +76,7 @@ const toggleOpen = () => {
 }
 
 const chooseOption = (workspaceId: string, event?: MouseEvent) => {
-  // Ctrl/Cmd+click or middle-click opens the workspace in a new
-  // browser tab and leaves the dropdown open state to close without
-  // navigating the current tab.
+  // Ctrl/Cmd+click or middle-click opens the workspace in a new browser tab and leaves the dropdown open state to close without navigating the current tab.
   if (event && isBackgroundOpenEvent(event)) {
     emit('openWorkspaceInBackground', workspaceId)
     close()
@@ -92,8 +86,7 @@ const chooseOption = (workspaceId: string, event?: MouseEvent) => {
   close()
 }
 
-// Right-click "Open in new tab" on a workspace option. The payload
-// is just the workspace id — Sidebar builds the workspace URL.
+// Right-click "Open in new tab" on a workspace option.
 const { menuPos, openAt, close: closeWorkspaceMenu } = useContextMenu()
 const contextMenuWorkspaceId = ref<string | null>(null)
 
@@ -179,8 +172,7 @@ const onDocumentMouseDown = (event: MouseEvent) => {
   if (!open.value) return
   const target = event.target as Node | null
   if (!target) return
-  // The panel lives inside rootRef when expanded, but is teleported
-  // to <body> when collapsed — accept either container.
+  // The panel lives inside rootRef when expanded, but is teleported to <body> when collapsed — accept either container.
   if (rootRef.value?.contains(target) || panelRef.value?.contains(target)) return
   close()
 }

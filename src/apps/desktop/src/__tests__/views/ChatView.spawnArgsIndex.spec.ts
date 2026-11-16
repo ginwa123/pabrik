@@ -1,6 +1,4 @@
-/** Drawing one tool card must not cost more because its turn sits later in the transcript: the
- * walk that re-parsed every preceding turn's `tool_calls_json` was O(n^2) and ran for every card of
- * the compact view on every SSE chunk (measured: 287 ms of main-thread work per chunk). */
+/** Drawing one tool card must not cost more because its turn sits later in the transcript: the walk that re-parsed every preceding turn's `tool_calls_json` was … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

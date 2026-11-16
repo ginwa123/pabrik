@@ -1,5 +1,4 @@
-// Graceful shutdown: Ctrl+C (SIGINT) and SIGTERM drain cleanly. Zig port of
-// `tests/functional/graceful_shutdown_test.py` (same test names, same order).
+// Graceful shutdown: Ctrl+C (SIGINT) and SIGTERM drain cleanly.
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,20 +10,15 @@ const builtin = @import("builtin");
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Seconds the Python `_wait_exit` allowed before declaring the
-/// graceful handler hung. Kept verbatim: this IS the regression budget.
+/// Seconds the Python `_wait_exit` allowed before declaring the graceful handler hung.
 const exit_timeout_ms: i64 = 10_000;
 
-/// Monotonic milliseconds. Zig 0.16 dropped `std.time.milliTimestamp`; the
-/// monotonic clock now hangs off the Io handle. `.awake`, not `.real` — a
-/// wall-clock step backwards (NTP) must not extend the deadline.
+/// Monotonic milliseconds.
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// Signal `pid` and block until it exits (or `exit_timeout_ms` elapses), then
-/// assert the status word says "exited cleanly". Returns `error.SkipZigTest`
-/// off Linux — see the file header.
+/// Signal `pid` and block until it exits (or `exit_timeout_ms` elapses), then assert the status word says "exited cleanly".
 fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
     if (comptime builtin.os.tag == .linux) {
         std.posix.kill(@intCast(pid), sig) catch |err| {
@@ -39,16 +33,14 @@ fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
             const rc = std.os.linux.waitpid(@intCast(pid), &status, std.os.linux.W.NOHANG);
             switch (std.posix.errno(rc)) {
                 .SUCCESS => {
-                    // WNOHANG returns 0 when the child has not changed
-                    // state yet; anything else is the pid that exited.
+                    // WNOHANG returns 0 when the child has not changed state yet; anything else is the pid that exited.
                     if (rc != 0) {
                         reaped = true;
                         break;
                     }
                     std.Io.sleep(io, .fromMilliseconds(50), .awake) catch {};
                 },
-                // ECHILD: already reaped elsewhere, so there is no status
-                // word to read.
+                // ECHILD: already reaped elsewhere, so there is no status word to read.
                 .CHILD => break,
                 else => {
                     std.debug.print("waitpid({d}) failed: {t}\n", .{ pid, std.posix.errno(rc) });
@@ -67,9 +59,7 @@ fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
 
         if (std.os.linux.W.IFEXITED(status)) {
             const code = std.os.linux.W.EXITSTATUS(status);
-            // 0 = clean unwind through listen() return + defers;
-            // 130 = second-signal force-exit path (acceptable, still
-            // graceful intent, never a crash).
+            // 0 = clean unwind through listen() return + defers; 130 = second-signal force-exit path (acceptable, still graceful intent, never a crash).
             if (code != 0 and code != 130) {
                 std.debug.print("{s} exit code {d}, expected 0 (clean) or 130 (force)\n", .{ sig_name, code });
                 return error.TestUnexpectedResult;
@@ -85,9 +75,7 @@ fn awaitCleanExit(pid: u32, sig: std.posix.SIG, sig_name: []const u8) !void {
             return error.TestUnexpectedResult;
         }
     } else {
-        // The `if`/`else` is comptime-resolved, but Zig still ANALYZES the
-        // untaken branch, so a plain `_ = x` is a "pointless discard" on
-        // Linux.
+        // The `if`/`else` is comptime-resolved, but Zig still ANALYZES the untaken branch, so a plain `_ = x` is a "pointless discard" on Linux.
         std.mem.doNotOptimizeAway(pid);
         std.mem.doNotOptimizeAway(sig);
         std.mem.doNotOptimizeAway(sig_name);
@@ -100,8 +88,7 @@ fn portServes(h: *Harness) bool {
     var client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();
 
-    // `portServes` answers a boolean, so an allocation failure is a
-    // "cannot prove it is serving" rather than a propagated error.
+    // `portServes` answers a boolean, so an allocation failure is a "cannot prove it is serving" rather than a propagated error.
     const url = std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/health", .{h.port}) catch return false;
     defer gpa.free(url);
 
@@ -116,9 +103,7 @@ fn portServes(h: *Harness) bool {
     return @intFromEnum(resp.head.status) == 200;
 }
 
-/// The half of each test that is identical between SIGINT and SIGTERM:
-/// health-check, signal, await the clean exit, release the harness's
-/// pid, and confirm the listener is gone.
+/// The half of each test that is identical between SIGINT and SIGTERM
 fn exerciseSignal(h: *Harness, sig: std.posix.SIG, sig_name: []const u8) !void {
     if (!h.health(io)) {
         std.debug.print("server should serve /health before {s}\n", .{sig_name});
@@ -129,9 +114,7 @@ fn exerciseSignal(h: *Harness, sig: std.posix.SIG, sig_name: []const u8) !void {
 
     try awaitCleanExit(pid, sig, sig_name);
 
-    // Mark reaped so `Harness.deinit` skips the redundant kill ladder
-    // (it tolerates dead pids anyway, but this keeps the log clean —
-    // exactly what the Python `harness._stopped = True` did).
+    // Mark reaped so `Harness.deinit` skips the redundant kill ladder (it tolerates dead pids anyway, but this keeps the log clean — exactly what the Python …
     h.stopped = true;
     h.pid = null;
 

@@ -1,5 +1,4 @@
-/** PrChecksPanel — the panel's own contract. The rule this file exists to protect: "this PR has no
- * failing checks" and "we could not reach the backend" must render differently. */
+/** PrChecksPanel — the panel's own contract. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PrChecksPanel from '../components/views/chat_right_sidebar/PrChecksPanel.vue'
@@ -86,9 +85,7 @@ describe('PrChecksPanel', () => {
 
   it('renders one row per check job', async () => {
     const w = await mountPanel()
-    // Assert on the row-name testids rather than on a composed row id:
-    // job names contain `(`, `+` and `/`, and a querySelector built from
-    // them is needlessly fragile.
+    // Assert on the row-name testids rather than on a composed row id
     const names = w.findAll('[data-testid="checks-row-name"]').map((n) => n.text())
     expect(names).toHaveLength(3)
     expect(names).toContain('backend (Windows X64) / build')
@@ -98,8 +95,7 @@ describe('PrChecksPanel', () => {
 
   it('shows the failing STEP of a failed job, not just the job', async () => {
     const w = await mountPanel()
-    // Failing jobs are expanded by default — the user opened this tab to
-    // read them, and a collapsed red row answers nothing.
+    // Failing jobs are expanded by default — the user opened this tab to read them, and a collapsed red row answers nothing.
     expect(w.find('[data-testid="checks-step-zig build test"]').exists()).toBe(true)
     expect(w.find('[data-testid="checks-step-Set up job"]').exists()).toBe(true)
   })
@@ -145,8 +141,7 @@ describe('PrChecksPanel', () => {
   })
 
   it('surfaces a failed fetch as an error, NOT as an empty check list', async () => {
-    // The bug this guards: `catch { checks.value = [] }` makes an
-    // unreachable backend render as "No CI checks reported", i.e. green.
+    // The bug this guards: `catch { checks.value = [] }` makes an unreachable backend render as "No CI checks reported", i.e. green.
     getPrChecksMock.mockRejectedValue(new Error('gh: could not connect'))
     const w = await mountPanel()
     expect(w.find('[data-testid="checks-error"]').text()).toContain('could not connect')

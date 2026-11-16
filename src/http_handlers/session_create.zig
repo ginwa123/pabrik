@@ -24,9 +24,7 @@ fn createSandbox(allocator: std.mem.Allocator, io: std.Io, environment: ?*const 
     // Create the data/apps directory and all parent directories if they don't exist
     try std.Io.Dir.cwd().createDirPath(io, data_apps_dir);
 
-    // session_id is caller-supplied (frontend / curl / LLM tool) — it may
-    // contain path separators (`../`), backslashes, or Windows-reserved
-    // characters (`<>:"|?*`, device names).
+    // session_id is caller-supplied (frontend / curl / LLM tool) — it may contain path separators (`../`), backslashes, or Windows-reserved characters (`<>:"|?*` …
     const sandbox_name = try helpers.sanitize.sanitizePathComponent(allocator, session_id);
     errdefer allocator.free(sandbox_name);
 
@@ -36,8 +34,7 @@ fn createSandbox(allocator: std.mem.Allocator, io: std.Io, environment: ?*const 
     });
     errdefer allocator.free(sandbox_path);
 
-    // `createDirAbsolute` below ASSERTS the path is absolute and ABORTS the
-    // whole process (Debug/ReleaseSafe) instead of returning an error.
+    // `createDirAbsolute` below ASSERTS the path is absolute and ABORTS the whole process (Debug/ReleaseSafe) instead of returning an error.
     if (!std.fs.path.isAbsolute(sandbox_path)) return error.SandboxPathNotAbsolute;
 
     // Create the sandbox directory (ignore if already exists)
@@ -50,8 +47,7 @@ fn createSandbox(allocator: std.mem.Allocator, io: std.Io, environment: ?*const 
     return sandbox_path;
 }
 
-/// Last-resort cwd when createSandbox itself fails (disk full, permission
-/// denied, no HOME/USERPROFILE).
+/// Last-resort cwd when createSandbox itself fails (disk full, permission denied, no HOME/USERPROFILE).
 fn sandboxTempFallback(environment: *const std.process.Environ.Map) []const u8 {
     return environment.get("TMPDIR") orelse
         environment.get("TEMP") orelse
@@ -72,9 +68,7 @@ pub const RequestSession = struct {
     /// The chat's file attachments — a JSON array of `{name, mime, b64}`.
     file_attachments: []const u8 = "",
     selected_profile_model: []const u8 = "", // NEW: name of profile in LlmConfig.profiles_models
-    /// Migration 063 — "1" to opt into unattended mode (workflow keeps
-    /// retrying past the 10-attempt TooManyRetries bail). Empty string
-    /// OR anything other than "1" = off (matches the session's default).
+    /// Migration 063 — "1" to opt into unattended mode (workflow keeps retrying past the 10-attempt TooManyRetries bail).
     is_auto_retry_until_stop: []const u8 = "",
 };
 
@@ -84,17 +78,14 @@ pub const ResponseSession = struct {
     status: []const u8,
 };
 
-/// Create a new session Request body (JSON, optional): - name: session name
-/// (string, defaults to "New Session") - session_id: custom session ID
-/// (string, optional, auto-generated if not provided) - queue_message:
+/// Create a new session Request body (JSON, optional): - name: session name (string, defaults to "New Session") - session_id: custom session ID (string, optional …
 pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
     const di = try pabrikcore.getSingleton();
 
     {
-        // 35 MB: fits the 25 MB video cap (base64 inflates ~33% → ~33.3 MB
-        // wire) plus JSON envelope overhead.
+        // 35 MB: fits the 25 MB video cap (base64 inflates ~33% → ~33.3 MB wire) plus JSON envelope overhead.
         if (req.body.len > 35 * 1024 * 1024) {
             std.log.warn("session_create: body too large ({} bytes), rejecting", .{req.body.len});
             return res.jsonResponse(.{
@@ -114,8 +105,6 @@ pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     };
 
     // Owner for the session row this request creates (plan 2026-09-25, W1).
-    // Server-derived from the `pabrik_session` cookie only — never a body,
-    // query, or header field.
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
 
@@ -130,8 +119,7 @@ pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
         });
     };
 
-    // Stamp the owner on the session row this create path produced (plan
-    // 2026-09-25: W1/W2.3).
+    // Stamp the owner on the session row this create path produced (plan 2026-09-25: W1/W2.3).
     if (di.auth_enabled) {
         const stamp_owner = auth_common.resolveRequestUserId(allocator, di.db, di.auth_enabled, req.headers) catch null;
         defer if (stamp_owner) |o| allocator.free(o);
@@ -156,9 +144,7 @@ pub fn sessionCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     });
 }
 
-/// The `active_profile` in force for this session's config scope: the session
-/// yourself (owner + the session's workspace overlay), the owner's stored
-/// config, the process-global one — in that order.
+/// The `active_profile` in force for this session's config scope: the session yourself (owner + the session's workspace overlay), the owner's stored config, the …
 fn activeProfileForSession(
     alloc: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -171,9 +157,7 @@ fn activeProfileForSession(
     return cfg.active_agent;
 }
 
-/// The session-create funnel, callable without an HTTP request. `pub` so
-/// `pabrik headless run` can drive the SAME code path the POST
-/// /api/llm/session handler drives.
+/// The session-create funnel, callable without an HTTP request.
 pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed: RequestSession, owner: []const u8) !ResponseSession {
     const environment = di.environment orelse return error.EnvironmentNotInitialized;
 
@@ -191,9 +175,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         session_id = try helpers.random.generateSessionId(alloc, io);
     }
     if (parsed.session_name.len > 0) session_name = parsed.session_name;
-    // NEW (plan: 2026-09-02-kanban-task-session-name-bind, task
-    // 1787671636395_1): when the caller did NOT supply session_name (the
-    // common case for kanban task chats — the frontend's
+    // NEW (plan: 2026-09-02-kanban-task-session-name-bind, task 1787671636395_1): when the caller did NOT supply session_name (the common case for kanban task chats …
     if (std.mem.eql(u8, session_name, "New Session") and parsed.session_id.len > 0) {
         if (resolveNameFromTask(alloc, di, parsed.session_id)) |maybe_name| {
             if (maybe_name) |task_name| {
@@ -213,15 +195,11 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
 
     var effective_cwd: []const u8 = "";
     if (cwd_session.len > 0) {
-        // Explicit per-call override wins (the frontend's KanbanView threads
-        // the resolved cwd through to runAgentOnNewTask →
-        // api.sendChatMessage's cwdSession param.
+        // Explicit per-call override wins (the frontend's KanbanView threads the resolved cwd through to runAgentOnNewTask → api.sendChatMessage's cwdSession param.
         effective_cwd = if (std.fs.path.isAbsolute(cwd_session))
             try alloc.dupe(u8, cwd_session)
         else blk: {
-            // Nothing validated this field before, and a RELATIVE cwd_session
-            // propagates into `copy_cwd` → every tool's `ctx.cwd` → the
-            // `*Absolute` fs calls, which ASSERT absoluteness and ABORT the
+            // Nothing validated this field before, and a RELATIVE cwd_session propagates into `copy_cwd` → every tool's `ctx.cwd` → the `*Absolute` fs calls, which ASSERT …
             var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
             const proc_cwd = helpers.getcwd(&cwd_buf) orelse "/";
             break :blk try std.fs.path.join(alloc, &.{ proc_cwd, cwd_session });
@@ -241,8 +219,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
                 break :blk createSandbox(alloc, io, environment, session_id) catch
                     sandboxTempFallback(environment);
             };
-            // The DB fallback (`workspace_item_tasks.cwd` / `workspace_items.path`)
-            // is length-checked only, so a relative row must not become ctx.cwd.
+            // The DB fallback (`workspace_item_tasks.cwd` / `workspace_items.path`) is length-checked only, so a relative row must not become ctx.cwd.
             if (effective_cwd.len == 0 or !std.fs.path.isAbsolute(effective_cwd)) {
                 effective_cwd = createSandbox(alloc, io, environment, session_id) catch
                     sandboxTempFallback(environment);
@@ -279,9 +256,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         }
     }
 
-    // Final invariant: `effective_cwd` is copied into `copy_cwd` and then
-    // into every agent tool's `ctx.cwd`, which feeds the `*Absolute` fs calls
-    // that ASSERT absoluteness and ABORT the whole process
+    // Final invariant: `effective_cwd` is copied into `copy_cwd` and then into every agent tool's `ctx.cwd`, which feeds the `*Absolute` fs calls that ASSERT …
     if (effective_cwd.len == 0 or !std.fs.path.isAbsolute(effective_cwd)) {
         var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
         const proc_cwd = helpers.getcwd(&cwd_buf) orelse "/";
@@ -301,14 +276,11 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
     if (parsed.selected_profile_model.len > 0) {
         selected_profile_model = parsed.selected_profile_model;
     } else if (activeProfileForSession(alloc, di, session_id, owner)) |ap| {
-        // 2026-08-21 — snapshot the session's active profile into the session
-        // row at create time.
+        // 2026-08-21 — snapshot the session's active profile into the session row at create time.
         selected_profile_model = ap;
     }
 
     // The chat's file attachments: a JSON array of `{name, mime, b64}`.
-    // The backend classifies each file ONCE, here, so the model path never
-    // re-decodes them.
     var file_attachments_payload: []const u8 = "";
     if (parsed.file_attachments.len > 0) {
         const url_style = profileUrlStyle(alloc, di, session_id, owner, selected_profile_model);
@@ -317,13 +289,11 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
     }
     defer if (file_attachments_payload.len > 0) alloc.free(file_attachments_payload);
 
-    // Migration 063 — opt into unattended mode. Empty / anything other
-    // than "1" stays off (matches the production SQL default '0').
+    // Migration 063 — opt into unattended mode.
     var is_auto_retry_until_stop: []const u8 = "";
     if (parsed.is_auto_retry_until_stop.len > 0) is_auto_retry_until_stop = parsed.is_auto_retry_until_stop;
 
-    // An unanswered question blocks the turn: the loop breaks and
-    // recorded it and the workflow broke instead of looping back.
+    // An unanswered question blocks the turn: the loop breaks and recorded it and the workflow broke instead of looping back.
     if (ai_workflow.ask_user_pending.hasPendingQuestion(alloc, di.db, session_id)) {
         const abandoned = ai_workflow.ask_user_pending.abandonPendingQuestions(
             alloc,
@@ -346,9 +316,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         }
     }
 
-    // Slash-command skills: `/skill-<name>` and bare `/<name>` tokens in the
-    // human's message resolve server-side against the session's workspace and
-    // append their bodies as a trailing `<slash_skills>` block, so the model
+    // Slash-command skills: `/skill-<name>` and bare `/<name>` tokens in the human's message resolve server-side against the session's workspace and append their …
     if (queue_message.len > 0) {
         const expanded = slash_skill_expand.expandSlashSkills(alloc, di.io, di.db, session_id, queue_message) catch |err| blk: {
             std.log.warn(
@@ -365,13 +333,11 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
                     .{result.unknown.len},
                 );
             }
-            // `alloc` is the per-request arena: the rewritten message and
-            // the unknown names live until teardown, so nothing to free.
+            // `alloc` is the per-request arena: the rewritten message and the unknown names live until teardown, so nothing to free.
         }
     }
 
-    // Slash-command documents: `/document-<id>` tokens resolve the same way,
-    // appending the documents' bodies as a trailing `<slash_documents>` block.
+    // Slash-command documents: `/document-<id>` tokens resolve the same way, appending the documents' bodies as a trailing `<slash_documents>` block.
     if (queue_message.len > 0) {
         const store = documents_store.Store{ .db = di.db, .storage = di.objectStore() };
         const expanded = slash_document_expand.expandSlashDocuments(alloc, store, session_id, queue_message) catch |err| blk: {
@@ -404,8 +370,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         .file_attachments = file_attachments_payload,
         .selected_profile_model = selected_profile_model,
         .is_auto_retry_until_stop = is_auto_retry_until_stop,
-        // Owner rides along so the concurrent insert_worker task stamps the
-        // session row at INSERT time (plan 2026-09-25, W1).
+        // Owner rides along so the concurrent insert_worker task stamps the session row at INSERT time (plan 2026-09-25, W1).
         .user_id = owner,
     });
 
@@ -427,8 +392,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
     };
 }
 
-/// The wire style the session's profile uses — it decides which file types
-/// the model can read. Null when the profile cannot be resolved.
+/// The wire style the session's profile uses — it decides which file types the model can read.
 fn profileUrlStyle(
     alloc: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -444,8 +408,7 @@ fn profileUrlStyle(
     return profile.url_style;
 }
 
-/// Reject a file the session's wire style cannot carry. The Responses API
-/// takes the rich binary documents; every other style takes a PDF only.
+/// Reject a file the session's wire style cannot carry.
 fn rejectUncarryableFiles(
     alloc: std.mem.Allocator,
     raw: []const u8,
@@ -460,9 +423,7 @@ fn rejectUncarryableFiles(
     }
 }
 
-/// Turn the wire's file attachments into the JSON payload the model path
-/// reads. A text-like document keeps its decoded text; a binary file keeps
-/// its base64.
+/// Turn the wire's file attachments into the JSON payload the model path reads.
 fn normalizeFileAttachments(alloc: std.mem.Allocator, raw: []const u8) ![]u8 {
     var request_files = file_attachments.parseRequest(alloc, raw) catch return error.InvalidFileAttachments;
     defer request_files.deinit();
@@ -478,17 +439,13 @@ fn normalizeFileAttachments(alloc: std.mem.Allocator, raw: []const u8) ![]u8 {
     return file_attachments.encodeStored(alloc, stored);
 }
 
-/// Server-side cwd fallback chain (Migration 070). Returns the first
-/// non-empty path in the chain: 1. `workspace_item_tasks.cwd` (per-task
-/// override) 2.
+/// Server-side cwd fallback chain (Migration 070).
 fn resolveCwdFromTaskOrItem(
     alloc: std.mem.Allocator,
     di: *pabrikcore.App,
     session_id: []const u8,
 ) ![]const u8 {
-    // Single JOIN'd query — cheaper than two separate SELECTs and
-    // avoids any race where the task exists but the parent item
-    // is gone (extremely unlikely; both columns have FK semantics).
+    // Single JOIN'd query — cheaper than two separate SELECTs and avoids any race where the task exists but the parent item is gone (extremely unlikely; both columns …
     var q = di.db.query(alloc,
         \\SELECT t.cwd, wi.path
         \\FROM workspace_item_tasks t
@@ -500,9 +457,7 @@ fn resolveCwdFromTaskOrItem(
     const row = (q.next() catch return "") orelse return "";
     defer row.deinit(alloc);
 
-    // The row has exactly 2 values: t.cwd (Migration 070), wi.path. Migration
-    // 070 made `t.cwd` NOT NULL DEFAULT '' so this is always a valid slice
-    // (possibly empty).
+    // The row has exactly 2 values: t.cwd (Migration 070), wi.path.
     const task_cwd = row.values[0];
     if (task_cwd.len > 0) return alloc.dupe(u8, task_cwd) catch return "";
 
@@ -512,8 +467,7 @@ fn resolveCwdFromTaskOrItem(
     return "";
 }
 
-/// Server-side session-name fallback (task_1787671636395_1, plan
-/// 2026-09-02-kanban-task-session-name-bind).
+/// Server-side session-name fallback (task_1787671636395_1, plan 2026-09-02-kanban-task-session-name-bind).
 fn resolveNameFromTask(
     alloc: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -537,15 +491,11 @@ fn resolveNameFromTask(
     return try alloc.dupe(u8, task_name);
 }
 
-// =====================================================================
-// Contract tests
-// ===================================================================== The
+// Contract tests ===================================================================== The
 
 const testing = std.testing;
 
 // ─── Windows sandbox hardening (task_1788609013221_1) ───────────────────
-// createSandbox failed on native Windows three ways: (1) getDataAppsDir only
-// read HOME (unset on cmd/pwsh — now falls back to USERPROFILE in
 
 test "session_create sandboxTempFallback prefers TMPDIR over TEMP/TMP" {
     const allocator = testing.allocator;

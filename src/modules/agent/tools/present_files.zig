@@ -1,6 +1,4 @@
-//! `present_files` — an agent tool that presents workspace files of ANY type
-//! (text, jpg/png, pdf, zip, code, html, etc.) as rich inline-preview cards
-//! in the chat transcript.
+//! `present_files` — an agent tool that presents workspace files of ANY type (text, jpg/png, pdf, zip, code, html, etc.) as rich inline-preview cards in the chat …
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -11,20 +9,17 @@ const AgentTool = schemas.AgentTool;
 const presented_source = @import("presented_source.zig");
 const host_fixture = @import("helpers").host_fixture;
 
-/// Maximum number of files per call. Keeps the card scannable and the
-/// envelope small; the LLM can split larger sets across calls.
+/// Maximum number of files per call.
 pub const MAX_FILES: usize = 10;
 
-/// Maximum per-file size (50 MiB). Matches the download handler's cap
-/// (`files_download.zig`) so a presented file is always downloadable.
+/// Maximum per-file size (50 MiB).
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 
 /// One file reference from the LLM.
 pub const PresentFileRef = struct {
     /// ABSOLUTE path to a workspace file.
     path: []const u8,
-    /// Optional short display name shown in the card. Falls back to the
-    /// basename when absent or empty.
+    /// Optional short display name shown in the card.
     label: ?[]const u8 = null,
     /// Optional longer note shown below the row.
     caption: ?[]const u8 = null,
@@ -33,8 +28,7 @@ pub const PresentFileRef = struct {
 /// Input structure for the `present_files` tool.
 pub const PresentFilesInput = struct {
     files: []PresentFileRef,
-    /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative entry `path` resolves against it.
+    /// REQUIRED on the wire.
     cwd: []const u8 = "",
 };
 
@@ -84,8 +78,6 @@ pub const present_files_tool = AgentTool{
 };
 
 // ─── JSON helpers ──────────────────────────────────────────────────────
-// JSON payloads mirror the old `<present_files>` envelope 1:1: `status`,
-// `count`, and `files` (one object per former `<file>` tag with `path`,
 
 pub const PresentFileJSON = struct {
     path: []const u8,
@@ -103,8 +95,7 @@ pub const PresentFilesJSON = struct {
 
 const sanitize_control_chars = @import("helpers").sanitize_control_chars;
 
-/// Build the error envelope: `{"error": ...}` with explicit nulls for
-/// the success fields.
+/// Build the error envelope: `{"error": ...}` with explicit nulls for the success fields.
 fn jsonErrorEnvelope(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     const clean = try sanitize_control_chars(allocator, msg);
     defer allocator.free(clean);
@@ -114,8 +105,6 @@ fn jsonErrorEnvelope(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 }
 
 // ─── MIME detection ──────────────────────────────────────────────────────
-// Extension-based, mirroring `static_files.zig:mimeForPath` (kept local per
-// the tool self-containment convention).
 
 const MimeEntry = struct {
     ext: []const u8,
@@ -149,9 +138,7 @@ const mime_table = [_]MimeEntry{
     .{ .ext = ".mp4", .mime = "video/mp4" },
 };
 
-/// Returns the mime string for `path`'s extension (case-insensitive
-/// ASCII, last `.` after the final `/`). Unknown or missing extensions
-/// yield `application/octet-stream`.
+/// Returns the mime string for `path`'s extension (case-insensitive ASCII, last `.` after the final `/`).
 pub fn mimeForPath(path: []const u8) []const u8 {
     var dot_idx: ?usize = null;
     for (path, 0..) |c, i| {
@@ -180,8 +167,7 @@ pub fn executePresentFilesToString(
     return executePresentFilesFrom(allocator, host.source(), input, sandbox_root);
 }
 
-/// Execute the tool against whichever filesystem owns the workspace tree:
-/// validate every file, then build the success object.
+/// Execute the tool against whichever filesystem owns the workspace tree
 pub fn executePresentFilesFrom(
     allocator: std.mem.Allocator,
     source: presented_source.Source,
@@ -191,9 +177,7 @@ pub fn executePresentFilesFrom(
     if (input.files.len == 0) {
         return jsonErrorEnvelope(allocator, "present_files requires at least 1 file in `files`.");
     }
-    // Every path here is model-supplied. On Windows a malformed NT name
-    // panics the process inside std's Io backend instead of failing the
-    // call, so validate before touching any of them.
+    // Every path here is model-supplied.
     for (input.files) |f| {
         if (invalidPathReason(f.path)) |reason| {
             const msg = try std.fmt.allocPrint(
@@ -217,8 +201,7 @@ pub fn executePresentFilesFrom(
 
     var files = std.ArrayList(PresentFileJSON).empty;
     defer files.deinit(allocator);
-    // Sanitized labels are owned here and freed after serialization
-    // (`Stringify` copies every byte into the returned payload).
+    // Sanitized labels are owned here and freed after serialization (`Stringify` copies every byte into the returned payload).
     var owned_labels = std.ArrayList([]u8).empty;
     defer {
         for (owned_labels.items) |l| allocator.free(l);
@@ -226,9 +209,7 @@ pub fn executePresentFilesFrom(
     }
 
     for (input.files) |f| {
-        // Empty path is what an LLM that emits `"path": ""` produces
-        // (the frontend's atomic-mode-switch trap in PR #291) — reject
-        // with a clear message, never pass "" to isAbsolute/stat.
+        // Empty path is what an LLM that emits `"path": ""` produces (the frontend's atomic-mode-switch trap in PR #291) — reject with a clear message, never pass "" to …
         if (f.path.len == 0) {
             return jsonErrorEnvelope(allocator, "present_files: one entry has an empty `path`. Each file needs a non-empty ABSOLUTE path.");
         }
@@ -244,9 +225,7 @@ pub fn executePresentFilesFrom(
                     allocator.free(canon);
                 } else |err| switch (err) {
                     error.OutOfMemory => return error.OutOfMemory,
-                    // Missing file (or a directory we cannot canonicalize):
-                    // fall through to the stat below, which words it as
-                    // "not found (or is a directory)" — the actionable form.
+                    // Missing file (or a directory we cannot canonicalize)
                     error.TargetUnreachable => {},
                     error.NotAbsolute => {
                         const msg = try std.fmt.allocPrint(allocator, "present_files: path \"{s}\" is not absolute. Pass an ABSOLUTE path.", .{f.path});
@@ -325,8 +304,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
 
-/// Open a fresh `std.Io.Threaded` runtime. Mirrors the setup helper
-/// in `kanban_list.zig` (same pattern).
+/// Open a fresh `std.Io.Threaded` runtime.
 fn setupIo() std.Io.Threaded {
     const threaded = std.Io.Threaded.init(testing.allocator, .{});
     return threaded;
@@ -367,9 +345,7 @@ test "executePresentFilesToString rejects relative path" {
     const obj = parsed.value.object;
     try testing.expect(obj.get("status").? == .null);
 
-    // Two different guards reject a relative path, and which one fires first
-    // is platform-dependent: - POSIX: `invalidPathReason` returns null (the
-    // shape is merely unusual, not dangerous), so the
+    // Two different guards reject a relative path, and which one fires first is platform-dependent: - POSIX: `invalidPathReason` returns null (the shape is merely …
     const err_msg = obj.get("error").?.string;
     if (builtin.os.tag == .windows) {
         try testing.expect(std.mem.indexOf(u8, err_msg, "absolute Windows path") != null);
@@ -487,8 +463,6 @@ test "mimeForPath maps common extensions and falls back to octet-stream" {
 }
 
 // ─── Sandbox tests ───────────────────────────────────────────────────────
-// The reported bug: the tool returned `{"status":"presented"}` for a file the
-// download endpoint refuses to serve, so the card rendered and every fetch
 
 const builtin = @import("builtin");
 
@@ -554,9 +528,7 @@ fn callTool(allocator: std.mem.Allocator, f: *const Fixture, refs: []PresentFile
     return executePresentFilesToString(allocator, f.io, input, root);
 }
 
-/// Assert the failure envelope shape and hand back the error string (the
-/// parsed tree is freed with `parsed`, so the string is only valid for the
-/// caller's own parse — see `errorMessage`).
+/// Assert the failure envelope shape and hand back the error string (the parsed tree is freed with `parsed`, so the string is only valid for the caller's own …
 fn expectErrorEnvelope(allocator: std.mem.Allocator, payload: []const u8) !std.json.Parsed(std.json.Value) {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
     const obj = parsed.value.object;
@@ -624,9 +596,7 @@ test "present_files: a nested file inside the working directory is presented" {
 }
 
 test "present_files: a file OUTSIDE the working directory is rejected" {
-    // The reported Windows case: the agent wrote/kept a report under
-    // `C:\Users\<user>\Downloads\…` while the session worked in its worktree.
-    // The tool used to answer "presented" and the card 403'd on every fetch.
+    // The reported Windows case: the agent wrote/kept a report under `C:\Users\<user>\Downloads\…` while the session worked in its worktree.
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
@@ -640,8 +610,7 @@ test "present_files: a file OUTSIDE the working directory is rejected" {
 }
 
 test "present_files: the outside-root message names BOTH the file and the working directory" {
-    // The model can only act on the failure if it knows where the file was
-    // and where it is allowed to put things.
+    // The model can only act on the failure if it knows where the file was and where it is allowed to put things.
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
@@ -686,8 +655,7 @@ test "present_files: one out-of-root file fails the whole batch and names it" {
 }
 
 test "present_files: a null sandbox root keeps the un-sandboxed legacy behaviour" {
-    // TUI / routine dispatches have no session row, so they pass null and must
-    // keep working exactly as before.
+    // TUI / routine dispatches have no session row, so they pass null and must keep working exactly as before.
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
@@ -704,8 +672,7 @@ test "present_files: a null sandbox root keeps the un-sandboxed legacy behaviour
 }
 
 test "present_files: an empty sandbox root is treated as no root, not as the filesystem root" {
-    // `""` must never be handed to realPath — and it must not 403 every file
-    // either (the empty-slice trap from PR #291 in a new costume).
+    // `""` must never be handed to realPath — and it must not 403 every file either (the empty-slice trap from PR #291 in a new costume).
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
@@ -736,8 +703,7 @@ test "present_files: a directory link inside the working directory pointing outs
     var refs = [_]PresentFileRef{.{ .path = through }};
     const msg = try failureMessage(alloc, &f, &refs, f.inside_abs);
     defer alloc.free(msg);
-    // The refusal is OutsideRoot, NOT "not found": the link resolved to the
-    // real file outside the root, which is the rule under test.
+    // The refusal is OutsideRoot, NOT "not found": the link resolved to the real file outside the root, which is the rule under test.
     try testing.expect(contains(msg, "outside the session working directory"));
     try testing.expect(!contains(msg, "not found"));
 }
@@ -842,9 +808,7 @@ test "present_files: an empty path is reported before the sandbox rule" {
 }
 
 test "present_files: a Windows drive path's absoluteness is judged by THIS host" {
-    // One body, both hosts, same reference path: POSIX refuses it as "not
-    // absolute" (realPath's isAbsolute assert would abort the process),
-    // Windows accepts it as absolute and refuses it on containment instead.
+    // One body, both hosts, same reference path: POSIX refuses it as "not absolute" (realPath's isAbsolute assert would abort the process), Windows accepts it as …
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
@@ -906,9 +870,7 @@ test "present_files: NUL and C0/DEL control characters in a label are sanitized"
 }
 
 test "present_files: a label keeps its tabs and newlines (sanitizeControlChars contract)" {
-    // Not a wish of this test — the shared helper deliberately passes \t \n
-    // through (they are legal in JSON/XLS text) and only replaces 0x00-0x08,
-    // 0x0B, 0x0C, 0x0E-0x1F and 0x7F.
+    // Not a wish of this test — the shared helper deliberately passes \t \n through (they are legal in JSON/XLS text) and only replaces 0x00-0x08, 0x0B, 0x0C …
     const alloc = testing.allocator;
     var f = try setupFixture();
     defer f.deinit(alloc);
@@ -923,8 +885,6 @@ test "present_files: a label keeps its tabs and newlines (sanitizeControlChars c
 }
 
 // ─── Workspace-VM tests ──────────────────────────────────────────────────
-// `--saas` keeps the tenant tree inside the workspace's microVM: these hold the
-// source the guest answers with, which is the only copy of the file that exists.
 
 test "present_files: a file that exists only in the workspace VM is presented" {
     const alloc = testing.allocator;
@@ -1018,7 +978,6 @@ test "present_files: a workspace-VM path outside the working directory is reject
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
@@ -1047,8 +1006,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool (see
-    // helpers/exec_path_validate.validateCwd).
+    // `cwd` is REQUIRED on every path-taking tool (see helpers/exec_path_validate.validateCwd).
     exec_path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -1056,9 +1014,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
 
-    // Resolve every entry against the call's `cwd` BEFORE the sandbox check:
-    // the download endpoint is handed absolute paths, and an unresolved
-    // relative one would be rejected there as "not absolute".
+    // Resolve every entry against the call's `cwd` BEFORE the sandbox check
     var resolved_paths: std.ArrayList([]u8) = .empty;
     defer {
         for (resolved_paths.items) |p| ctx.allocator.free(p);
@@ -1074,16 +1030,11 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     var input = parsed.value;
     input.files = files_abs;
 
-    // The sandbox root, resolved through the SAME helper the download
-    // endpoint uses (`git_worktree_cwd ?? cwd`).
+    // The sandbox root, resolved through the SAME helper the download endpoint uses (`git_worktree_cwd ?? cwd`).
     const root = exec_file_sandbox.resolveSessionRoot(ctx.allocator, ctx.db, ctx.session_id) catch |err| switch (err) {
-        // No `sessions` row at all: a TUI / routine dispatch. It renders no
-        // card (there is no session id to build the download URL from), so
-        // keep the un-sandboxed behaviour instead of disabling the tool.
+        // No `sessions` row at all: a TUI / routine dispatch.
         error.SessionNotFound => null,
         // A session WITH a row but no usable working directory: fail closed.
-        // The endpoint 403s every path for such a session, so presenting
-        // anything would only produce a dead card.
         error.NoWorkingDirectory, error.QueryFailed, error.OutOfMemory => {
             const err_msg = "present_files: this session has no accessible working directory, so no file can be presented in the chat. Tell the user the full path instead.";
             const output = try wrapToolOutput(ctx.allocator, "present_files", tc.function.arguments, false, err_msg, "");
@@ -1092,8 +1043,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer if (root) |r| ctx.allocator.free(r);
 
-    // Which filesystem holds the tree. Local mode is this host; `--saas` is the
-    // workspace's VM, whose copy is the only one there is.
+    // Which filesystem holds the tree.
     var guest = workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -1121,9 +1071,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer ctx.allocator.free(inner);
 
-    // Detect the {"status":null,"error":...} shape and surface it as a tool
-    // failure (so the LLM sees `success=false` rather than a successful
-    // wrapper around an error body).
+    // Detect the {"status":null,"error":...} shape and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error …
     const inner_failed: bool = blk: {
         const parsed_inner = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk true;
         defer parsed_inner.deinit();
@@ -1133,9 +1081,7 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
         break :blk !std.mem.eql(u8, status.string, "presented");
     };
     if (inner_failed) {
-        // The message must be COPIED out of the parse tree: returning
-        // `e.string` from a block that defers `parsed_inner.deinit()` hands
-        // `wrapToolOutput` a slice into freed memory.
+        // The message must be COPIED out of the parse tree: returning `e.string` from a block that defers `parsed_inner.deinit()` hands `wrapToolOutput` a slice into …
         const err_msg: ?[]const u8 = blk: {
             const parsed_inner = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
             defer parsed_inner.deinit();
@@ -1153,12 +1099,10 @@ pub fn execPresentFiles(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 // ─── Exec-layer tests ────────────────────────────────────────────────────
-// The tool-level tests in `zig` prove the RULE.
 
 const exec_testing = std.testing;
 
-/// In-memory `sessions` table + two sibling temp dirs, so "inside the
-/// working directory" and "outside it" are real paths on every CI OS.
+/// In-memory `sessions` table + two sibling temp dirs, so "inside the working directory" and "outside it" are real paths on every CI OS.
 const ExecEnv = struct {
     threaded: std.Io.Threaded,
     db: pabrikcore.database.Db,
@@ -1241,8 +1185,7 @@ fn setupExecEnv(allocator: std.mem.Allocator) !ExecEnv {
     var db: pabrikcore.database.Db = .{};
     errdefer db.deinit();
     try test_db.openMemory(&db, threaded.io());
-    // Only the two columns the sandbox root resolver reads; nullable, like
-    // production (Migration 046), so the unbound-worktree shape is real.
+    // Only the two columns the sandbox root resolver reads; nullable, like production (Migration 046), so the unbound-worktree shape is real.
     try db.exec(allocator,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
@@ -1261,8 +1204,7 @@ fn setupExecEnv(allocator: std.mem.Allocator) !ExecEnv {
     const inside_abs = try exec_realPathOf(allocator, inside.dir);
     errdefer allocator.free(inside_abs);
     const outside_abs = try exec_realPathOf(allocator, outside.dir);
-    // A real session always has a working directory; tests that care about
-    // the other shapes override it below.
+    // A real session always has a working directory; tests that care about the other shapes override it below.
     try db.exec(allocator, "UPDATE sessions SET cwd = ? WHERE id = ?", &.{ inside_abs, "task_present_1" });
     return .{
         .threaded = threaded,
@@ -1279,13 +1221,9 @@ fn runPresentFiles(allocator: std.mem.Allocator, env: *ExecEnv, path: []const u8
     return runPresentFilesWith(allocator, &ctx, path);
 }
 
-/// Build the tool-call arguments with `std.json` — a hand-formatted string
-/// would emit `C:\Users\…` unescaped, which is not valid JSON on Windows and
-/// would make these tests pass on Linux and fail on the Windows CI.
+/// Build the tool-call arguments with `std.json` — a hand-formatted string would emit `C:\Users\…` unescaped, which is not valid JSON on Windows and would make …
 fn runPresentFilesWith(allocator: std.mem.Allocator, ctx: *ToolExecContext, path: []const u8) ![]const u8 {
-    // `cwd` is required by the tool. These tests pass absolute paths, so the
-    // only thing that matters is that it is absolute — the file's own
-    // directory is the honest value.
+    // `cwd` is required by the tool.
     const args = try std.json.Stringify.valueAlloc(allocator, .{
         .files = &[_]present_files_mod.PresentFileRef{.{ .path = path }},
         .cwd = std.fs.path.dirname(path) orelse "/",
@@ -1313,8 +1251,7 @@ test "execPresentFiles: a file inside the session working directory succeeds" {
 }
 
 test "execPresentFiles: a file outside the session working directory fails the call" {
-    // The whole point of the fix: the tool must not hand the model a
-    // "presented" card whose bytes the download endpoint refuses to serve.
+    // The whole point of the fix: the tool must not hand the model a "presented" card whose bytes the download endpoint refuses to serve.
     const a = exec_testing.allocator;
     var env = try setupExecEnv(a);
     defer env.deinit(a);
@@ -1334,9 +1271,7 @@ test "execPresentFiles: a file outside the session working directory fails the c
 }
 
 test "execPresentFiles: the sandbox root is git_worktree_cwd when bound, like the endpoint" {
-    // Parity test for the rule that drifted: the download endpoint resolves
-    // the root as `git_worktree_cwd ?? cwd`. If the tool resolved `cwd` only,
-    // a file in the worktree would present fine and then 403 in the card.
+    // Parity test for the rule that drifted: the download endpoint resolves the root as `git_worktree_cwd ?? cwd`.
     const a = exec_testing.allocator;
     var env = try setupExecEnv(a);
     defer env.deinit(a);
@@ -1381,9 +1316,7 @@ test "execPresentFiles: a session with no working directory fails closed" {
 }
 
 test "execPresentFiles: an unknown session keeps the un-sandboxed legacy path" {
-    // TUI / routine dispatches run with a session id that has no `sessions`
-    // row. They render no card (there is no session id to build the download
-    // URL from), so the guard must not disable present_files for them.
+    // TUI / routine dispatches run with a session id that has no `sessions` row.
     const a = exec_testing.allocator;
     var env = try setupExecEnv(a);
     defer env.deinit(a);
@@ -1400,8 +1333,7 @@ test "execPresentFiles: an unknown session keeps the un-sandboxed legacy path" {
     try exec_testing.expect(parsed.value.object.get("success").?.bool);
 }
 
-/// Make the session a `--saas` one whose workspace is a microVM, with the
-/// tree's recorded root at `root`.
+/// Make the session a `--saas` one whose workspace is a microVM, with the tree's recorded root at `root`.
 fn makeVmWorkspace(env: *ExecEnv, root: []const u8) !void {
     const a = exec_testing.allocator;
     try env.db.exec(a, "ALTER TABLE sessions ADD COLUMN workspace_id TEXT", &.{});
@@ -1414,9 +1346,7 @@ fn makeVmWorkspace(env: *ExecEnv, root: []const u8) !void {
 }
 
 test "execPresentFiles: under --saas the tool asks the workspace's VM, never this host" {
-    // The bug: a `--saas` session's tree is the microVM's, and `present_files`
-    // read the HOST instead. The file below exists on this host, so a host read
-    // answers "presented" — a card whose every fetch 404s.
+    // The bug: a `--saas` session's tree is the microVM's, and `present_files` read the HOST instead.
     const a = exec_testing.allocator;
     var env = try setupExecEnv(a);
     defer env.deinit(a);

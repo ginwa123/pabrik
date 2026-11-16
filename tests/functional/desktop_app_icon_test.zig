@@ -18,9 +18,7 @@ fn readRepoFile(path: []const u8) ![]u8 {
     return try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
 }
 
-/// ICO pixel data starts at byte 62 for the single-image 32x32/32bpp brand
-/// file (6-byte header + 16-byte dir entry + 40-byte BITMAPINFOHEADER). The
-/// first pixel is the top-left background cell, stored BGRA.
+/// ICO pixel data starts at byte 62 for the single-image 32x32/32bpp brand file (6-byte header + 16-byte dir entry + 40-byte BITMAPINFOHEADER).
 const ICO_PIXEL_OFF = 62;
 
 test "favicon_ico_serves_the_brand_icon_byte_identical" {
@@ -29,9 +27,7 @@ test "favicon_ico_serves_the_brand_icon_byte_identical" {
     const expected = try readRepoFile("src/apps/desktop/public/favicon.ico");
     defer gpa.free(expected);
 
-    // Sanity on the fixture itself: a one-image ICO with the opaque
-    // brand background. If the artwork is ever re-rendered with a
-    // different layout this fails fast here, not at the wire assert.
+    // Sanity on the fixture itself: a one-image ICO with the opaque brand background.
     try testing.expect(expected.len >= ICO_PIXEL_OFF + 4);
     try testing.expectEqual(@as(u8, 0x00), expected[0]);
     try testing.expectEqual(@as(u8, 0x00), expected[1]);

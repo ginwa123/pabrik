@@ -13,9 +13,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
     pub const name = "upgrade_design_pages_to_file_model";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // CREATE design_pages (fresh-DB path). On a legacy DB that
-        // already has the v1 table, this is a no-op (CREATE TABLE IF
-        // NOT EXISTS).
+        // CREATE design_pages (fresh-DB path).
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS design_pages (
             \\    id TEXT PRIMARY KEY,
@@ -32,9 +30,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
             \\)
         , &[_][]const u8{});
 
-        // Upgrade path: drop legacy `html` column from Migration 055
-        // if present. SQLite 3.35+ supports DROP COLUMN. No-op on
-        // fresh DBs.
+        // Upgrade path: drop legacy `html` column from Migration 055 if present.
         try dropColumnIfExists(.{ .db = db }, allocator, "design_pages", "html");
 
         // Ensure the 4 new position columns exist.
@@ -43,8 +39,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
         try addColumnIfMissing(.{ .db = db }, allocator, "design_pages", "x", "x INTEGER NOT NULL DEFAULT 0");
         try addColumnIfMissing(.{ .db = db }, allocator, "design_pages", "y", "y INTEGER NOT NULL DEFAULT 0");
 
-        // CREATE design_page_elements (new in v5/v6). Always new —
-        // no upgrade path needed.
+        // CREATE design_page_elements (new in v5/v6).
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS design_page_elements (
             \\    id TEXT PRIMARY KEY,
@@ -63,8 +58,7 @@ pub const Migration056UpgradeDesignPagesToFileModel = struct {
             \\)
         , &[_][]const u8{});
 
-        // Indexes. CREATE [UNIQUE] INDEX IF NOT EXISTS — all safe
-        // to re-run.
+        // Indexes.
         try db.exec(allocator,
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_design_pages_item_name " ++
             "ON design_pages(workspace_item_id, name)",

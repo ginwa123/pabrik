@@ -302,16 +302,13 @@ pub fn redactConninfo(conninfo: []const u8, buf: []u8) error{WriteFailed}![]cons
     return writer.buffered();
 }
 
-/// The backend's own diagnosis of its last failure: a postgres build keeps libpq's
-/// or the server's text (`getLastErrorMessage`), and a sqlite-only build has no such
-/// field — the branch is comptime-pruned, so nothing here reaches it.
+/// The backend's own diagnosis of its last failure: a postgres build keeps libpq's or the server's text (`getLastErrorMessage`), and a sqlite-only build has no …
 pub fn lastErrorMessage(db: *database.Db) ?[]const u8 {
     if (comptime database.backend_is_postgres) return db.getLastErrorMessage();
     return null;
 }
 
-/// Why the backend refused to open: which connection was attempted, what the
-/// backend said about it, and the one command that checks that connection.
+/// Why the backend refused to open: which connection was attempted, what the backend said about it, and the one command that checks that connection.
 pub fn reportOpenError(target: *const Target, err: anyerror, detail: ?[]const u8) void {
     var line_buf: [512]u8 = undefined;
     const shown = target.describe(&line_buf) catch "database: backend=?";

@@ -1,15 +1,11 @@
-//! Shared auth helpers for opt-in `--auth` mode. `users` (Migration 077)
-//! stores identity; `auth_sessions` (Migration 089) stores one row per active
-//! `pabrik_session` cookie (SHA-256 hash -> user).
+//! Shared auth helpers for opt-in `--auth` mode.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const auth_core = @import("auth_core");
 
-// The session cookie and the token/password helpers live in `auth_core.zig`,
-// which needs nothing but `databases` and `std.crypto`, so a program that
-// only checks a session can compile against that instead of all of pabrik.
+// The session cookie and the token/password helpers live in `auth_core.zig`, which needs nothing but `databases` and `std.crypto`, so a program that only checks …
 pub const cookie_name = auth_core.cookie_name;
 pub const session_max_age_secs = auth_core.session_max_age_secs;
 pub const parseSessionToken = auth_core.parseSessionToken;
@@ -23,26 +19,19 @@ pub const setCookieValue = auth_core.setCookieValue;
 pub const clearCookieValue = auth_core.clearCookieValue;
 
 /// Paths that never require auth even when `--auth` is on.
-/// Exact match only (not prefix) to avoid accidentally opening /api/authX.
 pub fn isAuthExempt(path: []const u8) bool {
     if (std.mem.eql(u8, path, "/api/auth/login")) return true;
     if (std.mem.eql(u8, path, "/api/auth/logout")) return true;
     if (std.mem.eql(u8, path, "/health")) return true;
     if (std.mem.eql(u8, path, "/api/health")) return true;
-    // A scraper holds no session. /metrics carries route templates and
-    // counters, never bodies or ids, so a public tunnel must deny the path
-    // rather than this gate — otherwise every scrape reads 401.
+    // A scraper holds no session.
     if (std.mem.eql(u8, path, "/metrics")) return true;
     return false;
 }
 
-// =====================================================================
 // Per-request owner resolution — the input to per-user row isolation.
-// =====================================================================
 
-/// Sentinel owner id: Migration 077's backfill target for every row that
-/// predates `--auth`, and the answer `resolveRequestUserId` gives whenever
-/// identity cannot be established.
+/// Sentinel owner id: Migration 077's backfill target for every row that predates `--auth`, and the answer `resolveRequestUserId` gives whenever identity cannot …
 pub const system_user_id = "user_system";
 
 /// SQL predicate for "rows that `alias` may see".
@@ -53,9 +42,7 @@ pub fn ownerVisibilityClause(comptime alias: []const u8) []const u8 {
     );
 }
 
-/// SQL predicate for "workspaces `alias` may see", backed by the
-/// `workspace_members` join table (Migration 100). This is the successor to
-/// `ownerVisibilityClause` for WORKSPACES ONLY.
+/// SQL predicate for "workspaces `alias` may see", backed by the `workspace_members` join table (Migration 100).
 pub fn workspaceVisibilityClause(comptime alias: []const u8) []const u8 {
     return std.fmt.comptimePrint(
         "(? = '{s}' OR EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = {s}.id AND (m.user_id = ? OR m.user_id = '{s}')))",
@@ -68,15 +55,12 @@ pub fn normaliseOwnerId(user_id: []const u8) []const u8 {
     return if (user_id.len == 0) system_user_id else user_id;
 }
 
-/// True when `user_id` is the shared/legacy bucket rather than a real
-/// owner. Callers use this to detect (and log) writes that fell back to
-/// the sentinel while `--auth` was on — a mis-scoping signal.
+/// True when `user_id` is the shared/legacy bucket rather than a real owner.
 pub fn isSharedOwner(user_id: []const u8) bool {
     return user_id.len == 0 or std.mem.eql(u8, user_id, system_user_id);
 }
 
-/// True when a `sessions` row with this id exists at all, regardless of
-/// owner.
+/// True when a `sessions` row with this id exists at all, regardless of owner.
 pub fn sessionExistsById(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -119,8 +103,7 @@ pub fn canSeeWorkspace(
     return false;
 }
 
-/// Session counterpart of `canSeeWorkspace`: true when `session_id` exists
-/// AND the given owner may see it.
+/// Session counterpart of `canSeeWorkspace`: true when `session_id` exists AND the given owner may see it.
 pub fn canSeeSession(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -159,9 +142,7 @@ pub fn resolveRequestUserId(
     return sess.user_id;
 }
 
-/// Buffer-writing variant of `resolveRequestUserId` for callers that want to
-/// avoid a heap allocation (the terminal handlers, whose owner is a short
-/// per-request string).
+/// Buffer-writing variant of `resolveRequestUserId` for callers that want to avoid a heap allocation (the terminal handlers, whose owner is a short per-request …
 pub fn resolveOwnerInto(buf: []u8, headers: anytype) ?[]const u8 {
     const di = pabrikcore.getSingleton() catch return null;
     const owner = resolveRequestUserId(di.allocator, di.db, di.auth_enabled, headers) catch return null;
@@ -171,26 +152,21 @@ pub fn resolveOwnerInto(buf: []u8, headers: anytype) ?[]const u8 {
     return buf[0..owner.len];
 }
 
-/// The `LlmConfig` for the user behind `headers`, or null when the
-/// process-global singleton is authoritative.
+/// The `LlmConfig` for the user behind `headers`, or null when the process-global singleton is authoritative.
 pub fn requestUserConfig(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     auth_enabled: bool,
     headers: anytype,
 ) ?*pabrikcore.config.LlmConfig {
-    // File mode: the config PUT swaps the singleton synchronously, so it is
-    // already the authority. Reading the database here would add a second
-    // source that can only ever disagree with it.
+    // File mode: the config PUT swaps the singleton synchronously, so it is already the authority.
     if (!auth_enabled) return null;
     const owner = resolveRequestUserId(allocator, db, auth_enabled, headers) catch return null;
     defer allocator.free(owner);
     return pabrikcore.session_llm_config.forOwner(allocator, db, owner);
 }
 
-/// The `LlmConfig` for `(the user behind headers, workspace_id)`, or null when
-/// neither the workspace row nor a user document resolves — the caller then
-/// falls back to the singleton.
+/// The `LlmConfig` for `(the user behind headers, workspace_id)`, or null when neither the workspace row nor a user document resolves — the caller then falls back …
 pub fn requestWorkspaceConfig(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -211,9 +187,7 @@ pub fn requestWorkspaceConfig(
     );
 }
 
-// ===================================================================== Tests
-// (in-memory SQLite via useCase-adjacent helpers is covered in
-// auth_login_test; here we test pure helpers with no DB).
+// ===================================================================== Tests (in-memory SQLite via useCase-adjacent helpers is covered in auth_login_test; here …
 
 test "isAuthExempt allows login/logout/health and the scrape target only" {
     try std.testing.expect(isAuthExempt("/api/auth/login"));
@@ -296,8 +270,7 @@ test "canSeeSession: own + shared visible, another user's hidden, system sees al
 }
 
 test "resolveRequestUserId falls back to the sentinel without identity" {
-    // Both the auth-off path and the auth-on-with-no-cookie path return
-    // before the DB is touched, so an undefined db is safe here.
+    // Both the auth-off path and the auth-on-with-no-cookie path return before the DB is touched, so an undefined db is safe here.
     var headers = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer headers.deinit();
 
@@ -361,9 +334,7 @@ test "resolveRequestUserId maps a valid cookie to the owning user" {
     try std.testing.expectEqualStrings(system_user_id, stranger);
 }
 
-// ============================================================================
 // workspace_members — visibility clause + owner normalisation
-// ============================================================================
 
 fn countByte(haystack: []const u8, needle: u8) usize {
     var n: usize = 0;
@@ -379,9 +350,7 @@ test "workspaceVisibilityClause keeps the two-bind arity the call sites already 
     // THE load-bearing assertion.
     try std.testing.expectEqual(@as(usize, 2), countByte(sql, '?'));
 
-    // The sentinel test comes FIRST and short-circuits before the subquery,
-    // which is what makes auth-off ("no identity, so the installation sees
-    // everything") free rather than a full table scan.
+    // The sentinel test comes FIRST and short-circuits before the subquery, which is what makes auth-off ("no identity, so the installation sees everything") free …
     try std.testing.expect(std.mem.startsWith(u8, sql, "(? = 'user_system' OR EXISTS ("));
 }
 
@@ -391,12 +360,9 @@ test "workspaceVisibilityClause expresses membership OR the shared legacy bucket
     try std.testing.expect(std.mem.indexOf(u8, sql, "FROM workspace_members") != null);
     try std.testing.expect(std.mem.indexOf(u8, sql, "m.workspace_id = w.id") != null);
     // ...OR the workspace carries the sentinel member, i.e. it is shared.
-    // This is what keeps a pre-`--auth` workspace visible to everyone, and
-    // it is why adding that one member row IS the "share" operation.
     try std.testing.expect(std.mem.indexOf(u8, sql, "m.user_id = 'user_system'") != null);
 
-    // The alias must be honoured, or the query will not compile: passing "w"
-    // must never emit a bare `workspaces.`.
+    // The alias must be honoured, or the query will not compile: passing "w" must never emit a bare `workspaces.`.
     try std.testing.expect(std.mem.indexOf(u8, sql, "workspaces.") == null);
     const other = workspaceVisibilityClause("ws");
     try std.testing.expect(std.mem.indexOf(u8, other, "m.workspace_id = ws.id") != null);
@@ -405,25 +371,20 @@ test "workspaceVisibilityClause expresses membership OR the shared legacy bucket
 
 test "workspaceVisibilityClause never reads workspaces.user_id" {
     // The column is deprecated in Migration 100 but still EXISTS on disk.
-    // If this clause ever grew a `{alias}.user_id` arm again, the membership
-    // table would stop being the source of truth and the two could drift.
     const sql = workspaceVisibilityClause("workspaces");
     try std.testing.expect(std.mem.indexOf(u8, sql, "user_id IS NULL") == null);
     try std.testing.expect(std.mem.indexOf(u8, sql, ".user_id = ''") == null);
 }
 
 test "normaliseOwnerId maps an empty owner to the sentinel, never NULL" {
-    // Backend.exec binds an empty slice as SQL NULL, and
-    // workspace_members.user_id is NOT NULL. Binding a raw empty owner is a
-    // runtime constraint violation — this helper is what prevents it.
+    // Backend.exec binds an empty slice as SQL NULL, and workspace_members.user_id is NOT NULL.
     try std.testing.expectEqualStrings(system_user_id, normaliseOwnerId(""));
     try std.testing.expectEqualStrings(system_user_id, normaliseOwnerId(system_user_id));
     try std.testing.expectEqualStrings("user_a", normaliseOwnerId("user_a"));
 }
 
 test "normaliseOwnerId is exactly isSharedOwner for the empty case" {
-    // The two must not drift: `workspaces_reorder` treats a shared owner as
-    // "see everything", so normalising to the sentinel has to agree with it.
+    // The two must not drift: `workspaces_reorder` treats a shared owner as "see everything", so normalising to the sentinel has to agree with it.
     try std.testing.expect(isSharedOwner(normaliseOwnerId("")));
     try std.testing.expect(!isSharedOwner(normaliseOwnerId("user_a")));
 }

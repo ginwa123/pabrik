@@ -4,9 +4,7 @@ import SidebarDiffView from './SidebarDiffView.vue'
 import type { DiffCommentSavePayload } from './DiffCommentBox.vue'
 import type { ParsedDiffLine } from './parseUnifiedDiff'
 
-/** One lazily-mounted file section of the stacked center diff. The shell (id anchor +
- * content-visibility sizing) renders immediately so scroll position stays stable; the heavy
- * SidebarDiffView mounts when the section nears the viewport (400px prefetch margin). */
+/** One lazily-mounted file section of the stacked center diff. */
 const props = defineProps<{
   sectionId: string
   path: string
@@ -16,8 +14,7 @@ const props = defineProps<{
   staged?: boolean
   error?: string | null
   cwd: string
-  /** Collapsed = header only. Owned by ChatView, so it survives this
-   * section unmounting its own body. */
+  /** Collapsed = header only. */
   collapsed?: boolean
   mode?: 'unified' | 'split'
   wholeFile?: boolean
@@ -60,9 +57,7 @@ onMounted(() => {
   observer.observe(el)
 })
 
-/** Expanding a section must mount its body NOW. The observer is the only automatic gate, and a
- * COLLAPSED section never intersects — so relying on it alone would leave a section the user just
- * expanded as an empty stub, i.e. "expand all" would appear to do nothing. */
+/** Expanding a section must mount its body NOW. */
 let prevCollapsed = props.collapsed
 onUpdated(() => {
   const now = props.collapsed

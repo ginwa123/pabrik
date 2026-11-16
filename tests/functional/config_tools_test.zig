@@ -1,5 +1,4 @@
-// Functional tests for the config.json `tools` default checklist (plan
-// 2026-09-22-tools-menu-config-default-tools, decisions D2/D4).
+// Functional tests for the config.json `tools` default checklist (plan 2026-09-22-tools-menu-config-default-tools, decisions D2/D4).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -9,20 +8,14 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures / helpers
-// ============================================================================
 
-/// The single profile every seed carries. Inlined from the Python
-/// module-level `PROFILE` dict, which existed so `_base_config(**extra)`
-/// could splat the same fields into both the on-disk seed and the PUT body.
+/// The single profile every seed carries.
 const PROFILE_JSON =
     \\{"model":"tools-model","base_url":"https://tools.example.com","api_key":"tools-key","url_style":"openai"}
 ;
 
 /// Where `getDefaultConfigDir` (Config.zig) actually writes config.json.
-/// Mirrors that function's platform switch: * macOS — `~/Library/Application
-/// Support/pabrik`.
 fn platformConfigDir(home: []const u8) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik" }),
@@ -49,8 +42,7 @@ fn writeSeedConfig(home: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Boot a harness and seed `seed` into its config.json before the first
-/// request. Caller frees nothing — the harness owns the tempdir.
+/// Boot a harness and seed `seed` into its config.json before the first request.
 fn bootSeeded(seed: []const u8) !Harness {
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     errdefer h.deinit(io) catch {};
@@ -58,8 +50,7 @@ fn bootSeeded(seed: []const u8) !Harness {
     return h;
 }
 
-/// The seeded on-disk config: a profile-only document so the PUT live-reload
-/// validates (backfill provides the credentials `validate()` requires).
+/// The seeded on-disk config: a profile-only document so the PUT live-reload validates (backfill provides the credentials `validate()` requires).
 fn baseConfig(tools_json: ?[]const u8) ![]u8 {
     if (tools_json) |t| {
         return std.fmt.allocPrint(
@@ -90,8 +81,7 @@ fn toolsJson(names: []const []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from any
-/// tab: profiles + operational settings, no top-level LLM defaults.
+/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from any tab: profiles + operational settings, no top-level LLM defaults.
 fn settingsBody(tools: ?[]const u8) ![]u8 {
     const tail = if (tools) |t| try std.fmt.allocPrint(gpa, ",\"tools\":{s}", .{t}) else try gpa.dupe(u8, "");
     defer gpa.free(tail);
@@ -153,8 +143,7 @@ fn describeTools(v: std.json.Value) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// `GET /api/config/pabrik` must carry a `tools` key that is exactly
-/// `want` (as a JSON array).
+/// `GET /api/config/pabrik` must carry a `tools` key that is exactly `want` (as a JSON array).
 fn expectWireTools(doc: *const harness.Json, raw_body: []const u8, want: []const []const u8) !void {
     const v = doc.get("tools") orelse {
         std.debug.print("tools key missing from GET wire: {s}\n", .{raw_body});
@@ -167,8 +156,7 @@ fn expectWireTools(doc: *const harness.Json, raw_body: []const u8, want: []const
     return error.TestUnexpectedResult;
 }
 
-/// `GET /api/config/pabrik` must carry a PRESENT `tools` key holding
-/// JSON `null` — the "legacy defaults" state.
+/// `GET /api/config/pabrik` must carry a PRESENT `tools` key holding JSON `null` — the "legacy defaults" state.
 fn expectWireToolsNull(doc: *const harness.Json, raw_body: []const u8) !void {
     const v = doc.get("tools") orelse {
         std.debug.print("tools key missing from GET wire: {s}\n", .{raw_body});
@@ -205,13 +193,9 @@ fn getConfig(h: *Harness) !harness.Response {
     return h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
 }
 
-// ============================================================================
 // (a) GET returns tools: null when the key is absent
-// ============================================================================
 
-// A config.json without `tools` serves `tools: null` on the wire — the
-// key must be PRESENT so the frontend can tell 'legacy defaults' from a
-// backend that never shipped the field.
+// A config.json without `tools` serves `tools: null` on the wire — the key must be PRESENT so the frontend can tell 'legacy defaults' from a backend that never …
 test "get_returns_tools_null_when_key_absent" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -231,13 +215,9 @@ test "get_returns_tools_null_when_key_absent" {
     try expectWireToolsNull(&doc, r.body);
 }
 
-// ============================================================================
 // (b) Settings save WITHOUT a tools key must not erase it
-// ============================================================================
 
-// Seed `tools` first, then PUT the whole config from another tab (no
-// `tools` key). The on-disk list and GET must both survive — this is the
-// PUT-strip footgun from plan §2.2.
+// Seed `tools` first, then PUT the whole config from another tab (no `tools` key).
 test "put_without_tools_key_preserves_on_disk_value" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -279,9 +259,7 @@ test "put_without_tools_key_preserves_on_disk_value" {
     try expectDiskTools(h.temp_dir, &seeded);
 }
 
-// ============================================================================
 // (c) PUT with a tools array persists and GET reflects it
-// ============================================================================
 
 test "put_with_tools_array_persists" {
     try harness.requirePabrikBin(io, gpa);
@@ -314,13 +292,9 @@ test "put_with_tools_array_persists" {
     try expectDiskTools(h.temp_dir, &new_list);
 }
 
-// ============================================================================
 // (d) PUT "tools": [] persists as an explicit empty list
-// ============================================================================
 
-// `[]` is the explicit-zero checklist (D2). It must round-trip as an
-// empty ARRAY — collapsing back to null would snap the UI to the 25
-// legacy defaults.
+// `[]` is the explicit-zero checklist (D2).
 test "put_empty_tools_array_persists" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -342,8 +316,7 @@ test "put_empty_tools_array_persists" {
         defer r.deinit();
     }
 
-    // Python asserted three things here, and only the third is distinct: the
-    // key is present, it equals `[]`, and it is NOT null.
+    // Python asserted three things here, and only the third is distinct: the key is present, it equals `[]`, and it is NOT null.
     var r = try getConfig(&h);
     defer r.deinit();
     var doc = try r.json();
@@ -359,9 +332,7 @@ test "put_empty_tools_array_persists" {
     try expectDiskTools(h.temp_dir, &empty_disk);
 }
 
-// ============================================================================
 // (e) Unknown tool name -> 400 + clear message
-// ============================================================================
 
 test "put_unknown_tool_name_returns_400" {
     try harness.requirePabrikBin(io, gpa);
@@ -402,13 +373,9 @@ test "put_unknown_tool_name_returns_400" {
     try expectDiskTools(h.temp_dir, &seeded);
 }
 
-// ============================================================================
 // (e2) A stored name the registry no longer carries does not block the save
-// ============================================================================
 
-// The settings editor replays the stored `tools` list on every save, so a name
-// the registry dropped (`ask_user` became a message block) must not fail the
-// save — pre-fix every setting, the Chat view toggle included, returned 400.
+// The settings editor replays the stored `tools` list on every save, so a name the registry dropped (`ask_user` became a message block) must not fail the save — …
 test "put_stored_stale_tool_name_does_not_block_the_save" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -440,13 +407,9 @@ test "put_stored_stale_tool_name_does_not_block_the_save" {
     try expectWireTools(&doc, r.body, &live);
 }
 
-// ============================================================================
 // (f) PUT "tools": null preserves the existing value
-// ============================================================================
 
-// An explicit JSON null parses to the same `null` as an absent key (the
-// desired collapse) -> no change. A Save that sends `tools: null` must
-// not wipe the list.
+// An explicit JSON null parses to the same `null` as an absent key (the desired collapse) -> no change.
 test "put_explicit_null_preserves_existing_value" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -478,8 +441,7 @@ test "put_explicit_null_preserves_existing_value" {
     try expectDiskTools(h.temp_dir, &seeded);
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = PROFILE_JSON;
     _ = platformConfigDir;

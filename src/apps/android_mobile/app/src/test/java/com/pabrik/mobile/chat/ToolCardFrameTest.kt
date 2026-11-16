@@ -9,35 +9,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The tool card's frame, which is a 2dp left rule and nothing else.
- *
- * The web drew each tool row as a four-sided box for as long as there was one
- * and then dropped it, in `ChatView.vue`'s shared `.chat-tool-card`:
- *
- *     border: none;
- *     border-left: 2px solid var(--color-border);
- *     border-radius: 0;
- *     background-color: transparent;
- *
- * A dozen boxed cards in a row read as a wall, so the row became a paragraph
- * with a rule down its left edge — and the error variants, which bind
- * `border-red-500/50`, recolour that rule instead of drawing a frame. This
- * screen kept the box, so the phone and the browser rendered the same
- * transcript two different ways.
- *
- * Two things are asserted here, because they fail in different ways.
- *
- * [CardRuleColor] is a plain function and the three-way split is asserted
- * against real values: a rule that never turns red is the actual regression,
- * and no amount of reading the source proves a colour.
- *
- * The frame's *shape* — no box, a 2dp rule — cannot be read off a value, since
- * it lives in a `drawBehind` lambda. Those are asserted against the source, the
- * way `PabrikNavGraphBackTest` keeps a back-stack fix honest. Compose can only
- * report a rendered pixel, and a screenshot is exactly the tool that let the
- * divergence ship in the first place.
- */
+/** The tool card's frame, which is a 2dp left rule and nothing else. */
 class ToolCardFrameTest {
 
     @Test

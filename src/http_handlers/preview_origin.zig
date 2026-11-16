@@ -1,6 +1,4 @@
-//! The preview origin's rules: a separate registrable domain, the app's
-//! credentials stripped by the proxy, and a foreign `Origin` refused on a
-//! mutation. Pure, so the table is testable without a proxy or a browser.
+//! The preview origin's rules: a separate registrable domain, the app's credentials stripped by the proxy, and a foreign `Origin` refused on a mutation.
 
 const std = @import("std");
 const gserverz = @import("pabrikcore").gserverz;
@@ -8,18 +6,14 @@ const gserverz = @import("pabrikcore").gserverz;
 /// The label the preview host is built from: `<id>.preview.<base>`.
 pub const preview_label = "preview";
 
-/// The preview host for a workspace. The base is the PREVIEW base domain, which
-/// must not be a suffix of the app's own host — that is what makes the app's
-/// cookies invisible to the tenant's dev server.
+/// The preview host for a workspace.
 pub fn previewHost(allocator: std.mem.Allocator, workspace_id: []const u8, base: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, base, ".");
     if (trimmed.len == 0) return error.InvalidPreviewBase;
     return std.fmt.allocPrint(allocator, "{s}.{s}.{s}", .{ workspace_id, preview_label, trimmed });
 }
 
-/// The last two labels. Deliberately naive: it is the *comparison* that matters
-/// (two hosts are either same-site or not), and a wrong guess can only make the
-/// check stricter for hosts the app never serves.
+/// The last two labels.
 pub fn registrableDomain(host: []const u8) []const u8 {
     const trimmed = std.mem.trim(u8, host, ".");
     var labels: usize = 0;
@@ -33,14 +27,12 @@ pub fn registrableDomain(host: []const u8) []const u8 {
     return trimmed;
 }
 
-/// Same-site in the cookie sense: eTLD+1 equal, which is what `SameSite=Lax`
-/// actually compares. Ports never enter into it.
+/// Same-site in the cookie sense: eTLD+1 equal, which is what `SameSite=Lax` actually compares.
 pub fn sameSite(a: []const u8, b: []const u8) bool {
     return std.ascii.eqlIgnoreCase(registrableDomain(a), registrableDomain(b));
 }
 
-/// True when `child` is `parent` itself or sits under it. A preview that is
-/// same-site with the app defeats the whole point, so callers assert `!`.
+/// True when `child` is `parent` itself or sits under it.
 pub fn isSubdomainOf(parent: []const u8, child: []const u8) bool {
     const p = std.mem.trim(u8, parent, ".");
     const c = std.mem.trim(u8, child, ".");
@@ -50,9 +42,7 @@ pub fn isSubdomainOf(parent: []const u8, child: []const u8) bool {
     return c[c.len - p.len - 1] == '.';
 }
 
-/// A header the proxy never forwards INTO the guest. The tenant's dev server
-/// must not see the user's session, and must not be handed a credential to
-/// replay against the API.
+/// A header the proxy never forwards INTO the guest.
 const stripped_request_headers = [_][]const u8{
     "cookie",
     "authorization",
@@ -60,9 +50,7 @@ const stripped_request_headers = [_][]const u8{
     "x-api-key",
 };
 
-/// Hop-by-hop headers belong to one connection and must not be relayed
-/// (RFC 9110 §7.6.1). `te`, `trailer` and `transfer-encoding` are handled by the
-/// proxy's own framing, so they are not forwarded in either direction.
+/// Hop-by-hop headers belong to one connection and must not be relayed (RFC 9110 §7.6.1).
 const hop_by_hop_headers = [_][]const u8{
     "connection",
     "keep-alive",
@@ -88,9 +76,7 @@ pub fn requestHeaderForwarded(name: []const u8) bool {
     return true;
 }
 
-/// Whether a response header may cross back to the browser. A guest
-/// `Set-Cookie` is allowed: the preview is its own registrable domain, so a
-/// cookie it sets cannot be sent to the app.
+/// Whether a response header may cross back to the browser.
 pub fn responseHeaderForwarded(name: []const u8) bool {
     return !inList(&hop_by_hop_headers, name);
 }
@@ -98,8 +84,7 @@ pub fn responseHeaderForwarded(name: []const u8) bool {
 pub const OriginVerdict = enum {
     /// The request carried an origin this deployment serves.
     allowed,
-    /// No `Origin` at all: a CLI, a test, or a same-origin form post. Allowed on
-    /// a mutation only because the CSRF token is the second half of the rule.
+    /// No `Origin` at all: a CLI, a test, or a same-origin form post.
     absent,
     /// An origin this deployment does not serve. Refused.
     foreign,
@@ -109,8 +94,7 @@ pub const OriginVerdict = enum {
     }
 };
 
-/// The `Origin` allowlist decision for one request. `allowed` is the set of
-/// origins the deployment serves, compared scheme+host+port, case-insensitively.
+/// The `Origin` allowlist decision for one request.
 pub fn originVerdict(origin: ?[]const u8, allowed: []const []const u8) OriginVerdict {
     const value = origin orelse return .absent;
     const trimmed = std.mem.trim(u8, value, " ");
@@ -121,9 +105,7 @@ pub fn originVerdict(origin: ?[]const u8, allowed: []const []const u8) OriginVer
     return .foreign;
 }
 
-/// The origins this deployment serves, in the form the engine's pre-gate
-/// compares: a host and a port, never a scheme. Hosts from
-/// `PABRIK_ALLOWED_ORIGINS` are added for a deployment behind a proxy.
+/// The origins this deployment serves, in the form the engine's pre-gate compares: a host and a port, never a scheme.
 pub fn allowedFor(
     allocator: std.mem.Allocator,
     env: ?*const std.process.Environ.Map,
@@ -142,24 +124,20 @@ pub fn allowedFor(
     return out.toOwnedSlice(allocator);
 }
 
-/// Whether the request's `Origin` is the app's own origin: the same host
-/// and port the request was addressed to. `host` is the `Host` header.
+/// Whether the request's `Origin` is the app's own origin: the same host and port the request was addressed to.
 pub fn sameOrigin(origin: ?[]const u8, host: ?[]const u8) bool {
     const o = origin orelse return false;
     const h = host orelse return false;
     return gserverz.security.sameEndpoint(o, h);
 }
 
-/// Whether a mutation may come from this `Origin`: the app's own origin
-/// and the origins the deployment serves may, a foreign one may not.
+/// Whether a mutation may come from this `Origin`: the app's own origin and the origins the deployment serves may, a foreign one may not.
 pub fn mayMutate(origin: ?[]const u8, host: ?[]const u8, allowed: []const []const u8) bool {
     if (sameOrigin(origin, host)) return true;
     return !originVerdict(origin, allowed).refused();
 }
 
-/// The rule the engine applies to those entries: the host (with its port) of
-/// an `Origin`, matched case-insensitively. An absent `Origin` is not foreign
-/// — a CLI and a same-origin form post send none.
+/// The rule the engine applies to those entries: the host (with its port) of an `Origin`, matched case-insensitively.
 pub fn originHostAllowed(origin: ?[]const u8, allowed: []const []const u8) bool {
     const value = origin orelse return true;
     const trimmed = std.mem.trim(u8, value, " ");
@@ -189,8 +167,7 @@ pub fn isMutatingMethod(method: []const u8) bool {
         std.ascii.eqlIgnoreCase(m, "DELETE");
 }
 
-/// The policy a preview response carries: the tenant's page may not frame the
-/// app, may not be framed by it, and may not phone home to the app's origin.
+/// The policy a preview response carries: the tenant's page may not frame the app, may not be framed by it, and may not phone home to the app's origin.
 pub const preview_csp =
     "default-src 'self'; base-uri 'none'; form-action 'self'; " ++
     "frame-ancestors 'none'; connect-src 'self'; object-src 'none'";

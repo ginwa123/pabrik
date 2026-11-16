@@ -48,14 +48,7 @@ import com.pabrik.mobile.ui.PabrikField
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * Everything the Projects section draws, in one value.
- *
- * A holder rather than nine more parameters on [RecentsSidebar], which already
- * takes twenty-two. Same move the auth block made for the same reason: these
- * eight fields are only ever read together, and a caller passing half of them
- * is a caller with a half-rendered section.
- */
+/** Everything the Projects section draws, in one value. */
 @Stable
 class ProjectsState(
     val expanded: Boolean,
@@ -64,48 +57,14 @@ class ProjectsState(
     val chats: Map<String, ProjectChatsPage>,
     val isLoading: Boolean,
     val errorMessage: String?,
-    /**
-     * The project whose create is in flight, or null.
-     *
-     * Held here rather than passed down as its own parameter, for the reason
-     * the whole holder exists: this composable already takes twenty-two and
-     * this is only ever read by the `+` row, which is part of the Projects
-     * section like everything else it draws.
-     */
+    /** The project whose create is in flight, or null. */
     val creatingTaskItemId: String? = null,
 ) {
     fun isProjectExpanded(itemId: String): Boolean = itemId in expandedItemIds
 
     fun chatsFor(itemId: String): ProjectChatsPage? = chats[itemId]
 
-    /**
-     * The projects holding at least one of [runningSessionIds]'s sessions.
-     *
-     * The web draws the same indicator from the workspace tree
-     * (`WorkspaceItem.vue`'s `firstProcessingTaskId`, and
-     * `ProjectsList.vue`'s `firstProcessingTaskIdInWorkspace` for the section
-     * header) — one `processingState[task.id]` lookup per task, and a task id
-     * *is* a session id, which is the join this method performs.
-     *
-     * Two sources, because the web has one and the phone does not. The web
-     * loads every project's tasks up front (`is_include_items=true`) so it can
-     * ask about any project without asking again; this section loads a
-     * project's page only when the reader unfolds it, deliberately (see
-     * [ProjectsApi] on why a phone does not pull the whole tree on a metered
-     * connection). So [chats] alone would light a spinner only for a project
-     * the reader has opened — and in the very state the report was taken, every
-     * project row folded.
-     *
-     * [recents] is what closes that. The recents list is the one list the
-     * drawer holds for the whole workspace at all times, and it now carries
-     * each session's own `workspace_item_id` (`ChatSummary.projectId`), so a
-     * collapsed project resolves from data already on screen — no request, no
-     * per-project fan-out.
-     *
-     * A running session this cannot attribute — no project, or one outside the
-     * page the caller passed — still lights nothing. Guessing which project a
-     * run belongs to is how a spinner ends up on the wrong row.
-     */
+    /** The projects holding at least one of [runningSessionIds]'s sessions. */
     fun runningProjectIds(
         runningSessionIds: Set<String>,
         recents: List<ChatSummary> = emptyList(),
@@ -124,27 +83,11 @@ class ProjectsState(
         return fromUnfoldedProjects + fromRecents
     }
 
-    /**
-     * The rows the drawer unrolls under a project — the first
-     * [ProjectsApi.DRAWER_PREVIEW_ROWS] of the page, never the whole thing.
-     *
-     * A cap rather than a scroll of its own: a 390dp drawer cannot host two
-     * independently scrolling panes, and the full list is one tap away on a
-     * screen of its own.
-     */
+    /** The rows the drawer unrolls under a project — the first [ProjectsApi.DRAWER_PREVIEW_ROWS] of the page, never the whole thing. */
     fun previewFor(itemId: String): List<ProjectChat> =
         chats[itemId]?.chats?.take(ProjectsApi.DRAWER_PREVIEW_ROWS).orEmpty()
 
-    /**
-     * Whether "See all chats" is worth offering: only when the drawer is
-     * actually hiding rows. A project with three chats needs no detour to a
-     * screen showing those same three.
-     *
-     * Note there is no count anywhere. The tasks endpoint's `count` is the page
-     * length, not a filtered total, so any total means paging the whole list —
-     * per project, per refresh. A button that says "See all 47 chats" when
-     * there are 312 is a worse lie than no number.
-     */
+    /** Whether "See all chats" is worth offering: only when the drawer is actually hiding rows. */
     fun shouldOfferSeeAllChats(itemId: String): Boolean {
         val page = chats[itemId] ?: return false
         return page.chats.size > ProjectsApi.DRAWER_PREVIEW_ROWS || page.hasMore
@@ -159,11 +102,7 @@ class ProjectsState(
         get() = errorMessage != null && items.isNotEmpty()
 
     companion object {
-        /**
-         * Empty rather than all-defaults, so a caller that forgets to pass a
-         * section gets an honest "nothing here" instead of a silent
-         * default-to-expanded one.
-         */
+        /** Empty rather than all-defaults, so a caller that forgets to pass a section gets an honest "nothing here" instead of a silent default-to-expanded one. */
         val Empty = ProjectsState(
             expanded = false,
             items = emptyList(),
@@ -175,37 +114,17 @@ class ProjectsState(
     }
 }
 
-/**
- * The things a reader can do to the Projects section.
- *
- * [onOpenAllChats] and [onCreateTask] are **destinations** (or lead to one) and
- * the rest are not. That split is the whole drawer contract: a project row and
- * the section header reshape the list in place, only "See all chats" leaves,
- * and only a chat row closes the drawer. Naming them together is a small way of
- * keeping that visible at the call site.
- */
+/** The things a reader can do to the Projects section. */
 @Stable
 class ProjectsActions(
     /** Fold the whole section away, or unfold it. Stays in the drawer. */
     val onToggleSection: () -> Unit,
     /** Fold one project open or shut. Stays in the drawer. */
     val onToggleItem: (String) -> Unit,
-    /**
-     * Leave the drawer for the project-chats screen. Closes it, because the
-     * reader asked for a destination rather than a filter.
-     */
+    /** Leave the drawer for the project-chats screen. */
     val onOpenAllChats: (workspaceId: String, itemId: String) -> Unit,
     val onRetry: () -> Unit,
-    /**
-     * Open the create flow for a project. Does **not** close the drawer: the
-     * sheet takes over on top of it, and a memory create has to leave the reader
-     * looking at the list their new row just appeared in.
-     *
-     * Takes the whole [ProjectSummary] rather than two ids because the flow
-     * needs the item's `item_type` to decide whether to show a picker at all —
-     * see [createTaskStartDecision] — and passing ids would make the caller
-     * look the type up in a list it does not own.
-     */
+    /** Open the create flow for a project. */
     val onCreateTask: (ProjectSummary) -> Unit = {},
 ) {
     companion object {
@@ -219,12 +138,7 @@ class ProjectsActions(
     }
 }
 
-/**
- * The glyph for an `item_type`.
- *
- * The fallback is the point: a type the backend ships tomorrow must render as
- * *some* named row, never as a blank line the reader cannot tap.
- */
+/** The glyph for an `item_type`. */
 internal fun projectGlyph(itemType: String): ImageVector = when (itemType) {
     ProjectTypes.KANBAN -> Icons.Filled.ViewKanban
     ProjectTypes.AGENT -> Icons.Filled.SmartToy
@@ -234,24 +148,14 @@ internal fun projectGlyph(itemType: String): ImageVector = when (itemType) {
     else -> Icons.Filled.Folder
 }
 
-/**
- * One project row: a glyph, a name, and a chevron.
- *
- * No count, on purpose — see [ProjectsState.shouldOfferSeeAllChats].
- */
+/** One project row: a glyph, a name, and a chevron. */
 @Composable
 internal fun ProjectRow(
     project: ProjectSummary,
     expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * Whether a chat inside this project has a live worker.
-     *
-     * A parameter rather than something read from the store so the row is
-     * drawable without one — same contract [ProjectChatRow]'s `isRunning`
-     * already has, and the reason a preview and a test can both render a row.
-     */
+    /** Whether a chat inside this project has a live worker. */
     isRunning: Boolean = false,
 ) {
     Surface(
@@ -267,8 +171,7 @@ internal fun ProjectRow(
                 }
                 stateDescription = if (expanded) "Expanded" else "Collapsed"
             },
-        // The same selected treatment a chat row uses, so "the thing you are
-        // inside" looks the same whichever list you found it in.
+        // The same selected treatment a chat row uses, so "the thing you are inside" looks the same whichever list you found it in.
         shape = RoundedCornerShape(12.dp),
         color = if (expanded) PabrikField else Color.Transparent,
         contentColor = PabrikText,
@@ -292,14 +195,10 @@ internal fun ProjectRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            // Ahead of the chevron, and only while something runs: the row's
-            // right-hand edge must not change width as a run starts and stops,
-            // or every reader watches the whole list shift sideways.
+            // Ahead of the chevron, and only while something runs: the row's right-hand edge must not change width as a run starts and stops, or every reader watches the …
             if (isRunning) {
                 CircularProgressIndicator(
-                    // Decorative — "agent is working" is already in the content
-                    // description, and announcing it twice is worse than not
-                    // announcing it.
+                    // Decorative — "agent is working" is already in the content description, and announcing it twice is worse than not announcing it.
                     modifier = Modifier
                         .clearAndSetSemantics { }
                         .size(14.dp)
@@ -313,25 +212,13 @@ internal fun ProjectRow(
                 contentDescription = null,
                 tint = PabrikDim,
                 modifier = Modifier.size(16.dp),
-                // Rotated rather than swapped for a different icon, so the row's
-                // right-hand edge does not change width as it opens.
-                // (No rotation applied: the glyph reads as a chevron either way
-                // and rotating Compose's `Icon` needs a modifier the icon does
-                // not take, so the expanded state is carried by semantics and
-                // the row's fill.)
+                // Rotated rather than swapped for a different icon, so the row's right-hand edge does not change width as it opens.
             )
         }
     }
 }
 
-/**
- * One chat under a project, or one chat on the project-chats screen.
- *
- * The same gesture as a recents row and the same call: `onChatSelected` then
- * `onOpenChat`. That is why a project needs no route of its own for the common
- * case — a task id *is* a session id, so this row opens the identical
- * destination the Recent list opens.
- */
+/** One chat under a project, or one chat on the project-chats screen. */
 @Composable
 internal fun ProjectChatRow(
     chat: ProjectChat,
@@ -388,9 +275,7 @@ internal fun ProjectChatRow(
 
             if (isRunning) {
                 androidx.compose.material3.CircularProgressIndicator(
-                    // Decorative: "agent is working" is already in the merged
-                    // content description, and announcing it twice is worse
-                    // than not announcing it.
+                    // Decorative: "agent is working" is already in the merged content description, and announcing it twice is worse than not announcing it.
                     modifier = Modifier
                         .clearAndSetSemantics { }
                         .size(14.dp)
@@ -403,24 +288,7 @@ internal fun ProjectChatRow(
     }
 }
 
-/**
- * The one control in either section that leaves the drawer.
- *
- * Words and a chevron, never a count. Two jobs in one row: it tells the reader
- * the list continues, and it is the route to reading it. A chevron is the
- * right affordance for both — the row goes somewhere.
- *
- * One implementation for the project section and the recents section, because
- * they are the same control pointed at a different list: a second copy is a
- * second place for the two sections' "what does this do" to drift apart, and
- * the whole reason they can be read side by side is that they cannot.
- *
- * [subject] is the only thing that differs — "in this project" / "in this
- * workspace" — and it exists so a screen-reader user is told which list the
- * destination covers rather than hearing the same two words twice in one
- * drawer. [testTag] likewise, because two rows with one tag cannot both be
- * addressed in a test.
- */
+/** The one control in either section that leaves the drawer. */
 @Composable
 internal fun SeeAllChatsRow(
     testTag: String,

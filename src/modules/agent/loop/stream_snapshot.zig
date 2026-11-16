@@ -1,6 +1,4 @@
-//! Stream snapshot registry — in-flight LLM stream buffer per session.
-//! 2026-09-02 stream-resume-on-reselect (task_1787673548905_0): When the user
-//! closes/re-selects a chat session mid-stream, ChatView drops its
+//! Stream snapshot registry — in-flight LLM stream buffer per session. 2026-09-02 stream-resume-on-reselect (task_1787673548905_0): When the user …
 
 const std = @import("std");
 
@@ -14,9 +12,7 @@ pub const Snapshot = struct {
     content: []const u8,
 };
 
-/// Zig 0.16 removed `std.Thread.Mutex` — use `std.atomic.Mutex` (an
-/// enum with tryLock/unlock) wrapped in a spinlock, matching the
-/// pattern in kabelweb server/security.zig:114.
+/// Zig 0.16 removed `std.Thread.Mutex` — use `std.atomic.Mutex` (an enum with tryLock/unlock) wrapped in a spinlock, matching the pattern in kabelweb …
 var mutex: std.atomic.Mutex = .unlocked;
 
 fn mutexLock(m: *std.atomic.Mutex) void {
@@ -38,9 +34,7 @@ pub const Entry = struct {
 
 fn ensureInit() void {
     if (registry == null) {
-        // The registry is a process-global singleton — it MUST NOT live in a
-        // caller's arena (each test / request passes a different arena that
-        // dies at scope exit). page_allocator gives it process lifetime.
+        // The registry is a process-global singleton — it MUST NOT live in a caller's arena (each test / request passes a different arena that dies at scope exit). …
         registry = std.StringHashMap(*Entry).init(std.heap.page_allocator);
     }
 }
@@ -85,9 +79,7 @@ pub fn appendContent(allocator: std.mem.Allocator, session_id: []const u8, delta
     gop.value_ptr.*.content.appendSlice(std.heap.page_allocator, delta) catch {};
 }
 
-/// Mark the stream as finished. Content stays readable until the next
-/// `beginStream` so a late poll right after finish still sees the text,
-/// but `active` becomes false.
+/// Mark the stream as finished.
 pub fn endStream(allocator: std.mem.Allocator, session_id: []const u8) void {
     _ = allocator;
     mutexLock(&mutex);
@@ -99,8 +91,7 @@ pub fn endStream(allocator: std.mem.Allocator, session_id: []const u8) void {
     }
 }
 
-/// Read the current snapshot. `content` is duped into `allocator`
-/// (the caller's arena); the registry keeps its own copy.
+/// Read the current snapshot.
 pub fn getSnapshot(allocator: std.mem.Allocator, session_id: []const u8) !Snapshot {
     mutexLock(&mutex);
     defer mutex.unlock();

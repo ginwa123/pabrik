@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** AppearanceSection — the user-scope Settings section that switches the theme. The list comes from
- * the registry (`src/theme/themes.ts`), so a new theme appears here without editing this file; the
- * picker is a searchable dropdown because the list is meant to keep growing. */
+/** AppearanceSection — the user-scope Settings section that switches the theme. */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import ThemeSwatch from './ThemeSwatch.vue'

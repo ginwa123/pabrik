@@ -1,6 +1,4 @@
-/** Unit tests for the bus-backed documentsSse Pinia store. The backend emits `documents` events
- * from the AGENT TOOLS only (src/agentic_loop/document_events.zig), so the sidebar's Documents list
- * refreshes when an agent writes or removes one. */
+/** Unit tests for the bus-backed documentsSse Pinia store. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -19,8 +17,7 @@ import { makeLocalStorageStub } from './helpers'
 
 const listDocuments = vi.hoisted(() => vi.fn())
 
-// ONLY `listDocuments` is replaced — everything else in `../api` stays real because
-// `installSseBus` builds its client through `createUnifiedSseConnection`.
+// ONLY `listDocuments` is replaced — everything else in `../api` stays real because `installSseBus` builds its client through `createUnifiedSseConnection`.
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
   return { ...actual, listDocuments }
@@ -71,8 +68,7 @@ describe('useDocumentsSseStore (bus-backed)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE initDocumentsSse runs — the store calls `useSseBus()` inside it,
-    // which throws if the bus is not installed.
+    // Install the bus BEFORE initDocumentsSse runs — the store calls `useSseBus()` inside it, which throws if the bus is not installed.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -104,9 +100,7 @@ describe('useDocumentsSseStore (bus-backed)', () => {
   })
 
   it('an agent create lands in the store, not just as a fetch call', async () => {
-    // The test above proves the wiring; this proves the OUTCOME an agent write has for the
-    // sidebar. The list is cache-first over a module singleton, so clear it first or a previous
-    // test's rows paint through and the assertion becomes order-dependent.
+    // The test above proves the wiring; this proves the OUTCOME an agent write has for the sidebar.
     const { documentEngineDb } = await import('../sync/DocumentEngineDb')
     const { runSyncVoid } = await import('../sync/runtime')
     await runSyncVoid(documentEngineDb.clear('ws_1'), 'spec.clearDocuments')
@@ -117,8 +111,7 @@ describe('useDocumentsSseStore (bus-backed)', () => {
     })
 
     await useDocumentsSseStore().initDocumentsSse('ws_1')
-    // Positive control: init alone must NOT read the list (the bus is still 'connecting'), so the
-    // population below can only have come from the dispatched event.
+    // Positive control: init alone must NOT read the list (the bus is still 'connecting'), so the population below can only have come from the dispatched event.
     expect(listDocuments).not.toHaveBeenCalled()
 
     dispatch({

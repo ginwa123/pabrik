@@ -153,9 +153,7 @@ describe('SidebarDiffPanel tabs', () => {
       props: { cwd: '/repo' },
     })
     await flushPromises()
-    // The Files tab carries the WORKING TREE list, which exists with or
-    // without a PR — gating it on isPrMode is what forced the old
-    // `Files | Commits` header toggle to exist as the only way back.
+    // The Files tab carries the WORKING TREE list, which exists with or without a PR — gating it on isPrMode is what forced the old `Files | Commits` header toggle …
     expect(wrapper.find('[data-testid="sidebar-tab-files"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="sidebar-tab-files"]').attributes('aria-selected')).toBe(
       'true',
@@ -267,16 +265,14 @@ describe('SidebarDiffPanel tabs', () => {
       props: { cwd: '/repo' },
     })
     await flushPromises()
-    // Commits is NOT PR-only — history exists with or without a PR — so the
-    // strip renders and Commits is clickable. Only the PR tab is gated.
+    // Commits is NOT PR-only — history exists with or without a PR — so the strip renders and Commits is clickable.
     expect(wrapper.find('[data-testid="sidebar-tab-pr"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="sidebar-tab-commits"]').exists()).toBe(true)
     await wrapper.get('[data-testid="sidebar-tab-commits"]').trigger('click')
     await flushPromises()
     expect(r.currentRoute.value.query.panel).toBe('commits')
     expect(getGitCommitsMock).toHaveBeenCalledWith('/repo', 100, 0)
-    // Back to the working tree, via the tab that is always there — no second
-    // "Files" button is needed now that Files is not gated on isPrMode.
+    // Back to the working tree, via the tab that is always there — no second "Files" button is needed now that Files is not gated on isPrMode.
     await wrapper.get('[data-testid="sidebar-tab-files"]').trigger('click')
     await flushPromises()
     expect(r.currentRoute.value.query.panel).toBe('files')
@@ -325,8 +321,7 @@ describe('SidebarDiffPanel without a router', () => {
   })
 
   it('switches tabs instead of throwing when there is no router to keep in sync', async () => {
-    // A standalone mount (the harness, a unit mount) has no router: there is no URL to write the
-    // tab into, and the panel said so when it read the URL. The write must not throw.
+    // A standalone mount (the harness, a unit mount) has no router: there is no URL to write the tab into, and the panel said so when it read the URL.
     const errors: unknown[] = []
     const wrapper = mount(SidebarDiffPanel, {
       global: { config: { errorHandler: (err: unknown) => errors.push(err) } },

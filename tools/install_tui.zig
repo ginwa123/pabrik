@@ -1,6 +1,4 @@
 // tools/install_tui.zig Cross-platform installer for the `pabrik-tui` binary.
-// Usage (invoked by `zig build install-tui`): install_tui <source-path> Where
-// <source-path> is the built binary (e.g. zig-out/bin/pabrik-tui).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -70,9 +68,7 @@ fn resolveDestLinux(allocator: std.mem.Allocator, init: std.process.Init) ![]con
 }
 
 fn resolveDestMacos(allocator: std.mem.Allocator, init: std.process.Init) ![]const u8 {
-    // macOS: same as Linux — $HOME/.local/bin is the standard user bin
-    // for CLI tools (used by pip, cargo, etc.). We also ensure the dir
-    // exists even if the user has never used it before.
+    // macOS: same as Linux — $HOME/.local/bin is the standard user bin for CLI tools (used by pip, cargo, etc.).
     const home = getEnv(init, "HOME") orelse {
         std.debug.print("ERROR: $HOME is not set — cannot determine install destination.\n", .{});
         return error.HomeNotSet;
@@ -82,8 +78,6 @@ fn resolveDestMacos(allocator: std.mem.Allocator, init: std.process.Init) ![]con
 
 fn resolveDestWindows(allocator: std.mem.Allocator, init: std.process.Init) ![]const u8 {
     // Priority: 1. %LOCALAPPDATA%\pabrik\bin\pabrik-tui.exe (e.g.
-    // C:\Users\you\AppData\Local) 2. %APPDATA%\pabrik\bin\pabrik-tui.exe
-    // (e.g.
     if (getEnv(init, "LOCALAPPDATA")) |local_app_data| {
         return std.fs.path.join(allocator, &.{ local_app_data, "pabrik", "bin", "pabrik-tui.exe" });
     }
@@ -100,8 +94,7 @@ fn resolveDestWindows(allocator: std.mem.Allocator, init: std.process.Init) ![]c
     return error.HomeNotSet;
 }
 
-/// Get env var value from init.environ_map. Returns null if not set or empty.
-/// The returned slice is valid for the lifetime of `init` (no allocation needed).
+/// Get env var value from init.environ_map.
 fn getEnv(init: std.process.Init, key: []const u8) ?[]const u8 {
     const val = init.environ_map.get(key) orelse return null;
     if (val.len == 0) return null;

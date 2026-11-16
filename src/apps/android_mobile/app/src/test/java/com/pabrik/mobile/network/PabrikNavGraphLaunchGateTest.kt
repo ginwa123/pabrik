@@ -25,21 +25,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The launch gate, against the real `NavHost` — and on the JVM.
- *
- * `LaunchGateTest` pins the *rule*; this pins the thing the rule is for, which
- * is a rendering outcome: is there an opaque screen over the graph right now,
- * or not. No assertion on a pure function can see that, which is why this was
- * an instrumented test and why it sat unrun — an emulator was the only place it
- * could go, and an emulator is the one thing CI does not have. Under
- * Robolectric the real graph composes on the JVM, so the assertions that
- * mattered now run in `testDebugUnitTest`.
- *
- * The two halves are the pair. "The gate is up" alone passes just as happily
- * for a gate that is *always* up, which is a splash with no way out of it; the
- * second case is the one that fails when the callback stops firing.
- */
+/** The launch gate, against the real `NavHost` — and on the JVM. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PabrikNavGraphLaunchGateTest {
@@ -53,25 +39,11 @@ class PabrikNavGraphLaunchGateTest {
     fun aResumedChatStaysBehindTheGateUntilItsTranscriptLands() {
         launch(
             saved = LastPosition(workspaceId = "ws_b", sessionId = "sess_c"),
-            // A cold open: the route is on the back stack and the first page has
-            // not arrived. The reader must not see it yet, because the frame
-            // they would see is the top of an empty list and the frame after it
-            // is the bottom of a full one — the drift this exists to remove.
+            // A cold open: the route is on the back stack and the first page has not arrived.
             chatState = MutableStateFlow(ChatUiState(sessionId = "sess_c", isLoading = true)),
         )
 
-        // The navigation has already happened. Only the *showing* is held, which
-        // is what lets the transcript load and scroll behind the gate at all —
-        // a gate that replaced the destinations would move that work to after
-        // the reveal, which is the bug.
-        //
-        // *Which* chat the route is on, read off the title bar rather than off
-        // `currentDestination.route`. A destination's route is the *pattern* it
-        // was declared with — `chat/{sessionId}` for every chat the app has
-        // ever opened — so it cannot tell two resumes apart, and
-        // `Bundle.getString` is not resolvable on the unit-test classpath. The
-        // title is looked up in the same `homeState.chats` the route resolves
-        // the session against, so this is the id the graph really navigated to.
+        // The navigation has already happened.
         composeTestRule.onNodeWithTag("chat_title").assertTextEquals("Chat sess_c")
         composeTestRule.onNodeWithTag("launch_gate").assertIsDisplayed()
     }
@@ -80,9 +52,7 @@ class PabrikNavGraphLaunchGateTest {
     fun theGateLiftsOnceTheResumedTranscriptHasLanded() {
         launch(
             saved = LastPosition(workspaceId = "ws_b", sessionId = "sess_c"),
-            // Loaded, and nothing to scroll because the transcript is empty —
-            // which is also what a failed load looks like, and a gate that
-            // waited for a scroll in that case would strand the reader.
+            // Loaded, and nothing to scroll because the transcript is empty — which is also what a failed load looks like, and a gate that waited for a scroll in that case …
             chatState = MutableStateFlow(ChatUiState(sessionId = "sess_c", isLoading = false)),
         )
 
@@ -92,8 +62,7 @@ class PabrikNavGraphLaunchGateTest {
 
     @Test
     fun aFirstLaunchRevealsTheShellWithoutAnyChat() {
-        // Nothing to resume is an *answer*, not a wait. If "no saved chat" left
-        // the gate up, every first launch would be a splash with no exit.
+        // Nothing to resume is an *answer*, not a wait.
         launch(saved = LastPosition())
 
         composeTestRule.onNodeWithTag("launch_gate").assertDoesNotExist()
@@ -102,8 +71,7 @@ class PabrikNavGraphLaunchGateTest {
 
     @Test
     fun aSavedChatTheListNoLongerHasStillRevealsTheShell() {
-        // The answer is "no", for a reason. Treating it as "not yet" would hold
-        // the gate for ever, on exactly the launch where the chat is gone.
+        // The answer is "no", for a reason.
         launch(
             saved = LastPosition(workspaceId = "ws_b", sessionId = "sess_deleted"),
             homeState = settledHome(chats = listOf(chat("sess_a"), chat("sess_c"))),
@@ -115,10 +83,7 @@ class PabrikNavGraphLaunchGateTest {
 
     @Test
     fun aSignInScreenIsNeverCovered() {
-        // The gate blocks by being opaque, and a gate over the sign-in form is
-        // an app nobody can get into. The shell's own launch screen and retry
-        // screen are the same argument, and all three are one test each because
-        // `setContent` may only be called once per rule.
+        // The gate blocks by being opaque, and a gate over the sign-in form is an app nobody can get into.
         launch(
             saved = LastPosition(workspaceId = "ws_b", sessionId = "sess_c"),
             authState = AuthUiState(phase = SessionPhase.NeedsLogin),
@@ -135,12 +100,9 @@ class PabrikNavGraphLaunchGateTest {
             onOpenSession = { opened += it },
         )
 
-        // A second chat route for the same session is a second copy of the chat
-        // under Back, and it is invisible until someone presses Back twice.
+        // A second chat route for the same session is a second copy of the chat under Back, and it is invisible until someone presses Back twice.
         assertEquals(listOf("sess_c"), opened)
-        // The shell still underneath says the resume *pushed* a route rather
-        // than replacing the whole stack, which would have left the reader with
-        // nowhere to go. Without it, Back out of a resumed chat is a dead end.
+        // The shell still underneath says the resume *pushed* a route rather than replacing the whole stack, which would have left the reader with nowhere to go.
         assertEquals(
             PabrikRoutes.SHELL,
             controller.previousBackStackEntry?.destination?.route,
@@ -149,9 +111,7 @@ class PabrikNavGraphLaunchGateTest {
 
     @Test
     fun aRestoringLaunchScreenIsNotCoveredByASecondOne() {
-        // The shell already paints `AuthRestoringScreen` in this phase. A gate
-        // on top would add nothing and put a second `auth_restoring` node in
-        // the tree, which is a trap for any test that looks for that tag.
+        // The shell already paints `AuthRestoringScreen` in this phase.
         launch(
             saved = LastPosition(workspaceId = "ws_b", sessionId = "sess_c"),
             authState = AuthUiState(phase = SessionPhase.Restoring),
@@ -217,13 +177,7 @@ class PabrikNavGraphLaunchGateTest {
     )
 }
 
-/**
- * A store that answers one position and records nothing.
- *
- * A `PrefsLastPositionStore` would work too, but it needs a `Context` and writes
- * through `apply()`, and none of these tests are about persistence — they are
- * about what the graph does with an answer.
- */
+/** A store that answers one position and records nothing. */
 internal class FixedLastPosition(private val position: LastPosition) : LastPositionStore {
     override fun read(userId: String?): LastPosition = position
     override fun save(userId: String?, position: LastPosition) = Unit

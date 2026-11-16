@@ -81,77 +81,32 @@ fun MobileHomeScreen(
     initialChatId: String? = null,
     onWorkspaceSelected: (String) -> Unit = {},
     onChatSelected: (String) -> Unit = {},
-    /**
-     * Opens a chat as its own destination. A chat is a view, so it lives on a
-     * route rather than in a local selection flag — that is what makes it
-     * survive process death and the system Back button.
-     */
+    /** Opens a chat as its own destination. */
     onOpenChat: (String) -> Unit = {},
     onOpenNetworkInspector: () -> Unit = {},
     drawerLayout: MobileDrawerLayout = MobileDrawerLayout.Auto,
     isLoading: Boolean = false,
     errorMessage: String? = null,
     onRetry: () -> Unit = {},
-    /**
-     * Whether the workspace holds chats the drawer is not showing, and the
-     * server's count of them all.
-     *
-     * Forwarded to both drawers from here rather than from each call site: they
-     * are one drawer, and a `See all chats ›` row that one of them offers and
-     * the other does not is a drawer that disagrees with itself.
-     */
+    /** Whether the workspace holds chats the drawer is not showing, and the server's count of them all. */
     hasMoreChats: Boolean = false,
     chatsTotal: Int = 0,
-    /**
-     * Leave the drawer for the full recents list.
-     *
-     * A destination, and the drawer closes on the way — for the same reason a
-     * chat row does: the list behind it is somewhere to go, not a filter.
-     */
+    /** Leave the drawer for the full recents list. */
     onOpenAllChats: () -> Unit = {},
-    /**
-     * Session ids with a live worker. Hoisted all the way down to each row, and
-     * app-wide rather than per-view, because the shell and the chat are
-     * separate routes and a run belongs to neither of them.
-     */
+    /** Session ids with a live worker. */
     runningSessionIds: Set<String> = emptySet(),
-    /**
-     * The signed-in account, and the one action that ends it. Defaults keep the
-     * screen renderable in previews and tests with no session to describe.
-     */
+    /** The signed-in account, and the one action that ends it. */
     isAuthEnabled: Boolean = false,
     signedInEmail: String? = null,
     isLoggingOut: Boolean = false,
     onLogout: () -> Unit = {},
-    /**
-     * The Projects section, forwarded to both drawers.
-     *
-     * Two holders rather than eight more parameters, and threaded through
-     * this one composable rather than into the two call sites below: the
-     * shell's permanent drawer and the phone's modal drawer are the same
-     * drawer, and a Projects section that only reached one of them would
-     * look broken rather than absent.
-     */
+    /** The Projects section, forwarded to both drawers. */
     projects: ProjectsState = ProjectsState.Empty,
     projectActions: ProjectsActions = ProjectsActions.None,
-    /**
-     * Whether the Recents section is folded, and the tap that folds it.
-     *
-     * Hoisted, not local, for the same reason [projects] is: the chat route
-     * composes the *same* drawer through [RecentsDrawerContent] while this
-     * screen composes it twice below. A fold held in a local here would be one
-     * the reader loses the moment they open a chat — the drawer would spring
-     * open again with the section they just closed.
-     */
+    /** Whether the Recents section is folded, and the tap that folds it. */
     recentsExpanded: Boolean = true,
     onToggleRecentsSection: () -> Unit = {},
-    /**
-     * The top-level "New Chat" row's busy flag and its tap.
-     *
-     * Threaded rather than owned here for the same reason the section fold is:
-     * the shell's permanent drawer and the modal one are the same drawer, so a
-     * row wired in only one of them is a row that does nothing in the other.
-     */
+    /** The top-level "New Chat" row's busy flag and its tap. */
     isCreatingChat: Boolean = false,
     onNewChat: () -> Unit = {},
 ) {
@@ -181,17 +136,11 @@ fun MobileHomeScreen(
     }
 
     LaunchedEffect(scopedChats, selectedChatId, initialChatId) {
-        // Already on a real row: nothing to decide. Reached on every refresh and
-        // every tap, and short-circuiting is what stops a revalidation from
-        // moving the highlight off the chat the user is reading.
+        // Already on a real row: nothing to decide.
         if (selectedChatId != null && scopedChats.any { it.id == selectedChatId }) {
             return@LaunchedEffect
         }
-        // `initialChatId` is a *request*, not a seed. It arrives after the first
-        // composition — the chat list is still loading then, so an id read at
-        // construction time is either null or cannot be checked — and honouring
-        // it only at construction is what lets the app resume a chat the drawer
-        // does not highlight.
+        // `initialChatId` is a *request*, not a seed.
         val requested = initialChatId
         selectedChatId = if (requested != null && scopedChats.any { it.id == requested }) {
             requested
@@ -203,8 +152,7 @@ fun MobileHomeScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val closeDrawer: () -> Unit = {
-        // A permanent drawer has no sheet to close, so asking anyway would
-        // animate a drawer that was never open on every chat tap.
+        // A permanent drawer has no sheet to close, so asking anyway would animate a drawer that was never open on every chat tap.
         if (drawerState.isOpen) {
             coroutineScope.launch {
                 drawerState.close()
@@ -212,25 +160,13 @@ fun MobileHomeScreen(
         }
     }
 
-    // D13: the top-level "New Chat" CLOSES the drawer, unlike the per-project
-    // `+` beside it, which deliberately leaves it open so the reader watches
-    // the new row appear under that project. Two rows that look alike and
-    // behave oppositely is worse than either choice alone.
-    //
-    // The dismissal is fired BEFORE the create starts, not after. The create is
-    // async — the navigation happens later, when HomeViewModel's createdChat
-    // flow emits — so the close animation runs while the request is in flight
-    // and the chat screen mounts into an already-closed drawer. Closing after
-    // would be a visible flicker.
+    // D13: the top-level "New Chat" CLOSES the drawer, unlike the per-project `+` beside it, which deliberately leaves it open so the reader watches the new row …
     val newChatAndClose: () -> Unit = {
         closeDrawer()
         onNewChat()
     }
 
-    // The destination row, closed behind it. Same shape as `newChatAndClose`
-    // and for the same reason: the list behind the row is a *place to go*, so
-    // leaving the sheet open on top of it is the drawer hiding the page the
-    // reader asked for.
+    // The destination row, closed behind it.
     val openAllChatsAndClose: () -> Unit = {
         closeDrawer()
         onOpenAllChats()
@@ -371,10 +307,7 @@ private fun HomeContent(
     onOpenNetworkInspector: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // One clock for the whole composition rather than a fresh read inside the
-    // body below. A `System.currentTimeMillis()` in a composition body is a
-    // parameter that changes on every recomposition, which is what makes every
-    // row of a list built here unskippable.
+    // One clock for the whole composition rather than a fresh read inside the body below.
     val nowEpochMillis = remember { System.currentTimeMillis() }
 
     Scaffold(
@@ -478,9 +411,6 @@ private fun HomeContent(
                         text = selectedChat?.let { chat ->
                             if (chat.hasTimestamp) {
                                 // Human-touch key, matching the sidebar pill.
-                                // The order key is what put the row at the top
-                                // of the list; it moves while the agent works
-                                // and says nothing about the human.
                                 formatRelativeTime(
                                     chat.lastHumanTouchedAtEpochMillis,
                                     nowEpochMillis,
@@ -508,9 +438,7 @@ private fun HomeContent(
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun MobileHomeScreenPreview() {
-    // The fixtures live here rather than in a shared `Preview*` top-level so
-    // nothing outside the IDE's preview renderer can reach them — that shared
-    // indirection is how demo data ended up as the app's default parameter.
+    // The fixtures live here rather than in a shared `Preview*` top-level so nothing outside the IDE's preview renderer can reach them — that shared indirection is …
     val previewNow = System.currentTimeMillis()
     PabrikTheme {
         MobileHomeScreen(

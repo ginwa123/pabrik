@@ -5,8 +5,7 @@ import * as api from '../api'
 import type { WorkspaceUsage, WorkspaceUsageRange } from '../api'
 import { tryParseJsonErrorField } from '../api/internal'
 
-/** This store's error channel, the shape `stores/members.ts` uses: the failure is in the type, so
- * every call site decides whether to show it. */
+/** This store's error channel, the shape `stores/members.ts` uses: the failure is in the type, so every call site decides whether to show it. */
 export class WorkspaceUsageRequestError extends Data.TaggedError('WorkspaceUsageRequestError')<{
   readonly op: string
   readonly reason: string
@@ -50,8 +49,7 @@ export const useWorkspaceUsageStore = defineStore('workspaceUsage', () => {
   /** Last failure message, or null. Rendered by the section — never write-only. */
   const error = ref<string | null>(null)
 
-  /** The workspace whose numbers are in `usage`. A switch must not paint one workspace's totals
-   * under another's header, so readers compare this before rendering. */
+  /** The workspace whose numbers are in `usage`. */
   const loadedWorkspace = computed<string>(() => usage.value?.workspace_id ?? '')
 
   async function load(

@@ -192,9 +192,7 @@ describe('BaseSyncEngine error channels', () => {
     }
     const eng = new TestEngine(store, () => emptyDelta())
 
-    // syncOnMount's contract is still "never fails". The cache read is
-    // absorbed (nothing to paint), and because the revalidation itself
-    // succeeded there is no error to report.
+    // syncOnMount's contract is still "never fails".
     const res = await run(eng.syncOnMount('s1', 10))
     expect(res.items).toEqual([])
     expect(res.fromCache).toBe(false)

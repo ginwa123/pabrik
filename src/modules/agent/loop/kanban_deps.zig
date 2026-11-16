@@ -1,6 +1,4 @@
-//! Kanban task dependencies (`depends_on`): one row per edge. A dependency is
-//! COMPLETE when its card sits in a column flagged `is_done`; unassigned counts
-//! as incomplete. The move gate lives in `kanban_model.moveTaskChecked`.
+//! Kanban task dependencies (`depends_on`): one row per edge.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,8 +6,7 @@ const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
-/// Hard cap on the number of dependencies a single task may declare. Keeps the
-/// dependency list payload and the cycle walk bounded.
+/// Hard cap on the number of dependencies a single task may declare.
 pub const max_dependencies: usize = 32;
 
 /// One resolved dependency edge.
@@ -47,13 +44,9 @@ pub fn anyIncomplete(edges: []const Edge) bool {
     return false;
 }
 
-// =====================================================================
 // Reads
-// =====================================================================
 
-/// `dep` is the DEPENDENCY (the task that must finish first), NOT the owner:
-/// every column after the two ids describes it. LEFT JOINs so a dangling edge
-/// still reports its id.
+/// `dep` is the DEPENDENCY (the task that must finish first), NOT the owner
 const edge_select =
     "SELECT d.task_id, d.depends_on_task_id, " ++
     "COALESCE(CAST(dep.name AS TEXT), ''), COALESCE(CAST(k.kanban_column_id AS TEXT), ''), " ++
@@ -66,8 +59,7 @@ const edge_joins =
 
 const edge_sql_for_task = edge_select ++ edge_joins ++
     " WHERE d.task_id = ? ORDER BY d.depends_on_task_id";
-// The board filter goes through the OWNER (`o`); `validate` only ever admits an
-// edge inside one board, so the dependency's own item is never consulted.
+// The board filter goes through the OWNER (`o`); `validate` only ever admits an edge inside one board, so the dependency's own item is never consulted.
 const edge_sql_for_item = edge_select ++
     " FROM kanban_task_dependencies d " ++
     "JOIN workspace_item_tasks o ON o.id = d.task_id " ++
@@ -86,7 +78,6 @@ pub fn listEdgesForTask(
 }
 
 /// Every dependency edge of every task under `item_id`, ordered by owner.
-/// One query serves a whole board listing. Caller frees with `freeEdges`.
 pub fn listEdgesForItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -124,21 +115,16 @@ fn readEdges(
             .name = try allocator.dupe(u8, row.values[2]),
             .column_id = try allocator.dupe(u8, row.values[3]),
             .column_name = try allocator.dupe(u8, row.values[4]),
-            // COALESCE makes this never-NULL, and a non-"0" value is true —
-            // a row written before the column existed must not read as
-            // "not done" for a column the user marked done.
+            // COALESCE makes this never-NULL, and a non-"0" value is true — a row written before the column existed must not read as "not done" for a column the user marked …
             .is_done = !std.mem.eql(u8, row.values[5], "0"),
         });
     }
     return rows.toOwnedSlice(allocator);
 }
 
-// =====================================================================
 // Writes
-// =====================================================================
 
-/// Replace the task's dependency set with `ids`. `ids` must already be
-/// normalized and validated (see `validateAndReplace`).
+/// Replace the task's dependency set with `ids`.
 pub fn replace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -158,8 +144,7 @@ pub fn replace(
     }
 }
 
-/// Drop every edge that mentions `task_id`, in both directions. Called when a
-/// task is deleted so a dangling edge cannot freeze another card forever.
+/// Drop every edge that mentions `task_id`, in both directions.
 pub fn deleteForTask(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -168,9 +153,7 @@ pub fn deleteForTask(
     try db.exec(allocator, "DELETE FROM kanban_task_dependencies WHERE task_id = ? OR depends_on_task_id = ?", &.{ task_id, task_id });
 }
 
-// =====================================================================
 // Validation
-// =====================================================================
 
 pub const ValidationError = error{
     SelfDependency,
@@ -181,9 +164,7 @@ pub const ValidationError = error{
     QueryFailed,
 };
 
-/// Dedupe the ids (order preserved), drop empties, and reject what needs no DB:
-/// a self-dependency and the cap. The result borrows from `ids` — only the outer
-/// slice is owned.
+/// Dedupe the ids (order preserved), drop empties, and reject what needs no DB
 pub fn normalizeIds(
     allocator: std.mem.Allocator,
     task_id: []const u8,
@@ -209,9 +190,7 @@ pub fn normalizeIds(
     return out.toOwnedSlice(allocator);
 }
 
-/// True when adding `task_id -> new_deps` would close a cycle: walking
-/// dependency edges out of any new dependency reaches `task_id` again. Pure —
-/// `edges` and `new_deps` are only borrowed.
+/// True when adding `task_id -> new_deps` would close a cycle: walking dependency edges out of any new dependency reaches `task_id` again.
 pub fn hasCycle(
     allocator: std.mem.Allocator,
     edges: []const Edge,
@@ -243,8 +222,7 @@ pub fn hasCycle(
     return false;
 }
 
-/// Validate a proposed dependency set against its board: every id must be a
-/// task of `item_id`, and the resulting graph must stay acyclic.
+/// Validate a proposed dependency set against its board: every id must be a task of `item_id`, and the resulting graph must stay acyclic.
 pub fn validate(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -262,8 +240,7 @@ pub fn validate(
         if (!std.mem.eql(u8, row.values[0], "1")) return error.DependencyNotInItem;
     }
 
-    // A cycle is a property of the WHOLE board, not of this task alone, so the
-    // walk starts from the item's current graph.
+    // A cycle is a property of the WHOLE board, not of this task alone, so the walk starts from the item's current graph.
     const edges = listEdgesForItem(allocator, db, item_id) catch return error.QueryFailed;
     defer freeEdges(allocator, edges);
 
@@ -271,8 +248,7 @@ pub fn validate(
     if (cyclic) return error.DependencyCycle;
 }
 
-/// Normalize -> validate -> replace, in that order. The single entry point the
-/// HTTP handlers use.
+/// Normalize -> validate -> replace, in that order.
 pub fn validateAndReplace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -287,9 +263,7 @@ pub fn validateAndReplace(
     replace(allocator, db, task_id, ids) catch return error.QueryFailed;
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 const testing = std.testing;
 

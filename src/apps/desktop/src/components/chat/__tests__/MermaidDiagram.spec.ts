@@ -1,6 +1,4 @@
-/** Behavioural tests for <MermaidDiagram> — the transcript's `<mermaid>` block renderer. Mermaid
- * itself is mocked: jsdom has no layout, and the component's contract is "draw what mermaid
- * returned, or show the source", not "mermaid parses". */
+/** Behavioural tests for <MermaidDiagram> — the transcript's `<mermaid>` block renderer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -74,11 +72,9 @@ describe('MermaidDiagram', () => {
     expect(config.startOnLoad).toBe(false)
     expect(config.securityLevel).toBe('strict')
     expect(config.theme).toBe('base')
-    // Root-level: mermaid 12 deprecated `flowchart.htmlLabels`, and HTML labels
-    // would inherit the transcript's Tailwind preflight inside the diagram.
+    // Root-level: mermaid 12 deprecated `flowchart.htmlLabels`, and HTML labels would inherit the transcript's Tailwind preflight inside the diagram.
     expect(config.htmlLabels).toBe(false)
-    // A diagram mermaid cannot parse must REJECT, not draw its "Syntax error"
-    // graphic into the page (which is what appears at the bottom of the chat).
+    // A diagram mermaid cannot parse must REJECT, not draw its "Syntax error" graphic into the page (which is what appears at the bottom of the chat).
     expect(config.suppressErrorRendering).toBe(true)
     expect(config.themeVariables.darkMode).toBe(true)
     // Canvas is the card surface, not a white sheet on a dark transcript.
@@ -108,8 +104,7 @@ describe('MermaidDiagram', () => {
     await flushPromises()
     expect(renderMock).toHaveBeenCalledTimes(1)
 
-    // A parent re-render with the same text (a streaming sibling) must not
-    // re-render the diagram.
+    // A parent re-render with the same text (a streaming sibling) must not re-render the diagram.
     await wrapper.setProps({ source: SOURCE })
     await flushPromises()
     expect(renderMock).toHaveBeenCalledTimes(1)

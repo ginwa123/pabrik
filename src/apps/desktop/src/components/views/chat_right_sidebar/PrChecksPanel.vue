@@ -27,8 +27,7 @@ const data = ref<GitPrChecks | null>(null)
 /** Rendered, never swallowed into an empty list. */
 const error = ref<string | null>(null)
 const loading = ref(false)
-/** Which failing jobs are expanded. Failed jobs default open — the user
- *  opened this tab to read them. */
+/** Which failing jobs are expanded. */
 const expanded = ref(new Set<string>())
 
 const fail = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason))
@@ -53,8 +52,7 @@ async function load() {
   if (result.ok) {
     data.value = result.value
     error.value = null
-    // Default-expand the red jobs, but keep whatever the user already
-    // opened or closed for the jobs that are still there.
+    // Default-expand the red jobs, but keep whatever the user already opened or closed for the jobs that are still there.
     const next = new Set(expanded.value)
     for (const c of result.value.checks) {
       if (c.bucket === 'fail' || c.bucket === 'cancel') next.add(c.name)
@@ -115,8 +113,7 @@ let poll: number | undefined
 
 onMounted(() => {
   void load()
-  // CI moves on its own, so a stale red is a lie. `showPr` is false when
-  // this panel is not mounted, so the panel only polls while visible.
+  // CI moves on its own, so a stale red is a lie.
   poll = window.setInterval(() => void load(), 30000)
 })
 
@@ -124,9 +121,7 @@ onUnmounted(() => {
   if (poll !== undefined) window.clearInterval(poll)
 })
 
-// Reload on binding change (cwd / PR / provider): the expanded set belongs
-// to the previous PR, so it resets with the data. Prev-value guard on
-// update — same reset+load the watcher did.
+// Reload on binding change (cwd / PR / provider): the expanded set belongs to the previous PR, so it resets with the data.
 let prevChecksCwd = props.cwd
 let prevChecksPrUrl = props.prUrl
 let prevChecksProvider = props.prProvider

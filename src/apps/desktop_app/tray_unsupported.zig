@@ -1,6 +1,4 @@
-// src/apps/desktop_app/tray_unsupported.zig
-// Tray backend for platforms the desktop app has no tray implementation for
-// (currently Windows, which keeps its existing window chrome only).
+// src/apps/desktop_app/tray_unsupported.zig Tray backend for platforms the desktop app has no tray implementation for (currently Windows, which keeps its …
 
 const std = @import("std");
 const tray = @import("tray.zig");

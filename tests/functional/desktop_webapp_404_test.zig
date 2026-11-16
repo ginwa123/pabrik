@@ -1,6 +1,4 @@
-// Functional tests for the desktop `--static-dir` 404 bug. Zig port of
-// `tests/functional/desktop_webapp_404_test.py` (same test names, same
-// order).
+// Functional tests for the desktop `--static-dir` 404 bug.
 
 const std = @import("std");
 const testing = std.testing;
@@ -43,18 +41,14 @@ fn makeWebapp(root: []const u8) !void {
     }
 }
 
-/// True when `/` returns the SPA shell — the desktop's readiness test. Python
-/// `h_serves_app`: `GET /` accepting `(200, 404)`, then `status == 200 and
-/// "<" in body`.
+/// True when `/` returns the SPA shell — the desktop's readiness test.
 fn servesApp(h: *Harness) !bool {
     var r = try h.http(io, .GET, "/", .{ .expect = &.{ 200, 404 } });
     defer r.deinit();
     return r.status == 200 and std.mem.indexOf(u8, r.text(), "<") != null;
 }
 
-// The bug, at the wire level. A daemon whose --static-dir was removed keeps
-// answering /health with 200 while answering / with 404. That asymmetry is
-// why the old health-only attach probe let the desktop open a 404 window.
+// The bug, at the wire level.
 test "static_dir_404s_when_the_dir_is_deleted_health_stays_200" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -100,8 +94,7 @@ test "static_dir_404s_when_the_dir_is_deleted_health_stays_200" {
         defer r.deinit();
     }
 
-    // 2. Delete the directory out from under the running daemon. This
-    //    is exactly what the old desktop did at window close.
+    // 2.
     std.Io.Dir.cwd().deleteTree(io, webapp_dir) catch |err| {
         std.debug.print("could not delete the static dir: {s}\n", .{@errorName(err)});
         return err;
@@ -127,8 +120,7 @@ test "static_dir_404s_when_the_dir_is_deleted_health_stays_200" {
         defer r.deinit();
     }
 
-    // 4. Restoring the dir restores the app (proving the daemon itself
-    //    never died — only its static dir went away).
+    // 4.
     try makeWebapp(webapp_dir);
     {
         var r = try h.http(io, .GET, "/", .{});
@@ -140,9 +132,7 @@ test "static_dir_404s_when_the_dir_is_deleted_health_stays_200" {
     }
 }
 
-// The fix's invariant: reopening the app keeps serving it. Models two desktop
-// launches against the same persistent webapp dir — the dir is never deleted,
-// so the second launch's webview gets the app instead of `404 Not Found`.
+// The fix's invariant: reopening the app keeps serving it.
 test "persistent_static_dir_survives_a_restart" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -156,9 +146,7 @@ test "persistent_static_dir_survives_a_restart" {
 
     const args = [_][]const u8{ "--static-dir", webapp_dir };
 
-    // Each launch gets its OWN block so its `defer` tears the harness
-    // down before the next one boots — two live `pabrik` children would
-    // otherwise be racing for the same tempdir.
+    // Each launch gets its OWN block so its `defer` tears the harness down before the next one boots — two live `pabrik` children would otherwise be racing for the …
     {
         var first = try Harness.boot(io, gpa, .{
             .stub_llm_profile = true,
@@ -192,9 +180,7 @@ test "persistent_static_dir_survives_a_restart" {
     }
 }
 
-// A pabrik with no --static-dir looks identical to the broken daemon. Nothing
-// about `/health` distinguishes it, so an attach decision based on health
-// alone cannot tell a usable server from a useless one.
+// A pabrik with no --static-dir looks identical to the broken daemon.
 test "without_static_dir_health_is_200_but_root_is_404" {
     try harness.requirePabrikBin(io, gpa);
 

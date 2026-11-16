@@ -1,6 +1,4 @@
-//! The compaction envelope: the single JSON message that replaces a session's
-//! dropped history. Every field except `summary` is read straight from the DB,
-//! so a handoff needs no model call and cannot fail on one.
+//! The compaction envelope: the single JSON message that replaces a session's dropped history.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -44,8 +42,7 @@ pub const RecentActivity = struct {
     }
 };
 
-/// One read_file tool-result row. `path` is the value of the `<path>` tag in
-/// that row's own output envelope.
+/// One read_file tool-result row.
 pub const ReadFileTurn = struct {
     path: []const u8,
     raw_content: []const u8,
@@ -122,9 +119,7 @@ pub const TruncatedEntries = struct {
     note: []const u8,
 };
 
-/// Field order is the order the next agent reads them in, so `plan` sits
-/// immediately after the metadata: its own task state comes before any
-/// background material.
+/// Field order is the order the next agent reads them in, so `plan` sits immediately after the metadata: its own task state comes before any background material.
 pub const Payload = struct {
     format_version: u32,
     metadata: Metadata,
@@ -164,8 +159,7 @@ pub const Input = struct {
     summary: ?[]const u8 = null,
 };
 
-/// Serialize the handoff envelope. Returns a heap-allocated JSON document the
-/// caller owns.
+/// Serialize the handoff envelope.
 pub fn build(input: Input) ![]u8 {
     const allocator = input.allocator;
     var arena_state = std.heap.ArenaAllocator.init(allocator);
@@ -316,15 +310,12 @@ fn buildTruncatedEntries(arena: std.mem.Allocator, dropped_count: usize) !?Trunc
     };
 }
 
-/// Newest `dropped` messages win, so the tail — what the agent was doing when
-/// the handoff fired — is always the part that survives.
+/// Newest `dropped` messages win, so the tail — what the agent was doing when the handoff fired — is always the part that survives.
 fn truncate(value: []const u8, max_chars: usize) []const u8 {
     return if (value.len > max_chars) value[0..max_chars] else value;
 }
 
-/// A copy that is legal inside a JSON string: invalid UTF-8 and the control
-/// characters JSON forbids become U+FFFD. Half a multi-byte character in a
-/// preview would otherwise break the whole document for every reader.
+/// A copy that is legal inside a JSON string: invalid UTF-8 and the control characters JSON forbids become U+FFFD.
 fn safe(arena: std.mem.Allocator, raw: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     var index: usize = 0;
@@ -643,8 +634,7 @@ test "read_files lists each path once and resolves a relative path against the a
     const entries = parsed.payload().object.get("read_files").?.array;
     try testing.expectEqual(@as(usize, 2), entries.items.len);
     try testing.expectEqualStrings("src/a.zig", entries.items[0].object.get("path").?.string);
-    // `std.fs.path.join` uses the host separator, so assert the two facts that
-    // hold everywhere: it resolved under the worktree, not the session cwd.
+    // `std.fs.path.join` uses the host separator, so assert the two facts that hold everywhere: it resolved under the worktree, not the session cwd.
     const abs = entries.items[0].object.get("abs").?.string;
     try testing.expect(std.mem.startsWith(u8, abs, "WT"));
     try testing.expect(std.mem.endsWith(u8, abs, "src/a.zig"));

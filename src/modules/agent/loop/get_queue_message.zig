@@ -20,8 +20,7 @@ pub const GetQueueMessageInput = struct {
     session_id: []const u8,
 };
 
-/// Returns null if no messages queued
-/// Caller must free the returned slice
+/// Returns null if no messages queued Caller must free the returned slice
 pub fn getQueueMessages(
     obj: GetQueueMessageInput,
 ) !?std.ArrayList(QueuedMessage) {
@@ -83,8 +82,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     var db: database.Db = .{};
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
-    // The real schema also has `created_at DEFAULT (datetime('now'))`,
-    // which gives the ORDER BY something stable to sort on.
+    // The real schema also has `created_at DEFAULT (datetime('now'))`, which gives the ORDER BY something stable to sort on.
     try db.exec(alloc,
         \\CREATE TABLE session_queue_messages (
         \\    id TEXT PRIMARY KEY,
@@ -99,8 +97,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Insert one queued message at a fixed created_at so the ORDER BY is
-/// deterministic regardless of how fast the tests run.
+/// Insert one queued message at a fixed created_at so the ORDER BY is deterministic regardless of how fast the tests run.
 fn seedMsg(
     db: *database.Db,
     session: []const u8,
@@ -180,9 +177,7 @@ test "getQueueMessages returns multiple messages in created_at ASC order" {
 }
 
 test "getQueueMessages returns heap-owned slices that survive after the Rows cursor is gone" {
-    // The contract says "Caller must free the returned slice". Verify the
-    // returned message/image bytes are independent of the underlying row
-    // buffer — they must remain valid after the Rows cursor is deinitialized.
+    // The contract says "Caller must free the returned slice".
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
@@ -200,8 +195,7 @@ test "getQueueMessages returns heap-owned slices that survive after the Rows cur
         }
         msgs.deinit(testing.allocator);
     }
-    // The internal `rows` went out of scope at the end of the helper
-    // call — the messages we got back must still be readable now.
+    // The internal `rows` went out of scope at the end of the helper call — the messages we got back must still be readable now.
     try testing.expectEqualStrings("stable content", msgs.items[0].message);
     try testing.expectEqualStrings("stable image", msgs.items[0].image_url);
 }

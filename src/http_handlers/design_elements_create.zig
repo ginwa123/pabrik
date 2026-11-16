@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements`.
-//! Add a new design element to a design page.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,9 +25,7 @@ const CreateElementBody = struct {
     image_url: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each variant to an
-/// HTTP status code + message via two exhaustive switches (one for status,
-/// one for the user-facing message).
+/// Domain-level error set for `useCase`.
 pub const DesignElementCreateError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
@@ -37,20 +33,15 @@ pub const DesignElementCreateError = error{
     BadName,
     /// `type` field was not a valid `ElementType` enum variant.
     InvalidType,
-    /// `design_model.addElement` returned `ItemPathMissing`
-    /// (the parent workspace_item has no `path`).
+    /// `design_model.addElement` returned `ItemPathMissing` (the parent workspace_item has no `path`).
     ItemPathMissing,
-    /// `design_model.addElement` returned `PageNotFound`
-    /// (no row with that `page_id`).
+    /// `design_model.addElement` returned `PageNotFound` (no row with that `page_id`).
     PageNotFound,
-    /// `design_model.addElement` returned `FileWriteFailed` (mkdir
-    /// or atomic-rename failed).
+    /// `design_model.addElement` returned `FileWriteFailed` (mkdir or atomic-rename failed).
     FileWriteFailed,
     /// `addElement` failed for some other DB reason.
     DbError,
-    /// Insert succeeded but the new element wasn't visible in the
-    /// subsequent `getElement` (consistency violation — extremely
-    /// unlikely; surfaces as 500 so the caller can re-fetch).
+    /// Insert succeeded but the new element wasn't visible in the subsequent `getElement` (consistency violation — extremely unlikely; surfaces as 500 so the caller …
     ElementNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
@@ -59,8 +50,7 @@ pub const DesignElementCreateError = error{
 /// Inputs to the create-element use-case.
 pub const CreateElementInput = struct {
     page_id: []const u8,
-    /// workspace_id is for the SSE payload (the frontend filters
-    /// events by it). Empty is fine.
+    /// workspace_id is for the SSE payload (the frontend filters events by it).
     workspace_id: []const u8,
     name: []const u8,
     elem_type: design_model.ElementType,
@@ -84,9 +74,7 @@ pub const CreateElementOutput = struct {
     element: design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a design element. Steps: 1. Validate `page_id` and `name`. 2.
 fn useCase(
@@ -134,8 +122,7 @@ fn useCase(
         .action = "created",
         .workspace_id = input.workspace_id,
         .item_id = "", // The HTTP handler doesn't have item_id; SSE
-        //                payload contract allows empty. (The
-        //                frontend refetches by workspace_id.)
+        // payload contract allows empty.
         .page_id = input.page_id,
         .element_id = new_id,
     }) catch {};
@@ -143,13 +130,9 @@ fn useCase(
     return .{ .element = element };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn designElementsCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -201,7 +184,6 @@ pub fn designElementsCreateHandler(
     }
 
     // Translate the wire `type` string into the ElementType enum.
-    // `std.meta.stringToEnum` returns `?T` — null on no match.
     const elem_type = std.meta.stringToEnum(design_model.ElementType, parsed.type) orelse {
         return res.jsonResponse(.{
             .status_code = 400,

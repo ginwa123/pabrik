@@ -1,5 +1,4 @@
-/** Tests for workspacesStore.runAgentOnNewTask — the imageUrls path, which sends direct base64
- * rather than upload-then-URL. */
+/** Tests for workspacesStore.runAgentOnNewTask — the imageUrls path, which sends direct base64 rather than upload-then-URL. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -17,9 +16,7 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
   })
 
   it('forwards imageUrls (base64 data URLs) to api.sendChatMessage when provided', async () => {
-    // Real-world shape: the host converts each pendingFile.file to a
-    // `data:<mime>;base64,<payload>` URL via FileReader.readAsDataURL,
-    // collects them in upload order, and passes the array.
+    // Real-world shape: the host converts each pendingFile.file to a `data:<mime>;base64,<payload>` URL via FileReader.readAsDataURL, collects them in upload order …
     const dataUrl1 =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
     const dataUrl2 =
@@ -45,9 +42,7 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
   })
 
   it('defaults imageUrls to undefined when not provided (back-compat)', async () => {
-    // The existing runAgentOnNewTask contract passes `undefined` for imageUrls. After the fix,
-    // callers that don't supply imageUrls should still work — the store should forward undefined to
-    // the API, not an empty array (the API contract distinguishes).
+    // The existing runAgentOnNewTask contract passes `undefined` for imageUrls.
     const sendSpy = vi
       .spyOn(api, 'sendChatMessage')
       .mockResolvedValue({ status: 'send' })
@@ -68,9 +63,7 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
   })
 
   it('forwards empty imageUrls array as-is (not coerced to undefined)', async () => {
-    // Edge case: caller explicitly passes []. The API may treat []
-    // differently from undefined (zero attachments vs "no attachment
-    // field"). Preserve the caller's intent.
+    // Edge case: caller explicitly passes [].
     const sendSpy = vi
       .spyOn(api, 'sendChatMessage')
       .mockResolvedValue({ status: 'send' })

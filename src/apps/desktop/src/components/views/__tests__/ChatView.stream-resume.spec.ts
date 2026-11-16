@@ -1,6 +1,4 @@
-/** Tests for ChatView's stream-resume-on-reselect behavior. 2026-09-02 stream-resume-on-reselect
- * (task_1787673548905_0) — when the user closes/re-selects a chat session mid-stream, ChatView
- * drops its `streaming-*` placeholder and resets `streamingContent`. */
+/** Tests for ChatView's stream-resume-on-reselect behavior. 2026-09-02 stream-resume-on-reselect (task_1787673548905_0) — when the user closes/re-selects a chat … */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -32,23 +30,19 @@ function makeHandler(_snapshot: StreamSnapshot) {
   const messages = ref<StreamMsg[]>([])
   let snapshotFetched = false
 
-  // Mirrors the planned ChatView resumeStreamFromSnapshot() — called
-  // after loadChatHistory() and BEFORE connectSse() on mount.
+  // Mirrors the planned ChatView resumeStreamFromSnapshot() — called after loadChatHistory() and BEFORE connectSse() on mount.
   const resumeStreamFromSnapshot = async (
     fetchSnapshot: (sid: string) => Promise<StreamSnapshot>,
   ) => {
     const snap = await fetchSnapshot(SID)
     snapshotFetched = true
     if (!snap.active || !snap.content) return
-    // Seed the buffer + recreate the streaming-* placeholder so the
-    // next chunk event APPENDS to the recovered text instead of
-    // starting from an empty string.
+    // Seed the buffer + recreate the streaming-* placeholder so the next chunk event APPENDS to the recovered text instead of starting from an empty string.
     streamingContent.value = snap.content
     updateStreamingMessage()
   }
 
-  // Mirrors ChatView.vue connectSse() bus.on('llm') handler — the
-  // relevant branches only.
+  // Mirrors ChatView.vue connectSse() bus.on('llm') handler — the relevant branches only.
   const onEvent = (event: SseEventLike) => {
     if (event.session_id !== SID) return
 

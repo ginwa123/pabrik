@@ -12,8 +12,7 @@ pub const Migration096CreateSessionSkillEvents = struct {
     pub const name = "create_session_skill_events";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // `event` is 'loaded' | 'listed' | 'created' | 'edited' | 'removed';
-        // `source` is the tool name that produced the row.
+        // `event` is 'loaded' | 'listed' | 'created' | 'edited' | 'removed'; `source` is the tool name that produced the row.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS session_skill_events (
             \\    id TEXT PRIMARY KEY,
@@ -28,8 +27,7 @@ pub const Migration096CreateSessionSkillEvents = struct {
             \\)
         , &[_][]const u8{});
 
-        // The eval reads one session's events; the per-skill timeline reads by
-        // name across sessions.
+        // The eval reads one session's events; the per-skill timeline reads by name across sessions.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_session_skill_events_session ON session_skill_events(session_id, created_at)",
             &[_][]const u8{});

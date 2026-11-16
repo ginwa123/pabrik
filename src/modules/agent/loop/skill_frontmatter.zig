@@ -1,19 +1,14 @@
-//! THE parser/renderer of a skill body's `---` block, shared by the importer,
-//! the write tools and the `skill_metadata` projection. Bodies stay byte-exact:
-//! a `skill_eval` identity is sha256(content).
+//! THE parser/renderer of a skill body's `---` block, shared by the importer, the write tools and the `skill_metadata` projection.
 
 const std = @import("std");
 
-/// Longest accepted frontmatter key. A key becomes a `skill_metadata.key`
-/// column and a JSON field name, so a paragraph with a colon in it is not
-/// one.
+/// Longest accepted frontmatter key.
 pub const MAX_KEY_BYTES: usize = 64;
 
 /// The keys `skills` keeps in typed columns rather than in `skill_metadata`.
 pub const PROMOTED_KEYS = [_][]const u8{ "name", "description", "is_can_auto_improve" };
 
-/// True when `key` has a dedicated column, i.e. must not also become a
-/// metadata row (one fact, one home).
+/// True when `key` has a dedicated column, i.e. must not also become a metadata row (one fact, one home).
 pub fn isPromoted(key: []const u8) bool {
     for (PROMOTED_KEYS) |promoted| {
         if (std.mem.eql(u8, key, promoted)) return true;
@@ -21,13 +16,11 @@ pub fn isPromoted(key: []const u8) bool {
     return false;
 }
 
-/// The promoted keys, typed. Owned strings, except an absent one, which is
-/// the empty literal.
+/// The promoted keys, typed.
 pub const Header = struct {
     name: []const u8 = "",
     description: []const u8 = "",
-    /// Only an explicit truthy/falsey token counts; anything else leaves
-    /// the column's default in place.
+    /// Only an explicit truthy/falsey token counts; anything else leaves the column's default in place.
     is_can_auto_improve: ?bool = null,
 };
 
@@ -37,13 +30,11 @@ pub const Pair = struct {
     value: []const u8,
 };
 
-/// A parsed body. `header` and `pairs` are owned; `body` points INTO the
-/// content that was parsed, so the caller keeps that buffer alive.
+/// A parsed body.
 pub const Parsed = struct {
     header: Header = .{},
     pairs: []const Pair = &.{},
-    /// Everything after the closing fence. The whole input when
-    /// `has_fence` is false.
+    /// Everything after the closing fence.
     body: []const u8 = "",
     has_fence: bool = false,
 
@@ -71,9 +62,7 @@ const Fence = struct {
     body: []const u8,
 };
 
-/// Split a leading `---` … `---` fence off `content`. Null when the input
-/// does not OPEN with a fence line or the fence is never closed — a `---`
-/// in the middle of a body is prose, not a delimiter.
+/// Split a leading `---` … `---` fence off `content`.
 fn splitFence(content: []const u8) ?Fence {
     if (!std.mem.startsWith(u8, content, "---")) return null;
     var i: usize = 3;
@@ -99,9 +88,7 @@ fn splitFence(content: []const u8) ?Fence {
     return null;
 }
 
-/// True when `key` can be a metadata key: a single token, no colon, no
-/// spaces. Shared so the parser and the metadata tool cannot disagree about
-/// what a key is.
+/// True when `key` can be a metadata key: a single token, no colon, no spaces.
 pub fn isValidKey(key: []const u8) bool {
     if (key.len == 0 or key.len > MAX_KEY_BYTES) return false;
     if (!std.ascii.isAlphanumeric(key[0]) and key[0] != '_') return false;
@@ -115,8 +102,7 @@ fn trimLine(line: []const u8) []const u8 {
     return std.mem.trim(u8, line, " \t\r");
 }
 
-/// One layer of matching quotes off, with the escapes a double-quoted YAML
-/// string can carry. The result is owned.
+/// One layer of matching quotes off, with the escapes a double-quoted YAML string can carry.
 fn valueAlloc(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, raw, " \t\r");
     if (trimmed.len == 0) return &.{};
@@ -167,9 +153,7 @@ fn freePairs(allocator: std.mem.Allocator, pairs: []const Pair) void {
     if (pairs.len > 0) allocator.free(pairs);
 }
 
-/// Parse `content`'s frontmatter. Never fails on malformed input: a line
-/// that is not `key: value` is not metadata, and an unusable body yields
-/// `has_fence = false` so the caller falls back to the whole input as body.
+/// Parse `content`'s frontmatter.
 pub fn parse(allocator: std.mem.Allocator, content: []const u8) error{OutOfMemory}!Parsed {
     const fence = splitFence(content) orelse return .{ .body = content };
 
@@ -286,9 +270,7 @@ fn appendQuoted(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []
     try out.append(allocator, '"');
 }
 
-/// A whole skill body: the fence rebuilt from `header` + `pairs`, then
-/// `body` verbatim. Promoted keys are skipped — including
-/// `is_can_auto_improve`, which is the human's lock, not a body field.
+/// A whole skill body: the fence rebuilt from `header` + `pairs`, then `body` verbatim.
 pub fn render(
     allocator: std.mem.Allocator,
     header: Header,
@@ -328,9 +310,7 @@ pub fn render(
     return out.toOwnedSlice(allocator);
 }
 
-// ============================================================================
 // skill_frontmatter — inline tests
-// ============================================================================
 
 const testing = std.testing;
 

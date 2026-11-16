@@ -1,22 +1,17 @@
-//! Agent-callable tool: `process` — look at, or stop, the processes this
-//! session started with the `command` tool's detached modes. `command`
-//! requires `command`, `cwd` and `timeout`.
+//! Agent-callable tool: `process` — look at, or stop, the processes this session started with the `command` tool's detached modes.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 
-/// The three actions, as a closed set. Kept as a constant so the schema text and
-/// the exec's parse cannot disagree about what is legal.
+/// The three actions, as a closed set.
 pub const ACTIONS: []const []const u8 = &.{ "read", "stop", "list" };
 
 pub const ReadAction = "read";
 pub const StopAction = "stop";
 pub const ListAction = "list";
 
-/// Default cap for one `read`, in bytes. 16 KiB is roughly 200 lines of a dev
-/// server's chatter — enough to see a compile error and its stack, small enough
-/// that a chatty process cannot blow up the context window in one call.
+/// Default cap for one `read`, in bytes. 16 KiB is roughly 200 lines of a dev server's chatter — enough to see a compile error and its stack, small enough that a …
 pub const DEFAULT_MAX_BYTES: usize = 16 * 1024;
 
 pub const process_tool_system_prompt =
@@ -96,9 +91,7 @@ pub const process_tool = AgentTool{
     },
 };
 
-// ============================================================================
 // Inline tests — schema shape
-// ============================================================================
 
 const testing = std.testing;
 
@@ -106,8 +99,7 @@ test "process_tool schema: name and the one required param" {
     try testing.expectEqualStrings("process", process_tool.function.name);
     const params = process_tool.function.parameters;
     try testing.expectEqualStrings("object", params.type);
-    // `action` alone: a `pid` required here would break `list`, and every other
-    // field is action-specific. One required field is the whole contract.
+    // `action` alone: a `pid` required here would break `list`, and every other field is action-specific.
     try testing.expectEqual(@as(usize, 1), params.required.len);
     try testing.expectEqualStrings("action", params.required[0]);
 }
@@ -119,8 +111,7 @@ test "process_tool schema: exactly the three documented actions, and pid/max_byt
     for (process_tool.function.parameters.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "action")) {
             found_action = true;
-            // Each action must be named in the description, or the model is
-            // guessing at a string enum the schema cannot express.
+            // Each action must be named in the description, or the model is guessing at a string enum the schema cannot express.
             for (ACTIONS) |a| {
                 try testing.expect(std.mem.indexOf(u8, prop.description, a) != null);
             }
@@ -132,17 +123,14 @@ test "process_tool schema: exactly the three documented actions, and pid/max_byt
 }
 
 test "process_tool schema: the description states the two facts the model will get wrong" {
-    // 1. An empty read is an ANSWER. Without this, a model reads nothing, assumes
-    //    the worst, and restarts a healthy dev server.
+    // 1.
     try testing.expect(std.mem.indexOf(u8, process_tool.function.description, "nothing new") != null);
-    // 2. `service` is silent. This is the load-bearing difference between the two
-    //    detached modes, and the only reason `kind` is on the wire at all.
+    // 2.
     try testing.expect(std.mem.indexOf(u8, process_tool.function.description, "SILENT") != null);
     try testing.expect(std.mem.indexOf(u8, process_tool.function.description, "tree kill") != null);
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -160,17 +148,14 @@ const error_explain = @import("tools_error_explain.zig");
 /// Cap on ONE `read`. Matches the tool schema's documented default.
 pub const default_max_bytes: usize = process_tool_mod.DEFAULT_MAX_BYTES;
 
-/// Parsed `process` arguments. Every field optional: which ones are required
-/// depends on `action`, so the check belongs with the action, not here.
+/// Parsed `process` arguments.
 const Args = struct {
     action: []const u8 = "",
     pid: ?u32 = null,
     max_bytes: ?usize = null,
 };
 
-/// Lenient parse — same posture as the `command` tool's: the model's JSON is
-/// coerced per field where that is unambiguous (a numeric string, a trailing
-/// XML close tag), and a real mismatch is reported as a field error rather
+/// Lenient parse — same posture as the `command` tool's: the model's JSON is coerced per field where that is unambiguous (a numeric string, a trailing XML close …
 fn parseArgs(allocator: std.mem.Allocator, arguments: []const u8) !union(enum) {
     ok: struct { args: Args, owned_action: ?[]u8 },
     bad: []const u8, // error prose, caller-owned
@@ -208,9 +193,7 @@ fn parseArgs(allocator: std.mem.Allocator, arguments: []const u8) !union(enum) {
         out.pid = switch (v) {
             .integer => |i| if (i > 0) @as(u32, @intCast(i)) else null,
             .float => |f| if (f > 0) @as(u32, @intFromFloat(f)) else null,
-            // A numeric string is the shape the model most often sends; a
-            // trailing `</pid>` is the XML leakage the `command` parser also
-            // cleans up.
+            // A numeric string is the shape the model most often sends; a trailing `</pid>` is the XML leakage the `command` parser also cleans up.
             .string => |s| blk: {
                 const cleaned = std.mem.trim(u8, s, " \t\"");
                 const tag = std.mem.indexOf(u8, cleaned, "</") orelse cleaned.len;
@@ -231,8 +214,7 @@ fn parseArgs(allocator: std.mem.Allocator, arguments: []const u8) !union(enum) {
     return .{ .ok = .{ .args = out, .owned_action = owned_action } };
 }
 
-/// Run one `process` call and return the INNER JSON payload (the caller wraps
-/// it in the tool envelope).
+/// Run one `process` call and return the INNER JSON payload (the caller wraps it in the tool envelope).
 pub fn executeProcess(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -248,8 +230,7 @@ pub fn executeProcess(
         },
         .ok => |ok| blk: {
             if (ok.owned_action) |a| {
-                // The action slice is handed to every branch below; freeing it
-                // is the caller's job at the one return point.
+                // The action slice is handed to every branch below; freeing it is the caller's job at the one return point.
                 break :blk a;
             }
             break :blk "";
@@ -285,17 +266,14 @@ pub fn executeProcess(
 }
 
 fn buildError(allocator: std.mem.Allocator, message: []const u8) ![]const u8 {
-    // `error` is a keyword, so the field needs the quoted form. The JSON key
-    // and the envelope's own `error` field then read the same to the model.
+    // `error` is a keyword, so the field needs the quoted form.
     return std.json.Stringify.valueAlloc(allocator, .{
         .ok = false,
         .@"error" = message,
     }, .{});
 }
 
-/// The one-row wire shape. Field names are the model's vocabulary, not the
-/// internal ones: `running` is liveness as of THIS call, `status` is the stored
-/// value, which can lag (the docs say so).
+/// The one-row wire shape.
 const Entry = struct {
     pid: u32,
     command: []const u8,
@@ -303,8 +281,7 @@ const Entry = struct {
     status: []const u8,
     running: bool,
     log_path: []const u8,
-    /// Set for a job that ran in a workspace VM, so the model can tell a guest
-    /// pid from a host one. Omitted entirely for a host job.
+    /// Set for a job that ran in a workspace VM, so the model can tell a guest pid from a host one.
     vm_id: ?[]const u8 = null,
 };
 
@@ -317,8 +294,7 @@ fn entryFor(allocator: std.mem.Allocator, p: background_process.ProcessInfo) !En
         .running = if (p.vm_id.len > 0)
             guest_jobs.probe(allocator, guestJobOf(p), null).verdict == .alive
         else
-            // `isAlive`, not a plain probe: it reaps first, so a process that
-            // just exited is not reported as running.
+            // `isAlive`, not a plain probe: it reaps first, so a process that just exited is not reported as running.
             background_process.isAlive(p.pid),
         .log_path = p.log_path,
         .vm_id = if (p.vm_id.len > 0) p.vm_id else null,
@@ -374,9 +350,7 @@ fn readProcess(
     const delta = try background_process.readDelta(allocator, io, db, session_id, pid, row.log_path, row.last_read_offset, cap);
     defer delta.free(allocator);
 
-    // A log with control bytes in it is not representable in a JSON string, and
-    // a dev server's colour codes are exactly that. Same sanitizer the `command`
-    // tool's payload goes through.
+    // A log with control bytes in it is not representable in a JSON string, and a dev server's colour codes are exactly that.
     const clean = try @import("helpers").sanitize_control_chars(allocator, delta.bytes);
     defer allocator.free(clean);
 
@@ -387,8 +361,7 @@ fn readProcess(
         .kind = row.kind,
         .status = row.status,
         .running = background_process.isAlive(pid),
-        // The delta, verbatim. Empty when nothing is new — which is an answer,
-        // not a failure, and the schema says so.
+        // The delta, verbatim.
         .output = clean,
         .new_bytes = clean.len,
         .total_bytes = delta.total_bytes,
@@ -397,8 +370,7 @@ fn readProcess(
     }, .{});
 }
 
-/// `read` for a job that ran in a workspace VM: the log is inside the VM, so
-/// the bytes come through the manager and the cursor is persisted here.
+/// `read` for a job that ran in a workspace VM: the log is inside the VM, so the bytes come through the manager and the cursor is persisted here.
 fn readGuestProcess(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -442,8 +414,7 @@ fn readGuestProcess(
     }, .{});
 }
 
-/// A guest read that fails needs a sentence the model can act on, not an error
-/// name — and the reason is never "your pid is wrong".
+/// A guest read that fails needs a sentence the model can act on, not an error name — and the reason is never "your pid is wrong".
 fn guestReadFailure(err: guest_jobs.Error) []const u8 {
     return switch (err) {
         error.OutOfMemory => "there was not enough memory to read this job's log. Retry with a smaller `max_bytes`.",
@@ -476,9 +447,7 @@ fn stopProcess(
         guest_jobs.probe(allocator, guestJobOf(row), null).verdict == .alive
     else
         background_process.isAlive(pid);
-    // The TREE, not the pid: a dev server forks its workers, and killing only
-    // the parent leaves them holding the port. A guest job's tree lives in the
-    // VM, so the kill has to happen there.
+    // The TREE, not the pid: a dev server forks its workers, and killing only the parent leaves them holding the port.
     const signalled = if (guest)
         guest_jobs.stop(allocator, guestJobOf(row))
     else
@@ -492,9 +461,7 @@ fn stopProcess(
         .kind = row.kind,
         .vm_id = if (guest) row.vm_id else null,
         .signalled = signalled,
-        // Reported so the model can tell "I stopped it" from "it was already
-        // gone", which are different situations for a `service` it expected to
-        // be running.
+        // Reported so the model can tell "I stopped it" from "it was already gone", which are different situations for a `service` it expected to be running.
         .was_running = was_alive,
     }, .{ .emit_null_optional_fields = false });
 }

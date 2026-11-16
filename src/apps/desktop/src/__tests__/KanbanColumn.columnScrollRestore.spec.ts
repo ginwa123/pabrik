@@ -1,5 +1,4 @@
-/** KanbanColumn — per-column vertical scroll survives an unmount/remount. The user-visible bug this
- * pins: Clicking a kanban task card opens the chat (its own tab). */
+/** KanbanColumn — per-column vertical scroll survives an unmount/remount. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref, type Ref } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -34,8 +33,7 @@ beforeAll(() => {
     configurable: true,
   })
 
-  // jsdom does NOT provide requestAnimationFrame — polyfill it via
-  // setTimeout(0) so the composable's `await rAF × 2` resolves.
+  // jsdom does NOT provide requestAnimationFrame — polyfill it via setTimeout(0) so the composable's `await rAF × 2` resolves.
   if (typeof globalThis.requestAnimationFrame !== 'function') {
     globalThis.requestAnimationFrame = (cb: (t: number) => void): number =>
       setTimeout(() => cb(performance.now()), 0) as unknown as number
@@ -45,9 +43,7 @@ beforeAll(() => {
   }
 })
 
-/**  * Stand-in for <VirtualScroller> that exposes a real, geometry-controllable `containerRef`. It
- * deliberately does NOT render the default slot: the cards are irrelevant here and rendering them
- * would drag in KanbanCard's whole prop surface for no benefit. */
+/** Stand-in for <VirtualScroller> that exposes a real, geometry-controllable `containerRef`. */
 const ScrollerStub = defineComponent({
   name: 'VirtualScroller',
   setup(_props, { expose }) {
@@ -185,8 +181,7 @@ describe('KanbanColumn — per-column vertical scroll persistence', () => {
     container.dispatchEvent(new Event('scroll'))
     container.dispatchEvent(new Event('scrollend'))
 
-    // Exactly one key, named for this board's column — a key that could only
-    // ever describe one board's one column.
+    // Exactly one key, named for this board's column — a key that could only ever describe one board's one column.
     expect(localStorage.getItem(KEY)).toBe('500')
     expect(localStorage.getItem('kanban-col-scroll-item_2:col_a')).toBeNull()
     expect(localStorage.getItem(`kanban-col-scroll-${ITEM_ID}:col_b`)).toBeNull()

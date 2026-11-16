@@ -1,5 +1,4 @@
-// Functional tests for default agent tools seeded at creation. Zig port of
-// `tests/functional/agent_tools_defaults_test.py` (same test names).
+// Functional tests for default agent tools seeded at creation.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Expected tool lists — mirrors tests/functional/default_tools.py
-// ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire
-/// order of `GET /api/agents/:agent_id/tools`.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_skill",
     "command",
@@ -53,15 +49,13 @@ const EXPECTED_DEFAULTS = [_][]const u8{
     "write_file",
 };
 
-/// Mirrors `DEFAULT_KANBAN_TOOLS` — the two tools seeded on top for a
-/// kanban item, and nothing else.
+/// Mirrors `DEFAULT_KANBAN_TOOLS` — the two tools seeded on top for a kanban item, and nothing else.
 const DEFAULT_KANBAN_TOOLS = [_][]const u8{
     "kanban_list",
     "kanban_move_task",
 };
 
-/// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is
-/// born with: the agent defaults PLUS the kanban pair, sorted ASC.
+/// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is born with: the agent defaults PLUS the kanban pair, sorted ASC.
 const EXPECTED_KANBAN_DEFAULTS = [_][]const u8{
     "add_skill",
     "command",
@@ -138,9 +132,7 @@ comptime {
     }
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn boot() !Harness {
     return Harness.boot(io, gpa, .{});
@@ -158,7 +150,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST .../items/{agent,kanban}` answers `{"item": {"id": ...}}`.
-/// Returns an owned copy of that id.
 fn createdItemId(doc: *const harness.Json) ![]u8 {
     const item = doc.object("item") orelse {
         std.debug.print("create response has no `item` object\n", .{});
@@ -198,9 +189,7 @@ fn printExpected(list: []const []const u8) void {
     std.debug.print("]\n", .{});
 }
 
-/// Exact-equality against the wire's `tools` array. The Python original
-/// compared the whole list, and the whole list IS the contract, so a
-/// length mismatch, an order mismatch, and a name mismatch all fail.
+/// Exact-equality against the wire's `tools` array.
 fn expectToolList(doc: *const harness.Json, expected: []const []const u8, what: []const u8) !void {
     const arr = doc.array("tools") orelse {
         std.debug.print("{s}: response has no `tools` array\n", .{what});
@@ -227,9 +216,7 @@ fn expectToolList(doc: *const harness.Json, expected: []const []const u8, what: 
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // A freshly-created agent is born with DEFAULT_AGENT_TOOLS, exactly.
 test "agent_create_seeds_default_tools" {
@@ -242,9 +229,7 @@ test "agent_create_seeds_default_tools" {
     const ws_id = try createWorkspace(&h, "defaults-ws");
     defer gpa.free(ws_id);
 
-    // Derived from `h.temp_dir` rather than a literal "/tmp/..." — the
-    // handler rejects a non-absolute path with 400, and "/tmp/x" is
-    // NOT absolute on Windows.
+    // Derived from `h.temp_dir` rather than a literal "/tmp/..." — the handler rejects a non-absolute path with 400, and "/tmp/x" is NOT absolute on Windows.
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"defaults-agent"});
     defer gpa.free(agent_path);
 
@@ -275,8 +260,7 @@ test "agent_create_seeds_default_tools" {
     try expectToolList(&doc, &EXPECTED_DEFAULTS, "fresh agent");
 }
 
-// A freshly-created kanban seeds the agent defaults PLUS the kanban pair,
-// and its `agent_kanban` bundle is configured (200, not 404).
+// A freshly-created kanban seeds the agent defaults PLUS the kanban pair, and its `agent_kanban` bundle is configured (200, not 404).
 test "kanban_create_seeds_agent_kanban_and_tools" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -309,8 +293,7 @@ test "kanban_create_seeds_agent_kanban_and_tools" {
     defer doc.deinit();
     try expectToolList(&doc, &EXPECTED_KANBAN_DEFAULTS, "fresh kanban");
 
-    // The bundle must be CONFIGURED (200), not the 404 NotConfigured
-    // a mis-wired mirror would produce, and it carries the same list.
+    // The bundle must be CONFIGURED (200), not the 404 NotConfigured a mis-wired mirror would produce, and it carries the same list.
     const bundle_path = try std.fmt.allocPrint(
         gpa,
         "/api/workspaces/{s}/items/{s}/agent_kanban",
@@ -325,8 +308,7 @@ test "kanban_create_seeds_agent_kanban_and_tools" {
     try expectToolList(&bdoc, &EXPECTED_KANBAN_DEFAULTS, "fresh kanban bundle");
 }
 
-// The seed runs ONCE at creation: deleting every default leaves `[]`
-// and a later read does NOT backfill.
+// The seed runs ONCE at creation: deleting every default leaves `[]` and a later read does NOT backfill.
 test "delete_all_tools_leaves_empty_no_backfill" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();

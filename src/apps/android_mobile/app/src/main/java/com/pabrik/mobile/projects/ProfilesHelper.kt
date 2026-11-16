@@ -1,7 +1,6 @@
 package com.pabrik.mobile.projects
 
-// Profiles (LLM config) helpers. Pure logic so they are unit-testable
-// without a ViewModel or a network.
+// Profiles (LLM config) helpers.
 object ProfilesHelper {
 
     fun isValidName(name: String): Boolean = name.trim().isNotEmpty()

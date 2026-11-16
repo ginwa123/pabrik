@@ -1,5 +1,4 @@
-// Functional wire tests for GET /api/git/pr/checks. Zig port of
-// `tests/functional/git_pr_checks_test.py` (same test names, same order).
+// Functional wire tests for GET /api/git/pr/checks.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// The suite's own scratch directory (the git repo + every fake bin),
-/// outside the harness's tempdir namespace.
+/// The suite's own scratch directory (the git repo + every fake bin), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -21,9 +17,7 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered
-    /// first — a defer that freed the slice before the cleaner read it is a
-    /// use-after-free that happens to read as a plausible path.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered first — a defer that freed the slice before the cleaner read it is a use-after-free that …
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -34,8 +28,7 @@ const Scratch = struct {
     }
 };
 
-/// Python's `_git`: `git` in `cwd` with the fixture identity baked in, so the
-/// fixture never depends on the machine's global git config.
+/// Python's `_git`: `git` in `cwd` with the fixture identity baked in, so the fixture never depends on the machine's global git config.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -63,9 +56,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// Python's `repo` fixture: `git init --initial-branch=main` plus one
-/// committed file, so the directory is a real worktree rather than a
-/// bare `.git`.
+/// Python's `repo` fixture: `git init --initial-branch=main` plus one committed file, so the directory is a real worktree rather than a bare `.git`.
 fn buildRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-checks-proj"});
     errdefer gpa.free(cwd);
@@ -91,15 +82,11 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     var f = try std.Io.Dir.cwd().createFile(io, path, .{});
     defer f.close(io);
     try f.writeStreamingAll(io, contents);
-    // `setFilePermissions(..., .executable_file, ...)` is the portable
-    // spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also makes the
-    // file READABLE, which OR-ing the exec bit into a fresh file's mode does
+    // `setFilePermissions(..., .executable_file, ...)` is the portable spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also makes the file READABLE, which …
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Put an executable `gh` stub in its OWN bindir inside `s`, so prepending
-/// that directory to PATH cannot shadow another command the server needs
-/// (`git` in particular — the repo gate runs it).
+/// Put an executable `gh` stub in its OWN bindir inside `s`, so prepending that directory to PATH cannot shadow another command the server needs (`git` in …
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -112,8 +99,7 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -160,38 +146,31 @@ const PathShadow = struct {
     }
 };
 
-// ============================================================================
 // The fake `gh` payloads
-// ============================================================================
 
 /// `json.dumps(CHECKS_ROWS)` — two rows, one FAILURE and one SUCCESS.
 const CHECKS_ROWS_JSON =
     \\[{"bucket": "fail", "name": "backend (Windows X64) / build", "state": "FAILURE", "link": "https://github.com/acme/app/actions/runs/37146940187/job/111273396968", "workflow": "ci", "startedAt": "2026-10-03T19:14:22Z", "completedAt": "2026-10-03T19:31:22Z"}, {"bucket": "pass", "name": "path filter", "state": "SUCCESS", "link": "https://github.com/acme/app/actions/runs/37146940187/job/111272741668", "workflow": "ci", "startedAt": "2026-10-03T19:11:04Z", "completedAt": "2026-10-03T19:11:11Z"}]
 ;
 
-/// `json.dumps(RUN_JOBS)` — the failing job's STEPS, plus the passing
-/// job's empty step list.
+/// `json.dumps(RUN_JOBS)` — the failing job's STEPS, plus the passing job's empty step list.
 const RUN_JOBS_JSON =
     \\{"jobs": [{"databaseId": 111273396968, "name": "backend (Windows X64) / build", "conclusion": "failure", "steps": [{"name": "Set up job", "number": 1, "conclusion": "success", "status": "completed", "startedAt": "2026-10-03T19:14:23Z", "completedAt": "2026-10-03T19:14:24Z"}, {"name": "zig build test", "number": 3, "conclusion": "failure", "status": "completed", "startedAt": "2026-10-03T19:15:00Z", "completedAt": "2026-10-03T19:31:22Z"}]}, {"databaseId": 111272741668, "name": "path filter", "conclusion": "success", "steps": []}]}
 ;
 
-/// `json.dumps(rows)` for `test_pending_checks_exit_code_8_is_still_200`:
-/// one IN_PROGRESS row whose `completedAt` is git's zero time.
+/// `json.dumps(rows)` for `test_pending_checks_exit_code_8_is_still_200`
 const PENDING_ROWS_JSON =
     \\[{"bucket": "pending", "name": "backend (Linux X64) / build", "state": "IN_PROGRESS", "link": "https://github.com/acme/app/actions/runs/1/job/2", "workflow": "ci", "startedAt": "2026-10-03T19:14:22Z", "completedAt": "0001-01-01T00:00:00Z"}]
 ;
 
-/// `gh pr checks` exiting 1 with "no checks reported" on stderr — what a
-/// PR that never ran CI looks like.
+/// `gh pr checks` exiting 1 with "no checks reported" on stderr — what a PR that never ran CI looks like.
 const GH_NO_CHECKS_SCRIPT =
     \\#!/bin/sh
     \\echo "no checks reported on the 'main' branch" >&2
     \\exit 1
 ;
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // 1. Missing path → 400 (the route is registered and the validator runs).
 test "missing_path_is_400" {
@@ -207,8 +186,7 @@ test "missing_path_is_400" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // `assert "error" in r` — an ABSENT key must fail, so `orelse`
-    // rather than a defaulted empty string.
+    // `assert "error" in r` — an ABSENT key must fail, so `orelse` rather than a defaulted empty string.
     if (doc.get("error") == null) {
         std.debug.print("400 body carries no `error` field: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -253,8 +231,7 @@ test "non_repo_is_404" {
     var s = try Scratch.init();
     defer s.deinit();
 
-    // Python: `plain = tmp_path / "plain"` — a plain directory inside
-    // the suite's own scratch dir, never a git worktree.
+    // Python: `plain = tmp_path / "plain"` — a plain directory inside the suite's own scratch dir, never a git worktree.
     const plain = try s.path(&.{"plain"});
     defer gpa.free(plain);
     try std.Io.Dir.cwd().createDirPath(io, plain);
@@ -281,9 +258,7 @@ test "non_repo_is_404" {
     }
 }
 
-// 4. gitlab → 422, NOT a 200 with zero checks. A CI panel that answers
-// "0 checks" for an unsupported forge reads as "everything passed",
-// which is the one answer it must never invent.
+// 4. gitlab → 422, NOT a 200 with zero checks.
 test "gitlab_is_422_not_an_empty_200" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -320,8 +295,7 @@ test "gitlab_is_422_not_an_empty_200" {
     }
 }
 
-// 5. Happy path via a fake `gh` on PATH → 200, with the failing job's STEPS
-// attached.
+// 5.
 test "failed_job_carries_its_steps" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -407,9 +381,7 @@ test "failed_job_carries_its_steps" {
     }
 }
 
-// 6. `gh pr checks` exits 1 with "no checks reported" on stderr for a PR
-// that never ran CI. That is an answer, not a failure — a 502 here would
-// paint every brand-new PR red.
+// 6.
 test "no_checks_reported_is_200_with_an_empty_list" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -456,9 +428,7 @@ test "no_checks_reported_is_200_with_an_empty_list" {
     try expectObjInt(summary, "total", 0);
 }
 
-// 7. `gh pr checks` exits 8 ("checks pending") WITH a valid payload on
-// stdout. Branching on the exit code would 502 the panel for every
-// in-flight PR — which is most of them, most of the time.
+// 7.
 test "pending_checks_exit_code_8_is_still_200" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -512,12 +482,9 @@ test "pending_checks_exit_code_8_is_still_200" {
     try expectObjStr(row, "completed_at", "");
 }
 
-// ============================================================================
 // Assertion helpers
-// ============================================================================
 
-/// One `case` arm of the fake `gh` dispatcher. The heredoc terminator lives
-/// HERE, once, rather than in the caller's splice list.
+/// One `case` arm of the fake `gh` dispatcher.
 fn ghArm(verb: []const u8, payload: []const u8) ![]u8 {
     return std.fmt.allocPrint(
         gpa,
@@ -526,9 +493,7 @@ fn ghArm(verb: []const u8, payload: []const u8) ![]u8 {
     );
 }
 
-/// The fake `gh` that dispatches on its first two argv words:
-/// `gh pr checks` yields the job rows, `gh run view` the step lists.
-/// Owned.
+/// The fake `gh` that dispatches on its first two argv words
 fn buildStepsScript() ![]u8 {
     const head = try gpa.dupe(u8, "#!/bin/sh\ncase \"$1 $2\" in\n");
     defer gpa.free(head);
@@ -663,9 +628,7 @@ fn expectObjInt(o: std.json.ObjectMap, key: []const u8, want: i64) !void {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one is invisible until a
-    // caller appears.
+    // Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one is invisible until a caller appears.
     _ = Scratch.init;
     _ = Scratch.deinit;
     _ = Scratch.path;

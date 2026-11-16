@@ -3,8 +3,7 @@ import { computed } from 'vue'
 import { highlightLinesForFile, type Token } from '@/helpers/codeHighlight'
 import type { SplitRow } from './pairSplitRows'
 
-/** The side-by-side (split) render of a parsed unified diff. Five columns: `old# · old code │ new#
- * · new code`. */
+/** The side-by-side (split) render of a parsed unified diff. */
 const props = defineProps<{
   rows: SplitRow[]
   /** Path of the file under review — drives the token language. */
@@ -12,8 +11,6 @@ const props = defineProps<{
 }>()
 
 // Token spans per side, computed once per diff rather than once per render.
-// A side that has no line here (`null`) tokenizes to a single empty plain
-// token, which the filler cell never renders (see the `v-if`s below).
 const tokensForSide = (pick: (row: SplitRow) => string | null): Token[][] =>
   highlightLinesForFile(
     props.rows.map((row) => pick(row) ?? ''),
@@ -24,8 +21,7 @@ const oldTokens = computed(() => tokensForSide((row) => row.oldText))
 const newTokens = computed(() => tokensForSide((row) => row.newText))
 
 const emit = defineEmits<{
-  /** A change line was clicked. `sourceIndex` indexes the caller's parsed
-   * `ParsedDiffLine[]`, which is what a review thread anchors to. */
+  /** A change line was clicked. */
   comment: [payload: { event: MouseEvent; sourceIndex: number }]
 }>()
 

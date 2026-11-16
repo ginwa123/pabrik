@@ -8,9 +8,7 @@ import {
 } from './internal'
 import { prettyJsonOrRaw, readParametersField } from '../toolOutputParser'
 
-// ─── progressive tools (search_tool / view_tool / use_tool) ────────────────── Universal
-// `<ProgressiveTool>` card: the three agent tools that let the model browse a catalog of
-// not-yet-enabled tools and equip one for the session.
+// ─── progressive tools (search_tool / view_tool / use_tool) ──────────────────
 export interface ProgressiveCatalogEntry {
   name: string
   kind: string

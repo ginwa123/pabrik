@@ -1,5 +1,4 @@
-/** Tests for the persisted-image gallery preview in KanbanTaskDetailDialog (edit mode — task
- * already created with imageUrls). */
+/** Tests for the persisted-image gallery preview in KanbanTaskDetailDialog (edit mode — task already created with imageUrls). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -90,8 +89,7 @@ describe('KanbanTaskDetailDialog — persisted image gallery preview', () => {
     await nextTick()
     await flushPromises()
 
-    // The popup is Teleported to body — it must NOT live inside the
-    // dialog tree (escapes overflow:hidden ancestors).
+    // The popup is Teleported to body — it must NOT live inside the dialog tree (escapes overflow:hidden ancestors).
     const popupImg = findInDom<HTMLImageElement>(
       '[data-testid="kanban-task-detail-image-popup-img"]',
     )

@@ -33,17 +33,14 @@ pub const Decision = union(enum) {
 };
 
 pub const Turn = struct {
-    /// The agent whose row is the newest in the thread. Empty when the newest
-    /// row is the human's, because then nobody has spoken yet.
+    /// The agent whose row is the newest in the thread.
     last_speaker: []const u8,
     last_text: []const u8,
     hops_so_far: u32,
     hop_budget: u32,
 };
 
-/// The agent a turn with no mention belongs to. An explicit lead wins; failing
-/// that the first member that calls itself the lead; failing that the first
-/// member. Null only when the roster is empty.
+/// The agent a turn with no mention belongs to.
 pub fn leadOf(members: []const Member, explicit_lead: []const u8) ?[]const u8 {
     if (explicit_lead.len > 0) {
         for (members) |m| {
@@ -57,9 +54,7 @@ pub fn leadOf(members: []const Member, explicit_lead: []const u8) ?[]const u8 {
     return members[0].name;
 }
 
-/// The token a mention uses in text: `Security Engineerr` becomes
-/// `security-engineerr`, so a member whose name carries a space stays
-/// addressable as one word.
+/// The token a mention uses in text: `Security Engineerr` becomes `security-engineerr`, so a member whose name carries a space stays addressable as one word.
 pub fn slug(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -103,9 +98,7 @@ fn matchMemberAt(allocator: std.mem.Allocator, text: []const u8, at: usize, m: M
     return best;
 }
 
-/// Every member the text addresses, in the order the mentions appear, each one
-/// once. An `@` inside a word (`you@mail.example`) is not a mention. The slice
-/// is owned by the caller; its strings point into `members`.
+/// Every member the text addresses, in the order the mentions appear, each one once.
 pub fn mentions(allocator: std.mem.Allocator, text: []const u8, members: []const Member) ![]const []const u8 {
     var found: std.ArrayList([]const u8) = .empty;
     errdefer found.deinit(allocator);

@@ -51,23 +51,17 @@ import {
 import ToolParameters from './_shared/ToolParameters.vue'
 
 const props = defineProps<{
-  /** The inner `<data>` XML from the generate_image tool's `<tool>` envelope (already unwrapped by
-   * the parent's `tryUnwrapToolOutput` pipeline). */
+  /** The inner `<data>` XML from the generate_image tool's `<tool>` envelope (already unwrapped by the parent's `tryUnwrapToolOutput` pipeline). */
   content: unknown
-  /**    * The JSON-stringified tool-call arguments (e.g. `'{"prompt":"a cat",...}'`). Used to display the
-   * prompt in the header for at-a-glance context — the agent asked for "X" and the card shows "X"
-   * without the user having to expand. */
+  /** The JSON-stringified tool-call arguments (e.g. */
   parameters?: string
-  /** Whether the row is already expanded in the parent chat (the
-   * "tool call loading placeholder" optimization — see AGENTS.md). */
+  /** Whether the row is already expanded in the parent chat (the "tool call loading placeholder" optimization — see AGENTS.md). */
   expanded?: boolean
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
-// ─── Inner-envelope parsing (typed) ─────────────────────────────────────── Pulled from the
-// project-wide parser in `_shared/toolOutputParser.ts` so the same regexes don't drift between the
-// parser test and the component. Always XML — never JSON.
+// ─── Inner-envelope parsing (typed) ───────────────────────────────────────
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed<ParsedGenerateImage>(() => {
   const p = parseGenerateImage(normalized.value.data)
@@ -100,8 +94,7 @@ const isSuccess = computed(() => parsed.value.error === null && parsed.value.sta
 
 const statusIndicator = computed(() => (isSuccess.value ? '✓' : '✗'))
 
-// Header label: parameter prompt (truncated) on success, "error" on failure. Fall back to the
-// envelope's count + model when the prompt is missing (e.g. legacy row without parameters).
+// Header label: parameter prompt (truncated) on success, "error" on failure.
 const headerLabel = computed(() => {
   if (!isSuccess.value) return parsed.value.error ?? 'error'
   const prompt = args.value.prompt
@@ -126,8 +119,7 @@ const rightMeta = computed(() => {
   return parts.length > 0 ? parts.join(' ') : null
 })
 
-// Hover title: prompt + first image path so power users can see
-// "what was asked" and "where it was saved" in one hover.
+// Hover title: prompt + first image path so power users can see "what was asked" and "where it was saved" in one hover.
 const headerTitle = computed(() => {
   if (!isSuccess.value) return parsed.value.error ?? ''
   const prompt = args.value.prompt ?? ''

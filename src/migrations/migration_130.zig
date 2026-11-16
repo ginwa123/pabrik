@@ -6,8 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 130 — `logs.message_truncated`, so a row says whether the message
-/// it holds is the whole message or the first 8 KB of one.
+/// Migration 130 — `logs.message_truncated`, so a row says whether the message it holds is the whole message or the first 8 KB of one.
 pub const Migration130AddLogMessageTruncated = struct {
     pub const version: u32 = 130;
     pub const name = "add_log_message_truncated";

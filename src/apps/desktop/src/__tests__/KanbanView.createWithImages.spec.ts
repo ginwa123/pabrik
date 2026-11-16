@@ -1,6 +1,4 @@
-/** Tests for KanbanView.handleCreateTaskSave's create flow with create-mode image attachments
- * (plan: 2026-08-06-kanban-image-urls-column, Migration 069). UPDATED for the 2026-08-14
- * kanban-specific endpoint refactor. */
+/** Tests for KanbanView.handleCreateTaskSave's create flow with create-mode image attachments (plan: 2026-08-06-kanban-image-urls-column, Migration 069). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

@@ -1,6 +1,4 @@
-//! `GET
-//! /api/llm/session/:session_id/background_processes/:pid/log?max_bytes=20480`
-//! — read the TAIL of one background process's log file.
+//! `GET /api/llm/session/:session_id/background_processes/:pid/log?max_bytes=20480` — read the TAIL of one background process's log file.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -15,13 +13,9 @@ pub const BackgroundProcessLogError = error{
     /// No row for (session_id, pid) — the handler maps this to 404.
     ProcessNotFound,
     QueryFailed,
-    /// The log file exists but could not be read (permissions, I/O
-    /// error — anything other than FileNotFound, which yields the
-    /// 200 not-found marker instead).
+    /// The log file exists but could not be read (permissions, I/O error — anything other than FileNotFound, which yields the 200 not-found marker instead).
     LogReadFailed,
-    /// `allocator.dupe` / `allocPrint` returned no memory. In
-    /// production the per-request arena makes this unreachable but
-    /// the type system requires the variant.
+    /// `allocator.dupe` / `allocPrint` returned no memory.
     OutOfMemory,
 };
 
@@ -45,17 +39,14 @@ pub fn clampMaxBytes(raw: usize) usize {
     return @min(@max(raw, min_max_bytes), max_max_bytes);
 }
 
-/// Parse the raw `?max_bytes=` query value: unparseable/empty falls
-/// back to the default; parseable values are clamped.
+/// Parse the raw `?max_bytes=` query value: unparseable/empty falls back to the default; parseable values are clamped.
 pub fn parseMaxBytes(raw: ?[]const u8) usize {
     const s = raw orelse return default_max_bytes;
     const parsed = std.fmt.parseInt(usize, s, 10) catch return default_max_bytes;
     return clampMaxBytes(parsed);
 }
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub fn useCase(
     allocator: std.mem.Allocator,
@@ -85,9 +76,7 @@ pub fn useCase(
     defer row.deinit(allocator);
 
     const log_path = allocator.dupe(u8, row.values[0]) catch return error.OutOfMemory;
-    // The JSON body deep-copies the path, so the dupe is freed here — it must
-    // NOT outlive the call (under testing.allocator it would report as a
-    // leak; under the per-request arena the free is a harmless no-op).
+    // The JSON body deep-copies the path, so the dupe is freed here — it must NOT outlive the call (under testing.allocator it would report as a leak; under the …
     defer allocator.free(log_path);
 
     // Missing file -> 200 not-found marker (documented above), NOT 404.
@@ -122,8 +111,7 @@ const TailLog = struct {
     truncated: bool,
 };
 
-/// Read the LAST `cap_bytes` bytes of the file at `log_path`, strip NUL bytes
-/// (SSE/JSON safety), and report the full size.
+/// Read the LAST `cap_bytes` bytes of the file at `log_path`, strip NUL bytes (SSE/JSON safety), and report the full size.
 fn readLogTail(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -184,9 +172,7 @@ fn readLogTail(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn backgroundProcessLogGetHandler(
     ctx: gserverz.HttpContext,
@@ -259,9 +245,7 @@ pub fn backgroundProcessLogGetHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = json_str });
 }
 
-// =====================================================================
-// Inline tests (project convention — useCase directly against an in-memory DB
-// walked through ALL migrations, never hand-rolled CREATE TABLE bodies; log
+// Inline tests (project convention — useCase directly against an in-memory DB walked through ALL migrations, never hand-rolled CREATE TABLE bodies; log
 
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
@@ -309,9 +293,7 @@ fn insertBgRow(
     , &.{ session_id, pid_str, command, log_path });
 }
 
-/// Write `data` to `<tmpdir>/t.log` and return the absolute path
-/// (caller-owned). The tmpDir cleanup is the caller's job — the path
-/// stays valid until then.
+/// Write `data` to `<tmpdir>/t.log` and return the absolute path (caller-owned).
 fn writeTmpLog(tmp: *std.testing.TmpDir, data: []const u8) ![]u8 {
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "t.log", .data = data });
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;

@@ -4,21 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The bubble rule: a bubble is the reader's own turn and nothing else.
- *
- * This is the only assertion standing between "the assistant answers as flat
- * prose" and "the assistant answers as flat prose again in three months",
- * because the thing that regresses is a `Surface` parameter quietly coming back
- * on a row, and a filled, bordered, rounded box is not something a JVM test
- * can see. The composable that consumed the old shared bubble is gone; what is
- * left to regress is this dispatch, so this is where the rule is pinned.
- *
- * The web it mirrors is `ChatView.vue`'s 2026-08-23 paragraph mode, where the
- * bubble chrome is bound to `group.role === 'user'` and the assistant side
- * renders bare. If the two clients are ever meant to diverge, this is the test
- * that has to be deleted rather than quietly relaxed.
- */
+/** The bubble rule: a bubble is the reader's own turn and nothing else. */
 class MessageChromeTest {
 
     private fun message(
@@ -64,12 +50,7 @@ class MessageChromeTest {
         )
     }
 
-    /**
-     * `system` is a role the wire can deliver and nothing in this app renders it
-     * as a conversation turn, so it belongs on the prose side. Naming it here
-     * is the point: it is the role most likely to be added to the `when` by
-     * someone reasoning "well, it's not the user, so bubble it".
-     */
+    /** `system` is a role the wire can deliver and nothing in this app renders it as a conversation turn, so it belongs on the prose side. */
     @Test
     fun `a system turn is prose, not a bubble`() {
         assertEquals(
@@ -78,13 +59,7 @@ class MessageChromeTest {
         )
     }
 
-    /**
-     * The regression this whole file exists for: `isError` frames are the
-     * agentic-loop's own diagnostics, and the instinct when styling one is to
-     * wrap it in a raised box so it stands out. It carries assistant prose, so
-     * it gets the same flat frame — the red text and the leading rule do the
-     * marking instead.
-     */
+    /** The regression this whole file exists for: `isError` frames are the agentic-loop's own diagnostics, and the instinct when styling one is to wrap it in a raised … */
     @Test
     fun `a diagnostic frame is prose too, not a raised bubble`() {
         assertEquals(
@@ -93,10 +68,7 @@ class MessageChromeTest {
         )
     }
 
-    /**
-     * Role wins over `isError`, in the other direction. A user row flagged as
-     * an error is still something the reader typed, so it still bubbles.
-     */
+    /** Role wins over `isError`, in the other direction. */
     @Test
     fun `a flagged user turn still bubbles`() {
         assertEquals(
@@ -105,13 +77,7 @@ class MessageChromeTest {
         )
     }
 
-    /**
-     * Exhaustiveness, stated as a test. `messageChrome` is a `when` whose last
-     * branch is `else`, so a role added to [ChatMessage] later lands in
-     * `PARAGRAPH` without a line anywhere saying that was a decision. Pinning
-     * the whole role → frame table means a new role fails this test rather than
-     * quietly shipping as a paragraph.
-     */
+    /** Exhaustiveness, stated as a test. */
     @Test
     fun `the role to frame table is pinned`() {
         assertEquals(
@@ -125,15 +91,7 @@ class MessageChromeTest {
         )
     }
 
-    /**
-     * A flat paragraph has to be spaced by something other than its box.
-     *
-     * The web sets `.assistant-item + .assistant-item { margin-top: 0.625rem }`
-     * for exactly this reason, and 6dp is what a boxed bubble was already
-     * getting — so the assistant gap has to be strictly the roomier of the two,
-     * or stripping the box silently collapses consecutive assistant rows
-     * together.
-     */
+    /** A flat paragraph has to be spaced by something other than its box. */
     @Test
     fun `flat paragraphs get more room than bubbles`() {
         val assistant = groupGapDp(group(ChatMessage.ROLE_ASSISTANT, message(ChatMessage.ROLE_ASSISTANT)))

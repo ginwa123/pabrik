@@ -6,8 +6,7 @@ const git_route = @import("git_route.zig");
 
 const GitStageResponse = http_response.GitStageResponse;
 
-/// Tell the UI one path moved into the index, so the Files tab can move ONE
-/// row instead of re-fetching the whole git-status list.
+/// Tell the UI one path moved into the index, so the Files tab can move ONE row instead of re-fetching the whole git-status list.
 fn emitStageEvent(ctx: gserverz.HttpContext, path_param: []const u8, file: []const u8, failed: bool) void {
     const di = pabrik_core.getSingleton() catch return;
     pabrik_core.git_file_stage_events.emitStaged(ctx.allocator, di.event_bus, path_param, file, failed);

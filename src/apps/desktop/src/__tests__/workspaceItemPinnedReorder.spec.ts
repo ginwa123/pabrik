@@ -8,8 +8,7 @@ import WorkspaceItem from '../components/workspace/WorkspaceItem.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-// Mock api.reorderPinnedTasks + pinTask so the store's optimistic-
-// update path doesn't hit a real backend.
+// Mock api.reorderPinnedTasks + pinTask so the store's optimistic-update path doesn't hit a real backend.
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
   return {
@@ -38,8 +37,7 @@ function makePinnedItem(taskIds: string[]) {
     tasks: taskIds.map((id, i) => ({
       id,
       name: `Task ${id}`,
-      // `as const` so TS infers the literal type 'standard', not `string`,
-      // and matches the Task interface's `task_type` union.
+      // `as const` so TS infers the literal type 'standard', not `string`, and matches the Task interface's `task_type` union.
       task_type: 'standard' as const,
       is_pinned: true,
       pinned_position: taskIds.length - i, // DESC order
@@ -73,9 +71,7 @@ async function flush(): Promise<void> {
   await nextTick()
 }
 
-// Build a DragEvent-ish Event with a real `dataTransfer` + `clientY`. jsdom doesn't support `new
-// DragEvent('drop', { dataTransfer })` and the underlying DataTransfer constructor doesn't exist,
-// so we shim the entire event surface.
+// Build a DragEvent-ish Event with a real `dataTransfer` + `clientY`. jsdom doesn't support `new DragEvent('drop', { dataTransfer })` and the underlying …
 function makeDragEvent(type: string, opts: { clientY?: number; relatedTarget?: EventTarget | null } = {}): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', { value: new DataTransferShim(), configurable: true })
@@ -132,8 +128,7 @@ describe('WorkspaceItem pinned-task drag reorder', () => {
     expect(region.exists()).toBe(true)
     const regionEl = region.element as HTMLElement
 
-    // Drag t3 (at index 2) to t1 (at index 0) with cursor in t1's
-    // top half → result: [t3, t1, t2] (t3 spliced BEFORE t1).
+    // Drag t3 (at index 2) to t1 (at index 0) with cursor in t1's top half → result: [t3, t1, t2] (t3 spliced BEFORE t1).
     const t1Row = regionEl.querySelector('[data-task-id="t1"]') as HTMLElement
     const t3Row = regionEl.querySelector('[data-task-id="t3"]') as HTMLElement
     const t1Rect = { top: 0, height: 40 } as DOMRect
@@ -204,8 +199,7 @@ describe('WorkspaceItem pinned-task drag reorder', () => {
   })
 
   it('emits reorderPinnedTasks with the dragged row moved to the end when no target is recorded (fallback)', async () => {
-    // No dragover — drop straight on the region. The handler falls
-    // back to "move the dragged row to the end".
+    // No dragover — drop straight on the region.
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await flush()

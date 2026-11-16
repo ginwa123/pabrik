@@ -1,6 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages`. Create
-//! (or idempotently upsert) a design page for a workspace item of
-//! `item_type='design'`.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,29 +13,23 @@ const CreatePageBody = struct {
     height: ?i64 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each variant to an
-/// HTTP status code + message via two exhaustive switches (one for status,
-/// one for the user-facing message).
+/// Domain-level error set for `useCase`.
 pub const DesignPageCreateError = error{
     /// `:item_id` path param was missing or empty.
     ItemIdRequired,
     /// Body `name` field was empty (matches `design_model.BadPageName`).
     BadPageName,
-    /// `design_model.setDesignPage` returned `ItemPathMissing`
-    /// (the parent workspace_item has no `path`).
+    /// `design_model.setDesignPage` returned `ItemPathMissing` (the parent workspace_item has no `path`).
     ItemPathMissing,
     /// `setDesignPage` failed for some other DB reason.
     DbError,
-    /// Insert succeeded but the new page wasn't visible in the
-    /// subsequent `listPages` (consistency violation — extremely
-    /// unlikely; surfaces as 500 so the caller can re-fetch).
+    /// Insert succeeded but the new page wasn't visible in the subsequent `listPages` (consistency violation — extremely unlikely; surfaces as 500 so the caller can …
     PageNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
 };
 
-/// Inputs to the create-page use-case. The handler maps the parsed
-/// HTTP body into this struct; the use-case is then transport-agnostic.
+/// Inputs to the create-page use-case.
 pub const CreatePageInput = struct {
     item_id: []const u8,
     name: []const u8,
@@ -51,26 +43,19 @@ pub const CreatePageOutput = struct {
     page: design_model.DesignPage,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Create (or upsert) a design page. Steps: 1. Validate `item_id` and `name`.
-/// 2.
+/// Create (or upsert) a design page.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     input: CreatePageInput,
 ) DesignPageCreateError!CreatePageOutput {
-    // 1. Validate. Empty `item_id` → no parent design item; empty
-    //    `name` → `design_model.BadPageName` (and the DB column is
-    //    NOT NULL anyway).
+    // 1.
     if (input.item_id.len == 0) return error.ItemIdRequired;
     if (input.name.len == 0) return error.BadPageName;
 
-    // 2. Insert (or upsert) the page. `setDesignPage` returns a
-    //    freshly-generated id (allocated from `allocator`) for new
-    //    pages, or the existing id for upserts. Free it via defer.
+    // 2.
     const new_id = design_model.setDesignPage(allocator, db, .{
         .item_id = input.item_id,
         .page_name = input.name,
@@ -83,9 +68,7 @@ fn useCase(
     };
     defer allocator.free(new_id);
 
-    // 3. Re-query to get the full row (we need `created_at` +
-    //    `workspace_item_id` + `position` for the response, which
-    //    setDesignPage does not return).
+    // 3.
     const pages = design_model.listPages(allocator, db, input.item_id) catch return error.DbError;
     defer design_model.freePages(allocator, pages);
 
@@ -93,8 +76,7 @@ fn useCase(
     for (pages) |p| {
         if (!std.mem.eql(u8, p.id, new_id)) continue;
 
-        // 5. Duplicate the matched page's slices so the output survives the
-        // `freePages(pages)` defer above.
+        // 5.
         var duped_id: ?[]u8 = null;
         var duped_workspace_item_id: ?[]u8 = null;
         var duped_name: ?[]u8 = null;
@@ -132,13 +114,9 @@ fn useCase(
     return error.PageNotVisible;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn designPagesCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -213,9 +191,7 @@ pub fn designPagesCreateHandler(
         });
     };
 
-    // Free the useCase's heap-owned page slices. On the per-request
-    // arena this is a no-op (the arena reaps at request end) but the
-    // explicit frees are defensive + document ownership.
+    // Free the useCase's heap-owned page slices.
     defer {
         allocator.free(output.page.id);
         allocator.free(output.page.workspace_item_id);
@@ -235,19 +211,15 @@ pub fn designPagesCreateHandler(
     });
 }
 
-// ===== Tests merged from design_pages_create_test.zig (2026-09-11 flatten)
-// ===== Static regression checks for the `POST /design/pages` handler.
+// ===== Tests merged from design_pages_create_test.zig (2026-09-11 flatten) ===== Static regression checks for the `POST /design/pages` handler.
 
 const testing = std.testing;
 
 // ─── Contract 6: response includes workspace_item_task_id FK field ───────
-// Behavioural unit test (NOT a static grep — see the project rule in
-// `.pabrik/memories/static-contract-test-when-to-prefer-behavioural.md`).
 test "makeDesignPageResponse serializes workspace_item_task_id on the wire" {
     const allocator = testing.allocator;
 
-    // Build the canonical page row that setDesignPage produces. The
-    // `workspace_item_task_id` is the FK we care about.
+    // Build the canonical page row that setDesignPage produces.
     const page = design_model.DesignPage{
         .id = try allocator.dupe(u8, "page_test_abc"),
         .workspace_item_id = try allocator.dupe(u8, "item_test_xyz"),
@@ -268,18 +240,14 @@ test "makeDesignPageResponse serializes workspace_item_task_id on the wire" {
         allocator.free(page.updated_at);
     }
 
-    // Map the model struct into the wire response struct (the same
-    // helper the handler calls).
+    // Map the model struct into the wire response struct (the same helper the handler calls).
     const response = http_response.makeDesignPageResponse(page);
 
-    // Serialize via std.json.Stringify.valueAlloc — the exact code
-    // path design_pages_create.zig uses for the 201 response body.
+    // Serialize via std.json.Stringify.valueAlloc — the exact code path design_pages_create.zig uses for the 201 response body.
     const json = try std.json.Stringify.valueAlloc(allocator, response, .{});
     defer allocator.free(json);
 
-    // The FK MUST be present in the wire payload (the whole point of the
-    // design-page-task-fk migration). Assert the JSON key + value round-trip
-    // cleanly.
+    // The FK MUST be present in the wire payload (the whole point of the design-page-task-fk migration).
     const expected_key_value =
         "\"workspace_item_task_id\":\"task_test_123\"";
     if (std.mem.indexOf(u8, json, expected_key_value) == null) {

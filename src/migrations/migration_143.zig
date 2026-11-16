@@ -6,16 +6,13 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 143 — the pointer from a `documents` row to its body in the
-/// object store. `content_key IS NULL` means the body is still in `content`,
-/// which is what every existing row looks like after this runs.
+/// Migration 143 — the pointer from a `documents` row to its body in the object store.
 pub const Migration143AddDocumentContentKey = struct {
     pub const version: u32 = 143;
     pub const name = "add_document_content_key";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Nullable on purpose: NULL is the "body is in the column" state, so
-        // the migration needs no backfill and no downtime.
+        // Nullable on purpose: NULL is the "body is in the column" state, so the migration needs no backfill and no downtime.
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
@@ -24,8 +21,7 @@ pub const Migration143AddDocumentContentKey = struct {
             "content_key TEXT DEFAULT NULL",
         );
 
-        // Integrity and dedupe: the key is content-addressed, so the digest is
-        // what the key was built from.
+        // Integrity and dedupe: the key is content-addressed, so the digest is what the key was built from.
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
@@ -34,8 +30,7 @@ pub const Migration143AddDocumentContentKey = struct {
             "content_sha256 TEXT DEFAULT NULL",
         );
 
-        // The body length, so a list can report a size without reading the
-        // object.
+        // The body length, so a list can report a size without reading the object.
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
@@ -44,8 +39,7 @@ pub const Migration143AddDocumentContentKey = struct {
             "content_bytes INTEGER NOT NULL DEFAULT 0",
         );
 
-        // The first slice of the body, kept in SQL so the sidebar and the
-        // search excerpt never need a round-trip to the object store.
+        // The first slice of the body, kept in SQL so the sidebar and the search excerpt never need a round-trip to the object store.
         try addColumnIfMissing(
             .{ .db = db },
             allocator,

@@ -44,8 +44,7 @@ describe('AddSkill.vue — clean success with args is expandable', () => {
   })
 
   it('is not expandable when a clean success carries neither a name nor args', () => {
-    // Otherwise the expanded body would be an empty panel with no way to
-    // tell what happened.
+    // Otherwise the expanded body would be an empty panel with no way to tell what happened.
     const wrapper = mount(AddSkill, {
       props: { content: { created: true } } as never,
     })

@@ -72,9 +72,7 @@ interface TaskSummary {
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Accepted so the
-   *  dispatcher can thread call args uniformly; the list result carries
-   *  no "unknown" fallback that needs it today. */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
@@ -91,9 +89,7 @@ const parsed = computed(() => {
 
 // Running: result envelope is still empty (no columns/tasks/error yet).
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content))
 

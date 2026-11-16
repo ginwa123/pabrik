@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LlmTestResult } from '../api'
 import LlmConfigModal, { type LlmConfigModalValue } from '../components/pabrik/LlmConfigModal.vue'
 
-// Mock the `testLlmProfile` API client so the modal's "Test" button
-// tests don't hit the network. Per-test overrides shape success vs
-// failure responses.
+// Mock the `testLlmProfile` API client so the modal's "Test" button tests don't hit the network.
 const mockTestLlmProfile = vi.fn(
   async (): Promise<LlmTestResult> => ({
     ok: true,
@@ -41,9 +39,7 @@ const baseValue: LlmConfigModalValue = {
   },
 }
 
-/**  * LlmConfigModal uses <Teleport to="body">, so tests MUST use `document.body.querySelector` for
- * teleported elements (NOT `wrapper.find`) and `mount({ attachTo: document.body })`. (See the
- * vue-teleport-vitest-document-queryselector skill.) */
+/** LlmConfigModal uses <Teleport to="body">, so tests MUST use `document.body.querySelector` for teleported elements (NOT `wrapper.find`) and `mount({ attachTo … */
 function mountModal(value: LlmConfigModalValue = baseValue): VueWrapper {
   return mount(LlmConfigModal, {
     props: {

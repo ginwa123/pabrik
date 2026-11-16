@@ -6,8 +6,7 @@ import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
 const { getGitChangesMock } = vi.hoisted(() => ({ getGitChangesMock: vi.fn() }))
 
-// jsdom has no layout/canvas for the real xterm renderer — stub it so the
-// always-mounted TerminalTab does not crash the suite (matchMedia).
+// jsdom has no layout/canvas for the real xterm renderer — stub it so the always-mounted TerminalTab does not crash the suite (matchMedia).
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     loadAddon() {}

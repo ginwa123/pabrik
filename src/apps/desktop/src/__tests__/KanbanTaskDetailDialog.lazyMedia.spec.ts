@@ -1,6 +1,4 @@
-/** Tests for the async lazy-media gallery in KanbanTaskDetailDialog (media-flags change). List/get
- * carry only `is_have_image` / `is_have_video` flags; the dialog fetches the full payload in the
- * background (fire-and-forget `void fetchTaskMedia(...)` — dialog open never blocks on it). */
+/** Tests for the async lazy-media gallery in KanbanTaskDetailDialog (media-flags change). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

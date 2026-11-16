@@ -1,5 +1,4 @@
-// Functional tests for the workspace-scoped skills HTTP surface. Zig port of
-// `tests/functional/skills_sqlite_test.py` (same test names, same order).
+// Functional tests for the workspace-scoped skills HTTP surface.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,13 +7,10 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The skill body asserted BYTE-EXACT by
-/// `detail_returns_the_body_and_the_companion_count`.
+/// The skill body asserted BYTE-EXACT by `detail_returns_the_body_and_the_companion_count`.
 const BODY = "---\nname: pdf\ndescription: Work with PDFs.\n---\n\nRun `scripts/convert.py`.\n";
 
-// ============================================================================
 // sqlite3 CLI helpers
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -23,8 +19,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
-/// in SQLite 3.33 (2020).
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -68,8 +63,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
-/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -99,8 +92,7 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
     return p;
 }
 
-/// Run `sql` against the harness DB, returning the CLI's stdout. The DB
-/// must already exist — the server creates it at boot.
+/// Run `sql` against the harness DB, returning the CLI's stdout.
 fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -111,8 +103,7 @@ fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     return sqliteRun(db, sql);
 }
 
-/// Insert one `skills` row directly, plus the name and description rows
-/// `skills_store.upsertSkill` projects out of its body.
+/// Insert one `skills` row directly, plus the name and description rows `skills_store.upsertSkill` projects out of its body.
 fn seedSkill(temp_dir: []const u8, workspace_id: []const u8, name: []const u8, description: []const u8, content: []const u8) !void {
     const ws_lit = try sqlLit(workspace_id);
     defer gpa.free(ws_lit);
@@ -182,8 +173,7 @@ fn skillIdSql(temp_dir: []const u8, workspace_id: []const u8, name: []const u8) 
     return try gpa.dupe(u8, id);
 }
 
-/// Insert one `skill_assets` row for an existing skill. Fails loudly
-/// when the parent skill is missing — the Python `assert row is not None`.
+/// Insert one `skill_assets` row for an existing skill.
 fn seedAsset(temp_dir: []const u8, workspace_id: []const u8, name: []const u8, rel_path: []const u8, content: []const u8) !void {
     const skill_id = (try skillIdSql(temp_dir, workspace_id, name)) orelse {
         std.debug.print("no skills row for {s}/{s}\n", .{ workspace_id, name });
@@ -239,9 +229,7 @@ fn rowCount(temp_dir: []const u8, table: []const u8) !i64 {
     };
 }
 
-// ============================================================================
 // HTTP + assertion helpers
-// ============================================================================
 
 /// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
@@ -341,8 +329,7 @@ fn expectInt(obj: std.json.ObjectMap, key: []const u8, want: i64, ctx: []const u
     }
 }
 
-/// Python `assert obj[key] is True` — strict: absent, `null` and any
-/// other type all fail, because `None is True` is False in Python too.
+/// Python `assert obj[key] is True` — strict: absent, `null` and any other type all fail, because `None is True` is False in Python too.
 fn expectTrue(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: missing `{s}` (must be true)\n", .{ ctx, key });
@@ -443,8 +430,7 @@ fn strLessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .lt;
 }
 
-/// The `skills` array at `key` of `obj`. Caller owns nothing; the slices
-/// borrow the parsed document.
+/// The `skills` array at `key` of `obj`.
 fn skillsArray(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !std.json.Array {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: missing `{s}`\n", .{ ctx, key });
@@ -459,13 +445,9 @@ fn skillsArray(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !std.j
     };
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // The three routes moved; the directory-tier collection route is gone.
-// `/api/skills` answered by merging `~/.config/pabrik/skills/` with
-// `<cwd>/.pabrik/skills/` and had no workspace id to scope either to.
 test "skills_are_reachable_only_under_a_workspace" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -501,26 +483,21 @@ test "skills_are_reachable_only_under_a_workspace" {
     }
     {
         var r = try h.http(io, .DELETE, "/api/skills", .{
-            // `params` values are percent-encoded by the harness; `pdf`
-            // has nothing to escape.
+            // `params` values are percent-encoded by the harness; `pdf` has nothing to escape.
             .params = &.{.{ .name = "name", .value = "pdf" }},
             .expect = &.{404},
         });
         defer r.deinit();
     }
 
-    // The sibling eval prefix is untouched by the move — it is a sibling
-    // ON PURPOSE, because a literal nested under the `:skill_name` route
-    // would be captured as the param.
+    // The sibling eval prefix is untouched by the move — it is a sibling ON PURPOSE, because a literal nested under the `:skill_name` route would be captured as the …
     {
         var r = try h.http(io, .GET, "/api/skill-evals/summary", .{ .expect = &.{200} });
         defer r.deinit();
     }
 }
 
-// `{skills:[{name, description, is_can_auto_improve}]}` — no body, no path,
-// no is_global. `is_global` described which of two directories a body was
-// read from.
+// `{skills:[{name, description, is_can_auto_improve}]}` — no body, no path, no is_global.
 test "list_returns_name_description_and_the_auto_improve_lock" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -555,17 +532,14 @@ test "list_returns_name_description_and_the_auto_improve_lock" {
             return error.TestUnexpectedResult;
         };
         if (std.mem.eql(u8, want_name, "pdf")) {
-            // `rows["pdf"] == {"name": "pdf", "description": "Work with PDFs.",
-            // "is_can_auto_improve": true}`
+            // `rows["pdf"] == {"name": "pdf", "description": "Work with PDFs.", "is_can_auto_improve": true}`
             try expectExactKeys(row, &.{ "name", "description", "is_can_auto_improve" }, "pdf row");
             try expectStr(row, "name", "pdf", "pdf row");
             try expectStr(row, "description", "Work with PDFs.", "pdf row");
-            // A row seeded straight into SQL takes the column default, so a
-            // skill that predates the flag reads as auto-improvable.
+            // A row seeded straight into SQL takes the column default, so a skill that predates the flag reads as auto-improvable.
             try expectTrue(row, "is_can_auto_improve", "pdf row");
         }
-        // The list row carries no body: a workspace can hold dozens of
-        // skills and the sidebar only renders a picker.
+        // The list row carries no body: a workspace can hold dozens of skills and the sidebar only renders a picker.
         try expectKeyAbsent(row, "content", "list row");
         try expectKeyAbsent(row, "path", "list row");
         try expectKeyAbsent(row, "is_global", "list row");
@@ -624,9 +598,7 @@ test "detail_returns_the_body_and_the_companion_count" {
     try expectStr(skill, "name", "pdf", "skill");
     try expectStr(skill, "description", "Work with PDFs.", "skill");
     try expectStr(skill, "content", BODY, "skill (body must round-trip byte-exact)");
-    // `skill["content"].startswith("---")` — the frontmatter is part of
-    // the body, asserted against the RETURNED string (not the constant),
-    // so a handler that stripped the block cannot pass.
+    // `skill["content"].startswith("---")` — the frontmatter is part of the body, asserted against the RETURNED string (not the constant), so a handler that stripped …
     {
         const content_v = skill.get("content") orelse {
             std.debug.print("skill has no `content`: {s}\n", .{detail_raw});
@@ -645,14 +617,12 @@ test "detail_returns_the_body_and_the_companion_count" {
         }
     }
     try expectInt(skill, "asset_count", 1, "skill");
-    // No `path`: the body no longer lives at a pathname, and a client
-    // that reconstructs one is the path-shaped contract this removes.
+    // No `path`: the body no longer lives at a pathname, and a client that reconstructs one is the path-shaped contract this removes.
     try expectKeyAbsent(skill, "path", "skill");
     try expectKeyAbsent(skill, "is_global", "skill");
 }
 
-// A foreign name is NOT 403. A 403 would confirm the name exists, which is
-// exactly what the workspace scoping exists to hide.
+// A foreign name is NOT 403.
 test "detail_of_a_foreign_workspace_is_404_and_lists_what_does_exist" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -716,7 +686,6 @@ test "detail_of_a_foreign_workspace_is_404_and_lists_what_does_exist" {
 }
 
 // `{success, skill_name, error_message}` with no `deleted_from`.
-// `deleted_from` named the directory the body was removed from.
 test "delete_removes_the_row_and_its_companions" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -797,8 +766,7 @@ test "delete_from_a_foreign_workspace_deletes_nothing" {
         defer doc.deinit();
         const body = try rootObject(&doc, "foreign DELETE skill");
         try expectFalse(body, "success", "foreign DELETE skill");
-        // A foreign name must get the SAME message as one that does not
-        // exist — that is the whole point of not 403-ing.
+        // A foreign name must get the SAME message as one that does not exist — that is the whole point of not 403-ing.
         try expectStr(body, "error_message", "skill not found", "foreign DELETE skill");
     }
 
@@ -809,9 +777,7 @@ test "delete_from_a_foreign_workspace_deletes_nothing" {
     }
 }
 
-// The list reflects writes made by the agent tools, not a cached walk. The
-// old handlers re-read the directory on every request, so a filesystem change
-// showed up immediately.
+// The list reflects writes made by the agent tools, not a cached walk.
 test "a_skill_created_by_a_tool_is_visible_to_the_next_read" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -886,9 +852,7 @@ test "detail_of_an_unknown_name_is_a_clean_404" {
     }
 }
 
-// Guard against a `count`/tiered envelope creeping back in. The old payload
-// was `{global_skills, local_skills, cwd}` — two arrays because there were
-// two directories.
+// Guard against a `count`/tiered envelope creeping back in.
 test "list_response_is_a_plain_array_of_objects" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -907,9 +871,7 @@ test "list_response_is_a_plain_array_of_objects" {
     defer doc.deinit();
     const body = try rootObject(&doc, "GET skills");
 
-    // `list(body.keys()) == ["skills"]` — a ONE-KEY object. `expectExactKeys`
-    // asserts the set; the count check is what the `list()` form really
-    // pins, and it is the same condition.
+    // `list(body.keys()) == ["skills"]` — a ONE-KEY object.
     try expectExactKeys(body, &.{"skills"}, "GET skills");
 
     const arr = try skillsArray(body, "skills", "GET skills");
@@ -928,9 +890,7 @@ test "list_response_is_a_plain_array_of_objects" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = exitCode;
     _ = requireSqlite3Cli;
     _ = parseSqliteJson;

@@ -1,6 +1,4 @@
-//! The free pages a long-lived SQLite file hoards: how to hand the ones already
-//! allocated back to the filesystem, and how to set the mode that lets the next
-//! batch go without a full rebuild.
+//! The free pages a long-lived SQLite file hoards: how to hand the ones already allocated back to the filesystem, and how to set the mode that lets the next batch …
 
 const std = @import("std");
 const databases = @import("databases");
@@ -20,8 +18,7 @@ pub const Mode = enum(u8) {
     }
 };
 
-/// Free pages are a SQLite file concept. A postgres build reports that instead
-/// of pretending to reclaim anything.
+/// Free pages are a SQLite file concept.
 pub const supported: bool = !dialect.is_postgres;
 
 pub const Size = struct {
@@ -51,9 +48,7 @@ pub const ReleaseReport = struct {
     steps: i64 = 0,
 };
 
-/// sqlite truncates ONE page per `PRAGMA incremental_vacuum`, so a release is a
-/// loop. This is the loop's ceiling: a cron tick hands back at most this many
-/// pages and leaves the rest to the next tick, so no tick runs long.
+/// sqlite truncates ONE page per `PRAGMA incremental_vacuum`, so a release is a loop.
 pub const pages_per_release: i64 = 256;
 
 fn pragmaText(db: *database.Db, allocator: std.mem.Allocator, sql: []const u8) ![]u8 {
@@ -69,9 +64,7 @@ fn pragmaInt(db: *database.Db, allocator: std.mem.Allocator, sql: []const u8) !i
     return std.fmt.parseInt(i64, raw, 10) catch error.NoPragmaValue;
 }
 
-/// The auto-vacuum mode the database is IN. `PRAGMA auto_vacuum=INCREMENTAL`
-/// does not move this on a database that already holds tables; only a `VACUUM`
-/// does, which is why the readback and not the request is what callers see.
+/// The auto-vacuum mode the database is IN.
 pub fn mode(db: *database.Db, allocator: std.mem.Allocator) !Mode {
     if (comptime !supported) return .none;
     return switch (try pragmaInt(db, allocator, "PRAGMA auto_vacuum")) {
@@ -94,9 +87,7 @@ pub fn journalMode(db: *database.Db, allocator: std.mem.Allocator) ![]u8 {
     return pragmaText(db, allocator, "PRAGMA journal_mode");
 }
 
-/// The maintenance-window pass: leave WAL, set the mode, `VACUUM` (the only
-/// statement that both applies the mode and truncates the file), go back to WAL.
-///
+/// The maintenance-window pass: leave WAL, set the mode, `VACUUM` (the only statement that both applies the mode and truncates the file), go back to WAL.
 pub fn reclaim(db: *database.Db, allocator: std.mem.Allocator) !ReclaimReport {
     var report = ReclaimReport{
         .mode_before = try mode(db, allocator),
@@ -109,12 +100,9 @@ pub fn reclaim(db: *database.Db, allocator: std.mem.Allocator) !ReclaimReport {
         return report;
     }
 
-    // `exec`, not a query: switching the journal mode has to happen on the WRITE
-    // connection, and `db.query` may be served by a pooled reader that cannot
-    // change it. The mode it lands in is read back below.
+    // `exec`, not a query: switching the journal mode has to happen on the WRITE connection, and `db.query` may be served by a pooled reader that cannot change it.
     try db.exec(allocator, "PRAGMA journal_mode = DELETE", &.{});
-    // The restore is what keeps a live database usable, so it runs even when the
-    // VACUUM fails.
+    // The restore is what keeps a live database usable, so it runs even when the VACUUM fails.
     errdefer db.exec(allocator, "PRAGMA journal_mode = WAL", &.{}) catch {};
 
     try db.exec(allocator, "PRAGMA auto_vacuum = INCREMENTAL", &.{});
@@ -127,9 +115,7 @@ pub fn reclaim(db: *database.Db, allocator: std.mem.Allocator) !ReclaimReport {
     return report;
 }
 
-/// Hand the free pages at the tail of the file back, up to `pages_per_release` of
-/// them. A no-op until `reclaim` has run once: `incremental_vacuum` needs the mode
-/// the vacuum sets, and asks for nothing before that.
+/// Hand the free pages at the tail of the file back, up to `pages_per_release` of them.
 pub fn releaseFreePages(db: *database.Db, allocator: std.mem.Allocator) !ReleaseReport {
     if (comptime !supported) return .{};
     if (try mode(db, allocator) != .incremental) return .{};
@@ -137,9 +123,7 @@ pub fn releaseFreePages(db: *database.Db, allocator: std.mem.Allocator) !Release
     var report = ReleaseReport{ .pages_before = (try size(db, allocator)).pages };
     report.pages_after = report.pages_before;
 
-    // A PASSIVE checkpoint applies the frames but leaves truncation nothing to
-    // do; only TRUNCATE shrinks the file. A checkpoint that cannot take the lock
-    // is not an error — nothing shrinks, and the report says so.
+    // A PASSIVE checkpoint applies the frames but leaves truncation nothing to do; only TRUNCATE shrinks the file.
     db.exec(allocator, "PRAGMA wal_checkpoint(TRUNCATE)", &.{}) catch {};
 
     while (report.steps < pages_per_release) {
@@ -152,8 +136,7 @@ pub fn releaseFreePages(db: *database.Db, allocator: std.mem.Allocator) !Release
     return report;
 }
 
-// Incremental truncation and the auto_vacuum mode are file-header facts that
-// `:memory:` cannot express, so these assertions run on a real file only.
+// Incremental truncation and the auto_vacuum mode are file-header facts that `:memory:` cannot express, so these assertions run on a real file only.
 
 const FileDb = struct {
     threaded: std.Io.Threaded,
@@ -178,9 +161,7 @@ const FileDb = struct {
 
         var db: database.Db = .{};
         errdefer db.deinit();
-        // No pooled readers: reclaim switches the journal mode, which sqlite
-        // refuses while ANY other connection has the file open ("database is
-        // locked"), idle or not. The command itself opens the same way.
+        // No pooled readers: reclaim switches the journal mode, which sqlite refuses while ANY other connection has the file open ("database is locked"), idle or not.
         const open_config: database.OpenConfig = if (database.backend_is_postgres)
             .{ .postgres_conninfo = path }
         else
@@ -203,8 +184,7 @@ const FileDb = struct {
         try self.db.exec(self.allocator, sql, &.{});
     }
 
-    /// Fill the file with `rows` 500-byte rows, then empty it: the case a prune
-    /// leaves behind.
+    /// Fill the file with `rows` 500-byte rows, then empty it: the case a prune leaves behind.
     fn fillThenEmpty(self: *FileDb, rows: usize) !void {
         try self.exec("CREATE TABLE ballast (v TEXT NOT NULL)");
         const value = try self.allocator.alloc(u8, 500);

@@ -1,10 +1,7 @@
-//! LLM tool: `create_kanban_task` — creates a new `workspace_item_tasks` row
-//! under an existing kanban `workspace_item`. Flow (mirrors
-//! `task_create.zig::createStandardTask` exactly): 1.
+//! LLM tool: `create_kanban_task` — creates a new `workspace_item_tasks` row under an existing kanban `workspace_item`.
 
 const std = @import("std");
-/// The tail of the upsert of a task's `kanban` row: sqlite's `INSERT OR
-/// REPLACE` replaces the row, postgres assigns the two columns instead.
+/// The tail of the upsert of a task's `kanban` row: sqlite's `INSERT OR REPLACE` replaces the row, postgres assigns the two columns instead.
 const UPSERT_KANBAN_TAIL: []const u8 = if (dialect.is_postgres)
     " ON CONFLICT (workspace_item_task_id) DO UPDATE SET " ++
         "kanban_column_id = excluded.kanban_column_id, kanban_position = excluded.kanban_position"
@@ -24,49 +21,33 @@ const tags_validation = @import("../../../http_handlers/tags_validation.zig");
 const image_urls_validation = @import("../../../http_handlers/image_urls_validation.zig");
 const model_guard = @import("../loop/llm_history_model_guard.zig");
 
-/// Input structure for `create_kanban_task` tool. Required fields:
-/// `workspace_id`, `item_id`, `name`, `description`.
+/// Input structure for `create_kanban_task` tool. Required fields
 pub const CreateKanbanTaskInput = struct {
     /// The workspace that owns the kanban item. From chat context.
     workspace_id: []const u8 = "",
-    /// The kanban workspace item id. From chat context. Must have
-    /// `item_type='kanban'` (validated up front).
+    /// The kanban workspace item id.
     item_id: []const u8 = "",
-    /// Card title shown on the kanban board. Required, must be
-    /// non-empty after trim of leading/trailing whitespace.
+    /// Card title shown on the kanban board.
     name: []const u8 = "",
-    /// Required card description (tooltip text in the kanban UI). Must be
-    /// non-empty after trim of leading/trailing whitespace — same rule as
-    /// `name`.
+    /// Required card description (tooltip text in the kanban UI).
     description: []const u8 = "",
-    /// Optional target column id. When omitted, the task is auto-assigned to
-    /// the first column by `position ASC` at `MAX(kanban_position) + 1`.
+    /// Optional target column id.
     column_id: ?[]const u8 = null,
-    /// Optional tags — JSON-encoded array string like
-    /// `"[\"bug\",\"urgent\"]"`.
+    /// Optional tags — JSON-encoded array string like `"[\"bug\",\"urgent\"]"`.
     tags: ?[]const u8 = null,
-    /// Optional image attachments — `||`-delimited
-    /// `data:image/<mime>;base64,<payload>` URLs (10 MB cap, enforced by
-    /// `image_urls_validation.validateImageUrls`).
+    /// Optional image attachments — `||`-delimited `data:image/<mime>;base64,<payload>` URLs (10 MB cap, enforced by `image_urls_validation.validateImageUrls`).
     image_urls: ?[]const u8 = null,
-    /// Migration 111 — optional array of task ids on the SAME board that must
-    /// finish before this new card may change column.
+    /// Migration 111 — optional array of task ids on the SAME board that must finish before this new card may change column.
     depends_on: ?[]const []const u8 = null,
-    /// Optional unattended-mode flag. `"1"` enables the agent to retry past
-    /// the 10-error TooManyRetries bail (overnight runs); any other value
-    /// normalizes to `"0"`.
+    /// Optional unattended-mode flag.
     is_auto_retry_until_stop: ?[]const u8 = null,
-    /// Optional profile name to bind on the new sessions row. A `sessions`
-    /// row is ALWAYS created; this only sets its `selected_profile_model`
-    /// column.
+    /// Optional profile name to bind on the new sessions row.
     selected_profile_model: ?[]const u8 = null,
-    /// The model id the seeded `llm_history` row records for this session's
-    /// chat.
+    /// The model id the seeded `llm_history` row records for this session's chat.
     resolved_model: []const u8 = "",
 };
 
-/// Top-level tool definition for the LLM. The description is the LLM's
-/// primary signal for WHEN to use this tool — it tells the LLM: 1.
+/// Top-level tool definition for the LLM.
 pub const create_kanban_task_tool_system_prompt =
     \\## Create Kanban Task Tool — Behavior
     \\Use `create_kanban_task` to create a new kanban card.
@@ -143,21 +124,16 @@ pub const create_kanban_task_tool = AgentTool{
                     .description = "Profile name from `LlmConfig.profiles` to bind on the new sessions row. Null or empty = backend default (top-level config).",
                 },
             },
-            // Four required fields (description promoted from optional on
-            // 2026-08-18; cwd dropped on 2026-10-14 — the card inherits the
-            // kanban item's path). column_id, tags, image_urls,
+            // Four required fields (description promoted from optional on 2026-08-18; cwd dropped on 2026-10-14 — the card inherits the kanban item's path). column_id, tags …
             .required = &.{ "workspace_id", "item_id", "name", "description" },
         },
         .system_prompt = create_kanban_task_tool_system_prompt,
     },
 };
 
-// =====================================================================
 // Implementation (Task 4)
-// =====================================================================
 
-/// Success payload for `create_kanban_task`. Keys mirror the old
-/// `<kanban_task>` child tags 1:1.
+/// Success payload for `create_kanban_task`.
 pub const CreateKanbanTaskSuccess = struct {
     success: bool,
     task_id: []const u8,
@@ -181,8 +157,7 @@ pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     }, .{});
 }
 
-/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it on
-/// return.
+/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it on return.
 pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     defer allocator.free(error_msg);
 
@@ -218,8 +193,7 @@ pub const CreateKanbanTaskOutput = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// The working directory a new card gets: the kanban item's own `path`. Read
-/// rather than asked for.
+/// The working directory a new card gets: the kanban item's own `path`.
 fn lookupItemProjectPath(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -243,9 +217,7 @@ fn lookupItemProjectPath(
     return allocator.dupe(u8, "");
 }
 
-/// Verify the parent `workspace_items` row exists and has
-/// `item_type='kanban'`. Returns null on success, or an error JSON
-/// string when the parent isn't a kanban (or doesn't exist).
+/// Verify the parent `workspace_items` row exists and has `item_type='kanban'`.
 fn validateItemTypeIsKanban(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -289,9 +261,7 @@ fn validateItemTypeIsKanban(
     return try errorJSON(allocator, msg);
 }
 
-/// Validate that a target column exists. Returns null on success, or an
-/// XML error message (matches the `validateItemTypeIsKanban` convention)
-/// on failure. Caller uses `if (try resolveTargetColumnId(...)) |err| return err;`.
+/// Validate that a target column exists.
 fn resolveTargetColumnId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -360,8 +330,7 @@ fn resolveTargetColumnId(
     return try errorJSON(allocator, msg);
 }
 
-/// Fetch the actual column id (assumes `resolveTargetColumnId` returned
-/// null). Heap-owned; caller frees via `defer allocator.free`.
+/// Fetch the actual column id (assumes `resolveTargetColumnId` returned null).
 fn fetchTargetColumnId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -386,7 +355,6 @@ fn fetchTargetColumnId(
 }
 
 /// Compute the next position for a column = `MAX(kanban_position) + 1`.
-/// Returns 0 when the column is empty. Falls back to 0 on DB error.
 fn computeNextPosition(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -424,8 +392,7 @@ pub fn executeKanbanTaskToJSON(
     if (trimmed_name.len == 0) {
         return errorJSON(allocator, "name is required and must be non-empty after trim");
     }
-    // description + cwd were promoted from optional to required on
-    // 2026-08-18.
+    // description + cwd were promoted from optional to required on 2026-08-18.
     const trimmed_description = std.mem.trim(u8, input.description, " \t\n\r");
     if (trimmed_description.len == 0) {
         return errorJSON(allocator, "description is required and must be non-empty after trim (one-to-three sentences about what this task is about)");
@@ -436,8 +403,7 @@ pub fn executeKanbanTaskToJSON(
         return err_xml;
     }
 
-    // 3. Resolve target column BEFORE inserting — if invalid, we
-    //    must not have created the task row yet.
+    // 3.
     if (try resolveTargetColumnId(allocator, db, input.item_id, input.column_id)) |err_xml| {
         return err_xml;
     }
@@ -449,8 +415,7 @@ pub fn executeKanbanTaskToJSON(
         allocator,
         input.tags,
     ) catch |err| {
-        // errorJSONOwned takes ownership of `msg` — do NOT also
-        // `defer allocator.free(msg)` (would be a double-free).
+        // errorJSONOwned takes ownership of `msg` — do NOT also `defer allocator.free(msg)` (would be a double-free).
         const msg = std.fmt.allocPrint(
             allocator,
             "tags validation failed: {s}. tags must be a JSON-encoded array of strings — letters/digits/`_`/`-` only, ≤50 chars per tag, e.g. \"[\\\"bug\\\",\\\"urgent\\\"]\".",
@@ -460,9 +425,7 @@ pub fn executeKanbanTaskToJSON(
     };
     defer allocator.free(validated_tags);
 
-    // 5. Validate image_urls (Migration 069) — `||`-delimited
-    //    data:image/<mime>;base64,... URLs. The validator returns
-    //    the input borrowed (no allocation); we just check it.
+    // 5.
     const validated_image_urls = image_urls_validation.validateImageUrls(
         input.image_urls orelse "",
     ) catch |err| switch (err) {
@@ -474,8 +437,7 @@ pub fn executeKanbanTaskToJSON(
         },
     };
 
-    // 6. The card's working directory comes from the KANBAN ITEM, not from an
-    // argument.
+    // 6.
     const owned_cwd = try lookupItemProjectPath(allocator, db, input.item_id);
     defer allocator.free(owned_cwd);
     const validated_cwd: []const u8 = owned_cwd;
@@ -495,28 +457,20 @@ pub fn executeKanbanTaskToJSON(
         trimmed_name,
         input.item_id,
         "standard",
-        // Pass `trimmed_description` (validated non-empty above) so
-        // any leading/trailing whitespace the LLM accidentally added
-        // doesn't leak into the stored tooltip text.
+        // Pass `trimmed_description` (validated non-empty above) so any leading/trailing whitespace the LLM accidentally added doesn't leak into the stored tooltip text.
         trimmed_description,
         // Migration 067 — tags.
         if (validated_tags.len == 0) "" else validated_tags,
-        // Migration 069 — image_urls. Same pattern: "" sentinel for
-        // no images; validated `||`-joined string when supplied.
+        // Migration 069 — image_urls.
         if (validated_image_urls.len == 0) "" else validated_image_urls,
-        // Migration 070 — per-task cwd override. Borrowed from the
-        // validated block above; empty string stays empty.
+        // Migration 070 — per-task cwd override.
         validated_cwd,
-        // Migration 090 — video_urls. Tool input is image-only;
-        // null omits the column (DEFAULT '' applies).
+        // Migration 090 — video_urls.
         null,
-        // Migration 112 — skill names. The agent tool has no skill
-        // input (the agent loads skills itself with `use_skill`), so
-        // null omits the column (DEFAULT '' applies).
+        // Migration 112 — skill names.
         null,
     ) catch {
-        // NOTE: do NOT `defer allocator.free(msg)` here — `errorJSONOwned`
-        // takes ownership of `msg` and frees it on success.
+        // NOTE: do NOT `defer allocator.free(msg)` here — `errorJSONOwned` takes ownership of `msg` and frees it on success.
         const msg = std.fmt.allocPrint(
             allocator,
             "Failed to INSERT task row into workspace_item_tasks",
@@ -538,9 +492,7 @@ pub fn executeKanbanTaskToJSON(
         std.log.warn("create_kanban_task: kanban auto-assign failed (non-fatal): {s}", .{@errorName(err)});
     };
 
-    // 9a. Migration 111 — dependencies, validated against the same board. The
-    //     card row exists by now, so the message names the offending rule and
-    //     the task id to fix instead of forcing a recreate.
+    // 9a.
     if (input.depends_on) |raw_ids| {
         pabrikcore.ai_mod.kanban_deps.validateAndReplace(
             allocator,
@@ -557,9 +509,7 @@ pub fn executeKanbanTaskToJSON(
         };
     }
 
-    // 10. Stamp last_human_touched_at (Migration 065) — mirrors
-    // `task_create.zig:467-469`. Fire-and-forget; without it the new card
-    // would show "awaiting review" until the user manually interacts with it.
+    // 10.
     pabrikcore.ai_mod.llm_history.updateTaskLastHumanTouchedAt(
         allocator,
         db,
@@ -597,9 +547,7 @@ pub fn executeKanbanTaskToJSON(
         };
     }
 
-    // 12. Seed the initial user `llm_history` row so the chatview lands on
-    // the user's description instead of the empty "How can I help you?"
-    // state.
+    // 12.
     {
         const initial_message = std.fmt.allocPrint(
             allocator,
@@ -625,9 +573,7 @@ pub fn executeKanbanTaskToJSON(
                         &[_][]const u8{
                             ids,
                             task_id,
-                            // Never empty: an empty bind lands as SQL NULL and
-                            // fails `model TEXT NOT NULL`, dropping the seed row.
-                            // See modules/agent/loop/llm_history_model_guard.zig.
+                            // Never empty: an empty bind lands as SQL NULL and fails `model TEXT NOT NULL`, dropping the seed row.
                             model_guard.resolve(input.resolved_model),
                             msg,
                             task_id,
@@ -688,12 +634,8 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
 }
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────────
-// These tests exercise `executeKanbanTaskToJSON` end-to-end: they seed a
-// workspace + kanban item + columns + (optionally) tasks, call the tool with
 
-/// Open a fresh in-memory SQLite DB. Caller owns the returned
-/// `db` + `threaded` and must `defer s.threaded.deinit();
-/// defer s.db.deinit();`.
+/// Open a fresh in-memory SQLite DB.
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -752,8 +694,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  cwd TEXT NOT NULL DEFAULT ''
         \\)
     , &[_][]const u8{});
-    // sessions table — ALWAYS written by the tool (HTTP `create_session`
-    // parity).
+    // sessions table — ALWAYS written by the tool (HTTP `create_session` parity).
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
@@ -766,9 +707,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  selected_profile_model TEXT
         \\)
     , &[_][]const u8{});
-    // llm_history table — the tool seeds one initial user row per
-    // created card (HTTP `create_session` parity). Only the
-    // columns the INSERT writes are modeled here.
+    // llm_history table — the tool seeds one initial user row per created card (HTTP `create_session` parity).
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
         \\  id TEXT PRIMARY KEY,
@@ -829,7 +768,6 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
 }
 
 /// Count rows in `workspace_item_tasks` matching `WHERE id = ?`.
-/// Used to assert the tool inserted exactly one row.
 fn taskRowExists(alloc: std.mem.Allocator, db: *database.Db, task_id: []const u8) !bool {
     var q = try db.query(
         alloc,
@@ -842,8 +780,7 @@ fn taskRowExists(alloc: std.mem.Allocator, db: *database.Db, task_id: []const u8
     return true;
 }
 
-/// Read the first column of the first row returned by `sql`. Returns a
-/// heap-owned slice; caller frees with `alloc.free`.
+/// Read the first column of the first row returned by `sql`.
 fn readColumn(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args: []const []const u8) ![]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
@@ -853,7 +790,6 @@ fn readColumn(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args:
 }
 
 /// Extract the task_id from the success JSON returned by the tool.
-/// Returns an allocator-owned dupe the caller frees.
 fn extractTaskId(allocator: std.mem.Allocator, json: []const u8) ![]u8 {
     const parsed = std.json.parseFromSlice(
         CreateKanbanTaskOutput,
@@ -1106,8 +1042,6 @@ test "executeKanbanTaskToJSON returns error when name is whitespace-only" {
 }
 
 // ─── description + cwd became required on 2026-08-18 ──────────────────
-// description: must be non-empty after trim of leading/trailing whitespace.
-// cwd: must be non-empty (and an absolute path — see the "rejects relative
 
 test "executeKanbanTaskToJSON returns error when description is empty" {
     const alloc = testing.allocator;
@@ -1236,9 +1170,7 @@ test "executeKanbanTaskToJSON rejects column_id that does not belong to the item
         &[_][]const u8{},
     );
 
-    // Try to place the new task in 'col_other' while item_id points
-    // to 'item_k1'. The tool must reject this — the column does not
-    // belong to the item.
+    // Try to place the new task in 'col_other' while item_id points to 'item_k1'.
     const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
@@ -1253,9 +1185,7 @@ test "executeKanbanTaskToJSON rejects column_id that does not belong to the item
     try testing.expect(contains(json, "column") or contains(json, "Column"));
 }
 
-// These tests exercise the 5 new optional input fields that were added to
-// mirror the user-facing KanbanTaskDetailDialog form (Migrations 067 / 069 /
-// 070-071 + 063 + 040).
+// These tests exercise the 5 new optional input fields that were added to mirror the user-facing KanbanTaskDetailDialog form (Migrations 067 / 069 /070-071 + 063 …
 
 // ─── DB behavior tests for new optional fields ──────────────────────────
 
@@ -1304,9 +1234,7 @@ test "executeKanbanTaskToJSON persists image_urls when supplied" {
 }
 
 test "executeKanbanTaskToJSON takes the card's cwd from the kanban item's path" {
-    // The tool has no `cwd` parameter (dropped 2026-10-14): the card is
-    // created on an item whose own `path` IS the project root, so the stored
-    // value must come from `workspace_items.path` and nowhere else.
+    // The tool has no `cwd` parameter (dropped 2026-10-14): the card is created on an item whose own `path` IS the project root, so the stored value must come from …
     const alloc = testing.allocator;
     var s = try setupDb();
     defer s.threaded.deinit();
@@ -1350,9 +1278,7 @@ test "executeKanbanTaskToJSON stamps last_human_touched_at on happy path" {
     defer alloc.free(task_id);
     const stored = try readColumn(alloc, &s.db, "SELECT COALESCE(CAST(last_human_touched_at_nano AS TEXT), '') FROM workspace_item_tasks WHERE id = ?", &.{task_id});
     defer alloc.free(stored);
-    // The stamp must be non-empty (a unix-ms integer string). The
-    // pre-stamp default is NULL → COALESCE returns ''. After the
-    // stamp it's a non-empty digit string.
+    // The stamp must be non-empty (a unix-ms integer string).
     try testing.expect(stored.len > 0);
     try testing.expect(stored.len > 0 and stored[0] >= '0' and stored[0] <= '9');
 }
@@ -1428,9 +1354,7 @@ test "executeKanbanTaskToJSON writes both unattended and profile in single sessi
     try testing.expectEqualStrings("my-profile", profile);
 }
 
-// ─── Kanban task name = session name (plan:
-// 2026-08-13-kanban-task-session-name-match.md) ── Pre-fix, the tool INSERT
-// OR IGNORE INTO sessions keyed by task_id bound `name = task_id` (the
+// ─── Kanban task name = session name (plan
 
 test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (unattended)" {
     const alloc = testing.allocator;
@@ -1451,8 +1375,7 @@ test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (unatt
     defer alloc.free(task_id);
     const stored = try readColumn(alloc, &s.db, "SELECT name FROM sessions WHERE id = ?", &.{task_id});
     defer alloc.free(stored);
-    // Pre-fix this returned task_id (the literal task id). Post-fix it
-    // must equal the trimmed user-facing title.
+    // Pre-fix this returned task_id (the literal task id).
     try testing.expectEqualStrings("workspace item task nama and session name", stored);
 }
 
@@ -1465,9 +1388,7 @@ test "executeKanbanTaskToJSON persists sessions.name == trimmed task name (profi
     const json = try executeKanbanTaskToJSON(alloc, &s.db, .{
         .workspace_id = "ws_1",
         .item_id = "item_k1",
-        // Leading/trailing whitespace; the tool trims before INSERT
-        // (see executeKanbanTaskToJSON line 463-466), so the
-        // sessions.name must be the trimmed value.
+        // Leading/trailing whitespace; the tool trims before INSERT (see executeKanbanTaskToJSON line 463-466), so the sessions.name must be the trimmed value.
         .name = "   my chatty task   ",
         .description = "sessions.name == trimmed profile desc",
         .selected_profile_model = "fast-model",
@@ -1521,12 +1442,9 @@ test "executeKanbanTaskToJSON rejects invalid image_urls" {
     try testing.expect(contains(json, "image_urls"));
 }
 
-// Pin the registration contract: a future refactor that drops
-// `create_kanban_task` from any of the registry / re-export / tools_equipped
-// surfaces would silently disable the tool. These tests catch that.
+// Pin the registration contract: a future refactor that drops `create_kanban_task` from any of the registry / re-export / tools_equipped surfaces would silently …
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1566,9 +1484,7 @@ pub fn execCreateKanbanTask(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecR
     };
     defer ctx.allocator.free(inner);
 
-    // Detect the {"success":false,"error":...} shape via the top-level
-    // "error" key (parsed, not substring-matched) and surface it as a tool
-    // failure (so the LLM sees success=false rather than a successful wrapper
+    // Detect the {"success":false,"error":...} shape via the top-level "error" key (parsed, not substring-matched) and surface it as a tool failure (so the LLM sees …
     if (std.json.parseFromSlice(struct { @"error": ?[]const u8 = null }, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {

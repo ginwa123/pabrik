@@ -1,6 +1,4 @@
-/** `downloadBlob` is the one place the app hands bytes to the browser's download path: the
- * anchor must carry the server's filename, and the object URL must be released rather than
- * leaked one per export. */
+/** `downloadBlob` is the one place the app hands bytes to the browser's download path: the anchor must carry the server's filename, and the object URL must be … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadBlob } from '../helpers/download'
 
@@ -10,8 +8,7 @@ describe('downloadBlob', () => {
   let clicked: HTMLAnchorElement[]
 
   beforeEach(() => {
-    // Fake timers keep the deferred revoke inside the test that scheduled it —
-    // a real timer from an earlier test would land in this test's `revoked`.
+    // Fake timers keep the deferred revoke inside the test that scheduled it — a real timer from an earlier test would land in this test's `revoked`.
     vi.useFakeTimers()
     created = []
     revoked = []

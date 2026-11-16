@@ -1,6 +1,4 @@
-//! `DELETE /api/llm/message/:message_id`. Removes ONE `llm_history` row and
-//! returns it whole, so the client can offer an undo. 409 while the loop is
-//! still writing the row.
+//! `DELETE /api/llm/message/:message_id`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -20,8 +18,7 @@ pub const MessageDeleteInput = struct {
     message_id: []const u8,
 };
 
-/// Transport-agnostic: the HTTP handler and `pabrik headless message-delete`
-/// both call this, so the CLI cannot drift from the endpoint.
+/// Transport-agnostic: the HTTP handler and `pabrik headless message-delete` both call this, so the CLI cannot drift from the endpoint.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,

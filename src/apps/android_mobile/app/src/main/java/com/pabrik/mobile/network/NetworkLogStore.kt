@@ -5,13 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * In-memory ring buffer of captured exchanges, newest first.
- *
- * Deliberately not persisted: a captured sign-in carries the session cookie, and
- * writing it to disk would put that cookie into backups and log files. The buffer
- * dies with the process.
- */
+/** In-memory ring buffer of captured exchanges, newest first. */
 class NetworkLogStore(
     private val maxEntries: Int = MAX_ENTRIES,
 ) {
@@ -27,11 +21,7 @@ class NetworkLogStore(
         _isRecording.value = recording
     }
 
-    /**
-     * Stores the built entry under a freshly allocated id. Returns null while
-     * recording is paused, so callers can treat "not captured" and "captured" as
-     * the same code path as not recording at all.
-     */
+    /** Stores the built entry under a freshly allocated id. */
     fun record(build: (id: Long) -> NetworkLogEntry): NetworkLogEntry? {
         if (!_isRecording.value) return null
 

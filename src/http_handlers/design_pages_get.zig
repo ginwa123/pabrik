@@ -1,6 +1,4 @@
 //! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
-//! Fetch a single design page plus all of its elements (without the HTML
-//! bodies — those are fetched lazily via `GET .../elements/:eid/html`).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,21 +8,17 @@ const design_model = @import("../modules/agent/loop/design_model.zig");
 
 pub const DesignPageGetError = error{
     PageIdRequired,
-    /// `design_model.getPageWithElements` returned `PageNotFound`
-    /// (no row with that `page_id`).
+    /// `design_model.getPageWithElements` returned `PageNotFound` (no row with that `page_id`).
     PageNotFound,
     /// `getPageWithElements` failed for some other DB / IO reason.
     QueryFailed,
-    /// `makeDesignPageWithElementsResponse` failed (effectively
-    /// unreachable on the per-request arena).
+    /// `makeDesignPageWithElementsResponse` failed (effectively unreachable on the per-request arena).
     OutOfMemory,
 };
 
 pub const DesignPageGetResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -46,9 +40,7 @@ fn useCase(
     );
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designPagesGetHandler(
     ctx: gserverz.HttpContext,

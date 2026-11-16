@@ -3,19 +3,14 @@
 const std = @import("std");
 
 /// Written to `llm_history.model` when no model could be resolved.
-/// Deliberately not a plausible model id — it must never be mistaken for a
-/// provider/model that was actually used.
 pub const UNKNOWN_MODEL: []const u8 = "unknown";
 
-/// True when `model` cannot be persisted: absent, empty, or only
-/// whitespace. Whitespace matters — an agent whose `model` is `"  "`
-/// passes `len > 0` checks elsewhere but is equally unusable.
+/// True when `model` cannot be persisted: absent, empty, or only whitespace.
 pub fn isEmpty(model: []const u8) bool {
     return std.mem.trim(u8, model, " \t\r\n").len == 0;
 }
 
-/// The single entry point every `llm_history.model` writer must use. Returns
-/// `model` unchanged when it carries content, otherwise `UNKNOWN_MODEL`.
+/// The single entry point every `llm_history.model` writer must use.
 pub fn resolve(model: []const u8) []const u8 {
     return if (isEmpty(model)) UNKNOWN_MODEL else model;
 }
@@ -41,16 +36,13 @@ test "resolve substitutes the sentinel for a whitespace-only model" {
 }
 
 test "resolve preserves interior/leading whitespace on a non-blank model" {
-    // Only a fully-blank model is replaced. A model id with a stray
-    // leading space is still a model id; trimming here would silently
-    // rewrite the user's configured value.
+    // Only a fully-blank model is replaced.
     try testing.expectEqualStrings(" gpt-4o", resolve(" gpt-4o"));
     try testing.expectEqualStrings("gpt 4o", resolve("gpt 4o"));
 }
 
 test "resolve never returns an empty slice for any input" {
-    // The invariant the whole module exists to provide. Fuzzed over the
-    // degenerate shapes the call sites actually produce.
+    // The invariant the whole module exists to provide.
     const inputs = [_][]const u8{ "", " ", "\n", "\t\r\n", "0", "a", UNKNOWN_MODEL, " ", "  a  " };
     for (inputs) |in| {
         try testing.expect(resolve(in).len > 0);
@@ -72,9 +64,7 @@ test "resolve is a no-op for a non-blank model, sentinel for a blank one" {
 }
 
 test "UNKNOWN_MODEL is not confusable with a real model id" {
-    // The sentinel's job is to be visibly "not a model". If a future edit
-    // made it look like a real provider id, the two failure modes would
-    // silently merge.
+    // The sentinel's job is to be visibly "not a model".
     try testing.expect(!std.mem.eql(u8, UNKNOWN_MODEL, ""));
     try testing.expect(UNKNOWN_MODEL.len > 0);
     try testing.expectEqualStrings("unknown", UNKNOWN_MODEL);

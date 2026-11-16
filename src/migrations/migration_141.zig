@@ -8,9 +8,7 @@ const dropColumnIfExists = common.dropColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 141 — a skill row is its body. `name` and `description` are
-/// frontmatter keys inside `content`, so their columns go: the values they
-/// held move into the fence and into `skill_metadata` before the drop.
+/// Migration 141 — a skill row is its body.
 pub const Migration141ContractSkillNameDescription = struct {
     pub const version: u32 = 141;
     pub const name = "contract_skill_name_description";
@@ -102,9 +100,7 @@ pub const Migration141ContractSkillNameDescription = struct {
         try tx.commit();
     }
 
-    /// sqlite cannot drop a column a UNIQUE constraint names, so the table is
-    /// rebuilt. Its children reference `skills(id)` by name, which the rename
-    /// restores before anything reads them.
+    /// sqlite cannot drop a column a UNIQUE constraint names, so the table is rebuilt.
     fn rebuildWithoutIdentityColumns(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         var pragma = try db.queryRow(allocator, "PRAGMA foreign_keys", &[_][]const u8{});
         const foreign_keys_on = std.mem.eql(u8, pragma.values[0], "1");

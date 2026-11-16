@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** The attachment strip on a user turn: one fixed-size thumbnail per attached image, one player per
- * attached clip, click an image to open the lightbox. Extracted from `ChatView.vue` so the `src`
- * binding is reachable by a mount test. */
+/** The attachment strip on a user turn: one fixed-size thumbnail per attached image, one player per attached clip, click an image to open the lightbox. */
 import { computed } from 'vue'
 import { renderableMediaUrls } from '../../helpers/mediaUrls'
 import { parseFileAttachmentsMeta } from '../../helpers/fileAttachments'

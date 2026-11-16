@@ -1,6 +1,4 @@
-/** Tests for the agent-model picker in KanbanTaskDetailDialog (create mode only). Mount pattern:
- * same as KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, attachTo: document.body +
- * document.querySelector. */
+/** Tests for the agent-model picker in KanbanTaskDetailDialog (create mode only). Mount pattern */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

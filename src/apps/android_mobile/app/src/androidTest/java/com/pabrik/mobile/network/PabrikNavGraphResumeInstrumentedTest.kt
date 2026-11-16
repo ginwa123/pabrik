@@ -27,16 +27,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * "Close the app, open it again, and it is where I was" — against a real
- * `NavController`.
- *
- * The JVM tests pin the *rule* ([SessionToResumeTest], [ResumePlanTest]) and
- * `HomeViewModelPositionTest` pins the workspace half, but the thing that makes
- * the feature work is a `navigate()` call from an effect on a real back stack,
- * and no assertion on a pure function can prove that call happens, happens
- * once, and lands somewhere Back can return from. That is what this is for.
- */
+/** "Close the app, open it again, and it is where I was" — against a real `NavController`. */
 @RunWith(AndroidJUnit4::class)
 class PabrikNavGraphResumeInstrumentedTest {
     @get:Rule
@@ -65,11 +56,7 @@ class PabrikNavGraphResumeInstrumentedTest {
     fun aRelaunchOpensTheSavedChat() {
         launch(LastPosition(workspaceId = "ws_b", sessionId = "sess_c"))
 
-        // The title bar, not `currentDestination.route`: a destination's route
-        // is the *pattern* it was declared with, so it reads `chat/{sessionId}`
-        // for every chat the app has ever opened and cannot tell two resumes
-        // apart. The title is looked up in the same list the route resolves the
-        // session against.
+        // The title bar, not `currentDestination.route`: a destination's route is the *pattern* it was declared with, so it reads `chat/{sessionId}` for every chat the …
         composeTestRule.onNodeWithTag("chat_title").assertTextEquals("Chat sess_c")
         // The chat's way out is the hamburger's drawer, not an arrow.
         composeTestRule.onNodeWithTag("chat_drawer_menu").assertIsDisplayed()
@@ -77,10 +64,7 @@ class PabrikNavGraphResumeInstrumentedTest {
 
     @Test
     fun theResumeOpensTheSessionBeforeItNavigates() {
-        // Otherwise Back lands on a chat route whose transcript was never
-        // requested, and the user gets an empty screen with a title and no
-        // explanation — the same failure the sidebar's own `onOpenChat` was fixed
-        // for.
+        // Otherwise Back lands on a chat route whose transcript was never requested, and the user gets an empty screen with a title and no explanation — the same failure …
         val opened = mutableListOf<String>()
         composeTestRule.setContent {
             PabrikTheme {
@@ -104,14 +88,11 @@ class PabrikNavGraphResumeInstrumentedTest {
     fun backFromAResumedChatReturnsToTheShell() {
         launch(LastPosition(workspaceId = "ws_b", sessionId = "sess_c"))
 
-        // The chat route's way home: the system Back button, claimed by the
-        // destination so it works from a resumed deep link where the shell was
-        // never pushed.
+        // The chat route's way home: the system Back button, claimed by the destination so it works from a resumed deep link where the shell was never pushed.
         Espresso.pressBack()
         composeTestRule.waitForIdle()
 
-        // A `popUpTo` here would drop the shell and put the user on the recovery
-        // screen, or nowhere at all.
+        // A `popUpTo` here would drop the shell and put the user on the recovery screen, or nowhere at all.
         composeTestRule.onNodeWithTag("home_screen").assertIsDisplayed()
     }
 
@@ -130,8 +111,7 @@ class PabrikNavGraphResumeInstrumentedTest {
             homeState = settledHome(chats = listOf(chat("sess_a"), chat("sess_c"))),
         )
 
-        // Opening a route whose session is gone gives an empty transcript, and
-        // the shell is the truthful answer.
+        // Opening a route whose session is gone gives an empty transcript, and the shell is the truthful answer.
         assertEquals(PabrikRoutes.SHELL, controller.currentDestination?.route)
     }
 
@@ -152,8 +132,7 @@ class PabrikNavGraphResumeInstrumentedTest {
         }
         composeTestRule.waitForIdle()
 
-        // A chat opened here would 401, and a 401 signs the user out of an app
-        // they were only ever trying to log into.
+        // A chat opened here would 401, and a 401 signs the user out of an app they were only ever trying to log into.
         assertEquals(PabrikRoutes.SHELL, controller.currentDestination?.route)
     }
 
@@ -175,11 +154,7 @@ class PabrikNavGraphResumeInstrumentedTest {
         }
         composeTestRule.waitForIdle()
 
-        // A second chat route for the same session is a second copy of the chat
-        // under Back, and it is invisible until someone presses Back twice. The
-        // session being opened once is the half that says it; the shell still
-        // being underneath says the resume pushed a route rather than replacing
-        // the whole stack, which would have left the user with nowhere to go.
+        // A second chat route for the same session is a second copy of the chat under Back, and it is invisible until someone presses Back twice.
         assertEquals(1, opened.size)
         composeTestRule.onNodeWithTag("chat_title").assertTextEquals("Chat sess_c")
         assertTrue(
@@ -190,10 +165,7 @@ class PabrikNavGraphResumeInstrumentedTest {
 
     @Test
     fun theChatStaysBehindTheGateUntilItsTranscriptLands() {
-        // A cold open: the route is on the back stack and the first page has
-        // not arrived. The reader must not see it yet, because the frame it
-        // would see is the top of an empty list and the frame after it is the
-        // bottom of a full one — the three-second drift in its shortest form.
+        // A cold open: the route is on the back stack and the first page has not arrived.
         composeTestRule.setContent {
             PabrikTheme {
                 controller = rememberNavController()
@@ -209,17 +181,14 @@ class PabrikNavGraphResumeInstrumentedTest {
         }
         composeTestRule.waitForIdle()
 
-        // The navigation has already happened. Only the *showing* is held, which
-        // is what lets the transcript load behind the gate at all.
+        // The navigation has already happened.
         composeTestRule.onNodeWithTag("chat_title").assertTextEquals("Chat sess_c")
         composeTestRule.onNodeWithTag("launch_gate").assertIsDisplayed()
     }
 
     @Test
     fun theGateLiftsOnceTheResumedTranscriptHasLanded() {
-        // The other half of the pair, and the one a test written only for the
-        // gate being up would pass without: a gate that never lifts is a splash
-        // with no way out of it.
+        // The other half of the pair, and the one a test written only for the gate being up would pass without: a gate that never lifts is a splash with no way out of it.
         composeTestRule.setContent {
             PabrikTheme {
                 controller = rememberNavController()
@@ -240,8 +209,7 @@ class PabrikNavGraphResumeInstrumentedTest {
 
     @Test
     fun aFirstLaunchRevealsTheShellWithoutAnyChat() {
-        // Nothing to resume is an answer, not a wait. If "no saved chat" left
-        // the gate up, every first launch would be a splash with no exit.
+        // Nothing to resume is an answer, not a wait.
         launch(LastPosition())
 
         composeTestRule.onNodeWithTag("launch_gate").assertDoesNotExist()
@@ -249,8 +217,7 @@ class PabrikNavGraphResumeInstrumentedTest {
 
     @Test
     fun aSignInScreenIsNeverCovered() {
-        // The gate blocks by being opaque, and a gate over the sign-in form is
-        // an app nobody can get into.
+        // The gate blocks by being opaque, and a gate over the sign-in form is an app nobody can get into.
         composeTestRule.setContent {
             PabrikTheme {
                 controller = rememberNavController()
@@ -297,17 +264,7 @@ private fun ResumeGraph(
         userId = "user_1",
     ),
     onOpenSession: (String) -> Unit = {},
-    /**
-     * The transcript the chat route paints.
-     *
-     * The default is the state a real open reaches within a frame or two —
-     * opened, loaded, nothing to scroll because the cached transcript is empty.
-     * It carries the route's session id because that is what a real
-     * `ChatViewModel` does: the resume calls `onOpenSession` *before* it
-     * navigates, so the first frame the route composes with already belongs to
-     * the chat it is showing. A state with no session id is a shape production
-     * never produces, and the launch gate reads it as "not settled yet".
-     */
+    /** The transcript the chat route paints. */
     chatState: StateFlow<ChatUiState> = MutableStateFlow(ChatUiState(sessionId = "sess_c", isLoading = false)),
 ) {
     PabrikNavGraph(

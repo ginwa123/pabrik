@@ -1,6 +1,4 @@
-// Functional test for the `add_mcp_server` agent tool. Zig port of
-// `tests/functional/agent_add_mcp_server_test.py` (same test names, same
-// order).
+// Functional test for the `add_mcp_server` agent tool.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,9 +10,7 @@ const ask_user = @import("ask_user_test.zig");
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// On-disk config directory for `home`, per `LlmConfig.getDefaultConfigDir`
-/// (Config.zig). Python `_platform_config_dir`; the harness shadows HOME (and
-/// APPDATA on Windows), so the tree below is always the one the binary wrote.
+/// On-disk config directory for `home`, per `LlmConfig.getDefaultConfigDir` (Config.zig).
 fn platformConfigDir(home: []const u8) ![]u8 {
     const parts: []const []const u8 = switch (builtin.os.tag) {
         .macos => &.{ "Library", "Application Support", "pabrik" },
@@ -24,19 +20,15 @@ fn platformConfigDir(home: []const u8) ![]u8 {
     return harness.harnessPath(gpa, home, parts);
 }
 
-/// One stdio MCP server entry, the shape `rebuildMcpServersParsed`
-/// (Config.zig) emits and the agent tool writes.
+/// One stdio MCP server entry, the shape `rebuildMcpServersParsed` (Config.zig) emits and the agent tool writes.
 const StdioServer = struct {
     command: []const u8,
     args: []const []const u8,
-    /// Absent on the second server in step 5 — mirrors the Python, which
-    /// omitted `cwd` there.
+    /// Absent on the second server in step 5 — mirrors the Python, which omitted `cwd` there.
     cwd: ?[]const u8 = null,
 };
 
-/// Parse `body` into an arena-backed document the caller owns. `leaky` into
-/// `gpa` on purpose: the returned arena is freed by the single `deinit()`
-/// below, so nothing escapes the tree.
+/// Parse `body` into an arena-backed document the caller owns.
 fn parseDoc(body: []const u8) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, gpa, body, .{});
 }
@@ -49,26 +41,20 @@ fn objPtr(doc: *std.json.Parsed(std.json.Value)) *std.json.ObjectMap {
     };
 }
 
-/// Insert `entry` into `doc`'s `mcp_servers` object, creating the object when
-/// the document has none.
+/// Insert `entry` into `doc`'s `mcp_servers` object, creating the object when the document has none.
 fn upsertMcpServer(doc: *std.json.Parsed(std.json.Value), name: []const u8, entry: StdioServer) !void {
     const a = doc.arena.allocator();
 
-    // Serialise through std.json so the binary path / args are escaped
-    // exactly as the server's own writer would escape them.
+    // Serialise through std.json so the binary path / args are escaped exactly as the server's own writer would escape them.
     const entry_json = try std.json.Stringify.valueAlloc(gpa, entry, .{});
     defer gpa.free(entry_json);
     const entry_value = try std.json.parseFromSliceLeaky(std.json.Value, a, entry_json, .{});
 
-    // `getPtr` (not `get`) because the map that comes back has to be MUTABLE
-    // to accept the new server — `get` hands out a const copy, and inserting
-    // into that copy would leave the document untouched.
+    // `getPtr` (not `get`) because the map that comes back has to be MUTABLE to accept the new server — `get` hands out a const copy, and inserting into that copy …
     if (objPtr(doc).getPtr("mcp_servers")) |slot| {
         switch (slot.*) {
             .object => {
-                // `slot.*` is an lvalue (through a mutable pointer), so the
-                // capture has to be by POINTER: an unmanaged ObjectMap's
-                // `put` replaces the map's own buffer, so mutating a by-value
+                // `slot.*` is an lvalue (through a mutable pointer), so the capture has to be by POINTER: an unmanaged ObjectMap's `put` replaces the map's own buffer, so …
                 switch (slot.*) {
                     .object => |*servers| servers.put(a, name, entry_value) catch return error.OutOfMemory,
                     else => unreachable,
@@ -88,8 +74,7 @@ fn upsertMcpServer(doc: *std.json.Parsed(std.json.Value), name: []const u8, entr
     objPtr(doc).put(a, "mcp_servers", .{ .object = fresh }) catch return error.OutOfMemory;
 }
 
-/// Read `key` → sub-object → `leaf` out of `obj`, as a string slice borrowed
-/// from the (still alive) parsed document.
+/// Read `key` → sub-object → `leaf` out of `obj`, as a string slice borrowed from the (still alive) parsed document.
 fn nestedStr(obj: std.json.ObjectMap, key: []const u8, leaf: []const u8, ctx: []const u8) ![]const u8 {
     const sub = obj.get(key) orelse {
         std.debug.print("{s}: no `{s}` entry\n", .{ ctx, key });
@@ -115,8 +100,7 @@ fn nestedStr(obj: std.json.ObjectMap, key: []const u8, leaf: []const u8, ctx: []
     };
 }
 
-/// Read `key` → `leaf` as a string array. The Python asserted
-/// `hello.get("args") == ["--flag"]`.
+/// Read `key` → `leaf` as a string array.
 fn nestedStrArray(obj: std.json.ObjectMap, key: []const u8, leaf: []const u8, ctx: []const u8) ![][]const u8 {
     const sub = obj.get(key) orelse {
         std.debug.print("{s}: no `{s}` entry\n", .{ ctx, key });
@@ -159,9 +143,7 @@ fn nestedStrArray(obj: std.json.ObjectMap, key: []const u8, leaf: []const u8, ct
 test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Python `_mcp_hello_world_bin_or_skip`: the binary is produced by
-    // `zig build mcp-hello-world` alongside `zig build`, and CI runs that
-    // chain. Skip (not fail) when it is absent, exactly as Python did.
+    // Python `_mcp_hello_world_bin_or_skip`: the binary is produced by `zig build mcp-hello-world` alongside `zig build`, and CI runs that chain.
     const binary = harness.mcpHelloWorldBin(io, gpa) catch |err| switch (err) {
         error.BinaryNotFound => {
             std.debug.print(
@@ -185,9 +167,7 @@ test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
     var initial = try parseDoc(initial_resp.body);
     defer initial.deinit();
 
-    // 2. PUT a config with a stdio MCP server — exactly the shape the
-    // agent tool emits internally. The write succeeds even though the
-    // LLM is a stub because the config endpoint never calls the LLM.
+    // 2.
     try upsertMcpServer(&initial, "hello_world", .{
         .command = binary,
         .args = &.{"--flag"},
@@ -217,8 +197,7 @@ test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
             return error.TestUnexpectedResult;
         },
     };
-    // Python: `servers = got.get("mcp_servers") or {}` then `assert
-    // "hello_world" in servers`.
+    // Python: `servers = got.get("mcp_servers") or {}` then `assert "hello_world" in servers`.
     const live_servers_val = live_obj.get("mcp_servers") orelse {
         std.debug.print("live config has no `mcp_servers`: {s}\n", .{got_resp.body});
         return error.TestUnexpectedResult;
@@ -243,8 +222,7 @@ test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
 
     try testing.expectEqualStrings("/tmp", try nestedStr(live_servers, "hello_world", "cwd", "live config"));
 
-    // 4. Verify the on-disk file matches — this is the bit that proves the
-    // disk-write half of the persistence helper ran.
+    // 4.
     const cfg_dir = try platformConfigDir(h.temp_dir);
     defer gpa.free(cfg_dir);
     const cfg_path = try std.fs.path.join(gpa, &.{ cfg_dir, "config.json" });
@@ -286,8 +264,7 @@ test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
 
     try testing.expectEqualStrings("/tmp", try nestedStr(disk_servers, "hello_world", "cwd", "on-disk config"));
 
-    // The stub profile (preserved by the PUT handler) is still there —
-    // proves the write didn't clobber sibling fields.
+    // The stub profile (preserved by the PUT handler) is still there — proves the write didn't clobber sibling fields.
     if (disk_obj.get("profiles_models") == null) {
         std.debug.print("profiles_models missing from on-disk config after PUT\n", .{});
         return error.TestUnexpectedResult;
@@ -342,13 +319,9 @@ test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
     }
 }
 
-// ============================================================================
 // Where the agent tool PERSISTS: a workspace session writes the OVERLAY
-// ============================================================================
 
-// `mcp_servers` is workspace-scoped, so `scopedBaseConfigText` strips it from
-// config.json. A server written there is invisible to the session that added
-// it; this drives the real `execAddMcpServer` path and asserts the overlay.
+// `mcp_servers` is workspace-scoped, so `scopedBaseConfigText` strips it from config.json.
 test "add_mcp_server_from_a_workspace_session_writes_the_workspace_overlay" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = ask_user.requireSqlite3Cli() catch |err| switch (err) {

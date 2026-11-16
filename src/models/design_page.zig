@@ -1,5 +1,4 @@
-//! Data model for the `design_pages` entity table. One row per design page
-//! (e.g. "Login", "Dashboard"). Pages belong to a `design` workspace item.
+//! Data model for the `design_pages` entity table.
 
 const std = @import("std");
 
@@ -17,9 +16,7 @@ height: i64 = 1024,
 /// Pan-zoom canvas offset for the page (NOT the page origin).
 x: i64 = 0,
 y: i64 = 0,
-/// Migration 066 — 1:1 FK to `workspace_item_tasks.id`. Set
-/// atomically by `set_design_page` at create time. Empty slice
-/// `""` for legacy pre-Migration-066 rows.
+/// Migration 066 — 1:1 FK to `workspace_item_tasks.id`.
 workspace_item_task_id: []u8 = &.{},
 
 const Self = @This();

@@ -1,6 +1,4 @@
-// AppLayout — URL restoration under the simplify-url-browser scheme
-// (?view=workspace&itemId=Y/chat/task_W). Mounts AppLayout with various URL shapes and asserts the
-// resulting store state + chat dialog visibility.
+// AppLayout — URL restoration under the simplify-url-browser scheme (?view=workspace&itemId=Y/chat/task_W).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -163,9 +161,7 @@ describe('AppLayout — simplify-url-browser wire shape', () => {
       `/app/${WS_ID}/projects/${KANBAN_ITEM_ID}/chat/${TASK_ID}`,
     )
     await flushPromises()
-    // After onMounted + initializeFromSystemFolder fires (and clears
-    // workspaces due to the empty API mock), re-set workspaces so the
-    // pending URL restore can find the item.
+    // After onMounted + initializeFromSystemFolder fires (and clears workspaces due to the empty API mock), re-set workspaces so the pending URL restore can find the …
     const ws = useWorkspacesStore()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ws.workspaces = [{ id: WS_ID, name: 'WS', items: [makeKanbanItem()] }] as any
@@ -224,9 +220,7 @@ describe('AppLayout — simplify-url-browser wire shape', () => {
   })
 
   it('legacy URL without workspaceId does NOT rewrite (boots normally)', async () => {
-    // Edge case: an old bookmark with no workspaceId in the URL. The sync rewrite needs workspaceId
-    // + itemId to build the path, so it returns null and boot continues normally (no replace). The
-    // chat task id is still restored into the store.
+    // Edge case: an old bookmark with no workspaceId in the URL.
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: vi.fn(), back: vi.fn() } as any)
@@ -244,8 +238,6 @@ describe('AppLayout — simplify-url-browser wire shape', () => {
     })
     await flushPromises()
     // No rewrite: workspaceId is missing so no path can be built.
-    // (The mirror watcher may still fire for other reasons — filter
-    // to boot-rewrite-shaped calls, of which there must be none.)
     const bootRewrites = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (c: any[]) => typeof c[0]?.path === 'string' && c[0].path.startsWith('/app/'),
@@ -255,9 +247,7 @@ describe('AppLayout — simplify-url-browser wire shape', () => {
 
   it('mounting with /chat/<taskId> on a design item sets activeDesignChatTaskId via onMounted branch', async () => {
      
-    // Design items have empty tasks arrays post-init, so the chat task is restored via the
-    // onMounted `setActiveTask` call (not via parent-discovery in setActiveTask). Verify the URL
-    // bar shape is preserved across mount.
+    // Design items have empty tasks arrays post-init, so the chat task is restored via the onMounted `setActiveTask` call (not via parent-discovery in setActiveTask).
     const wrapper = mountApp(
       [makeDesignItem()],
       {},

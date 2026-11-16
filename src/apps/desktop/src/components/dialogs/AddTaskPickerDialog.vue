@@ -14,9 +14,7 @@ const emit = defineEmits<{
 
 const handleClose = () => emit('close')
 
-// The picker is a chooser, not a holder: once the user has picked a path, the picker has done its
-// job and must close so the picked dialog isn't stacked on top of it (only memory opens a follow-up
-// dialog.
+// The picker is a chooser, not a holder: once the user has picked a path, the picker has done its job and must close so the picked dialog isn't stacked on top of …
 const handleStandard = () => {
   emit('pick', 'standard')
   handleClose()

@@ -1,6 +1,4 @@
-/** Git icon right-click menu: open GitHub branch / PR URLs in a new tab.
- * Covers the URL helpers (repo base + branch URL derivation) and the
- * GitBranchMenu items (disabled when the URL is missing). */
+/** Git icon right-click menu: open GitHub branch / PR URLs in a new tab. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import {

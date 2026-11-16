@@ -59,9 +59,7 @@ const absolutePath = computed<string>(() => {
   return stripped
 })
 
-// Re-fetch whenever the dialog opens OR the file changes: open guard
-// (mount with show=true, plus closed->open updates) with a prev-combo
-// guard so file switches while open also refetch.
+// Re-fetch whenever the dialog opens OR the file changes: open guard (mount with show=true, plus closed->open updates) with a prev-combo guard so file switches …
 const fetchForDialog = async () => {
   if (!props.show || !props.filePath || !props.cwd) return
   isLoading.value = true

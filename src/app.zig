@@ -1,5 +1,4 @@
-//! The process-wide `App` singleton — the one object every other part of the
-//! code reaches through.
+//! The process-wide `App` singleton — the one object every other part of the code reaches through.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -24,17 +23,14 @@ pub fn setSingleton(ctx: *App) !void {
     global_ctx = ctx;
 }
 
-/// Holds the live `LlmConfig` pointer plus the previously-installed one so
-/// that in-flight workflows (which captured the old `*const LlmConfig` into a
-/// local) keep dereferencing valid memory until the next swap — or until
+/// Holds the live `LlmConfig` pointer plus the previously-installed one so that in-flight workflows (which captured the old `*const LlmConfig` into a local) keep …
 pub const LlmConfigHolder = struct {
     current: *config.LlmConfig,
     previous: ?*const config.LlmConfig = null,
     lock: std.Io.Mutex = .init,
 };
 
-/// Input to `App.emit_run_agent`. The string fields are PASSED-THROUGH —
-/// `emit_run_agent` does not dupe them.
+/// Input to `App.emit_run_agent`.
 pub const EmitRunAgentInput = struct {
     session_id: []const u8,
     session_name: []const u8,
@@ -44,15 +40,13 @@ pub const EmitRunAgentInput = struct {
     allowed_tools: []const u8,
     image_urls: []const u8,
     video_urls: []const u8 = "",
-    /// The chat's file attachments, as the JSON payload the model path
-    /// reads. Empty when the message carries no file.
+    /// The chat's file attachments, as the JSON payload the model path reads.
     file_attachments: []const u8 = "",
     selected_profile_model: []const u8,
     is_auto_retry_until_stop: []const u8,
     // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
     skip_initial_queue_message: bool = false,
-    /// Owning user id for the session row this run creates (plan 2026-09-25,
-    /// W1).
+    /// Owning user id for the session row this run creates (plan 2026-09-25, W1).
     user_id: []const u8 = "",
 };
 
@@ -77,25 +71,18 @@ pub const App = struct {
     on_disconnect_cb: ?*fn (client_id: [16]u8) void = null,
     on_disconnect_lock: std.Io.Mutex = .init,
     group_emit_session_create: std.Io.Group,
-    /// Fire-and-forget group for background-command completion watchers
-    /// (background_watcher.zig).
+    /// Fire-and-forget group for background-command completion watchers (background_watcher.zig).
     group_bg_watchers: std.Io.Group = .init,
 
     static_dir_path: ?[]const u8 = null,
 
-    /// The sqlite file this process opened, so a sibling file (the transcript
-    /// archive) lands beside it rather than in a guessed directory. Empty on
-    /// postgres, which has no file.
+    /// The sqlite file this process opened, so a sibling file (the transcript archive) lands beside it rather than in a guessed directory.
     db_path: []const u8 = "",
 
     /// Opt-in auth enforcement, set from `--auth` CLI flag.
-    /// When false, all endpoints are open (legacy single-user mode).
-    /// When true, API + static + ws/sse require a valid `pabrik_session` cookie.
     auth_enabled: bool = false,
 
-    /// Process-global MCP stdio registry, cached here so every call site goes
-    /// through the singleton struct (`di.mcp_stdio_registry`) instead of
-    /// calling `StdioRegistry.global(allocator)` with its own allocator
+    /// Process-global MCP stdio registry, cached here so every call site goes through the singleton struct (`di.mcp_stdio_registry`) instead of calling …
     mcp_stdio_registry: ?*mcp_stdio.StdioRegistry = null,
     mcp_http_registry: ?*mcp_http.HttpRegistry = null,
     mcp_guest_registry: ?*mcp_stdio.GuestRegistry = null,
@@ -105,8 +92,7 @@ pub const App = struct {
     mcp_tools_init: bool = false,
     mcp_tools_lock: std.atomic.Mutex = .unlocked,
 
-    /// The object store document bodies live in, when one is configured. Null
-    /// keeps every body in the `documents.content` column.
+    /// The object store document bodies live in, when one is configured.
     storage_runtime: ?*storage_mod.runtime.Runtime = null,
 
     /// The object store as a `Storage` handle, or null when none is configured.
@@ -117,8 +103,7 @@ pub const App = struct {
 
     /// Schedule an async session-create task on the Io group.
     pub fn emit_run_agent(self: *App, obj: EmitRunAgentInput) !void {
-        // Heap-dupe each string synchronously into the long-lived
-        // `self.allocator`.
+        // Heap-dupe each string synchronously into the long-lived `self.allocator`.
         const owned_session_id = try self.allocator.dupe(u8, obj.session_id);
         errdefer self.allocator.free(owned_session_id);
         const owned_session_name = try self.allocator.dupe(u8, obj.session_name);
@@ -141,18 +126,12 @@ pub const App = struct {
         errdefer self.allocator.free(owned_selected_profile_model);
         const owned_is_auto_retry_until_stop = try self.allocator.dupe(u8, obj.is_auto_retry_until_stop);
         errdefer self.allocator.free(owned_is_auto_retry_until_stop);
-        // Owner rides along to the concurrent task (plan 2026-09-25, W1):
-        // the worker has no request context, so the enqueuing request's
-        // owner is the only source. Empty when auth is off.
+        // Owner rides along to the concurrent task (plan 2026-09-25, W1)
         const owned_user_id = try self.allocator.dupe(u8, obj.user_id);
         errdefer self.allocator.free(owned_user_id);
-        // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). The
-        // flag is a `bool` (no string dupe needed) — pass through the
-        // Io group directly.
+        // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
 
-        // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 3):
-        // Stamp `sessions.last_human_touched_at_nano` BEFORE the concurrent
-        // task spawns — this is the single funnel for every user-sends-a-
+        // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 3)
         ai_mod.llm_history.updateSessionLastHumanTouchedAt(
             self.allocator,
             self.db,
@@ -184,9 +163,7 @@ pub const App = struct {
                     siqm: bool,
                     uid: []const u8,
                 ) void {
-                    // These slices are owned by the Io task lifetime — they
-                    // were duped synchronously by `emit_run_agent` into
-                    // `di_inner.allocator` (which lives forever).
+                    // These slices are owned by the Io task lifetime — they were duped synchronously by `emit_run_agent` into `di_inner.allocator` (which lives forever).
                     defer di_inner.allocator.free(uid);
                     defer di_inner.allocator.free(iaur);
                     defer di_inner.allocator.free(spm);
@@ -264,13 +241,10 @@ pub const App = struct {
             &.{ session_id, copy_session_name, copy_cwd, copy_profile, effective_auto_retry, copy_user_id },
         );
 
-        // `INSERT OR IGNORE` is a no-op when the row already exists — which
-        // is EVERY normal send into an existing chat.
+        // `INSERT OR IGNORE` is a no-op when the row already exists — which is EVERY normal send into an existing chat.
         const session_row_inserted = self.db.changes() > 0;
 
-        // Claim an ownerless row when the INSERT OR IGNORE above no-opped on
-        // a pre-existing ownerless row (a handler that wrote the row without
-        // `user_id` before this task ran).
+        // Claim an ownerless row when the INSERT OR IGNORE above no-opped on a pre-existing ownerless row (a handler that wrote the row without `user_id` before this …
         if (parsed.user_id.len > 0) {
             self.db.exec(
                 allocator,
@@ -279,8 +253,7 @@ pub const App = struct {
             ) catch {};
         }
 
-        // Broadcast session created event — only when the INSERT above
-        // actually created the row. See `session_row_inserted`.
+        // Broadcast session created event — only when the INSERT above actually created the row.
         if (!session_row_inserted) return;
         try agentic_loop_mod.on_event_sent.onEventSendSessions(allocator, .{
             .action = "created",
@@ -297,16 +270,13 @@ pub const App = struct {
     }
 
     /// Fetch-once cache readers/writers (plan: mcp-fetch-once-cache).
-    /// All three are io-free (spinlock) so workflow + HTTP handlers share them.
     pub fn isMcpToolsInit(self: *App) bool {
         mcpToolsLock(&self.mcp_tools_lock);
         defer mcpToolsUnlock(&self.mcp_tools_lock);
         return self.mcp_tools_init;
     }
 
-    /// Snapshot the cache onto `run_allocator`. Returns `null` when the
-    /// cache is uninitialized OR when it was initialized with `null`
-    /// (no `mcp_servers` object). The caller owns the returned slice.
+    /// Snapshot the cache onto `run_allocator`.
     pub fn getMcpToolsCached(self: *App, run_allocator: std.mem.Allocator) ?[]tool_models.AgentTool {
         mcpToolsLock(&self.mcp_tools_lock);
         defer mcpToolsUnlock(&self.mcp_tools_lock);
@@ -315,8 +285,7 @@ pub const App = struct {
         return dupeAgentTools(run_allocator, cached) catch null;
     }
 
-    /// Publish a fresh fetch. Deep-dupes `tools` onto `self.allocator`
-    /// (process lifetime), frees the previous cache, marks initialized.
+    /// Publish a fresh fetch.
     pub fn storeMcpToolsCache(self: *App, tools_in: ?[]tool_models.AgentTool, mark_init: bool) void {
         mcpToolsLock(&self.mcp_tools_lock);
         defer mcpToolsUnlock(&self.mcp_tools_lock);
@@ -332,9 +301,7 @@ pub const App = struct {
         if (mark_init) self.mcp_tools_init = true;
     }
 
-    /// Lazy-invalidate: free + mark uninitialized. The next workflow run
-    /// does the one refetch. Called from PUT /api/config/pabrik and
-    /// add_mcp_server after their `setLlmConfig` swap.
+    /// Lazy-invalidate: free + mark uninitialized.
     pub fn clearMcpToolsCache(self: *App) void {
         mcpToolsLock(&self.mcp_tools_lock);
         defer mcpToolsUnlock(&self.mcp_tools_lock);
@@ -367,8 +334,7 @@ pub fn setLlmConfig(
     if (pending_previous) |p| freeLlmConfig(di.allocator, p);
 }
 
-/// Free both `current` and `previous` (if any). Called once at shutdown
-/// from `main.zig` after the HTTP server has stopped accepting requests.
+/// Free both `current` and `previous` (if any).
 pub fn freeAllLlmConfigs(di: *App) void {
     freeLlmConfig(di.allocator, di.llm_config_holder.current);
     if (di.llm_config_holder.previous) |p| freeLlmConfig(di.allocator, p);
@@ -376,9 +342,7 @@ pub fn freeAllLlmConfigs(di: *App) void {
     di.llm_config_holder.previous = null;
 }
 
-/// Free a single `LlmConfig`: deinit all owned strings/maps then destroy
-/// the heap allocation. The `const`-cast is safe because we own the
-/// memory — this is the only place we drop the `const`.
+/// Free a single `LlmConfig`: deinit all owned strings/maps then destroy the heap allocation.
 fn freeLlmConfig(allocator: std.mem.Allocator, ptr: *const config.LlmConfig) void {
     var mut: *config.LlmConfig = @constCast(ptr);
     mut.deinit();
@@ -393,8 +357,7 @@ pub fn registerClientOwner(client_id: [16]u8, owner: []const u8) void {
     di.client_owners_lock.lock(io) catch {};
     defer di.client_owners_lock.unlock(io);
 
-    // The key MUST be an owned copy: `client_id` is a by-value parameter, so
-    // `client_id[0..]` would dangle the moment this function returns.
+    // The key MUST be an owned copy: `client_id` is a by-value parameter, so `client_id[0..]` would dangle the moment this function returns.
     const owned_key = allocator.dupe(u8, client_id[0..]) catch return;
     const owned = allocator.dupe(u8, owner) catch {
         allocator.free(owned_key);
@@ -410,9 +373,7 @@ pub fn registerClientOwner(client_id: [16]u8, owner: []const u8) void {
     };
 }
 
-/// Look up the owning user id recorded for an SSE client. Returns a BORROWED
-/// slice valid only while the caller holds no other registry mutation — the
-/// fan-out uses it immediately and never stores it.
+/// Look up the owning user id recorded for an SSE client.
 pub fn getClientOwner(client_id: [16]u8) ?[]const u8 {
     const di = getSingleton() catch return null;
     const io = di.io;
@@ -421,9 +382,7 @@ pub fn getClientOwner(client_id: [16]u8) ?[]const u8 {
     return di.client_owners.get(client_id[0..]);
 }
 
-/// Drop the recorded owner for a disconnected SSE client. Called from
-/// `handleClientDisconnect`, which the SseManager invokes on every removal
-/// path, so the map cannot grow across reconnects.
+/// Drop the recorded owner for a disconnected SSE client.
 pub fn unregisterClientOwner(client_id: [16]u8) void {
     const di = getSingleton() catch return;
     const allocator = di.allocator;
@@ -488,8 +447,7 @@ pub fn unregisterSessionClient(session_id: []const u8, is_use_lock: bool) void {
     }
 }
 
-/// Remove ONE client_id from a routing key's list (disconnect path). Drops
-/// the map entry only when its list becomes empty.
+/// Remove ONE client_id from a routing key's list (disconnect path).
 pub fn unregisterSessionClientId(routing_key: []const u8, client_id: [16]u8, is_use_lock: bool) void {
     _ = is_use_lock;
     const di = getSingleton() catch return;
@@ -527,9 +485,7 @@ pub fn getClientIdForSession(session_id: []const u8, is_use_lock: bool) ?[16]u8 
     return null;
 }
 
-/// Get list of client_ids for a session Returns an owned copy that the caller
-/// MUST free with `allocator.free`. Returns null if the session has no
-/// registered clients (or does not exist).
+/// Get list of client_ids for a session Returns an owned copy that the caller MUST free with `allocator.free`.
 pub fn getListClientsForSession(session_id: []const u8, allocator: std.mem.Allocator, is_use_lock: bool) !?[][16]u8 {
     _ = is_use_lock;
     const di = try getSingleton();
@@ -586,8 +542,7 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
     // Drop the per-user event-filter entry for this client.
     unregisterClientOwner(client_id);
 
-    // Collect EVERY routing_key that contains this client_id, then unregister
-    // each one and drop its event_bus subscription.
+    // Collect EVERY routing_key that contains this client_id, then unregister each one and drop its event_bus subscription.
     var routing_keys_to_drop: std.ArrayList([]const u8) = .empty;
     defer routing_keys_to_drop.deinit(di.allocator);
 
@@ -598,9 +553,7 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
         while (it.next()) |entry| {
             for (entry.value_ptr.items) |v| {
                 if (std.mem.eql(u8, &v, &client_id)) {
-                    // Each routing_key's map entry owns its key string
-                    // (registered via `registerSessionClient` →
-                    // result.key_ptr.* = owned_key).
+                    // Each routing_key's map entry owns its key string (registered via `registerSessionClient` → result.key_ptr.* = owned_key).
                     if (di.allocator.dupe(u8, entry.key_ptr.*)) |duped| {
                         routing_keys_to_drop.append(di.allocator, duped) catch continue;
                     } else |_| {
@@ -619,8 +572,7 @@ pub fn handleClientDisconnect(client_id: [16]u8) void {
     }
 }
 
-/// Process-global MCP stdio registry accessor (lives beside `App` so every
-/// call site shares one `long_lived` allocator choice).
+/// Process-global MCP stdio registry accessor (lives beside `App` so every call site shares one `long_lived` allocator choice).
 pub fn mcpStdioRegistry(fallback: std.mem.Allocator) *mcp_stdio.StdioRegistry {
     if (getSingleton()) |di| {
         if (di.mcp_stdio_registry) |cached| return cached;
@@ -631,8 +583,7 @@ pub fn mcpStdioRegistry(fallback: std.mem.Allocator) *mcp_stdio.StdioRegistry {
     return mcp_stdio.StdioRegistry.global(fallback);
 }
 
-/// Same shape for the guest transport registry. The opener is a parameter
-/// because the agentic loop owns it, and `app` must not import that loop.
+/// Same shape for the guest transport registry.
 pub fn mcpGuestRegistry(
     io: std.Io,
     opener: mcp_stdio.GuestOpenFn,
@@ -658,9 +609,7 @@ pub fn mcpHttpRegistry(fallback: std.mem.Allocator) *mcp_http.HttpRegistry {
     return mcp_http.HttpRegistry.global(fallback);
 }
 
-/// Spinlock helper for the fetch-once tools cache (same pattern as
-/// `mcp_stdio.StdioRegistry` / `mcp_http.HttpRegistry` — Zig 0.16 has
-/// no `std.Thread.Mutex` in the public surface).
+/// Spinlock helper for the fetch-once tools cache (same pattern as `mcp_stdio.StdioRegistry` / `mcp_http.HttpRegistry` — Zig 0.16 has no `std.Thread.Mutex` in the …
 fn mcpToolsLock(m: *std.atomic.Mutex) void {
     while (!m.tryLock()) std.atomic.spinLoopHint();
 }
@@ -669,9 +618,7 @@ fn mcpToolsUnlock(m: *std.atomic.Mutex) void {
     m.unlock();
 }
 
-/// Deep-dupe one `AgentTool` (all strings + nested slices) onto
-/// `allocator`. Mirrors the ownership contract of
-/// `buildMCPToolsRun` (caller owns everything).
+/// Deep-dupe one `AgentTool` (all strings + nested slices) onto `allocator`.
 fn dupeAgentTool(allocator: std.mem.Allocator, src: tool_models.AgentTool) !tool_models.AgentTool {
     const props = try allocator.alloc(tool_models.ToolProperty, src.function.parameters.properties.len);
     errdefer allocator.free(props);
@@ -804,8 +751,7 @@ test "mcp fetch-once: store + snapshot roundtrip with deep-dupe isolation" {
     }
     try std.testing.expectEqual(@as(usize, 1), snap.len);
     try std.testing.expectEqualStrings("mcp_srv_do", snap[0].function.name);
-    // Snapshots must be independently duped (not aliased to the cache):
-    // different backing pointers prove the deep dupe.
+    // Snapshots must be independently duped (not aliased to the cache)
     try std.testing.expect(snap[0].function.name.ptr != ctx.mcp_tools_cache.?[0].function.name.ptr);
     try std.testing.expect(snap[0].function.parameters.properties.ptr != ctx.mcp_tools_cache.?[0].function.parameters.properties.ptr);
 }

@@ -1,5 +1,4 @@
-/** How a window's tab list is written to storage and read back. Split from `tabTarget` (identity)
- * so neither file has to carry the other's weight. */
+/** How a window's tab list is written to storage and read back. */
 import {
   fallbackTitle,
   homeTab,
@@ -20,9 +19,7 @@ export interface PersistedTabs {
   closed: ClosedTab[]
 }
 
-/**    * What a window writes to storage: one list per owner, so a row is a key rather than a filter the
- * payload has to be searched for. The store keeps the tabs flat in memory (`stripOf` filters), so this
- * shape exists only on the way in and out. */
+/** What a window writes to storage: one list per owner, so a row is a key rather than a filter the payload has to be searched for. */
 export interface PersistedStrips {
   v: number
   strips: Record<string, Tab[]>
@@ -168,8 +165,7 @@ function parseStrips(root: Record<string, unknown>): PersistedTabs {
   return { active, tabs, closed: closed.slice(0, MAX_CLOSED) }
 }
 
-/** Total: any input at all yields a usable list. A corrupt, older-version
- * or hand-edited value must never throw at boot — it starts over. */
+/** Total: any input at all yields a usable list. */
 export function parseTabList(raw: string | null | undefined): PersistedTabs {
   if (!raw) return freshList()
   let parsed: unknown
@@ -182,8 +178,7 @@ export function parseTabList(raw: string | null | undefined): PersistedTabs {
   if (!root) return freshList()
   const version = typeof root.v === 'number' ? root.v : 0
   if (version !== TABS_VERSION && version !== TABS_VERSION_LEGACY) return freshList()
-  // v2 writes one list per owner; v1 wrote one flat list. Both parse, and the flat list is what the
-  // store works with.
+  // v2 writes one list per owner; v1 wrote one flat list.
   if (root.strips) return parseStrips(root)
   if (!Array.isArray(root.tabs)) return freshList()
 

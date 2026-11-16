@@ -1,5 +1,4 @@
-// Functional wire test: REST `skills` + SSE `session_skills` agree after
-// skill equip.
+// Functional wire test: REST `skills` + SSE `session_skills` agree after skill equip.
 
 const std = @import("std");
 const testing = std.testing;
@@ -28,8 +27,7 @@ fn nowMs() i64 {
 
 // ─── sqlite3 CLI helpers ────────────────────────────────────────────────────
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. Exit code for a
-/// finished child, or null if a signal stopped it.
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -94,15 +92,12 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     return res.stdout;
 }
 
-/// `INSERT OR REPLACE INTO session_skills (...)` — the exact statement
-/// `llm_history.saveSkill` runs. Python `_seed_session_skill`.
+/// `INSERT OR REPLACE INTO session_skills (...)` — the exact statement `llm_history.saveSkill` runs.
 fn seedSessionSkill(temp_dir: []const u8) !void {
     const db = try harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
     defer gpa.free(db);
 
-    // Python asserted the DB exists before touching it; the table only
-    // exists once the server has migrated, so a missing file means the
-    // harness booted a binary that never opened its DB.
+    // Python asserted the DB exists before touching it; the table only exists once the server has migrated, so a missing file means the harness booted a binary that …
     std.Io.Dir.cwd().access(io, db, .{}) catch {
         std.debug.print("agent.db missing at {s}\n", .{db});
         return error.TestUnexpectedResult;
@@ -146,8 +141,7 @@ const SseEvent = struct {
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its address
-    /// outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *std.Io.Reader = undefined,
@@ -176,13 +170,11 @@ const SseStream = struct {
 };
 
 /// Open `GET /api/events?channels=<channels>` and capture the response head.
-/// Caller owns the returned pointer and must `deinit` it.
 fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -191,9 +183,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     s.req = s.client.request(.GET, try std.Uri.parse(url), .{
         .redirect_behavior = .unhandled,
         .extra_headers = &.{
-            // What the browser's `EventSource` sends; the handler keys off
-            // the query string, but sending it keeps the request identical
-            // to the one under test.
+            // What the browser's `EventSource` sends; the handler keys off the query string, but sending it keeps the request identical to the one under test.
             .{ .name = "Accept", .value = "text/event-stream" },
         },
     }) catch |err| {
@@ -209,8 +199,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     var resp = try s.req.receiveHead(&.{});
     s.status = @intFromEnum(resp.head.status);
 
-    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so
-    // touching `head` afterwards is a use-after-free.
+    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so touching `head` afterwards is a use-after-free.
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -226,7 +215,6 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
 }
 
 /// Read SSE frames until `stop` is set, the stream ends, or an error occurs.
-/// Runs on its own thread.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -242,8 +230,7 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // One LINE, not the whole stream: this is what makes the read
-        // incremental. `error.EndOfStream` is a clean server close.
+        // One LINE, not the whole stream: this is what makes the read incremental.
         const raw_line = reader.takeDelimiterInclusive('\n') catch |err| {
             const msg = switch (err) {
                 error.EndOfStream => "stream ended",
@@ -261,9 +248,7 @@ fn readEvents(s: *SseStream) void {
         if (line.len == 0) {
             // Blank line → dispatch whatever we accumulated.
             if (current_name) |name| {
-                // `std.mem.join` allocates an owned buffer but types it
-                // `[]const u8`; the constCast is sound because the buffer is
-                // ours to hand to `gpa.free`.
+                // `std.mem.join` allocates an owned buffer but types it `[]const u8`; the constCast is sound because the buffer is ours to hand to `gpa.free`.
                 const joined = std.mem.join(gpa, "\n", data_lines.items) catch "";
                 const data: []u8 = @constCast(joined);
                 s.mutex.lockUncancelable(io);
@@ -293,8 +278,7 @@ fn readEvents(s: *SseStream) void {
                 continue;
             };
         }
-        // `:` comment lines and unknown fields are ignored, matching both
-        // the browser EventSource parser and the Python reader.
+        // `:` comment lines and unknown fields are ignored, matching both the browser EventSource parser and the Python reader.
     }
 }
 
@@ -304,8 +288,7 @@ fn releaseReader(s: *SseStream) void {
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// True iff `data` is an `llm_full` payload for `session_id` carrying a
-/// NON-EMPTY `session_skills` array.
+/// True iff `data` is an `llm_full` payload for `session_id` carrying a NON-EMPTY `session_skills` array.
 fn llmFullHasSkills(data: []const u8, session_id: []const u8) bool {
     var parsed = std.json.parseFromSlice(std.json.Value, gpa, data, .{}) catch return false;
     defer parsed.deinit();
@@ -326,8 +309,7 @@ fn llmFullHasSkills(data: []const u8, session_id: []const u8) bool {
     return skills.items.len > 0;
 }
 
-/// Wait for an `llm_full` frame for `session_id` with non-empty
-/// `session_skills`.
+/// Wait for an `llm_full` frame for `session_id` with non-empty `session_skills`.
 fn drainUntilLlmFull(s: *SseStream, session_id: []const u8, timeout_ms: i64) !?[]u8 {
     const deadline = nowMs() + timeout_ms;
     var cursor: usize = 0;
@@ -348,8 +330,7 @@ fn drainUntilLlmFull(s: *SseStream, session_id: []const u8, timeout_ms: i64) !?[
         s.mutex.unlock(io);
 
         if (hit) |idx| {
-            // Dupe AFTER the unlock: `gpa.dupe` can fail, and returning
-            // while holding the lock would strand the reader thread.
+            // Dupe AFTER the unlock: `gpa.dupe` can fail, and returning while holding the lock would strand the reader thread.
             s.mutex.lockUncancelable(io);
             defer s.mutex.unlock(io);
             return try gpa.dupe(u8, s.events.items[idx].data);
@@ -377,7 +358,6 @@ fn seenNames(s: *SseStream) []u8 {
 // ─── HTTP helpers ───────────────────────────────────────────────────────────
 
 /// `PUT /api/llm/session/:id` creates the session row (no LLM needed).
-/// Python step 1.
 fn createSessionRow(h: *Harness) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{SESSION_ID});
     defer gpa.free(path);
@@ -458,16 +438,12 @@ test "rest_and_sse_skills_agree" {
         return error.TestUnexpectedResult;
     }
 
-    // DEFERRING THE JOIN LAST IS LOAD-BEARING: defers run LIFO, so
-    // `reader.join()` must fire BEFORE `s.deinit()` frees the SseStream the
-    // reader thread is writing frames into.
+    // DEFERRING THE JOIN LAST IS LOAD-BEARING: defers run LIFO, so `reader.join()` must fire BEFORE `s.deinit()` frees the SseStream the reader thread is writing …
     const reader = try std.Thread.spawn(.{}, readEvents, .{s});
     defer reader.join();
 
     {
-        // Python accepted 200 / 201 / 500: the stub LLM points at a dead
-        // port, so the turn may fail outright. The `llm_full` frame is
-        // emitted by the queue-message insert BEFORE the LLM call.
+        // Python accepted 200 / 201 / 500: the stub LLM points at a dead port, so the turn may fail outright.
         const turn = try std.json.Stringify.valueAlloc(gpa, .{
             .session_id = SESSION_ID,
             .session_name = "skills-live",
@@ -546,8 +522,7 @@ test "rest_and_sse_skills_agree" {
         return error.TestUnexpectedResult;
     }
 
-    // 5. Cross-wire agreement: REST and SSE carry the same skill set. Python:
-    // `set(names) == rest_names` with `rest_names == {SKILL_NAME}`.
+    // 5. Cross-wire agreement: REST and SSE carry the same skill set. Python
     for (sse_skills.items, 0..) |_, i| {
         const name = skillNameAt(sse_skills, i).?;
         if (!std.mem.eql(u8, name, SKILL_NAME)) {

@@ -1,5 +1,4 @@
-/** Unit tests for the older-history prefetch decision (task_1789505423062_0). Pure-function
- * coverage only — no DOM, no Vue. */
+/** Unit tests for the older-history prefetch decision (task_1789505423062_0). */
 import { describe, it, expect } from 'vitest'
 import {
   ARM_RADIUS_FLOOR_PX,
@@ -50,9 +49,7 @@ describe('armRadiusPx', () => {
   })
 
   it('is always strictly larger than the VirtualScroller commit band', () => {
-    // The core invariant of the design: the arm fires BEFORE the band the
-    // scroller commits in, at every viewport height. If this ever fails, the
-    // buffered page cannot be ready in time and the prefetch is pointless.
+    // The core invariant of the design: the arm fires BEFORE the band the scroller commits in, at every viewport height.
     for (const h of [0, 100, 200, 400, 800, 1440, 3000]) {
       const commitBand = computeLoadMoreThreshold(200, 0.5, h)
       expect(armRadiusPx(h)).toBeGreaterThan(commitBand)
@@ -60,16 +57,14 @@ describe('armRadiusPx', () => {
   })
 
   it('hard-codes the ratio above the scroller commit ratio', () => {
-    // ARM_RADIUS_RATIO must stay > loadMoreThresholdRatio (0.5) so the
-    // proportional term cannot invert the invariant above.
+    // ARM_RADIUS_RATIO must stay > loadMoreThresholdRatio (0.5) so the proportional term cannot invert the invariant above.
     expect(ARM_RADIUS_RATIO).toBeGreaterThan(0.5)
   })
 })
 
 describe('nextFetchEstimate', () => {
   it('blends from the cold-start estimate when the previous value is unusable', () => {
-    // prev unusable → the cold-start estimate stands in for prev, then the
-    // sample is blended in: 220 × 0.6 + 200 × 0.4 = 212.
+    // prev unusable → the cold-start estimate stands in for prev, then the sample is blended in: 220 × 0.6 + 200 × 0.4 = 212.
     expect(nextFetchEstimate(0, 200)).toBeCloseTo(PREFETCH_SAMPLE_INIT_MS * 0.6 + 200 * 0.4, 5)
     expect(nextFetchEstimate(Number.NaN, 200)).toBeCloseTo(
       PREFETCH_SAMPLE_INIT_MS * 0.6 + 200 * 0.4,
@@ -181,9 +176,7 @@ describe('decidePrefetchOlder — velocity term (Phase 2 hook, disabled in v1)',
   })
 
   it('arms from beyond the margin when travel time beats the fetch budget', () => {
-    // 10 px/ms (very fast fling), 2000 px from the top → 200 ms to arrive;
-    // the fetch budget is 220 + 80 = 300 ms. 2000 px is BEYOND the margin
-    // (1350), so only the velocity term can arm here.
+    // 10 px/ms (very fast fling), 2000 px from the top → 200 ms to arrive; the fetch budget is 220 + 80 = 300 ms. 2000 px is BEYOND the margin (1350), so only the …
     const d = decidePrefetchOlder(
       input({
         distanceFromTop: 2000,
@@ -199,8 +192,7 @@ describe('decidePrefetchOlder — velocity term (Phase 2 hook, disabled in v1)',
   })
 
   it('does not arm on velocity alone when travel time exceeds the budget', () => {
-    // 3 px/ms, 2000 px from the top → 667 ms to arrive; the fetch budget is
-    // 300 ms. The user has plenty of time, and 2000 > margin → no arm.
+    // 3 px/ms, 2000 px from the top → 667 ms to arrive; the fetch budget is 300 ms.
     const d = decidePrefetchOlder(
       input({
         distanceFromTop: 2000,

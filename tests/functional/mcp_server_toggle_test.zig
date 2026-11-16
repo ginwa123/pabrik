@@ -1,6 +1,4 @@
-// Functional toggle test for the MCP server `enabled` flag (Task 5). Zig port
-// of `tests/functional/mcp_server_toggle_test.py` (same test names, same
-// order).
+// Functional toggle test for the MCP server `enabled` flag (Task 5).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -10,13 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// An owned `mcp_servers` block for a PUT body. WHY A STRUCT AND NOT A LOCAL
-/// MAP: `ObjectMap.put` stores the value BY VALUE, and a `Value.object` copy
-/// shares the inner map's backing array.
+/// An owned `mcp_servers` block for a PUT body.
 const McpServers = struct {
     outer: std.json.ObjectMap,
     entries: std.ArrayList(std.json.ObjectMap) = .empty,
@@ -31,13 +25,9 @@ const McpServers = struct {
         self.outer.deinit(gpa);
     }
 
-    /// Add one stdio server. `enabled = null` OMITS the key — which is
-    /// exactly what the frontend serializer sends for an enabled server,
-    /// and what the backend reads back as "enabled".
+    /// Add one stdio server.
     fn put(self: *McpServers, name: []const u8, command: []const u8, enabled: ?bool) !void {
-        // No `errdefer entry.deinit()`: on any failure below the (partial)
-        // map is simply leaked, which reports as a leak on an already-failing
-        // test.
+        // No `errdefer entry.deinit()`: on any failure below the (partial) map is simply leaked, which reports as a leak on an already-failing test.
         var entry: std.json.ObjectMap = .{};
         try entry.put(gpa, "command", .{ .string = command });
         if (enabled) |e| try entry.put(gpa, "enabled", .{ .bool = e });
@@ -50,8 +40,7 @@ const McpServers = struct {
     }
 };
 
-/// `GET /api/config/pabrik`, re-parsed into an OWNED `std.json.Parsed` the
-/// caller can MUTATE and re-serialize.
+/// `GET /api/config/pabrik`, re-parsed into an OWNED `std.json.Parsed` the caller can MUTATE and re-serialize.
 fn fetchConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -66,9 +55,7 @@ fn putConfig(h: *Harness, cfg: *const std.json.Parsed(std.json.Value)) !void {
     r.deinit();
 }
 
-/// Mirror `LlmConfig.getDefaultConfigDir` (Config.zig) per-OS layout. The
-/// Python helper had a Windows branch that consulted `$APPDATA` when it
-/// pointed inside the harness HOME.
+/// Mirror `LlmConfig.getDefaultConfigDir` (Config.zig) per-OS layout.
 fn platformConfigDir(home: []const u8) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik" }),
@@ -120,8 +107,7 @@ fn serverEnabled(servers: std.json.ObjectMap, name: []const u8) ?bool {
     };
 }
 
-/// Assert the flag is neither absent nor explicitly `false`, i.e. the
-/// server is ENABLED (Python: `in (None, True)`).
+/// Assert the flag is neither absent nor explicitly `false`, i.e. the server is ENABLED (Python: `in (None, True)`).
 fn expectEnabled(servers: std.json.ObjectMap, name: []const u8, ctx: []const u8) !void {
     const flag = serverEnabled(servers, name);
     if (flag != null and flag.? == false) {
@@ -134,9 +120,7 @@ fn expectEnabled(servers: std.json.ObjectMap, name: []const u8, ctx: []const u8)
     }
 }
 
-// ============================================================================
 // tests
-// ============================================================================
 
 // PUT disabled stdio server -> GET returns enabled:false (wire + disk).
 test "disabled_stdio_server_round_trips_enabled_false" {
@@ -151,9 +135,7 @@ test "disabled_stdio_server_round_trips_enabled_false" {
         defer cfg.deinit();
         var servers = McpServers.init();
         defer servers.deinit();
-        // EXACT frontend serializer shape for a disabled stdio server:
-        // {command, ...} + enabled:false only when disabled. `/bin/true`
-        // is inert because we assert exclusion, never tool output.
+        // EXACT frontend serializer shape for a disabled stdio server
         try servers.put("toggled_off", "/bin/true", false);
         switch (cfg.value) {
             .object => |*o| try o.put(gpa, "mcp_servers", servers.value()),
@@ -187,8 +169,7 @@ test "disabled_stdio_server_round_trips_enabled_false" {
         });
     }
 
-    // On-disk shape matches (proves the generic json.Value deep-copy in
-    // PUT preserved `enabled` through the disk write).
+    // On-disk shape matches (proves the generic json.Value deep-copy in PUT preserved `enabled` through the disk write).
     const dir = try platformConfigDir(h.temp_dir);
     defer gpa.free(dir);
     const cfg_path = try std.fs.path.join(gpa, &.{ dir, "config.json" });
@@ -277,8 +258,7 @@ test "flip_disabled_to_enabled_omits_key" {
         std.debug.print("command lost on the enable flip: {?s}\n", .{cmd});
         return error.TestUnexpectedResult;
     }
-    // Omit-when-true: enabled servers serialize WITHOUT the key (absent
-    // parses as enabled -> server is enumerated again).
+    // Omit-when-true: enabled servers serialize WITHOUT the key (absent parses as enabled -> server is enumerated again).
     try expectEnabled(got, "flip", "after the enable flip");
 }
 
@@ -317,8 +297,7 @@ test "disabled_sibling_preserved_and_explicit_true_tolerated" {
             return error.TestUnexpectedResult;
         }
         try testing.expectEqual(false, serverEnabled(got, "off") orelse return error.TestUnexpectedResult);
-        // Explicit true must NOT disable (backend: only `.bool false`
-        // disables; missing/non-bool/true all mean enabled).
+        // Explicit true must NOT disable (backend: only `.bool false` disables; missing/non-bool/true all mean enabled).
         try expectEnabled(got, "on", "explicit true");
     }
 
@@ -350,8 +329,7 @@ test "disabled_sibling_preserved_and_explicit_true_tolerated" {
     try expectEnabled(got, "off", "after toggling `off` on");
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = McpServers.init;
     _ = McpServers.deinit;

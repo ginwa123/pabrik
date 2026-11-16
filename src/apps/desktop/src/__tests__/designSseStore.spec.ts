@@ -1,5 +1,4 @@
-/** Unit tests for the bus-backed designSse Pinia store. Mirrors kanbanSse.spec.ts
- * byte-for-byte in structure. */
+/** Unit tests for the bus-backed designSse Pinia store. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -16,9 +15,7 @@ import { useDesignSseStore } from '../stores/designSse'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/**  * Test-only stub SseClient. Tracks state-listener callbacks so tests can drive the bus's `state`
- * ShallowRef transitions to exercise the `onConnected → fetchInitialDesign` watcher. Same shape as
- * the kanban test's stub — the bus's SseClient vtable is shared across all channel subscribers. */
+/** Test-only stub SseClient. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,9 +48,7 @@ describe('useDesignSseStore (bus-backed)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE initDesignSse runs — designSseStore calls `useSseBus()` inside
-    // initDesignSse, which throws if the bus hasn't been installed. Replace the underlying
-    // SseClient with a stub so we never open a network EventSource in tests.
+    // Install the bus BEFORE initDesignSse runs — designSseStore calls `useSseBus()` inside initDesignSse, which throws if the bus hasn't been installed.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -62,9 +57,7 @@ describe('useDesignSseStore (bus-backed)', () => {
   })
 
   afterEach(() => {
-    // Detach the bus listener so events don't fire into a store whose Pinia is gone —
-    // `__resetSseBus` closes the global client which also tears down internal state, but explicit
-    // closeDesignSse covers the case where a test crashed before reaching close.
+    // Detach the bus listener so events don't fire into a store whose Pinia is gone — `__resetSseBus` closes the global client which also tears down internal state …
     try {
       useDesignSseStore().closeDesignSse()
     } catch {
@@ -78,13 +71,9 @@ describe('useDesignSseStore (bus-backed)', () => {
     __dispatchSseBus('design', event)
   }
 
-  // ─── Contract: idempotency + state cleanup ──────────────────────────── The Chunk 6 task spec
-  // lists exactly two test contracts: 1. initDesignSse is idempotent (second call doesn't add a
-  // second listener.
+  // ─── Contract: idempotency + state cleanup ────────────────────────────
   it('initDesignSse is idempotent — second call does NOT add a second listener', async () => {
-    // Spy on workspacesStore.fetchDesignElements and count how many
-    // times it fires per dispatched event. If initDesignSse added a
-    // second listener, the count would double.
+    // Spy on workspacesStore.fetchDesignElements and count how many times it fires per dispatched event.
     const ws = useWorkspacesStore()
     const fetchSpy = vi.spyOn(ws, 'fetchDesignElements').mockResolvedValue()
 
@@ -104,9 +93,7 @@ describe('useDesignSseStore (bus-backed)', () => {
   })
 
   it('closeDesignSse clears activeWorkspaceId so a later re-init re-binds cleanly', async () => {
-    // The spec asserts that closeDesignSse nulls out the active workspace filter — this lets
-    // `initDesignSse(newId)` after close re-register with the new id (verified by dispatching an
-    // event for the new id post-close+reinit and observing the fetch fire).
+    // The spec asserts that closeDesignSse nulls out the active workspace filter — this lets `initDesignSse(newId)` after close re-register with the new id (verified …
     const ws = useWorkspacesStore()
     const fetchSpy = vi.spyOn(ws, 'fetchDesignElements').mockResolvedValue()
 
@@ -118,9 +105,7 @@ describe('useDesignSseStore (bus-backed)', () => {
     // After close, the filter must be cleared.
     expect(store.activeWorkspaceId).toBe('')
 
-    // Re-init with a different workspace. The listener must be
-    // re-installed (since closeDesignSse detached it) and the
-    // activeWorkspaceId must reflect the new id.
+    // Re-init with a different workspace.
     await store.initDesignSse('ws_2')
     expect(store.activeWorkspaceId).toBe('ws_2')
 
@@ -155,9 +140,7 @@ describe('designSse — local-mutation dedupe', () => {
     installSseBus(createApp({}))
     localStubClient = makeStubClient('connecting')
     __setSseBusGlobalClient(localStubClient)
-    // Mock fetch — the store actions would otherwise hit the
-    // network (which doesn't exist in jsdom). The mock returns a
-    // shape compatible with apiFetch's expectations.
+    // Mock fetch — the store actions would otherwise hit the network (which doesn't exist in jsdom).
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -178,12 +161,10 @@ describe('designSse — local-mutation dedupe', () => {
   it('skips fetchDesignElements when the SSE event is for a locally-mutated element (single)', async () => {
     const ws = useWorkspacesStore()
     const fetchSpy = vi.spyOn(ws, 'fetchDesignElements').mockResolvedValue()
-    // Pre-register the element as recently-mutated locally (the store
-    // action does this automatically — we call the test-only helper).
+    // Pre-register the element as recently-mutated locally (the store action does this automatically — we call the test-only helper).
     const { _clearRecentLocalMutationsForTests, isRecentLocalMutation } = await import('../stores/workspaces')
     _clearRecentLocalMutationsForTests()
-    // Trigger a local mutation via the store action — it should
-    // register the id in the dedupe Map.
+    // Trigger a local mutation via the store action — it should register the id in the dedupe Map.
     ws.workspaces.push(makeWorkspaceWithItem('ws_1', 'item_1'))
     await ws.updateDesignElementGeometry('ws_1', 'item_1', 'page_1', 'elem_local', { x: 10 })
     expect(isRecentLocalMutation('elem_local')).toBe(true)
@@ -250,8 +231,7 @@ describe('designSse — local-mutation dedupe', () => {
     const fetchSpy = vi.spyOn(ws, 'fetchDesignElements').mockResolvedValue()
     const { _clearRecentLocalMutationsForTests } = await import('../stores/workspaces')
     _clearRecentLocalMutationsForTests()
-    // Register 3 ids in the dedupe Map (simulating a local batch
-    // PATCH that registered all 3).
+    // Register 3 ids in the dedupe Map (simulating a local batch PATCH that registered all 3).
     ws.workspaces.push(makeWorkspaceWithItem('ws_1', 'item_1'))
     await ws.updateDesignElementsGeometryBatch('ws_1', 'item_1', 'page_1', [
       { element_id: 'b1' },

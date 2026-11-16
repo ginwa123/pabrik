@@ -7,9 +7,7 @@ const Backend = common.Backend;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 119 — `skill_metadata`: one row per non-column frontmatter key,
-/// so metadata is a table instead of a block every reader re-scans out of
-/// `skills.content`. Promoted keys stay columns: one fact, one home.
+/// Migration 119 — `skill_metadata`: one row per non-column frontmatter key, so metadata is a table instead of a block every reader re-scans out of …
 pub const Migration119CreateSkillMetadata = struct {
     pub const version: u32 = 119;
     pub const name = "create_skill_metadata";
@@ -35,9 +33,7 @@ pub const Migration119CreateSkillMetadata = struct {
         try backfill(db, allocator);
     }
 
-    /// Stored skills keep their frontmatter inside `content`, so adding the
-    /// table late loses nothing. A body with no fence inserts no row: that is
-    /// a legal skill, not an error.
+    /// Stored skills keep their frontmatter inside `content`, so adding the table late loses nothing.
     fn backfill(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         var q = try db.query(allocator, "SELECT id, COALESCE(content, '') FROM skills", &[_][]const u8{});
         defer q.deinit();

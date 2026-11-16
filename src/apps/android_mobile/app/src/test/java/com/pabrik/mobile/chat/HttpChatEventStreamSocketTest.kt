@@ -13,43 +13,11 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
 
-/**
- * The SSE pump, driven against a real socket.
- *
- * Every other test in this package feeds the *parser* a string. None of them
- * touch [HttpChatEventStream], which is where the connection actually lives —
- * and "the chat never updates" is a statement about the pump, not about the
- * parser. The bytes below are the ones a real `GET /api/events` sends, copied
- * from kabelweb's `http_server.zig` SSE preamble plus a live capture, framing
- * included:
- *
- *   HTTP/1.1 200 OK
- *   Content-Type: text/event-stream
- *   Cache-Control: no-cache
- *   Connection: close
- *   Transfer-Encoding: chunked
- *   X-Accel-Buffering: no
- *   Access-Control-Allow-Origin: *
- *
- * Reproducing the preamble *and* the chunked framing is the point. A pump that
- * assumes a `Content-Length`, or that trips over `Connection: close`, passes
- * every string-fed test and delivers nothing on a phone.
- */
+/** The SSE pump, driven against a real socket. */
 class HttpChatEventStreamSocketTest {
 
     companion object {
-        /**
-         * Every case here has a hard deadline, and the deadline is JUnit's
-         * rather than the test's.
-         *
-         * *That is the whole point.* The regression these pin is a
-         * **deadlock**: on the unfixed pump, `stop()` parks inside
-         * `HttpURLConnection.disconnect()` while the pump thread is inside
-         * the very socket read it is waiting on, and the test never
-         * returns. A suite that hangs is a suite CI eventually stops
-         * reading, so the failure has to be a red test with a stack trace
-         * rather than a build that quietly times out.
-         */
+        /** Every case here has a hard deadline, and the deadline is JUnit's rather than the test's. */
         const val TEST_TIMEOUT_MILLIS = 45_000L
     }
 
@@ -82,9 +50,7 @@ class HttpChatEventStreamSocketTest {
                 }
                 accepted++
                 sockets.add(socket)
-                // Read the request head so the client's write completes, then
-                // reply. Never read past the blank line: the client sends no
-                // body and nothing more.
+                // Read the request head so the client's write completes, then reply.
                 Thread {
                     try {
                         val reader = BufferedReader(socket.getInputStream().reader())
@@ -130,19 +96,14 @@ class HttpChatEventStreamSocketTest {
     private fun stream(reconnectDelayMillis: Long = 50L) =
         HttpChatEventStream(
             sessionStore = store,
-            // A provider, not a captured host: this stream reconnects against
-            // whatever it names at connect time, which is the same rule
-            // production relies on for a mid-session server change.
+            // A provider, not a captured host: this stream reconnects against whatever it names at connect time, which is the same rule production relies on for a …
             baseUrlProvider = { baseUrl() },
             reconnectDelayMillis = reconnectDelayMillis,
         )
 
     // ── the wire bytes, verbatim ──────────────────────────────────────────
 
-    /**
-     * One `Transfer-Encoding: chunked` SSE frame, the way `SseManager` writes
-     * it: `<hex len>\r\n<payload>\r\n`.
-     */
+    /** One `Transfer-Encoding: chunked` SSE frame, the way `SseManager` writes it: `<hex len>\r\n<payload>\r\n`. */
     private fun chunk(payload: String): String {
         val bytes = payload.toByteArray()
         return "${Integer.toHexString(bytes.size)}\r\n$payload\r\n"
@@ -172,14 +133,7 @@ class HttpChatEventStreamSocketTest {
 
     // ── tests ──────────────────────────────────────────────────────────────
 
-    /**
-     * The headline regression: a stream that is connected and receiving
-     * delivers nothing.
-     *
-     * Every `decodeChatFrame` case in `ChatEventStreamTest` passes against a
-     * string, which is exactly why this had to be driven through a socket —
-     * the failure mode is a pump that never gets past the handshake.
-     */
+    /** The headline regression: a stream that is connected and receiving delivers nothing. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `the handshake and a delta both arrive over a chunked socket`() {
         streams.add(
@@ -208,11 +162,7 @@ class HttpChatEventStreamSocketTest {
         )
     }
 
-    /**
-     * A pretty-printed payload arrives as several `data:` lines, which is how
-     * *every* real `llm_full` is framed. The pump has to rejoin them before
-     * the decode can see a JSON object at all.
-     */
+    /** A pretty-printed payload arrives as several `data:` lines, which is how *every* real `llm_full` is framed. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `a pretty-printed full frame is rejoined across its data lines`() {
         val payload = """
@@ -251,10 +201,7 @@ class HttpChatEventStreamSocketTest {
         assertEquals("the answer", full.message.content)
     }
 
-    /**
-     * The heartbeat is an unnamed `data: ping` frame. It must not be mistaken
-     * for a payload, and — the part that matters — it must not stop the pump.
-     */
+    /** The heartbeat is an unnamed `data: ping` frame. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `a heartbeat between frames does not stop the stream`() {
         streams.add(
@@ -281,11 +228,7 @@ class HttpChatEventStreamSocketTest {
         assertEquals("the ping was decoded as an event: $events", 2, events.size)
         assertEquals("after the ping", (events[1] as ChatStreamEvent.Chunk).content)
     }
-    /**
-     * The server drops the connection. The pump has to come back on its own —
-     * an SSE stream has no replay buffer, so "give up" means the chat is dead
-     * until the reader switches chats.
-     */
+    /** The server drops the connection. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `a dropped connection is reconnected rather than abandoned`() {
         streams.add(
@@ -310,15 +253,7 @@ class HttpChatEventStreamSocketTest {
         assertEquals(listOf("before", "after"), contents)
     }
 
-    /**
-     * Switching chats stops the old stream and starts a new one, and the new
-     * one has to be the one that is actually reading.
-     *
-     * This is the sequence a reader performs every time they tap another chat
-     * in the drawer, so a stream that is left "running" by a stopped pump makes
-     * the next chat receive nothing at all — which is indistinguishable, from
-     * the screen, from the server having gone quiet.
-     */
+    /** Switching chats stops the old stream and starts a new one, and the new one has to be the one that is actually reading. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `a restart after stop delivers into the new callbacks`() {
         streams.add(StreamScript(listOf(headers, connected, llmChunkFrame("sess_1", "first"))))
@@ -333,8 +268,7 @@ class HttpChatEventStreamSocketTest {
 
         val secondEvents = CopyOnWriteArrayList<ChatStreamEvent>()
         val secondStates = CopyOnWriteArrayList<ChatStreamState>()
-        // Give the stopped pump a moment to unwind, which is the window a
-        // user-driven chat switch lands in.
+        // Give the stopped pump a moment to unwind, which is the window a user-driven chat switch lands in.
         Thread.sleep(150)
         pump.start(onEvent = { secondEvents.add(it) }, onState = { secondStates.add(it) })
         try {
@@ -348,12 +282,7 @@ class HttpChatEventStreamSocketTest {
         assertEquals("second", chunkEvent.content)
     }
 
-    /**
-     * A non-2xx handshake is terminal by design (the pump must not burn the
-     * radio retrying a rejected cookie), and the *message* is what the chat
-     * shows. A pump that silently swallows the status leaves the header reading
-     * "Connecting…" for the life of the process.
-     */
+    /** A non-2xx handshake is terminal by design (the pump must not burn the radio retrying a rejected cookie), and the *message* is what the chat shows. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `a rejected handshake reports the status instead of hanging`() {
         val rejected = buildString {
@@ -387,11 +316,7 @@ class HttpChatEventStreamSocketTest {
         )
     }
 
-    /**
-     * A reader who leaves the chat and comes back must get a working stream
-     * again. `ChatViewModel.openSession` does exactly stop-then-start, and the
-     * pump's own bookkeeping has to survive it.
-     */
+    /** A reader who leaves the chat and comes back must get a working stream again. */
     @Test(timeout = TEST_TIMEOUT_MILLIS)
     fun `start stop start stop leaves the pump usable`() {
         val scripts = (1..3).map { n ->

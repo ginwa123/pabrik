@@ -1,6 +1,4 @@
-/** Integration test for the full wire: DesignView `@create-element` → AppLayout
- * `handleDesignCreateElement` → `useDesignHandlers.create Element` →
- * `workspacesStore.addDesignElement` → api addDesignElement. */
+/** Integration test for the full wire: DesignView `@create-element` → AppLayout `handleDesignCreateElement` → `useDesignHandlers.create Element` → … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -95,9 +93,7 @@ function mountAppLayout(): VueWrapper {
         SettingsView: true,
         CodeEditor: true,
         KanbanView: true,
-        // CRITICAL: do NOT stub DesignView — we want the real <Teleport to="body"> content to
-        // render so document.querySelector can find the + Element button. The dialog itself uses
-        // Teleport so document.querySelector still works regardless of where DesignView mounts.
+        // CRITICAL: do NOT stub DesignView — we want the real <Teleport to="body"> content to render so document.querySelector can find the + Element button.
         Chats: true,
         DesignChatDialog: true,
       },
@@ -145,9 +141,7 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
     vi.useFakeTimers()
     setActivePinia(createPinia())
     document.body.innerHTML = ''
-    // Reset the hoisted addDesignElementMock between tests (it
-    // accumulates calls across tests in this describe block otherwise
-    // and bleeds into the next test's assertions).
+    // Reset the hoisted addDesignElementMock between tests (it accumulates calls across tests in this describe block otherwise and bleeds into the next test's …
     vi.clearAllMocks()
   })
 
@@ -160,7 +154,6 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
   })
 
   function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
-    // Snapshot NOW (JSON): lazy init() wipes the tree before reading mocks.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const snapshot = JSON.parse(JSON.stringify(store.workspaces)) as any[]
      
@@ -200,8 +193,7 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
     wrapper = mountAppLayout()
     await flushPromises()
 
-    // The handler is exposed via defineExpose so we can invoke the SAME function the
-    // @create-element template binding routes to.
+    // The handler is exposed via defineExpose so we can invoke the SAME function the @create-element template binding routes to.
     const exposed = wrapper.vm as unknown as {
       handleDesignCreateElement: (body: {
         name: string
@@ -225,9 +217,7 @@ describe('AppLayout.handleDesignCreateElement wire (bug: add element manual not 
   })
 
   it('is a quiet no-op when activeWorkspace or activeWorkspaceItem is missing', async () => {
-    // AppLayout's handler guards on the active workspace + item. If either is missing (race window
-    // during workspace/item switch) the handler must NOT call the api. Defensive guard matches
-    // handleDesignUpdateElement / handleDesignDeleteElement.
+    // AppLayout's handler guards on the active workspace + item.
     const store = useWorkspacesStore()
     // No activeWorkspace/Item set — the guard fires and bails.
     rewireApiForFixture(store)

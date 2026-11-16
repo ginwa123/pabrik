@@ -1,6 +1,4 @@
-/** Tests for SetGitWorktree.vue — the tool_output component that renders the XML response from the
- * `set_git_worktree` agent tool. The component is purely presentational (no API calls), so no mocks
- * are needed. Mirrors the AddSkill/RemoveSkill tool_output style. */
+/** Tests for SetGitWorktree.vue — the tool_output component that renders the XML response from the `set_git_worktree` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -108,9 +106,7 @@ describe('SetGitWorktree', () => {
     wrapper = mount(SetGitWorktree, {
       props: { content: SET_SUCCESS },
     })
-    // `UiIcon` stamps every icon it renders with data-testid="ui-icon",
-    // so one assertion covers every glyph instead of a per-emoji blacklist
-    // that goes stale the moment someone adds a name to the registry.
+    // `UiIcon` stamps every icon it renders with data-testid="ui-icon", so one assertion covers every glyph instead of a per-emoji blacklist that goes stale the …
     expect(wrapper.find('[data-testid="ui-icon"]').exists()).toBe(false)
     expect(wrapper.find('[data-icon="tree"]').exists()).toBe(false)
   })

@@ -8,8 +8,7 @@ const WIDTH = 1000
 const HEIGHT = 150
 const GAP = 10
 
-/** The endpoint only returns days that had a call, so a silent day would vanish from the bars
- * instead of reading as a zero. Fill the interior so the shape is the truth. */
+/** The endpoint only returns days that had a call, so a silent day would vanish from the bars instead of reading as a zero. */
 const slots = computed<{ day: string; tokens: number; calls: number }[]>(() => {
   const byDay = new Map(props.daily.map((d) => [d.day, d]))
   if (!byDay.size) return []

@@ -1,5 +1,4 @@
-/** End-to-end test for design-mode undo/redo capture calls (Chunk 7). Originally verified the full
- * gesture → entry push → undo/redo → element restored cycle for the most important mutations. */
+/** End-to-end test for design-mode undo/redo capture calls (Chunk 7). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

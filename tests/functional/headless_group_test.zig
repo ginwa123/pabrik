@@ -1,6 +1,4 @@
-//! Wire test: `pabrik headless group …` assembles a roster and answers the
-//! routing question with no server and no model. Every call runs the real
-//! binary against the harness's isolated HOME.
+//! Wire test: `pabrik headless group …` assembles a roster and answers the routing question with no server and no model.
 
 const std = @import("std");
 const testing = std.testing;

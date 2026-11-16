@@ -3,9 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { useChatRightSidebar } from '../chat_right_sidebar/useChatRightSidebar'
 
-// In-memory localStorage fallback for environments where jsdom was
-// created without a url (localStorage undefined). Mirrors the
-// Storage interface subset the composable uses.
+// In-memory localStorage fallback for environments where jsdom was created without a url (localStorage undefined).
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>()
   ;(globalThis as unknown as { localStorage: Storage }).localStorage = {
@@ -42,8 +40,7 @@ describe('useChatRightSidebar', () => {
     try {
       localStorage.clear()
     } catch {
-      // jsdom without url — localStorage unavailable; composable
-      // already guards with try/catch so tests still exercise logic.
+      // jsdom without url — localStorage unavailable; composable already guards with try/catch so tests still exercise logic.
     }
   })
 

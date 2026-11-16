@@ -1,7 +1,6 @@
 package com.pabrik.mobile.projects
 
-// Secrets helpers. Pure logic so they are unit-testable without a ViewModel
-// or a network.
+// Secrets helpers.
 object SecretsHelper {
 
     fun isValidName(name: String): Boolean = name.trim().isNotEmpty()

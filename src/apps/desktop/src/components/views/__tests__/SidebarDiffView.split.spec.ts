@@ -1,6 +1,4 @@
-/** SidebarDiffView's three view controls, as BEHAVIOUR: - `mode`      — 'unified' (default, today's
- * render) vs 'split' - `collapsed` — header only, driven from outside so it survives a body unmount
- * - `wholeFile` — the file's full context, fetched through `wholeFileDiff` (mocked here. */
+/** SidebarDiffView's three view controls, as BEHAVIOUR: - `mode` — 'unified' (default, today's render) vs 'split' - `collapsed` — header only, driven from outside … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'
@@ -94,8 +92,7 @@ describe('SidebarDiffView — split render', () => {
     expect(first[1]!.attributes('style')).toContain('var(--color-red)')
     expect(first[3]!.attributes('style')).toContain('var(--color-green)')
     expect(first[4]!.attributes('style')).toContain('var(--color-green)')
-    // Row 1 is a lone removal: the old side is tinted, the new side is the
-    // untinted striped filler — it must not borrow either tint.
+    // Row 1 is a lone removal: the old side is tinted, the new side is the untinted striped filler — it must not borrow either tint.
     const second = changed[1]!.findAll('td')
     expect(second[0]!.attributes('style')).toContain('var(--color-red)')
     expect(second[1]!.attributes('style')).toContain('var(--color-red)')

@@ -9,12 +9,10 @@ pub const egress_port: u32 = 5001;
 pub const resolver_port: u32 = 5002;
 pub const agent_service_port: u32 = 5003;
 
-/// A guest duplex (one MCP server's two byte streams) answers on its OWN
-/// port, so a read that waits never queues behind a long `exec`.
+/// A guest duplex (one MCP server's two byte streams) answers on its OWN port, so a read that waits never queues behind a long `exec`.
 pub const duplex_port_base: u32 = 5200;
 pub const max_duplex: u32 = 8;
-/// One read or write piece. A reply this size always fits one frame once
-/// base64-encoded, which `encodedReplyFits` below proves at compile time.
+/// One read or write piece.
 pub const max_duplex_chunk: usize = 32 * 1024;
 
 pub const max_frame: usize = 64 * 1024;

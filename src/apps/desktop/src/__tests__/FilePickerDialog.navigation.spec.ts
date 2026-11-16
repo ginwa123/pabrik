@@ -1,14 +1,11 @@
-/** Tests for FilePickerDialog — a generic, data-source-agnostic file/folder picker. The component
- * is generic over the item type T. */
+/** Tests for FilePickerDialog — a generic, data-source-agnostic file/folder picker. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import FilePickerDialog from '../components/FilePickerDialog.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Pinia + localStorage setup is required for FilePickerDialog because the component now imports
-// `useRecentFoldersStore` (the recent-folders tab). Pinia requires an active instance; jsdom 29
-// dropped localStorage from its default globals. Each test file gets a fresh Pinia + a fresh stub.
+// Pinia + localStorage setup is required for FilePickerDialog because the component now imports `useRecentFoldersStore` (the recent-folders tab).
 beforeEach(() => {
   setActivePinia(createPinia())
   Object.defineProperty(globalThis, 'localStorage', {
@@ -39,8 +36,7 @@ function keydownInDom(key: string) {
   el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
 }
 
-// Mock tree: / └── home └── user ├── docs (dir) ├── notes (dir) ├── readme (file) └── .hidden
-// (file, hidden)
+// Mock tree: / └── home └── user ├── docs (dir) ├── notes (dir) ├── readme (file) └── .hidden (file, hidden)
 const tree: Record<string, Array<{ name: string; path: string; is_directory: boolean }>> = {
   '/': [{ name: 'home', path: '/home', is_directory: true }],
   '/home': [{ name: 'user', path: '/home/user', is_directory: true }],
@@ -308,9 +304,7 @@ describe('FilePickerDialog — agnostic data source (non-folder example)', () =>
   })
 })
 
-// ─── Address-bar (path input) ────────────────────────────────────────────────────────────── The
-// "✏️ Go" button next to the breadcrumb swaps the clickable crumb row for a single text input
-// pre-filled with the current path. Enter navigates, Escape reverts, the input commits on blur.
+// ─── Address-bar (path input) ──────────────────────────────────────────────────────────────
 describe('FilePickerDialog — address bar (type a path)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -336,8 +330,7 @@ describe('FilePickerDialog — address bar (type a path)', () => {
     clickInDom('[data-testid="file-picker-path-edit"]')
     await flushPromises()
     expect(findInDom('[data-testid="file-picker-path-input"]')).not.toBeNull()
-    // The input should be pre-filled with the current path so the user can
-    // either start typing fresh text or edit the suffix.
+    // The input should be pre-filled with the current path so the user can either start typing fresh text or edit the suffix.
     expect(
       (findInDom('[data-testid="file-picker-path-input"]') as HTMLInputElement | null)?.value,
     ).toBe('/home/user')
@@ -355,14 +348,11 @@ describe('FilePickerDialog — address bar (type a path)', () => {
     const input = findInDom('[data-testid="file-picker-path-input"]') as HTMLInputElement
     input.value = '/home/user/notes'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    // Vue's v-model writes via the 'input' event above; flush so the next
-    // keydown sees the new value, then submit.
+    // Vue's v-model writes via the 'input' event above; flush so the next keydown sees the new value, then submit.
     await flushPromises()
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
-    // The dialog should now show the children of the new path. We pick a
-    // child that's only present in /home/user/notes (todo.txt) and assert
-    // it's in the DOM.
+    // The dialog should now show the children of the new path.
     expect(findInDom('[data-testid="file-picker-item-/home/user/notes/todo.txt"]')).not.toBeNull()
     // After commit the breadcrumb is back, the input is gone.
     expect(findInDom('[data-testid="file-picker-path-input"]')).toBeNull()
@@ -404,8 +394,6 @@ describe('FilePickerDialog — address bar (type a path)', () => {
 
   it('lexical POSIX: from /home/user/docs, "../user" goes up then INTO user → /home/user/user', async () => {
     // Documents the deliberate POSIX semantics of the joinRelative helper.
-    // `/home/user/user`, the same way `cd /home/user/docs && cd ../user`
-    // resolves in POSIX shells.
     const loadItems = makeLoadItems()
     wrapper = mountDialog({ initialPath: '/home/user/docs', loadItems })
     await wrapper.setProps({ modelValue: true })
@@ -418,8 +406,7 @@ describe('FilePickerDialog — address bar (type a path)', () => {
     await flushPromises()
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
-    // /home/user/user doesn't exist in our mock tree, so loadItems returns []
-    // and the content pane renders the "Empty folder" empty state.
+    // /home/user/user doesn't exist in our mock tree, so loadItems returns [] and the content pane renders the "Empty folder" empty state.
     expect(findInDom('[data-testid="file-picker-content"]')?.textContent).toContain('Empty folder')
   })
 
@@ -482,8 +469,7 @@ describe('FilePickerDialog — address bar (type a path)', () => {
     errSpy.mockRestore()
     // The dialog is still open (the error UI is in-pane, not a modal crash).
     expect(findInDom('[data-testid="file-picker-dialog"]')).not.toBeNull()
-    // The error block contains "boom: not a directory" — the same string
-    // loadPath formatted into loadError.
+    // The error block contains "boom: not a directory" — the same string loadPath formatted into loadError.
     const errEl =
       findInDom('[data-testid="file-picker-tree"] [class*="text-center"]') ||
       findInDom('[data-testid="file-picker-tree"]')

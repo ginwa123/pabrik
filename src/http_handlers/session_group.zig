@@ -1,6 +1,4 @@
 //! The roster of a multi-agent chat: `GET|POST|DELETE /api/llm/session/:id/group...`.
-//! A session is a group when `sessions.group_lead` names somebody; the loop then
-//! takes each turn's speaker from `session_group_members`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -26,8 +24,7 @@ pub const GroupError = error{
     OutOfMemory,
 };
 
-/// The roster as the wire carries it. `lead` and `members` are owned; free
-/// them with `freeRoster`. `session_id` points into the caller's memory.
+/// The roster as the wire carries it.
 pub fn rosterUseCase(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -54,9 +51,7 @@ pub fn freeRoster(allocator: std.mem.Allocator, roster: Roster) void {
     session_group.freeMembers(allocator, roster.members);
 }
 
-/// Add an agent to the roster, or move one that is already there. The first
-/// member to join leads the room, so a roster assembled one join at a time
-/// still has somebody to speak first.
+/// Add an agent to the roster, or move one that is already there.
 pub fn addMemberUseCase(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -75,8 +70,7 @@ pub fn addMemberUseCase(
     return rosterUseCase(allocator, db, session_id);
 }
 
-/// Take an agent out. The last member leaving clears the lead, so the session
-/// stops being a group instead of routing to an empty room.
+/// Take an agent out.
 pub fn removeMemberUseCase(
     allocator: std.mem.Allocator,
     db: *database.Db,

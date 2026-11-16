@@ -4,69 +4,16 @@ import com.pabrik.mobile.auth.SessionPhase
 import com.pabrik.mobile.recents.ChatSummary
 import com.pabrik.mobile.storage.LastPosition
 
-/**
- * What a relaunch should open, decided once, from the position the last run
- * saved and the data that has loaded since.
- *
- * ### Why the decision lives here
- *
- * The alternative is to put the restore in the nav graph's effect, where it
- * reads as three lines of `if`. What makes it dangerous is not the navigation —
- * it is the *waiting*. The saved id cannot be checked until the list it belongs
- * to has arrived, and the answer must not be acted on twice, because a second
- * `navigate()` onto the chat route is a second destination on the back stack,
- * which is how one chat ends up twice under Back. Both are rules about state
- * over time, so they belong to a class that owns the state, not to three
- * booleans threaded through a composable.
- *
- * The workspace half of the position is not here on purpose: a workspace is
- * sidebar state, so it is applied by [com.pabrik.mobile.recents.HomeViewModel]
- * while it is still choosing which list to paint, before the first fetch. See
- * `selectWorkspaceId` in that file.
- *
- * ### The rules it enforces
- *
- * 1. **Nothing to resume is not a failure.** No saved position, or one whose
- *    chat has been deleted, leaves the app on the shell — which is where it
- *    would have been anyway.
- * 2. **Only ever resume what still exists.** The saved id is validated against
- *    the loaded list. Resuming a deleted chat would open a route whose session
- *    no longer exists, and the transcript would come back empty with nothing to
- *    explain why.
- * 3. **Decide once.** Every answer latches, so a recomposition, a second refresh
- *    or a trip through the network inspector cannot re-apply it.
- * 4. **Wait for the list.** `settled` is what separates "this chat is gone" (a
- *    decision, `null`) from "the list has not arrived yet" (no decision, also
- *    `null`). Guessing early would make the restore depend on which of the
- *    cached paint or the live fetch happened to win the race.
- */
+/** What a relaunch should open, decided once, from the position the last run saved and the data that has loaded since. */
 internal class ResumePlan(private val saved: LastPosition) {
 
     private var sessionResolved = false
 
-    /**
-     * Whether the question has been answered — a chat to open, or a decision
-     * that there is none.
-     *
-     * The gate that holds a launch screen over the shell needs exactly this
-     * distinction, and it is not derivable from the return value: an unanswered
-     * plan and an answered one that found nothing to resume both return null,
-     * and only the second is a reason to stop waiting. Rule 3 in
-     * [sessionToResume] covers why the question can stay open indefinitely
-     * (the app is not on the shell) and why an empty chat list is not an answer
-     * to it.
-     */
+    /** Whether the question has been answered — a chat to open, or a decision that there is none. */
     val isDecided: Boolean
         get() = sessionResolved
 
-    /**
-     * The chat to open, or null while the question is still open.
-     *
-     * Only the shell may resume, and that rule is the caller's to keep: a
-     * `pabrik://` deep link, or a back stack restored from saved instance state,
-     * is a position the user has just chosen, and a persisted one must not
-     * override it. Only the nav graph knows the current destination.
-     */
+    /** The chat to open, or null while the question is still open. */
     fun resolveSession(
         chats: List<ChatSummary>,
         selectedWorkspaceId: String?,
@@ -74,60 +21,19 @@ internal class ResumePlan(private val saved: LastPosition) {
     ): String? {
         if (sessionResolved || !settled) return null
         val sessionId = saved.sessionId
-        // Latched even when the answer is null: "no chat was saved" cannot stop
-        // being true, so leaving it open would make every later recomposition
-        // re-decide it.
+        // Latched even when the answer is null: "no chat was saved" cannot stop being true, so leaving it open would make every later recomposition re-decide it.
         if (sessionId.isNullOrBlank() || selectedWorkspaceId == null) {
             sessionResolved = true
             return null
         }
-        // An empty list is NOT an answer, and this is the line that decides
-        // whether the feature works on a cold launch at all.
-        //
-        // `HomeViewModel.isLoading` covers the *workspace* list, and the chat list
-        // for the workspace it selects is fetched after that — so there is a real
-        // moment where the app has settled, holds no chats, and is about to
-        // receive them. Latching here would answer "nothing to resume" for the
-        // whole launch, and a launch with no cache to prime from is exactly the
-        // one this feature exists for.
-        //
-        // Staying open costs nothing: a workspace that genuinely has no chats
-        // keeps answering null, which is what it would have answered anyway. What
-        // must not stay open is a *decision*, and that is the line below.
+        // An empty list is NOT an answer, and this is the line that decides whether the feature works on a cold launch at all.
         if (chats.isEmpty()) return null
         sessionResolved = true
         return sessionId.takeIf { id -> chats.any { chat -> chat.id == id } }
     }
 }
 
-/**
- * The chat a relaunch should open right now, or null for "not yet, or not at
- * all".
- *
- * Everything the resume needs to be true is in one pure function so the effect
- * that calls it holds no policy of its own — the same split [goBackToPreviousOrShell]
- * makes for Back, and for the same reason: the conditions are the part that is
- * easy to get subtly wrong, and they are untestable inside a composable.
- *
- * Two of the four conditions are here and two live in [ResumePlan], split by
- * what they need to know:
- *
- * - **Authenticated.** The sidebar is still fetching while the auth phase
- *   settles, and a chat opened before it settles loads against a session that
- *   does not exist yet — an empty transcript, or a 401 that signs the user out.
- * - **On the shell.** A `pabrik://` deep link, or a back stack restored from
- *   saved instance state, is a position the user chose a moment ago. Resuming
- *   over it would pull them out of the link they followed, and this is the
- *   desktop's own precedence: a URL beats the persisted workspace.
- * - **Settled** and **still listed** are [ResumePlan]'s, because only it knows
- *   whether it has already answered. "Still listed" means listed by the list the
- *   drawer is currently painting — cached or live — because that is the same list
- *   the user is being offered rows from. Restoring a chat the drawer is showing
- *   is no more of a leap than tapping it.
- *
- * [isLoading] is passed as the state field it is rather than as an inverted
- * `settled`, so the caller has no way to get the sense of the flag wrong.
- */
+/** The chat a relaunch should open right now, or null for "not yet, or not at all". */
 internal fun sessionToResume(
     authPhase: SessionPhase,
     currentRoute: String?,

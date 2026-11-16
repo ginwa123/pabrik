@@ -1,5 +1,4 @@
-/** Behavioural tests for `workspacesStore.fetchDesignElements` in-place mutation contract. Bug
- * history (2026-08-06): the FIRST drag of a group/frame moved only the group, not the descendants. */
+/** Behavioural tests for `workspacesStore.fetchDesignElements` in-place mutation contract. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -126,8 +125,6 @@ describe('workspacesStore.fetchDesignElements (in-place mutation)', () => {
 
     await store.fetchDesignElements('ws_1', 'item_1', 'page_1')
 
-    // CRITICAL: the array reference must be the same — Vue 3 reactivity depends on per-index writes to
-    // the same reactive array, and a new reference would orphan in-flight mirror writes.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const afterRef = (store.workspaces[0] as any).items[0].design_elements
     expect(afterRef).toBe(beforeRef)

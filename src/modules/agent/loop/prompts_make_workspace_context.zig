@@ -69,11 +69,8 @@ pub fn makeWorkspaceContext(
         }
         try out.appendSlice(allocator, "`)");
         // Cache-friendly: no "*(this task)*" marker — that would make the prompt per-task dynamic.
-        // The agent can find its own item_id via the task's workspace_item_id in the anchor,
-        // but we don't mark it here to keep the prompt workspace-static (same for all tasks in workspace).
         try out.appendSlice(allocator, "\n");
-        // Cache-friendly: no per-item tasks listing — tasks are highly dynamic (change on every create)
-        // and break prefix cache. The agent should use kanban_list / search to discover tasks.
+        // Cache-friendly: no per-item tasks listing — tasks are highly dynamic (change on every create) and break prefix cache.
     }
 
     if (ctx.truncated_items_count > 0) {
@@ -86,8 +83,7 @@ pub fn makeWorkspaceContext(
         try out.appendSlice(allocator, footer);
     }
 
-    // Per-task dynamic tail — small, at the end so prefix cache for the workspace-static
-    // siblings list above stays hot. This is the ONLY per-task dynamic part.
+    // Per-task dynamic tail — small, at the end so prefix cache for the workspace-static siblings list above stays hot.
     try out.appendSlice(allocator, "\n**Your current task:** `");
     try out.appendSlice(allocator, ctx.self_task_id);
     try out.appendSlice(allocator, "` is bound to item `");

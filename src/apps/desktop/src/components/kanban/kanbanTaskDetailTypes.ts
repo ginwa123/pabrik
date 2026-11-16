@@ -1,6 +1,4 @@
-/** Shared contracts for the KanbanTaskDetail panel and its extracted children. The props and emits
- * below are the panel's public API and are unchanged by the split — every parent keeps binding the
- * same names. */
+/** Shared contracts for the KanbanTaskDetail panel and its extracted children. */
 import type { ComputedRef, Ref, SetupContext } from 'vue'
 import type { Task, KanbanColumn } from '../../stores/workspaces'
 import type { PreviewFile } from '../file/FilePreview.vue'
@@ -14,24 +12,15 @@ export interface TaskDetailProps {
   task: Task | null
   column?: KanbanColumn | null // optional — shown in metadata strip
   errorMessage?: string | null // optional — red banner in body
-  // Absolute path used as the root for the `@`-trigger file picker
-  // in <KanbanDescriptionEditor>. Falls back to '' (no picker
-  // results) for legacy kanbans that don't have a path set.
+  // Absolute path used as the root for the `@`-trigger file picker in <KanbanDescriptionEditor>.
   cwd?: string
-  // NEW (plan: kanban-task-tags-autocomplete.md, Task 2.7): Workspace id required by the
-  // tag-suggestions composable. Empty string = no fetch attempted (legacy callers + tests that
-  // don't care about suggestions).
+  // NEW (plan: kanban-task-tags-autocomplete.md, Task 2.7): Workspace id required by the tag-suggestions composable.
   workspaceId?: string
-  // NEW (plan: 2026-08-06-kanban-add-task-button-placement). The available columns for the
-  // create-mode column dropdown. Empty array = no dropdown rendered (legacy callers, edit mode,
-  // or kanbans that haven't loaded columns yet). Edit mode passes empty.
+  // NEW (plan: 2026-08-06-kanban-add-task-button-placement).
   availableColumns?: KanbanColumn[]
-  // NEW (kanban task dependencies). Candidate tasks for the
-  // dependency picker (same board). Empty = picker hidden.
+  // NEW (kanban task dependencies).
   tasks?: Task[]
   // NEW (plan: 2026-08-24-kanban-create-run-disable-double-click).
-  // Edit mode ignores it (the host only binds it on the
-  // create-mode mount).
   creating?: boolean
 }
 
@@ -39,13 +28,9 @@ export type TaskDetailEmit = SetupContext<TaskDetailEmits>['emit']
 export type TaskTagSuggestions = ReturnType<typeof useKanbanTagSuggestions>
 
 export interface TaskDetailEmits {
-  // v-model:show two-way binding — emits `false` when the dialog wants to close (X button, Cancel
-  // button, backdrop click, Escape key). Parent uses `v-model:show` so this is what makes the
-  // dialog actually close.
+  // v-model:show two-way binding — emits `false` when the dialog wants to close (X button, Cancel button, backdrop click, Escape key).
   'update:show': [value: boolean]
-  // Explicit close event for parents that bind `:show` (one-way) and listen for `@close` to flip
-  // their own ref. Kept for backward compatibility with the existing test suite and for the
-  // KanbanSettingsDialog-style pattern.
+  // Explicit close event for parents that bind `:show` (one-way) and listen for `@close` to flip their own ref.
   close: []
   save: [
     payload: {
@@ -56,9 +41,7 @@ export interface TaskDetailEmits {
       depends_on?: string[]
     },
   ]
-  // Create-mode counterpart. Host wires this to workspacesStore.addTask
-  // + moveTaskToColumn. Same payload shape as `save` but with
-  // mode='create' so the parent handler can switch on it.
+  // Create-mode counterpart.
   create: [
     payload: {
       mode: 'create'
@@ -66,47 +49,30 @@ export interface TaskDetailEmits {
       description: string
       // Auto-retry-until-stop (Option A): the toggle's live value at the moment of Create.
       is_auto_retry_until_stop: '0' | '1'
-      // Create-mode only. `true` = isolate the agent in a fresh git
-      // worktree (host bakes `#Notes UseGitWorktree` into the
-      // create_and_run queue_message; plain create ignores it).
+      // Create-mode only.
       useGitWorktree: boolean
-      // Create-mode only. Custom worktree path input (visible when the worktree toggle is ON).
-      // Empty string = agent picks the path itself; non-empty is baked as the `Path:` line after
-      // `#Notes UseGitWorktree` in the queue_message.
+      // Create-mode only.
       worktreePath: string
-      // Create-mode only. Base ref the new worktree branches FROM, e.g. `origin/main`. Visible when
-      // the worktree toggle is ON; empty string = no `Base:` line, so the agent branches from the
-      // repo's current HEAD (the pre-existing behavior).
+      // Create-mode only.
       worktreeBaseBranch: string
-      // Create-mode only. `true` = the agent waits for CI and merges the PR itself (host bakes
-      // `#Notes AutoMerge` into the create_and_run queue_message; plain create ignores it).
+      // Create-mode only.
       autoMerge: boolean
       // Create-mode only. The `Method:` line under that note: merge | squash | rebase.
       autoMergeMethod: string
-      // NEW (kanban task tags, Migration 067): array of free-form
-      // tag strings. Empty array = no tags. Host forwards via
-      // api.createTask's `tags` param; backend validates + persists.
+      // NEW (kanban task tags, Migration 067): array of free-form tag strings.
       tags: string[]
-      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Selected agent-model name (empty
-      // string = backend default / top-level config).
+      // NEW (plan: 2026-08-06-kanban-task-profile-selector).
       selectedAgent: string
-      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Files the dialog's editor staged in create
-      // mode (no base64 ever written into `description`). Always present — empty array when no
-      // images were pasted/picked.
+      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
       pendingFiles: PreviewFile[]
-      // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Absolute
-      // path on disk or '' for cwd-less.
+      // NEW (Migration 070 — kanban-cwd-session-optional plan).
       skillNames: string[]
       cwdSession?: string
     },
   ]
   // Emitted in edit mode when the user flips the unattended toggle.
-  // BEFORE the optimistic UI flip so the host can capture the
-  // pre-toggle value (in case it needs to roll back on PUT failure).
   'update-unattended': [payload: { value: '0' | '1'; previous: '0' | '1' }]
-  // NEW (plan: 2026-08-06-kanban-create-task-run-agent). Emitted when the user clicks "Create task
-  // & run agent" in create mode. Same payload shape as `create` but with mode='create_and_run' so
-  // the host can branch on it.
+  // NEW (plan: 2026-08-06-kanban-create-task-run-agent).
   'create-and-run': [
     payload: {
       mode: 'create_and_run'
@@ -117,34 +83,27 @@ export interface TaskDetailEmits {
       useGitWorktree: boolean
       // Mirror of `worktreePath` on the `create` emit (the `Path:` line).
       worktreePath: string
-      // Mirror of `worktreeBaseBranch` on the `create` emit (the
-      // `Base:` line).
+      // Mirror of `worktreeBaseBranch` on the `create` emit (the `Base:` line).
       worktreeBaseBranch: string
       // Mirror of `autoMerge` on the `create` emit (the `#Notes AutoMerge` line).
       autoMerge: boolean
       // Mirror of `autoMergeMethod` on the `create` emit (the `Method:` line).
       autoMergeMethod: string
       tags: string[]
-      // NEW (plan: 2026-08-06-kanban-task-profile-selector). See note on the `create` emit above.
-      // Threaded through to runAgentOnNewTask so the agent runs with the chosen agent.
+      // NEW (plan: 2026-08-06-kanban-task-profile-selector).
       selectedAgent: string
-      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc). Mirror of
-      // the `pendingFiles` field on the `create` emit above.
+      // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
       pendingFiles: PreviewFile[]
-      // NEW (Migration 070 — kanban-cwd-session-optional plan). Mirror of the `cwdSession` field on
-      // the `create` emit above.
+      // NEW (Migration 070 — kanban-cwd-session-optional plan).
       skillNames: string[]
       cwdSession?: string
     },
   ]
-  // NEW (plan: 2026-08-06-kanban-add-task-button-placement). Create mode only. Fires when the user
-  // picks a different column from the create-mode dropdown.
+  // NEW (plan: 2026-08-06-kanban-add-task-button-placement).
   'column-change': [columnId: string]
-  // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Edit mode only. Fires when the user picks a
-  // different cwd from the picker in edit mode.
+  // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd).
   'update-cwd': [payload: { cwd: string }]
-  // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit mode only. Fires when the user
-  // clicks the ▶ Start agent button.
+  // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
   'start-agent': [payload: { taskId: string }]
 }
 
@@ -159,8 +118,7 @@ export interface SkillEntry {
   description: string
 }
 
-/** Everything the extracted sub-panels read. Provided once by KanbanTaskDetail.vue so a child owns
- * markup only — behaviour stays in the parent's state/actions composables. */
+/** Everything the extracted sub-panels read. */
 export type TaskDetailResolvedProps = Required<TaskDetailProps>
 
 export interface TaskDetailContext {

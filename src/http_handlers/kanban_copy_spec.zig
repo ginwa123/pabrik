@@ -1,5 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/kanban/copy_spec_from/:source_item_id`.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/kanban/copy_spec_from/:source_item_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,8 +14,7 @@ const CopySpecBody = struct {
     mode: ?[]const u8 = null,
 };
 
-/// Domain error set for the copy-spec flow. The handler maps each variant to
-/// an HTTP status code + user-facing message via two exhaustive switches.
+/// Domain error set for the copy-spec flow.
 pub const CopySpecError = error{
     WorkspaceIdRequired,
     ItemIdRequired,
@@ -37,9 +35,7 @@ pub const CopySpecInput = struct {
 /// Returns the JSON-encoded envelope `{columns: [...], count: N}`.
 pub const CopySpecResult = []const u8;
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Copy the source kanban's column spec to the target kanban. Steps: 1.
 fn useCase(
@@ -51,8 +47,7 @@ fn useCase(
     if (input.item_id.len == 0) return error.ItemIdRequired;
     if (input.source_item_id.len == 0) return error.SourceItemIdRequired;
     if (std.mem.eql(u8, input.item_id, input.source_item_id)) {
-        // Self-copy has no useful semantics (the model would
-        // delete-then-recreate, possibly with same row ids). 400.
+        // Self-copy has no useful semantics (the model would delete-then-recreate, possibly with same row ids). 400.
         return error.SourceItemIdRequired;
     }
     if (!std.mem.eql(u8, input.mode, "replace") and
@@ -61,13 +56,11 @@ fn useCase(
         return error.InvalidMode;
     }
 
-    // Step 2: confirm both items are kanbans in the DB. Return 404 if either
-    // is missing or is the wrong type.
+    // Step 2: confirm both items are kanbans in the DB.
     const target_opt = llm_history.getWorkspaceItem(allocator, db, input.item_id)
         catch return error.DatabaseError;
     defer if (target_opt) |t| {
-        // WorkspaceItemInfo.deinit takes self by value, so this is
-        // a no-copy free of the duped slices inside the struct.
+        // WorkspaceItemInfo.deinit takes self by value, so this is a no-copy free of the duped slices inside the struct.
         t.deinit(allocator);
     };
     if (target_opt == null or !std.mem.eql(u8, target_opt.?.item_type, "kanban")) {
@@ -83,9 +76,7 @@ fn useCase(
         return error.WorkspaceItemNotFound;
     }
 
-    // Step 3: snapshot target's pre-existing column ids (used for
-    // SSE emits in step 5). We capture the IDs BEFORE the model
-    // helper deletes them.
+    // Step 3: snapshot target's pre-existing column ids (used for SSE emits in step 5).
     var pre_existing_ids = std.ArrayList([]u8).empty;
     defer {
         for (pre_existing_ids.items) |id| allocator.free(id);
@@ -113,9 +104,7 @@ fn useCase(
         ) catch return error.DatabaseError;
     }
 
-    // Step 5: SSE emits — fire-and-forget. Replace mode: emit one `deleted`
-    // event per pre-existing column, then one `created` event per newly
-    // inserted column. Append mode: only `created` events.
+    // Step 5: SSE emits — fire-and-forget.
     for (pre_existing_ids.items) |col_id| {
         on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
             .action = "deleted",
@@ -149,9 +138,7 @@ fn useCase(
         };
     }
 
-    // Build the wire envelope `{columns, count}`. Each column is
-    // mapped via the shared `makeKanbanColumnResponse` helper for
-    // shape consistency with the other endpoints.
+    // Build the wire envelope `{columns, count}`.
     const col_responses = try allocator.alloc(http_response.KanbanColumnResponse, new_cols.len);
     defer allocator.free(col_responses);
     for (new_cols, 0..) |col, i| {
@@ -170,9 +157,7 @@ fn useCase(
     );
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn kanbanCopySpecHandler(
     ctx: gserverz.HttpContext,
@@ -229,9 +214,7 @@ pub fn kanbanCopySpecHandler(
         .source_item_id = source_item_id,
         .mode = mode,
     }) catch |err| {
-        // Both switches are exhaustive over the inferred error set —
-        // adding a new CopySpecError variant will fail to compile
-        // here. No `else` prong needed.
+        // Both switches are exhaustive over the inferred error set — adding a new CopySpecError variant will fail to compile here.
         const status: u16 = switch (err) {
             error.WorkspaceIdRequired => 400,
             error.ItemIdRequired => 400,

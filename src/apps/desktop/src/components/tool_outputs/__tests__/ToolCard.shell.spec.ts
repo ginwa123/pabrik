@@ -1,5 +1,4 @@
-/** An opencode-CLI step is a `shell` tool row. The dispatcher must draw it with the
- * shell card — the command and its output — not the raw-JSON fallback. */
+/** An opencode-CLI step is a `shell` tool row. */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 

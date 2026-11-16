@@ -1,5 +1,4 @@
-/** Tests for the composer's agent cascade — `useChatComposerAgents` owns it now that the chip is
- * gone. The `@` list in FileInput renders `availableAgents`; the cascade itself is data. */
+/** Tests for the composer's agent cascade — `useChatComposerAgents` owns it now that the chip is gone. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -14,8 +13,7 @@ const TWO_PROFILES = {
   active_profile: '300 ribu',
 }
 
-/** Mount the composable the way ChatView does: a session id ref, a workspace resolver and the
- * chat-view-mode sink. `loadAgents()` is the one async step. */
+/** Mount the composable the way ChatView does: a session id ref, a workspace resolver and the chat-view-mode sink. */
 async function loadComposer(
   config: Record<string, unknown>,
   opts: { workspaceId?: string; sessionId?: string } = {},

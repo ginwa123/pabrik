@@ -1,5 +1,4 @@
-//! `GET|POST|DELETE /api/llm/session/:id/group...` — the roster that turns a
-//! chat into a multi-agent room. Every call runs the real binary.
+//! `GET|POST|DELETE /api/llm/session/:id/group...` — the roster that turns a chat into a multi-agent room.
 
 const std = @import("std");
 const testing = std.testing;

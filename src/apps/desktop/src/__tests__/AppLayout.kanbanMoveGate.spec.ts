@@ -1,6 +1,4 @@
-/**
- * AppLayout kanban move gate: a 409 opens the "Move anyway" confirm, confirming retries with force === true, cancelling changes nothing.
- */
+/** AppLayout kanban move gate: a 409 opens the "Move anyway" confirm, confirming retries with force === true, cancelling changes nothing. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -89,8 +87,7 @@ function mountAppLayout(workspaces: Workspace[] = []) {
         Chats: true,
         SettingsView: true,
         CodeEditor: true,
-        // Emitting stub: a button that fires the move-task event
-        // the real KanbanView would emit on drop.
+        // Emitting stub: a button that fires the move-task event the real KanbanView would emit on drop.
         KanbanView: {
           template: `
             <div data-kanban-view="stub">
@@ -165,8 +162,7 @@ describe('AppLayout — kanban move gate', () => {
 
   async function openBoard() {
     const wrapper = mountAppLayout([])
-    // Let AppLayout's boot init() settle first: it re-fetches (mocked to []) and would wipe a
-    // tree seeded before mount, while a re-seed after it is stable.
+    // Let AppLayout's boot init() settle first: it re-fetches (mocked to []) and would wipe a tree seeded before mount, while a re-seed after it is stable.
     await flushPromises()
     const ws = useWorkspacesStore()
     ws.workspaces = [

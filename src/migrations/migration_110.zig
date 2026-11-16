@@ -5,7 +5,6 @@ const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// skill_name is a NAME, not an id (name is the row identity; ids break on re-import).
-/// No FK to skills — task rows must survive skill deletion. Empty = no skill.
 pub const Migration110AddTaskSkillName = struct {
     pub const version: u32 = 110;
     pub const name = "add_task_skill_name";

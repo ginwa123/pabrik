@@ -13,14 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The screen behind `See all chats`.
- *
- * It is the same list the drawer previews, drawn at full height and paged on
- * scroll. These assert the two things that make it worth existing — that it
- * pages, and that its footer tells the truth about there being more — because
- * both are the shape of a bug the parser tests cannot see.
- */
+/** The screen behind `See all chats`. */
 @RunWith(AndroidJUnit4::class)
 class ProjectChatsScreenTest {
     @get:Rule
@@ -48,8 +41,7 @@ class ProjectChatsScreenTest {
 
     @Test
     fun theFooterSaysThereIsMoreWhileTheServerSaysThereIsMore() {
-        // Claiming the end while more exists is a lie the reader sees first and
-        // then watches get retracted.
+        // Claiming the end while more exists is a lie the reader sees first and then watches get retracted.
         show(page = ProjectChatsPage(chats(3), hasMore = true, nextCursor = "cur"))
 
         composeTestRule.onNodeWithText("Scroll for older chats").assertIsDisplayed()
@@ -78,8 +70,7 @@ class ProjectChatsScreenTest {
 
     @Test
     fun aProjectWithNoChatsSaysSoRatherThanShowingAnError() {
-        // A fresh kanban or agent legitimately has none. That is a fact about
-        // the project, not a failure.
+        // A fresh kanban or agent legitimately has none.
         show(page = ProjectChatsPage(emptyList(), hasMore = false, nextCursor = null))
 
         composeTestRule.onNodeWithTag("project_chats_empty").assertIsDisplayed()
@@ -88,8 +79,7 @@ class ProjectChatsScreenTest {
 
     @Test
     fun theFirstLoadSaysLoadingRatherThanNoChats() {
-        // The difference between "none yet" and "not loaded yet" is the whole
-        // reason both strings exist.
+        // The difference between "none yet" and "not loaded yet" is the whole reason both strings exist.
         show(page = null, isLoading = true)
 
         composeTestRule.onNodeWithTag("project_chats_loading").assertIsDisplayed()
@@ -97,9 +87,7 @@ class ProjectChatsScreenTest {
 
     @Test
     fun tappingAChatOpensTheSessionTheTaskIdNames() {
-        // The backend joins tasks to sessions on this id. The screen hands it
-        // over verbatim rather than translating it, because there is nothing to
-        // translate.
+        // The backend joins tasks to sessions on this id.
         var selected: String? = null
         var opened: String? = null
         show(

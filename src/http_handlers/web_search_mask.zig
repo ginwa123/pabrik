@@ -5,19 +5,16 @@ const json = std.json;
 const curlmod = @import("../modules/agent/tools/web_search_curl.zig");
 const reqmod = @import("../modules/agent/tools/web_search_request.zig");
 
-/// What a short key masks to. Fixed-length so it cannot leak the length of
-/// a short credential.
+/// What a short key masks to.
 pub const SHORT_MASK = "••••";
 
-/// Mask a credential for display: first 3 + last 3 when there is enough to
-/// make that meaningful, otherwise a fixed-length marker.
+/// Mask a credential for display: first 3 + last 3 when there is enough to make that meaningful, otherwise a fixed-length marker.
 pub fn maskKey(key: []const u8) ?[]const u8 {
     if (key.len < 10) return SHORT_MASK;
     return null;
 }
 
-/// True when `value` is what `maskKey` would have produced for the stored
-/// secret — the test the PUT handler uses to decide "leave it alone".
+/// True when `value` is what `maskKey` would have produced for the stored secret — the test the PUT handler uses to decide "leave it alone".
 pub fn isMaskFor(value: []const u8) bool {
     if (std.mem.eql(u8, value, SHORT_MASK)) return true;
     // Any `abc…xyz` shape is a mask.
@@ -34,8 +31,7 @@ pub const ValidationError = error{
     BadPinnedUrl,
     /// `curl` missing or empty.
     MissingCurl,
-    /// The template has no `{key}` but the entry declares a credential —
-    /// the credential would be silently dropped.
+    /// The template has no `{key}` but the entry declares a credential — the credential would be silently dropped.
     MissingKeyPlaceholder,
     /// The template has `{key}` but the entry declares no credential.
     UnexpectedKeyPlaceholder,
@@ -44,8 +40,6 @@ pub const ValidationError = error{
 };
 
 /// Validate one provider entry, returning a human-readable reason on failure.
-/// Called on the PUT path so a bad paste is reported WHILE THE USER IS
-/// LOOKING AT IT.
 pub fn validateProvider(name: []const u8, entry: json.Value) ValidationError!?[]const u8 {
     if (name.len == 0) return error.BadProviderName;
     if (entry != .object) return "must be an object";
@@ -55,8 +49,7 @@ pub fn validateProvider(name: []const u8, entry: json.Value) ValidationError!?[]
         .string => |s| s,
         else => return "`url` is required and must be a string",
     };
-    // `if (err_union) |payload|` fires on SUCCESS, so the rejection lives
-    // in the `else` branch.
+    // `if (err_union) |payload|` fires on SUCCESS, so the rejection lives in the `else` branch.
     if (reqmod.validatePinnedUrl(url)) |_| {
         // the pin passed
     } else |_| {
@@ -69,8 +62,7 @@ pub fn validateProvider(name: []const u8, entry: json.Value) ValidationError!?[]
     };
     if (curl_text.len == 0) return "`curl` must not be empty";
 
-    // The template must survive the same parser the tool uses, so the user
-    // learns about `-X POST` or a bad header here rather than mid-chat.
+    // The template must survive the same parser the tool uses, so the user learns about `-X POST` or a bad header here rather than mid-chat.
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -107,8 +99,7 @@ pub fn validateProvider(name: []const u8, entry: json.Value) ValidationError!?[]
     return null;
 }
 
-/// Replace every provider's `key` with its mask. The result is allocated from
-/// `allocator` and owned by it.
+/// Replace every provider's `key` with its mask.
 pub fn maskProviders(
     allocator: std.mem.Allocator,
     body: ?json.Value,
@@ -170,8 +161,7 @@ fn jsonStringify(allocator: std.mem.Allocator, v: anytype) ![]u8 {
     return json.Stringify.valueAlloc(allocator, v, .{});
 }
 
-/// The mask string for `key`, allocated. Long keys become `abc…xyz`;
-/// short ones become a fixed-length marker so the length does not leak.
+/// The mask string for `key`, allocated.
 pub fn maskFor(allocator: std.mem.Allocator, key: []const u8) ![]u8 {
     if (maskKey(key)) |short| return allocator.dupe(u8, short);
     return std.fmt.allocPrint(allocator, "{s}…{s}", .{ key[0..3], key[key.len - 3 ..] });
@@ -254,15 +244,11 @@ test "web_search_mask: a name-less provider is rejected" {
 
 
 test "web_search_mask: maskProviders masks every key and leaves the rest alone" {
-    // An arena, not testing.allocator: `maskProviders` parses LEAKY into the
-    // allocator it is given, because production hands it the per-request
-    // arena where nothing is freed by hand.
+    // An arena, not testing.allocator: `maskProviders` parses LEAKY into the allocator it is given, because production hands it the per-request arena where nothing …
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    // Single-line literals throughout: a multiline `\\` literal needs a
-    // different escape depth for the nested quotes, and getting it wrong
-    // produced malformed JSON that failed as a parse error rather than as the
+    // Single-line literals throughout: a multiline `\\` literal needs a different escape depth for the nested quotes, and getting it wrong produced malformed JSON …
     var parsed = try json.parseFromSlice(json.Value, alloc,
         "{\"tinyfish\":{\"url\":\"https://api.search.tinyfish.ai\",\"key\":\"sk-secret-1234\",\"curl\":\"https://api.search.tinyfish.ai?q=X -H \\\"X-Api-Key: {key}\\\"\",\"description\":\"Best for news\",\"enabled\":true},\"searxng\":{\"url\":\"https://search.example.net\",\"curl\":\"https://search.example.net?q=X\"}}",
         .{},
@@ -276,8 +262,7 @@ test "web_search_mask: maskProviders masks every key and leaves the rest alone" 
     // The credential is gone; the mask is recognisable as one.
     try testing.expect(std.mem.indexOf(u8, json_str, "sk-secret-1234") == null);
     try testing.expect(std.mem.indexOf(u8, json_str, "sk-…234") != null);
-    // Everything else round-trips, including the {key} placeholder in the
-    // template — the listing stays usable.
+    // Everything else round-trips, including the {key} placeholder in the template — the listing stays usable.
     try testing.expect(std.mem.indexOf(u8, json_str, "https://api.search.tinyfish.ai") != null);
     try testing.expect(std.mem.indexOf(u8, json_str, "Best for news") != null);
     try testing.expect(std.mem.indexOf(u8, json_str, "{key}") != null);
@@ -297,9 +282,7 @@ test "web_search_mask: maskProviders returns null for an absent or non-object bo
 // ─── PUT-path behaviour: masked and empty keys ────────────────────────────
 
 test "web_search_mask: a mask is distinguishable from a real short key" {
-    // The whole masked-key contract rests on this: if a mask could be
-    // mistaken for a credential, PUT would either wipe the secret or store
-    // the mask as one.
+    // The whole masked-key contract rests on this: if a mask could be mistaken for a credential, PUT would either wipe the secret or store the mask as one.
     try testing.expect(isMaskFor(SHORT_MASK));
     try testing.expect(isMaskFor("sk-…234"));
     // A REAL key that happens to contain an ellipsis is still a key.

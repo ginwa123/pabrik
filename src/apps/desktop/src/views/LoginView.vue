@@ -75,8 +75,7 @@ function redirectTarget(): string {
 }
 
 function kickSseAfterLogin(): void {
-  // The global SSE bus connects at app boot (App.vue) — possibly BEFORE login, while /api/events
-  // still 401s.
+  // The global SSE bus connects at app boot (App.vue) — possibly BEFORE login, while /api/events still 401s.
   try {
     const bus = useSseBus()
     if (bus.state.value === 'failed' || bus.state.value === 'closed') {
@@ -90,8 +89,7 @@ function kickSseAfterLogin(): void {
 onMounted(async () => {
   // The only field on the page: a sign-in should never need a click before the first keystroke.
   emailInput.value?.focus()
-  // Already logged in? Skip the form (deep-linkable ?redirect= is honored).
-  // Cached: mount must not stall on a slow /me (see helpers/authMe).
+  // Already logged in?
   try {
     const { data } = await getAuthMeCached()
     if (data && (data.authenticated === true || data.auth_enabled === false)) {
@@ -121,8 +119,7 @@ async function onSubmit() {
       error.value = 'Invalid email or password'
       return
     }
-    // New session cookie: drop any pre-login cached /me (401) so the
-    // guard sees the fresh authenticated state on the redirect.
+    // New session cookie: drop any pre-login cached /me (401) so the guard sees the fresh authenticated state on the redirect.
     invalidateAuthMe()
     await router.replace(redirectTarget())
     kickSseAfterLogin()

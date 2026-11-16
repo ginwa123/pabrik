@@ -13,9 +13,7 @@ pub const WorkspaceUpdateError = error{
     MissingName,
     NameNotString,
     DatabaseError,
-    /// The workspace does not exist, or belongs to another user — the two
-    /// are deliberately indistinguishable (404, never 403) so a caller
-    /// cannot probe for the existence of someone else's ids.
+    /// The workspace does not exist, or belongs to another user — the two are deliberately indistinguishable (404, never 403) so a caller cannot probe for the …
     NotFound,
 };
 
@@ -70,16 +68,13 @@ fn useCase(
 ) WorkspaceUpdateError!WorkspaceUpdateResult {
     if (body.len == 0) return error.MissingBody;
 
-    // Owner resolved server-side (cookie only). A caller must not be able to
-    // rename another user's workspace by guessing its id.
+    // Owner resolved server-side (cookie only).
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, auth_enabled, headers) catch {
         return error.OutOfMemory;
     };
     defer allocator.free(owner);
 
-    // Per the project memory (pabrik-http-handler-thin-wrapper-pattern.md),
-    // the per-request arena allocator (`allocator`) is the per-request arena,
-    // so parseFromSliceLeaky is the correct API — its internal arena lifetime
+    // Per the project memory (pabrik-http-handler-thin-wrapper-pattern.md), the per-request arena allocator (`allocator`) is the per-request arena, so …
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{}) catch {
         return error.InvalidJson;
     };

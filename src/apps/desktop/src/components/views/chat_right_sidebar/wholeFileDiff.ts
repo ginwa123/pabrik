@@ -1,8 +1,7 @@
 import * as api from '../../../api'
 import { parseUnifiedDiff, type ParsedDiffLine } from './parseUnifiedDiff'
 
-/** Whole-file diff reader — the ONE way the frontend asks for a file's full context, and the reason
- * "Whole file" costs one request instead of one per click. */
+/** Whole-file diff reader — the ONE way the frontend asks for a file's full context, and the reason "Whole file" costs one request instead of one per click. */
 export interface WholeFileDiff {
   lines: ParsedDiffLine[]
   added: number
@@ -21,8 +20,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 const inFlight = new Map<string, Promise<WholeFileDiff>>()
 
-/** Cache key for one file's whole-file diff. Staged and unstaged are
- * independent diffs of the same path, so `staged` is part of the key. */
+/** Cache key for one file's whole-file diff. */
 export function wholeFileKey(path: string, staged: boolean): string {
   return `${staged ? 1 : 0}:${path}`
 }
@@ -33,8 +31,7 @@ function cacheKey(cwd: string, path: string, staged: boolean): string {
 
 function remember(key: string, value: WholeFileDiff): void {
   cache.set(key, { value, at: Date.now() })
-  // Insert-order eviction. The map is small (a handful of files the user
-  // actually opened) so a plain oldest-first trim is enough.
+  // Insert-order eviction.
   while (cache.size > MAX_ENTRIES) {
     const oldest = cache.keys().next()
     if (oldest.done) break
@@ -42,8 +39,7 @@ function remember(key: string, value: WholeFileDiff): void {
   }
 }
 
-/** Read the whole-file diff for one path, fetching at most once per path. A backend failure
- * REJECTS. */
+/** Read the whole-file diff for one path, fetching at most once per path. */
 export async function fetchWholeFileDiff(
   cwd: string,
   path: string,
@@ -59,9 +55,7 @@ export async function fetchWholeFileDiff(
   const request = (async (): Promise<WholeFileDiff> => {
     const res = await api.getGitWholeFileDiff(cwd, path, staged)
     const entry = res.diffs.find((d) => d.path === path)
-    // A missing entry is a REFUSAL, not a clean file. The server answers a whole-file request for a
-    // path it could not diff with an empty list, and "empty list" rendered as "no changes" would be
-    // the exact lie this view exists to prevent.
+    // A missing entry is a REFUSAL, not a clean file.
     const refused = res.whole_file_refused === true || !entry
     const parsed = refused ? null : parseUnifiedDiff(entry.diff_content)
     const value: WholeFileDiff = {
@@ -78,8 +72,7 @@ export async function fetchWholeFileDiff(
   try {
     return await request
   } finally {
-    // Cleared on both paths, so a failed fetch does not poison the next
-    // attempt (and does not wedge a stale rejected promise in the map).
+    // Cleared on both paths, so a failed fetch does not poison the next attempt (and does not wedge a stale rejected promise in the map).
     inFlight.delete(key)
   }
 }

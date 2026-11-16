@@ -1,6 +1,4 @@
-/** Navigating one skill's body: the outline and the find box, as pure
- * functions over the raw markdown the detail pane already holds. A
- * section is one `##`/`###` heading, with the line it starts on. */
+/** Navigating one skill's body: the outline and the find box, as pure functions over the raw markdown the detail pane already holds. */
 export interface SkillSection {
   /** The heading text, `#` marks and trailing `#`s stripped. */
   title: string
@@ -10,8 +8,7 @@ export interface SkillSection {
   depth: 2 | 3
 }
 
-/** The `##`/`###` headings, in document order. Fenced blocks are skipped:
- * a `## Example` inside a fence is sample text, not a section. */
+/** The `##`/`###` headings, in document order. Fenced blocks are skipped */
 export function extractSections(body: string): SkillSection[] {
   const out: SkillSection[] = []
   let inFence = false
@@ -39,8 +36,7 @@ export interface SkillBodyHit {
   text: string
 }
 
-/** Every line containing `term`, case-insensitively. An empty term matches
- * nothing: an empty box answering "all 500 lines" is noise. */
+/** Every line containing `term`, case-insensitively. */
 export function findInBody(body: string, term: string): SkillBodyHit[] {
   const needle = term.trim().toLowerCase()
   if (needle.length === 0) return []
@@ -54,8 +50,7 @@ export function findInBody(body: string, term: string): SkillBodyHit[] {
   return out
 }
 
-/** How many times `term` occurs in the body, for the "N matches" label. A
- * term appearing twice on one line counts twice. */
+/** How many times `term` occurs in the body, for the "N matches" label. */
 export function countBodyMatches(body: string, term: string): number {
   const needle = term.trim().toLowerCase()
   if (needle.length === 0) return 0

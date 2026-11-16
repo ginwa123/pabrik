@@ -12,24 +12,7 @@ import com.pabrik.mobile.recents.WorkspaceOption
 import com.pabrik.mobile.storage.LastPosition
 import com.pabrik.mobile.storage.LastPositionStore
 
-/**
- * In-memory stand-ins for the three caches, for the ViewModel tests.
- *
- * These are not stubs that return null and let a test pass by accident — each
- * one reimplements the same rules the Room caches do, so a ViewModel test that
- * passes here is testing the ViewModel and not the absence of a cache:
- *
- * - a null or blank `userId` is a **miss**, never an unscoped read;
- * - a transcript write is a **merge** that replaces a same-id row;
- * - a transcript read is **newest-first and capped**;
- * - a sidebar write **replaces** its partition, so a row deleted upstream stays
- *   deleted;
- * - server order is preserved verbatim, because that is what the endpoint sent.
- *
- * Those rules are the *contract*; `RoomChatCacheTest`, `RoomRecentsCacheTest`
- * and `RoomAuthMeCacheTest` are what prove SQLite honours them. Keeping the two
- * in step is the point of writing them in one file.
- */
+/** In-memory stand-ins for the three caches, for the ViewModel tests. */
 class InMemoryChatCache : ChatCache {
     private val rows = mutableMapOf<String, MutableMap<String, CachedChatMessage>>()
     private val cursors = mutableMapOf<String, String>()
@@ -128,13 +111,7 @@ class InMemoryRecentsCache : RecentsCache {
     }
 }
 
-/**
- * The projects cache, in memory.
- *
- * Mirrors [InMemoryRecentsCache]'s shape, including its partition keys, so a
- * test that seeds a workspace's projects and then switches workspaces sees the
- * same isolation the real cache enforces through its primary key.
- */
+/** The projects cache, in memory. */
 class InMemoryProjectsCache : ProjectsCache {
     private val projects = mutableMapOf<String, List<ProjectSummary>>()
     private val chats = mutableMapOf<String, List<ProjectChat>>()
@@ -189,18 +166,7 @@ class InMemoryProjectsCache : ProjectsCache {
     }
 }
 
-/**
- * The last-position store, in memory.
- *
- * It reproduces the rules [com.pabrik.mobile.storage.PrefsLastPositionStore]
- * makes that a caller can actually depend on — the per-account namespace
- * (including the unscoped one a server without `--auth` lands in) and the fact
- * that a workspace switch drops the session — and it records `clear` so a
- * sign-out test can see the position went with the rows.
- *
- * `PrefsLastPositionStoreTest` is what proves the real store keeps the same
- * promises against a real `SharedPreferences`.
- */
+/** The last-position store, in memory. */
 class InMemoryLastPositionStore(
     seedUserId: String? = null,
     initial: LastPosition = LastPosition(),

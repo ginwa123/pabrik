@@ -44,9 +44,7 @@ describe('api.getTask', () => {
   })
 
   it('resolves to null on 404 (task deleted / wrong item)', async () => {
-    // 404 must NOT throw and must NOT fire an error toast — the store
-    // treats "missing" as a no-op. silent: true keeps the notification
-    // store out of it.
+    // 404 must NOT throw and must NOT fire an error toast — the store treats "missing" as a no-op. silent: true keeps the notification store out of it.
     mockFetchOnce(404, { error: 'task not found' })
     const task = await getTask('ws_1', 'item_1', 'task_gone')
     expect(task).toBeNull()

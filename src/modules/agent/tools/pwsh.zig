@@ -9,9 +9,7 @@ const AgentTool = schemas.AgentTool;
 pub const PwshInput = command.CommandInput;
 pub const PwshOutput = command.CommandOutput;
 
-/// Run a PowerShell Core command. Deprecated shim over
-/// `command.execute_command` (which dispatches to `pwsh` on Windows,
-/// `bash` elsewhere).
+/// Run a PowerShell Core command.
 pub fn execute_pwsh(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -21,7 +19,6 @@ pub fn execute_pwsh(
 }
 
 /// JSON payload formatter — same 8-field shape as `bash_result_to_json`.
-/// Re-exported under the pwsh name for ergonomic callers.
 pub const pwsh_result_to_json = command.command_result_to_json;
 
 pub const pwsh_tool_system_prompt = command.command_tool_system_prompt;
@@ -36,18 +33,13 @@ pub const pwsh_tool = AgentTool{
     },
 };
 
-// pwsh_test.zig — pwsh tool behavioural tests (Task 3 of
-// 2026-08-14-pwsh-tool.md). pwsh is the LLM-facing PowerShell Core shell
-// tool.
+// pwsh_test.zig — pwsh tool behavioural tests (Task 3 of 2026-08-14-pwsh-tool.md). pwsh is the LLM-facing PowerShell Core shell tool.
 const builtin = @import("builtin");
 const testing = std.testing;
 
-/// Probe whether `pwsh` is on $PATH. Skips gracefully when it isn't.
-/// Equivalent to the bash.zig `if builtin.os.tag != .linux and builtin.os.tag != .macos` skip —
-/// but pwsh's availability check is per-machine, not per-OS.
+/// Probe whether `pwsh` is on $PATH.
 fn pwsh_available() bool {
-    // Zig 0.16 std.process API: `std.process.run(gpa, io, options)`. The
-    // .argv-based run signature is `RunOptions { argv, ... }`.
+    // Zig 0.16 std.process API: `std.process.run(gpa, io, options)`.
     var child = std.process.spawn(std.testing.io, .{
         .argv = &.{ "pwsh", "-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()" },
         .stdin = .ignore,
@@ -84,9 +76,7 @@ test "pwsh_tool schema: required fields match bash (command, cwd, timeout)" {
 }
 
 test "pwsh_available returns false when pwsh is not on PATH" {
-    // This test runs regardless of platform — it just exercises the
-    // boolean probe. On a CI machine without pwsh it returns false; on
-    // a Windows or pwsh-installed machine it returns true.
+    // This test runs regardless of platform — it just exercises the boolean probe.
     const available = pwsh_available();
     _ = available;
     // The test passes either way — the assertion is "doesn't crash".
@@ -114,8 +104,7 @@ test "command-only registry: the model is offered exactly one shell tool, named 
     }
     try testing.expectEqual(@as(usize, 1), command_entries);
 
-    // …and the equipped list — the one the workflow actually hands the LLM —
-    // advertises neither legacy name.
+    // …and the equipped list — the one the workflow actually hands the LLM — advertises neither legacy name.
     const equip = tools_equipped.equips(testing.allocator);
     defer testing.allocator.free(equip);
     for (equip) |t| {
@@ -123,9 +112,7 @@ test "command-only registry: the model is offered exactly one shell tool, named 
         try testing.expect(!std.mem.eql(u8, t.function.name, "pwsh"));
     }
 
-    // Unregistered is not unreachable-by-accident: the names are RETIRED, so
-    // a stale `bash` call is refused outright AND the refusal names
-    // `command`.
+    // Unregistered is not unreachable-by-accident: the names are RETIRED, so a stale `bash` call is refused outright AND the refusal names `command`.
     try testing.expectEqual(@as(?[]const u8, null), tools_equipped.resolveToolAlias("bash"));
     try testing.expectEqual(@as(?[]const u8, null), tools_equipped.resolveToolAlias("pwsh"));
     try testing.expect(!tools_equipped.isDispatchableToolName("bash"));

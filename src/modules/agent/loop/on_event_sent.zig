@@ -8,20 +8,13 @@ const gserverz = tree1_mod.gserverz;
 const llm_history = @import("llm_history.zig");
 const helpers = @import("helpers");
 
-// ============================================================================
 // Session-to-Client ID mapping for SSE event bus integration
-// ============================================================================
 
-// ============================================================================
 // JSON Protocol Constants
-// ============================================================================
 
-// ============================================================================
 // Unified Response Types
-// ============================================================================
 
-/// Input parameters for sending SSE events
-/// Used by TUI workflow to broadcast messages to connected clients
+/// Input parameters for sending SSE events Used by TUI workflow to broadcast messages to connected clients
 pub const OnEventInputLLMHistory = struct {
     id: ?[]const u8 = null,
     index: usize = 0,
@@ -87,18 +80,14 @@ pub const SkillInfo = struct {
     loaded_at: ?i64 = null,
 };
 
-/// JSON representation of a tool call 2026-08-24 wire-shape fix: no longer
-/// used by the SSE payload (tool_calls_json is now serialized to a string via
-/// llm_history.serializeToolCalls before std.json.fmt).
+/// JSON representation of a tool call 2026-08-24 wire-shape fix: no longer used by the SSE payload (tool_calls_json is now serialized to a string via …
 pub const ToolCallJson = struct {
     id: []const u8,
     name: []const u8,
     arguments: []const u8,
 };
 
-/// Input parameters for sending SSE session events Reflects the sessions
-/// table columns: id, name, status, cwd, created_at, updated_at,
-/// selected_profile_model, git_worktree_cwd, pr_url, pr_provider,
+/// Input parameters for sending SSE session events Reflects the sessions table columns: id, name, status, cwd, created_at, updated_at, selected_profile_model …
 pub const OnEventInputSessions = struct {
     action: []const u8, // "created", "updated", "deleted"
     id: []const u8,
@@ -109,18 +98,14 @@ pub const OnEventInputSessions = struct {
     updated_at: []const u8,
     selected_profile_model: []const u8 = "",
     git_worktree_cwd: []const u8 = "",
-    /// Migration 086 — attached PR URL / effective provider. Empty
-    /// defaults keep older callers compiling (same rationale as 063).
+    /// Migration 086 — attached PR URL / effective provider.
     pr_url: []const u8 = "",
     pr_provider: []const u8 = "",
-    /// Migration 063 — opt-in flag for unattended mode. Empty default =
-    /// "off" (matches the production SQL default of `'0'` via COALESCE).
+    /// Migration 063 — opt-in flag for unattended mode.
     is_auto_retry_until_stop: []const u8 = "",
     /// Migration 063 — most recent finish_reason observed by the workflow.
     last_finish_reason: []const u8 = "",
-    /// Migration 082 - unix-ms of the last human touch, surfaced on the SSE
-    /// session_updated/created events so the ChatsList badge and stale-dot
-    /// update without a refetch.
+    /// Migration 082 - unix-ms of the last human touch, surfaced on the SSE session_updated/created events so the ChatsList badge and stale-dot update without a …
     last_human_touched_at: []const u8 = "",
 };
 
@@ -136,8 +121,7 @@ pub const SseEvent = struct {
     event_type: ?[]const u8 = null,
 };
 
-/// Input parameters for sending SSE worker events
-/// Reflects the worker table columns: id, session_id, working_directory, last_activity, last_activity_description, created_at
+/// Input parameters for sending SSE worker events Reflects the worker table columns: id, session_id, working_directory, last_activity, last_activity_description …
 pub const OnEventInputWorkers = struct {
     action: []const u8, // "created", "updated", "deleted"
     id: []const u8,
@@ -148,9 +132,7 @@ pub const OnEventInputWorkers = struct {
     created_at: []const u8,
 };
 
-/// Send worker events to all subscribed clients via SSE Broadcasts worker
-/// list updates (created, updated, deleted) SSE event name (the value of
-/// `event:` in the wire format): - workers: worker_created | worker_updated |
+/// Send worker events to all subscribed clients via SSE Broadcasts worker list updates (created, updated, deleted) SSE event name (the value of `event:` in the …
 pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorkers) !void {
     const di = try tree1_mod.getSingleton();
     const event_bus = di.event_bus;
@@ -175,9 +157,7 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     // Duplicate the data so event owns its own copy (buf will be deallocated below)
     const data_copy = try allocator.dupe(u8, buf.items);
 
-    // Granular event name drives the SSE wire format `event:` line — the
-    // frontend's EventSource dispatches each named event to its registered
-    // listener without any JSON parsing (see project memory
+    // Granular event name drives the SSE wire format `event:` line — the frontend's EventSource dispatches each named event to its registered listener without any …
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
         "worker_created"
     else if (std.mem.eql(u8, input.action, "updated"))
@@ -197,9 +177,7 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     event_bus.emit(SseEvent, "workers", event);
 }
 
-/// Send an SSE event to all clients connected to the given session JSON
-/// Protocol: - Response events contain all message fields as JSON object -
-/// Tool result events include tool_call_id and tool_name SSE event name (the
+/// Send an SSE event to all clients connected to the given session JSON Protocol: - Response events contain all message fields as JSON object -Tool result events …
 pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLLMHistory) !void {
 
     // todo dirty code
@@ -225,8 +203,7 @@ pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLL
         log.?.warnFmt("on_event_send_new[{s}]: NO CONTENT!", .{session_id});
     }
 
-    // Sanitize content + reasoning_content to valid UTF-8 before JSON
-    // serialization.
+    // Sanitize content + reasoning_content to valid UTF-8 before JSON serialization.
     const sanitized_content: ?[]u8 = blk: {
         const c = input.content orelse break :blk null;
         break :blk try helpers.sanitize.sanitizeUtf8(allocator, c);
@@ -239,8 +216,7 @@ pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLL
     };
     defer if (sanitized_reasoning) |s| allocator.free(s);
 
-    // 2026-08-24 wire-shape fix (task_1787590621966_10): tool_calls_json MUST
-    // be a JSON STRING on the wire, not an array.
+    // 2026-08-24 wire-shape fix (task_1787590621966_10): tool_calls_json MUST be a JSON STRING on the wire, not an array.
     const serialized_tool_calls_json: ?[]u8 = blk: {
         const calls = input.tool_calls_json orelse break :blk null;
         break :blk try llm_history.serializeToolCalls(allocator, calls);
@@ -307,18 +283,13 @@ pub fn onEventSendLLMHistory(allocator: std.mem.Allocator, input: OnEventInputLL
         .data = data_copy,
         .event_type = "llm_full",
     };
-    // Per-session emit (kept for any future server-side fan-out that
-    // needs only this session's events).
+    // Per-session emit (kept for any future server-side fan-out that needs only this session's events).
     event_bus.emit(SseEvent, input.session_id, event);
-    // Central broadcast: subscribers to bare "llm" receive ALL sessions'
-    // LLM events. The frontend listener filter narrows to the current
-    // session_id on the JS side.
+    // Central broadcast: subscribers to bare "llm" receive ALL sessions' LLM events.
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send session events to all subscribed clients via SSE Broadcasts session
-/// list updates (created, updated, deleted, list actions) SSE event name (the
-/// value of `event:` in the wire format): - sessions: session_created |
+/// Send session events to all subscribed clients via SSE Broadcasts session list updates (created, updated, deleted, list actions) SSE event name (the value of …
 pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSessions) !void {
     if (std.mem.indexOf(u8, input.id, "subagent")) |_| {
         return;
@@ -340,16 +311,13 @@ pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSess
         .created_at = input.created_at,
         .updated_at = input.updated_at,
         .selected_profile_model = input.selected_profile_model,
-        // Migration 063 — propagate the new columns via SSE so the
-        // ChatsList badge updates without a refetch.
+        // Migration 063 — propagate the new columns via SSE so the ChatsList badge updates without a refetch.
         .git_worktree_cwd = input.git_worktree_cwd,
         .pr_url = input.pr_url,
         .pr_provider = input.pr_provider,
         .is_auto_retry_until_stop = input.is_auto_retry_until_stop,
         .last_finish_reason = input.last_finish_reason,
-        // Migration 082 - propagate the chat-side stamp so the SSE
-        // session_updated event drives the sidebar's time pill + stale-dot
-        // without a refetch.
+        // Migration 082 - propagate the chat-side stamp so the SSE session_updated event drives the sidebar's time pill + stale-dot without a refetch.
         .last_human_touched_at = input.last_human_touched_at,
     };
     try buf.print(allocator, "{f}", .{std.json.fmt(payload, .{
@@ -379,9 +347,7 @@ pub fn onEventSendSessions(allocator: std.mem.Allocator, input: OnEventInputSess
     event_bus.emit(SseEvent, "sessions", event);
 }
 
-// ============================================================================
 // Structured Chunk Types for Streaming
-// ============================================================================
 
 /// Structured representation of a content chunk
 pub const ContentChunk = struct {
@@ -422,9 +388,7 @@ pub const ToolCallDeltaChunk = struct {
     session_id: []const u8 = "",
 };
 
-// ============================================================================
 // Structured Serialization Functions (JSON)
-// ============================================================================
 
 /// JSON structure for content chunk
 const ContentChunkJson = struct {
@@ -531,13 +495,11 @@ pub fn serializeToolCallDeltas(allocator: std.mem.Allocator, chunk: ToolCallDelt
     return try buf.toOwnedSlice(allocator);
 }
 
-// ============================================================================
 // Streaming helpers (using event_bus for SSE)
 
 // ============================================================================
 
-/// Send content chunk during streaming response SSE event name (the value of
-/// `event:` in the wire format): - llm: llm_chunk
+/// Send content chunk during streaming response SSE event name (the value of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamChunkContent(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -554,17 +516,13 @@ pub fn sendStreamChunkContent(
         .data = data,
         .event_type = "llm_chunk",
     };
-    // Per-session emit (kept for future server-side fan-out that
-    // needs only this session's events).
+    // Per-session emit (kept for future server-side fan-out that needs only this session's events).
     event_bus.emit(SseEvent, session_id, event);
-    // Central broadcast on "llm" — required for the single global
-    // EventSource pattern (the frontend listener filters by
-    // session_id on the JS side).
+    // Central broadcast on "llm" — required for the single global EventSource pattern (the frontend listener filters by session_id on the JS side).
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send reasoning chunk during streaming response SSE event name (the value
-/// of `event:` in the wire format): - llm: llm_chunk
+/// Send reasoning chunk during streaming response SSE event name (the value of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamChunkReasoning(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -581,17 +539,13 @@ pub fn sendStreamChunkReasoning(
         .data = data,
         .event_type = "llm_chunk",
     };
-    // Per-session emit (kept for future server-side fan-out that
-    // needs only this session's events).
+    // Per-session emit (kept for future server-side fan-out that needs only this session's events).
     event_bus.emit(SseEvent, session_id, event);
-    // Central broadcast on "llm" — required for the single global
-    // EventSource pattern (the frontend listener filters by
-    // session_id on the JS side).
+    // Central broadcast on "llm" — required for the single global EventSource pattern (the frontend listener filters by session_id on the JS side).
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send final chunk with usage information during streaming SSE event name
-/// (the value of `event:` in the wire format): - llm: llm_chunk
+/// Send final chunk with usage information during streaming SSE event name (the value of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamChunkFinal(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -608,17 +562,13 @@ pub fn sendStreamChunkFinal(
         .data = data,
         .event_type = "llm_chunk",
     };
-    // Per-session emit (kept for future server-side fan-out that
-    // needs only this session's events).
+    // Per-session emit (kept for future server-side fan-out that needs only this session's events).
     event_bus.emit(SseEvent, session_id, event);
-    // Central broadcast on "llm" — required for the single global
-    // EventSource pattern (the frontend listener filters by
-    // session_id on the JS side).
+    // Central broadcast on "llm" — required for the single global EventSource pattern (the frontend listener filters by session_id on the JS side).
     event_bus.emit(SseEvent, "llm", event);
 }
 
-/// Send tool call delta chunk during streaming response SSE event name (the
-/// value of `event:` in the wire format): - llm: llm_chunk
+/// Send tool call delta chunk during streaming response SSE event name (the value of `event:` in the wire format): - llm: llm_chunk
 pub fn sendStreamToolCallDelta(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -635,18 +585,13 @@ pub fn sendStreamToolCallDelta(
         .data = data,
         .event_type = "llm_chunk",
     };
-    // Per-session emit (kept for future server-side fan-out that
-    // needs only this session's events).
+    // Per-session emit (kept for future server-side fan-out that needs only this session's events).
     event_bus.emit(SseEvent, session_id, event);
-    // Central broadcast on "llm" — required for the single global
-    // EventSource pattern (the frontend listener filters by
-    // session_id on the JS side).
+    // Central broadcast on "llm" — required for the single global EventSource pattern (the frontend listener filters by session_id on the JS side).
     event_bus.emit(SseEvent, "llm", event);
 }
 
 // ─── Inline tests (formerly on_event_sent_sanitize_test.zig) ──────────────
-// Regression test for the "bash tool returns corrupt value" bug where tool
-// result content containing invalid UTF-8 bytes (e.g. \x89, \x93 from a test
 
 const testing_oes = std.testing;
 const pabrikcore_oes = tree1_mod;
@@ -744,9 +689,7 @@ test "SseEventLLMHistory emits is_input/is_output as JSON booleans" {
     try testing_oes.expect(std.mem.indexOf(u8, json, "\"is_output\": 0") == null);
 }
 
-// ============================================================================
-// llm_chunk payload tests (2026-08-23 llm-chunk-streaming) The frontend's
-// ChatView gate (`event.session_id !== sid`) drops every chunk event whose
+// llm_chunk payload tests (2026-08-23 llm-chunk-streaming) The frontend's ChatView gate (`event.session_id !== sid`) drops every chunk event whose
 
 test "serializeContentChunk includes session_id + type chunk" {
     const data = try serializeContentChunk(testing_oes.allocator, .{
@@ -756,9 +699,7 @@ test "serializeContentChunk includes session_id + type chunk" {
     });
     defer testing_oes.allocator.free(data);
 
-    // indent_4 whitespace puts `"key": value` on its own line — match
-    // on the key only (the SseEventLLMHistory tests above use minified,
-    // where `"key":"value"` works; here it would false-negative).
+    // indent_4 whitespace puts `"key": value` on its own line — match on the key only (the SseEventLLMHistory tests above use minified, where `"key":"value"` works …
     try testing_oes.expect(std.mem.indexOf(u8, data, "\"session_id\"") != null);
     try testing_oes.expect(std.mem.indexOf(u8, data, "\"sess-abc\"") != null);
     try testing_oes.expect(std.mem.indexOf(u8, data, "\"type\": \"chunk\"") != null);

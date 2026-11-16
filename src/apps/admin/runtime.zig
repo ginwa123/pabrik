@@ -1,5 +1,4 @@
-//! The installation the console administers: the database handle and whether
-//! `--auth` is on. The host program installs it once, at boot.
+//! The installation the console administers: the database handle and whether `--auth` is on.
 
 const std = @import("std");
 const database = @import("databases").database;

@@ -1,6 +1,4 @@
-//! `POST /api/bench/seed/sessions?rows=N` — BENCHMARK-ONLY seeding for
-//! `benchmark/run.sh`. Gated by `PABRIK_BENCH_SEED=1`; 404 when off, so a
-//! production binary never exposes it.
+//! `POST /api/bench/seed/sessions?rows=N` — BENCHMARK-ONLY seeding for `benchmark/run.sh`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,8 +8,7 @@ const gserverz = pabrikcore.gserverz;
 pub const default_rows: u32 = 50;
 pub const max_rows: u32 = 1_000;
 
-/// Three directories no git repository owns, so every row exercises the
-/// "no badge" answer the sidebar pays for on a plain folder.
+/// Three directories no git repository owns, so every row exercises the "no badge" answer the sidebar pays for on a plain folder.
 pub const seed_cwds = [_][]const u8{
     "/pabrik-bench/cwd-a",
     "/pabrik-bench/cwd-b",

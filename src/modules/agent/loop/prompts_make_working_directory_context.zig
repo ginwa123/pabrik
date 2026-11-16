@@ -3,8 +3,7 @@ const testing = std.testing;
 
 const memory_files = [_][]const u8{ "PABRIK.md", "CLAUDE.md", "AGENTS.md" };
 
-/// Build a working-directory context by concatenating the contents of
-/// `PABRIK.md`, `CLAUDE.md`, and `AGENTS.md` in the given `cwd`.
+/// Build a working-directory context by concatenating the contents of `PABRIK.md`, `CLAUDE.md`, and `AGENTS.md` in the given `cwd`.
 pub fn makeWorkingDirectoryContext(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -24,9 +23,7 @@ pub fn makeWorkingDirectoryContext(
         const file_path = try std.fs.path.join(allocator, &[_][]const u8{ absolute_cwd, filename });
         defer allocator.free(file_path);
 
-        // Open the file for reading. If it doesn't exist, skip — do NOT
-        // create it. Force-creating an empty markdown file pollutes
-        // freshly-cloned repos every time the agent starts a session.
+        // Open the file for reading.
         const file = std.Io.Dir.openFileAbsolute(io, file_path, .{
             .mode = .read_only,
         }) catch |err| {
@@ -48,9 +45,7 @@ pub fn makeWorkingDirectoryContext(
     return try result.toOwnedSlice(allocator);
 }
 
-// ─── Tests ─────────────────────────────────────────────────────────── These
-// tests are INLINE in the impl file (not a separate `*_test.zig`) per the
-// project's prevailing pattern — see `session_skills.zig`, `handle_tool.zig`,
+// ─── Tests ───────────────────────────────────────────────────────────
 
 const TestEnv = struct {
     tmp: std.testing.TmpDir,
@@ -164,8 +159,7 @@ test "makeWorkingDirectoryContext: all three files concatenated in canonical ord
     defer threaded.deinit();
     const io = threaded.io();
 
-    // Write files in REVERSE order to verify the function reads them
-    // in PABRIK / CLAUDE / AGENTS order regardless of insertion order.
+    // Write files in REVERSE order to verify the function reads them in PABRIK / CLAUDE / AGENTS order regardless of insertion order.
     inline for ([_][]const u8{ "AGENTS.md", "CLAUDE.md", "PABRIK.md" }) |name| {
         const p = try std.fs.path.join(alloc, &.{ env.root_abs, name });
         defer alloc.free(p);
@@ -203,8 +197,7 @@ test "makeWorkingDirectoryContext: file without trailing newline still gets a se
     const result = try makeWorkingDirectoryContext(alloc, io, env.root_abs);
     defer alloc.free(result);
 
-    // The first file's content gets a trailing newline so the next
-    // file's content doesn't accidentally concatenate onto it.
+    // The first file's content gets a trailing newline so the next file's content doesn't accidentally concatenate onto it.
     try testing.expectEqualStrings("no-newline\nblock\n", result);
 }
 

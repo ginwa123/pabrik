@@ -12,8 +12,6 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // The card receives the bare `data` object ({updated, thought, error}).
-// A legacy XML string degrades to empty (running state) instead of
-// regex-parsing tags.
 const dataRecord = computed((): Record<string, unknown> => {
   const { data } = normalizeToolContent(props.content)
   if (data !== null && typeof data === 'object' && !Array.isArray(data)) {

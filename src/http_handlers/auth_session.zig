@@ -1,5 +1,4 @@
 //! `POST /api/auth/logout` — delete the session row + clear the cookie.
-//! `GET /api/auth/me` — return the current user or 401.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -34,8 +33,7 @@ pub fn authMeHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const di = try pabrikcore.getSingleton();
-    // When auth is off, report anonymous but 200 so the frontend
-    // can boot without a redirect.
+    // When auth is off, report anonymous but 200 so the frontend can boot without a redirect.
     if (!di.auth_enabled) {
         const data = try std.json.Stringify.valueAlloc(allocator, .{ .authenticated = false, .auth_enabled = false }, .{});
         return res.jsonResponse(.{ .status_code = 200, .data = data });

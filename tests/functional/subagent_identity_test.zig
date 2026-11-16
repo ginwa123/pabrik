@@ -1,5 +1,4 @@
-// Sub-agent identity columns (Migration 091, task_1789909961925_0). Zig port
-// of `tests/functional/subagent_identity_test.py`.
+// Sub-agent identity columns (Migration 091, task_1789909961925_0).
 
 // QUERY STRINGS ARE IN THE PATH, NOT IN `HttpOptions.params`.
 
@@ -42,8 +41,7 @@ test "messages_wire_includes_sub_agent_identity" {
         defer r.deinit();
     }
 
-    // Query is INLINED, not passed via `HttpOptions.params`: see the
-    // "QUERY STRINGS ARE IN THE PATH" note at the top of this file.
+    // Query is INLINED, not passed via `HttpOptions.params`: see the "QUERY STRINGS ARE IN THE PATH" note at the top of this file.
     const messages_path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages?limit=1", .{session_id});
     defer gpa.free(messages_path);
 
@@ -63,13 +61,11 @@ test "messages_wire_includes_sub_agent_identity" {
         return error.TestUnexpectedResult;
     };
 
-    // Python: `body["sub_agent_name"] in (None, "")` — a MAIN session
-    // is nobody's sub-agent, so both fields must be unset.
+    // Python: `body["sub_agent_name"] in (None, "")` — a MAIN session is nobody's sub-agent, so both fields must be unset.
     try expectNullOrEmpty(sub_agent_name, "sub_agent_name");
     try expectNullOrEmpty(parent_session_id, "parent_session_id");
 
-    // Parent profile still flows through unchanged. Python:
-    //   `body.get("selected_profile_model") in (None, "muse spark auto", "")`
+    // Parent profile still flows through unchanged. Python
     if (doc.get("selected_profile_model")) |profile| switch (profile) {
         .null => {},
         .string => |s| try testing.expect(

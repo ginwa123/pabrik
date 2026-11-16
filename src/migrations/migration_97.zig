@@ -32,8 +32,7 @@ pub const Migration097CreateSkillEvalTables = struct {
             \\)
         , &[_][]const u8{});
 
-        // The unique key IS the claim mechanism: a second writer for the same
-        // (skill, content, context) cannot insert, so it reuses instead.
+        // The unique key IS the claim mechanism: a second writer for the same (skill, content, context) cannot insert, so it reuses instead.
         try db.exec(allocator,
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_eval_facts ON skill_eval_facts(skill_key, content_hash, context_key)",
             &[_][]const u8{});
@@ -42,8 +41,6 @@ pub const Migration097CreateSkillEvalTables = struct {
             &[_][]const u8{});
 
         // ── one row per eval invocation ───────────────────────────────────
-        // `sub_session_ids_json` exists so the run's token cost can be summed
-        // exactly over the sub-agent session ids the spawn envelope returns,
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS skill_eval_runs (
             \\    id TEXT PRIMARY KEY,
@@ -68,9 +65,7 @@ pub const Migration097CreateSkillEvalTables = struct {
             \\)
         , &[_][]const u8{});
 
-        // "At most one self-prompted run per session" is enforced by the
-        // DATABASE, not by a convention, because the agent can emit two
-        // `run_skill_eval` tool calls in a single turn and both would
+        // "At most one self-prompted run per session" is enforced by the DATABASE, not by a convention, because the agent can emit two `run_skill_eval` tool calls in a …
         try db.exec(allocator,
             \\CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_eval_runs_self_prompt
             \\ON skill_eval_runs(session_id, trigger) WHERE trigger = 'self_prompt'

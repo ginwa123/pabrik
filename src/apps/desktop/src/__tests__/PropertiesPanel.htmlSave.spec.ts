@@ -1,6 +1,4 @@
-/** Wire-up regression test for PropertiesPanel.vue Monaco Save button. Pre-fix symptom (silent-drop
- * bug): clicking "Save" in the Monaco HTML editor emits `htmlChanged` upward → DesignView re-emits
- * → AppLayout has no `@html-changed` listener → nothing happens. */
+/** Wire-up regression test for PropertiesPanel.vue Monaco Save button. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -87,21 +85,17 @@ describe('PropertiesPanel Monaco Save wire-up (Chunk 1 of undo/redo plan)', () =
     await nextTick()
 
     // Expand the HTML editor and replace the draft with new content.
-    // The Save button is only rendered when `htmlExpanded === true`.
     const toggle = wrapper.find('[data-testid="properties-toggle-html-editor"]')
     expect(toggle.exists()).toBe(true)
     await toggle.trigger('click')
     await nextTick()
 
-    // The Monaco editor is lazy-loaded via `await import('monaco-editor')` — in the jsdom test
-    // environment this is a network-style import. We bypass Monaco's internal editor by setting the
-    // draft via the component's internal `htmlDraft` ref.
+    // The Monaco editor is lazy-loaded via `await import('monaco-editor')` — in the jsdom test environment this is a network-style import.
     const textarea = wrapper.find('textarea.html-draft-textarea')
     if (textarea.exists()) {
       await textarea.setValue('<div>new content</div>')
     } else {
-      // Fall back to direct API spy invocation: call handleHtmlSave via the Save button click
-      // without modifying the draft.
+      // Fall back to direct API spy invocation: call handleHtmlSave via the Save button click without modifying the draft.
     }
     await nextTick()
 

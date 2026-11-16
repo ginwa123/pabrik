@@ -1,5 +1,3 @@
-// RED: SSE stall must trigger reconnect (idle-freeze fix)
-// Currently resetStallDetector only logs — this test must FAIL before fix.
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-function-type -- test mocks legitimately use loose types */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSseClient } from '../helpers/sseClient'

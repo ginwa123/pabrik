@@ -1,5 +1,4 @@
-//! Tiny in-process regex engine for `search_tool`'s catalog query. Why
-//! hand-rolled: the catalog is an in-memory list of `AgentTool`s.
+//! Tiny in-process regex engine for `search_tool`'s catalog query.
 
 const std = @import("std");
 
@@ -10,13 +9,10 @@ pub const Options = struct {
     case_insensitive: bool = true,
 };
 
-/// Compiled program cap. `a{0,900}{0,900}` would otherwise expand to 810k
-/// instructions from a 15-byte pattern.
+/// Compiled program cap.
 pub const MAX_INSTRS: usize = 1024;
 
-/// Per-`isMatch` budget, counted in thread insertions. A real catalog query
-/// uses a few thousand; the cap only exists so a hostile pattern cannot stall
-/// the agent worker. Tripping it is reported via `exhausted()`.
+/// Per-`isMatch` budget, counted in thread insertions.
 pub const MAX_STEPS: usize = 2_000_000;
 
 const Inst = union(enum) {
@@ -85,8 +81,7 @@ pub const Regex = struct {
         self.* = undefined;
     }
 
-    /// True when the last `isMatch` hit the step budget — results from that
-    /// call are incomplete (false negatives possible).
+    /// True when the last `isMatch` hit the step budget — results from that call are incomplete (false negatives possible).
     pub fn exhausted(self: *const Regex) bool {
         return self.exhausted_flag;
     }
@@ -263,9 +258,7 @@ const Parser = struct {
         }
     }
 
-    /// Lazy markers (`*?`) are semantically irrelevant here: the caller only
-    /// asks whether a match exists, and every quantifier alternative is
-    /// explored anyway. Accept and drop so the agent can copy a PCRE habit.
+    /// Lazy markers (`*?`) are semantically irrelevant here: the caller only asks whether a match exists, and every quantifier alternative is explored anyway.
     fn skipLazy(self: *Parser) void {
         if (self.peek() == '?') self.pos += 1;
     }
@@ -302,8 +295,7 @@ const Parser = struct {
                 self.pos += 1;
                 if (self.peek() == '?') {
                     self.pos += 1;
-                    // `(?:` is the only supported extension; the rest
-                    // (`(?=`, `(?!`, `(?<`, `(?i`) is an explicit error.
+                    // `(?:` is the only supported extension; the rest (`(?=`, `(?!`, `(?<`, `(?i`) is an explicit error.
                     if (self.peek() != ':') return error.InvalidPattern;
                     self.pos += 1;
                 }
@@ -355,8 +347,7 @@ const Parser = struct {
             'v' => return self.add(.{ .literal = 0x0b }),
             '0' => return self.add(.{ .literal = 0 }),
             else => {
-                // Unknown alphabetic escapes (`\q`, `\A`, `\z`, `\G`, …) are an
-                // explicit error, never a silently different literal.
+                // Unknown alphabetic escapes (`\q`, `\A`, `\z`, `\G`, …) are an explicit error, never a silently different literal.
                 if (std.ascii.isAlphanumeric(c)) return error.InvalidPattern;
                 return self.add(.{ .literal = self.foldByte(c) });
             },
@@ -632,9 +623,7 @@ pub fn matches(allocator: std.mem.Allocator, pattern: []const u8, text: []const 
     return re.isMatch(text);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
@@ -786,14 +775,12 @@ test "escaped metacharacters are literal" {
 }
 
 test "a pathological backtracking pattern stays linear" {
-    // The classic catastrophic-backtracking shape: 30 a's + 'b'. A
-    // backtracking engine blows up here; the NFA simulation must not.
+    // The classic catastrophic-backtracking shape: 30 a's + 'b'.
     const text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     try testing.expect(!try pair(testing.allocator, "(a+)+b", text));
 }
 
-// ─── Oracle: expectations cross-checked against Python's `re` ─── Generated
-// with Python 3 (`re.compile(pattern.encode())`, i.e.
+// ─── Oracle: expectations cross-checked against Python's `re` ───
 
 const OracleCase = struct { pattern: []const u8, text: []const u8, want: bool };
 

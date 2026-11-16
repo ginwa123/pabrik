@@ -1,5 +1,4 @@
-//! `POST /api/agent-kanbans/:kanban_id/system_prompt`. Adds a named
-//! system-prompt block to an agent-kanbans config. Body: `{title?, content}`.
+//! `POST /api/agent-kanbans/:kanban_id/system_prompt`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,8 +17,7 @@ const CreateSystemPromptBody = struct {
 /// Subset of the system-prompt row returned by the use-case.
 pub const SystemPrompt = agent_kanban_db.SystemPromptRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const SystemPromptCreateError = error{
     /// `kanban_id` path param was missing or empty.
     KanbanIdRequired,
@@ -27,8 +25,7 @@ pub const SystemPromptCreateError = error{
     ContentRequired,
     /// `db.query` failed while looking up the kanban.
     LookupFailed,
-    /// The workspace_item doesn't exist / isn't a kanban, OR the kanban
-    /// has no `agent_kanbans` row yet.
+    /// The workspace_item doesn't exist / isn't a kanban, OR the kanban has no `agent_kanbans` row yet.
     KanbanNotFound,
     /// `db.exec` failed on the INSERT.
     InsertFailed,
@@ -52,9 +49,7 @@ pub const SystemPromptCreateOutput = struct {
     system_prompt: SystemPrompt,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a system-prompt row for the given agent-kanbans config.
 fn useCase(
@@ -86,9 +81,7 @@ fn useCase(
     return .{ .system_prompt = system_prompt };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanSystemPromptCreateHandler(
@@ -153,7 +146,6 @@ pub fn agentKanbanSystemPromptCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

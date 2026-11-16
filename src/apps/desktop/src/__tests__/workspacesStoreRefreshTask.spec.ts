@@ -22,8 +22,7 @@ describe('useWorkspacesStore.refreshTask', () => {
     })
 
     vi.spyOn(api, 'getTask').mockImplementation(getTaskMock)
-    // getTasks is the OLD path — mocked so any accidental call is
-    // observable (the regression test asserts it stays untouched).
+    // getTasks is the OLD path — mocked so any accidental call is observable (the regression test asserts it stays untouched).
     vi.spyOn(api, 'getTasks').mockImplementation(getTasksMock)
     // init() never runs in these tests, but stub defensively.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
@@ -36,9 +35,7 @@ describe('useWorkspacesStore.refreshTask', () => {
     getTasksMock.mockReset()
   })
 
-  // Seed the store with one workspace / one item / one task so we
-  // can test the in-place replacement. Skipping init() keeps the
-  // tests focused on refreshTask's read-then-patch logic.
+  // Seed the store with one workspace / one item / one task so we can test the in-place replacement.
   function seedStore(opts: {
     taskId: string
     cachedUnattended: '0' | '1'
@@ -84,8 +81,7 @@ describe('useWorkspacesStore.refreshTask', () => {
     const ws = useWorkspacesStore()
     await ws.refreshTask('ws_1', 'item_1', 'task_x')
 
-    // THE contract of plan 2026-08-24-kanban-task-detail-single-fetch:
-    // one single-task request, zero list requests.
+    // THE contract of plan 2026-08-24-kanban-task-detail-single-fetch
     expect(getTaskMock).toHaveBeenCalledTimes(1)
     expect(getTaskMock).toHaveBeenCalledWith('ws_1', 'item_1', 'task_x')
     expect(getTasksMock).not.toHaveBeenCalled()
@@ -98,8 +94,7 @@ describe('useWorkspacesStore.refreshTask', () => {
   })
 
   it('flips the toggle from OFF to ON when the server has it ON', async () => {
-    // This is the exact bug the user reported: cached value says
-    // OFF, server has ON, the dialog must show ON after refresh.
+    // This is the exact bug the user reported: cached value says OFF, server has ON, the dialog must show ON after refresh.
     seedStore({ taskId: 'task_x', cachedUnattended: '0' })
     getTaskMock.mockResolvedValue({
       id: 'task_x',
@@ -121,9 +116,7 @@ describe('useWorkspacesStore.refreshTask', () => {
     const ws = useWorkspacesStore()
     await ws.refreshTask('ws_1', 'item_1', 'task_x')
 
-    // Cached task is unchanged (preserved, not deleted) — the dialog
-    // can still display it. The eventual delete-event SSE handler
-    // will remove the task from the store on the next round trip.
+    // Cached task is unchanged (preserved, not deleted) — the dialog can still display it.
     expect(ws.workspaces[0]!.items[0]!.tasks![0]!.name).toBe('Original name')
     expect(ws.workspaces[0]!.items[0]!.tasks![0]!.is_auto_retry_until_stop).toBe('0')
   })
@@ -138,9 +131,7 @@ describe('useWorkspacesStore.refreshTask', () => {
 
     // Cached task unchanged; failure is logged via console.warn.
     expect(ws.workspaces[0]!.items[0]!.tasks![0]!.is_auto_retry_until_stop).toBe('1')
-    // We don't assert on console.warn here — vi.restoreAllMocks() in afterEach would reset a
-    // module-level spy. The "does not throw" promise is the contract that matters for the dialog
-    // UX; the log line is incidental observability.
+    // We don't assert on console.warn here — vi.restoreAllMocks() in afterEach would reset a module-level spy.
   })
 
   it('only patches the task whose id matches (does not touch sibling tasks)', async () => {

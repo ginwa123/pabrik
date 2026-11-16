@@ -1,5 +1,4 @@
-/** CompactionCard, JSON envelopes: the task plan and the working directory the backend writes.
- * The XML envelopes from before the format change are covered by CompactionCard.spec.ts. */
+/** CompactionCard, JSON envelopes: the task plan and the working directory the backend writes. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -78,8 +77,7 @@ describe('CompactionCard, JSON envelopes', () => {
   })
 
   it('does not print the same directory twice when no worktree is bound', () => {
-    // The reported card read `Session cwd /home/ginwa/glinlandui` and `Active
-    // /home/ginwa/glinlandui` on consecutive lines — two rows, one path.
+    // The reported card read `Session cwd /home/ginwa/glinlandui` and `Active /home/ginwa/glinlandui` on consecutive lines — two rows, one path.
     wrapper = mount(CompactionCard, {
       props: {
         content: envelope({

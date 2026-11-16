@@ -1,6 +1,4 @@
-//! `PATCH
-//! /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id`.
-//! Rename and/or reorder a kanban column.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,16 +7,13 @@ const http_response = @import("http_response.zig");
 const kanban_model = @import("../modules/agent/loop/kanban_model.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 
-/// Request body for column-update. All fields are optional. At least one must
-/// be present (validated in the use-case).
+/// Request body for column-update.
 const UpdateColumnBody = struct {
     name: ?[]const u8 = null,
-    /// New description: `null` leaves the existing description
-    /// unchanged; `""` clears it; non-empty replaces it.
+    /// New description: `null` leaves the existing description unchanged; `""` clears it; non-empty replaces it.
     description: ?[]const u8 = null,
     position: ?i64 = null,
-    /// Migration 111 — "a card that lands in this column has finished the work
-    /// it describes", so it stops blocking its dependents.
+    /// Migration 111 — "a card that lands in this column has finished the work it describes", so it stops blocking its dependents.
     is_done: ?bool = null,
 };
 
@@ -31,8 +26,7 @@ pub const KanbanColumnUpdateError = error{
     UpdateFailed,
     ReorderFailed,
     ListFailed,
-    /// `makeKanbanColumnListResponse` returns `![]u8` — its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`.
+    /// `makeKanbanColumnListResponse` returns `![]u8` — its body uses `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
@@ -45,9 +39,7 @@ pub const KanbanColumnUpdateInput = struct {
 
 pub const KanbanColumnUpdateResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -58,8 +50,6 @@ fn useCase(
     if (input.column_id.len == 0) return error.ColumnIdRequired;
 
     // Empty-body check is in the handler (`req.body.len` is HTTP-layer).
-    // Body-shape validation is also handler-layer (parses JSON). Here
-    // we just enforce "at least one field present".
     const parsed = input.body;
     if (parsed.name == null and parsed.description == null and parsed.position == null and parsed.is_done == null) {
         return error.NothingToUpdate;
@@ -83,8 +73,7 @@ fn useCase(
         ) catch return error.UpdateFailed;
     }
 
-    // Reorder (if position is set). Independent of name/description —
-    // a single PATCH can do both.
+    // Reorder (if position is set).
     if (parsed.position) |new_pos| {
         kanban_model.reorderColumn(
             allocator,
@@ -95,8 +84,7 @@ fn useCase(
         ) catch return error.ReorderFailed;
     }
 
-    // Return the updated board so the frontend can re-render without
-    // a separate GET round-trip.
+    // Return the updated board so the frontend can re-render without a separate GET round-trip.
     const cols = kanban_model.listColumns(allocator, db, input.item_id) catch return error.ListFailed;
     defer kanban_model.freeColumns(allocator, cols);
 
@@ -120,9 +108,7 @@ fn useCase(
     return try http_response.makeKanbanColumnListResponse(allocator, cols);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn kanbanColumnsUpdateHandler(
     ctx: gserverz.HttpContext,
@@ -141,9 +127,7 @@ pub fn kanbanColumnsUpdateHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "item_id required" }),
         });
     }
-    // workspace_id is required for the SSE payload (the frontend uses
-    // it to filter events for the active workspace). Empty is fine —
-    // the SSE event will still be emitted with workspace_id="".
+    // workspace_id is required for the SSE payload (the frontend uses it to filter events for the active workspace).
     const ws_id = req.params.get("workspace_id") orelse "";
     const column_id = req.params.get("column_id") orelse "";
     if (column_id.len == 0) {

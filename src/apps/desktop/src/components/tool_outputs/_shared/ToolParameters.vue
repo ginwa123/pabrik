@@ -18,8 +18,7 @@ const props = defineProps<{
   exclude?: string[]
 }>()
 
-// Strip excluded keys so cards that already visualize a param (diff, file
-// content) don't repeat the same huge blob as raw JSON in Arguments.
+// Strip excluded keys so cards that already visualize a param (diff, file content) don't repeat the same huge blob as raw JSON in Arguments.
 const filtered = computed(() => {
   const p = (props.parameters ?? '').trim()
   if (!p) return ''

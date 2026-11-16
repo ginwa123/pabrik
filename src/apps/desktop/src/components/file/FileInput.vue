@@ -36,19 +36,13 @@ const props = defineProps<{
   isLLMProcessing?: boolean
   initialMessage?: string
   reviewMode?: boolean
-  /** True while the parent is waiting for the stop-session API call to resolve. Drives the Stop
-   * button's spinner state + click-debounce. */
+  /** True while the parent is waiting for the stop-session API call to resolve. */
   isStopping?: boolean
-  /** Optional draft bucket. When set, typed-but-unsent text survives this component being remounted
-   * — and remounting is exactly what every tab switch does (AppLayout keys each view by the active
-   * tab), so without a bucket the text would silently vanish. */
+  /** Optional draft bucket. */
   draftKey?: string
-  /** True while the parent view is still running its initial load (ChatView's `isInitializing`:
-   * session id unassigned or first history fetch outstanding). Disables the textarea + send button
-   * so the user can't submit against an unloaded session. */
+  /** True while the parent view is still running its initial load (ChatView's `isInitializing` */
   isInitializing?: boolean
-  /** The agents `@` can address. The parent owns the list (workspace config)
-   * and the selection (the session's agent). */
+  /** The agents `@` can address. */
   agents?: Array<{ name: string; model?: string }>
 }>()
 
@@ -76,8 +70,7 @@ const selectedFileIndex = ref(0)
 const filePickerRef = ref<HTMLElement | null>(null)
 let fileDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
-// ── `@` agent picker ──────────────────────────────────────────────────── `@`
-// addresses an agent; files moved to `/files-` so the two never compete.
+// ── `@` agent picker ────────────────────────────────────────────────────
 const showAgentPicker = ref(false)
 const agentQuery = ref('')
 const selectedAgentIndex = ref(0)
@@ -147,19 +140,15 @@ const scrollAgentSelectedIntoView = () => {
 // File input ref for native file selection
 const nativeFileInput = ref<HTMLInputElement | null>(null)
 
-// Textarea ref for the document-level paste handler to scope intercepts
-// to our textarea only — so we don't swallow paste events from sibling
-// inputs (other chat tabs, search fields, etc.).
+// Textarea ref for the document-level paste handler to scope intercepts to our textarea only — so we don't swallow paste events from sibling inputs (other chat …
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
-// ── Draft survival across remounts (tab switches) ───────────────────── Every tab switch remounts
-// this component, so the text in the box would otherwise be lost.
+// ── Draft survival across remounts (tab switches) ─────────────────────
 const draftKey = computed(() => props.draftKey ?? '')
 
 function draftBucket(): ReturnType<typeof useTabsStore> | null {
   if (!draftKey.value) return null
-  // FileInput is also mounted outside any app (unit tests, GitFileViewer)
-  // where there is no active pinia — drafts are simply unavailable there.
+  // FileInput is also mounted outside any app (unit tests, GitFileViewer) where there is no active pinia — drafts are simply unavailable there.
   if (!getActivePinia()) return null
   return useTabsStore()
 }
@@ -175,8 +164,7 @@ function flushDraft(): void {
   if (bucket) bucket.setDraft(draftKey.value, inputText.value)
 }
 
-// Debounced draft persist, driven by the textarea's @input handler
-// (`autoResize`) instead of a watcher — same 200 ms trailing write.
+// Debounced draft persist, driven by the textarea's @input handler (`autoResize`) instead of a watcher — same 200 ms trailing write.
 function scheduleDraftSave(): void {
   if (!draftKey.value) return
   if (draftTimer) clearTimeout(draftTimer)
@@ -187,9 +175,7 @@ function scheduleDraftSave(): void {
   }, 200)
 }
 
-// ── Autofocus on session switch ─────────────────────────────────────── Clicking a chat session
-// remounts ChatView (AppLayout `:key="activeChatId"`) which remounts this input. Auto-focus the
-// textarea so the user can type immediately with no second mouse click.
+// ── Autofocus on session switch ───────────────────────────────────────
 const focusInput = () => {
   const el = chatTextareaRef.value
   if (!el || el.disabled) return
@@ -209,18 +195,14 @@ if (props.initialMessage) {
 // Image preview state
 const previewFiles = ref<PreviewFile[]>([])
 
-// ── Stop button state ───────────────────────────────────────────────────── Stop-button state: the
-// parent (ChatView) sets `isStopping` on click and clears it when the LLM stops, so the spinner
-// shows only while a stop is actually in flight AND the agent is still processing.
+// ── Stop button state ─────────────────────────────────────────────────────
 const stopRequested = ref(false)
 const isStopping = computed(
   () => ((props.isStopping ?? false) || stopRequested.value) && (props.isLLMProcessing ?? false),
 )
 
 const handleStopClick = () => {
-  // Debounce: while a stop is already in flight, ignore subsequent clicks. The button is also
-  // `:disabled` while `isStopping`, so this is a defensive check for the case where the prop hasn't
-  // propagated yet (same render frame as the click).
+  // Debounce: while a stop is already in flight, ignore subsequent clicks.
   if (isStopping.value) return
   stopRequested.value = true
   emit('stop-session')
@@ -259,8 +241,7 @@ const sendMessageWithFiles = async () => {
     clearTimeout(fileDebounceTimer)
     fileDebounceTimer = null
   }
-  // The text is gone from the box AND from the draft bucket — a sent
-  // message must never come back as a draft.
+  // The text is gone from the box AND from the draft bucket — a sent message must never come back as a draft.
   draftBucket()?.clearDraft(draftKey.value)
   showFilePicker.value = false
   closeSkillPicker()
@@ -282,9 +263,7 @@ const sendMessageWithFiles = async () => {
   })
 }
 
-// Pre-fill when the parent provides a new initialMessage (e.g., selecting diff lines). The producer
-// lives in the parent, so the prop change is picked up here with a prev-value guard on update —
-// same truthy-only assignment the watcher did.
+// Pre-fill when the parent provides a new initialMessage (e.g., selecting diff lines).
 let prevInitialMessage = props.initialMessage
 onUpdated(() => {
   const next = props.initialMessage
@@ -293,9 +272,7 @@ onUpdated(() => {
   if (changed && next) {
     inputText.value = next
   }
-  // Drop the optimistic stop claim once it is superseded: the parent
-  // acknowledged (prop true, it owns the spinner now) or the run ended
-  // (otherwise the leftover would show a phantom spinner on the next run).
+  // Drop the optimistic stop claim once it is superseded: the parent acknowledged (prop true, it owns the spinner now) or the run ended (otherwise the leftover …
   if (stopRequested.value && ((props.isStopping ?? false) || !props.isLLMProcessing)) {
     stopRequested.value = false
   }
@@ -306,16 +283,13 @@ const triggerFilePicker = () => {
   nativeFileInput.value?.click()
 }
 
-// Add a single image, video or document to the preview list (shared by the paperclip + paste
-// flows). A document rides along as a file attachment — the model reads a PDF as a file and a
-// text document as text.
+// Add a single image, video or document to the preview list (shared by the paperclip + paste flows).
 const addAttachmentFile = (file: File) => {
   const isMedia = isMediaFile(file)
   const isDocument = isDocumentFile(file)
   if (!isMedia && !isDocument) return
   if (isVideoFile(file) && file.size > MAX_VIDEO_BYTES) return
-  // The caps bound the DOCUMENTS only — they mirror the backend's file caps,
-  // and the image/video path has always had its own.
+  // The caps bound the DOCUMENTS only — they mirror the backend's file caps, and the image/video path has always had its own.
   if (isDocument) {
     const staged = previewFiles.value.filter((item) => isDocumentFile(item.file))
     if (staged.length >= MAX_FILE_ATTACHMENT_COUNT) return
@@ -341,20 +315,15 @@ const handleNativeFileSelect = (event: Event) => {
   target.value = ''
 }
 
-// Handle paste event — attach pasted images as file attachments (Ctrl/Cmd+V). Chromium / Firefox:
-// `e.clipboardData.items` natively contains file items, so the standard sync loop below is enough.
+// Handle paste event — attach pasted images as file attachments (Ctrl/Cmd+V). Chromium / Firefox
 const handlePaste = async (e: ClipboardEvent) => {
-  // Scope: this listener is attached at document level (see onMounted below), so we get every paste
-  // on the page. Only intercept paste when it originated in OUR textarea — sibling input components
-  // (other chat tabs, search fields, etc.) keep their native paste behavior.
+  // Scope: this listener is attached at document level (see onMounted below), so we get every paste on the page.
   if (e.target !== chatTextareaRef.value) return
 
   const items = e.clipboardData?.items
   let pastedImageCount = 0
 
-  // Strategy 1: clipboardData.items (works in Chrome, Firefox, and WebKit
-  // variants where the focused element permits file pastes — e.g.
-  // contenteditable divs).
+  // Strategy 1: clipboardData.items (works in Chrome, Firefox, and WebKit variants where the focused element permits file pastes — e.g. contenteditable divs).
   if (items && items.length > 0) {
     for (const item of items) {
       if (item.kind !== 'file') continue
@@ -363,8 +332,7 @@ const handlePaste = async (e: ClipboardEvent) => {
       const file = item.getAsFile()
       if (!file) continue
 
-      // Browsers often leave `file.name` empty for clipboard images; give it
-      // a sensible name + extension so FilePreview's tooltip is readable.
+      // Browsers often leave `file.name` empty for clipboard images; give it a sensible name + extension so FilePreview's tooltip is readable.
       if (!file.name) {
         const ext = item.type.split('/')[1] ?? 'png'
         const renamed = new File([file], `pasted-image-${Date.now()}.${ext}`, { type: item.type })
@@ -376,9 +344,7 @@ const handlePaste = async (e: ClipboardEvent) => {
     }
   }
 
-  // Strategy 2: WebKitGTK <textarea> filter workaround. If the sync path found no files AND the
-  // async Clipboard API is available, use it to read the actual clipboard contents (bypassing the
-  // element-level filter).
+  // Strategy 2: WebKitGTK <textarea> filter workaround.
   if (pastedImageCount === 0 && navigator.clipboard?.read) {
     try {
       const clipboardItems = await navigator.clipboard.read()
@@ -394,7 +360,6 @@ const handlePaste = async (e: ClipboardEvent) => {
       }
     } catch (err) {
       // Permission denied, clipboard unavailable, or no images present.
-      // Silent fall-through — the user can still type and send text.
       console.debug(
         '[paste] navigator.clipboard.read() fallback skipped:',
         err instanceof Error ? err.message : err,
@@ -402,19 +367,16 @@ const handlePaste = async (e: ClipboardEvent) => {
     }
   }
 
-  // If we attached at least one image, suppress the default text paste so the textarea doesn't get
-  // a multi-MB `data:image/png;base64,…` string.
+  // If we attached at least one image, suppress the default text paste so the textarea doesn't get a multi-MB `data:image/png;base64,…` string.
   if (pastedImageCount > 0) {
     e.preventDefault()
   }
 }
 
-// Register the document-level capture-phase paste listener on mount and unregister on unmount. Why
-// document-level (capture phase) instead of `@paste` on the <textarea>?
+// Register the document-level capture-phase paste listener on mount and unregister on unmount.
 onMounted(() => {
   document.addEventListener('paste', handlePaste, true)
-  // Restore a draft from an earlier mount of this chat (tab switch), but
-  // never clobber text the parent already put in the box.
+  // Restore a draft from an earlier mount of this chat (tab switch), but never clobber text the parent already put in the box.
   const bucket = draftBucket()
   if (bucket && !inputText.value) {
     const saved = bucket.getDraft(draftKey.value)
@@ -425,8 +387,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // A fast tab switch can beat the 200 ms debounce — persist synchronously
-  // so the text is already in the bucket when the next mount looks for it.
+  // A fast tab switch can beat the 200 ms debounce — persist synchronously so the text is already in the bucket when the next mount looks for it.
   if (draftTimer) flushDraft()
   document.removeEventListener('paste', handlePaste, true)
   if (fileDebounceTimer) clearTimeout(fileDebounceTimer)
@@ -455,29 +416,22 @@ const isCompletionMsg = (msg: { message: string }): boolean =>
 const completionPid = (msg: { message: string }): string | null =>
   parseBackgroundCommandOutput(msg.message)?.pid ?? null
 
-// ── @ picker server search ────── Single round-trip per query via
-// `api.searchFiles`; both picker timers share 100 ms, which still collapses a
-// burst of keystrokes now that one search is a single round-trip.
+// ── @ picker server search ──────
 const PICKER_DEBOUNCE_MS = 100
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0
 let fileSearchAbort: AbortController | null = null
-// Per-cwd cache for the EMPTY-query top-N (bounded: max 3 cwds, oldest
-// evicted). Survives closing the picker — it is the recent-files page.
+// Per-cwd cache for the EMPTY-query top-N (bounded: max 3 cwds, oldest evicted).
 const fileSearchCache = new Map<string, FileEntry[]>()
 const FILE_SEARCH_CACHE_MAX_CWDS = 3
-// Answers for the queries this picker session asked, keyed by cwd + query
-// (bounded, oldest evicted): retyping a query renders from here. Cleared on
-// close, so a reopened picker sees the files that appeared meanwhile.
+// Answers for the queries this picker session asked, keyed by cwd + query (bounded, oldest evicted): retyping a query renders from here.
 const fileQueryCache = new Map<string, FileEntry[]>()
 const FILE_QUERY_CACHE_MAX = 64
-// Rows kept on screen while the debounced answer is in flight: the previous
-// page narrowed by the new query, so a keystroke never blanks the panel.
+// Rows kept on screen while the debounced answer is in flight: the previous page narrowed by the new query, so a keystroke never blanks the panel.
 const pickerPreview = ref<FileEntry[] | null>(null)
 // Total entries returned by the server for the current query (footer Y).
 const serverTotal = ref(0)
-// True when the server errored and `filteredFiles` falls back to the
-// client subsequence filter over the cached top-N.
+// True when the server errored and `filteredFiles` falls back to the client subsequence filter over the cached top-N.
 const serverFailed = ref(false)
 
 const setFileSearchCache = (cwd: string, entries: FileEntry[]) => {
@@ -538,15 +492,13 @@ const scheduleFileSearch = (immediate: boolean) => {
     clearTimeout(fileSearchTimer)
     fileSearchTimer = null
   }
-  // Cancel any in-flight request (retype/close) — the generation counter
-  // below discards responses that still resolve afterwards.
+  // Cancel any in-flight request (retype/close) — the generation counter below discards responses that still resolve afterwards.
   fileSearchAbort?.abort()
   const run = () => {
     const cwd = props.cwd
     const query = fileQuery.value
     if (!cwd || !showFilePicker.value) return
-    // Already answered in this session (top-N or a query the user typed
-    // before): render it synchronously, no network.
+    // Already answered in this session (top-N or a query the user typed before): render it synchronously, no network.
     const cached =
       query === '' ? fileSearchCache.get(cwd) : fileQueryCache.get(fileQueryKey(cwd, query))
     if (cached) {
@@ -580,9 +532,7 @@ const closeFilePicker = () => {
   isLoadingFiles.value = false
 }
 
-// Smart word matching: support "out of order" characters
-// e.g., "comp" matches "components", "tst" matches "test". Used by the
-// server-error fallback and the in-flight preview — never over the tree.
+// Smart word matching: support "out of order" characters e.g., "comp" matches "components", "tst" matches "test".
 const matchesOutOfOrder = (path: string, query: string): boolean => {
   const lowerPath = path.toLowerCase()
   let pathIdx = 0
@@ -597,14 +547,12 @@ const matchesOutOfOrder = (path: string, query: string): boolean => {
   return queryIdx === query.length
 }
 
-// Same test the server ranks by (substring beats subsequence), applied to the
-// rows we already hold.
+// Same test the server ranks by (substring beats subsequence), applied to the rows we already hold.
 const matchesPreview = (path: string, query: string): boolean =>
   path.toLowerCase().includes(query.toLowerCase()) || matchesOutOfOrder(path, query)
 
 const filteredFiles = computed(() => {
-  // Server results are already ranked + filtered — use them directly; while
-  // the next answer is in flight, the narrowed preview stands in for them.
+  // Server results are already ranked + filtered — use them directly; while the next answer is in flight, the narrowed preview stands in for them.
   if (!serverFailed.value) return pickerPreview.value ?? fileList.value
   if (!fileQuery.value) return fileList.value
   const q = fileQuery.value.toLowerCase()
@@ -614,8 +562,7 @@ const filteredFiles = computed(() => {
 // Render cap: at most 50 rows in the DOM (v1 — no virtual list).
 const visibleFiles = computed(() => filteredFiles.value.slice(0, 50))
 
-// `/files-<query>` is the file trigger (it used to be `@`, which now
-// addresses an agent). The query may carry a path: `/`, `\`, `:` and `-`.
+// `/files-<query>` is the file trigger (it used to be `@`, which now addresses an agent).
 const FILES_TOKEN_RE = /(^|\s)\/files-([\w./\\:-]*)$/i
 
 const detectFilesTrigger = () => {
@@ -637,8 +584,7 @@ const detectFilesTrigger = () => {
       scheduleFileSearch(true) // immediate on open
     } else if (queryChanged) {
       selectedFileIndex.value = 0
-      // Narrow the rows already on screen so the panel never blanks between a
-      // keystroke and the answer; the server's ranked page replaces them.
+      // Narrow the rows already on screen so the panel never blanks between a keystroke and the answer; the server's ranked page replaces them.
       pickerPreview.value = q
         ? fileList.value.filter((f) => matchesPreview(f.path, q))
         : fileList.value
@@ -649,9 +595,7 @@ const detectFilesTrigger = () => {
   }
 }
 
-// Debounced @-mention, /skill, /tool and /files detection, driven by the textarea's @input handler
-// instead of a watcher — same 100 ms trailing run. The command menu runs last so it can see which
-// picker (if any) the token opened.
+// Debounced @-mention, /skill, /tool and /files detection, driven by the textarea's @input handler instead of a watcher — same 100 ms trailing run.
 function scheduleDetectAtTrigger(): void {
   if (fileDebounceTimer) clearTimeout(fileDebounceTimer)
   fileDebounceTimer = setTimeout(() => {
@@ -679,8 +623,7 @@ const skillError = ref<string | null>(null)
 const skillLoadedWorkspace = ref<string | null>(null)
 
 const activeWorkspaceId = (): string | null => {
-  // FileInput also mounts outside pinia (unit tests, GitFileViewer) where
-  // there is no workspace scope — `/` simply does not open there.
+  // FileInput also mounts outside pinia (unit tests, GitFileViewer) where there is no workspace scope — `/` simply does not open there.
   if (!getActivePinia()) return null
   return useWorkspacesStore().activeWorkspace?.id ?? null
 }
@@ -728,9 +671,7 @@ const detectSlashTrigger = () => {
       closeSkillPicker()
       return
     }
-    // Everything after the `skill-` marker is the filter query. Stored names are `[A-Za-z0-9._-]`
-    // (see `isValidSkillName`), so the query alphabet matches the name alphabet exactly — no
-    // separators to split, no last-segment walk.
+    // Everything after the `skill-` marker is the filter query.
     skillQuery.value = (slashMatch[2] ?? '').toLowerCase()
     if (!showSkillPicker.value) {
       showSkillPicker.value = true
@@ -746,9 +687,7 @@ const detectSlashTrigger = () => {
   closeSkillPicker()
 }
 
-// Client-side substring filter over the cached workspace list. Matches the bare name, the full
-// `skill-<name>` token shown in the row, or the description — so `/skill-dep` narrows to
-// `deploy-prod` and `/SKILL-DEPLOY` behaves the same (matching is case-insensitive).
+// Client-side substring filter over the cached workspace list.
 const filteredSkills = computed(() => {
   const q = skillQuery.value
   if (q === '') return skillList.value
@@ -765,9 +704,7 @@ const selectSkill = (skill: api.Skill) => {
   const textAfterCursor = text.slice(pos)
   const slashMatch = textBeforeCursor.match(SLASH_TOKEN_RE)
   if (slashMatch && slashMatch.index !== undefined) {
-    // Replace the whole `/skill-<query>` span with the canonical token,
-    // keeping whatever preceded the trigger (start-of-line or the
-    // whitespace the regex consumed) untouched.
+    // Replace the whole `/skill-<query>` span with the canonical token, keeping whatever preceded the trigger (start-of-line or the whitespace the regex consumed) …
     const slashPos = slashMatch.index + (slashMatch[1] ?? '').length
     inputText.value = textBeforeCursor.slice(0, slashPos) + `/skill-${skill.name}` + textAfterCursor
   }
@@ -787,8 +724,7 @@ const toolPickerRef = ref<HTMLElement | null>(null)
 const toolError = ref<string | null>(null)
 // The compiled-in registry is global, so it is fetched once per mount.
 const toolsLoaded = ref(false)
-// MCP tools are workspace-scoped and cost a live `tools/list` roundtrip per
-// server, so they load after the built-ins and are cached per workspace.
+// MCP tools are workspace-scoped and cost a live `tools/list` roundtrip per server, so they load after the built-ins and are cached per workspace.
 const isLoadingMcpTools = ref(false)
 const toolMcpError = ref<string | null>(null)
 const mcpToolsWorkspace = ref<string | null>(null)
@@ -862,9 +798,7 @@ const detectToolTrigger = () => {
   const textBeforeCursor = text.slice(0, pos)
   const toolMatch = textBeforeCursor.match(TOOL_TOKEN_RE)
   if (toolMatch) {
-    // Everything after the `tool-` marker is the filter query. Registry
-    // names are `[a-z0-9_]` (see UNIFIED_TOOL_REGISTRY), so the query
-    // alphabet is a superset — no separators to split.
+    // Everything after the `tool-` marker is the filter query.
     toolQuery.value = (toolMatch[2] ?? '').toLowerCase()
     if (!showToolPicker.value) {
       showToolPicker.value = true
@@ -881,9 +815,7 @@ const detectToolTrigger = () => {
   closeToolPicker()
 }
 
-// Client-side substring filter over the cached registry. Matches the bare name, the full
-// `tool-<name>` token shown in the row, or the description — so `/tool-read` narrows to `read_file`
-// and `/TOOL-READ` behaves the same (matching is case-insensitive).
+// Client-side substring filter over the cached registry.
 const filteredTools = computed(() => {
   const q = toolQuery.value
   if (q === '') return toolList.value
@@ -900,9 +832,7 @@ const selectTool = (tool: api.AgentRegistryEntry) => {
   const textAfterCursor = text.slice(pos)
   const toolMatch = textBeforeCursor.match(TOOL_TOKEN_RE)
   if (toolMatch && toolMatch.index !== undefined) {
-    // Replace the whole `/tool-<query>` span with the canonical token,
-    // keeping whatever preceded the trigger (start-of-line or the
-    // whitespace the regex consumed) untouched.
+    // Replace the whole `/tool-<query>` span with the canonical token, keeping whatever preceded the trigger (start-of-line or the whitespace the regex consumed) …
     const slashPos = toolMatch.index + (toolMatch[1] ?? '').length
     inputText.value = textBeforeCursor.slice(0, slashPos) + `/tool-${tool.name}` + textAfterCursor
   }
@@ -992,9 +922,7 @@ const selectFile = (file: FileEntry) => {
   closeFilePicker()
 }
 
-// ── slash command menu ───────────────────────────────────────────────── A bare `/` at message
-// start or after whitespace lists the commands the composer understands; typing letters narrows
-// it. Accepting a row rewrites the prefix to the token the matching picker's trigger looks for.
+// ── slash command menu ─────────────────────────────────────────────────
 const SLASH_MENU_RE = /(^|\s)\/([a-z]*)$/i
 
 type SlashCommand = {
@@ -1119,8 +1047,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     return
   }
 
-  // The slash command menu is the only surface a bare `/` opens, and it is
-  // never open at the same time as a picker.
+  // The slash command menu is the only surface a bare `/` opens, and it is never open at the same time as a picker.
   if (showCommandMenu.value) {
     const commands = filteredCommands.value
     if (e.key === 'ArrowDown') {
@@ -1291,16 +1218,14 @@ const autoResize = (e: Event) => {
   cursorPos.value = target.selectionStart ?? 0
   target.style.height = 'auto'
   target.style.height = `${Math.min(target.scrollHeight, 200)}px`
-  // The @input handler is the single entry point for typed text (typing,
-  // paste, IME all fire `input`), so both debounced reactions live here.
+  // The @input handler is the single entry point for typed text (typing, paste, IME all fire `input`), so both debounced reactions live here.
   scheduleDraftSave()
   scheduleDetectAtTrigger()
 }
 
 const scrollSelectedIntoView = () => {
   setTimeout(() => {
-    // Scoped to this picker's DOM node (not document) so sibling chat
-    // tabs / kanban editors never steal the scroll target.
+    // Scoped to this picker's DOM node (not document) so sibling chat tabs / kanban editors never steal the scroll target.
     const root = filePickerRef.value
     if (!root) return
     const buttons = root.querySelectorAll('button')

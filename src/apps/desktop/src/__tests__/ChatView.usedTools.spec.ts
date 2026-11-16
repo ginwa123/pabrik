@@ -1,6 +1,4 @@
-/** Tests for the `used_tools` tool dispatcher in ChatView.vue. `used_tools` used to fall through to
- * the generic `v-else` fallback, which dumped the raw payload into a one-liner: used_tools → ✓
- * {"count":10,"tools":[{"name":"update_plan",…]} It now has a dedicated card. */
+/** Tests for the `used_tools` tool dispatcher in ChatView.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -15,9 +13,7 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 import type { Message } from '../api'
 
-// ──────────────────────────────────────────────────────────────────────── Stubs — we only assert
-// WHICH renderer the dispatcher picked, so the stubs are thin markers rather than the real
-// components. ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Stubs — we only assert WHICH renderer the dispatcher picked, so the stubs are thin …
 vi.mock('../components/tool_outputs/UsedTools.vue', () => ({
   default: {
     name: 'UsedTools',
@@ -61,9 +57,7 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ──────────────────────────────────────────────────────────────────────── Wire helpers (mirror the
-// backend `wrapToolOutput` shape for `used_tools` — see src/agentic_loop/tools_exec_used_tools.zig)
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Wire helpers (mirror the backend `wrapToolOutput` shape for `used_tools` — see …
 const usedToolsEnvelope = (tools: { name: string; description: string }[]): string =>
   JSON.stringify({
     tool: 'used_tools',
@@ -111,8 +105,7 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the transcript stayed empty and every render assertion read an unloaded view.
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the transcript stayed empty and every render assertion …
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [], count: 0 })
   vi.spyOn(api, 'getSession').mockResolvedValue({
@@ -135,9 +128,7 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
- * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
- * keeps the path opaque. */
+/** ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a real router — without one `useRoute()` returns undefined and … */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -150,9 +141,7 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/** Mount ChatView with `messages` and return the per-test container. Queries must be scoped to the
- * returned container (`document.querySelector` would see the previous test's tree when a mount
- * leaves anything behind). */
+/** Mount ChatView with `messages` and return the per-test container. */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_used_tools_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })
@@ -207,9 +196,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('ChatView tool dispatcher — used_tools', () => {
   it('routes a used_tools tool result to the <UsedTools> component', async () => {
     const el = await mountChatViewWithMessages([
@@ -235,8 +222,7 @@ describe('ChatView tool dispatcher — used_tools', () => {
   })
 
   it('routes an ERRORED used_tools result to <UsedTools> as well', async () => {
-    // The error branch must not fall through either — the card owns the
-    // red-border + error-body rendering.
+    // The error branch must not fall through either — the card owns the red-border + error-body rendering.
     const errored = JSON.stringify({
       tool: 'used_tools',
       parameters: {},
@@ -263,8 +249,7 @@ describe('ChatView tool dispatcher — used_tools', () => {
   })
 
   it('does NOT capture search_tool — the progressive card keeps it', async () => {
-    // Guard against a widened branch: both cards render name/description
-    // rows, so `startsWith`-style logic would swallow search_tool.
+    // Guard against a widened branch: both cards render name/description rows, so `startsWith`-style logic would swallow search_tool.
     const el = await mountChatViewWithMessages([
         assistantToolCall('search_tool'),
         {

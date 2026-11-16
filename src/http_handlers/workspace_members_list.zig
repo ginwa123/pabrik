@@ -1,6 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/members` — every member of one
-//! workspace joined with its account, owners first. Never another
-//! workspace's rows.
+//! `GET /api/workspaces/:workspace_id/members` — every member of one workspace joined with its account, owners first.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,8 +8,7 @@ const http_response = @import("http_response.zig");
 const gate = @import("workspace_members_gate.zig");
 const store = @import("../modules/agent/loop/workspace_members_store.zig");
 
-/// Exactly the gate's set: reading cannot fail in a way the gate does not
-/// already describe.
+/// Exactly the gate's set: reading cannot fail in a way the gate does not already describe.
 pub const MembersListError = gate.GateError;
 
 pub const MembersListInput = struct {
@@ -38,8 +35,7 @@ fn useCase(
         error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
-        // Writes and the by-id reads are the only paths that can produce
-        // these, and this is neither.
+        // Writes and the by-id reads are the only paths that can produce these, and this is neither.
         else => unreachable,
     };
     return .{ .members = rows };
@@ -138,8 +134,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// No Cookie header, so `resolveRequestUserId` answers the installation
-/// owner — the auth-off deployment this handler must also serve.
+/// No Cookie header, so `resolveRequestUserId` answers the installation owner — the auth-off deployment this handler must also serve.
 const NoCookie = struct {
     pub fn get(_: @This(), _: []const u8) ?[]const u8 {
         return null;
@@ -159,8 +154,7 @@ test "useCase lists one workspace's members, owner first, with no invite left nu
     try testing.expectEqualStrings("user_amy", out.members[0].user_id);
     try testing.expectEqualStrings("owner", out.members[0].role);
     try testing.expectEqualStrings("user_ben", out.members[1].user_id);
-    // `invited_by` is the INVITER's id, and a NULL there renders as '' rather
-    // than as the text "null".
+    // `invited_by` is the INVITER's id, and a NULL there renders as '' rather than as the text "null".
     try testing.expectEqualStrings("user_amy", out.members[1].invited_by);
     try testing.expectEqualStrings("", out.members[0].invited_by);
 }

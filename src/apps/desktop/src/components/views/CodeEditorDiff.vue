@@ -15,9 +15,7 @@ const props = defineProps<{
 
 const splitRows = computed(() => pairSplitRows(props.lines))
 
-/** One token row per rendered line, computed once per diff rather than once per render. A hunk
- * header is diff metadata, not code — tokenizing `@@ -1,2 +1,2 @@` would paint its numbers over the
- * row's own hunk colour, so it stays plain like every other unified surface. */
+/** One token row per rendered line, computed once per diff rather than once per render. */
 const unifiedTokens = computed(() => {
   const tokens = highlightLinesForFile(
     props.lines.map((line) => line.content),

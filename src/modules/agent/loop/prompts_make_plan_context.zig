@@ -1,6 +1,4 @@
 //! Render the "## Current Plan" markdown block for the LLM's system prompt.
-//! Reads the plan off the session row (`sessions.plan_md`, Migration 132) and emits a fenced
-//! markdown block plus the timestamp footer.
 
 const std = @import("std");
 const testing = std.testing;
@@ -20,9 +18,7 @@ pub fn makePlanContext(
 ) ![]const u8 {
     if (session_id.len == 0) return allocator.dupe(u8, "");
 
-    // 1. Read the plan row (graceful-skip on DB error so the system
-    //    prompt never breaks because of a plan lookup failure —
-    //    mirrors `makeKanbanContext`'s pattern).
+    // 1.
     const row = session_plan.getPlanOpt(allocator, db, session_id) catch |err| {
         std.log.warn("BuildPlanContext: getPlanOpt failed: {}", .{err});
         return allocator.dupe(u8, "");
@@ -49,12 +45,10 @@ pub fn makePlanContext(
         \\
     );
 
-    // Wrap the raw plan body in a markdown fence so the agent's parser treats
-    // it as a code block rather than as top-level instructions.
+    // Wrap the raw plan body in a markdown fence so the agent's parser treats it as a code block rather than as top-level instructions.
     try out.appendSlice(allocator, "```markdown\n");
     try out.appendSlice(allocator, plan_row.plan_md);
-    // Ensure the plan body ends with a newline so the closing fence
-    // can never fuse with the trailing lines of the plan body.
+    // Ensure the plan body ends with a newline so the closing fence can never fuse with the trailing lines of the plan body.
     if (plan_row.plan_md.len == 0 or plan_row.plan_md[plan_row.plan_md.len - 1] != '\n') {
         try out.appendSlice(allocator, "\n");
     }
@@ -90,8 +84,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// `update_plan` writes the plan onto the session row, so a test that expects a
-/// plan to land needs the session it lands on.
+/// `update_plan` writes the plan onto the session row, so a test that expects a plan to land needs the session it lands on.
 fn seedSession(db: *database.Db, session_id: []const u8) !void {
     try db.exec(
         testing.allocator,
@@ -108,9 +101,7 @@ test "makePlanContext: empty plan returns empty string (silently omitted)" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // No plan row exists for "no_plan_session" — the helper must
-    // gracefully return a 0-byte slice so the caller omits the
-    // section from the final system prompt.
+    // No plan row exists for "no_plan_session" — the helper must gracefully return a 0-byte slice so the caller omits the section from the final system prompt.
     const got = try makePlanContext(allocator, &ctx.db, "no_plan_session");
     defer allocator.free(got);
     try testing.expectEqualStrings("", got);
@@ -125,8 +116,7 @@ test "makePlanContext: present plan renders ## Current Plan markdown block" {
     defer ctx.db.deinit();
     try seedSession(&ctx.db, "s_present");
 
-    // Seed a plan via the same fn the LLM tool calls. We discard
-    // the returned XML envelope — we just need the row to exist.
+    // Seed a plan via the same fn the LLM tool calls.
     {
         const xml = try update_plan_mod.executeUpdatePlan(allocator, &ctx.db, "s_present", .{
             .content = "# Goal\n\n- [x] first done\n- [ ] second pending\n- [ ] third pending\n",
@@ -140,19 +130,16 @@ test "makePlanContext: present plan renders ## Current Plan markdown block" {
     // Block header
     try testing.expect(std.mem.indexOf(u8, got, "## Current Plan") != null);
 
-    // The LLM-facing hint that names the tool (`update_plan`) and the
-    // "every checklist item" call-to-action.
+    // The LLM-facing hint that names the tool (`update_plan`) and the "every checklist item" call-to-action.
     try testing.expect(std.mem.indexOf(u8, got, "update_plan") != null);
     try testing.expect(std.mem.indexOf(u8, got, "checklist item") != null);
 
-    // The plan content is wrapped in a ```markdown fence so the
-    // agent's parser sees it as code, not as instructions
+    // The plan content is wrapped in a ```markdown fence so the agent's parser sees it as code, not as instructions
     try testing.expect(std.mem.indexOf(u8, got, "```markdown\n# Goal") != null);
     try testing.expect(std.mem.indexOf(u8, got, "- [x] first done") != null);
     try testing.expect(std.mem.indexOf(u8, got, "- [ ] second pending") != null);
 
-    // Timestamp footer line (Migration 076 populates CURRENT_TIMESTAMP
-    // on every UPSERT).
+    // Timestamp footer line (Migration 076 populates CURRENT_TIMESTAMP on every UPSERT).
     try testing.expect(std.mem.indexOf(u8, got, "Last updated:") != null);
 }
 

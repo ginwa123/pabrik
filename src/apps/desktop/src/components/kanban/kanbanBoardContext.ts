@@ -1,5 +1,4 @@
-/** The provide/inject seam for the board: KanbanView provides one context object and the three
- * extracted panels inject it, so a panel holds markup and nothing else. */
+/** The provide/inject seam for the board: KanbanView provides one context object and the three extracted panels inject it, so a panel holds markup and nothing … */
 import { inject, type InjectionKey, type Ref } from 'vue'
 import type { KanbanColumn, Task, WorkspaceItem } from '../../stores/workspaces'
 import type { PrListTab } from './KanbanPrList.vue'

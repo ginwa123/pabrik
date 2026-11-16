@@ -13,14 +13,11 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 import type { Message } from '../api'
 
-// ──────────────────────────────────────────────────────────────────────── Stub the new tool-output
-// components.
+// ──────────────────────────────────────────────────────────────────────── Stub the new tool-output components.
 vi.mock('../components/tool_outputs/UpdatePlan.vue', () => ({
   default: {
     name: 'UpdatePlan',
-    // No `parameters` prop — the component parses the plan body directly from the inner
-    // <plan><![CDATA[...]]></plan> block of the <tool> envelope (mirrors get_plan's wire shape).
-    // The dispatcher doesn't thread anything extra.
+    // No `parameters` prop — the component parses the plan body directly from the inner <plan><![CDATA[...]]></plan> block of the <tool> envelope (mirrors get_plan's …
     props: ['message'],
     template:
       '<div class="update-plan-stub" :data-tool-name="message.tool_name" :data-msg-id="message.id"></div>',
@@ -62,9 +59,7 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ────────────────────────────────────────────────────────────────────────
 // Wire envelope helpers (mirrors the backend's JSON `wrapToolOutput` shape)
-// ────────────────────────────────────────────────────────────────────────
 const wireToolEnvelope = (inner: unknown, paramsJson: string): string =>
   JSON.stringify({
     tool: 'tool',
@@ -84,9 +79,7 @@ const getPlanPresentEnvelope = (markdown: string): unknown => ({ plan: markdown 
 
 const getPlanEmptyEnvelope = (): unknown => ({ empty: true })
 
-// ──────────────────────────────────────────────────────────────────────── Test helpers — mock the
-// api module + SSE bus + localStorage so the mount is fast and stable (parity with
-// profileCascade.spec.ts). ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Test helpers — mock the api module + SSE bus + localStorage so the mount is fast and …
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
   const history = {
     messages: opts.messages,
@@ -97,8 +90,7 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the transcript stayed empty and every render assertion read an unloaded view.
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the transcript stayed empty and every render assertion …
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [], count: 0 })
   vi.spyOn(api, 'getSession').mockResolvedValue({
@@ -122,9 +114,7 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} })
 }
 
-/**  * ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a
- * real router — without one `useRoute()` returns undefined and the render throws. Catch-all route
- * keeps the path opaque. */
+/** ChatView reads `route.query` and calls `router.replace` (diff deep-linking), so the mount needs a real router — without one `useRoute()` returns undefined and … */
 async function makeRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -137,9 +127,7 @@ async function makeRouter(): Promise<Router> {
 
 let mountSeq = 0
 
-/**  * Each call mounts a FRESH session id on purpose: ChatView primes its messages from the
- * IndexedDB-backed `chatEngineDb` cache keyed by session id, so reusing one id made test N+1 paint
- * test N's rows instead of the freshly-mocked `getChatHistory` response. */
+/** Each call mounts a FRESH session id on purpose: ChatView primes its messages from the IndexedDB-backed `chatEngineDb` cache keyed by session id, so reusing one … */
 async function mountChatViewWithMessages(messages: Message[]) {
   const chatId = `s_plan_${++mountSeq}`
   installChatViewMocks({ messages, sessionId: chatId })
@@ -147,9 +135,7 @@ async function mountChatViewWithMessages(messages: Message[]) {
   const processingState = ref<Record<string, boolean>>({})
   const router = await makeRouter()
 
-  // Use a per-test container so multiple mounts don't bleed DOM
-  // into each other. attachTo: document.body would persist the
-  // previous test's stub across cases.
+  // Use a per-test container so multiple mounts don't bleed DOM into each other. attachTo: document.body would persist the previous test's stub across cases.
   const container = document.createElement('div')
   container.id = `chatview-test-container-${mountSeq}`
   document.body.appendChild(container)
@@ -162,8 +148,7 @@ async function mountChatViewWithMessages(messages: Message[]) {
       provide: { processingState },
     },
   })
-  // Wait for onMounted's loadChatHistory + the watch on sessionId to
-  // settle. Same loop as ChatView.profileCascade.spec.ts.
+  // Wait for onMounted's loadChatHistory + the watch on sessionId to settle.
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
@@ -192,8 +177,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // Tear down any leftover container elements from the previous
-  // mount so the next test starts with a clean DOM.
+  // Tear down any leftover container elements from the previous mount so the next test starts with a clean DOM.
   document.querySelectorAll('[id^="chatview-test-container-"]').forEach((el) => el.remove())
   __resetSseBus()
   vueApp = null
@@ -201,9 +185,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('ChatView tool dispatcher — update_plan + get_plan', () => {
   it('routes an update_plan tool result to the <UpdatePlan> component', async () => {
     await mountChatViewWithMessages([
@@ -286,8 +268,7 @@ describe('ChatView tool dispatcher — update_plan + get_plan', () => {
   })
 
   it('routes a get_plan {empty:true} result to the <GetPlan> component too', async () => {
-    // The empty/no-plan sentinel still belongs to get_plan — the
-    // dispatcher must not skip it.
+    // The empty/no-plan sentinel still belongs to get_plan — the dispatcher must not skip it.
     await mountChatViewWithMessages([
         {
           id: 'm_asst',
@@ -315,9 +296,7 @@ describe('ChatView tool dispatcher — update_plan + get_plan', () => {
   })
 
   it('routes both update_plan and get_plan in the same session', async () => {
-    // The agent often chains update_plan → get_plan within a single
-    // turn (or across adjacent turns). The dispatcher must handle
-    // both messages with their respective components.
+    // The agent often chains update_plan → get_plan within a single turn (or across adjacent turns).
     await mountChatViewWithMessages([
         {
           id: 'm_update_plan',
@@ -351,9 +330,7 @@ describe('ChatView tool dispatcher — update_plan + get_plan', () => {
   })
 
   it('does NOT route other tool names to either component', async () => {
-    // A read_file tool result must dispatch to its own component,
-    // not bleed into the plan tools. This guards against future
-    // dispatcher refactors that might widen the v-else-if branch.
+    // A read_file tool result must dispatch to its own component, not bleed into the plan tools.
     await mountChatViewWithMessages([
         {
           id: 'm_read_file',

@@ -61,33 +61,25 @@ const emit = defineEmits<{
   delete: [targetIds: string[]]
 }>()
 
-// Detect platform once at module load so the menu doesn't recompute
-// on every render. Linux/Windows shows "Ctrl" + "+"; macOS shows
-// unicode glyphs (⌘ ⇧ ⌫).
+// Detect platform once at module load so the menu doesn't recompute on every render.
 const isMac = computed(() => navigator.platform.includes('Mac'))
 const acc = (mac: string, linux: string): string => (isMac.value ? mac : linux)
 
 const hasSelection = computed(() => props.targetIds.length >= 1)
 const canGroup = computed(() => props.targetIds.length >= 2)
 
-// Leave group is enabled only when EXACTLY ONE element is selected AND that element has a non-empty
-// `parent_id` (it's currently nested inside a group or frame). Mirrors Figma's "Pull out of group"
-// — the affordance is greyed out for already top-level rows.
+// Leave group is enabled only when EXACTLY ONE element is selected AND that element has a non-empty `parent_id` (it's currently nested inside a group or frame).
 const canLeaveGroup = computed(() => {
   if (props.targetIds.length !== 1) return false
   const targetId = props.targetIds[0]
   if (!targetId) return false
   const target = props.elements.find((e) => e.id === targetId)
   if (!target) return false
-  // `parent_id` arrives as '' (empty string) for top-level elements (the backend uses
-  // COALESCE(parent_id, '')) or is undefined when the API returned an older shape. Both count as
-  // "not inside a group" → disabled.
+  // `parent_id` arrives as '' (empty string) for top-level elements (the backend uses COALESCE(parent_id, '')) or is undefined when the API returned an older shape.
   return !!target.parent_id && target.parent_id !== ''
 })
 
-// Ungroup is enabled only when EXACTLY ONE element is selected AND
-// that element's type is 'group' or 'frame'. Mirrors Figma's
-// "greyed-out Ungroup for non-group single selections" rule.
+// Ungroup is enabled only when EXACTLY ONE element is selected AND that element's type is 'group' or 'frame'.
 const canUngroup = computed(() => {
   if (props.targetIds.length !== 1) return false
   const targetId = props.targetIds[0]
@@ -97,9 +89,7 @@ const canUngroup = computed(() => {
   return target.type === 'group' || target.type === 'frame'
 })
 
-// Items dispatched through `v-for` to avoid repeating the same button markup 4 times. Each entry
-// maps to one of the design's 4 reorder events. The single `reorder` handler below routes to the
-// right emit by name.
+// Items dispatched through `v-for` to avoid repeating the same button markup 4 times.
 const reorderItems = computed(() => [
   { id: 'bring-to-front', label: 'Bring to front', acc: acc('⌘⇧]', 'Ctrl+Shift+]'), emitName: 'bringToFront' as const },
   { id: 'bring-forward', label: 'Bring forward', acc: acc('⌘]', 'Ctrl+]'), emitName: 'bringForward' as const },
@@ -108,12 +98,9 @@ const reorderItems = computed(() => [
 ])
 
 // "Move to page…" is enabled only when EXACTLY ONE element is selected.
-// Mirrors Q2 (single element only, button greyed when multi-select).
 const canMoveToPage = computed(() => props.targetIds.length === 1)
 
-// Estimated menu footprint for viewport edge clamping. Counted from the items[] below: 11 buttons +
-// 2 separators = 13 rows × 40px tall; 220px wide minimum. (Updated to include "Move to page…" which
-// sits before the reorder items.)
+// Estimated menu footprint for viewport edge clamping.
 const MENU_WIDTH = 220
 const MENU_ROW_HEIGHT = 40
 const MENU_ROWS = 13
@@ -136,9 +123,7 @@ const edgeClampedStyle = computed(() => {
 })
 
 function dispatchReorder(item: typeof reorderItems.value[number]): void {
-  // Switch on emitName (typed `as const`) so TS narrows the emit() call to the matching overload. A
-  // simple `emit(item.emitName, ...)` is rejected by TS2769 because the union of emit names doesn't
-  // auto-narrow to a single overload.
+  // Switch on emitName (typed `as const`) so TS narrows the emit() call to the matching overload.
   switch (item.emitName) {
     case 'bringToFront': emit('bringToFront', [...props.targetIds]); return
     case 'bringForward': emit('bringForward', [...props.targetIds]); return

@@ -48,30 +48,7 @@ private const val BODY_LINE_HEIGHT = 22
 /** Inline and fenced code: the web's `0.875em`. */
 private const val CODE_SIZE = 12
 
-/**
- * Draws a parsed message.
- *
- * The metrics are the web's `.markdown-content` rules (`style.css`), converted
- * from rem to sp. The mapping is one-to-one on purpose: the answer is the same
- * document on both surfaces, and a heading that is 1.25rem on the web and 19sp
- * on the phone reads as two different documents.
- *
- *   web                        here
- *   ----------------------     ---------------------------------------
- *   h1 1.5rem / 700            20sp SemiBold, hairline rule under
- *   h2 1.25rem / 600           18sp SemiBold, hairline rule under
- *   h3 1.1rem / 600            15sp SemiBold
- *   h4-h6 1rem / 600           14sp SemiBold
- *   body 0.875rem / 1.6        14sp, 22sp line height
- *   code 0.875em               12sp mono, aqua on a raised surface
- *   pre                        raised surface, 1dp border, 8dp radius
- *   table                      12sp, hairline grid, raised header
- *   blockquote                 italic, 3dp rule, 12dp inset
- *
- * The parse is `remember`ed on the source string rather than recomputed per
- * recomposition: a streaming turn re-composes on every appended delta, and a
- * full markdown parse of a growing answer is the expensive half of drawing it.
- */
+/** Draws a parsed message. */
 @Composable
 fun MarkdownText(
     source: String,
@@ -175,14 +152,7 @@ private fun MarkdownBlock(block: MdBlock, color: Color, isLast: Boolean) {
     }
 }
 
-/**
- * A blockquote.
- *
- * The web's `border-left: 3px` becomes a 3dp bar, which means the bar has to be
- * as tall as the text it marks — hence `IntrinsicSize.Min` on the row, letting
- * the bar `fillMaxHeight` instead of being a fixed-height divider that no longer
- * lines up once the quote wraps to three lines.
- */
+/** A blockquote. */
 @Composable
 private fun QuoteBlock(block: MdBlock.Quote, isLast: Boolean) {
     Row(
@@ -219,13 +189,7 @@ private fun QuoteBlock(block: MdBlock.Quote, isLast: Boolean) {
     }
 }
 
-/**
- * A fenced code block.
- *
- * Scrolls horizontally rather than wrapping, because a wrapped shell command
- * is unreadable — the continuation is indistinguishable from the next line. The
- * web does the same (`overflow-x: auto` on `.markdown-content pre`).
- */
+/** A fenced code block. */
 @Composable
 private fun CodeBlock(block: MdBlock.Code, color: Color) {
     Column(
@@ -262,14 +226,7 @@ private fun CodeBlock(block: MdBlock.Code, color: Color) {
     }
 }
 
-/**
- * A pipe table.
- *
- * A phone is narrow, so the row scrolls rather than squeezing: three columns at
- * a third of a 360dp screen is 120dp of unreadable ellipsis per cell. The header
- * is filled and the cells are hairline-ruled to match
- * `.markdown-content th, td`.
- */
+/** A pipe table. */
 @Composable
 private fun TableBlock(block: MdBlock.Table, color: Color, isLast: Boolean) {
     Column(
@@ -293,9 +250,7 @@ private fun TableBlock(block: MdBlock.Table, color: Color, isLast: Boolean) {
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
             ) {
-                // Pad a short row out to the header's width rather than letting
-                // the last column vanish, which is how a two-cell row under a
-                // three-cell header used to render.
+                // Pad a short row out to the header's width rather than letting the last column vanish, which is how a two-cell row under a three-cell header used to render.
                 repeat(block.header.size) { column ->
                     TableCell(
                         spans = row.getOrNull(column).orEmpty(),
@@ -318,8 +273,7 @@ private fun TableCell(spans: List<MdSpan>, color: Color, isHeader: Boolean) {
         fontWeight = if (isHeader) FontWeight.SemiBold else FontWeight.Normal,
         color = color,
         modifier = Modifier
-            // A fixed width keeps a short cell from collapsing to a few
-            // characters once the row is allowed to be wider than the screen.
+            // A fixed width keeps a short cell from collapsing to a few characters once the row is allowed to be wider than the screen.
             .width(112.dp)
             .background(if (isHeader) PabrikField else Color.Transparent)
             .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -333,21 +287,14 @@ private fun headingSize(level: Int): Float = when (level) {
     else -> BODY_SIZE.toFloat()
 }
 
-/**
- * Spans → one `AnnotatedString`.
- *
- * Code spans get the mono face and the aqua ink the web gives inline `code`; a
- * link gets the accent colour and an underline, which on a read-only bubble is
- * the only affordance available short of a click handler.
- */
+/** Spans → one `AnnotatedString`. */
 private fun List<MdSpan>.toAnnotatedString(
     color: Color,
     size: Float = BODY_SIZE.toFloat(),
 ): AnnotatedString =
     buildAnnotatedString {
         this@toAnnotatedString.forEach { span ->
-            // A zero-length run would still open a style span, and Compose
-            // applies the last style to the text after it — so it is skipped.
+            // A zero-length run would still open a style span, and Compose applies the last style to the text after it — so it is skipped.
             if (span.text.isEmpty()) return@forEach
             pushStyle(
                 SpanStyle(

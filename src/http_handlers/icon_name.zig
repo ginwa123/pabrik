@@ -1,6 +1,4 @@
-//! The one rule for a row's glyph name, shared by every handler that accepts
-//! one: 1-64 lowercase letters, digits or hyphens — the shape of an `ICON_PATHS`
-//! key. The registry is not duplicated here; the UI degrades unknown names.
+//! The one rule for a row's glyph name, shared by every handler that accepts one: 1-64 lowercase letters, digits or hyphens — the shape of an `ICON_PATHS` key.
 
 const std = @import("std");
 

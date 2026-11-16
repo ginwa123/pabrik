@@ -5,8 +5,7 @@ const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 const testing = std.testing;
 
-/// Wrap a tool result in the standardized JSON envelope. On success: emits
-/// `"data"` containing the inner tool-specific JSON object.
+/// Wrap a tool result in the standardized JSON envelope.
 pub fn wrapToolOutput(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -40,9 +39,7 @@ pub fn wrapToolOutput(
     }
 }
 
-/// Add the wall-clock duration of a tool call to its result envelope. The
-/// envelope shape is fixed by `wrapToolOutput`, so the field goes in front of
-/// the trailing `"v":1}`. Anything that is not an envelope is returned as is.
+/// Add the wall-clock duration of a tool call to its result envelope.
 pub fn withDurationMs(allocator: std.mem.Allocator, envelope: []const u8, duration_ms: u64) ![]u8 {
     const prefix = "{\"tool\":";
     const suffix = ",\"v\":1}";
@@ -52,8 +49,7 @@ pub fn withDurationMs(allocator: std.mem.Allocator, envelope: []const u8, durati
     return std.fmt.allocPrint(allocator, "{s},\"duration_ms\":{d}{s}", .{ head, duration_ms, suffix });
 }
 
-/// Mark a placeholder envelope as a call that has not answered yet, so the
-/// chat can name the call in flight instead of drawing it as a finished one.
+/// Mark a placeholder envelope as a call that has not answered yet, so the chat can name the call in flight instead of drawing it as a finished one.
 pub fn withPending(allocator: std.mem.Allocator, envelope: []const u8) ![]u8 {
     const prefix = "{\"tool\":";
     const suffix = ",\"v\":1}";
@@ -63,13 +59,9 @@ pub fn withPending(allocator: std.mem.Allocator, envelope: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s},\"pending\":true{s}", .{ head, suffix });
 }
 
-// Every `execX` function below MUST end by calling `wrapToolOutput` so the
-// LLM sees a single consistent envelope: {"tool":…, "parameters":…,
-// "success":true|false, "data":{…} | null, "error":"…" | null, "v":1} The
+// Every `execX` function below MUST end by calling `wrapToolOutput` so the LLM sees a single consistent envelope: {"tool":…, "parameters":… …
 
-/// Normalize a raw JSON arguments string into the JSON value that goes in the
-/// envelope's `"parameters"` field. - Empty input → `{}`. - Top-level object
-/// → re-serialized canonically. - Malformed JSON or non-object top level →
+/// Normalize a raw JSON arguments string into the JSON value that goes in the envelope's `"parameters"` field. - Empty input → `{}`. - Top-level object → …
 fn normalizeParamsJson(allocator: std.mem.Allocator, json_str: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, json_str, &std.ascii.whitespace);
     if (trimmed.len == 0) {
@@ -94,9 +86,7 @@ fn normalizeParamsJson(allocator: std.mem.Allocator, json_str: []const u8) ![]u8
     return try std.json.Stringify.valueAlloc(allocator, parsed.value, .{});
 }
 
-/// Normalize the tool-specific payload into the JSON fragment for the
-/// envelope's `"data"` field. - Empty input → `null` (no payload). - Valid
-/// JSON object → embedded verbatim (control chars sanitized first). -
+/// Normalize the tool-specific payload into the JSON fragment for the envelope's `"data"` field. - Empty input → `null` (no payload). - Valid JSON object → …
 fn normalizeDataFragment(allocator: std.mem.Allocator, data: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, data, &std.ascii.whitespace);
     if (trimmed.len == 0) {
@@ -281,8 +271,7 @@ test "wrapToolOutput - data is preserved verbatim (no escaping)" {
     );
     defer allocator.free(out);
 
-    // Data is NOT re-escaped — <>& stay raw so the LLM and frontend read
-    // the inner payload directly.
+    // Data is NOT re-escaped — <>& stay raw so the LLM and frontend read the inner payload directly.
     try testing.expect(std.mem.indexOf(u8, out, "\"stdout\":\"<hi> & \\\"world\\\"\"") != null);
 }
 
@@ -329,8 +318,7 @@ test "wrapToolOutput - non-JSON data is wrapped as _raw" {
     );
     defer allocator.free(out);
 
-    // Safety net so every stored row stays valid JSON while producers
-    // migrate; final producers always emit objects.
+    // Safety net so every stored row stays valid JSON while producers migrate; final producers always emit objects.
     try testing.expect(std.mem.indexOf(u8, out, "\"data\":{\"_raw\":\"just a plain string\"}") != null);
 }
 
@@ -363,9 +351,7 @@ test "wrapToolOutput - allocates and caller owns" {
     try testing.expect(out.len > 0);
 }
 
-// ===== Tests merged from tool_output_json_contract_test.zig (2026-09-29
-// flatten) ===== Phase 0 RED contract for the XML → JSON tool-output
-// migration (plan `2026-09-18-agent-tool-output-xml-to-json.md`, schema in
+// ===== Tests merged from tool_output_json_contract_test.zig (2026-09-29 flatten) ===== Phase 0 RED contract for the XML → JSON tool-output migration (plan …
 
 fn parseEnvelope(allocator: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     return try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
@@ -443,9 +429,7 @@ test "json contract - output is JSON, never the <tool> envelope" {
 
 test "json contract - binary stdout is sanitized, envelope stays valid JSON" {
     const allocator = testing.allocator;
-    // ELF header bytes: 0x7F 'E' 'L' 'F' + NUL + C0 control. NUL truncates
-    // SQLite TEXT and breaks both XML and JSON strings, so the writer must
-    // replace such bytes with U+FFFD before serialization.
+    // ELF header bytes: 0x7F 'E' 'L' 'F' + NUL + C0 control.
     const raw_stdout = [_]u8{ 0x7F, 'E', 'L', 'F', 0x00, 0x01 };
     const data = try std.fmt.allocPrint(allocator, "{{\"stdout\":\"{s}\"}}", .{raw_stdout});
     defer allocator.free(data);

@@ -1,5 +1,4 @@
-/** Static contract: ChatView feeds the session's attached-PR binding into the right sidebar so the
- * panel flips to PR-changes mode. */
+/** Static contract: ChatView feeds the session's attached-PR binding into the right sidebar so the panel flips to PR-changes mode. */
 import { describe, expect, it } from 'vitest'
 import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 

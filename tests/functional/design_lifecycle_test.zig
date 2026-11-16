@@ -1,5 +1,4 @@
-// Functional tests for design mode lifecycle. Zig port of
-// `tests/functional/design_lifecycle_test.py` (same test names, same order).
+// Functional tests for design mode lifecycle.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers — HTTP
-// ============================================================================
 
 fn boot() !Harness {
     return Harness.boot(io, gpa, .{});
@@ -175,9 +172,7 @@ fn getElementHtml(
     });
 }
 
-/// `GET .../design/pages/:pid` → an OWNED document. `.alloc_always`, because
-/// the caller navigates it long after the `Response` body buffer is gone — a
-/// `harness.Json` borrows and cannot cross that boundary.
+/// `GET .../design/pages/:pid` → an OWNED document.
 fn getPage(h: *Harness, ws_id: []const u8, design_id: []const u8, page_id: []const u8) !std.json.Parsed(std.json.Value) {
     const url = try std.fmt.allocPrint(
         gpa,
@@ -214,12 +209,9 @@ fn objectId(v: std.json.Value) ?[]const u8 {
     };
 }
 
-// ============================================================================
 // Helpers — filesystem
-// ============================================================================
 
-/// `<item_path>/.pabrik/design/<page_name>` — the directory a page's
-/// element HTML files live in.
+/// `<item_path>/.pabrik/design/<page_name>` — the directory a page's element HTML files live in.
 fn pageDir(item_path: []const u8, page_name: []const u8) ![]u8 {
     return harness.harnessPath(gpa, item_path, &.{ ".pabrik", "design", page_name });
 }
@@ -230,9 +222,7 @@ fn dirExists(path: []const u8) bool {
     return true;
 }
 
-/// The `*.html` files directly inside `dir`, as owned absolute paths, sorted
-/// by name (directory order is not defined, and the Python assertions index
-/// `candidates[0]`).
+/// The `*.html` files directly inside `dir`, as owned absolute paths, sorted by name (directory order is not defined, and the Python assertions index …
 fn listHtmlFiles(dir: []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -270,9 +260,7 @@ fn readTextFile(path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
 }
 
-// ============================================================================
 // Test 1: design item create requires path
-// ============================================================================
 
 // POST /items/design without a path returns 400 with an `error` key.
 test "create_design_item_requires_path" {
@@ -300,9 +288,7 @@ test "create_design_item_requires_path" {
     }
 }
 
-// ============================================================================
 // Test 2: create page with 3 elements
-// ============================================================================
 
 // Create page + 3 elements; get-page returns 3 elements with those ids.
 test "create_page_with_three_elements" {
@@ -377,9 +363,7 @@ test "create_page_with_three_elements" {
     }
 }
 
-// ============================================================================
 // Test 3: element HTML file is written to disk
-// ============================================================================
 
 // POST /elements writes the HTML to <path>/.pabrik/design/<page>/<elem>.html.
 test "element_html_file_written_to_disk" {
@@ -425,9 +409,7 @@ test "element_html_file_written_to_disk" {
     }
 }
 
-// ============================================================================
 // Test 4: update HTML atomically rewrites the file
-// ============================================================================
 
 // PUT /elements/:eid with new html rewrites the on-disk file in place.
 test "update_html_atomically_rewrites_file" {
@@ -488,8 +470,7 @@ test "update_html_atomically_rewrites_file" {
         r.deinit();
     }
 
-    // The file is now the new content — an atomic rewrite leaves no
-    // leftover second file.
+    // The file is now the new content — an atomic rewrite leaves no leftover second file.
     const files_after = try listHtmlFiles(dir);
     defer freePaths(files_after);
     if (files_after.len != 1) {
@@ -504,12 +485,9 @@ test "update_html_atomically_rewrites_file" {
     }
 }
 
-// ============================================================================
 // Test 5: geometry PATCH does not touch the HTML file
-// ============================================================================
 
-// PATCH /geometry only updates x/y/width/height; the HTML file is byte-equal
-// afterwards.
+// PATCH /geometry only updates x/y/width/height; the HTML file is byte-equal afterwards.
 test "geometry_patch_does_not_touch_html" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -574,9 +552,7 @@ test "geometry_patch_does_not_touch_html" {
     }
 }
 
-// ============================================================================
 // Test 6: delete element removes the HTML file
-// ============================================================================
 
 // DELETE /elements/:eid removes the on-disk HTML file.
 test "delete_element_removes_html_file" {
@@ -634,9 +610,7 @@ test "delete_element_removes_html_file" {
     }
 }
 
-// ============================================================================
 // Test 7: delete page removes the entire directory
-// ============================================================================
 
 // DELETE /pages/:pid removes <page_dir>/ and all its contents.
 test "delete_page_removes_entire_directory" {
@@ -707,12 +681,9 @@ test "delete_page_removes_entire_directory" {
     }
 }
 
-// ============================================================================
 // Test 8: get html returns stored content
-// ============================================================================
 
-// GET /html returns the body byte-equal to what was POSTed, across five
-// shapes of HTML (simple, newlines, double quotes, unicode, backslashes).
+// GET /html returns the body byte-equal to what was POSTed, across five shapes of HTML (simple, newlines, double quotes, unicode, backslashes).
 test "get_html_returns_stored_content" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -759,9 +730,7 @@ test "get_html_returns_stored_content" {
     }
 }
 
-// ============================================================================
 // Test 9: design pages list groups by item
-// ============================================================================
 
 // 2 design items × 2 pages each; each item's list returns only its own 2.
 test "design_pages_list_groups_by_item" {
@@ -851,8 +820,7 @@ fn freeIds(ids: [][]const u8) void {
     gpa.free(ids);
 }
 
-/// Assert `got` is a permutation of `want` with no duplicates and no
-/// extras — Python's `assert ids == {a, b}` (a SET comparison).
+/// Assert `got` is a permutation of `want` with no duplicates and no extras — Python's `assert ids == {a, b}` (a SET comparison).
 fn expectExactly(got: [][]const u8, want: []const []const u8, what: []const u8) !void {
     if (got.len != want.len) {
         std.debug.print("{s}: expected {d} pages, got {d}\n", .{ what, want.len, got.len });
@@ -879,12 +847,9 @@ fn expectExactly(got: [][]const u8, want: []const []const u8, what: []const u8) 
     }
 }
 
-// ============================================================================
 // Test 10: geometry throttle handles 60 patches per second
-// ============================================================================
 
-// Fire 60 PATCH /geometry calls in <5s; all return 200, and the final
-// position matches the last call.
+// Fire 60 PATCH /geometry calls in <5s; all return 200, and the final position matches the last call.
 test "geometry_throttle_handles_60_patches" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -964,8 +929,7 @@ test "geometry_throttle_handles_60_patches" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = boot;
     _ = createWorkspace;

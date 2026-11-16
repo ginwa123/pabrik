@@ -1,6 +1,4 @@
-//! The admin console: a server-rendered page plus the endpoints behind it. The
-//! owner can list accounts, create them, change their role, switch them off and
-//! reset a password: the "forgot password" case.
+//! The admin console: a server-rendered page plus the endpoints behind it.
 
 pub const admin_common = @import("admin_common.zig");
 pub const runtime = @import("runtime.zig");

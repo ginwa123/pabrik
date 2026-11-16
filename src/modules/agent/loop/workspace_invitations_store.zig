@@ -1,6 +1,4 @@
-//! Persistence for `workspace_invitations` (Migration 123). An invitation is a
-//! PENDING ask: a row exists only while it is waiting for an answer, and
-//! `accept` is the single place a `workspace_members` row is ever written.
+//! Persistence for `workspace_invitations` (Migration 123).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -29,8 +27,7 @@ pub const InviteArgs = struct {
 
 pub const AnswerArgs = struct {
     invitation_id: []const u8,
-    /// The caller, as resolved from the session. An invitation may only be
-    /// answered by this exact account.
+    /// The caller, as resolved from the session.
     invitee_user_id: []const u8 = "",
 };
 
@@ -106,8 +103,7 @@ fn collect(
     defer q.deinit();
 
     var list: std.ArrayList(InvitationRow) = .empty;
-    // Unwind both the rows and the buffer: `toOwnedSlice` never runs on the
-    // error path, so the list would otherwise leak every row it built.
+    // Unwind both the rows and the buffer: `toOwnedSlice` never runs on the error path, so the list would otherwise leak every row it built.
     errdefer {
         for (list.items) |row| freeInvitationRow(allocator, row);
         list.deinit(allocator);
@@ -120,8 +116,7 @@ fn collect(
     return list.toOwnedSlice(allocator);
 }
 
-/// Every pending invitation for one workspace — what the Members section shows
-/// so an owner can see (and revoke) a request nobody has answered yet.
+/// Every pending invitation for one workspace — what the Members section shows so an owner can see (and revoke) a request nobody has answered yet.
 pub fn listForWorkspace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -186,8 +181,7 @@ pub fn getForWorkspace(
     );
 }
 
-/// One invitation, scoped to its invitee. Any other caller gets `NotFound`,
-/// never a 403: an invitation is not something to confirm the existence of.
+/// One invitation, scoped to its invitee.
 pub fn getForInvitee(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -256,8 +250,7 @@ fn userIdForEmail(
     return allocator.dupe(u8, r.values[0]);
 }
 
-/// Create a pending invitation. This writes NO membership row: the invitee
-/// answers first, which is the whole point of the table.
+/// Create a pending invitation.
 pub fn invite(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -286,8 +279,7 @@ pub fn invite(
     return getForWorkspace(allocator, db, args.workspace_id, invitation_id);
 }
 
-/// Accept: the invitation becomes a membership **in one transaction**, so a
-/// half-applied answer can never leave both rows (or neither) behind.
+/// Accept: the invitation becomes a membership **in one transaction**, so a half-applied answer can never leave both rows (or neither) behind.
 pub fn accept(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -327,8 +319,7 @@ pub fn accept(
     return members.getMember(allocator, db, invitation.workspace_id, invitation.invitee_user_id) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.QueryFailed => return error.QueryFailed,
-        // The row was inserted in the transaction above; a miss here is the
-        // consistency error, not a 404.
+        // The row was inserted in the transaction above; a miss here is the consistency error, not a 404.
         else => return error.QueryFailed,
     };
 }

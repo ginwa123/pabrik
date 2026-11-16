@@ -7,18 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * A bus-shaped stand-in for the app's one real socket.
- *
- * Multi-subscriber on purpose. The single-callback `FakeEventStream` that
- * replaced it could only ever serve one owner, which is precisely the property
- * the move to a shared bus removed: a test that emitted an event was asserting
- * about the *only* listener, and there is no longer such a thing.
- *
- * The counts are here so a test can assert the *root's* lifecycle — one open
- * per sign-in, one close per sign-out — instead of the per-ViewModel
- * start/stop counters that encoded the old two-socket architecture.
- */
+/** A bus-shaped stand-in for the app's one real socket. */
 class FakeSseBus : SseBus {
 
     private class Subscriber(

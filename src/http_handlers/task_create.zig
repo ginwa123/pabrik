@@ -1,6 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/items/:item_id/tasks`. Body: `{ name,
-//! session_id?, task_type? ('standard'|'memory'), memory_name?,
-//! memory_content? }`.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/tasks`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -20,16 +18,13 @@ const task_skills = @import("task_skills.zig");
 var task_id_counter: std.atomic.Value(u64) = .init(0);
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code in the handler (see the handler's
-/// `switch (err)` below).
+/// Domain-level error set for `useCase`.
 pub const TaskCreateError = error{
     // 400 — path params / body validation
     ItemIdRequired,
     MissingBody,
     InvalidJson,
-    // 400 — the per-task 'routine' task_type was deleted (Migration
-    // 084). Routines are now first-class workspace items.
+    // 400 — the per-task 'routine' task_type was deleted (Migration 084).
     RoutineTasksRemoved,
     // 400 — memory-task validation
     MemoryNameRequired,
@@ -45,15 +40,12 @@ pub const TaskCreateError = error{
     MemoryTaskInsertFailed,
     // 500 — standard-task DB ops
     StandardTaskCreateFailed,
-    // 400 — kanban task tags validation (Migration 067). Empty,
-    // too long, or contains forbidden characters (only
-    // [a-zA-Z0-9_-] allowed). See tags_validation.zig.
+    // 400 — kanban task tags validation (Migration 067).
     InvalidTags,
     // 400 / 413 — kanban image_urls validation (Migration 069).
     InvalidImageUrls,
     ImageUrlsTooLarge,
     // 400 / 413 — kanban video_urls validation (Migration 090).
-    // Same contract as image_urls with a 25 MB cap.
     InvalidVideoUrls,
     VideoUrlsTooLarge,
     // 400 — per-task cwd validation (Migration 070).
@@ -64,15 +56,12 @@ pub const TaskCreateError = error{
     SkillNameTooLong,
     SkillNameContainsControlChar,
     TooManySkills,
-    // 400 — `depends_on` validation (Migration 111): a task cannot depend on
-    // itself, on a task from another kanban, on a set that would close a
-    // cycle, or on more than 32 tasks.
+    // 400 — `depends_on` validation (Migration 111): a task cannot depend on itself, on a task from another kanban, on a set that would close a cycle, or on more …
     DependencySelfReference,
     DependencyNotInItem,
     DependencyCycle,
     DependencyCountExceeded,
-    // Underlying I/O / alloc errors (required by the type system
-    // even though they're unreachable on the per-request arena)
+    // Underlying I/O / alloc errors (required by the type system even though they're unreachable on the per-request arena)
     OutOfMemory,
     Canceled,
 };
@@ -82,13 +71,11 @@ pub const TaskCreateInput = struct {
     workspace_id: []const u8,
     io: std.Io,
     body: http_response.TaskCreateRequest,
-    /// Owning user id for any `sessions` row this create path writes
-    /// (unattended-flag INSERT below).
+    /// Owning user id for any `sessions` row this create path writes (unattended-flag INSERT below).
     owner: []const u8 = "",
 };
 
-/// Tagged outcome of the use-case. The fields are the data needed
-/// to build the response for each task type.
+/// Tagged outcome of the use-case.
 pub const TaskCreateResult = union(enum) {
     memory: MemoryResult,
     standard: StandardResult,
@@ -106,26 +93,20 @@ pub const StandardResult = struct {
     workspace_item_id: []const u8,
     kanban_column_id: ?[]const u8,
     kanban_position: i64,
-    /// Caller-supplied session_id (if any). When null the JSON response emits
-    /// "session_id":null.
+    /// Caller-supplied session_id (if any).
     session_id: ?[]const u8,
     /// JSON-encoded array of tag strings (Migration 067 — kanban task tags).
     tags: []const u8 = "",
-    /// Per-task cwd (Migration 070 — kanban-cwd-session-optional plan,
-    /// 2026-08-06). Borrowed from the per-request arena (validated above).
+    /// Per-task cwd (Migration 070 — kanban-cwd-session-optional plan, 2026-08-06).
     cwd: []const u8 = "",
-    /// Media-presence flags (media-flags change). Derived from the validated
-    /// payload lengths so the create response tells the frontend whether
-    /// to lazy-fetch via the media endpoint.
+    /// Media-presence flags (media-flags change).
     is_have_image: bool = false,
     is_have_video: bool = false,
 };
 
-// Typed response structs. Serialized via std.json.Stringify.valueAlloc (NOT
-// hand-rolled JSON via the std.fmt formatting helpers) for two reasons: 1.
+// Typed response structs.
 
-// NOTE: RoutineResponse deleted with the per-task `routines` table
-// (Migration 084, plan 2026-09-10-workspace-items-routines).
+// NOTE: RoutineResponse deleted with the per-task `routines` table (Migration 084, plan 2026-09-10-workspace-items-routines).
 const MemoryResponse = struct {
     id: []const u8,
     name: []const u8,
@@ -144,29 +125,20 @@ const StandardResponse = struct {
     session_id: ?[]const u8,
     kanban_column_id: ?[]const u8 = null,
     kanban_position: i64 = 0,
-    /// JSON-encoded array of tag strings (Migration 067 — kanban
-    /// task tags feature). Empty string means the task has no
-    /// tags.
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags feature).
     tags: []const u8 = "",
-    /// Per-task cwd override (Migration 070). Empty string means the task has
-    /// no per-task cwd (falls back to kanban-level path + sandbox). Plan:
-    /// docs/superpowers/plans/2026-08-06- kanban-cwd-session-optional.md
+    /// Per-task cwd override (Migration 070).
     cwd: []const u8 = "",
-    /// Media-presence flags (media-flags change). True when the just-INSERTed
-    /// row has media; the frontend lazy-fetches via the media endpoint.
+    /// Media-presence flags (media-flags change).
     is_have_image: bool = false,
     is_have_video: bool = false,
     created_at: ?[]const u8 = null,
     updated_at: ?[]const u8 = null,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Generate a unique `task_<unix_ms>_<intra_ms_counter>` id. The millisecond
-/// prefix preserves wire-compat with previously-stored rows (`task_<ms>`) and
-/// keeps IDs roughly time-sortable.
+/// Generate a unique `task_<unix_ms>_<intra_ms_counter>` id.
 fn generateTaskId(allocator: std.mem.Allocator, io: std.Io) TaskCreateError![]u8 {
     const ts = std.Io.Timestamp.now(io, .real);
     const ms: i64 = @intCast(@divTrunc(ts.nanoseconds, std.time.ns_per_ms));
@@ -185,15 +157,12 @@ fn createMemoryTask(
     if (!memories_mod.isValidMemoryName(memory_name)) return error.InvalidMemoryName;
     const memory_content = input.body.memory_content orelse return error.MemoryContentRequired;
 
-    // Look up the parent workspace_item to get its `path` (the project
-    // root — the .md file is scoped to `<path>/.pabrik/memories/<name>.md`).
+    // Look up the parent workspace_item to get its `path` (the project root — the .md file is scoped to `<path>/.pabrik/memories/<name>.md`).
     const item_opt = ai_mod.workspace_item_tasks.getWorkspaceItem(allocator, db, input.item_id) catch return error.WorkspaceItemNotFound;
     const item = item_opt orelse return error.WorkspaceItemNotFound;
     defer item.deinit(allocator);
 
-    // Refuse non-folder items — `loadLocalKnowledge` reads from
-    // `<cwd>/.pabrik/memories/`, so the cwd must be a real directory
-    // (which is what a 'folder' item's path is).
+    // Refuse non-folder items — `loadLocalKnowledge` reads from `<cwd>/.pabrik/memories/`, so the cwd must be a real directory (which is what a 'folder' item's path …
     if (!std.mem.eql(u8, item.item_type, "folder")) return error.NotAFolderItem;
     const cwd = item.path orelse return error.NoPathForMemory;
 
@@ -204,8 +173,7 @@ fn createMemoryTask(
         return error.FailedToWriteMemoryFile;
     }
 
-    // Migration 062: persist description. Same dynamic-SQL builder Migration
-    // 062: persist description.
+    // Migration 062: persist description.
     {
         var cols_buf: std.ArrayList(u8) = .empty;
         defer cols_buf.deinit(allocator);
@@ -248,18 +216,14 @@ fn createMemoryTask(
     return .{ .task_id = task_id, .name = input.body.name, .workspace_item_id = input.item_id };
 }
 
-/// Standard branch. Creates the task row and, if the parent is a
-/// kanban, auto-assigns it to the first column at
-/// MAX(kanban_position) + 1.
+/// Standard branch.
 fn createStandardTask(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     input: TaskCreateInput,
     task_id: []const u8,
 ) TaskCreateError!StandardResult {
-    // Migration 111 — resolve the requested dependencies BEFORE the task row
-    // exists, so a rejected set (self-reference, a task from another board, a
-    // cycle, over the cap) cannot leave a half-created card behind.
+    // Migration 111 — resolve the requested dependencies BEFORE the task row exists, so a rejected set (self-reference, a task from another board, a cycle, over the …
     const dep_ids: [][]const u8 = if (input.body.depends_on) |raw_ids|
         kanban_deps.normalizeIds(allocator, task_id, raw_ids) catch |err| return switch (err) {
             error.SelfDependency => error.DependencySelfReference,
@@ -285,9 +249,7 @@ fn createStandardTask(
         };
     }
 
-    // Validate + normalize the tags payload (Migration 067). The helper
-    // returns a heap-allocated JSON-encoded array string (or "" for "no
-    // tags") — the right shape for the `tags` column.
+    // Validate + normalize the tags payload (Migration 067).
     const validated_tags = tags_validation.validateAndNormalizeTags(
         allocator,
         input.body.tags,
@@ -301,9 +263,7 @@ fn createStandardTask(
         error.InvalidImageUrl => error.InvalidImageUrls,
     };
 
-    // Validate the video_urls payload (Migration 090). Same shape as
-    // image_urls: already-joined `||`-delimited string, validated
-    // prefix + allowlist + 25 MB cap.
+    // Validate the video_urls payload (Migration 090).
     const validated_video_urls = video_urls_validation.validateVideoUrls(
         input.body.video_urls orelse "",
     ) catch |err| return switch (err) {
@@ -311,28 +271,21 @@ fn createStandardTask(
         error.InvalidVideoUrl => error.InvalidVideoUrls,
     };
 
-    // Validate the per-task cwd payload (Migration 070). The wire format is
-    // an absolute path string from the FilePickerDialog (or empty / null for
-    // cwd-less).
+    // Validate the per-task cwd payload (Migration 070).
     const validated_cwd = blk: {
         const raw = input.body.cwd orelse "";
         if (raw.len == 0) break :blk raw;
         if (raw.len > 4096) return error.CwdTooLong;
         // Must be absolute (POSIX '/' or Windows 'C:\', '\\', ...).
-        // Frontend's FilePickerDialog only emits absolute paths; this guard
-        // protects against a misbehaving API client (curl, etc.).
         if (!std.fs.path.isAbsolute(raw)) return error.CwdNotAbsolute;
-        // Reject any control characters (\x00..\x1f or \x7f). Paths
-        // with embedded NULs would crash std.fs.path.join downstream.
+        // Reject any control characters (\x00..\x1f or \x7f).
         for (raw) |c| {
             if (c < 0x20 or c == 0x7f) return error.CwdContainsControlChar;
         }
         break :blk raw;
     };
 
-    // Migration 112 — the skills this task asks its agent to use, validated,
-    // deduplicated and joined into the `||` form the column stores. The
-    // pre-112 single name still works for a client that never sent the array.
+    // Migration 112 — the skills this task asks its agent to use, validated, deduplicated and joined into the `||` form the column stores.
     const validated_skill_names = task_skills.normalize(
         allocator,
         input.body.skill_names,
@@ -353,19 +306,16 @@ fn createStandardTask(
         "standard",
         input.body.description,
         validated_tags,
-        // Migration 069 — image_urls. Borrowed from the per-request
-        // arena (validated above). Pass through verbatim.
+        // Migration 069 — image_urls.
         validated_image_urls,
-        // Migration 070 — per-task cwd override. Borrowed from the
-        // per-request arena (validated above). Pass through verbatim.
+        // Migration 070 — per-task cwd override.
         validated_cwd,
         // Migration 090 — video_urls (trailing param). Same contract.
         validated_video_urls,
         validated_skill_names,
     ) catch return error.StandardTaskCreateFailed;
 
-    // Chunk 5 of kanban-task-notification-icon: creating a card is a human
-    // touch.
+    // Chunk 5 of kanban-task-notification-icon: creating a card is a human touch.
     ai_mod.llm_history.updateTaskLastHumanTouchedAt(allocator, db, task_id, null) catch |err| {
         if (pabrikcore.loggermod.getGlobal()) |logger| {
             logger.warnFmt("task_create: stamp last_human_touched_at failed (non-fatal): {s}", .{@errorName(err)});
@@ -373,14 +323,10 @@ fn createStandardTask(
     };
     // NOTE: do NOT `defer task.deinit(allocator)` here.
 
-    // Kanban auto-assign: if the parent is a kanban, append the new
-    // task to the bottom of the first column. Errors here are
-    // non-fatal — the task row is already created.
+    // Kanban auto-assign: if the parent is a kanban, append the new task to the bottom of the first column.
     var kanban_column_id: ?[]u8 = null;
     var kanban_position: i64 = 0;
-    // NOTE: do NOT `defer allocator.free(kanban_column_id)` here.
-    // kanban_column_id (when set) is a dupe on the per-request arena that is
-    // BORROWED into the returned StandardResult.
+    // NOTE: do NOT `defer allocator.free(kanban_column_id)` here. kanban_column_id (when set) is a dupe on the per-request arena that is BORROWED into the returned …
 
     {
         const parent_is_kanban = blk: {
@@ -405,17 +351,14 @@ fn createStandardTask(
             };
             if (first_col_id) |col_id| {
                 defer allocator.free(col_id);
-                // Post-Migration-072: the task→column assignment lives in the
-                // `kanban` join table.
+                // Post-Migration-072: the task→column assignment lives in the `kanban` join table.
                 db.exec(allocator,
                     "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES (?, ?, (SELECT COALESCE(MAX(k.kanban_position), -1) + 1 FROM kanban k WHERE k.kanban_column_id = ?)) ON CONFLICT DO NOTHING",
                     &[_][]const u8{ task_id, col_id, col_id },
                 ) catch |err| {
                     std.log.warn("task_create: kanban auto-assign failed (non-fatal): {s}", .{@errorName(err)});
                 };
-                // Emit SSE event so other connected clients refresh
-                // their kanban view. action="assigned" matches the
-                // frontend's KanbanTaskEvent union variant.
+                // Emit SSE event so other connected clients refresh their kanban view. action="assigned" matches the frontend's KanbanTaskEvent union variant.
                 const assigned_pos: i64 = blk: {
                     var q = db.query(allocator,
                         "SELECT COALESCE(k.kanban_position, 0) FROM kanban k WHERE k.workspace_item_task_id = ?",
@@ -435,8 +378,7 @@ fn createStandardTask(
                 }) catch |err| {
                     std.log.warn("task_create: SSE emit failed (non-fatal): {s}", .{@errorName(err)});
                 };
-                // Re-read kanban fields after the INSERT so the
-                // response carries the assigned values.
+                // Re-read kanban fields after the INSERT so the response carries the assigned values.
                 var q2 = db.query(allocator,
                     "SELECT k.kanban_column_id, COALESCE(k.kanban_position, 0) FROM kanban k WHERE k.workspace_item_task_id = ?",
                     &[_][]const u8{task_id}) catch return .{
@@ -462,24 +404,18 @@ fn createStandardTask(
         }
     }
 
-    // Migration 111 — the task row exists now, so the validated edges can be
-    // written.
+    // Migration 111 — the task row exists now, so the validated edges can be written.
     if (dep_ids.len > 0) {
         kanban_deps.replace(allocator, db, task_id, dep_ids) catch
             return error.StandardTaskCreateFailed;
     }
 
-    // session_id is preserved for backward compatibility with the v1 wire
-    // format.
+    // session_id is preserved for backward compatibility with the v1 wire format.
 
-    // Auto-retry-until-stop (Option A of the unattended-mode dialog fix): if
-    // the request body carries `is_auto_retry_until_stop`, insert a
-    // `sessions` row keyed by the new task.id so the flag has somewhere to
+    // Auto-retry-until-stop (Option A of the unattended-mode dialog fix): if the request body carries `is_auto_retry_until_stop`, insert a `sessions` row keyed by …
     if (input.body.is_auto_retry_until_stop) |flag| {
         const normalized: []const u8 = if (std.mem.eql(u8, flag, "1")) "1" else "0";
-        // INSERT OR IGNORE so a concurrent PUT /api/llm/session/:id that
-        // landed first (e.g. the user typed a message in the new task's chat
-        // before this row was written) doesn't trip a UNIQUE constraint
+        // INSERT OR IGNORE so a concurrent PUT /api/llm/session/:id that landed first (e.g. the user typed a message in the new task's chat before this row was written) …
         db.exec(
             allocator,
             "INSERT INTO sessions (id, name, status, is_auto_retry_until_stop, user_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT DO NOTHING",
@@ -496,15 +432,11 @@ fn createStandardTask(
         .kanban_column_id = kanban_column_id,
         .kanban_position = kanban_position,
         .session_id = input.body.session_id,
-        // Migration 067 — kanban task tags. Borrowed from the
-        // per-request arena; the arena reaps it on request teardown.
+        // Migration 067 — kanban task tags.
         .tags = validated_tags,
-        // Migration 070 — per-task cwd override. Borrowed from the
-        // per-request arena (validated above). Mirrors what we just
-        // INSERTed into the `cwd` column.
+        // Migration 070 — per-task cwd override.
         .cwd = validated_cwd,
-        // Media-flags change — media-presence flags derived from the validated
-        // payloads. The full TEXT stays server-side for lazy fetch.
+        // Media-flags change — media-presence flags derived from the validated payloads.
         .is_have_image = validated_image_urls.len > 0,
         .is_have_video = validated_video_urls.len > 0,
     };
@@ -518,13 +450,10 @@ pub fn useCase(
     if (input.item_id.len == 0) return error.ItemIdRequired;
 
     const task_id = try generateTaskId(allocator, input.io);
-    // NOTE: do NOT `defer allocator.free(task_id)` here. `task_id` is passed
-    // to `createMemoryTask` / `createStandardTask`, which return it as
-    // `*.task_id` in their `*Result` structs.
+    // NOTE: do NOT `defer allocator.free(task_id)` here.
 
     if (std.mem.eql(u8, input.body.task_type, "routine")) {
         // Deleted with the per-task `routines` table (Migration 084).
-        // Create a routine workspace item instead (`POST .../items/routine`).
         return error.RoutineTasksRemoved;
     }
     if (std.mem.eql(u8, input.body.task_type, "memory")) {
@@ -535,9 +464,7 @@ pub fn useCase(
     return .{ .standard = result };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn tasksCreateHandler(
     ctx: gserverz.HttpContext,
@@ -556,8 +483,7 @@ pub fn tasksCreateHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "item_id required" }),
         });
     }
-    // workspace_id is required for the SSE payload (the frontend
-    // filters events for the active workspace). Empty is fine.
+    // workspace_id is required for the SSE payload (the frontend filters events for the active workspace).
     const ws_id = req.params.get("workspace_id") orelse "";
 
     const body = req.body;
@@ -576,8 +502,6 @@ pub fn tasksCreateHandler(
     };
 
     // Owner for the `sessions` row this request may create (plan 2026-09-25).
-    // Server-derived from the `pabrik_session` cookie only — never a body,
-    // query, or header field.
     var owner_buf: [128]u8 = undefined;
     const outcome = useCase(allocator, sqlite_db, .{
         .item_id = item_id,
@@ -585,7 +509,6 @@ pub fn tasksCreateHandler(
         .io = ctx.io,
         .body = parsed,
         // Owner for the unattended-flag `sessions` row (plan 2026-09-25).
-        // Server-derived from the cookie only; empty when auth is off.
         .owner = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "",
     }) catch |err| {
         const status: u16 = switch (err) {
@@ -682,8 +605,7 @@ pub fn tasksCreateHandler(
                     .tags = r.tags,
                     // Migration 070 — per-task cwd override.
                     .cwd = r.cwd,
-                    // Media-flags change — media-presence flags. The frontend
-                    // lazy-fetches via the media endpoint when true.
+                    // Media-flags change — media-presence flags.
                     .is_have_image = r.is_have_image,
                     .is_have_video = r.is_have_video,
                 },
@@ -693,24 +615,19 @@ pub fn tasksCreateHandler(
     };
 }
 
-// ===== Tests merged from task_create_description_test.zig (2026-09-11
-// flatten) ===== The description / image_urls / kanban auto-assign /
-// 201-response-shape contracts this file used to assert were all source greps
+// ===== Tests merged from task_create_description_test.zig (2026-09-11 flatten) ===== The description / image_urls / kanban auto-assign /201-response-shape …
 
 const testing = std.testing;
 const workspace_provisioning = @import("workspace_provisioning.zig");
 
-/// One thread's worth of `generateTaskId`. Null on failure so the test can
-/// report a short list instead of quietly counting fewer ids.
+/// One thread's worth of `generateTaskId`.
 const TaskIdWorker = struct {
     fn run(allocator: std.mem.Allocator, out: *?[]const u8) void {
         out.* = generateTaskId(allocator, testing.io) catch null;
     }
 };
 
-/// Same for the workspace generator, which lives in
-/// `workspace_provisioning.zig` (it backs both POST /api/workspaces and
-/// the automatic per-user provisioning).
+/// Same for the workspace generator, which lives in `workspace_provisioning.zig` (it backs both POST /api/workspaces and the automatic per-user provisioning).
 const WorkspaceIdWorker = struct {
     fn run(allocator: std.mem.Allocator, out: *?[]const u8) void {
         out.* = workspace_provisioning.generateWorkspaceId(allocator, testing.io) catch null;
@@ -733,8 +650,7 @@ fn expectAllIdsDistinct(a: std.mem.Allocator, ids: []const ?[]const u8, count: u
 }
 
 test "task_create: generateTaskId mints distinct ids from 32 concurrent threads" {
-    // No platform gate: the id is `<unix-ms>_<atomic counter>` and both
-    // halves exist on Windows.
+    // No platform gate: the id is `<unix-ms>_<atomic counter>` and both halves exist on Windows.
     const a = testing.allocator;
     const n = 32;
     const ids = try a.alloc(?[]const u8, n);
@@ -749,8 +665,7 @@ test "task_create: generateTaskId mints distinct ids from 32 concurrent threads"
 }
 
 test "workspaces_create: generateWorkspaceId mints distinct ids from 32 concurrent threads" {
-    // No platform gate: the id is `<unix-ms>_<atomic counter>` and both
-    // halves exist on Windows.
+    // No platform gate: the id is `<unix-ms>_<atomic counter>` and both halves exist on Windows.
     const a = testing.allocator;
     const n = 32;
     const ids = try a.alloc(?[]const u8, n);
@@ -766,8 +681,7 @@ test "workspaces_create: generateWorkspaceId mints distinct ids from 32 concurre
 
 const migration_mod = @import("../migrations/migration.zig");
 
-// The unattended-flag `sessions` row must carry the requesting owner under
-// `--auth`.
+// The unattended-flag `sessions` row must carry the requesting owner under `--auth`.
 test "task_create: unattended sessions row carries the requesting owner" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -784,9 +698,7 @@ test "task_create: unattended sessions row carries the requesting owner" {
     try migration_mod.registerAllMigrations(&manager);
     try manager.runMigrations();
 
-    // No parent row on purpose: the kanban auto-assign path treats a
-    // missing parent as non-kanban, so this stays on the sessions-INSERT
-    // path under test.
+    // No parent row on purpose: the kanban auto-assign path treats a missing parent as non-kanban, so this stays on the sessions-INSERT path under test.
     const owned = try useCase(alloc, &db, .{
         .item_id = "item_folder",
         .workspace_id = "ws_1",

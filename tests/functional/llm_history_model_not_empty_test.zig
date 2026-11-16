@@ -1,6 +1,4 @@
-// `llm_history.model` is never empty — wire-level proof. Zig port of
-// `tests/functional/llm_history_model_not_empty_test.py` (same test names,
-// same order).
+// `llm_history.model` is never empty — wire-level proof.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,24 +8,20 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The sentinel the backend substitutes when no model can be resolved. Mirrors
-/// `modules/agent/loop/llm_history_model_guard.zig::UNKNOWN_MODEL` and the literal in
-/// Migration 101's trigger. A real model id is never this string.
+/// The sentinel the backend substitutes when no model can be resolved.
 const UNKNOWN_MODEL = "unknown";
 
 /// One `llm_history` row as the `sqlite3 -json` output spells it.
 const HistoryRow = struct {
     id: []const u8,
     model: ?[]const u8,
-    /// `typeof(model) AS t` — `'null'` is the NULL-collapse drop path,
-    /// `'text'` with a blank value is the `''`-literal path.
+    /// `typeof(model) AS t` — `'null'` is the NULL-collapse drop path, `'text'` with a blank value is the `''`-literal path.
     t: []const u8,
     role: []const u8,
     response_content: ?[]const u8,
 };
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
-/// in SQLite 3.33 (2020).
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -56,8 +50,7 @@ fn requireSqlite3Cli() !void {
     }
 }
 
-/// Parse `sqlite3 -json` output into a document the caller owns. `-json`
-/// prints ZERO BYTES for an empty result set — not `[]`.
+/// Parse `sqlite3 -json` output into a document the caller owns.
 fn parseSqliteJson(allocator: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     if (std.mem.trim(u8, out, " \t\r\n").len == 0) {
         return std.json.parseFromSlice(std.json.Value, allocator, "[]", .{});
@@ -107,8 +100,7 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
-/// `SELECT <cols> FROM llm_history WHERE session_id = ? ORDER BY created_at_nano`
-/// as a JSON document the caller owns.
+/// `SELECT <cols> FROM llm_history WHERE session_id = ?
 fn historyRowsSql(temp_dir: []const u8, session_id: []const u8) !std.json.Parsed(std.json.Value) {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -149,9 +141,7 @@ fn decodeRows(parsed: *const std.json.Parsed(std.json.Value), ctx: []const u8) !
                 return error.TestUnexpectedResult;
             },
         };
-        // `id` is a TEXT column, but SQLite is dynamically typed: a NULL id
-        // must fail loudly rather than decode as the empty string, or the
-        // failure messages name the wrong row.
+        // `id` is a TEXT column, but SQLite is dynamically typed: a NULL id must fail loudly rather than decode as the empty string, or the failure messages name the …
         const id = switch (o.get("id") orelse {
             std.debug.print("{s}: row {d} has no id\n", .{ ctx, i });
             return error.TestUnexpectedResult;
@@ -223,7 +213,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/<ws>/items/kanban` → the kanban item's id.
-/// Python `_create_kanban`.
 fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -253,8 +242,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST .../kanban/tasks` with `mode: "create_session"` — the exact wire the
-/// frontend's plain `Create task` button sends. Python `_create_task`.
+/// `POST .../kanban/tasks` with `mode: "create_session"` — the exact wire the frontend's plain `Create task` button sends.
 const TaskBody = struct {
     mode: []const u8 = "create_session",
     name: []const u8,
@@ -315,9 +303,7 @@ test "kanban_create_session_seeds_a_row_with_a_non_empty_model" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // The harness's stub profile leaves `active_profile` unset and the config
-    // carries no top-level `model`, so `resolveEffectiveProfile` cascades all
-    // the way down to an empty string.
+    // The harness's stub profile leaves `active_profile` unset and the config carries no top-level `model`, so `resolveEffectiveProfile` cascades all the way down to …
     const ws_id = try createWorkspace(&h, "model-guard-ws");
     defer gpa.free(ws_id);
     const kanban_id = try createKanban(&h, ws_id, "sprint-guard");
@@ -341,8 +327,7 @@ test "kanban_create_session_seeds_a_row_with_a_non_empty_model" {
     }
 
     const row = rows[0];
-    // `typeof` distinguishes the two failure modes: 'null' = the NULL-collapse
-    // drop path, 'text' with a blank value = the `''`-literal path.
+    // `typeof` distinguishes the two failure modes: 'null' = the NULL-collapse drop path, 'text' with a blank value = the `''`-literal path.
     if (std.mem.eql(u8, row.t, "null")) {
         std.debug.print("model is SQL NULL (empty-bind collapse) for row {s}\n", .{row.id});
         return error.TestUnexpectedResult;
@@ -397,9 +382,7 @@ test "seeded_model_is_either_real_or_the_sentinel" {
         std.debug.print("model must never be blank (row {s}, typeof={s})\n", .{ rows[0].id, rows[0].t });
         return error.TestUnexpectedResult;
     }
-    // Two paths are acceptable and both are asserted to be non-empty:
-    // a real model id, when the profile cascade resolves one; or
-    // UNKNOWN_MODEL, when it resolves to nothing.
+    // Two paths are acceptable and both are asserted to be non-empty
     if (!std.mem.eql(u8, model, UNKNOWN_MODEL) and std.mem.trim(u8, model, " \t\r\n").len == 0) {
         std.debug.print("model must be the sentinel or a real id, got '{s}'\n", .{model});
         return error.TestUnexpectedResult;
@@ -431,9 +414,7 @@ test "no_blank_model_anywhere_in_the_database" {
         defer gpa.free(task_id);
     }
 
-    // Catches a regression that a per-session assertion would miss: a write
-    // site that still binds an empty model would either drop its row or,
-    // after Migration 101's trigger is in place, be caught there.
+    // Catches a regression that a per-session assertion would miss: a write site that still binds an empty model would either drop its row or, after Migration 101's …
     const db = try dbPath(h.temp_dir);
     defer gpa.free(db);
     const sql =
@@ -443,9 +424,7 @@ test "no_blank_model_anywhere_in_the_database" {
     const out = try sqliteRun(db, sql);
     defer gpa.free(out);
 
-    // `parseSqliteJson`, not a raw parse: a CLEAN sweep is the expected
-    // outcome here, and `-json` prints zero bytes (not `[]`) for an empty
-    // result set — so the passing case is exactly the one the std parser
+    // `parseSqliteJson`, not a raw parse: a CLEAN sweep is the expected outcome here, and `-json` prints zero bytes (not `[]`) for an empty result set — so the …
     var doc = try parseSqliteJson(gpa, out);
     defer doc.deinit();
     const blank = switch (doc.value) {

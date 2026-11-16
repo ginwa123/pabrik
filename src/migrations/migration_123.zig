@@ -5,9 +5,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// A pending invitation: the ask, not the membership. Accepting it inserts the
-/// `workspace_members` row, so nothing here can put a workspace in somebody's
-/// sidebar before they have said yes.
+/// A pending invitation: the ask, not the membership.
 pub const Migration123AddWorkspaceInvitations = struct {
     pub const version: u32 = 123;
     pub const name = "add_workspace_invitations";
@@ -24,8 +22,7 @@ pub const Migration123AddWorkspaceInvitations = struct {
             \\)
         , &[_][]const u8{});
 
-        // One pending ask per (workspace, invitee): re-inviting the same person
-        // is a 409, never a second row to answer twice.
+        // One pending ask per (workspace, invitee): re-inviting the same person is a 409, never a second row to answer twice.
         try db.exec(allocator,
             \\CREATE UNIQUE INDEX IF NOT EXISTS uq_workspace_invitations_pair
             \\ON workspace_invitations(workspace_id, invitee_user_id)
@@ -70,8 +67,7 @@ test "Migration123 creates the invitation row the accept flow needs" {
         " WHERE name IN ('id','workspace_id','invitee_user_id','role','invited_by','created_at')");
     try testing.expectEqual(@as(u64, 6), cols);
 
-    // An invitation with no workspace or no invitee is unroutable, so both
-    // columns must be NOT NULL rather than merely empty.
+    // An invitation with no workspace or no invitee is unroutable, so both columns must be NOT NULL rather than merely empty.
     const nullable = try count(alloc, db, "SELECT COUNT(*) FROM " ++
         comptime dialect.tableColumns("workspace_invitations") ++
         " WHERE \"notnull\" = 0 AND name IN ('workspace_id','invitee_user_id')");
@@ -92,8 +88,7 @@ test "Migration123 refuses a second pending invitation for the same pair" {
         \\VALUES ('inv_1', 'ws_1', 'user_ben', 'editor', 'user_amy')
     , &[_][]const u8{});
 
-    // The UNIQUE index is the guard the store relies on, so it is asserted at
-    // the schema, not only in the store's own pre-checks.
+    // The UNIQUE index is the guard the store relies on, so it is asserted at the schema, not only in the store's own pre-checks.
     db.exec(alloc,
         \\INSERT INTO workspace_invitations (id, workspace_id, invitee_user_id, role, invited_by)
         \\VALUES ('inv_2', 'ws_1', 'user_ben', 'viewer', 'user_amy')

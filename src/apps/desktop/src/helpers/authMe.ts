@@ -1,6 +1,4 @@
-/** Cached client for `GET /api/auth/me`. Why this exists: the router guard `await`s `/api/auth/me`
- * on EVERY navigation (plus `LoginView` on mount, plus `Sidebar` on mount and every window focus)
- * with a bare `fetch` — no cache, no timeout. */
+/** Cached client for `GET /api/auth/me`. */
 export interface AuthMeUser {
   id: string
   email: string
@@ -58,9 +56,7 @@ function readEntry(): CacheEntry | null {
     const parsed = JSON.parse(raw) as Partial<CacheEntry> & { data?: unknown }
     if (typeof parsed.at !== 'number' || typeof parsed.status !== 'number') return null
     const data = parsed.data === null ? null : normalizeAuthMe(parsed.data)
-    // normalizeAuthMe rejects garbage; a non-null data that fails to
-    // normalize means a corrupt entry (fail-silent miss), except an
-    // explicit null body which is a legitimate cached !ok response.
+    // normalizeAuthMe rejects garbage; a non-null data that fails to normalize means a corrupt entry (fail-silent miss), except an explicit null body which is a …
     if (parsed.data !== null && parsed.data !== undefined && data === null) return null
     return { status: parsed.status, data, at: parsed.at }
   } catch {
@@ -68,9 +64,7 @@ function readEntry(): CacheEntry | null {
   }
 }
 
-/** The cached `/me` body, or null when nothing is cached. Synchronous on purpose: the
- * identity has to be known before the first store is created, and the router guard's
- * `await` is too late for that (see `seedIdentityFromCache`). */
+/** The cached `/me` body, or null when nothing is cached. */
 export function readCachedAuthMe(): AuthMeData | null {
   return readEntry()?.data ?? null
 }
@@ -80,8 +74,7 @@ function writeEntry(status: number, data: AuthMeData | null): void {
     const entry: CacheEntry = { status, data, at: Date.now() }
     localStorage.setItem(AUTH_ME_KEY, JSON.stringify(entry))
   } catch {
-    // quota / private mode / no storage — the live fetch still works,
-    // only the next init's instant paint is lost.
+    // quota / private mode / no storage — the live fetch still works, only the next init's instant paint is lost.
   }
 }
 
@@ -145,9 +138,7 @@ function fetchShared(): Promise<AuthMeResult> {
   return inflight
 }
 
-/**  * Cached `/me` for navigation guards and chrome (sidebar/login). Fresh cache hits never touch the
- * network; stale entries are served instantly with a background revalidate; cold starts share one
- * live fetch across concurrent callers. */
+/** Cached `/me` for navigation guards and chrome (sidebar/login). */
 export async function getAuthMeCached(): Promise<AuthMeResult> {
   const cached = readEntry()
   if (cached) {

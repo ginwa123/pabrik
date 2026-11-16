@@ -9,9 +9,7 @@ const io = testing.io;
 
 const Io = std.Io;
 
-/// The OpenAI-style SSE transcript the stub replays verbatim. Byte-identical
-/// in shape to `anthropic_chat_headers_test.zig`'s stream: one content delta,
-/// then a finish_reason, then `[DONE]`.
+/// The OpenAI-style SSE transcript the stub replays verbatim.
 const SSE_STREAM =
     "data: {\"id\":\"chatcmpl-stub\",\"object\":\"chat.completion.chunk\"," ++
     "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"," ++
@@ -28,13 +26,9 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `heads`; the serve thread appends while the test reads.
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the latter,
-    /// and the replacement takes the `Io` handle for its contended path.
     mutex: Io.Mutex = .init,
     heads: std.ArrayList([]u8) = .empty,
     /// The request BODY of each recorded request, same order as `heads`.
-    /// The head alone cannot prove which model was asked for — the model
-    /// lives in the JSON body — so both are captured.
     bodies: std.ArrayList([]u8) = .empty,
 
     /// Copy every recorded head out. Owned by the caller.
@@ -78,9 +72,7 @@ fn startStub(stub: *Stub) !void {
     stub.thread = try std.Thread.spawn(.{}, serveStub, .{stub});
 }
 
-/// Wake the blocked `accept`, join, and free. `Server.accept` is a BLOCKING
-/// `accept4(2)`, and on Linux closing a listening socket does NOT wake a
-/// thread already blocked in `accept` on it.
+/// Wake the blocked `accept`, join, and free.
 fn stopStub(stub: *Stub) void {
     stub.stop.store(true, .release);
 
@@ -107,9 +99,7 @@ fn serveStub(stub: *Stub) void {
     }
 }
 
-/// Read one request, record its head, reply with the SSE transcript. THE HEAD
-/// AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that wrong hangs
-/// the whole suite.
+/// Read one request, record its head, reply with the SSE transcript.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);
@@ -131,9 +121,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
 
     const head = acc.written()[0..head_len];
 
-    // Read the rest of the body. A full agent prompt is tens of KB, and a
-    // client cannot be answered mid-frame — so this has to drain to
-    // Content-Length before the response is written.
+    // Read the rest of the body.
     var body: Io.Writer.Allocating = .init(gpa);
     defer body.deinit();
     if (acc.written().len > head_len) {
@@ -224,8 +212,7 @@ fn writeStubProfile(h: *Harness, stub_port: u16) !void {
 test "headless run completes a turn and prints the assistant text" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Registered FIRST so it runs LAST: the recorded heads are read by
-    // the assertions, and the serve thread must outlive the child.
+    // Registered FIRST so it runs LAST: the recorded heads are read by the assertions, and the serve thread must outlive the child.
     var stub: Stub = .{ .io = io, .port = 0, .server = undefined, .thread = undefined };
     try startStub(&stub);
     defer stopStub(&stub);
@@ -271,9 +258,7 @@ test "headless run completes a turn and prints the assistant text" {
     const timed_out = obj.get("timed_out") orelse return error.TestUnexpectedResult;
     try testing.expectEqual(false, timed_out.bool);
 
-    // Positive control: the turn really reached the upstream. Without
-    // this, "the assistant text came back" could pass on a cached or
-    // fabricated reply.
+    // Positive control: the turn really reached the upstream.
     const seen = stub.requestCount();
     if (seen == 0) {
         std.debug.print("stub upstream received no requests — the turn never left the process\n", .{});
@@ -281,9 +266,7 @@ test "headless run completes a turn and prints the assistant text" {
     }
 }
 
-// The turn really went through the backend: the request carried the
-// configured model and a bearer key, and the session row landed in the
-// isolated DB.
+// The turn really went through the backend: the request carried the configured model and a bearer key, and the session row landed in the isolated DB.
 test "headless run drives the real backend, not a parallel implementation" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -330,9 +313,7 @@ test "headless run drives the real backend, not a parallel implementation" {
         }
     }
 
-    // 2. The session row landed in the ISOLATED database — proof the run
-    //    used the real `openDatabase` + migration chain, not an in-memory
-    //    stand-in.
+    // 2.
     const db_path = try std.fs.path.join(gpa, &.{ h.temp_dir, ".config", "pabrik", "agent.db" });
     defer gpa.free(db_path);
     std.Io.Dir.cwd().access(io, db_path, .{}) catch {
@@ -381,8 +362,7 @@ test "headless run binds no port" {
 
     const after = try countPabrikListeners();
 
-    // The child has exited by the time `runPabrikCommand` returns, so any
-    // listener it held is already gone.
+    // The child has exited by the time `runPabrikCommand` returns, so any listener it held is already gone.
     if (after > before) {
         std.debug.print(
             "headless run leaked {d} listener(s): before={d} after={d}\n",

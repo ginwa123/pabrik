@@ -51,22 +51,14 @@ import { abbrevElement, designLogger } from '../../helpers/designLogger'
 const props = withDefaults(
   defineProps<{
     element: DesignElement
-    // Single-element shortcut (kept for backward compat with tests + simple use cases). True iff
-    // `selectedIds` has exactly this element and nothing else. The wrapper's `.selected` class is
-    // applied iff this is true OR the element is in a multi-selection that includes it.
+    // Single-element shortcut (kept for backward compat with tests + simple use cases).
     selected?: boolean
-    // The full selection set (Figma multi-select model). When non-empty AND this element's id is in
-    // it, render the violet outline + resize handles. When only `selected === true` (no
-    // multi-selection context), the wrapper renders the legacy single-selection chrome.
+    // The full selection set (Figma multi-select model).
     selectedIds?: string[]
     readonly?: boolean
-    // Current canvas zoom level (1.0 = 100%). When the canvas is CSS-scaled via `transform:
-    // scale(zoom)`, the cursor delta (screen-px) and the model's element coordinates (design-px)
-    // differ — drag/resize math divides by zoom to keep them aligned.
+    // Current canvas zoom level (1.0 = 100%). When the canvas is CSS-scaled via `transform
     zoom?: number
-    // IDs needed to lazy-load the element's HTML body from the backend (the page+elements GET
-    // response excludes the body to keep payloads small). Defaults are empty so the component can
-    // mount without them; fetchHtml is a no-op when any is missing.
+    // IDs needed to lazy-load the element's HTML body from the backend (the page+elements GET response excludes the body to keep payloads small).
     workspaceId?: string
     itemId?: string
     pageId?: string
@@ -86,31 +78,19 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  // Chunk 3: select now carries an `additive` flag so the canvas's
-  // Shift+click can toggle membership in the multi-selection Set
-  // (Figma parity with the layers panel which already supports it).
+  // Chunk 3: select now carries an `additive` flag so the canvas's Shift+click can toggle membership in the multi-selection Set (Figma parity with the layers panel …
   select: [payload: { elementId: string; additive: boolean }]
-  /** DEPRECATED — replaced by `translate` (move) and `resize` (Figma parity with the backend's POST
-   * /translate + POST /resize split). */
+  /** DEPRECATED — replaced by `translate` (move) and `resize` (Figma parity with the backend's POST /translate + POST /resize split). */
   update: [patch: Partial<DesignElement>]
-  /** NEW (2026-08-06) — fires on every pointermove during a drag for a SINGLE element (leaf OR a
-   * single-element drag of a group that didn't trigger the group-drag path). */
+  /** NEW (2026-08-06) — fires on every pointermove during a drag for a SINGLE element (leaf OR a single-element drag of a group that didn't trigger the group-drag … */
   translate: [payload: { elementId: string; dx: number; dy: number }]
-  /** NEW (2026-08-06) — fires on every pointermove during a RESIZE gesture (dragging one of the 8
-   * resize handles). Payload carries the absolute target `(x, y, width, height, rotation)` after
-   * applying the cursor delta to the start geometry. */
+  /** NEW (2026-08-06) — fires on every pointermove during a RESIZE gesture (dragging one of the 8 resize handles). */
   resize: [patch: Partial<DesignElement>]
-  // Chunk 2: when the user drags an element that's part of a multi-selection, the WHOLE selection
-  // moves. The parent (DesignView) applies the dx/dy to every selected element's start position;
-  // this component only reports the cursor delta.
+  // Chunk 2: when the user drags an element that's part of a multi-selection, the WHOLE selection moves.
   groupDrag: [delta: { dx: number; dy: number }]
-  // Chunk 3: emit on drag-end (pointerup or pointercancel) so the
-  // parent can clear its snap guides. Fires after both the single-
-  // element drag and the multi-selection group drag paths.
+  // Chunk 3: emit on drag-end (pointerup or pointercancel) so the parent can clear its snap guides.
   dragEnd: []
-  // Undo/redo plan: emit on drag-start so the parent can capture pre-state for the eventual undo
-  // entry. Carries the moved ids so the parent can capture the full selection (not just this
-  // element).
+  // Undo/redo plan: emit on drag-start so the parent can capture pre-state for the eventual undo entry.
   dragStart: [ids: string[]]
   htmlChanged: [html: string]
   delete: [elementId: string]
@@ -123,15 +103,11 @@ const elementStyle = computed(() => ({
   width: `${props.element.width}px`,
   height: `${props.element.height}px`,
   transform: `rotate(${props.element.rotation}deg)`,
-  // Inline opacity; the backend's `opacity` field defaults to 1.0
-  // and the v-if on the parent only renders elements with valid
-  // geometry, so no extra defensive checks needed.
+  // Inline opacity; the backend's `opacity` field defaults to 1.0 and the v-if on the parent only renders elements with valid geometry, so no extra defensive …
   opacity: props.element.opacity,
   // FIX 2026-08-06 (task_1785988530202): apply `z-index` inline so CSS handles the z-axis stacking.
   zIndex: props.element.z_index,
-  // Selection outline is rendered as a child absolutely-positioned
-  // div via the .selected class below; the parent keeps the
-  // standard border styling from the element itself.
+  // Selection outline is rendered as a child absolutely-positioned div via the .selected class below; the parent keeps the standard border styling from the element …
 }))
 
 // ─── Drag (move) ────────────────────────────────────────────────────────
@@ -141,21 +117,16 @@ type ResizeHandle = 'nw' | 'n' | 'ne' | 'w' | 'e' | 'sw' | 's' | 'se'
 
 const isDragging = ref(false)
 
-// Workspace store — used to look up the parent element by id when
-// the user clicks on a child. The store is the canonical source of
-// page elements (mirrored from the backend's `design_elements` array).
+// Workspace store — used to look up the parent element by id when the user clicks on a child.
 const workspacesStore = useWorkspacesStore()
 
-// True when this element is nested inside a parent group/frame. The backend's `COALESCE(parent_id,
-// '')` returns '' for top-level rows, non-empty for nested rows. Legacy / pre-migration shapes may
-// return `null` or `undefined` — both are treated as top-level so legacy elements remain draggable.
+// True when this element is nested inside a parent group/frame.
 const isChildOfGroup = computed(() => {
   const pid = props.element.parent_id
   return !!pid && pid !== ''
 })
 
-// The immediate parent element, looked up from the workspace store's `item.design_elements[]` array
-// (the mirrored backend payload).
+// The immediate parent element, looked up from the workspace store's `item.design_elements[]` array (the mirrored backend payload).
 const parentElement = computed<DesignElement | null>(() => {
   const pid = props.element.parent_id
   if (!pid || pid === '') return null
@@ -168,9 +139,7 @@ const parentElement = computed<DesignElement | null>(() => {
 })
 
 const startDrag = (event: PointerEvent, mode: DragMode): void => {
-  // The 8 resize handles are children of the .design-element wrapper. The wrapper also has a
-  // @pointerdown handler (for 'move'). Without stopping propagation, clicking a handle would bubble
-  // to the wrapper and start TWO gestures: the resize (on the handle) and a move (on the wrapper).
+  // The 8 resize handles are children of the .design-element wrapper.
   console.log('GIL START DDRAGGING', mode)
 
   if (mode !== 'move') {
@@ -187,9 +156,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
 
     return
   }
-  // In Preview mode, the canvas is "playing" the mockup — clicks
-  // on element bodies are absorbed by the inner iframe (typed text,
-  // button activations). Don't start a drag, don't emit select.
+  // In Preview mode, the canvas is "playing" the mockup — clicks on element bodies are absorbed by the inner iframe (typed text, button activations).
   if (props.previewMode) {
     designLogger.debug({
       reason: 'drag:noop:preview',
@@ -198,9 +165,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     })
     return
   }
-  // Don't initiate a drag if the click was on an interactive child
-  // (e.g. the iframe content) — pointer-events:none on the iframe
-  // already prevents that, but we double-check.
+  // Don't initiate a drag if the click was on an interactive child (e.g. the iframe content) — pointer-events:none on the iframe already prevents that, but we …
   if (event.button !== 0) {
     designLogger.debug({
       reason: 'drag:noop:button≠0',
@@ -210,9 +175,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     console.log('GIL START DDRAGGING button', event)
     return
   }
-  // ─── Click on child: select the parent group instead ───────────────── User request (2026-08-06,
-  // follow-up to drag-suppress): clicking on a child element should select the parent group, not
-  // the child itself.
+  // ─── Click on child: select the parent group instead ─────────────────
   const useParentSelect = !event.shiftKey && isChildOfGroup.value && parentElement.value !== null
   const selectTarget = useParentSelect ? parentElement.value : null
   const selectElementId = selectTarget ? selectTarget.id : props.element.id
@@ -242,9 +205,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     })
   }
 
-  // ─── Child-of-group: block single-element move drag ───────────────── User request (2026-08-06,
-  // drag-on-child-element bug): a child element nested inside a parent group/frame should NOT be
-  // independently movable.
+  // ─── Child-of-group: block single-element move drag ─────────────────
   const inMultiSelect = props.selectedIds.length > 1 && props.selectedIds.includes(props.element.id)
   if (mode === 'move' && isChildOfGroup.value && !inMultiSelect) {
     designLogger.debug({
@@ -255,9 +216,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     return
   }
 
-  // Undo/redo plan (Chunk 4): emit drag-start BEFORE the gesture branches so the parent can capture
-  // pre-state. For single-element drag, the captured set is [this element]. For group drag (below),
-  // we re-emit with the full selection BEFORE setting up the move handler.
+  // Undo/redo plan (Chunk 4): emit drag-start BEFORE the gesture branches so the parent can capture pre-state.
   const groupDragIds =
     props.selectedIds.length > 1 && props.selectedIds.includes(props.element.id) && mode === 'move'
       ? props.selectedIds
@@ -270,8 +229,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     extra: { groupDragIds: [...groupDragIds], mode },
   })
 
-  // Group drag (Chunk 2): when this element is part of a multi-selection, dragging moves the ENTIRE
-  // selection. The parent applies the same dx/dy to every selected element's start position.
+  // Group drag (Chunk 2): when this element is part of a multi-selection, dragging moves the ENTIRE selection.
   const isGroupLike = props.element.type === 'group' || props.element.type === 'frame'
   const inMultiselect = props.selectedIds.length > 1 && props.selectedIds.includes(props.element.id)
   const triggerGroupDrag = (inMultiselect || isGroupLike) && mode === 'move'
@@ -289,8 +247,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     const startClientY = event.clientY
     let pendingDx = 0
     let pendingDy = 0
-    // BUG FIX (2026-08-06, design-mode-moves-so-fast v2): send INCREMENTAL dx/dy (delta since last
-    // emit), NOT the cumulative cursor distance from drag-start.
+    // BUG FIX (2026-08-06, design-mode-moves-so-fast v2): send INCREMENTAL dx/dy (delta since last emit), NOT the cumulative cursor distance from drag-start.
     let lastEmittedDx = 0
     let lastEmittedDy = 0
     let lastEmitMs = 0
@@ -309,8 +266,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
       pendingDy = (e.clientY - startClientY) * inv
       const now = performance.now()
       if (now - lastEmitMs >= THROTTLE_MS) {
-        // INCREMENTAL delta — server ADDs this to the current
-        // position. End-of-drag total = cumulative cursor delta.
+        // INCREMENTAL delta — server ADDs this to the current position.
         const incDx = pendingDx - lastEmittedDx
         const incDy = pendingDy - lastEmittedDy
         emit('groupDrag', { dx: incDx, dy: incDy })
@@ -339,9 +295,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
         target.releasePointerCapture(e.pointerId)
       }
       isDragging.value = false
-      // Trailing emit: capture the final position regardless of throttle. Use INCREMENTAL delta so
-      // the server's last ADD lands exactly on the cursor's end position. Without this the trailing
-      // emit would re-apply the FULL cumulative (compounding again).
+      // Trailing emit: capture the final position regardless of throttle.
       const incDx = pendingDx - lastEmittedDx
       const incDy = pendingDy - lastEmittedDy
       emit('groupDrag', { dx: incDx, dy: incDy })
@@ -378,9 +332,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     return
   }
 
-  // ─── Single-element drag path log ────────────────────────────────── The triggerGroupDrag branch
-  // above already returned for groups / frames / multi-select. Falls through here for leaves
-  // (rectangle, ellipse, text, image).
+  // ─── Single-element drag path log ──────────────────────────────────
   designLogger.info({
     reason: 'drag:start:move',
     caller: 'DesignElement.startDrag',
@@ -406,9 +358,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     width: props.element.width,
     height: props.element.height,
   }
-  // Overwrite the drag:start:move info above with a more-specific reason (resize vs move) using
-  // `mode`. The earlier info line is a redundancy safety net in case this code path throws before
-  // reaching here.
+  // Overwrite the drag:start:move info above with a more-specific reason (resize vs move) using `mode`.
   designLogger.info({
     reason: mode === 'move' ? 'drag:start:move' : 'drag:start:resize',
     caller: 'DesignElement.startDrag',
@@ -419,9 +369,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     extra: { mode: typeof mode === 'string' ? mode : mode.resize },
   })
 
-  // The latest pending event we intend to emit. Throttled: we only emit when either (a) 50ms has
-  // elapsed since the last emit, or (b) pointerup fires (the trailing emit captures the final
-  // position even if the throttle window hasn't elapsed).
+  // The latest pending event we intend to emit.
   let pendingTranslate: { dx: number; dy: number } | null = null
   let pendingResize: Partial<DesignElement> | null = null
   let lastEmitMs = 0
@@ -433,9 +381,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
     if (pendingTranslate) {
       const incDx = pendingTranslate.dx - lastEmittedTranslateDx
       const incDy = pendingTranslate.dy - lastEmittedTranslateDy
-      // Carry the source elementId in the event so the parent doesn't
-      // have to fish it out of `selectedIds` (which can be wrong —
-      // see the doc on the `translate` emit type).
+      // Carry the source elementId in the event so the parent doesn't have to fish it out of `selectedIds` (which can be wrong — see the doc on the `translate` emit …
       emit('translate', {
         elementId: props.element.id,
         dx: incDx,
@@ -475,8 +421,7 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
 
   const computeResizePatch = (dx: number, dy: number): Partial<DesignElement> => {
     const patch: Partial<DesignElement> = {}
-    // Narrowing: at this point `mode` must be the `{ resize: ResizeHandle }`
-    // variant because the `if (mode === 'move')` branch above returned.
+    // Narrowing: at this point `mode` must be the `{ resize: ResizeHandle }` variant because the `if (mode === 'move')` branch above returned.
     const resizeMode = mode as { resize: ResizeHandle }
     const h = resizeMode.resize
     if (h.includes('e')) patch.width = Math.max(10, Math.round(start.width + dx))
@@ -531,25 +476,21 @@ const startDrag = (event: PointerEvent, mode: DragMode): void => {
   target.addEventListener('pointercancel', onUp)
 }
 
-// ─── HTML preview wrapper ─────────────────────────────────────────────── ─── HTML preview wrapper
-// ─────────────────────────────────────────────── Lazy-load the element's stored HTML body so the
-// canvas can render the actual design (not just a placeholder rectangle).
+// ─── HTML preview wrapper ───────────────────────────────────────────────
 const htmlBody = ref<string>('')
 const htmlLoadError = ref<string | null>(null)
 const isLoadingHtml = ref(false)
 let htmlFetchSeq = 0
 
 const fetchHtml = async (): Promise<void> => {
-  // No file_path = no HTML body to render. This is the common case
-  // for legacy / empty elements created before the body feature.
+  // No file_path = no HTML body to render.
   if (!props.element.file_path) {
     htmlBody.value = ''
     htmlLoadError.value = null
     isLoadingHtml.value = false
     return
   }
-  // Need the full id tuple to call the API; the parent's `fetchDesignElements`
-  // call doesn't carry them through to here yet, so guard gracefully.
+  // Need the full id tuple to call the API; the parent's `fetchDesignElements` call doesn't carry them through to here yet, so guard gracefully.
   if (!props.workspaceId || !props.itemId || !props.pageId) {
     htmlBody.value = ''
     return
@@ -564,8 +505,7 @@ const fetchHtml = async (): Promise<void> => {
       props.pageId,
       props.element.id,
     )
-    // Only commit the result if this is still the latest in-flight
-    // request; otherwise a stale fetch could clobber newer content.
+    // Only commit the result if this is still the latest in-flight request; otherwise a stale fetch could clobber newer content.
     if (seq === htmlFetchSeq) {
       htmlBody.value = html
     }
@@ -586,9 +526,7 @@ onMounted(() => {
   void fetchHtml()
 })
 
-// Re-fetch when the element identity, file path, or updated_at changes. `updated_at` is the proxy
-// for "the user re-saved the HTML via Monaco in the PropertiesPanel" — the path stays the same but
-// the file content changed.
+// Re-fetch when the element identity, file path, or updated_at changes.
 const prevHtmlKey = ref('')
 const htmlKey = () => `${props.element.id}|${props.element.file_path}|${props.element.updated_at}`
 onUpdated(() => {
@@ -599,15 +537,11 @@ onUpdated(() => {
   }
 })
 
-// ─── Delete (Delete/Backspace key on the selected element) ────────────── We don't bind window
-// keydown here (the parent DesignView owns keyboard events); the parent emits `delete` on the
-// active element.
+// ─── Delete (Delete/Backspace key on the selected element) ──────────────
 import { onUnmounted } from 'vue'
 
 const handleKeydown = (e: KeyboardEvent): void => {
-  // Chunk 2: gate on the full selection set, not just this element's `selected` flag. When the user
-  // has multi-selected several elements via Shift+click, hitting Delete should remove ALL of them —
-  // even though only ONE of them is the "active" one with `selected: true`.
+  // Chunk 2: gate on the full selection set, not just this element's `selected` flag.
   if (props.selectedIds.length === 0 && !props.selected) return
   if (props.readonly) return
   if (e.key !== 'Delete' && e.key !== 'Backspace') return
@@ -620,9 +554,7 @@ const handleKeydown = (e: KeyboardEvent): void => {
     return
   }
   e.preventDefault()
-  // Emit one `delete` per selected id. When only the legacy `selected`
-  // flag is set (no multi-selection context), fall back to deleting
-  // just this element so the back-compat path still works.
+  // Emit one `delete` per selected id.
   for (const id of props.selectedIds.length > 0 ? props.selectedIds : [props.element.id]) {
     emit('delete', id)
   }

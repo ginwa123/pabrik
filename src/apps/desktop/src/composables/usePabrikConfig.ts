@@ -1,22 +1,18 @@
-/** usePabrikConfig — single source of truth for the Pabrik settings UI. Owns the in-memory
- * `PabrikConfig` and a deep snapshot of the last document the server confirmed. */
+/** usePabrikConfig — single source of truth for the Pabrik settings UI. */
 import { computed, ref } from 'vue'
 
 import type { PabrikConfig } from '../api'
 import { userConfigSource, type PabrikConfigSource } from '../helpers/configSource'
 
-/** @param source where the config is read from and written to. See `helpers/configSource.ts` for
- * why the two are not interchangeable. */
+/** @param source where the config is read from and written to. */
 export function usePabrikConfig(source: PabrikConfigSource = userConfigSource()) {
   const config = ref<PabrikConfig | null>(null)
   const loaded = ref(false)
-  // JSON.stringify of the config as the server last confirmed it. Empty string means "no snapshot
-  // yet", so dirty is false before load.
+  // JSON.stringify of the config as the server last confirmed it.
   const snapshot = ref<string>('')
   const saving = ref(false)
 
-  /** Has the config drifted from the confirmed document? Compares leaf values, so a hydrate that
-   * writes an explicit `false` where the key was absent is NOT a change. */
+  /** Has the config drifted from the confirmed document? */
   const dirty = computed(() => {
     if (!config.value) return false
     if (!snapshot.value) return false
@@ -34,25 +30,20 @@ export function usePabrikConfig(source: PabrikConfigSource = userConfigSource())
       config.value = data ?? {}
     } catch {
       // localStorage fallback is handled by the orchestrator.
-      // Here we just want to ensure config is non-null so
-      // downstream refs can rely on it.
       config.value = {}
     }
     loaded.value = true
     takeSnapshot()
   }
 
-  /** Set the config directly and take a snapshot of it. Use this when the orchestrator needs to
-   * layer in legacy data (e.g. localStorage fallback) before the API response arrives, instead of
-   * using the composable's `load()` which fetches the API itself. */
+  /** Set the config directly and take a snapshot of it. */
   function setConfig(c: PabrikConfig) {
     config.value = c
     loaded.value = true
     takeSnapshot()
   }
 
-  /** PUT the config and, on success, confirm exactly what was SENT. Snapshotting the live config
-   * instead would mark an edit made during the request as saved although the server never saw it. */
+  /** PUT the config and, on success, confirm exactly what was SENT. */
   async function save() {
     if (!config.value) return
     const body = JSON.stringify(config.value)
@@ -91,9 +82,7 @@ function countLeafDiffs(aJson: string, bJson: string): number {
 
 function countDiffs(a: unknown, b: unknown): number {
   if (a === b) return 0
-  // Treat undefined and missing as equivalent — JSON.stringify already
-  // omits undefined keys, so two objects that differ only by presence
-  // of an undefined field would otherwise count as different.
+  // Treat undefined and missing as equivalent — JSON.stringify already omits undefined keys, so two objects that differ only by presence of an undefined field …
   if (a == null && b == null) return 0
   if (a == null || b == null) return 1
   if (typeof a !== 'object' || typeof b !== 'object') return 1
@@ -106,9 +95,7 @@ function countDiffs(a: unknown, b: unknown): number {
   }
   const ao = a as Record<string, unknown>
   const bo = b as Record<string, unknown>
-  // Only consider keys whose value is defined on BOTH sides. This way
-  // an explicit `undefined` doesn't show up as a difference from a
-  // missing key, matching the JSON round-trip behavior.
+  // Only consider keys whose value is defined on BOTH sides.
   const aKeys = Object.keys(ao).filter(k => ao[k] !== undefined)
   const bKeys = Object.keys(bo).filter(k => bo[k] !== undefined)
   const keys = new Set([...aKeys, ...bKeys])

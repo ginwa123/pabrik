@@ -9,9 +9,7 @@ import { SyncRemoteError } from '../../sync/SyncError'
 import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
-  /** Explicit workspace binding, forwarded to the list + detail halves.
-   * The workspace settings page passes the route workspace id; absent
-   * keeps the previous behaviour (active workspace from the store). */
+  /** Explicit workspace binding, forwarded to the list + detail halves. */
   workspaceId?: string | null
 }>()
 
@@ -25,15 +23,11 @@ const scopeCaption = computed(() =>
     : 'Available AI capabilities and workflows.',
 )
 
-// The selected skill lives in the URL (`?skill=`), not in a ref: a ref
-// loses it on refresh, on Back and on a shared link. Same rule as the
-// kanban board's `?detail=`.
+// The selected skill lives in the URL (`?skill=`), not in a ref: a ref loses it on refresh, on Back and on a shared link.
 const route = useRoute()
 const router = useRouter()
 
-// `route?.query` rather than `route.query`: a unit test that mounts this
-// component without a router leaves `route` undefined, and the read must
-// degrade to "nothing selected" rather than throw during setup.
+// `route?.query` rather than `route.query`: a unit test that mounts this component without a router leaves `route` undefined, and the read must degrade to …
 const readSkillParam = (): string | null => {
   const raw = route?.query?.skill
   const value = Array.isArray(raw) ? raw[0] : raw
@@ -61,14 +55,11 @@ function writeSkillParam(name: string | null): void {
   const query = flatQuery()
   if (name) query.skill = name
   else delete query.skill
-  // replace, not push: clicking through five skills should not bury the
-  // previous four under Back.
+  // replace, not push: clicking through five skills should not bury the previous four under Back.
   router?.replace({ path: route?.path ?? '', query })
 }
 
-// The create form. A skill is a row, so "new" is three fields and no directory: the name is the
-// natural key inside the workspace, and the body is stored verbatim — frontmatter included, because
-// `skill_eval` identities are sha256(body) and trimming it would stale every verdict.
+// The create form.
 const isCreating = ref(false)
 const newName = ref('')
 const newDescription = ref('')
@@ -119,14 +110,12 @@ const handleCreate = async () => {
   isSaving.value = false
 
   if (!result.ok) {
-    // Kept in the form: the user is mid-entry and the reason belongs next
-    // to the fields that caused it, not in a toast that outlives them.
+    // Kept in the form: the user is mid-entry and the reason belongs next to the fields that caused it, not in a toast that outlives them.
     createError.value = result.reason
     return
   }
   isCreating.value = false
-  // Select what was just written, so the detail pane shows the stored row
-  // rather than an empty state the user has to click out of.
+  // Select what was just written, so the detail pane shows the stored row rather than an empty state the user has to click out of.
   selectedSkillName.value = result.value.skill.name
   writeSkillParam(result.value.skill.name)
   skillListRef.value?.refresh()
@@ -146,8 +135,7 @@ const handleSkillDeleted = () => {
 }
 
 const handleSkillSaved = () => {
-  // The description is the list row's second line, so a save that changed
-  // it has to re-read or the two halves disagree about the same skill.
+  // The description is the list row's second line, so a save that changed it has to re-read or the two halves disagree about the same skill.
   skillListRef.value?.refresh()
 }
 
@@ -155,9 +143,7 @@ const handleSkillError = (message: string) => {
   emit('notification', message, 'error')
 }
 
-// `/` focuses the list's search box from anywhere on this page — the one
-// shortcut a 41-row list needs. Ignored while typing in a field, so the
-// keystroke still types a slash where a slash belongs.
+// `/` focuses the list's search box from anywhere on this page — the one shortcut a 41-row list needs.
 const onSlashKey = (event: KeyboardEvent) => {
   if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null

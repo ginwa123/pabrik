@@ -1,40 +1,28 @@
-//! The SQLite connection policy pabrik opens its database with. Every knob
-//! is overridable from the command line (`pabrik --db-read-conns=4`), so an
-//! operator can trade RAM for throughput without rebuilding.
+//! The SQLite connection policy pabrik opens its database with.
 
 const std = @import("std");
 const databases = @import("databases");
 const cli_flags = @import("../cli/flags.zig");
 
-/// The measured-best sqlite policy for pabrik's agent database. The numbers
-/// are measured against the real 4.6 GB agent.db; the reasoning for each one
-/// sits on the field it belongs to.
+/// The measured-best sqlite policy for pabrik's agent database.
 pub const best: databases.database.SqliteConfig = .{
     // FULL, not WAL's usual NORMAL pairing.
     .synchronous = .full,
     .busy_timeout_ms = 15_000,
     .read_conns = 1, // warm floor: readers opened up front at boot
-    // 0 = no POLICY cap: read concurrency tracks in-flight reads rather
-    // than a fixed pool size, which is what removed the queueing that cost
-    // 70% of read throughput.
+    // 0 = no POLICY cap: read concurrency tracks in-flight reads rather than a fixed pool size, which is what removed the queueing that cost 70% of read throughput.
     .max_read_conns = 0,
-    // CAPPING IS A TRAP, measured: at 8 the RSS fell to 50 MB but 8-way latency went to 15.09 s, because
-    // `reader_wait_ms` is 5 s and a read that finds every reader busy waits the whole budget before it falls back
-    // to the write connection. The idle reaper bounds the pool instead.
+    // CAPPING IS A TRAP, measured: at 8 the RSS fell to 50 MB but 8-way latency went to 15.09 s, because `reader_wait_ms` is 5 s and a read that finds every reader …
     .cache_size_kb = 512,
-    // THE RAM LEVER: the cache is PER CONNECTION and the pool is elastic,
-    // so it is multiplied by the concurrency a burst reaches. 512 KiB (down
-    // from SQLite's 2 MiB default) measured RSS 208 -> 134 MB, latency flat.
+    // THE RAM LEVER: the cache is PER CONNECTION and the pool is elastic, so it is multiplied by the concurrency a burst reaches. 512 KiB (down from SQLite's 2 MiB …
     .mmap_size_bytes = 256 * 1024 * 1024,
     .journal_size_limit_bytes = 64 * 1024 * 1024,
     .wal_autocheckpoint_pages = 1_000,
-    // An idle reader above the warm floor is closed after this long: 30 s,
-    // down from the package's 60 s default, so a burst's readers go sooner.
+    // An idle reader above the warm floor is closed after this long: 30 s, down from the package's 60 s default, so a burst's readers go sooner.
     .max_idle_time_ms = 30_000,
 };
 
-/// Page cache this policy commits to for `readers` pooled readers plus the
-/// single write connection, in KiB.
+/// Page cache this policy commits to for `readers` pooled readers plus the single write connection, in KiB.
 pub fn pageCacheBudgetKb(readers: u32) u32 {
     return best.cache_size_kb * (readers + 1);
 }
@@ -48,12 +36,9 @@ pub fn describeReaderPool(buf: []u8) ![]const u8 {
     );
 }
 
-// -- CLI overrides --------------------------------------------------------- Every field of
-// `best` an operator might retune, as an optional override. Null means "use `best`", so a bare
-// boot is the policy above verbatim.
+// -- CLI overrides ---------------------------------------------------------
 
-/// Which knob a `--db-*` flag names. One variant per flag, so a typo is a
-/// named error rather than a silently ignored argument.
+/// Which knob a `--db-*` flag names.
 pub const Knob = enum {
     read_conns,
     max_read_conns,
@@ -84,16 +69,14 @@ pub const OverrideError = error{
     OutOfMemory,
 };
 
-/// The flag name for a knob, without the leading `--`. It comes from the one
-/// table, so a knob cannot exist without its flag.
+/// The flag name for a knob, without the leading `--`.
 pub fn flagName(knob: Knob) []const u8 {
     return switch (knob) {
         inline else => |k| cli_flags.dbFlagName(@tagName(k)),
     };
 }
 
-/// The knob a flag names, or null when the name is not one of ours. Accepts
-/// both `db-read-conns` and `db_read_conns`; the dashed one is canonical.
+/// The knob a flag names, or null when the name is not one of ours.
 pub fn knobForFlag(flag: []const u8) ?Knob {
     const tag = cli_flags.dbKnobTag(flag) orelse return null;
     inline for (@typeInfo(Knob).@"enum".fields) |f| {
@@ -102,9 +85,7 @@ pub fn knobForFlag(flag: []const u8) ?Knob {
     return null;
 }
 
-/// Parse one `--db-<knob>=<value>` argument. The `=` form is required (not
-/// `--db-read-conns 4`) so a missing value is unambiguous: a space-separated
-/// form would let `--db-read-conns --auth` eat the next flag as the value.
+/// Parse one `--db-<knob>=<value>` argument.
 pub fn parseOverride(arg: []const u8) OverrideError!Override {
     const eq = std.mem.indexOfScalar(u8, arg, '=') orelse
         return error.MissingValue;
@@ -119,8 +100,6 @@ pub fn parseOverride(arg: []const u8) OverrideError!Override {
 }
 
 /// Collect every `--db-*` override out of `args` (argv WITHOUT argv[0]).
-/// Unknown arguments are ignored, matching how `cli_args.parse` treats
-/// anything it does not recognise - a `--db-*` flag is only special here.
 pub fn parseOverrides(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -136,16 +115,12 @@ pub fn parseOverrides(
 }
 
 /// Apply `overrides` on top of `best`, returning the policy to open with.
-/// Later flags win, so `--db-read-conns=1 --db-read-conns=4` opens 4 - the
-/// same last-one-wins rule `cli_args.parse` uses for `--port`.
 pub fn resolve(overrides: []const Override) databases.database.SqliteConfig {
     var cfg = best;
     for (overrides) |o| {
         switch (o.knob) {
             .read_conns => cfg.read_conns = @intCast(o.value),
-            // A cap at or below the warm floor is clamped UP to the floor by
-            // the pool (`ReaderPool.effectiveCap`), so passing 0 here means
-            // "no policy cap" and passing 1 with `read_conns = 4` yields 4.
+            // A cap at or below the warm floor is clamped UP to the floor by the pool (`ReaderPool.effectiveCap`), so passing 0 here means "no policy cap" and passing 1 with …
             .max_read_conns => cfg.max_read_conns = @intCast(o.value),
             .cache_size_kb => cfg.cache_size_kb = @intCast(@min(o.value, std.math.maxInt(u32))),
             .mmap_size_bytes => cfg.mmap_size_bytes = o.value,
@@ -158,9 +133,7 @@ pub fn resolve(overrides: []const Override) databases.database.SqliteConfig {
     return cfg;
 }
 
-/// The postgres connection policy pabrik opens its database with: a pool sized
-/// for a desktop workload, under a server-side cap that a refused connection can
-/// recover from. Empty on a sqlite-only build, where the module is not compiled.
+/// The postgres connection policy pabrik opens its database with: a pool sized for a desktop workload, under a server-side cap that a refused connection can …
 pub const postgres_best: databases.database.PostgresConfig = if (databases.database.backend_is_postgres) .{
     .conns = 7,
     .max_conns = 32,
@@ -168,8 +141,7 @@ pub const postgres_best: databases.database.PostgresConfig = if (databases.datab
     .max_idle_time_ms = 60_000,
 } else .{};
 
-/// Both backends' policies at once, so an open call site stays identical whichever
-/// `-Ddb_used` list the app was built with. The `--db-*` knobs tune the sqlite half.
+/// Both backends' policies at once, so an open call site stays identical whichever `-Ddb_used` list the app was built with.
 pub fn resolveConfig(overrides: []const Override) databases.database.Config {
     return .{ .sqlite = resolve(overrides), .postgres = postgres_best };
 }
@@ -201,9 +173,7 @@ fn readPragmaInt(db: *databases.database.Db, allocator: std.mem.Allocator, sql: 
     return std.fmt.parseInt(i64, row.values[0], 10);
 }
 
-/// A fresh database path inside a per-test temp directory. WHY NOT `/tmp/...`: that directory does not exist on Windows, so `sqlite3_open` fails with
-/// `FileNotFound` and every test in this file goes red on the Windows runner while passing on Linux and macOS. `testing.tmpDir` is the portable equivalent
-/// and cleans itself up. The caller owns the returned slice and must free it; `dir` must outlive the database, so keep it alive until after `db.deinit()`.
+/// A fresh database path inside a per-test temp directory.
 fn freshDbPath(dir: *std.testing.TmpDir, name: []const u8) ![:0]const u8 {
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const dir_len = try dir.dir.realPath(std.testing.io, &dir_buf);
@@ -213,11 +183,9 @@ fn freshDbPath(dir: *std.testing.TmpDir, name: []const u8) ![:0]const u8 {
 }
 
 test "the policy pabrik opens with is the policy the connection reports" {
-    // A postgres build cannot open a sqlite path at all, and these tests
-    // assert sqlite pragmas: there is nothing to check on this backend.
+    // A postgres build cannot open a sqlite path at all, and these tests assert sqlite pragmas: there is nothing to check on this backend.
     if (databases.database.backend_is_postgres) return error.SkipZigTest;
-    // The point of this file is that these values are APPLIED, not just
-    // declared - a struct that compiles proves nothing about the pragmas.
+    // The point of this file is that these values are APPLIED, not just declared - a struct that compiles proves nothing about the pragmas.
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -229,8 +197,7 @@ test "the policy pabrik opens with is the policy the connection reports" {
     defer db.deinit();
     try databases.database.openWithConfig(&db, io, .{ .sqlite_path = path }, best);
 
-    // Copy the pragma out BEFORE `deinit`: `row.values` are freed by it, so
-    // comparing the slice afterwards would read freed memory.
+    // Copy the pragma out BEFORE `deinit`: `row.values` are freed by it, so comparing the slice afterwards would read freed memory.
     var mode_buf: [16]u8 = undefined;
     var mode_len: usize = 0;
     {
@@ -252,11 +219,9 @@ test "the policy pabrik opens with is the policy the connection reports" {
 }
 
 test "a pooled connection still reads and writes correctly" {
-    // A postgres build cannot open a sqlite path at all, and these tests
-    // assert sqlite pragmas: there is nothing to check on this backend.
+    // A postgres build cannot open a sqlite path at all, and these tests assert sqlite pragmas: there is nothing to check on this backend.
     if (databases.database.backend_is_postgres) return error.SkipZigTest;
-    // Reader pooling must be invisible: a write on the primary connection
-    // has to be visible to the next read, which lands on a reader.
+    // Reader pooling must be invisible: a write on the primary connection has to be visible to the next read, which lands on a reader.
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -279,8 +244,7 @@ test "a pooled connection still reads and writes correctly" {
         try std.testing.expectEqualStrings("written", row.values[0]);
     }
 
-    // `last_insert_rowid()` is connection state, not table data: it must be
-    // answered by the connection that inserted, or it returns 0.
+    // `last_insert_rowid()` is connection state, not table data: it must be answered by the connection that inserted, or it returns 0.
     try db.exec(allocator, "INSERT INTO t (v) VALUES (?)", &.{"second"});
     var id_row = try db.queryRow(allocator, "SELECT last_insert_rowid()", &.{});
     defer id_row.deinit(allocator);
@@ -288,12 +252,9 @@ test "a pooled connection still reads and writes correctly" {
 }
 
 test "a committed write is visible to the next pooled read" {
-    // A postgres build cannot open a sqlite path at all, and these tests
-    // assert sqlite pragmas: there is nothing to check on this backend.
+    // A postgres build cannot open a sqlite path at all, and these tests assert sqlite pragmas: there is nothing to check on this backend.
     if (databases.database.backend_is_postgres) return error.SkipZigTest;
-    // The regression this file could not see: with reader pooling, a
-    // connection handed out while a `Rows` from it is still open serves the
-    // OLD snapshot, because the live iterator holds that connection's read
+    // The regression this file could not see: with reader pooling, a connection handed out while a `Rows` from it is still open serves the OLD snapshot, because the …
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -309,9 +270,7 @@ test "a committed write is visible to the next pooled read" {
     try db.exec(allocator, "INSERT INTO t (id, v) VALUES (1, 'v0')", &.{});
 
     const sql = "SELECT v FROM t WHERE id = ?";
-    // Round i asserts: the pre-write read sees the value round i-1 wrote, and the post-write read sees round i's
-    // own value. Both reads are served by whatever reader the pool hands back. `prev_buf[0..prev_len]` is exactly
-    // the previous value's length - a fixed 16-byte buffer would compare the padding too.
+    // Round i asserts: the pre-write read sees the value round i-1 wrote, and the post-write read sees round i's own value.
     var prev_buf: [16]u8 = undefined;
     var prev_len: usize = 2;
     @memcpy(prev_buf[0..2], "v0");
@@ -342,28 +301,22 @@ test "a committed write is visible to the next pooled read" {
 }
 
 test "page cache cost per concurrent read is known and bounded" {
-    // The cache is PER CONNECTION, so the number that matters is the product The cache is PER CONNECTION, so the number that matters is
-    // the product - and with an ELASTIC pool the connection count is the concurrency, not a constant in this file. At the 24 readers a
-    // 32-way burst was measured to open, the pool must stay inside a budget an operator calls "small".
+    // The cache is PER CONNECTION, so the number that matters is the product The cache is PER CONNECTION, so the number that matters is the product - and with an …
     try std.testing.expectEqual(@as(u32, 512), best.cache_size_kb);
     try std.testing.expectEqual(@as(u32, 512), pageCacheBudgetKb(0));
     try std.testing.expect(pageCacheBudgetKb(24) <= 32 * 1024);
 
-    // Unlimited GROWTH is deliberate: a read must never queue behind another
-    // read, which is what cost 70% of read throughput before.
+    // Unlimited GROWTH is deliberate: a read must never queue behind another read, which is what cost 70% of read throughput before.
     try std.testing.expectEqual(@as(usize, 0), best.max_read_conns);
     try std.testing.expect(databases.sqlite.fdDerivedReaderCap() > best.read_conns);
     try std.testing.expect(databases.sqlite.FDS_PER_READER > 0);
-    // A warm floor must exist, or the first burst of concurrent reads each
-    // pays to open a connection.
+    // A warm floor must exist, or the first burst of concurrent reads each pays to open a connection.
     try std.testing.expect(best.read_conns > 0);
     try std.testing.expectEqual(databases.sqlite.Synchronous.full, best.synchronous);
 }
 
 test "the boot log names the pool's warm floor, policy cap and descriptor backstop" {
-    // The warning this answers - warning: sqlite: reader pool unavailable
-    // (PoolExhausted); serving this read on the write connection - says
-    // nothing about how many readers exist or what stops there being more,
+    // The warning this answers - warning: sqlite: reader pool unavailable (PoolExhausted); serving this read on the write connection - says nothing about how many …
     var buf: [128]u8 = undefined;
     const line = try describeReaderPool(&buf);
 
@@ -402,8 +355,7 @@ test "no overrides leaves the policy exactly as declared" {
 }
 
 test "an override changes only the knob it names" {
-    // The failure this pins: a parser that reset the whole struct to
-    // defaults and then applied one field would silently drop the others.
+    // The failure this pins: a parser that reset the whole struct to defaults and then applied one field would silently drop the others.
     const cfg = resolve(&.{.{ .knob = .cache_size_kb, .raw = "4096", .value = 4096 }});
     try std.testing.expectEqual(@as(u32, 4096), cfg.cache_size_kb);
     try std.testing.expectEqual(best.read_conns, cfg.read_conns);
@@ -421,8 +373,7 @@ test "the last override for a knob wins" {
 }
 
 test "every knob round-trips through its flag name" {
-    // A knob whose flag name does not parse back is a flag the user cannot
-    // reach, which is the whole point of the feature.
+    // A knob whose flag name does not parse back is a flag the user cannot reach, which is the whole point of the feature.
     inline for (@typeInfo(Knob).@"enum".fields) |f| {
         const knob: Knob = @field(Knob, f.name);
         var buf: [80]u8 = undefined;
@@ -468,11 +419,9 @@ test "parseOverrides collects db flags and ignores everything else" {
 }
 
 test "an override is applied to a live connection, not just to the struct" {
-    // A postgres build cannot open a sqlite path at all, and these tests
-    // assert sqlite pragmas: there is nothing to check on this backend.
+    // A postgres build cannot open a sqlite path at all, and these tests assert sqlite pragmas: there is nothing to check on this backend.
     if (databases.database.backend_is_postgres) return error.SkipZigTest;
-    // The struct is only a promise; this is the one that proves the pragma
-    // the server will actually run with is the one the flag asked for.
+    // The struct is only a promise; this is the one that proves the pragma the server will actually run with is the one the flag asked for.
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});

@@ -1,5 +1,4 @@
-// Functional regression: a failed auto-name call must not strand the session
-// as "New Chat" forever.
+// Functional regression: a failed auto-name call must not strand the session as "New Chat" forever.
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,16 +12,12 @@ const Io = std.Io;
 const SESSION_ID = "sess_auto_name_retry_1";
 const GENERATED_NAME = "wire-verified-auto-name";
 
-/// Cap on the recorded request head — a runaway client must not grow the
-/// accumulation without bound.
+/// Cap on the recorded request head — a runaway client must not grow the accumulation without bound.
 const MAX_HEAD_BYTES = 1 << 18;
 
-// ============================================================================
 // Stub upstream
-// ============================================================================
 
-/// A stub LLM upstream that fails the FIRST session-name request with
-/// HTTP 503. Python's `_StubState` + `_StubHandler` + `_start_stub`.
+/// A stub LLM upstream that fails the FIRST session-name request with HTTP 503.
 const Stub = struct {
     io: Io,
     port: u16,
@@ -30,19 +25,15 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     mutex: Io.Mutex = .init,
-    /// How many tool-call rounds the main turn drives before answering
-    /// with a plain stop. Python's `tool_rounds`.
+    /// How many tool-call rounds the main turn drives before answering with a plain stop.
     tool_rounds: usize,
-    /// When true the name request ALWAYS 503s. Python's
-    /// `name_always_fails`.
+    /// When true the name request ALWAYS 503s.
     name_always_fails: bool,
     name_calls: usize = 0,
     name_failures_served: usize = 0,
     agent_calls: usize = 0,
 
-    /// Bind and start serving on `stub` (an OUT-PARAMETER — the serve
-    /// thread is handed `stub`'s address, so it must live at a stable
-    /// address in the caller's frame; see `llm_test_test.zig`).
+    /// Bind and start serving on `stub` (an OUT-PARAMETER — the serve thread is handed `stub`'s address, so it must live at a stable address in the caller's frame …
     fn start(stub: *Stub, tool_rounds: usize, name_always_fails: bool) !void {
         stub.* = .{
             .io = io,
@@ -135,8 +126,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     }
     const body = body_acc.written();
 
-    // Python's `classify`: the name call carries NO `tools` array while
-    // the main agent turn always does.
+    // Python's `classify`: the name call carries NO `tools` array while the main agent turn always does.
     const is_name = std.mem.indexOf(u8, body, "SessionNameGenerator") != null or
         (std.mem.indexOf(u8, body, "\"tools\"") == null and
             std.mem.indexOf(u8, body, "SessionName") != null);
@@ -200,7 +190,6 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
 }
 
 /// OpenAI-style SSE stream carrying a plain assistant message.
-/// Python's `_text_sse`.
 fn textSse(text: []const u8) ![]u8 {
     return std.fmt.allocPrint(
         gpa,
@@ -248,9 +237,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
@@ -260,8 +247,7 @@ fn sleepMs(ms: i64) void {
     std.Io.sleep(io, .fromMilliseconds(ms), .awake) catch {};
 }
 
-/// Point the server's active profile at this run's stub. Python's
-/// config-PUT preamble.
+/// Point the server's active profile at this run's stub.
 fn useStubProfile(h: *Harness, stub_port: u16, profile: []const u8) !void {
     const stub_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/v1/chat/completions", .{stub_port});
     defer gpa.free(stub_url);
@@ -302,8 +288,6 @@ fn sendTurn(h: *Harness, message: []const u8, profile: []const u8, allowed_tools
 }
 
 /// `(sessions.name, workspace_item_tasks.name)` for the session.
-/// Python's `_read_names`. Both are owned optionals; null when the row
-/// (or the column) is absent.
 const Names = struct {
     session: ?[]u8 = null,
     task: ?[]u8 = null,
@@ -401,9 +385,7 @@ fn sessionNameIsPlaceholder(names: *const Names) bool {
     return std.mem.eql(u8, s, "New Chat") or std.mem.eql(u8, s, "New Session");
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Turn 1's name call is rejected; turn 2 must still name the session.
 test "failed_auto_name_call_is_retried_on_the_next_turn" {
@@ -473,8 +455,7 @@ test "failed_auto_name_call_is_retried_on_the_next_turn" {
         }
     }
 
-    // ── Turn 2: the name call now succeeds, and the placeholder gate
-    //    must let it through.
+    // ── Turn 2: the name call now succeeds, and the placeholder gate must let it through.
     try sendTurn(&h, "any update on that?", profile, "");
 
     {
@@ -503,8 +484,7 @@ test "failed_auto_name_call_is_retried_on_the_next_turn" {
             );
             return error.TestUnexpectedResult;
         }
-        // The rename cascades to the linked task row ONLY when one
-        // exists (a plain chat session has no workspace_item_tasks row).
+        // The rename cascades to the linked task row ONLY when one exists (a plain chat session has no workspace_item_tasks row).
         if (final.task) |t| {
             if (!std.mem.eql(u8, t, GENERATED_NAME)) {
                 std.debug.print("sessions.name was renamed but the task row was not: {s}\n", .{t});
@@ -538,9 +518,7 @@ test "existing_name_is_never_overwritten_by_the_generator" {
 
     try sendTurn(&h, "first message", profile, "");
     {
-        // Best-effort wait, mirroring the Python original: its
-        // `_wait_for_name(..., GENERATED_NAME, 60.0)` return value is
-        // DISCARDED (no assert).
+        // Best-effort wait, mirroring the Python original: its `_wait_for_name(..., GENERATED_NAME, 60.0)` return value is DISCARDED (no assert).
         const deadline = nowMs() + 60_000;
         while (nowMs() < deadline) {
             var n = try readNames(&h);
@@ -580,8 +558,7 @@ test "existing_name_is_never_overwritten_by_the_generator" {
     const name_calls_before = stub.nameCallCount();
     const agent_calls_before = stub.agentCallCount();
 
-    // A further turn must NOT call the generator again. Wait for the
-    // turn-2 worker to demonstrably reach the stub BEFORE asserting.
+    // A further turn must NOT call the generator again.
     try sendTurn(&h, "second message", profile, "");
     {
         const deadline = nowMs() + 60_000;
@@ -615,8 +592,7 @@ test "existing_name_is_never_overwritten_by_the_generator" {
     }
 }
 
-// A failing name call must cost ONE LLM round-trip per turn, not one
-// per tool-call iteration.
+// A failing name call must cost ONE LLM round-trip per turn, not one per tool-call iteration.
 test "name_call_is_not_repeated_per_tool_call_iteration" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

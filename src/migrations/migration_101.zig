@@ -20,16 +20,13 @@ pub const Migration101GuardLlmHistoryModel = struct {
         defer tx.commitOrRollback() catch {};
         errdefer tx.rollback() catch {};
 
-        // Backfill first so the trigger (which only fires on INSERT) does not
-        // have to reason about rows that already exist.
+        // Backfill first so the trigger (which only fires on INSERT) does not have to reason about rows that already exist.
         try tx.exec(allocator,
             \\UPDATE llm_history SET model = 'unknown'
             \\WHERE model IS NULL OR TRIM(model) = ''
         , &[_][]const u8{});
 
-        // The backstop. Catches raw SQL (which the Zig guard cannot see) and
-        // any future write site that forgets the guard. Postgres needs a
-        // trigger function; sqlite inlines the body.
+        // The backstop.
         if (dialect.is_postgres) {
             try tx.exec(allocator,
                 \\CREATE OR REPLACE FUNCTION llm_history_guard_model() RETURNS trigger AS $guard$

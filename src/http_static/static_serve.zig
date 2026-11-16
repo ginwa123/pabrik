@@ -1,14 +1,10 @@
-//! Static-file HTTP fallback (`--static-dir`): resolve a request path to a
-//! file under the root dir and buffer a complete HTTP response (status +
-//! headers + body) for the listen loop to write to the socket.
+//! Static-file HTTP fallback (`--static-dir`): resolve a request path to a file under the root dir and buffer a complete HTTP response (status + headers + body) …
 
 const std = @import("std");
 const gserverz = @import("kabelweb").server;
 const static_files = @import("../modules/static_files.zig");
 
-/// Where a generated certificate lives: `$XDG_DATA_HOME/pabrik/tls`,
-/// else `~/.local/share/pabrik/tls` (POSIX) or `%LOCALAPPDATA%\pabrik\tls`
-/// (Windows). State, not configuration, so never the config dir.
+/// Where a generated certificate lives: `$XDG_DATA_HOME/pabrik/tls`, else `~/.local/share/pabrik/tls` (POSIX) or `%LOCALAPPDATA%\pabrik\tls` (Windows).
 pub fn tlsDataDir(allocator: std.mem.Allocator, env: *const std.process.Environ.Map) ![]const u8 {
     const app_name = "pabrik";
     if (comptime @import("builtin").os.tag == .windows) {
@@ -22,14 +18,10 @@ pub fn tlsDataDir(allocator: std.mem.Allocator, env: *const std.process.Environ.
     return std.fs.path.join(allocator, &.{ home, ".local", "share", app_name, "tls" });
 }
 
-/// Every static response MUST say this, because every static connection is
-/// closed right after it (`http_server.zig`, `.hijack_static` arm: "static
-/// responses are unframed: never reuse").
+/// Every static response MUST say this, because every static connection is closed right after it (`http_server.zig`, `.hijack_static` arm: "static responses are …
 const CLOSE_HEADER = "Connection: close\r\n";
 
-/// `GinwaServer` static-dir callback: buffers the response in a per-request
-/// arena writer, then writes it to the socket. On internal error, resets to
-/// a minimal 500 rather than leaving the connection hanging.
+/// `GinwaServer` static-dir callback: buffers the response in a per-request arena writer, then writes it to the socket.
 pub fn staticDirHandler(
     cfg: *const anyopaque,
     handler_allocator: std.mem.Allocator,
@@ -60,9 +52,7 @@ pub fn staticDirHandler(
     }
 }
 
-/// Build the static-file HTTP response into `writer`: resolve, emit headers
-/// (Content-Type, Content-Length, ETag, optional Content-Range / 206), then
-/// stream the body (full or sliced). 404 / 403 for the matching lookups.
+/// Build the static-file HTTP response into `writer`: resolve, emit headers (Content-Type, Content-Length, ETag, optional Content-Range / 206), then stream the …
 pub fn writeStaticFileResponse(
     cfg: *const static_files.StaticDirConfig,
     io: std.Io,
@@ -93,8 +83,7 @@ pub fn writeStaticFileResponse(
         .file => |f| {
             defer cfg.allocator.free(f.abs_path);
 
-            // Content-derived ETag (size + mtime): same-size minified
-            // bundles must not share an ETag or browsers cache-poison.
+            // Content-derived ETag (size + mtime): same-size minified bundles must not share an ETag or browsers cache-poison.
             const etag = try std.fmt.allocPrint(cfg.allocator, "\"x-{x}-{x}\"", .{ f.size, f.mtime.nanoseconds });
             defer cfg.allocator.free(etag);
 
@@ -126,8 +115,7 @@ pub fn writeStaticFileResponse(
     }
 }
 
-/// Stream the whole file at `abs_path` in 64 KB positional reads (the Zig
-/// 0.16 idiom safe under `Io.Threaded`'s blocking recv model).
+/// Stream the whole file at `abs_path` in 64 KB positional reads (the Zig 0.16 idiom safe under `Io.Threaded`'s blocking recv model).
 pub fn writeFileFull(io: std.Io, abs_path: []const u8, writer: *std.Io.Writer) !void {
     const file = try std.Io.Dir.openFileAbsolute(io, abs_path, .{});
     defer file.close(io);
@@ -142,7 +130,6 @@ pub fn writeFileFull(io: std.Io, abs_path: []const u8, writer: *std.Io.Writer) !
 }
 
 /// Stream `[start, end]` (inclusive) of the file at `abs_path`.
-/// Caller ensures `start <= end < file_size`.
 pub fn writeFileRange(
     io: std.Io,
     abs_path: []const u8,
@@ -165,9 +152,7 @@ pub fn writeFileRange(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Behaviour tests (wire payloads, not source text)
-// ---------------------------------------------------------------------------
 
 fn testRoot(allocator: std.mem.Allocator) !struct {
     tmp: std.testing.TmpDir,
@@ -231,9 +216,7 @@ test "static_serve: existing file round-trips its bytes with a 200" {
     try std.testing.expect(std.mem.startsWith(u8, out, "HTTP/1.1 200 OK\r\n"));
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Length: 11\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Type: text/plain; charset=utf-8\r\n") != null);
-    // The connection is closed right after this response, so the response has
-    // to SAY so — HTTP/1.1 is persistent by default and a client that is not
-    // told otherwise may reuse the socket for the next asset, which surfaces
+    // The connection is closed right after this response, so the response has to SAY so — HTTP/1.1 is persistent by default and a client that is not told otherwise …
     try std.testing.expect(std.mem.indexOf(u8, out, "Connection: close\r\n") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "\r\n\r\nhello world"));
 }
@@ -255,9 +238,7 @@ test "static_serve: valid range yields a 206 with the requested slice" {
     const out = aw.writer.buffered();
     try std.testing.expect(std.mem.startsWith(u8, out, "HTTP/1.1 206 Partial Content\r\n"));
     try std.testing.expect(std.mem.indexOf(u8, out, "Content-Range: bytes 0-4/11\r\n") != null);
-    // The connection is closed right after this response, so the response has
-    // to SAY so — HTTP/1.1 is persistent by default and a client that is not
-    // told otherwise may reuse the socket for the next asset, which surfaces
+    // The connection is closed right after this response, so the response has to SAY so — HTTP/1.1 is persistent by default and a client that is not told otherwise …
     try std.testing.expect(std.mem.indexOf(u8, out, "Connection: close\r\n") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "\r\n\r\nhello"));
 }
@@ -266,8 +247,7 @@ test "static_serve: tlsDataDir honors XDG_DATA_HOME" {
     const allocator = std.testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
-    // Windows never consults XDG_DATA_HOME (see tlsDataDir): the scope is
-    // %LOCALAPPDATA%, joined with native separators.
+    // Windows never consults XDG_DATA_HOME (see tlsDataDir): the scope is %LOCALAPPDATA%, joined with native separators.
     if (comptime @import("builtin").os.tag == .windows) {
         try env.put("XDG_DATA_HOME", "C:\\xdg-test");
         try env.put("LOCALAPPDATA", "C:\\Users\\testuser\\AppData\\Local");
@@ -286,8 +266,7 @@ test "static_serve: tlsDataDir falls back to HOME/.local/share" {
     const allocator = std.testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
-    // Same platform split as above: HOME is POSIX-only scope, Windows
-    // stays on %LOCALAPPDATA% even when HOME is set.
+    // Same platform split as above: HOME is POSIX-only scope, Windows stays on %LOCALAPPDATA% even when HOME is set.
     if (comptime @import("builtin").os.tag == .windows) {
         try env.put("HOME", "C:\\home\\testuser");
         try env.put("LOCALAPPDATA", "C:\\Users\\testuser\\AppData\\Local");
@@ -306,9 +285,7 @@ test "static_serve: tlsDataDir errors when the platform scope is absent" {
     const allocator = std.testing.allocator;
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
-    // Empty scope on either platform: POSIX has neither XDG_DATA_HOME
-    // nor HOME, Windows has no LOCALAPPDATA (XDG/HOME must not rescue
-    // it — that precedence is pinned by the two tests above).
+    // Empty scope on either platform: POSIX has neither XDG_DATA_HOME nor HOME, Windows has no LOCALAPPDATA (XDG/HOME must not rescue it — that precedence is pinned …
     if (comptime @import("builtin").os.tag == .windows) {
         try env.put("XDG_DATA_HOME", "C:\\xdg-test");
         try env.put("HOME", "C:\\home\\testuser");

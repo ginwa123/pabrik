@@ -1,9 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-/** Global loading store — drives the top loading bar. Two independent counters (route navigation +
- * in-flight apiFetch calls) instead of booleans so concurrent requests overlap without flicker: the
- * bar is visible while EITHER counter is non-zero. */
+/** Global loading store — drives the top loading bar. */
 export const useLoadingStore = defineStore('loading', () => {
   const routeDepth = ref(0)
   const apiPending = ref(0)

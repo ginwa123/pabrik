@@ -374,8 +374,7 @@ describe('KanbanTaskDetailDialog — Use git worktree toggle', () => {
     await wrapper!.setProps({ show: true })
     await flushPromises()
 
-    // The name was reset too, so re-enter it before the commit buttons
-    // become clickable again.
+    // The name was reset too, so re-enter it before the commit buttons become clickable again.
     setName('My task')
     setWorktreeToggle(true)
     await flushPromises()

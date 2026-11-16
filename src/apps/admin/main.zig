@@ -1,6 +1,4 @@
-//! `pabrik-admin` — the admin console as a program of its own. It serves
-//! `/admin` and `/api/admin/*` straight from a pabrik database, so the
-//! console runs without booting the whole server.
+//! `pabrik-admin` — the admin console as a program of its own.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -23,8 +21,7 @@ const Options = struct {
     conninfo: ?[]const u8 = null,
     port: u16 = default_port,
     auth_enabled: bool = false,
-    /// Where `pabrik-vmd` listens. Absent means "no machines section": this
-    /// program links no manager of its own.
+    /// Where `pabrik-vmd` listens.
     vmd_socket: ?[]const u8 = null,
 };
 
@@ -50,9 +47,7 @@ fn printUsage() void {
     , .{ db_target.Backend.compiled().text(), default_port });
 }
 
-/// `--name=value`, or `--name value` when this program already spells its other
-/// flags that way. Null when `arg` is some other flag; `missing` when the flag
-/// is there but carries nothing.
+/// `--name=value`, or `--name value` when this program already spells its other flags that way.
 fn optionValue(
     it: *std.process.Args.Iterator,
     arg: []const u8,
@@ -77,8 +72,7 @@ fn parseOptions(allocator: std.mem.Allocator, args: std.process.Args) !?Options 
 
     while (it.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) return null;
-        // The postgres family first: `--database-conninfo` also starts with
-        // `--database`, and `optionValue` only accepts it as its own flag.
+        // The postgres family first: `--database-conninfo` also starts with `--database`, and `optionValue` only accepts it as its own flag.
         if (try optionValue(&it, arg, "--database-conninfo", error.ConninfoValueMissing)) |value| {
             out.conninfo = value;
             continue;
@@ -128,9 +122,7 @@ fn defaultDbPath(allocator: std.mem.Allocator, io: std.Io, environ: *const std.p
     return std.fs.path.join(allocator, &.{ home, ".config", "pabrik", "agent.db" });
 }
 
-/// The manager socket an operator did not name, in the same order the server
-/// resolves it: `$PABRIK_VMD_SOCKET`, then the runtime dir, then `/tmp`. A
-/// socket nobody answers on is not a failure — the machines section says so.
+/// The manager socket an operator did not name, in the same order the server resolves it: `$PABRIK_VMD_SOCKET`, then the runtime dir, then `/tmp`.
 fn defaultVmdSocket(allocator: std.mem.Allocator, environ: *const std.process.Environ.Map) ?[]const u8 {
     if (environ.get("PABRIK_VMD_SOCKET")) |given| {
         if (given.len > 0) return given;
@@ -144,9 +136,7 @@ fn defaultVmdSocket(allocator: std.mem.Allocator, environ: *const std.process.En
 }
 
 fn registerRoutes(router: *gserverz.router.Router) !void {
-    // The page loads without a session — it has to ask who is asking — and each
-    // section is a path that renders its own view. The endpoints answer 401/403
-    // themselves, so no middleware is needed.
+    // The page loads without a session — it has to ask who is asking — and each section is a path that renders its own view.
     try router.get("/admin", admin_page.adminPageHandler);
     try router.get("/admin/", admin_page.adminPageHandler);
     try router.get("/admin/accounts", admin_page.adminAccountsHandler);
@@ -162,9 +152,7 @@ fn registerRoutes(router: *gserverz.router.Router) !void {
     try router.patch("/api/admin/users/:id", admin_api.adminUserUpdateHandler);
     try router.post("/api/admin/users/:id/password", admin_api.adminUserPasswordHandler);
 
-    // The machines section. Without a socket the handlers say so and the page
-    // offers no control, which is the honest answer for a console that was
-    // never told where the manager lives.
+    // The machines section.
     try router.get("/api/admin/vms", admin_machines.listHandler);
     try router.post("/api/admin/vms/:workspace/resize", admin_machines.resizeHandler);
 }
@@ -182,8 +170,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     };
 
-    // Which backend to open, and where it lives. The flag wins over the
-    // environment, and no choice at all means the backend the build compiled in.
+    // Which backend to open, and where it lives.
     const backend = db_target.resolve(options.backend orelse init.environ_map.get(db_target.env_backend)) catch |err| {
         std.log.err(
             "pabrik-admin: {s}: this binary opens the {s} backend (rebuild with -Ddb_used={s} for postgres)",
@@ -193,16 +180,13 @@ pub fn main(init: std.process.Init) !void {
         return err;
     };
 
-    // Only one of the two is owned (and only the matching one is non-null):
-    // sqlite needs the file path as a sentinel string, postgres the conninfo.
+    // Only one of the two is owned (and only the matching one is non-null)
     var sqlite_path: ?[:0]u8 = null;
     defer if (sqlite_path) |path| allocator.free(path);
     var conninfo: ?[:0]u8 = null;
     defer if (conninfo) |value| allocator.free(value);
 
     // What the console says it is connected to, in words, never a password.
-    // The sqlite path is owned here: the banner and any error print it long
-    // after the branch that chose it.
     var place: []const u8 = "libpq defaults";
     var sqlite_plain: ?[]const u8 = null;
     defer if (sqlite_plain) |plain| allocator.free(plain);

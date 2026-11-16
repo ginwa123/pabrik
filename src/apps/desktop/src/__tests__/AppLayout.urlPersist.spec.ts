@@ -1,5 +1,4 @@
-/** Tests for AppLayout's URL → activeWorkspaceItemId persistence on page reload. Plan: feature "url
- * browser kanban" (workspace kanban URL persistence). */
+/** Tests for AppLayout's URL → activeWorkspaceItemId persistence on page reload. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -151,8 +150,7 @@ describe('AppLayout — page reload of /app/{ws}/projects/{item} restores the ac
   it('mounting with /app/{ws}/projects/{item} in the URL restores activeWorkspaceItemId', async () => {
     const ws = useWorkspacesStore()
     const kanban = makeKanbanItem()
-    // The API mocks return the workspace + its items so init()
-    // populates the tree instead of wiping the seeded fixtures.
+    // The API mocks return the workspace + its items so init() populates the tree instead of wiping the seeded fixtures.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({
       workspaces: [{ id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [] }],
     })
@@ -162,9 +160,7 @@ describe('AppLayout — page reload of /app/{ws}/projects/{item} restores the ac
       {},
       `/app/${WS_ID}/projects/${KANBAN_ID}`,
     )
-    // The restore watcher fires on mount (seeded fixtures) and again after init() loads the items
-    // from the API mocks. init() is async (workspace list → items → columns), so wait for the
-    // kanban view to actually render instead of counting ticks.
+    // The restore watcher fires on mount (seeded fixtures) and again after init() loads the items from the API mocks. init() is async (workspace list → items → …
     await vi.waitFor(() => {
       expect(ws.activeWorkspaceItemId).toBe(KANBAN_ID)
       expect(wrapper.find('[data-kanban-view="stub"]').exists()).toBe(true)
@@ -190,8 +186,7 @@ describe('AppLayout — page reload of /app/{ws}/projects/{item} restores the ac
     )
     await nextTick()
     await nextTick()
-    // The pending restore watcher should detect the mismatch and clear
-    // itself, leaving activeWorkspaceItemId null.
+    // The pending restore watcher should detect the mismatch and clear itself, leaving activeWorkspaceItemId null.
     expect(ws.activeWorkspaceItemId).toBeNull()
     // The kanban view should NOT render — there's no active item.
     const view = wrapper.find('[data-kanban-view="stub"]')

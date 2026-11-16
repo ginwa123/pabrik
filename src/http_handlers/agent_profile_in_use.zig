@@ -1,6 +1,4 @@
-//! `GET /api/agent-profiles/:name/in-use` — the running sessions pinned to a
-//! profile, so Settings can refuse to rename an agent out from under a worker
-//! (which would leave `selected_profile_model` pointing at a missing name).
+//! `GET /api/agent-profiles/:name/in-use` — the running sessions pinned to a profile, so Settings can refuse to rename an agent out from under a worker (which …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -16,8 +14,7 @@ pub const InUseError = error{
 /// One running session bound to the profile.
 pub const InUseSession = struct {
     id: []const u8,
-    /// True when the session is a spawned sub-agent (matched on
-    /// `sessions.sub_agent_name` rather than the picker's profile).
+    /// True when the session is a spawned sub-agent (matched on `sessions.sub_agent_name` rather than the picker's profile).
     sub_agent: bool,
 };
 
@@ -28,8 +25,6 @@ pub const InUseOutput = struct {
 };
 
 /// Sessions bound to `name` that have a live row in the `worker` table.
-/// A missing `worker`/`sessions` table reads as "nothing running" — the guard
-/// is advisory, so a schema surprise must not block an edit.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,

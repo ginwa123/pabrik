@@ -26,17 +26,13 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       expect(buildSettingsUrl('ws_1', null)).toEqual({ path: '/app/ws_1/settings', query: {} })
     })
     it('user scope only when no workspace is in scope at all', () => {
-      // `/app/settings` is General-only and genuinely not about a workspace;
-      // it must never be the answer for a known workspace (that is the bug:
-      // the URL lost the workspace and the Workspace tab then guessed one).
+      // `/app/settings` is General-only and genuinely not about a workspace; it must never be the answer for a known workspace (that is the bug: the URL lost the …
       expect(buildSettingsUrl('')).toEqual({ path: '/app/settings', query: {} })
       expect(buildSettingsUrl(undefined)).toEqual({ path: '/app/settings', query: {} })
       expect(buildSettingsUrl('  ')).toEqual({ path: '/app/settings', query: {} })
     })
     it('never sends a section to the user-scope page', () => {
-      // `profiles` is workspace-scoped since Migration 105; the user page has
-      // no such tab, so a `?section=profiles` there would name a tab it cannot
-      // render.
+      // `profiles` is workspace-scoped since Migration 105; the user page has no such tab, so a `?section=profiles` there would name a tab it cannot render.
       expect(buildSettingsUrl('', 'profiles')).toEqual({ path: '/app/settings', query: {} })
     })
   })
@@ -183,16 +179,14 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       })
     })
     it('does not swallow the sibling shapes', () => {
-      // `doc` and `chat` have the same segment count, so an ordering slip
-      // in the parser would silently turn a document into a chat.
+      // `doc` and `chat` have the same segment count, so an ordering slip in the parser would silently turn a document into a chat.
       expect(parseAppPath('/app/ws_1/chat/s').kind).toBe('chat')
       expect(parseAppPath('/app/ws_1').kind).toBe('workspace')
       expect(parseAppPath('/app/ws_1/projects/p').kind).toBe('project')
       expect(parseAppPath('/app/ws_1/projects/p/chat/t').kind).toBe('projectChat')
     })
     it('a bare /app/doc is NOT a workspace named "doc"', () => {
-      // Otherwise a malformed document URL boots the user into a
-      // workspace that does not exist.
+      // Otherwise a malformed document URL boots the user into a workspace that does not exist.
       expect(parseAppPath('/app/doc').kind).toBe('other')
     })
     it('builds /app/{ws}/doc/{id} and carries sub-state', () => {
@@ -201,8 +195,7 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       ).toEqual({ path: '/app/ws_1/doc/doc_9', query: { tab: 't1' } })
     })
     it('a document is exclusive with chat/project targets', () => {
-      // Both at once means the caller lost track of what it navigates to;
-      // silently picking one would hide the bug behind a wrong URL.
+      // Both at once means the caller lost track of what it navigates to; silently picking one would hide the bug behind a wrong URL.
       expect(() =>
         buildAppUrl({ workspaceId: 'ws_1', documentId: 'doc_9', chatSessionId: 's' }),
       ).toThrow(/cannot combine/)
@@ -250,16 +243,13 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       })
     })
     it('does not swallow the sibling shapes', () => {
-      // `add` shares the `/projects/{pid}` prefix with project and
-      // project-chat, so an ordering slip in the parser would turn one of
-      // them into the add page.
+      // `add` shares the `/projects/{pid}` prefix with project and project-chat, so an ordering slip in the parser would turn one of them into the add page.
       expect(parseAppPath('/app/ws_1/projects/p').kind).toBe('project')
       expect(parseAppPath('/app/ws_1/projects/p/chat/t').kind).toBe('projectChat')
       expect(parseAppPath('/app/ws_1').kind).toBe('workspace')
     })
     it('addTask needs a project, and excludes the task chat', () => {
-      // The add page and an open task chat are two different screens, so both
-      // at once is a caller bug rather than a URL worth guessing at.
+      // The add page and an open task chat are two different screens, so both at once is a caller bug rather than a URL worth guessing at.
       expect(() => buildAppUrl({ workspaceId: 'ws_1', addTask: true })).toThrow(
         /addTask requires projectId/,
       )
@@ -297,16 +287,13 @@ describe('appUrl — path-based URL contract (2026-09-22 revamp)', () => {
       })
     })
     it('does not swallow the sibling shapes', () => {
-      // `settings` shares the `/projects/{pid}` prefix with project, add and
-      // project-chat, so an ordering slip in the parser would turn one of
-      // them into the settings page.
+      // `settings` shares the `/projects/{pid}` prefix with project, add and project-chat, so an ordering slip in the parser would turn one of them into the settings …
       expect(parseAppPath('/app/ws_1/projects/p').kind).toBe('project')
       expect(parseAppPath('/app/ws_1/projects/p/add').kind).toBe('projectAdd')
       expect(parseAppPath('/app/ws_1/projects/p/chat/t').kind).toBe('projectChat')
     })
     it('the legacy kanban path is not a project-settings page', () => {
-      // The old shape named no workspace; it is rewritten by the page itself
-      // once the owning workspace is known.
+      // The old shape named no workspace; it is rewritten by the page itself once the owning workspace is known.
       expect(parseAppPath('/app/kanban/item_7/settings').kind).toBe('other')
     })
     it('projectSettings needs a project, and excludes the task chat and the add page', () => {

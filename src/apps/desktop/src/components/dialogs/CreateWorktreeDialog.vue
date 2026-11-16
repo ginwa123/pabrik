@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** "Create worktree" dialog. Mounted by ChatView.vue when the user clicks "Create worktree" in the
- * WorktreeMenu (no-worktree branch). The dialog is a small folder-picker + name input. */
+/** "Create worktree" dialog. */
 import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { getSystemFolder, listFolder, type FolderEntry } from '../../api'
 import FilePickerDialog from '../FilePickerDialog.vue'
@@ -17,8 +16,6 @@ const emit = defineEmits<{
 }>()
 
 // ─── State ─────────────────────────────────────────────────────────────────
-// Parent directory of the new worktree. Starts at initialCwd (the
-// session cwd), or falls back to '/' if not provided.
 const parentDir = ref(
   props.initialCwd && props.initialCwd.trim() !== '' ? props.initialCwd : '/',
 )
@@ -30,17 +27,13 @@ const isSubmitting = ref(false)
 const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 
-// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
-// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
-// When path is empty we return the system folder root entries.
+// ─── Picker data source ────────────────────────────────────────────────────
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
 }
 
 // ─── Computed ──────────────────────────────────────────────────────────────
-// Final path that will be sent to set_git_worktree. Avoids double-slash
-// when parentDir is "/".
 const fullPath = computed(() => {
   const base = parentDir.value.endsWith('/')
     ? parentDir.value.slice(0, -1)
@@ -50,9 +43,7 @@ const fullPath = computed(() => {
   return `${base}/${trimmed}`
 })
 
-// Can the user submit? Need a non-empty basename + a valid-looking
-// parent dir. The tool's validatePath is the source of truth; this is
-// only the client-side guard to disable the button.
+// Can the user submit?
 const canSubmit = computed(() => {
   return (
     !isSubmitting.value &&
@@ -64,9 +55,7 @@ const canSubmit = computed(() => {
 // ─── Handlers ──────────────────────────────────────────────────────────────
 const handleFolderSelected = (path: string) => {
   parentDir.value = path
-  // Close the picker on selection — matches the expected UX (the picker dismisses and the user is
-  // returned to the CreateWorktreeDialog with the chosen path filled in). The real FilePickerDialog
-  // has a `closeOnSelect` prop but it defaults to false, so we close from the parent instead.
+  // Close the picker on selection — matches the expected UX (the picker dismisses and the user is returned to the CreateWorktreeDialog with the chosen path filled …
   showPicker.value = false
 }
 
@@ -78,8 +67,7 @@ const onSubmit = () => {
   if (!canSubmit.value) return
   isSubmitting.value = true
   emit('create', fullPath.value)
-  // Don't close here — the parent may show an error inline. Parent
-  // decides when to close (on success, on error, on Cancel).
+  // Don't close here — the parent may show an error inline.
 }
 
 const onClose = () => {
@@ -87,8 +75,6 @@ const onClose = () => {
 }
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────────
-// Focus the basename input on mount. The dialog is mounted by the parent
-// (ChatView) via v-if, so this fires exactly once per open/close cycle.
 onMounted(() => {
   nextTick(() => nameInput.value?.focus())
 })

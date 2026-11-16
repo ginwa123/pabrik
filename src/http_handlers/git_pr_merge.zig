@@ -1,5 +1,4 @@
-//! `POST /api/git/pr/merge` — merge a pull/merge request through the forge
-//! CLI (`gh pr merge` / `glab mr merge`).
+//! `POST /api/git/pr/merge` — merge a pull/merge request through the forge CLI (`gh pr merge` / `glab mr merge`).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -8,30 +7,23 @@ const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
-// Provider resolution and the error-detail helper are shared with the status
-// endpoint: two endpoints that disagreed about which forge a repo is on would
-// merge the wrong thing.
+// Provider resolution and the error-detail helper are shared with the status endpoint: two endpoints that disagreed about which forge a repo is on would merge …
 const pr_status = @import("git_pr_status.zig");
 
-/// A merge is a network write, so this is as generous as `gh pr create`'s
-/// budget — and still bounded, so a credential prompt cannot wedge a worker.
+/// A merge is a network write, so this is as generous as `gh pr create`'s budget — and still bounded, so a credential prompt cannot wedge a worker.
 pub const MERGE_TIMEOUT_MS: u32 = 60_000;
 
-/// Per-stream capture cap. Merge output is a line or two; a URL or a git
-/// error is the most we ever need.
+/// Per-stream capture cap.
 const MAX_CAPTURE_BYTES: usize = 64 * 1024;
 
 const MergeError = error{
-    /// No forge CLI to run: the `generic` provider, or a provider whose
-    /// binary is not on PATH.
+    /// No forge CLI to run: the `generic` provider, or a provider whose binary is not on PATH.
     ForgeUnsupported,
-    /// The merge itself failed (non-zero exit, signal kill, timeout, or the
-    /// status re-read afterwards). The caller has `detail`.
+    /// The merge itself failed (non-zero exit, signal kill, timeout, or the status re-read afterwards).
     MergeFailed,
 };
 
-/// The forge binaries. Injectable so tests can point the whole path at
-/// fixture scripts instead of real, authenticated CLIs.
+/// The forge binaries.
 pub const Programs = struct {
     gh: []const u8 = "gh",
     glab: []const u8 = "glab",
@@ -49,16 +41,13 @@ pub const Programs = struct {
 pub const MergeOutcome = struct {
     /// The strategy that was requested (echoed, not re-derived from flags).
     method: pr_cli.MergeMethod,
-    /// The command was accepted but the forge has not merged the change
-    /// request: a merge queue, or an armed auto-merge.
+    /// The command was accepted but the forge has not merged the change request: a merge queue, or an armed auto-merge.
     pending: bool,
-    /// The forge's answer AFTER the command ran — the same payload
-    /// `GET /api/git/pr/status` returns.
+    /// The forge's answer AFTER the command ran — the same payload `GET /api/git/pr/status` returns.
     status: http_response.GitPrStatusResponse,
 };
 
-/// `detail` receives the CLI's own stderr (or a synthesized hint) on failure,
-/// capped and trimmed by `pr_status.setFetchDetail`.
+/// `detail` receives the CLI's own stderr (or a synthesized hint) on failure, capped and trimmed by `pr_status.setFetchDetail`.
 fn mergeUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -83,9 +72,7 @@ fn mergeUseCaseWithPrograms(
     opts: pr_cli.MergeOptions,
     detail: *?[]u8,
 ) !MergeOutcome {
-    // Same resolution order as the status endpoint (`resolveProvider` is
-    // shared for exactly this reason): explicit provider > URL-shaped `pr`
-    // argument > the repository's own origin remote.
+    // Same resolution order as the status endpoint (`resolveProvider` is shared for exactly this reason): explicit provider > URL-shaped `pr` argument > the …
     const provider = pr_status.resolveProvider(allocator, io, path, pr_arg, provider_override) catch |err| switch (err) {
         error.UnknownProvider, error.UnsupportedProvider => return error.ForgeUnsupported,
     };
@@ -103,8 +90,6 @@ fn mergeUseCaseWithPrograms(
         .timeout_ms = MERGE_TIMEOUT_MS,
     }) catch |err| {
         // Spawn-time failure: CLI not installed, not executable, cwd gone.
-        // `bufPrint`, not `allocPrint`: setFetchDetail copies into the request
-        // arena, so an allocated temporary here would only leak.
         var msg_buf: [224]u8 = undefined;
         const msg = std.fmt.bufPrint(&msg_buf, "{s} (is the {s} CLI installed and on PATH?)", .{ @errorName(err), cli.program }) catch "forge CLI spawn failed";
         pr_status.setFetchDetail(allocator, detail, msg);
@@ -121,8 +106,7 @@ fn mergeUseCaseWithPrograms(
     switch (res.term) {
         .exited => |code| {
             if (code != 0) {
-                // The CLI's own words: "Pull request is not mergeable",
-                // "Protected branch update failed", a GraphQL error, …
+                // The CLI's own words: "Pull request is not mergeable", "Protected branch update failed", a GraphQL error, …
                 pr_status.setFetchDetail(allocator, detail, res.stderr);
                 return error.MergeFailed;
             }
@@ -156,9 +140,7 @@ fn mergeUseCaseWithPrograms(
     };
 }
 
-/// Tell every client that this branch's change request moved, so the
-/// sidebar's RECENT icon and the kanban card badge re-read the forge instead
-/// of keeping the colour they cached before the mutation.
+/// Tell every client that this branch's change request moved, so the sidebar's RECENT icon and the kanban card badge re-read the forge instead of keeping the …
 fn emitPrStateEvent(ctx: gserverz.HttpContext, cwd: []const u8, branch: []const u8, action: []const u8) void {
     const di = pabrik_core.getSingleton() catch return;
     pabrik_core.git_pr_state_events.emitGitPrStateEvent(ctx.allocator, di.event_bus, .{
@@ -175,8 +157,7 @@ pub fn gitPrMergeHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     // Leaky parse: the per-request arena reaps it (see the sibling handlers).
     const Body = struct {
         path: []const u8 = "",
-        /// Number, IID, URL or branch. Empty = the one for the current
-        /// branch, which both CLIs resolve from the repo themselves.
+        /// Number, IID, URL or branch.
         pr: []const u8 = "",
         provider: []const u8 = "",
         /// "merge" | "squash" | "rebase". REQUIRED — see the module comment.
@@ -194,9 +175,7 @@ pub fn gitPrMergeHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     if (parsed.path.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "path is required" }) });
     }
-    // Refusing an empty method is not pedantry: `gh pr merge` without a
-    // strategy flag prompts interactively, and the prompt can only be
-    // answered by hanging until the timeout kills the child.
+    // Refusing an empty method is not pedantry: `gh pr merge` without a strategy flag prompts interactively, and the prompt can only be answered by hanging until the …
     const method = pr_cli.MergeMethod.fromString(parsed.method) orelse {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "method must be \"merge\", \"squash\", or \"rebase\"" }) });
     };
@@ -221,21 +200,18 @@ pub fn gitPrMergeHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
         &detail,
     ) catch |err| switch (err) {
         error.ForgeUnsupported => {
-            // 422: the request was understood and this forge cannot answer
-            // it — the same status `git_pr_checks` uses for unsupported.
+            // 422: the request was understood and this forge cannot answer it — the same status `git_pr_checks` uses for unsupported.
             const msg = detail orelse "this change request has no forge CLI, so it cannot be merged from here";
             return res.jsonResponse(.{ .status_code = 422, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = msg }) });
         },
         error.MergeFailed => {
             const msg = detail orelse "the merge command failed";
-            // 502: the forge is the upstream, and it said no (conflict,
-            // protection, approval, rate limit, auth).
+            // 502: the forge is the upstream, and it said no (conflict, protection, approval, rate limit, auth).
             return res.jsonResponse(.{ .status_code = 502, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = msg }) });
         },
     };
 
-    // A merge MOVED this branch's change request, and every badge reads a
-    // shared 60s cache that still holds the pre-merge answer.
+    // A merge MOVED this branch's change request, and every badge reads a shared 60s cache that still holds the pre-merge answer.
     if (!outcome.pending and outcome.status.head_ref.len > 0) {
         emitPrStateEvent(ctx, parsed.path, outcome.status.head_ref, "merged");
     }

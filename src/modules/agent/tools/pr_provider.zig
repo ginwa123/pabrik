@@ -1,8 +1,6 @@
 const std = @import("std");
 
-/// Forge provider for an attached pull/merge request. `github` covers
-/// github.com AND GitHub Enterprise (custom domains) — the tool caller passes
-/// the explicit override when host sniffing cannot tell.
+/// Forge provider for an attached pull/merge request.
 pub const PrProvider = enum {
     github,
     gitlab,
@@ -24,8 +22,7 @@ pub const PrProvider = enum {
     }
 };
 
-/// Parsed PR reference. `number` is the pull number (GitHub) or MR iid
-/// (GitLab); null for `generic` (no number to parse).
+/// Parsed PR reference.
 pub const PrRef = struct {
     provider: PrProvider,
     repo_path: []const u8,
@@ -40,13 +37,11 @@ pub fn normalizePrUrl(allocator: std.mem.Allocator, url: []const u8) ![]u8 {
     if (std.mem.indexOf(u8, trimmed, "://")) |scheme_end| {
         const after_scheme = trimmed[scheme_end + 3 ..];
         if (std.mem.indexOfScalar(u8, after_scheme, '@')) |at| {
-            // Only treat as credentials when the '@' comes before the
-            // first '/' (i.e. inside the authority, not the path).
+            // Only treat as credentials when the '@' comes before the first '/' (i.e. inside the authority, not the path).
             const slash = std.mem.indexOfScalar(u8, after_scheme, '/');
             if (slash == null or at < slash.?) {
                 const stripped = try std.fmt.allocPrint(allocator, "{s}://{s}", .{ trimmed[0..scheme_end], after_scheme[at + 1 ..] });
-                // `stripped` is owned ([]u8); normalizeTail may shorten
-                // it in place and either returns or frees it.
+                // `stripped` is owned ([]u8); normalizeTail may shorten it in place and either returns or frees it.
                 return normalizeTail(allocator, stripped);
             }
         }
@@ -58,9 +53,7 @@ pub fn normalizePrUrl(allocator: std.mem.Allocator, url: []const u8) ![]u8 {
 fn normalizeTail(allocator: std.mem.Allocator, owned: []u8) ![]u8 {
     var len = owned.len;
     while (len > 0 and owned[len - 1] == '/') len -= 1;
-    // Strip forge UI tails ("/files", "/commits[/<sha>]", "/checks",
-    // "/diffs") — but ONLY after a PR marker, so a repo literally named
-    // "files" is never mangled. Keeps just the number/IID segment.
+    // Strip forge UI tails ("/files", "/commits[/<sha>]", "/checks", "/diffs") — but ONLY after a PR marker, so a repo literally named "files" is never mangled.
     const markers = [_][]const u8{ "/pull/", "/-/merge_requests/", "/merge_requests/" };
     for (markers) |m| {
         const at = std.mem.indexOf(u8, owned[0..len], m) orelse continue;
@@ -77,8 +70,7 @@ fn normalizeTail(allocator: std.mem.Allocator, owned: []u8) ![]u8 {
     return try allocator.dupe(u8, owned[0..len]);
 }
 
-/// Split a normalized URL into scheme/host/path. Returns null when
-/// there is no `://` or no host. Slices borrow from the input.
+/// Split a normalized URL into scheme/host/path.
 fn splitUrl(url: []const u8) ?struct { scheme: []const u8, host: []const u8, path: []const u8 } {
     const scheme_end = std.mem.indexOf(u8, url, "://") orelse return null;
     const after = url[scheme_end + 3 ..];
@@ -106,13 +98,10 @@ pub fn detectProvider(url: []const u8) PrProvider {
     return .generic;
 }
 
-/// Longest host we will lowercase in a stack buffer. Real hosts are far
-/// shorter; anything past this is a malformed remote, not a forge.
+/// Longest host we will lowercase in a stack buffer.
 const MAX_SNIFF_HOST = 256;
 
-/// Provider implied by a bare host string, by name only. No allocation
-/// and no path knowledge, so it is safe to call on a host slice taken
-/// straight out of a remote string.
+/// Provider implied by a bare host string, by name only.
 fn providerFromHost(host: []const u8) PrProvider {
     if (host.len == 0) return .generic;
     var host_buf: [MAX_SNIFF_HOST]u8 = undefined;
@@ -150,9 +139,7 @@ pub fn detectProviderFromRemote(remote: []const u8) PrProvider {
     return .generic;
 }
 
-/// Parse owner/repo + number out of a normalized URL for the given
-/// provider. Returns null when the shape does not match (the caller
-/// surfaces a validation error). Slices borrow from `url`.
+/// Parse owner/repo + number out of a normalized URL for the given provider.
 pub fn parsePrRef(url: []const u8, provider: PrProvider) ?PrRef {
     const parts = splitUrl(url) orelse return null;
     switch (provider) {
@@ -221,9 +208,7 @@ test "detectProvider sniffs github, gitlab, generic" {
 }
 
 test "detectProviderFromRemote sniffs both https and scp-like remotes" {
-    // The scp-like rows are the point of this helper: a GitLab repo
-    // cloned over SSH has no `://`, so `detectProvider` alone would
-    // report every SSH remote as `generic`.
+    // The scp-like rows are the point of this helper: a GitLab repo cloned over SSH has no `://`, so `detectProvider` alone would report every SSH remote as …
     const cases = [_]struct { in: []const u8, out: PrProvider }{
         .{ .in = "https://github.com/acme/app.git", .out = .github },
         .{ .in = "https://gitlab.com/group/sub/repo.git", .out = .gitlab },
@@ -231,8 +216,7 @@ test "detectProviderFromRemote sniffs both https and scp-like remotes" {
         .{ .in = "git@gitlab.com:group/sub/repo.git", .out = .gitlab },
         .{ .in = "  git@gitlab.com:group/repo.git\n", .out = .gitlab },
         .{ .in = "ssh://git@gitlab.com/group/repo.git", .out = .gitlab },
-        // A host with no forge name in it and no MR marker is still
-        // generic — the caller passes an explicit override there.
+        // A host with no forge name in it and no MR marker is still generic — the caller passes an explicit override there.
         .{ .in = "git@git.corp.example.com:group/repo.git", .out = .generic },
         .{ .in = "", .out = .generic },
         .{ .in = "not a remote", .out = .generic },
@@ -284,8 +268,7 @@ test "detectProviderFromRemote survives a remote longer than PATH_MAX" {
 }
 
 test "detectProviderFromRemote keeps path-marker detection for scheme remotes" {
-    // A self-hosted GitLab on a host with no forge name in it is only
-    // identifiable from the MR path marker.
+    // A self-hosted GitLab on a host with no forge name in it is only identifiable from the MR path marker.
     try std.testing.expectEqual(
         PrProvider.gitlab,
         detectProviderFromRemote("https://git.corp.example.com/g/s/r/-/merge_requests/3.git"),

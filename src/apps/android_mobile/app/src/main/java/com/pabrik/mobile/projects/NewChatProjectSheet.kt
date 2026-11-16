@@ -38,52 +38,15 @@ import com.pabrik.mobile.ui.PabrikField
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * The projects a new chat can be created in, from [projects].
- *
- * A pure function so the rule is asserted without a device — and there is a
- * rule, which is the point. A chat is a `workspace_item_tasks` row, so it
- * belongs to a project, and the one project type that has no task list at all
- * is [ProjectTypes.ROUTINE] (a routine is scheduled, not conversed with).
- * Offering it would POST into a parent the backend does not accept tasks for.
- *
- * **The filter is applied here rather than at the row**, for the same reason
- * the drawer's own `+` is guarded in
- * [createTaskStartDecision]: a row that is filtered by the caller is a row
- * that a future caller forgets to filter.
- */
+/** The projects a new chat can be created in, from [projects]. */
 fun projectsThatTakeAChat(projects: List<ProjectSummary>): List<ProjectSummary> =
     projects.filterNot { it.itemType == ProjectTypes.ROUTINE }
 
-/**
- * Which project, if any, a new chat can start in.
- *
- * A count, not a list, because the two callers want opposite things from the
- * same fact: the sheet needs to know whether to draw a chooser or an
- * explanation, and the button needs to know whether it is worth being
- * tappable. Both are `isNotEmpty()` over the same list, so this exists to
- * make that one reading.
- */
+/** Which project, if any, a new chat can start in. */
 fun newChatProjectCount(projects: List<ProjectSummary>): Int =
     projectsThatTakeAChat(projects).size
 
-/**
- * "Which project?" — the one step between pressing `+ New chat` and a `POST`.
- *
- * A new chat cannot be created "in the app": it is a task row, and every task
- * endpoint in the backend is nested under `/api/workspaces/:id/items/:id`. So
- * the press has to become a choice, and this is that choice.
- *
- * Every row creates a **standard chat directly** — no Standard/Memory picker
- * in between, unlike the drawer's `+`. The button is labelled "New chat", so
- * asking "chat or memory?" after it would be answering a question the label
- * already settled. The drawer's `+` has no such label, which is why it keeps
- * the two-card picker.
- *
- * A bottom sheet rather than a dialog for the same reason
- * [CreateTaskPickerSheet] is one: the reader came from a chat, and a sheet
- * leaves that transcript visible behind it.
- */
+/** "Which project?" — the one step between pressing `+ New chat` and a `POST`. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewChatProjectSheet(
@@ -115,9 +78,7 @@ fun NewChatProjectSheet(
             )
 
             if (candidates.isEmpty()) {
-                // The honest answer when there is nothing to choose from. A
-                // sheet with an empty list under a "New chat" title is a bug
-                // report with no error message attached.
+                // The honest answer when there is nothing to choose from.
                 Text(
                     text = "No projects here yet. Create one in the desktop app, " +
                         "then come back for a new chat.",
@@ -184,9 +145,7 @@ private fun NewChatProjectRow(
                     style = MaterialTheme.typography.bodyLarge,
                     color = PabrikText,
                 )
-                // The type is shown because two projects can share a name
-                // across types in a workspace, and "which one" is exactly the
-                // question this sheet is asking.
+                // The type is shown because two projects can share a name across types in a workspace, and "which one" is exactly the question this sheet is asking.
                 Text(
                     text = project.itemType.ifBlank { "project" },
                     style = MaterialTheme.typography.labelMedium,

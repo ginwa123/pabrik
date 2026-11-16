@@ -1,6 +1,4 @@
-// Behavioural tests for KanbanToolsPanel — the per-board tool allowlist panel (extracted from
-// KanbanAgentPanel in iteration 2 of the kanban-agent-as-tab plan: 2026-08-27). Mounted as the
-// ?tab=tools tab body inside KanbanSettingsView.
+// Behavioural tests for KanbanToolsPanel — the per-board tool allowlist panel (extracted from KanbanAgentPanel in iteration 2 of the kanban-agent-as-tab plan …
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { flushPromises } from '@vue/test-utils'
@@ -125,15 +123,12 @@ describe('KanbanToolsPanel', () => {
     expect(maybeQ('kanban-agent-system-prompt-panel')).toBeNull()
   })
 
-  // ─── Bootstrap flow (unconfigured → configured) ───────────────────────── When the board has no
-  // agent_kanbans row yet, clicking a checkbox must still call enableAgentKanbanTool — the backend
-  // auto-seeds the row in agent_kanban_tools_create.zig.
+  // ─── Bootstrap flow (unconfigured → configured) ─────────────────────────
   it('lets the user bootstrap the config by enabling a tool from the unconfigured state', async () => {
     // First GET resolves to null (no config yet).
     const getSpy = vi.spyOn(api, 'getAgentKanban')
     getSpy.mockResolvedValueOnce(null)
-    // Then, after the first enable lands, the panel refetches and gets
-    // a real bundle (mirroring what the backend auto-seeded).
+    // Then, after the first enable lands, the panel refetches and gets a real bundle (mirroring what the backend auto-seeded).
     getSpy.mockResolvedValueOnce({
       ...configuredBundle,
       tools: ['read_file'],
@@ -171,8 +166,7 @@ describe('KanbanToolsPanel', () => {
     bashCheckbox.checked = true
     bashCheckbox.dispatchEvent(new Event('change'))
     await flushPromises()
-    // The first arg of enableAgentKanbanTool is the kanban id, which
-    // equals props.item.id (wi_kanban) — NOT config.value.id (null).
+    // The first arg of enableAgentKanbanTool is the kanban id, which equals props.item.id (wi_kanban) — NOT config.value.id (null).
     expect(enableSpy).toHaveBeenCalledWith('wi_kanban', 'bash')
   })
 
@@ -191,9 +185,7 @@ describe('KanbanToolsPanel', () => {
     readFileCheckbox.dispatchEvent(new Event('change'))
     await flushPromises()
 
-    // After the optimistic flip + successful POST, the checkbox stays
-    // checked (no revert). The backend auto-seeded the row and the
-    // optimistic update is the source of truth in the UI.
+    // After the optimistic flip + successful POST, the checkbox stays checked (no revert).
     expect(readFileCheckbox.checked).toBe(true)
   })
 
@@ -242,16 +234,12 @@ describe('KanbanToolsPanel', () => {
     await flushPromises()
 
     expect(enableSpy).toHaveBeenCalled()
-    // Every preset tool got an enable call (RECOMMENDED_TOOLS list,
-    // filtered by registry presence — the mock registry has no
-    // `command`, so only read_file + write_file fire).
+    // Every preset tool got an enable call (RECOMMENDED_TOOLS list, filtered by registry presence — the mock registry has no `command`, so only read_file + …
     const calledTools = enableSpy.mock.calls.map((c) => c[1]).sort()
     expect(calledTools).toEqual(['read_file', 'write_file'])
   })
 
-  // unify-command: the preset enables `command` (unified shell) when the
-  // registry advertises it; legacy `bash` is NOT equipped anymore, so it
-  // is never part of the starter set even when advertised.
+  // unify-command: the preset enables `command` (unified shell) when the registry advertises it; legacy `bash` is NOT equipped anymore, so it is never part of the …
   it('includes command (not bash) in the recommended starter set when the registry advertises it', async () => {
     vi.spyOn(api, 'getAgentToolsRegistry').mockResolvedValue({
       tools: [

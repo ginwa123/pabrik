@@ -1,5 +1,4 @@
 //! Render a single backend message into 0..N styled `Line`s for the viewport.
-//! Pure function — no state, no side effects.
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,8 +11,7 @@ const Color = tui.color.Color;
 const think = @import("think.zig");
 const tool_envelope = @import("tool_envelope.zig");
 
-/// Trimmed view of a `SessionMessage` (TUI doesn't depend on the
-/// backend wire types directly — populated by `App.onMessages`).
+/// Trimmed view of a `SessionMessage` (TUI doesn't depend on the backend wire types directly — populated by `App.onMessages`).
 pub const MessageView = struct {
     role: []const u8,
     content: []const u8,
@@ -21,8 +19,7 @@ pub const MessageView = struct {
     reasoning_content: []const u8,
 };
 
-/// Render a message into 1+ `Line`s. Caller owns each `Line.text`
-/// and the returned slice itself.
+/// Render a message into 1+ `Line`s.
 pub fn renderMessage(allocator: std.mem.Allocator, msg: MessageView) ![]Line {
     if (std.mem.eql(u8, msg.role, "user")) {
         const text = try std.fmt.allocPrint(allocator, "> {s}", .{msg.content});
@@ -46,9 +43,7 @@ pub fn renderMessage(allocator: std.mem.Allocator, msg: MessageView) ![]Line {
         defer allocator.free(stripped);
         const unwrapped = try think.unwrapContentWrappers(allocator, stripped);
         defer allocator.free(unwrapped);
-        // Split on newlines into multiple Lines so paragraphs/bullets
-        // are preserved. Each line is stripped of markdown syntax for
-        // TUI readability (desktop renders markdown via marked.parse).
+        // Split on newlines into multiple Lines so paragraphs/bullets are preserved.
         var out: std.ArrayList(Line) = .empty;
         defer out.deinit(allocator);
         var it = std.mem.splitScalar(u8, unwrapped, '\n');
@@ -57,9 +52,7 @@ pub fn renderMessage(allocator: std.mem.Allocator, msg: MessageView) ![]Line {
             const cleaned = try stripMarkdown(allocator, raw_line);
             defer allocator.free(cleaned);
             const trimmed = std.mem.trim(u8, cleaned, &std.ascii.whitespace);
-            // Preserve empty lines as blank Lines (paragraph spacing)
-            // but trim trailing whitespace. For non-empty, use cleaned
-            // trimmed version.
+            // Preserve empty lines as blank Lines (paragraph spacing) but trim trailing whitespace.
             const text = if (trimmed.len == 0)
                 try allocator.dupe(u8, "")
             else
@@ -80,9 +73,7 @@ pub fn renderMessage(allocator: std.mem.Allocator, msg: MessageView) ![]Line {
             const primary = try tool_envelope.toolEnvelopePrimary(allocator, env);
             defer allocator.free(primary);
             const badge = if (env.success) "✓" else "✗";
-            // Header shape adapts to whether the primary field is
-            // known. Empty primary → `▶ name  ✓` (no duplicated
-            // name — the round-2 fix).
+            // Header shape adapts to whether the primary field is known.
             const text = if (primary.len == 0)
                 try std.fmt.allocPrint(allocator, "▶ {s}  {s}", .{ env.name, badge })
             else
@@ -112,16 +103,13 @@ pub fn renderMessage(allocator: std.mem.Allocator, msg: MessageView) ![]Line {
 }
 
 /// Strip markdown syntax for TUI plain-text display.
-/// Removes **, __, `, #, >, and normalizes bullet markers.
-/// Keeps the inner text content.
 fn stripMarkdown(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(allocator);
     try out.ensureTotalCapacity(allocator, input.len);
 
     var i: usize = 0;
-    // Strip leading markdown markers: #, >, -, *, and whitespace
-    // e.g. "## Heading" -> "Heading", "> quote" -> "quote", "- bullet" -> "• bullet"
+    // Strip leading markdown markers: #, >, -, *, and whitespace e.g. "## Heading" -> "Heading", "> quote" -> "quote", "- bullet" -> "• bullet"
     var start: usize = 0;
     // Handle heading markers: leading #'s + space
     while (start < input.len and input[start] == '#') start += 1;
@@ -159,9 +147,7 @@ fn stripMarkdown(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-// ----------------------------------------------------------------------------
 // Tests (RED — impl added below after tests fail)
-// ----------------------------------------------------------------------------
 
 fn freeLines(allocator: std.mem.Allocator, lines: []Line) void {
     for (lines) |l| allocator.free(l.text);
@@ -247,9 +233,7 @@ test "renderMessage: tool with malformed content falls back to raw dim" {
 }
 
 test "renderMessage: tool with no primary field renders bare name + badge" {
-    // load_memory data is <results>...</results> — outside the
-    // whitelist. toolEnvelopePrimary returns "" — header should
-    // render as `▶ load_memory  ✓` (no duplicated name).
+    // load_memory data is <results>...</results> — outside the whitelist. toolEnvelopePrimary returns "" — header should render as `▶ load_memory ✓` (no duplicated …
     const content =
         "<tool><name>load_memory</name><parameters></parameters><success>true</success><data><results>x</results></data></tool>";
     const lines = try renderMessage(testing.allocator, .{

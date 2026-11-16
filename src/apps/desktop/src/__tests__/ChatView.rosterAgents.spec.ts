@@ -1,6 +1,4 @@
-/** "Agents in this chat" offers the agents the chat is NOT running yet — in the
- * tab-strip app bar as much as in the plain one. The strip was handed the
- * roster itself, so a group chat could never gain a third agent. */
+/** "Agents in this chat" offers the agents the chat is NOT running yet — in the tab-strip app bar as much as in the plain one. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

@@ -1,6 +1,4 @@
-//! In-memory backend. A working implementation, not a mock: it stores real
-//! bytes and reports real sizes, so a test can assert on resulting state
-//! instead of on which methods were called.
+//! In-memory backend.
 
 const std = @import("std");
 const storage = @import("storage.zig");
@@ -26,8 +24,7 @@ pub const MemoryStorage = struct {
         return .{ .ptr = self, .vtable = &vtable };
     }
 
-    /// How many objects the store holds. Lets a test assert that a failed
-    /// write left nothing behind.
+    /// How many objects the store holds.
     pub fn count(self: *const MemoryStorage) usize {
         return self.objects.count();
     }

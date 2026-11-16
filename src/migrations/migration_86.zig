@@ -12,9 +12,7 @@ pub const Migration086AddSessionPrUrl = struct {
     pub const name = "add_session_pr_url";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Attached-PR binding for the ChatView right panel (set_pull_request
-        // agent tool). pr_url holds the normalized PR/MR URL ("" = unset);
-        // pr_provider holds the effective provider resolved at write time
+        // Attached-PR binding for the ChatView right panel (set_pull_request agent tool). pr_url holds the normalized PR/MR URL ("" = unset); pr_provider holds the …
         try addColumnIfMissing(.{ .db = db }, allocator, "sessions", "pr_url", "pr_url TEXT");
         try addColumnIfMissing(.{ .db = db }, allocator, "sessions", "pr_provider", "pr_provider TEXT");
     }

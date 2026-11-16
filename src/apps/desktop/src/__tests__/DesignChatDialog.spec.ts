@@ -61,20 +61,15 @@ describe('DesignChatDialog', () => {
   let wrapper: VueWrapper | null = null
 
   beforeEach(() => {
-    // jsdom 29 dropped localStorage from defaults; ChatView transitively
-    // loads the navigation store which reads localStorage at module-load
-    // time. Install a Map-backed stub so navigation.ts can boot.
+    // jsdom 29 dropped localStorage from defaults; ChatView transitively loads the navigation store which reads localStorage at module-load time.
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
       configurable: true,
     })
-    // ChatView's onMounted connects via the SSE bus. Install a stub
-    // client so unhandled rejections don't bleed across tests.
+    // ChatView's onMounted connects via the SSE bus.
     installBusForTests()
-    // ChatView's onMounted queues async work (scroll-to-bottom,
-    // connectSse). Fake timers prevent those from firing after
-    // teardown and producing "containerRef is null" warnings.
+    // ChatView's onMounted queues async work (scroll-to-bottom, connectSse).
     vi.useFakeTimers()
     setActivePinia(createPinia())
     document.body.innerHTML = ''
@@ -179,9 +174,7 @@ describe('DesignChatDialog', () => {
       cwd: '',
     })
     await flushPromises()
-    // The dialog listens via @keydown on the teleport root, so the
-    // event must be dispatched on the root element (or bubbled from
-    // a focused child).
+    // The dialog listens via @keydown on the teleport root, so the event must be dispatched on the root element (or bubbled from a focused child).
     const root = document.querySelector(
       '[data-testid="design-chat-dialog-root"]',
     ) as HTMLElement
@@ -232,9 +225,7 @@ describe('DesignChatDialog', () => {
   })
 
   it('swaps content when task + pageName props change (page→task pair)', async () => {
-    // In design mode each page is paired 1:1 with a task via the FK (per
-    // 2026-07-28-design-page-workspace-item-task-fk.md), so a "task swap" only happens when the
-    // user clicks a different page's 💬 button — both task AND pageName change together.
+    // In design mode each page is paired 1:1 with a task via the FK (per 2026-07-28-design-page-workspace-item-task-fk.md), so a "task swap" only happens when the …
     wrapper = mountDialog({
       show: true,
       task: TASK_A,
@@ -259,9 +250,7 @@ describe('DesignChatDialog', () => {
   })
 
   it('keeps the pageName in the title when only the task id changes', async () => {
-    // Edge case: the parent may update only the task prop while keeping the same pageName (e.g.
-    // task renamed but same FK relationship). The title should NOT flicker to the task name — page
-    // context is more meaningful for the user.
+    // Edge case: the parent may update only the task prop while keeping the same pageName (e.g. task renamed but same FK relationship).
     wrapper = mountDialog({
       show: true,
       task: TASK_A,
@@ -300,17 +289,14 @@ describe('DesignChatDialog', () => {
       cwd: '',
     })
     await flushPromises()
-    // The dialog shell renders (header + backdrop), but the chat body
-    // is gated on task being non-null.
+    // The dialog shell renders (header + backdrop), but the chat body is gated on task being non-null.
     const dialog = document.querySelector('[data-testid="design-chat-dialog"]')
     expect(dialog).not.toBeNull()
     const title = document.querySelector('[data-testid="design-chat-dialog-title"]')
     expect(title?.textContent).toContain('Chat')
   })
 
-  // Lock in the sizing so future refactors don't shrink it. The 3rd bump numbers (2026-08-06) — the
-  // user explicitly asked to make design's chatview dialog bigger, the same way they did for the
-  // kanban chat while it was still a dialog.
+  // Lock in the sizing so future refactors don't shrink it.
   describe('dialog sizing', () => {
     it('uses 98vw width + 95vh height for viewport-relative sizing', async () => {
       wrapper = mountDialog({

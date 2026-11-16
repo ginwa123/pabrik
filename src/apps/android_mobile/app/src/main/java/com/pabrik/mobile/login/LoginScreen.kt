@@ -116,11 +116,7 @@ fun LoginScreen(
     authError: String? = null,
     isAuthenticating: Boolean = false,
     onOpenNetworkInspector: () -> Unit = {},
-    /**
-     * The server this app is pointed at, and the way to point it somewhere
-     * else. Defaults keep the screen renderable in a test that is not about
-     * this, exactly like every other defaulted action on it.
-     */
+    /** The server this app is pointed at, and the way to point it somewhere else. */
     serverBaseUrl: String = AuthConfig.BUILD_DEFAULT_BASE_URL,
     defaultServerBaseUrl: String = AuthConfig.BUILD_DEFAULT_BASE_URL,
     onChangeServer: (String) -> ServerChange = { ServerChange.Applied(serverBaseUrl) },
@@ -154,8 +150,7 @@ fun LoginScreen(
     ) {
         DecorativeBackground(Modifier.matchParentSize())
 
-        // Reachable before sign-in on purpose: "why did my POST fail?" is the
-        // moment an inspector is most needed, and that POST is the login itself.
+        // Reachable before sign-in on purpose: "why did my POST fail?" is the moment an inspector is most needed, and that POST is the login itself.
         IconButton(
             onClick = onOpenNetworkInspector,
             modifier = Modifier
@@ -171,9 +166,7 @@ fun LoginScreen(
             )
         }
 
-        // In the `Box` beside the form, not inside it: the dialog is about the
-        // server rather than about the account, so it has to sit outside the
-        // card the credentials are in or it reads as part of the sign-in.
+        // In the `Box` beside the form, not inside it: the dialog is about the server rather than about the account, so it has to sit outside the card the credentials …
         if (serverDialogOpen) {
             ServerAddressDialog(
                 currentBaseUrl = serverBaseUrl,
@@ -365,10 +358,6 @@ fun LoginScreen(
             Spacer(Modifier.height(24.dp))
 
             // Below the card, above the sign-off line, and on both auth screens.
-            // A self-hoster installing the app has to be able to find this
-            // before the first sign-in, and a one-line row with the host spelled
-            // out is what tells them the app is even capable of pointing
-            // somewhere else.
             ServerAddressRow(
                 baseUrl = serverBaseUrl,
                 onChange = { serverDialogOpen = true },

@@ -4,13 +4,10 @@ const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 const git_route = @import("git_route.zig");
 
-/// Domain error set for the worktree-info use case. The handler maps
-/// `NotARepository` to HTTP 404; other failures propagate as 500.
+/// Domain error set for the worktree-info use case.
 const WorktreeInfoError = error{ NotARepository };
 
-/// Result of gathering worktree info. Mirrors the `GitWorktreeInfoResponse`
-/// shape but with the HTTP layer stripped out (no status codes, no response
-/// struct).
+/// Result of gathering worktree info.
 const WorktreeInfoResult = struct {
     branch: []const u8,
     last_commit_sha: []const u8,
@@ -20,9 +17,7 @@ const WorktreeInfoResult = struct {
     diff_summary: []const u8,
 };
 
-/// Use case — run all the git CLI commands to gather worktree metadata. Takes
-/// primitive inputs (worktree path + optional base override), returns a
-/// domain struct.
+/// Use case — run all the git CLI commands to gather worktree metadata.
 fn getWorktreeInfoUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -48,17 +43,14 @@ fn getWorktreeInfoUseCase(
         last_msg = log_line[space_idx + 1 ..];
     }
 
-    // 4) Base branch — use `base` override if provided, else auto-detect
-    // (origin/main → origin/master → origin/develop → "main" fallback).
+    // 4) Base branch — use `base` override if provided, else auto-detect (origin/main → origin/master → origin/develop → "main" fallback).
     var default_base: []const u8 = "main";
     if (base) |eb| {
         if (eb.len > 0) default_base = eb;
     } else {
         const bases = [_][]const u8{ "main", "master", "develop" };
         for (bases) |b| {
-            // Build "origin/<b>" at runtime — the `++` operator on string
-            // slices in Zig 0.16 requires comptime-known slices, and `b` is a
-            // loop variable.
+            // Build "origin/<b>" at runtime — the `++` operator on string slices in Zig 0.16 requires comptime-known slices, and `b` is a loop variable.
             var origin_b_buf: [64]u8 = undefined;
             const origin_b = std.fmt.bufPrint(origin_b_buf[0..], "origin/{s}", .{b}) catch continue;
             const probe = git_route.run(allocator, io, path, &.{ "rev-parse", "--verify", origin_b }, opts) catch continue;
@@ -108,9 +100,7 @@ fn getWorktreeInfoUseCase(
     };
 }
 
-/// HTTP handler for `GET /api/git/worktree/info`. Query params: - `path`
-/// (required) — absolute worktree path - `base` (optional) — override the
-/// auto-detected base branch.
+/// HTTP handler for `GET /api/git/worktree/info`.
 pub fn gitWorktreeInfoHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -123,16 +113,13 @@ pub fn gitWorktreeInfoHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     const explicit_base_param = req.query.get("base");
 
     const info = getWorktreeInfoUseCase(allocator, io, path_param, explicit_base_param, git_route.options(req)) catch |err| switch (err) {
-        // NotARepository → 404 with a clear message. Other errors propagate
-        // to the GinwaServer which returns a generic 500.
+        // NotARepository → 404 with a clear message.
         error.NotARepository => {
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
         },
     };
 
-    // Build the response. draft_title and draft_body are derived from the
-    // use-case result; the title is the last commit subject, the body is
-    // a short markdown summary with the diff stat and commit count.
+    // Build the response. draft_title and draft_body are derived from the use-case result; the title is the last commit subject, the body is a short markdown summary …
     const response = http_response.GitWorktreeInfoResponse{
         .is_git_repo = true,
         .branch = info.branch,

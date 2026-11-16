@@ -44,9 +44,7 @@ class ProjectsClientTest {
 
     @Test
     fun sendsTheSessionCookieAndNothingElse() {
-        // The backend reads the session from this cookie and from nowhere else,
-        // and accepts no Authorization header and no CSRF token, so a native
-        // client has to send the cookie itself.
+        // The backend reads the session from this cookie and from nowhere else, and accepts no Authorization header and no CSRF token, so a native client has to send the …
         val transport = FakeTransport(
             response = AuthHttpResponse(
                 statusCode = 200,
@@ -72,11 +70,7 @@ class ProjectsClientTest {
 
     @Test
     fun aProjectsFailureNeverBlamesTheSidebar() {
-        // `RecentsClient.messageForStatus` hard-codes "sidebar" into its 5xx and
-        // default messages. Reusing those here would tell a reader whose
-        // *projects* failed to load that the server could not load the sidebar —
-        // a small lie about what is broken, and the kind this codebase's
-        // comments refuse.
+        // `RecentsClient.messageForStatus` hard-codes "sidebar" into its 5xx and default messages.
         val server = ProjectsClient(
             MemorySessionStore(),
             httpTransport = FakeTransport(response = AuthHttpResponse(500, "")),
@@ -174,9 +168,7 @@ class ProjectsClientTest {
 
     @Test
     fun aMissingCookieStillSendsARequestRatherThanGuessingAnIdentity() {
-        // Null is a legitimate "not signed in yet" for the auth layer; the
-        // server decides what it means. Guessing a user id here would be the
-        // unscoped-read mistake the caches are careful about.
+        // Null is a legitimate "not signed in yet" for the auth layer; the server decides what it means.
         val transport = FakeTransport(
             response = AuthHttpResponse(200, """{"items":[],"count":0}"""),
         )

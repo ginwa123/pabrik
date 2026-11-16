@@ -1,5 +1,4 @@
-/** P2 structural tests for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller more
- * smooth"). What P2 changes, and what each test pins: 1. */
+/** P2 structural tests for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller more smooth"). */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -56,8 +55,7 @@ describe('VirtualScroller sizer + transform DOM contract', () => {
     const { wrapper, el } = mountScroller({ items: makeItems(100), buffer: 5 })
     await nextTick()
 
-    // Scroll to middle: scrollTop=10000 → startIndex=50 → start=45.
-    // topSpacer = accumulated[45] = 45 × 200 = 9000.
+    // Scroll to middle: scrollTop=10000 → startIndex=50 → start=45. topSpacer = accumulated[45] = 45 × 200 = 9000.
     el.scrollTop = 10000
     el.dispatchEvent(new Event('scroll'))
     await nextTick()
@@ -95,9 +93,7 @@ describe('VirtualScroller contentShift emit', () => {
     )
     expect(events).toBeTruthy()
     const last = events![events!.length - 1]![0]
-    // start=45 → topSpacer=9000; end=59+... visible 4 + buffer → end=74?
-    // scrollTop=10000, viewBottom=10800 → endIndex=54 → end=59.
-    // bottomSpacer = 100×200 − 59×200 = 8200. total = 20000.
+    // start=45 → topSpacer=9000; end=59+... visible 4 + buffer → end=74? scrollTop=10000, viewBottom=10800 → endIndex=54 → end=59. bottomSpacer = 100×200 − 59×200 = …
     expect(last.topSpacer).toBe(9000)
     expect(last.bottomSpacer).toBe(8200)
     expect(last.total).toBe(20000)

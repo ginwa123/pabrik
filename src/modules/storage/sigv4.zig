@@ -1,6 +1,4 @@
-//! AWS Signature Version 4, as S3 needs it. Pure functions only: no clock, no
-//! socket, no allocator beyond the caller's. That is what makes the published
-//! AWS test vectors usable as behaviour tests.
+//! AWS Signature Version 4, as S3 needs it.
 
 const std = @import("std");
 
@@ -26,8 +24,7 @@ pub const Request = struct {
     path: []const u8,
     /// Already sorted and encoded, no leading '?'. Empty when there is none.
     query: []const u8 = "",
-    /// Headers to sign, EXCLUDING host / x-amz-date / x-amz-content-sha256,
-    /// which the signer adds itself.
+    /// Headers to sign, EXCLUDING host / x-amz-date / x-amz-content-sha256, which the signer adds itself.
     headers: []const Header = &.{},
     /// Lowercase hex SHA-256 of the body. The empty body has a known digest.
     payload_sha256: []const u8,
@@ -48,8 +45,6 @@ fn isUnreserved(c: u8) bool {
 }
 
 /// URI-encode `path` for a canonical request, keeping '/' as a separator.
-/// S3 wants each segment encoded exactly once — not twice, as the other AWS
-/// services do.
 pub fn uriEncodePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     const hex = "0123456789ABCDEF";
     var out: std.ArrayList(u8) = .empty;
@@ -100,8 +95,7 @@ fn headerLessThan(_: void, a: Header, b: Header) bool {
     return std.mem.lessThan(u8, a.name, b.name);
 }
 
-/// Every header the signature covers, sorted by name: the caller's extras plus
-/// the three the signer owns.
+/// Every header the signature covers, sorted by name: the caller's extras plus the three the signer owns.
 fn signedHeaders(
     allocator: std.mem.Allocator,
     req: Request,
@@ -149,8 +143,7 @@ pub fn canonicalRequest(allocator: std.mem.Allocator, req: Request) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// The string to sign: algorithm, stamp, scope, and the canonical request's
-/// digest.
+/// The string to sign: algorithm, stamp, scope, and the canonical request's digest.
 pub fn stringToSign(
     allocator: std.mem.Allocator,
     creds: Credentials,
@@ -169,8 +162,7 @@ pub fn stringToSign(
     );
 }
 
-/// The derived signing key: HMAC chain from the secret through date, region and
-/// service.
+/// The derived signing key: HMAC chain from the secret through date, region and service.
 pub fn signingKey(
     secret_key: []const u8,
     date: []const u8,

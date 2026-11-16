@@ -1,6 +1,4 @@
-//! `pabrik headless compaction <session_id>` — the `compaction` agent tool's
-//! own path, no HTTP server and no port. The output reports the workspace
-//! switch so a script can tell "refused by the setting" from "nothing to do".
+//! `pabrik headless compaction <session_id>` — the `compaction` agent tool's own path, no HTTP server and no port.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -99,9 +97,7 @@ fn report(allocator: std.mem.Allocator, r: Report) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, r, .{});
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 const database = pabrikcore.database;

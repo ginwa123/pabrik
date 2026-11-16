@@ -24,33 +24,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The chat route has to *observe* the transcript, not be handed a sample of it.
- *
- * ### The bug this pins
- *
- * `PabrikNavGraph` used to take `chatState: () -> ChatUiState` and call it in the
- * chat destination. That looks like a lazy read and behaves like a value: a
- * `StateFlow.value` read during composition subscribes to nothing, so the
- * destination only repainted when some *other* collected state happened to
- * change — the home state, or the worker set.
- *
- * Everything with a second source kept working, which is exactly why it
- * shipped. A run registers a worker, so streaming repainted. A send moves the
- * chat list, so the composer cleared itself after a send. Typing had no second
- * source at all, so the controlled text field never received a new `value` and
- * every keystroke was swallowed — the reported "input message cannot typing".
- *
- * ### Why this is a rendered-tree test and not a source-grep
- *
- * A `ChatScreen` test cannot catch it: rendering the screen with a draft and
- * typing into it passes whether or not the graph hands it a live flow. The
- * failure is one level up — whether a *new emission* of the flow reaches a
- * destination that is already composed. That is observable only by rendering
- * the graph, pushing a value into the flow, and asserting the tree changed.
- * Which is what this does, with a `MutableStateFlow` standing in for the
- * ViewModel and a resume position to get the graph onto the chat route.
- */
+/** The chat route has to *observe* the transcript, not be handed a sample of it. */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w390dp-h844dp")
 class PabrikNavGraphChatStateTest {
@@ -60,13 +34,7 @@ class PabrikNavGraphChatStateTest {
 
     private val chatState = MutableStateFlow(ChatUiState(sessionId = "sess_1", isLoading = false))
 
-    /**
-     * The production graph, resumed straight onto the chat route.
-     *
-     * A saved position rather than a tap: the resume is the path that puts the
-     * chat on the back stack without a drawer interaction, which keeps this
-     * file about one thing — whether the route follows the flow.
-     */
+    /** The production graph, resumed straight onto the chat route. */
     private fun renderChatRoute() {
         compose.setContent {
             PabrikTheme {
@@ -82,8 +50,7 @@ class PabrikNavGraphChatStateTest {
 
     @Test
     fun theRouteStartsOnTheChatTheResumeOpened() {
-        // The precondition every other test here rests on: without this, a
-        // failing assertion below could just be a route that never opened.
+        // The precondition every other test here rests on: without this, a failing assertion below could just be a route that never opened.
         renderChatRoute()
 
         compose.onNodeWithTag("chat_title").assertIsDisplayed()
@@ -94,9 +61,7 @@ class PabrikNavGraphChatStateTest {
     fun anEmissionReachesTheChatAlreadyOnScreen() {
         renderChatRoute()
 
-        // This is the whole bug in one line. Before the fix the destination
-        // read `chatState.value` once during composition and never again, so
-        // this assignment changed the flow and nothing on screen.
+        // This is the whole bug in one line.
         chatState.value = chatState.value.copy(
             messages = listOf(
                 ChatMessage(
@@ -117,9 +82,7 @@ class PabrikNavGraphChatStateTest {
     fun aDraftEmissionReachesTheComposerAlreadyOnScreen() {
         renderChatRoute()
 
-        // Typing is the reported symptom, and it is the one emission with no
-        // second source: nothing else in the tree changes when a keystroke is
-        // written to the draft.
+        // Typing is the reported symptom, and it is the one emission with no second source: nothing else in the tree changes when a keystroke is written to the draft.
         chatState.value = chatState.value.copy(draft = "hello")
         compose.waitForIdle()
 
@@ -137,11 +100,7 @@ class PabrikNavGraphChatStateTest {
     }
 }
 
-/**
- * The production graph, so the test drives the real destination and the real
- * resume. A copy of the graph would pass with the bug in place — the bug is in
- * the graph's own parameter, and a copy would be a different signature.
- */
+/** The production graph, so the test drives the real destination and the real resume. */
 @androidx.compose.runtime.Composable
 private fun GraphWithChatState(
     navController: NavHostController,
@@ -182,13 +141,7 @@ private fun GraphWithChatState(
     )
 }
 
-/**
- * A store that answers one position and records nothing.
- *
- * A `PrefsLastPositionStore` would work too, but it needs a `Context` and writes
- * through `apply()`, and nothing here is about persistence — it is about what
- * the graph does with an answer.
- */
+/** A store that answers one position and records nothing. */
 private class FixedPosition(private val position: LastPosition) : LastPositionStore {
     override fun read(userId: String?): LastPosition = position
     override fun save(userId: String?, position: LastPosition) = Unit

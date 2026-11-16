@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/skills`. One workspace, one list, no
-//! filesystem walk.
+//! `GET /api/workspaces/:workspace_id/skills`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -23,9 +22,7 @@ pub const SkillsListOutput = struct {
     skills: []skills_store.SkillRow,
 };
 
-// ===================================================================== Use
-// case =====================================================================
-// Takes the allocator and the database handle as ARGUMENTS and never calls
+// ===================================================================== Use case ===================================================================== Takes the …
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -35,9 +32,7 @@ fn useCase(
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     return .{
         .skills = skills_store.listSkills(allocator, db, input.workspace_id) catch |err| switch (err) {
-            // `WorkspaceIdRequired` is unreachable behind the guard above,
-            // but it is mapped rather than propagated with `try`: that would
-            // widen this function's error set to whatever the store declares,
+            // `WorkspaceIdRequired` is unreachable behind the guard above, but it is mapped rather than propagated with `try`: that would widen this function's error set to …
             error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
             error.QueryFailed => return error.QueryFailed,
             error.OutOfMemory => return error.OutOfMemory,
@@ -45,12 +40,9 @@ fn useCase(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// The per-skill row on the wire. A struct rather than a map so a field
-/// added to `SkillRow` cannot silently leak onto the list response.
+/// The per-skill row on the wire.
 const SkillSummary = struct {
     name: []const u8,
     description: []const u8,
@@ -108,8 +100,7 @@ pub fn skillsListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-// See the note in `skill_delete.zig`: the test binary has no HTTP server,
-// so nothing else in `zig build test` would analyse this handler's body.
+// See the note in `skill_delete.zig`: the test binary has no HTTP server, so nothing else in `zig build test` would analyse this handler's body.
 comptime {
     _ = &skillsListHandler;
 }
@@ -126,9 +117,7 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// Real Migration 101 tables on an in-memory database, seeded with one row
-/// per workspace so the scoping assertions have something to be wrong
-/// about.
+/// Real Migration 101 tables on an in-memory database, seeded with one row per workspace so the scoping assertions have something to be wrong about.
 fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
@@ -161,8 +150,7 @@ test "useCase: empty workspace_id returns WorkspaceIdRequired" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Refused before SQL: `Backend.exec` binds "" as NULL and
-    // `skills.workspace_id` is NOT NULL.
+    // Refused before SQL: `Backend.exec` binds "" as NULL and `skills.workspace_id` is NOT NULL.
     try testing.expectError(
         error.WorkspaceIdRequired,
         useCase(alloc, &ctx.db, .{ .workspace_id = "" }),
@@ -193,8 +181,7 @@ test "useCase: never returns another workspace's skills" {
     const mine = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
     defer skills_store.freeSkillRows(alloc, mine.skills);
 
-    // Name-ordered (the UNIQUE (workspace_id, name) index gives it), and
-    // scoped: `not-mine` is absent even though the name is a plain string.
+    // Name-ordered (the UNIQUE (workspace_id, name) index gives it), and scoped: `not-mine` is absent even though the name is a plain string.
     try testing.expectEqual(@as(usize, 2), mine.skills.len);
     try testing.expectEqualStrings("pdf", mine.skills[0].name);
     try testing.expectEqualStrings("Work with PDFs", mine.skills[0].description);
@@ -207,8 +194,7 @@ test "useCase: an empty description round-trips as empty, not as a missing field
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A model routinely writes the body first and the one-line description
-    // second, so "" is a legal skill state.
+    // A model routinely writes the body first and the one-line description second, so "" is a legal skill state.
     try seed(&ctx, "ws_1", "half-written", "");
 
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
@@ -233,9 +219,7 @@ test "useCase: the auto-improve lock travels with each list row" {
     });
     defer skills_store.freeSkillRow(alloc, pinned);
 
-    // The list is the only surface that knows about every skill, so a row
-    // that dropped the flag would render every skill as unlocked and the
-    // checkbox would lie about what the agent may touch.
+    // The list is the only surface that knows about every skill, so a row that dropped the flag would render every skill as unlocked and the checkbox would lie about …
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
     defer skills_store.freeSkillRows(alloc, output.skills);
 
@@ -245,5 +229,4 @@ test "useCase: the auto-improve lock travels with each list row" {
     try testing.expectEqualStrings("beta", output.skills[1].name);
     try testing.expect(!output.skills[1].is_can_auto_improve);
 }
-// Registration ORDER is load-bearing: `matchRoute` returns on the first hit,
-// so the collection route must precede `:skill_name`.
+// Registration ORDER is load-bearing: `matchRoute` returns on the first hit, so the collection route must precede `:skill_name`.

@@ -1,6 +1,4 @@
-//! Auth enforcement middleware for opt-in `--auth` mode. Wired via
-//! `router.group("/api")` + `use()` in main.zig (see the kabelweb
-//! `MiddlewareFn` / `MiddlewareChain` docs in `src/server/router.zig`).
+//! Auth enforcement middleware for opt-in `--auth` mode.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,8 +6,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 
-/// Shared gate used by both the middleware and the manual ws/sse/static
-/// checks. Returns true when the request may proceed.
+/// Shared gate used by both the middleware and the manual ws/sse/static checks.
 pub fn isAuthorized(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -33,8 +30,7 @@ pub fn authMiddleware(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const di = pabrikcore.getSingleton() catch {
-        // No singleton in unit tests — fail open so handler tests
-        // that construct their own ctx keep working.
+        // No singleton in unit tests — fail open so handler tests that construct their own ctx keep working.
         return chain.next(ctx, req, res);
     };
     if (!di.auth_enabled) return chain.next(ctx, req, res);
@@ -63,9 +59,7 @@ pub fn authMiddleware(
         }
     }
 
-    // Same choke point for the `:session_id` routes (`/api/session/…` and
-    // `/api/llm/session/…`): without it, any authenticated user could read or
-    // mutate any session by id — messages included.
+    // Same choke point for the `:session_id` routes (`/api/session/…` and `/api/llm/session/…`): without it, any authenticated user could read or mutate any session …
     if (req.params.get("session_id") orelse req.params.get("session")) |sid| {
         if (!auth_common.canSeeSession(allocator, di.db, sid, sess.user_id)) {
             if (auth_common.sessionExistsById(allocator, di.db, sid)) {

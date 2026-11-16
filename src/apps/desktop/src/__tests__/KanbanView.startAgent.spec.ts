@@ -26,7 +26,6 @@ vi.mock('@/components/preview/InlineEditableText.vue', () => ({
   default: { name: 'InlineEditableText', template: '<div />' },
 }))
 
-//
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ITEM_WITH_TASK: any = {
   id: 'item_1',
@@ -69,8 +68,6 @@ describe('KanbanView.handleStartAgent', () => {
       },
     })
     await flushPromises()
-    // Set the active task id + open the dialog so handleStartAgent's guard passes and the "dialog stays
-    // open on error" assertions are meaningful; in production handleViewTaskDetail sets both together.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vmInit: any = wrapper!.vm
     vmInit.activeTaskDetailId = 'task_existing'
@@ -89,7 +86,6 @@ describe('KanbanView.handleStartAgent', () => {
       })
 
     const view = await mountView()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm: any = view.vm
     await vm.handleStartAgent({ taskId: 'task_existing' })
@@ -110,7 +106,6 @@ describe('KanbanView.handleStartAgent', () => {
     vi.spyOn(store, 'startAgentOnTask').mockResolvedValue(undefined)
 
     const view = await mountView()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm: any = view.vm
     await vm.handleStartAgent({ taskId: 'task_existing' })
@@ -126,7 +121,6 @@ describe('KanbanView.handleStartAgent', () => {
     vi.spyOn(store, 'startAgentOnTask').mockRejectedValue(new Error('boom'))
 
     const view = await mountView()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm: any = view.vm
     await vm.handleStartAgent({ taskId: 'task_existing' })
@@ -141,7 +135,6 @@ describe('KanbanView.handleStartAgent', () => {
     vi.spyOn(store, 'startAgentOnTask').mockResolvedValue({ success: false })
 
     const view = await mountView()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm: any = view.vm
     await vm.handleStartAgent({ taskId: 'task_existing' })
@@ -158,12 +151,9 @@ describe('KanbanView.handleStartAgent', () => {
     const startAgentSpy = vi.spyOn(store, 'startAgentOnTask')
 
     const view = await mountView()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm: any = view.vm
-    // The guard: activeTaskDetailId is 'task_existing' but the payload
-    // says 'task_other'. The handler should bail without calling the
-    // store action.
+    // The guard: activeTaskDetailId is 'task_existing' but the payload says 'task_other'.
     await vm.handleStartAgent({ taskId: 'task_other' })
     await flushPromises()
 
@@ -172,20 +162,16 @@ describe('KanbanView.handleStartAgent', () => {
   })
 
   it('does not double-fire when handleStartAgent is called twice in quick succession', async () => {
-    // 1-shot re-entrancy guard: the second click during the in-flight
-    // POST should bail on startAgentBusy.
+    // 1-shot re-entrancy guard: the second click during the in-flight POST should bail on startAgentBusy.
     const store = useWorkspacesStore()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let resolveFirst: (v: any) => void = () => {}
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const firstCallPromise = new Promise<any>((resolve) => {
       resolveFirst = resolve
     })
     const startAgentSpy = vi
       .spyOn(store, 'startAgentOnTask')
-      //
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .mockReturnValueOnce(firstCallPromise as any)
       .mockResolvedValueOnce({
@@ -195,7 +181,6 @@ describe('KanbanView.handleStartAgent', () => {
       })
 
     const view = await mountView()
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vm: any = view.vm
 

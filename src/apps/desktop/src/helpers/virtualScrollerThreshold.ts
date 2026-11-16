@@ -1,6 +1,4 @@
-/** Compute the effective `loadMore` threshold in pixels. The VirtualScroller fires `loadMore` when
- * the user is within this many pixels of the load edge. The threshold is the **larger** of: -
- * `absoluteFloor`  — the existing `loadMoreThreshold` prop, in px. */
+/** Compute the effective `loadMore` threshold in pixels. */
 export function computeLoadMoreThreshold(
   absoluteFloor: number,
   viewportRatio: number,

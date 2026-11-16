@@ -28,8 +28,7 @@ function toggle() {
     return
   }
   open.value = true
-  // Registered on the next tick so the click that opened the menu does not
-  // immediately close it again.
+  // Registered on the next tick so the click that opened the menu does not immediately close it again.
   setTimeout(() => document.addEventListener('click', close), 0)
 }
 

@@ -41,9 +41,7 @@ describe('estimateViewportEnd', () => {
   })
 
   it('short chats (window renders from 0 to end) anchor at the end, not 0', () => {
-    // THE reported bug: 8 groups all rendered [0, 8] — the old
-    // range.start anchor lit pill 0 at the bottom; the compensated
-    // anchor lights the last pill.
+    // THE reported bug: 8 groups all rendered [0, 8] — the old range.start anchor lit pill 0 at the bottom; the compensated anchor lights the last pill.
     const visEnd = estimateViewportEnd(0, 8, 8, 30)
     expect(pickActivePillIndex(pills, visEnd)).toBe(7)
   })

@@ -43,9 +43,7 @@ import { normalizeToolContent, parseKanbanMove } from './_shared/toolOutputParse
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). The backend input shape
-   * (`KanbanMoveTaskInput`) uses `task_id` + `target_column_id` / `target_column_name` — none of
-   * which appear in the result envelope until the move completes. */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
@@ -70,9 +68,7 @@ const taskId = computed(() => {
 
 const taskName = computed(() => {
   if (parsed.value.taskName) return parsed.value.taskName
-  // Best effort: the input shape has no `task_name` — fall back to the
-  // raw `task_id` the tool was called with so the header shows something
-  // meaningful while running.
+  // Best effort: the input shape has no `task_name` — fall back to the raw `task_id` the tool was called with so the header shows something meaningful while …
   return extractParam(props.parameters, 'task_name') ?? extractParam(props.parameters, 'task_id')
 })
 
@@ -83,8 +79,7 @@ const columnId = computed(() => {
 
 const columnName = computed(() => {
   if (parsed.value.columnName) return parsed.value.columnName
-  // Best effort across both input + envelope naming (`target_column_name`
-  // is the backend input field; `column_name` covers JSON callers).
+  // Best effort across both input + envelope naming (`target_column_name` is the backend input field; `column_name` covers JSON callers).
   return (
     extractParam(props.parameters, 'column_name') ??
     extractParam(props.parameters, 'target_column_name') ??
@@ -100,19 +95,14 @@ const position = computed(() => {
 const errorMessage = computed(() => parsed.value.error)
 
 // ---- Derived display values ------------------------------------------------
-// Running: result envelope is still empty (no data yet).
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content))
 
 const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.value ? '✓' : '✗'))
 
-// Header label: "<task_name> · <column_name>" on success (or while running, from the parameters
-// fallback), "error" on failure. We trim+strip the kanban_move wrapper so the user sees
-// "fix-blocking-sse-call" not the raw XML.
+// Header label: "<task_name> · <column_name>" on success (or while running, from the parameters fallback), "error" on failure.
 const headerLabel = computed(() => {
   if (!isSuccess.value && !isRunning.value) return 'error'
   const name = taskName.value ?? 'unknown task'

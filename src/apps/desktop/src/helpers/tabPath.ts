@@ -32,8 +32,7 @@ export function resolveTabPath(file: string, cwd: string): string {
   return isAbsolutePath(joined) ? normalisePath(joined) : joined
 }
 
-/** Every key one file may already be filed under: its resolved path first, then the spellings it
- * arrived with before a cwd made it absolute. */
+/** Every key one file may already be filed under: its resolved path first, then the spellings it arrived with before a cwd made it absolute. */
 export function fileKeyVariants(file: string, cwd: string, diff: boolean): string[] {
   if (!file) return ['file:']
   const prefix = diff ? 'diff:' : 'file:'

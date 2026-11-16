@@ -1,5 +1,4 @@
-/** Tests for GenerateImage.vue — the tool-output card component for the `generate_image` agent
- * tool. */
+/** Tests for GenerateImage.vue — the tool-output card component for the `generate_image` agent tool. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 

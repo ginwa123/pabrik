@@ -7,8 +7,6 @@ const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
 /// Migration 115 — a workspace records whether it is a microVM workspace.
-/// A workspace created while the server ran in `--saas` mode is VM-backed
-/// (is_vm = 1); one created on the host is not (is_vm = 0).
 pub const Migration115AddWorkspaceIsVm = struct {
     pub const version: u32 = 115;
     pub const name = "add_workspace_is_vm";
@@ -22,9 +20,7 @@ pub const Migration115AddWorkspaceIsVm = struct {
             "is_vm INTEGER NOT NULL DEFAULT 0",
         );
 
-        // Rows that predate the column were already running in a Firecracker
-        // on a `--saas` deployment, so an upgrade must not downgrade them.
-        // Inert locally: the flag is only read in saas mode.
+        // Rows that predate the column were already running in a Firecracker on a `--saas` deployment, so an upgrade must not downgrade them.
         try db.exec(
             allocator,
             "UPDATE workspaces SET is_vm = 1 WHERE is_vm = 0",
@@ -66,8 +62,7 @@ test "Migration115 marks a workspace VM-backed and leaves a new one host-backed"
     // The workspace that existed before the column is VM-backed.
     try testing.expectEqualStrings("1", row.values[0]);
 
-    // A workspace created after the migration is host-backed until its server
-    // says otherwise.
+    // A workspace created after the migration is host-backed until its server says otherwise.
     try db.exec(alloc, "INSERT INTO workspaces (id, name) VALUES ('ws_new', 'New')", &[_][]const u8{});
     var new_rows = try db.query(alloc, "SELECT is_vm FROM workspaces WHERE id = 'ws_new'", &[_][]const u8{});
     defer new_rows.deinit();

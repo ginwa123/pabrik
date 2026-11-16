@@ -9,8 +9,7 @@ import {
 } from './myersDiff'
 import { detectLanguage, highlightLine } from '@/helpers/codeHighlight'
 
-/** Renders a side-by-side or unified diff for two strings. Split-view is the default (matches
- * GitHub). Unified-view uses git-style `@@ -start,count +start,count @@` hunk headers. */
+/** Renders a side-by-side or unified diff for two strings. */
 interface Props {
   /** "Before" content (string; will be split into lines). */
   before: string
@@ -18,9 +17,7 @@ interface Props {
   after: string
   /** Optional path — used as a title on the diff header for context. */
   filePath?: string
-  /**    * Optional monaco language id for code coloring. When omitted it is derived from `filePath` via
-   * `detectLanguage`; unknown extensions fall back to plaintext (plain-text rendering, exactly as
-   * before). */
+  /** Optional monaco language id for code coloring. */
   language?: string
   /** Initial mode. Default 'split'. */
   initialMode?: 'split' | 'unified'
@@ -32,9 +29,7 @@ const props = withDefaults(defineProps<Props>(), {
   initialMode: 'split',
 })
 
-/** Emitted when the user clicks a line-number cell in the diff. Payload is the 1-based line number
- * in the file (the `after`-side line for split view, the actual row's new-line number for unified
- * view). */
+/** Emitted when the user clicks a line-number cell in the diff. */
 const emit = defineEmits<{
   'jump-to-line': [line: number]
 }>()
@@ -78,13 +73,10 @@ const changeCount = computed(() => {
 
 const hasChanges = computed(() => changeCount.value > 0)
 
-/** Effective language for code coloring: explicit prop wins, otherwise
- * derived from the file path. Plaintext disables token spans. */
+/** Effective language for code coloring: explicit prop wins, otherwise derived from the file path. */
 const effectiveLanguage = computed(() => props.language ?? detectLanguage(props.filePath ?? ''))
 
-/**  * Split one line into colored token spans. Plaintext (or an empty line) returns a single text node
- * — identical output to the old plain-text rendering. Tokens render as framework text nodes, never
- * HTML strings, so `old_str` content cannot inject markup. */
+/** Split one line into colored token spans. */
 function renderHighlighted(text: string, language: string): VNode[] {
   const tokens = highlightLine(text, language)
   if (tokens.length === 1 && tokens[0]!.type === 'plain') {
@@ -95,9 +87,7 @@ function renderHighlighted(text: string, language: string): VNode[] {
 
 const readMode = readStoredMode // suppress unused warning if some bundler tree-shakes
 
-// ──────────────────────────────────────────────────────────────────────────── Sub-components —
-// inline to avoid 3 separate files for tiny helpers.
-// ────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────── Sub-components — inline to avoid 3 separate files for tiny helpers.
 const DiffSplitSide = defineComponent({
   name: 'DiffSplitSide',
   props: {
@@ -135,9 +125,7 @@ const DiffSplitSide = defineComponent({
           h(
             'div',
             {
-              // The shared sizing wrapper: shrink-wraps to the widest row's content, floored at
-              // 100% of the scroll container (the pane). This is computed ONCE for the whole pane,
-              // so every row below inherits the same final width.
+              // The shared sizing wrapper: shrink-wraps to the widest row's content, floored at 100% of the scroll container (the pane).
               style: { width: 'max-content', minWidth: '100%' },
             },
             props.rows.map((row, idx) => renderSplitRow(row, idx, props.side, props.language)),
@@ -163,9 +151,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
     }
   }
 
-  // The text is deliberately NOT tinted per row. An `!important` red/green color here beats the
-  // `.tok-*` classes inside the spans and paints the whole line monochrome — a diff with no syntax
-  // color on exactly the lines that changed.
+  // The text is deliberately NOT tinted per row.
   const isClickable = lineNum !== null
   const gutterClickHandler = isClickable
     ? {
@@ -183,8 +169,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
       }
     : {}
 
-  // Row container: a plain block, `width: 100%` of the shared sizing wrapper (computed once per
-  // pane — see DiffSplitSide).
+  // Row container: a plain block, `width: 100%` of the shared sizing wrapper (computed once per pane — see DiffSplitSide).
   const rowStyle: Record<string, string> = { width: '100%' }
   if (bgColor) {
     rowStyle.backgroundColor = bgColor
@@ -201,9 +186,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
       'data-line': lineNum !== null ? String(lineNum) : undefined,
     },
     [
-      // Gutter: line number cell. position:sticky + left:0 makes it stay
-      // visible at the left edge when the user scrolls right. Card-bg
-      // colored so the number stays readable against the row's bg.
+      // Gutter: line number cell. position:sticky + left:0 makes it stay visible at the left edge when the user scrolls right.
       h(
         'span',
         {
@@ -219,8 +202,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
         },
         lineNum !== null ? String(lineNum) : '\u00a0',
       ),
-      // Line content. Token-colored spans (code) or a single plain-text node (plaintext/unknown
-      // language — identical to the old rendering).
+      // Line content.
       h(
         'span',
         {
@@ -294,8 +276,7 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
   let rowBgClass = ''
   if (row.kind === 'delete') rowBgClass = '!bg-[var(--tint-error)]'
   else if (row.kind === 'insert') rowBgClass = '!bg-[var(--tint-success)]'
-  // ...but the +/- sign keeps its red/green: it is the only place in the
-  // unified view that names the direction once the text is syntax-colored.
+  // ...but the +/- sign keeps its red/green: it is the only place in the unified view that names the direction once the text is syntax-colored.
   const signColorClass =
     row.kind === 'delete' ? 'text-[var(--semantic-error)]' : row.kind === 'insert' ? 'text-[var(--semantic-success)]' : ''
 
@@ -318,9 +299,7 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
         }
       : {}
 
-  // Row is `flex w-full` — full width of the shared sizing wrapper (see
-  // DiffUnifiedSide), so every row shares the same final width whether
-  // it's a one-character line or the longest line in the file.
+  // Row is `flex w-full` — full width of the shared sizing wrapper (see DiffUnifiedSide), so every row shares the same final width whether it's a one-character …
   return h(
     'div',
     {

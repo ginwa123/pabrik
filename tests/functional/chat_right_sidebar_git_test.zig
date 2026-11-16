@@ -1,6 +1,4 @@
-// Functional wire tests for the ChatView-embedded git-diff sidebar. Zig port
-// of `tests/functional/chat_right_sidebar_git_test.py` (same test names, same
-// order).
+// Functional wire tests for the ChatView-embedded git-diff sidebar.
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,8 +10,7 @@ const io = testing.io;
 
 // QUERY STRINGS RIDE IN `path`, NOT IN `HttpOptions.params`.
 
-/// A scratch directory to hold the fixture repo, mirroring pytest's
-/// `tmp_path`. Removed on the way out, whatever the test's outcome.
+/// A scratch directory to hold the fixture repo, mirroring pytest's `tmp_path`.
 const Scratch = struct {
     tmp: std.testing.TmpDir,
     root: []u8,
@@ -56,9 +53,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
         "git",         "-C",             cwd,
         "-c",          "user.email=t@t", "-c",
         "user.name=t",
-        // A machine-wide `commit.gpgsign=true` would make every
-        // fixture commit fail for a reason that has nothing to do with
-        // the code under test.
+        // A machine-wide `commit.gpgsign=true` would make every fixture commit fail for a reason that has nothing to do with the code under test.
         "-c",             "commit.gpgsign=false",
     });
     try argv.appendSlice(gpa, args);
@@ -77,8 +72,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// `git init --initial-branch=main --quiet <path>` — the Python fixture
-/// ran this as a separate subprocess before the `_git` helper existed.
+/// `git init --initial-branch=main --quiet <path>` — the Python fixture ran this as a separate subprocess before the `_git` helper existed.
 fn gitInit(path: []const u8) !void {
     var argv: [5][]const u8 = .{ "git", "init", "--initial-branch=main", "--quiet", path };
     const res = std.process.run(gpa, io, .{ .argv = &argv }) catch |err| {
@@ -103,8 +97,7 @@ fn buildDiffRepo(s: *Scratch) ![]u8 {
     try std.Io.Dir.cwd().createDirPath(io, cwd);
     try gitInit(cwd);
 
-    // Base commit: two files with the same two-line body, so the
-    // staged/unstaged distinction is visible in BOTH files' diffs.
+    // Base commit: two files with the same two-line body, so the staged/unstaged distinction is visible in BOTH files' diffs.
     {
         const p = try std.fs.path.join(gpa, &.{ cwd, "committed.txt" });
         defer gpa.free(p);
@@ -142,8 +135,7 @@ fn buildDiffRepo(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// Does the file-object array `arr` contain an entry whose `path` is
-/// exactly `want`?
+/// Does the file-object array `arr` contain an entry whose `path` is exactly `want`?
 fn arrayHasPath(arr: std.json.Array, want: []const u8) bool {
     for (arr.items) |v| {
         const o = switch (v) {
@@ -197,8 +189,7 @@ test "changes_groups_files" {
     const modified = doc.array("modified_files").?;
     const untracked = doc.array("untracked_files").?;
 
-    // Python asserted EXACT list equality; in Zig that is the length
-    // plus a membership check, with the body dumped when it fails.
+    // Python asserted EXACT list equality; in Zig that is the length plus a membership check, with the body dumped when it fails.
     if (arrayLen(staged) != 1 or !arrayHasPath(staged, "staged.txt")) {
         std.debug.print("staged_files should be exactly [staged.txt], got: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -213,9 +204,7 @@ test "changes_groups_files" {
     }
 }
 
-// FOLDER mode returns the unified hunk the inline view renders, and says
-// which side it came from. This used to be GET /api/git/file/diff, one git
-// spawn per file; it is now one POST for the whole repo.
+// FOLDER mode returns the unified hunk the inline view renders, and says which side it came from.
 test "folder_diff_content" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -242,8 +231,7 @@ test "folder_diff_content" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // The whole repo comes back in one response, each row tagged with the
-    // side it belongs to.
+    // The whole repo comes back in one response, each row tagged with the side it belongs to.
     const diffs = doc.array("diffs") orelse return error.TestUnexpectedResult;
     var found: ?[]const u8 = null;
     var found_staged: ?bool = null;
@@ -264,8 +252,7 @@ test "folder_diff_content" {
     try testing.expect(std.mem.indexOf(u8, diff_content, "@@") != null);
 }
 
-// The per-file diff route is gone: asking for it must 404, not fall through
-// to some other handler that happens to match the path.
+// The per-file diff route is gone: asking for it must 404, not fall through to some other handler that happens to match the path.
 test "per_file_diff_route_is_gone" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -285,8 +272,7 @@ test "per_file_diff_route_is_gone" {
             .{ .name = "file", .value = "committed.txt" },
             .{ .name = "staged", .value = "false" },
         },
-        // assert_status = false: THE STATUS IS THE ASSERTION. A hard-coded
-        // `.expect` would make the harness raise before we can look.
+        // assert_status = false: THE STATUS IS THE ASSERTION.
         .assert_status = false,
         .timeout_s = 15.0,
     });

@@ -1,5 +1,4 @@
-//! src/modules/agent/tools/zig Agent tool: list first-level
-//! entries in a directory (like `ls <path>`).
+//! src/modules/agent/tools/zig Agent tool: list first-level entries in a directory (like `ls <path>`).
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -9,8 +8,7 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const git_hardening = @import("helpers").git_hardening;
 
-/// Per-entry result returned by the iterator. Owned by the caller (use
-/// `freeEntries`).
+/// Per-entry result returned by the iterator.
 pub const Entry = struct {
     name: []const u8,
     /// Absolute path, e.g. `/home/user/project/src/main.zig`.
@@ -35,9 +33,7 @@ pub fn execute_list_directory(
     hidden: bool,
     respect_ignore_files: bool,
 ) ![]Entry {
-    // Defence in depth — `openDirAbsolute` below asserts
-    // `path.isAbsolute(...)`, and that assert is `unreachable` in a Debug
-    // build: it panics and aborts the whole worker (sig 6) instead of
+    // Defence in depth — `openDirAbsolute` below asserts `path.isAbsolute(...)`, and that assert is `unreachable` in a Debug build: it panics and aborts the whole …
     if (!std.fs.path.isAbsolute(dir_path_abs)) return error.PathNotAbsolute;
 
     var entries = std.ArrayList(Entry).empty;
@@ -68,9 +64,7 @@ pub fn execute_list_directory(
 
         if (!is_dir and !is_file) continue;
 
-        // Gitignore check (when enabled). Spawn failures (no `git`
-        // on PATH) are FALL-THROUGH-OK — treat as "not gitignored"
-        // so the entry is shown rather than silently dropped.
+        // Gitignore check (when enabled).
         if (respect_ignore_files) {
             const git_result = std.process.run(allocator, io, .{
                 .argv = &(git_hardening.git_prefix ++ .{ "-C", dir_path_abs, "check-ignore", name }),
@@ -115,9 +109,7 @@ pub fn execute_list_directory(
     return entries.toOwnedSlice(allocator);
 }
 
-/// JSON payload mirrors the old `<directory_listing>` envelope 1:1: `path`,
-/// `count`, and `entries` (one object per former `<file>` / `<directory>` tag
-/// with `name`, `path`, `is_directory`, `is_symlink`).
+/// JSON payload mirrors the old `<directory_listing>` envelope 1:1: `path`, `count`, and `entries` (one object per former `<file>` / `<directory>` tag with …
 pub const ListDirectoryEntryJSON = struct {
     name: []const u8,
     path: []const u8,
@@ -206,9 +198,7 @@ pub const list_directory_tool = AgentTool{
     },
 };
 
-// src/modules/agent/tools/list_directory_test.zig Tests for the
-// list_directory agent tool: first-level directory listing (ls-like).
-// Companion to glob_test.zig (recursive pattern matching).
+// src/modules/agent/tools/list_directory_test.zig Tests for the list_directory agent tool: first-level directory listing (ls-like).
 
 const builtin = @import("builtin");
 const testing = std.testing;
@@ -231,9 +221,7 @@ fn setupRoot(allocator: std.mem.Allocator) !TestEnv {
     return .{ .tmp_dir = tmp, .root_abs = try allocator.dupe(u8, path_buf[0..n]) };
 }
 
-// -------------------------------------------------------------------------
 // execute_list_directory — basic happy paths
-// -------------------------------------------------------------------------
 
 test "execute_list_directory: lists files and subdirs at the cwd" {
     const alloc = testing.allocator;
@@ -301,9 +289,7 @@ test "execute_list_directory: hidden=true includes dotfiles" {
 test "execute_list_directory: returns PathNotAbsolute for a relative path (no panic)" {
     const alloc = testing.allocator;
 
-    // `openDirAbsolute` asserts `path.isAbsolute(...)`; in a Debug build that
-    // assertion is `unreachable` → panic → abort(), killing the whole worker.
-    // A direct caller passing a relative path must get an error instead.
+    // `openDirAbsolute` asserts `path.isAbsolute(...)`; in a Debug build that assertion is `unreachable` → panic → abort(), killing the whole worker.
     for ([_][]const u8{ ".", "frontend/src", "" }) |relative| {
         const result = execute_list_directory(
             alloc,
@@ -319,9 +305,7 @@ test "execute_list_directory: returns PathNotAbsolute for a relative path (no pa
 test "execute_list_directory: returns PathNotFound for missing dir" {
     const alloc = testing.allocator;
 
-    // An ABSOLUTE name under the cwd: a hardcoded `/tmp/...` would be
-    // rooted-but-driveless on Windows, so `std.fs.path.isAbsolute` (which
-    // dispatches to `isAbsoluteWindows` there) would reject it as
+    // An ABSOLUTE name under the cwd: a hardcoded `/tmp/...` would be rooted-but-driveless on Windows, so `std.fs.path.isAbsolute` (which dispatches to …
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const missing = try absPath(&path_buf, "this_path_definitely_does_not_exist_xyz_123");
 
@@ -414,9 +398,7 @@ test "execute_list_directory: respect_ignore_files=false lists gitignored paths"
     try testing.expectEqualStrings("foo.log", entries[0].name);
 }
 
-// -------------------------------------------------------------------------
 // toJSON — JSON envelope
-// -------------------------------------------------------------------------
 
 test "toJSON: emits path, count and entries" {
     const alloc = testing.allocator;
@@ -459,7 +441,6 @@ test "toJSON: empty list produces empty entries array" {
 }
 
 // Schema contract — mirrors the static-contract tests in glob_test.zig
-// -------------------------------------------------------------------------
 
 test "list_directory_tool schema: name is list_directory, parameters object with 3 properties" {
     const params = list_directory_tool.function.parameters;
@@ -481,16 +462,13 @@ test "list_directory_tool schema: name is list_directory, parameters object with
     try testing.expect(found_ignore);
     try testing.expect(found_cwd);
 
-    // `cwd` is the ONLY required field: `path` still defaults to the call's
-    // cwd, but the model must state which directory it is working in.
+    // `cwd` is the ONLY required field: `path` still defaults to the call's cwd, but the model must state which directory it is working in.
     try testing.expectEqual(@as(usize, 1), params.required.len);
     try testing.expectEqualStrings("cwd", params.required[0]);
 }
 
 test "list_directory_tool description documents the cwd + path contract" {
-    // The DESCRIPTION is the product here: it is the only text the model
-    // reads before choosing arguments, so its promises are the contract the
-    // exec wrapper implements (helpers/path_validate.zig's validateCwd +
+    // The DESCRIPTION is the product here: it is the only text the model reads before choosing arguments, so its promises are the contract the exec wrapper …
     const desc = list_directory_tool.function.description;
     try testing.expect(std.mem.indexOf(u8, desc, "`cwd` is REQUIRED") != null);
     try testing.expect(std.mem.indexOf(u8, desc, "resolved against") != null);
@@ -512,8 +490,7 @@ test "list_directory_tool description documents the cwd + path contract" {
     try testing.expect(found_path);
     try testing.expect(found_cwd);
 
-    // The schema must actually require it — a described-but-optional `cwd`
-    // would let the model omit the one argument the resolution depends on.
+    // The schema must actually require it — a described-but-optional `cwd` would let the model omit the one argument the resolution depends on.
     var required_cwd = false;
     for (list_directory_tool.function.parameters.required) |name| {
         if (std.mem.eql(u8, name, "cwd")) required_cwd = true;
@@ -522,7 +499,6 @@ test "list_directory_tool description documents the cwd + path contract" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -537,17 +513,13 @@ const ListDirectoryInput = struct {
     path: []const u8 = ".",
     hidden: bool = false,
     respect_ignore_files: bool = true,
-    /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it. Empty by default so this struct
-    /// stays constructible, but the exec rejects an empty value.
+    /// REQUIRED on the wire.
     cwd: []const u8 = "",
 };
 
 const workspace_fs = @import("../loop/workspace_fs.zig");
 
-/// The listing, from whichever substrate owns the directory. Under `--saas`
-/// the guest lists it AND answers the ignore question — the host runs no git
-/// against a tenant tree — and every other mode is today's host listing.
+/// The listing, from whichever substrate owns the directory.
 fn listThrough(
     ctx: ToolExecContext,
     dir_abs: []const u8,
@@ -567,8 +539,7 @@ fn listThrough(
     };
     defer walked.deinit();
 
-    // The candidates come first, in the guest's own order: the ignore question
-    // is asked once for the whole directory rather than once per entry.
+    // The candidates come first, in the guest's own order: the ignore question is asked once for the whole directory rather than once per entry.
     var names: std.ArrayList([]const u8) = .empty;
     defer {
         for (names.items) |name| ctx.allocator.free(name);
@@ -585,8 +556,7 @@ fn listThrough(
     for (walked.entries) |entry| {
         const name = std.fs.path.basename(entry.abs);
         if (!hidden and name.len > 0 and name[0] == '.') continue;
-        // The host's reader shows files and directories and drops every other
-        // kind, so a link the guest reported must not appear here either.
+        // The host's reader shows files and directories and drops every other kind, so a link the guest reported must not appear here either.
         if (entry.kind != .dir and entry.kind != .file) continue;
         const owned_name = try ctx.allocator.dupe(u8, name);
         errdefer ctx.allocator.free(owned_name);
@@ -626,8 +596,7 @@ fn listThrough(
         });
     }
 
-    // The same order the host's listing is in, so the payload does not depend
-    // on which substrate answered.
+    // The same order the host's listing is in, so the payload does not depend on which substrate answered.
     std.mem.sort(Entry, entries.items, {}, struct {
         fn less(_: void, a: Entry, b: Entry) bool {
             if (a.is_directory != b.is_directory) return a.is_directory;
@@ -652,8 +621,7 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // 2. `cwd` is required (see helpers/path_validate.validateCwd), and the
-    //    model's directory resolves against it.
+    // 2.
     path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -672,8 +640,7 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
         parsed.value.hidden,
         parsed.value.respect_ignore_files,
     ) catch |err| {
-        // The resolved absolute path is the one thing the model can act on
-        // here, so it rides along as the explanation's context.
+        // The resolved absolute path is the one thing the model can act on here, so it rides along as the explanation's context.
         const err_msg = try error_explain.explain(ctx.allocator, err, dir_path_abs);
         defer ctx.allocator.free(err_msg);
         const output = try wrapToolOutput(ctx.allocator, "list_directory", tc.function.arguments, false, err_msg, "");
@@ -681,16 +648,13 @@ pub fn execListDirectory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer freeEntries(ctx.allocator, entries);
 
-    // 4. Serialise to JSON and wrap. The reported `path` is the resolved
-    // absolute path, so the LLM (and the tool-output panel) can see which
-    // directory `frontend/src` actually meant.
+    // 4.
     const inner = try toJSON(ctx.allocator, entries, dir_path_abs);
     const output = try wrapToolOutput(ctx.allocator, "list_directory", tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-// End-to-end proof that the list_directory exec wrapper resolves its input
-// BEFORE reaching the underlying tool.
+// End-to-end proof that the list_directory exec wrapper resolves its input BEFORE reaching the underlying tool.
 test "execListDirectory: absolute path passes through and lists entries" {
     var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
     defer arena.deinit();
@@ -792,9 +756,7 @@ test "execListDirectory: absolute path returns success envelope without validato
         .logger = undefined,
         .session_id = "test_session",
         .model = "test",
-        // A DIFFERENT absolute base, so "used as-is" stays observable: had
-        // the wrapper joined onto ctx.cwd, the reported path would not
-        // match `abs_dir`.
+        // A DIFFERENT absolute base, so "used as-is" stays observable: had the wrapper joined onto ctx.cwd, the reported path would not match `abs_dir`.
         .cwd = "/home/user/proj",
         .api_key = "test",
         .base_url = "test",
@@ -804,8 +766,7 @@ test "execListDirectory: absolute path returns success envelope without validato
         .environment = null,
     };
 
-    // `std.json.Stringify` escapes the Windows separators for us (a raw
-    // `C:\Users\...` inside a JSON string is malformed).
+    // `std.json.Stringify` escapes the Windows separators for us (a raw `C:\Users\...` inside a JSON string is malformed).
     const args = try std.json.Stringify.valueAlloc(a, .{
         .path = abs_dir,
         .cwd = "/home/user/proj",
@@ -832,9 +793,7 @@ test "execListDirectory: absolute path returns success envelope without validato
     try exec_testing.expect(obj2.get("error").? == .null);
 }
 
-// =====================================================================
-// Relative-path regression tests (crash: task_1790256349339_0) The LLM called
-// `list_directory` with `{"path":"frontend/src"}` and the wrapper forwarded
+// Relative-path regression tests (crash: task_1790256349339_0) The LLM called `list_directory` with `{"path":"frontend/src"}` and the wrapper forwarded
 
 /// Build a ToolExecContext for the wrapper tests.
 fn testCtx(
@@ -890,9 +849,7 @@ test "execListDirectory: relative 'frontend/src' resolves against the call's cwd
     var thinking: bool = false;
     const ctx = testCtx(a, root_abs, &temperature, &thinking);
 
-    // The EXACT arguments the model emitted when the worker aborted, plus the
-    // `cwd` the tool now requires. `std.json.Stringify` handles the Windows
-    // separators in `root_abs`.
+    // The EXACT arguments the model emitted when the worker aborted, plus the `cwd` the tool now requires.
     const call_a = try std.json.Stringify.valueAlloc(a, .{
         .path = "frontend/src",
         .cwd = root_abs,
@@ -906,24 +863,19 @@ test "execListDirectory: relative 'frontend/src' resolves against the call's cwd
     defer parsed.deinit();
     const obj = parsed.value.object;
 
-    // Success envelope — BEFORE the fix this line never ran: the process
-    // aborted inside openDirAbsolute's assertion.
+    // Success envelope — BEFORE the fix this line never ran: the process aborted inside openDirAbsolute's assertion.
     try exec_testing.expect(obj.get("success").?.bool);
     try exec_testing.expect(obj.get("error").? == .null);
 
     const data = obj.get("data").?.object;
     const expected_dir = try std.fs.path.join(a, &.{ root_abs, "frontend/src" });
-    // The reported path is the resolved ABSOLUTE path, so the LLM can see
-    // which directory its relative path meant.
+    // The reported path is the resolved ABSOLUTE path, so the LLM can see which directory its relative path meant.
     try exec_testing.expectEqualStrings(expected_dir, data.get("path").?.string);
-    // NB: `count` may legitimately be 0 on this call — `tmpDir` creates the
-    // fixture under `.zig-cache/tmp/<rand>`, which lives INSIDE the repo and
-    // is covered by the repo's `.gitignore`, so `git check-ignore` filters
+    // NB: `count` may legitimately be 0 on this call — `tmpDir` creates the fixture under `.zig-cache/tmp/<rand>`, which lives INSIDE the repo and is covered by the …
     const entries = data.get("entries").?.array.items;
     try exec_testing.expectEqual(data.get("count").?.integer, @as(i64, @intCast(entries.len)));
 
-    // Same relative path, gitignore filtering off — proves `frontend/src`
-    // resolved to <cwd>/frontend/src (and not the server process cwd).
+    // Same relative path, gitignore filtering off — proves `frontend/src` resolved to <cwd>/frontend/src (and not the server process cwd).
     const call_b = try std.json.Stringify.valueAlloc(a, .{
         .path = "frontend/src",
         .cwd = root_abs,
@@ -978,8 +930,7 @@ test "execListDirectory: omitted path lists the call's cwd (not the process cwd)
     const obj = parsed.value.object;
     try exec_testing.expect(obj.get("success").?.bool);
 
-    // The default `"."` means the session cwd itself — NOT the server
-    // process cwd, and never an abort.
+    // The default `"."` means the session cwd itself — NOT the server process cwd, and never an abort.
     const data = obj.get("data").?.object;
     try exec_testing.expectEqualStrings(root_abs, data.get("path").?.string);
     const entries = data.get("entries").?.array.items;
@@ -1002,9 +953,7 @@ test "execListDirectory: an empty path resolves to the call's cwd" {
     var thinking: bool = false;
     const ctx = testCtx(a, root_abs, &temperature, &thinking);
 
-    // Some providers emit `"path":""` for an optional string instead of
-    // omitting the field (same class of bug as the migrations' empty-slice
-    // binding).
+    // Some providers emit `"path":""` for an optional string instead of omitting the field (same class of bug as the migrations' empty-slice binding).
     const call = try std.json.Stringify.valueAlloc(a, .{
         .path = "",
         .cwd = root_abs,

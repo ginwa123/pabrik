@@ -10,20 +10,16 @@ const object_store = @import("pabrikcore").storage.storage;
 /// A prose document. The body is markdown text.
 pub const FORMAT_MARKDOWN = "markdown";
 
-/// A spreadsheet. The body is a Univer snapshot: one JSON object holding the
-/// workbook's sheets, cells and styles.
+/// A spreadsheet.
 pub const FORMAT_OFFICE = "office";
 
-/// A self-contained HTML page. The body is HTML source, rendered in a
-/// sandboxed iframe.
+/// A self-contained HTML page.
 pub const FORMAT_HTML = "html";
 
-/// Every format a document may be created with. A format outside this list is
-/// refused at create time rather than stored and rendered as a blank page.
+/// Every format a document may be created with.
 pub const SUPPORTED_FORMATS = [_][]const u8{ FORMAT_MARKDOWN, FORMAT_OFFICE, FORMAT_HTML };
 
 /// The canonical format for `raw`, or null when it is not one we can render.
-/// An empty value means "the caller did not choose", which is markdown.
 pub fn normalizeFormat(raw: []const u8) ?[]const u8 {
     if (raw.len == 0) return FORMAT_MARKDOWN;
     for (SUPPORTED_FORMATS) |format| {
@@ -32,19 +28,13 @@ pub fn normalizeFormat(raw: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Bound where a query compares "this level" and it can be the root. `#` is not
-/// a folder-id character, and "" is unusable: `Backend.exec` binds it as SQL
-/// NULL, so `COALESCE(folder_id, '') = ''` would never match a row.
+/// Bound where a query compares "this level" and it can be the root.
 const ROOT_LEVEL = "#root";
 
-/// Hard cap on a single document's body. 4 MiB is generous for a markdown
-/// note and stops a runaway agent from filling the disk. The agent tool
-/// surfaces it as a tool error; the HTTP handler as 413.
+/// Hard cap on a single document's body. 4 MiB is generous for a markdown note and stops a runaway agent from filling the disk.
 pub const MAX_CONTENT_BYTES: usize = 4 << 20; // 4 MiB
 
-/// How much of the body the `preview` column keeps. Bounded so a 4 MiB note
-/// costs 512 bytes in every list read, and so the sidebar never needs the
-/// object store.
+/// How much of the body the `preview` column keeps.
 pub const PREVIEW_MAX_BYTES: usize = 512;
 
 /// The first `PREVIEW_MAX_BYTES` of `body`, cut on a UTF-8 boundary.
@@ -62,9 +52,7 @@ fn previewFor(allocator: std.mem.Allocator, body: []const u8, format: []const u8
     return allocator.dupe(u8, previewOf(body));
 }
 
-/// The visible text of an HTML body: `<script>`/`<style>` content dropped,
-/// tags stripped, entities decoded, runs of whitespace collapsed. A search
-/// for a phrase the reader can see must not depend on the markup around it.
+/// The visible text of an HTML body: `<script>`/`<style>` content dropped, tags stripped, entities decoded, runs of whitespace collapsed.
 fn htmlPreview(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -149,8 +137,7 @@ const DecodedEntity = struct {
     consumed: usize,
 };
 
-/// The five named entities plus numeric references. An unknown entity is left
-/// alone, so `&` in prose survives.
+/// The five named entities plus numeric references.
 fn decodeEntity(rest: []const u8) DecodedEntity {
     const named = [_]struct { raw: []const u8, text: []const u8 }{
         .{ .raw = "&amp;", .text = "&" },
@@ -169,9 +156,7 @@ fn decodeEntity(rest: []const u8) DecodedEntity {
     return .{ .text = "", .consumed = 0 };
 }
 
-/// The readable text of an office document: cell text for a sheet, `dataStream`
-/// for a document, raw bytes for anything unreadable. A lost preview is not a
-/// lost document, so a malformed body never fails the write.
+/// The readable text of an office document: cell text for a sheet, `dataStream` for a document, raw bytes for anything unreadable.
 fn officePreview(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch
         return allocator.dupe(u8, previewOf(body));
@@ -181,8 +166,7 @@ fn officePreview(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
         .object => |object| object,
         else => return allocator.dupe(u8, previewOf(body)),
     };
-    // A body written before the envelope existed is a bare snapshot; reading it
-    // as its own snapshot keeps those documents searchable.
+    // A body written before the envelope existed is a bare snapshot; reading it as its own snapshot keeps those documents searchable.
     const snapshot = switch (root.get("snapshot") orelse parsed.value) {
         .object => |object| object,
         else => return allocator.dupe(u8, previewOf(body)),
@@ -205,8 +189,7 @@ fn officePreview(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
     return allocator.dupe(u8, previewOf(text));
 }
 
-/// A spreadsheet's cells, in the order the snapshot lists its sheets, then rows,
-/// then columns.
+/// A spreadsheet's cells, in the order the snapshot lists its sheets, then rows, then columns.
 fn appendSheetText(
     allocator: std.mem.Allocator,
     out: *std.ArrayList(u8),
@@ -260,8 +243,7 @@ fn appendCellText(
     }
 }
 
-/// A word-processor document's text: `body.dataStream`, with the paragraph
-/// breaks Univer stores as `\r`/`\n` turned into spaces.
+/// A word-processor document's text: `body.dataStream`, with the paragraph breaks Univer stores as `\r`/`\n` turned into spaces.
 fn appendDocumentText(
     allocator: std.mem.Allocator,
     out: *std.ArrayList(u8),
@@ -291,9 +273,7 @@ fn appendDocumentText(
     }
 }
 
-/// An object's keys ordered by numeric value, so a preview reads top-down and
-/// left-to-right. A non-numeric key sorts after every number, by bytes, which
-/// keeps the order total and stable.
+/// An object's keys ordered by numeric value, so a preview reads top-down and left-to-right.
 fn sortedCellKeys(allocator: std.mem.Allocator, object: std.json.ObjectMap) ![]const []const u8 {
     const keys = try allocator.alloc([]const u8, object.count());
     errdefer allocator.free(keys);
@@ -331,16 +311,14 @@ fn appendValueText(
     try out.appendSlice(allocator, text);
 }
 
-/// Process-local monotonic counter for `document_id` generation. The wall
-/// clock alone is not a source of uniqueness here.
+/// Process-local monotonic counter for `document_id` generation.
 var document_id_counter: std.atomic.Value(u64) = .init(0);
 
 fn documentIdSeq() u64 {
     return document_id_counter.fetchAdd(1, .monotonic);
 }
 
-/// One row in `documents`. All string fields are allocator-owned and must
-/// be freed by the caller.
+/// One row in `documents`.
 pub const DocumentRow = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -360,13 +338,11 @@ pub const DocumentRow = struct {
     content_bytes: i64 = 0,
     /// The first `PREVIEW_MAX_BYTES` of the body, kept in SQL for the sidebar.
     preview: []const u8 = "",
-    /// Migration 148 — the document's own glyph name. NULL means "no override":
-    /// the sidebar draws `file` instead.
+    /// Migration 148 — the document's own glyph name. NULL means "no override"
     icon: ?[]const u8 = null,
 };
 
-/// Fields for a new document. `workspace_id` is required and has no
-/// default: a document with no owner is not a document.
+/// Fields for a new document.
 pub const CreateDocumentArgs = struct {
     workspace_id: []const u8,
     title: []const u8 = "",
@@ -377,17 +353,14 @@ pub const CreateDocumentArgs = struct {
     folder_id: ?[]const u8 = null,
 };
 
-/// Patch shape. Every field is optional; an absent field keeps its current
-/// value (the `effective_*` pattern from the routine update handler).
+/// Patch shape.
 pub const UpdateDocumentArgs = struct {
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
-    /// Set `move_folder` to move, so `folder_id = null` means "to the root"
-    /// rather than "keep the current folder".
+    /// Set `move_folder` to move, so `folder_id = null` means "to the root" rather than "keep the current folder".
     folder_id: ?[]const u8 = null,
     move_folder: bool = false,
-    /// When set, the patch is refused with `error.FormatMismatch` unless the
-    /// stored document already has this format.
+    /// When set, the patch is refused with `error.FormatMismatch` unless the stored document already has this format.
     require_format: ?[]const u8 = null,
 };
 
@@ -395,8 +368,7 @@ pub const CreateDocumentError = error{
     WorkspaceIdRequired,
     TitleRequired,
     ContentTooLarge,
-    /// A non-empty body with no object store configured. The body has nowhere
-    /// to live, so the write is refused rather than silently dropped.
+    /// A non-empty body with no object store configured.
     NoStorage,
     UnsupportedFormat,
     FolderNotFound,
@@ -411,9 +383,7 @@ pub const ListDocumentsError = error{
     OutOfMemory,
 };
 
-/// Same error set as `ListDocumentsError`; `searchDocuments` reuses it so a
-/// caller that handles "the list failed" already handles "the search
-/// failed" and cannot accidentally drop one arm.
+/// Same error set as `ListDocumentsError`; `searchDocuments` reuses it so a caller that handles "the list failed" already handles "the search failed" and cannot …
 pub const SearchDocumentsError = ListDocumentsError;
 
 pub const GetDocumentError = error{
@@ -429,8 +399,7 @@ pub const UpdateDocumentError = error{
     ContentTooLarge,
     /// `require_format` was set and the stored document has another format.
     FormatMismatch,
-    /// A non-empty body with no object store configured. See
-    /// `CreateDocumentError.NoStorage`.
+    /// A non-empty body with no object store configured.
     NoStorage,
     FolderNotFound,
     UpdateFailed,
@@ -458,8 +427,7 @@ pub const ReorderDocumentsError = error{
 pub const BackfillOptions = struct {
     /// Only this workspace. Null means every workspace.
     workspace_id: ?[]const u8 = null,
-    /// Stop after this many rows. 0 means no cap, so a run is resumable by
-    /// repeating it with a limit.
+    /// Stop after this many rows. 0 means no cap, so a run is resumable by repeating it with a limit.
     limit: usize = 0,
     /// Report what would move without writing anything.
     dry_run: bool = false,
@@ -500,8 +468,7 @@ fn freeCandidates(allocator: std.mem.Allocator, candidates: []Candidate) void {
     allocator.free(candidates);
 }
 
-/// The SELECT list, shared by every read so no call site can accidentally
-/// return a different shape.
+/// The SELECT list, shared by every read so no call site can accidentally return a different shape.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, title, format, " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
@@ -530,8 +497,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Docu
         .content_bytes = std.fmt.parseInt(i64, values[10], 10) catch 0,
         .preview = try allocator.dupe(u8, values[11]),
         .icon = icon,
-        // The body is not a column any more: `getDocument` hydrates it from
-        // the object store, and a list or search read leaves it empty.
+        // The body is not a column any more: `getDocument` hydrates it from the object store, and a list or search read leaves it empty.
         .content = "",
     };
 }
@@ -551,8 +517,7 @@ fn listDocumentsRaw(
     defer q.deinit();
 
     var list: std.ArrayList(DocumentRow) = .empty;
-    // On a mid-iteration OOM the already-built rows would leak; unwind
-    // them here rather than at each `try`.
+    // On a mid-iteration OOM the already-built rows would leak; unwind them here rather than at each `try`.
     errdefer freeDocumentRows(allocator, list.items);
 
     while (q.next() catch return error.QueryFailed) |r| {
@@ -562,13 +527,10 @@ fn listDocumentsRaw(
     return list.toOwnedSlice(allocator);
 }
 
-/// The LIKE escape character used by `searchDocuments`. Named so the SQL and
-/// the escaper below can never disagree — a mismatch here is a wrong answer,
-/// not a compile error.
+/// The LIKE escape character used by `searchDocuments`.
 const LIKE_ESCAPE = '\\';
 
-/// Escape `needle` into a SQLite `LIKE ... ESCAPE '\'` pattern that matches
-/// any string CONTAINING it verbatim.
+/// Escape `needle` into a SQLite `LIKE ...
 fn likeContainsPattern(allocator: std.mem.Allocator, needle: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -581,9 +543,7 @@ fn likeContainsPattern(allocator: std.mem.Allocator, needle: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Documents in one workspace whose TITLE, PREVIEW or CONTENT contains
-/// `needle`, case-insensitively — newest-updated first. `preview` is in the
-/// predicate so search survives the body leaving the column.
+/// Documents in one workspace whose TITLE, PREVIEW or CONTENT contains `needle`, case-insensitively — newest-updated first.
 pub fn searchDocumentsRaw(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -628,15 +588,12 @@ pub fn searchDocumentsRaw(
     return list.toOwnedSlice(allocator);
 }
 
-/// A document store: the database, plus the object store the bodies may live
-/// in. `storage = null` keeps every body in the `content` column, which is
-/// what the free functions below do.
+/// A document store: the database, plus the object store the bodies may live in.
 pub const Store = struct {
     db: *database.Db,
     storage: ?object_store.Storage = null,
 
-    /// One document, scoped to `workspace_id`, with its body hydrated from the
-    /// object store when the row points at one.
+    /// One document, scoped to `workspace_id`, with its body hydrated from the object store when the row points at one.
     pub fn getDocument(
         self: Store,
         allocator: std.mem.Allocator,
@@ -649,8 +606,7 @@ pub const Store = struct {
         return row;
     }
 
-    /// Every document in one workspace, in saved sidebar order. Reads the
-    /// `content` column, so a list costs no object-store round-trip.
+    /// Every document in one workspace, in saved sidebar order.
     pub fn listDocuments(
         self: Store,
         allocator: std.mem.Allocator,
@@ -659,8 +615,7 @@ pub const Store = struct {
         return listDocumentsRaw(allocator, self.db, workspace_id);
     }
 
-    /// Documents whose title or body contains `needle`. Reads the `content`
-    /// column for the same reason as `listDocuments`.
+    /// Documents whose title or body contains `needle`.
     pub fn searchDocuments(
         self: Store,
         allocator: std.mem.Allocator,
@@ -670,8 +625,7 @@ pub const Store = struct {
         return searchDocumentsRaw(allocator, self.db, workspace_id, needle);
     }
 
-    /// The row as SQL has it, without touching the object store. The write
-    /// paths use this because they already hold the body they are storing.
+    /// The row as SQL has it, without touching the object store.
     fn readRow(
         self: Store,
         allocator: std.mem.Allocator,
@@ -692,9 +646,7 @@ pub const Store = struct {
         return rowFromValues(allocator, r.values) catch return error.OutOfMemory;
     }
 
-    /// Replace `row.content` with the object's bytes. A missing object leaves
-    /// the column's copy in place: during the transition the column is
-    /// authoritative, so a fallback is correct rather than an error.
+    /// Replace `row.content` with the object's bytes.
     fn hydrate(self: Store, allocator: std.mem.Allocator, row: *DocumentRow) void {
         const key = row.content_key orelse return;
         const s = self.storage orelse return;
@@ -704,8 +656,6 @@ pub const Store = struct {
     }
 
     /// Insert a document and return it with its canonical id + timestamps.
-    /// The body goes to the object FIRST, so a failed row write leaves a
-    /// harmless orphan rather than a row pointing at nothing.
     pub fn createDocument(
         self: Store,
         allocator: std.mem.Allocator,
@@ -716,8 +666,7 @@ pub const Store = struct {
         const title = std.mem.trim(u8, args.title, " \t\n\r");
         if (title.len == 0) return error.TitleRequired;
         if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
-        // The request is validated before the server's capability: a bad format
-        // is the caller's mistake (400), not a missing object store (500).
+        // The request is validated before the server's capability: a bad format is the caller's mistake (400), not a missing object store (500).
         const format = normalizeFormat(args.format) orelse return error.UnsupportedFormat;
         if (self.storage == null and args.content.len > 0) return error.NoStorage;
 
@@ -728,8 +677,7 @@ pub const Store = struct {
             }
         }
 
-        // `doc_<nanos>_<pid>_<seq>` — the workspace_id scheme from
-        // `workspace_provisioning.zig`, for the same reason.
+        // `doc_<nanos>_<pid>_<seq>` — the workspace_id scheme from `workspace_provisioning.zig`, for the same reason.
         const document_id = try std.fmt.allocPrint(
             allocator,
             "doc_{d}_{d}_{d}",
@@ -747,9 +695,7 @@ pub const Store = struct {
         };
         defer placed.deinit(allocator);
 
-        // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
-        // `Backend.exec` binds a zero-length slice as SQL NULL, which would
-        // violate the constraint outright.
+        // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column
         const folder = args.folder_id orelse "";
         const level = if (folder.len == 0) ROOT_LEVEL else folder;
         self.db.exec(allocator,
@@ -775,17 +721,14 @@ pub const Store = struct {
         }) catch
             return error.InsertFailed;
 
-        // The re-read uses a wider error set than this function declares, so map
-        // it: a genuine "row is gone" is the consistency error, and anything else
-        // (query failure, OOM) is a failed insert from the caller's
+        // The re-read uses a wider error set than this function declares, so map it: a genuine "row is gone" is the consistency error, and anything else (query failure …
         return self.getDocument(allocator, args.workspace_id, document_id) catch |err| switch (err) {
             error.NotFound, error.IdsRequired, error.QueryFailed => error.RowNotFoundAfterInsert,
             error.OutOfMemory => error.InsertFailed,
         };
     }
 
-    /// Patch a document. Absent fields keep their current value and `updated_at`
-    /// always advances.
+    /// Patch a document.
     pub fn updateDocument(
         self: Store,
         allocator: std.mem.Allocator,
@@ -799,9 +742,7 @@ pub const Store = struct {
             if (self.storage == null and c.len > 0) return error.NoStorage;
         }
 
-        // Load the current values so an absent field is a true no-op. This MUST
-        // hydrate: a title-only PATCH that read the row without its body would
-        // write an empty object and lose the document.
+        // Load the current values so an absent field is a true no-op.
         const existing = self.getDocument(allocator, workspace_id, document_id) catch
             return error.NotFound;
         defer freeDocumentRow(allocator, existing);
@@ -817,9 +758,7 @@ pub const Store = struct {
         } else existing.title;
         const content = patch.content orelse existing.content;
 
-        // A patch with no body must not rewrite one: reuse the row's own
-        // pointer and preview, or a title-only patch blanks the preview of a
-        // row whose object is missing.
+        // A patch with no body must not rewrite one: reuse the row's own pointer and preview, or a title-only patch blanks the preview of a row whose object is missing.
         const placed = if (patch.content == null)
             placedFromRow(allocator, existing) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
@@ -877,9 +816,7 @@ pub const Store = struct {
             return error.UpdateFailed;
     }
 
-    /// Set (or clear) a document's glyph. `null` is "Reset to default". Its own
-    /// statement rather than a field on `updateDocument`: routing it through the
-    /// body path would make an icon-only patch re-place the object.
+    /// Set (or clear) a document's glyph.
     pub fn updateDocumentIcon(
         self: Store,
         allocator: std.mem.Allocator,
@@ -910,9 +847,7 @@ pub const Store = struct {
         };
     }
 
-    /// Delete a document. Scoped like every other read: a foreign id reports
-    /// `error.NotFound` and deletes nothing. The object goes AFTER the row, so
-    /// a failure leaves an orphan rather than a row pointing at nothing.
+    /// Delete a document.
     pub fn deleteDocument(
         self: Store,
         allocator: std.mem.Allocator,
@@ -921,9 +856,7 @@ pub const Store = struct {
     ) DeleteDocumentError!void {
         if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
 
-        // Check-then-delete in one statement: a DELETE that affects 0 rows is the
-        // same "not found" the guard would have reported, so a second round-trip
-        // is only needed to distinguish the two cases.
+        // Check-then-delete in one statement: a DELETE that affects 0 rows is the same "not found" the guard would have reported, so a second round-trip is only needed …
         var q = self.db.query(
             allocator,
             "SELECT id, COALESCE(content_key, '') FROM documents WHERE id = ? AND workspace_id = ?",
@@ -949,9 +882,7 @@ pub const Store = struct {
         }
     }
 
-    /// Move every body that is still only in the `content` column into the
-    /// object store. Idempotent: a second run finds nothing to move. The body
-    /// stays in the column — clearing it is a later phase.
+    /// Move every body that is still only in the `content` column into the object store.
     pub fn backfill(
         self: Store,
         allocator: std.mem.Allocator,
@@ -982,16 +913,13 @@ pub const Store = struct {
         return report;
     }
 
-    /// Rows whose body is still only in the column, oldest id first so a
-    /// `--limit` run resumes where the last one stopped.
+    /// Rows whose body is still only in the column, oldest id first so a `--limit` run resumes where the last one stopped.
     fn backfillCandidates(
         self: Store,
         allocator: std.mem.Allocator,
         opts: BackfillOptions,
     ) BackfillError![]Candidate {
-        // The body is not a column any more, so a row with no key has no body
-        // to move. The query still runs so the report is honest about what is
-        // left, and every candidate lands in `skipped_empty`.
+        // The body is not a column any more, so a row with no key has no body to move.
         const sql = if (opts.workspace_id != null)
             "SELECT id, workspace_id, '' FROM documents WHERE content_key IS NULL AND workspace_id = ? ORDER BY id"
         else
@@ -1019,8 +947,7 @@ pub const Store = struct {
         return list.toOwnedSlice(allocator);
     }
 
-    /// Write one body and point its row at it. The object goes first, so a
-    /// failed row update leaves an orphan rather than a dangling pointer.
+    /// Write one body and point its row at it.
     fn backfillOne(
         self: Store,
         allocator: std.mem.Allocator,
@@ -1058,9 +985,7 @@ pub const Store = struct {
         }) catch return error.ObjectStoreFailed;
     }
 
-    /// The object-store half of a write: the key, digest, byte count and
-    /// preview for `body`, with the object already stored when a store is
-    /// configured.
+    /// The object-store half of a write: the key, digest, byte count and preview for `body`, with the object already stored when a store is configured.
     fn placeBody(
         self: Store,
         allocator: std.mem.Allocator,
@@ -1098,9 +1023,7 @@ pub const Store = struct {
 
 pub const PlaceError = error{ ObjectStoreFailed, OutOfMemory };
 
-/// A `Placed` that reuses an existing row's pointer and preview, for a patch
-/// that changes neither. The strings are duplicated so `Placed.deinit` stays
-/// the only owner.
+/// A `Placed` that reuses an existing row's pointer and preview, for a patch that changes neither.
 fn placedFromRow(allocator: std.mem.Allocator, row: DocumentRow) PlaceError!Placed {
     var placed = Placed{ .preview = allocator.dupe(u8, row.preview) catch return error.OutOfMemory };
     errdefer allocator.free(placed.preview);
@@ -1115,8 +1038,7 @@ fn placedFromRow(allocator: std.mem.Allocator, row: DocumentRow) PlaceError!Plac
     return placed;
 }
 
-/// What `placeBody` produced. `key`, `sha256` and `preview` are owned; the byte
-/// count lives in `bytes_buf` so the struct stays copyable.
+/// What `placeBody` produced.
 const Placed = struct {
     key: ?[]const u8 = null,
     sha256: ?[]const u8 = null,
@@ -1213,8 +1135,7 @@ pub fn reorderDocuments(
     const folder = folder_id orelse "";
     const level = if (folder.len == 0) ROOT_LEVEL else folder;
 
-    // Sibling order is per level: an id in another folder is not "known" here,
-    // so a reorder cannot silently renumber a list the caller is not looking at.
+    // Sibling order is per level: an id in another folder is not "known" here, so a reorder cannot silently renumber a list the caller is not looking at.
     var q = db.query(
         allocator,
         "SELECT id FROM documents WHERE workspace_id = ? AND COALESCE(folder_id, '#root') = ?",
@@ -1476,8 +1397,7 @@ test "createDocument: a new document lands above every existing one" {
 
 const memory_backend = @import("pabrikcore").storage.memory;
 
-/// A store whose every verb fails, so a test can prove the write path stops
-/// before it touches the row.
+/// A store whose every verb fails, so a test can prove the write path stops before it touches the row.
 const FailingStorage = struct {
     fn put(_: *anyopaque, _: []const u8, _: []const u8) object_store.Error!void {
         return error.IoFailed;
@@ -1532,9 +1452,7 @@ test "createDocument with no store refuses a non-empty body instead of dropping 
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The body has nowhere to live: the `content` column is gone (Migration
-    // 144) and no object store is configured. Writing the row anyway would
-    // hand back a document that reads as empty — the exact bug this guards.
+    // The body has nowhere to live: the `content` column is gone (Migration 144) and no object store is configured.
     try testing.expectError(error.NoStorage, createDocument(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .title = "Plan",
@@ -1644,8 +1562,7 @@ test "getDocument reads the body from the object" {
     });
     defer freeDocumentRow(alloc, created);
 
-    // Overwrite the object behind the row's back. A read that returns this
-    // text can only have come from the store.
+    // Overwrite the object behind the row's back.
     try objects.asStorage().put(created.content_key.?, "object copy");
 
     const row = try store.getDocument(alloc, "ws_1", created.id);
@@ -1672,9 +1589,7 @@ test "getDocument returns an empty body when the object is gone" {
 
     try objects.asStorage().delete(created.content_key.?);
 
-    // There is no column to fall back to any more. The row still reads, with
-    // an empty body and its preview — a missing object is a lost body, not a
-    // failed read.
+    // There is no column to fall back to any more.
     const row = try store.getDocument(alloc, "ws_1", created.id);
     defer freeDocumentRow(alloc, row);
     try testing.expectEqualStrings("", row.content);
@@ -1789,8 +1704,7 @@ test "createDocument writes no row when the object store refuses the body" {
         .content = "body",
     }));
 
-    // Object-first ordering: a failed PUT must leave no row behind, because a
-    // row pointing at nothing is a broken read.
+    // Object-first ordering: a failed PUT must leave no row behind, because a row pointing at nothing is a broken read.
     const rows = try listDocuments(alloc, &ctx.db, "ws_1");
     defer freeDocumentRows(alloc, rows);
     try testing.expectEqual(@as(usize, 0), rows.len);
@@ -1861,8 +1775,7 @@ test "backfill reports nothing to move once the body is not a column" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A row with no key: its body is gone with the column, so there is
-    // nothing to move. The report says so rather than inventing work.
+    // A row with no key: its body is gone with the column, so there is nothing to move.
     try ctx.db.exec(alloc,
         \\INSERT INTO documents (id, workspace_id, title, preview)
         \\VALUES ('doc_orphan', 'ws_1', 'Plan', 'a preview')
@@ -1916,8 +1829,7 @@ test "searchDocuments does not search a body that is not a column" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The preview is the first 512 bytes; this needle is past it, so search
-    // cannot see it. That is the documented bound.
+    // The preview is the first 512 bytes; this needle is past it, so search cannot see it.
     try ctx.db.exec(alloc,
         \\INSERT INTO documents (id, workspace_id, title, preview, content_bytes)
         \\VALUES ('doc_long', 'ws_1', 'Long', 'the first 512 bytes', 4096)
@@ -1979,8 +1891,7 @@ test "createDocument: an html document previews its visible text, not its markup
     defer freeDocumentRow(alloc, row);
 
     try testing.expectEqualStrings(FORMAT_HTML, row.format);
-    // A preview of the markup would match every html document on `<div`, so
-    // the searchable text is what a reader sees.
+    // A preview of the markup would match every html document on `<div`, so the searchable text is what a reader sees.
     try testing.expectEqualStrings("Q3 Release plan Ship & celebrate.", row.preview);
 }
 
@@ -2092,8 +2003,7 @@ test "createDocument: an office spreadsheet keeps its format and previews its ce
     defer freeDocumentRow(alloc, row);
 
     try testing.expectEqualStrings(FORMAT_OFFICE, row.format);
-    // The preview is the cells, not the JSON: a preview of JSON keys would
-    // match every office document at once.
+    // The preview is the cells, not the JSON: a preview of JSON keys would match every office document at once.
     try testing.expectEqualStrings("Q3 budget 1200 Rent", row.preview);
 }
 
@@ -2132,8 +2042,7 @@ test "createDocument: an office preview reads rows and columns in numeric order"
     defer objects.deinit();
     const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
 
-    // Row 2 must come before row 10, and column 0 before column 2. A preview
-    // that sorted the keys as text would read "a c b" instead.
+    // Row 2 must come before row 10, and column 0 before column 2.
     const body =
         \\{"kind":"sheet","snapshot":{"sheets":{"s1":{"cellData":{"10":{"2":{"v":"c"},"0":{"v":"a"}},"2":{"0":{"v":"b"}}}}}}}
     ;
@@ -2222,8 +2131,7 @@ test "createDocument: a bad format is the caller's error even with no object sto
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The request is validated before the server's capability, so a client
-    // mistake is a 400 rather than a 500 about a missing store.
+    // The request is validated before the server's capability, so a client mistake is a 400 rather than a 500 about a missing store.
     try testing.expectError(error.UnsupportedFormat, createDocument(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .title = "Slides",

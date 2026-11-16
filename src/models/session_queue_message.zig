@@ -1,5 +1,4 @@
-//! Data model for the `session_queue_messages` entity table. Pending user
-//! messages queued behind a running session.
+//! Data model for the `session_queue_messages` entity table.
 
 const std = @import("std");
 
@@ -7,9 +6,7 @@ pub const EntityId = []u8;
 
 id: EntityId,
 session_id: []u8,
-/// The queued message text. NULL when the queued item is an
-/// image-only message (Migration 068 relaxed the NOT NULL
-/// constraint for the `image_url`-only case).
+/// The queued message text.
 message: ?[]u8 = null,
 /// Data URL of an attached image (Migration 060).
 image_url: ?[]u8 = null,

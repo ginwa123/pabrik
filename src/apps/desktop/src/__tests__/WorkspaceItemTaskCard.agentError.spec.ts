@@ -1,5 +1,4 @@
-/** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskCard> (the kanban board
- * card variant). */
+/** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskCard> (the kanban board card variant). */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -45,8 +44,7 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
     })
     expect(wrapper.find('[data-testid="task-agent-error"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="task-meta-agent-error"]').exists()).toBe(false)
-    // Root <button> must NOT have the data-has-agent-error attribute when
-    // there's no error — Vue treats undefined bindings as no attribute.
+    // Root <button> must NOT have the data-has-agent-error attribute when there's no error — Vue treats undefined bindings as no attribute.
     expect(wrapper.attributes('data-has-agent-error')).toBeUndefined()
   })
 
@@ -168,9 +166,7 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
   })
 
   it('does NOT apply the error-pulse animation when prefers-reduced-motion is reduce', async () => {
-    // Mock window.matchMedia to report prefers-reduced-motion: reduce. The agent-error-pulse
-    // keyframes live inside @media (prefers-reduced-motion: no-preference); with reduce, the
-    // animation shorthand doesn't apply and computed animationName === 'none'.
+    // Mock window.matchMedia to report prefers-reduced-motion: reduce.
     const matchMediaMock = vi.fn((query: string) => ({
       matches: query === '(prefers-reduced-motion: reduce)',
       media: query,
@@ -199,9 +195,7 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
       .find('[data-testid="task-agent-error"] .error-pulse')
       .element as HTMLElement
     expect(iconEl).toBeTruthy()
-    // The animationName resolves to 'none' because the @media
-    // (prefers-reduced-motion: no-preference) block is not matched
-    // when matchMedia reports reduce.
+    // The animationName resolves to 'none' because the @media (prefers-reduced-motion: no-preference) block is not matched when matchMedia reports reduce.
     const computed = window.getComputedStyle(iconEl)
     expect(computed.animationName).toBe('none')
 
@@ -209,9 +203,7 @@ describe('WorkspaceItemTaskCard — agent-error indicator', () => {
   })
 
   it('renders the ⚠ icon alongside an active spinner (additive, not mutually exclusive)', async () => {
-    // The retry chain fires WHILE the worker is still active, so the spinner and the error
-    // indicator must coexist on the standard branch (not v-else-if). Mount with both
-    // processingState[id] AND a store error, assert both render.
+    // The retry chain fires WHILE the worker is still active, so the spinner and the error indicator must coexist on the standard branch (not v-else-if).
     const store = useAgentErrorStore()
     store.setError('task_1', RETRY_CONTENT)
 

@@ -11,9 +11,7 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import * as api from '../api'
 
-/**  * Test-only stub SseClient. Tracks state-listener callbacks on a non-public `__stateListeners`
- * array so `emitStubState` can fan out a transition to all subscribers (the production `SseClient`
- * keeps the listener list in a closure; tests reach it via `as any`). */
+/** Test-only stub SseClient. */
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
@@ -34,8 +32,6 @@ function makeStubClient(initial: SseState): SseClient {
 }
 
 function emitStubState(c: SseClient, s: SseState): void {
-  // Walk the internal listener list. The stub stores it as a non-public
-  // property — we use `as any` to reach it from the test.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = (c as any).__stateListeners as
     Array<(s: SseState, info: SseStateInfo) => void> | undefined
@@ -124,8 +120,7 @@ describe('sseBus', () => {
     __setSseBusGlobalClient(stub)
     expect(bus.state.value).toBe('connecting')
 
-    // Subscribe directly to the stub's state fan-out (explicit push,
-    // not a reactive watcher) and drive a transition.
+    // Subscribe directly to the stub's state fan-out (explicit push, not a reactive watcher) and drive a transition.
     const stateChanges: SseState[] = []
     const unsub = stub.onStateChange((s) => stateChanges.push(s))
 
@@ -158,16 +153,13 @@ describe('sseBus', () => {
     const stubCloseSpy = vi.spyOn(stub, 'close')
     __setSseBusGlobalClient(stub)
 
-    // The swap itself already called `original.close()` exactly once (the `_globalClient &&
-    // _globalClient !== client` branch in __setSseBusGlobalClient).
+    // The swap itself already called `original.close()` exactly once (the `_globalClient && _globalClient !== client` branch in __setSseBusGlobalClient).
     expect(originalCloseSpy).toHaveBeenCalledTimes(1)
 
     const bus = useSseBus()
     bus.close()
 
-    // After bus.close(): still exactly 1 close on the original
-    // (only the swap called it). If the fix regresses, this jumps
-    // to 2 because bus.close() would call original.close() again.
+    // After bus.close(): still exactly 1 close on the original (only the swap called it).
     expect(originalCloseSpy).toHaveBeenCalledTimes(1)
     // bus.close() must close the SWAPPED-IN stub.
     expect(stubCloseSpy).toHaveBeenCalledTimes(1)
@@ -189,7 +181,6 @@ describe('sseBus', () => {
     expect(callArg.channels.kanban).toBeDefined()
     expect(callArg.channels.llm).toBeDefined()
     expect(callArg.channels.queue).toBeDefined()
-    // llm and queue must use bare tokens (no sessionId).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((callArg.channels.llm as any).sessionId).toBeUndefined()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

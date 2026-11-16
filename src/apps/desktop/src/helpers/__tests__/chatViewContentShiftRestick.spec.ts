@@ -1,5 +1,4 @@
-/** Regression tests for the re-stick-to-bottom path that ChatView's `onContentShift` performs after
- * every VirtualScroller layout shift. */
+/** Regression tests for the re-stick-to-bottom path that ChatView's `onContentShift` performs after every VirtualScroller layout shift. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VirtualScroller from '../VirtualScroller.vue'
@@ -11,9 +10,7 @@ function makeItems(n: number): Item[] {
   return Array.from({ length: n }, (_, i) => ({ id: i }))
 }
 
-/** The FIXED version of the rAF re-stick body. Read scrollHeight and clientHeight ONCE inside the
- * rAF, compute the target explicitly, then assign. This is the function that should replace the raw
- * `container.scrollTop = container.scrollHeight` line in ChatView.vue's onContentShift rAF. */
+/** The FIXED version of the rAF re-stick body. */
 function restickToBottom(args: {
   container: HTMLElement
   isAtBottom: boolean
@@ -86,9 +83,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
   })
 
   it('T3: explicit-compute target equals browser-clamp target for every sane pair', () => {
-    // Math invariant: `Math.max(0, scrollHeight - clientHeight)` is the
-    // exact value the browser's scrollTop clamp formula yields. The
-    // explicit compute must equal it for every non-negative pair.
+    // Math invariant: `Math.max(0, scrollHeight - clientHeight)` is the exact value the browser's scrollTop clamp formula yields.
     const cases: Array<[number, number]> = [
       [800, 400],
       [400, 400],
@@ -142,9 +137,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
   })
 
   it('T5 (red→green for the fix): when sizer grows but a STALE scrollHeight is read, the explicit-compute path still lands at the NEW max — once the caller re-reads on the next contentShift', async () => {
-    // Simulates the bug race: caller reads scrollHeight once (gets the OLD value because Vue's DOM
-    // patch hasn't flushed yet), assigns scrollTop to the stale max. Then the next contentShift
-    // fires, and the second read picks up the NEW scrollHeight.
+    // Simulates the bug race: caller reads scrollHeight once (gets the OLD value because Vue's DOM patch hasn't flushed yet), assigns scrollTop to the stale max.
     const wrapper = mount(VirtualScroller, {
       props: { items: makeItems(10), defaultItemHeight: 80, buffer: 0, totalCount: 10 },
     })
@@ -162,8 +155,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
     expect(r1.target).toBe(400) // landed at OLD max
 
-    // sizer grows (real DOM updates); on next contentShift, scrollHeight
-    // is the NEW value (1200).
+    // sizer grows (real DOM updates); on next contentShift, scrollHeight is the NEW value (1200).
     Object.defineProperty(el, 'scrollHeight', { value: 1200, configurable: true })
     const r2 = restickToBottom({
       container: el,
@@ -177,11 +169,9 @@ describe('ChatView onContentShift restick (extracted)', () => {
     wrapper.unmount()
   })
 
-  // ── Bug C (task_1787638309623_3): loadMore prepend drops the re-stick ────── During a loadMore
-  // prepend, `suppressContentShiftStick = true` swallows every contentShift event.
+  // ── Bug C (task_1787638309623_3): loadMore prepend drops the re-stick ──────
   describe('Bug C: post-preserve bottom re-validation', () => {
-    /**      * The decision function the loadMore branch runs after re-arming suppressContentShiftStick.
-     * Mirrors the production fix in ChatView.vue's loadChatHistory loadMore path. */
+    /** The decision function the loadMore branch runs after re-arming suppressContentShiftStick. */
     function postPreserveRestick(args: {
       container: HTMLElement
       wasAtBottom: boolean
@@ -198,9 +188,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
       })
       const el = wrapper.element as HTMLElement
       Object.defineProperty(el, 'clientHeight', { value: 400, configurable: true })
-      // Post-prepend layout: 10 old items (800px) + 5 prepended (400px) = 1200 scrollHeight.
-      // endPreserve restored scrollTop to the anchor's offsetTop (400) — the user's viewport now
-      // sits at the OLD content, with the bottom 400px away.
+      // Post-prepend layout: 10 old items (800px) + 5 prepended (400px) = 1200 scrollHeight. endPreserve restored scrollTop to the anchor's offsetTop (400) — the …
       Object.defineProperty(el, 'scrollHeight', { value: 1200, configurable: true })
       el.scrollTop = 400
 
@@ -227,8 +215,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
 
     it('T6c: wasAtBottom must be captured BEFORE beginPreserve (preserve scroll events corrupt the flag)', () => {
-      // The preserve dance (beginPreserve → messages mutation → endPreserve) fires scroll events
-      // that pass through handleVirtualScroll.
+      // The preserve dance (beginPreserve → messages mutation → endPreserve) fires scroll events that pass through handleVirtualScroll.
       const isAtBottom = { value: true }
       // Snapshot BEFORE the preserve (as the fix requires):
       const wasAtBottom = isAtBottom.value
@@ -239,19 +226,14 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
   })
 
-  // ── Static contract: production ChatView.vue must run the re-validation ──── The
-  // extracted-function tests above pin the MATH; this one pins the WIRING. Without it the extracted
-  // function could drift from production silently (the exact failure mode that let Bug C ship).
+  // ── Static contract: production ChatView.vue must run the re-validation ────
   it('T6d (red→green): production loadChatHistory re-validates bottom after endPreserve when user was at bottom', async () => {
     // The bundle, not the raw SFC: loadChatHistory now lives in useChatPagination.ts.
     const src = readChatViewSource()
-    // Extract the loadMore branch (from `if (loadMore) {` to the
-    // matching `} else {` that starts the initial-load branch).
+    // Extract the loadMore branch (from `if (loadMore) {` to the matching `} else {` that starts the initial-load branch).
     const loadMoreStart = src.indexOf('suppressContentShiftStick = true')
     expect(loadMoreStart).toBeGreaterThan(-1)
-    // End the window at the initial-load branch marker — the post-preserve re-validation lives
-    // AFTER the `suppressContentShiftStick = false` re-arm line, so slicing to that line would
-    // exclude the very code under test.
+    // End the window at the initial-load branch marker — the post-preserve re-validation lives AFTER the `suppressContentShiftStick = false` re-arm line, so slicing …
     const branchEnd = src.indexOf('isInitialLoad = true', loadMoreStart)
     expect(branchEnd).toBeGreaterThan(-1)
     const branch = src.slice(loadMoreStart, branchEnd)
@@ -267,12 +249,9 @@ describe('ChatView onContentShift restick (extracted)', () => {
     )
   })
 
-  // ── Bug D (task_1787638309623_3 round 2): stick must NOT re-engage for a user who is ALREADY
-  // scrolled up ───────────────────────────────────────── The content-grew guard from round 1
-  // (`isAtBottom = newIsAtBottom || disengagedByContentGrowth`) was designed for "user AT bottom.
+  // ── Bug D (task_1787638309623_3 round 2): stick must NOT re-engage for a user who is ALREADY scrolled up ───────────────────────────────────────── The …
   describe('Bug D: content growth must not re-engage a disengaged stick', () => {
-    /** The decision function handleVirtualScroll runs for isAtBottom.
-     * Mirrors the production fix in ChatView.vue. */
+    /** The decision function handleVirtualScroll runs for isAtBottom. */
     function computeIsAtBottom(args: {
       newIsAtBottom: boolean
       previousIsAtBottom: boolean
@@ -296,9 +275,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
 
     it('T7b: user ALREADY scrolled up, content grows, viewport stationary → stick stays OFF', () => {
-      // The bouncing bug: previousIsAtBottom=false (user is reading
-      // history), content grew below them, deltaTop≈0. The round-1
-      // guard re-engaged here; the fix must not.
+      // The bouncing bug: previousIsAtBottom=false (user is reading history), content grew below them, deltaTop≈0.
       expect(
         computeIsAtBottom({
           newIsAtBottom: false,
@@ -333,8 +310,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
 
     it('T7e (red→green): production handleVirtualScroll retains the stick ONLY when it was previously engaged', async () => {
       const src = readChatViewSource()
-      // The guard must reference previousIsAtBottom — without it the
-      // stick re-engages for users who are already scrolled up.
+      // The guard must reference previousIsAtBottom — without it the stick re-engages for users who are already scrolled up.
       expect(src).toMatch(
         /previousIsAtBottom\s*&&\s*contentGrew\s*&&\s*!userScrolledUp/,
       )

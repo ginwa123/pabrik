@@ -16,9 +16,7 @@ import { folderIconFor } from '../../stores/sidebarIcons'
 
 const workspacesStore = useWorkspacesStore()
 
-// Inject processingState from App.vue. Same contract ChatsList uses:
-// keyed by worker session_id (which equals task.id when ChatView is
-// mounted for a task — see AppLayout.vue:651 :chat-id="activeTask.id").
+// Inject processingState from App.vue. Same contract ChatsList uses
 const processingState = inject<Ref<Record<string, boolean>>>(
   'processingState',
   ref<Record<string, boolean>>({}),
@@ -28,28 +26,22 @@ const props = defineProps<{
   item: WorkspaceItem
   isActive: boolean
   workspaceId: string
-  // Drag-and-drop visual state, owned by the parent <ProjectsList> and passed down so the <li> can
-  // dim when being dragged and show a violet drop indicator on hover.
+  // Drag-and-drop visual state, owned by the parent <ProjectsList> and passed down so the <li> can dim when being dragged and show a violet drop indicator on hover.
   isItemDragging?: boolean
   isItemDragOver?: boolean
-  // When `isItemDragOver` is true, this flag tells the row whether the cursor is in the BOTTOM half
-  // (true → drop will land AFTER this row, draw a bottom-line indicator) or the TOP half (false →
-  // drop will land BEFORE this row, draw a top-line indicator).
+  // When `isItemDragOver` is true, this flag tells the row whether the cursor is in the BOTTOM half (true → drop will land AFTER this row, draw a bottom-line …
   isItemDragOverInsertAfter?: boolean
 }>()
 
 const emit = defineEmits<{
   click: [item: WorkspaceItem]
-  /** Ctrl/Cmd+click / middle click on the row: the parent opens (or focuses) a
-   * background tab for this item instead of navigating. */
+  /** Ctrl/Cmd+click / middle click on the row: the parent opens (or focuses) a background tab for this item instead of navigating. */
   openItemInBackground: [
     payload: { workspaceId: string; itemId: string; name: string; itemType?: string },
   ]
   delete: [item: WorkspaceItem]
   addTask: [item: WorkspaceItem]
-  // The three task-level events are emitted by the child <WorkspaceItemTaskRow> and re-emitted
-  // verbatim up to ProjectsList. ProjectsList's contract with Sidebar is unchanged; this is a pure
-  // pass-through (see handleSelectTask / handleDeleteTask / handleRenameTask below).
+  // The three task-level events are emitted by the child <WorkspaceItemTaskRow> and re-emitted verbatim up to ProjectsList.
   selectTask: [taskId: string]
   openTaskInBackground: [
     payload: { workspaceId: string; itemId: string; itemType?: string; taskId: string },
@@ -58,24 +50,17 @@ const emit = defineEmits<{
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   // The user must click to fetch the next page of tasks for this item.
   loadMoreTasks: [workspaceId: string, itemId: string]
-  // NEW (pinned-tasks feature): pin/unpin and drag-reorder
-  // of the pinned subset, both forwarded up to ProjectsList → Sidebar.
+  // NEW (pinned-tasks feature): pin/unpin and drag-reorder of the pinned subset, both forwarded up to ProjectsList → Sidebar.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design page events from <DesignPageRow>
-  // (children of expanded design items). ProjectsList forwards them to Sidebar which calls the
-  // store actions.
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design page events from <DesignPageRow> (children of expanded design items).
   selectDesignPage: [workspaceId: string, itemId: string, pageId: string]
   deleteDesignPage: [workspaceId: string, itemId: string, pageId: string]
   addDesignPage: [workspaceId: string, itemId: string]
-  // NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename" item forwards the page to Sidebar
-  // which opens the RenameDesignPageModal. Pure pass-through — same pattern as selectDesignPage /
-  // deleteDesignPage.
+  // NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename" item forwards the page to Sidebar which opens the RenameDesignPageModal.
   renameDesignPage: [workspaceId: string, itemId: string, pageId: string, currentName: string]
   openDesignPageInBackground: [payload: { workspaceId: string; itemId: string; pageId: string }]
-  // Right-click "Go to settings" on the item row. Carries the item payload so Sidebar can route per
-  // item_type: kanban items open /app/kanban/:itemId/settings, agent items open their AgentView
-  // config (Tools / System Prompt / Knowledge).
+  // Right-click "Go to settings" on the item row.
   goToSettings: [payload: { workspaceId: string; itemId: string; itemType?: string }]
 }>()
 
@@ -84,9 +69,7 @@ const isExpanded = computed(() => {
   return workspacesStore.expandedItemIds[props.item.id] === true
 })
 
-// URL-driven "what is the main content area showing?". The active row styling is now sourced from
-// the URL (?view=workspace&itemId=X) rather than the `isActive` prop (which is still passed by the
-// parent for backwards-compat with other consumers and for the right-side active dot).
+// URL-driven "what is the main content area showing?".
 const currentMainView = useCurrentMainView()
 const isCurrentMainView = computed(() => {
   const v = currentMainView.value
@@ -95,9 +78,7 @@ const isCurrentMainView = computed(() => {
   return false
 })
 
-// Computed: true if any of this item's tasks is currently being processed First processing task's
-// id (= session_id per Migration 052 convention, so it's the same key `processingState` uses). The
-// elapsed chip reads this — when null, the chip is hidden.
+// Computed: true if any of this item's tasks is currently being processed First processing task's id (= session_id per Migration 052 convention, so it's the same …
 const firstProcessingTaskId = computed<string | null>(() => {
   const tasks = props.item.tasks
   if (!tasks || tasks.length === 0) return null
@@ -109,9 +90,7 @@ const firstProcessingTaskId = computed<string | null>(() => {
 })
 
 const handleClick = (event?: MouseEvent) => {
-  // Ctrl/Cmd+click and middle click mean "open in a new browser tab" —
-  // the gesture users bring from a browser. Handle it before the
-  // expand/navigate behaviour so nothing is activated behind their back.
+  // Ctrl/Cmd+click and middle click mean "open in a new browser tab" — the gesture users bring from a browser.
   if (event && isBackgroundOpenEvent(event)) {
     emit('openItemInBackground', {
       workspaceId: props.workspaceId,
@@ -121,44 +100,33 @@ const handleClick = (event?: MouseEvent) => {
     })
     return
   }
-  // Agent/folder/memory items toggle expand/collapse here. Kanban items render the board in the
-  // main content area (see AppLayout.vue's KanbanView branch) AND show their tasks inline
-  // (2026-09-10: no expand on kanban mode).
+  // Agent/folder/memory items toggle expand/collapse here.
   if (props.item.item_type !== 'design' && props.item.item_type !== 'kanban') {
     workspacesStore.toggleExpandedItem(props.item.id)
   }
-  // Agent items never navigate on plain left-click — their main view is the
-  // AgentView config surface. A routine item's main view IS its RoutineView,
-  // so it navigates like any other project.
+  // Agent items never navigate on plain left-click — their main view is the AgentView config surface.
   if (props.item.item_type === 'agent') return
-  // Always emit click for external handling (e.g., navigation to
-  // the kanban board via activeWorkspaceItemId).
+  // Always emit click for external handling (e.g., navigation to the kanban board via activeWorkspaceItemId).
   emit('click', props.item)
 }
 
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): the chevron itself (▶) toggles expand for
-// design items WITHOUT activating them.
+// NEW (design-pages-in-workspace-tree plan, 2026-08-06): the chevron itself (▶) toggles expand for design items WITHOUT activating them.
 const handleChevronToggle = (event: Event) => {
-  // Stop propagation so the chevron click doesn't ALSO fire the outer row's @click handler (which
-  // would activate the design item AND expand it).
+  // Stop propagation so the chevron click doesn't ALSO fire the outer row's @click handler (which would activate the design item AND expand it).
   event.stopPropagation()
   workspacesStore.toggleExpandedItem(props.item.id)
-  // Lazy fetch design pages on first expand. The cache lives in
-  // `workspacesStore.designPagesByItemId`; if it's already populated or a fetch is in-flight, the
-  // store action is a no-op beyond returning the cached promise — no double-fetch on rapid toggle.
+  // Lazy fetch design pages on first expand.
   if (workspacesStore.expandedItemIds[props.item.id] === true) {
     void workspacesStore.fetchDesignPages(props.workspaceId, props.item.id)
   }
 }
 
-// Pass-through handlers: <WorkspaceItemTaskRow> emits these three events with the full payload
-// (workspaceId, itemId, taskId, currentName), and we forward them up to <ProjectsList> verbatim.
+// Pass-through handlers: <WorkspaceItemTaskRow> emits these three events with the full payload (workspaceId, itemId, taskId, currentName), and we forward them up …
 const handleSelectTask = (taskId: string) => {
   emit('selectTask', taskId)
 }
 
-// Right-click "Open in new tab" on the item row itself. Same payload
-// as the Ctrl/Cmd+click path below — Sidebar opens a real tab.
+// Right-click "Open in new tab" on the item row itself.
 const { menuPos, openAt, close: closeItemMenu } = useContextMenu()
 
 const itemMenuPayload = () => ({
@@ -188,9 +156,7 @@ const openItemMenuSettings = () => {
   emit('goToSettings', itemMenuPayload())
 }
 
-// The row carries no inline action buttons (removed: the hover-reveal `+` / `×` rendered as
-// oversized boxes on the agent site), so the right-click menu is the only path to Add task /
-// Delete. Same payloads the old row buttons emitted — the menu is the door, not a second one.
+// The row carries no inline action buttons (removed: the hover-reveal `+` / `×` rendered as oversized boxes on the agent site), so the right-click menu is the …
 const openItemMenuAddTask = () => {
   closeItemMenu()
   emit('addTask', props.item)
@@ -202,17 +168,14 @@ const openItemMenuDelete = () => {
 }
 
 // ─── Project icon (Migration 147) ────────────────────────────────────────
-// The glyph is a NAME stored on the server row, not in this browser.
 const projectIcon = computed(() => folderIconFor(props.item, isExpanded.value))
 
-// Where the flyout anchors. Captured from the menu BEFORE it closes, so the
-// picker still lands beside the row the user right-clicked.
+// Where the flyout anchors.
 const iconPickerPos = ref<{ x: number; y: number } | null>(null)
 
 const openItemMenuChangeIcon = () => {
   const anchor = menuPos.value
-  // Measured, not assumed: the menu's width is content-driven, so a
-  // hardcoded offset would mis-anchor the flyout.
+  // Measured, not assumed: the menu's width is content-driven, so a hardcoded offset would mis-anchor the flyout.
   const menu = document.querySelector('[data-testid="open-new-tab-menu"]')
   const right = menu?.getBoundingClientRect().right ?? (anchor ? anchor.x + 220 : 0)
   closeItemMenu()
@@ -226,20 +189,16 @@ const closeIconPicker = () => {
 
 const applyIcon = (icon: string | null) => {
   iconPickerPos.value = null
-  // The store rolls the row back and logs on failure; the sidebar then shows
-  // the glyph the database actually holds, which is the honest state.
+  // The store rolls the row back and logs on failure; the sidebar then shows the glyph the database actually holds, which is the honest state.
   void workspacesStore.setItemIcon(props.workspaceId, props.item.id, icon).catch(() => {})
 }
 
-// Add-task is hidden for kanban + routine (board/scheduler own
-// creation) — enforced on the menu row.
+// Add-task is hidden for kanban + routine (board/scheduler own creation) — enforced on the menu row.
 const showItemAddTask = computed(
   () => props.item.item_type !== 'kanban' && props.item.item_type !== 'routine',
 )
 
-// Only item types with a dedicated settings surface get the menu entry: kanban boards
-// (KanbanSettingsView: Columns + Agent tabs), agent items (AgentView: Tools / System Prompt /
-// Knowledge) and routine items (RoutineView: description / instruction / schedule).
+// Only item types with a dedicated settings surface get the menu entry: kanban boards (KanbanSettingsView: Columns + Agent tabs), agent items (AgentView: Tools / …
 const showItemSettings = computed(
   () =>
     props.item.item_type === 'kanban' ||
@@ -247,9 +206,7 @@ const showItemSettings = computed(
     props.item.item_type === 'routine',
 )
 
-// Right-click "Open in new tab" on a task row. The row only knows
-// workspaceId/itemId/taskId — the item_type is filled in here so
-// Sidebar can build the task chat URL without touching store state.
+// Right-click "Open in new tab" on a task row.
 const handleOpenTaskInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -271,8 +228,7 @@ const handleRenameTask = (
   emit('renameTask', workspaceId, itemId, taskId, currentName)
 }
 
-// Per-column pagination (kanban-per-column-pagination plan, 2026-08-06): the SIDEBAR's "Load more"
-// button aggregates the per-column state.
+// Per-column pagination (kanban-per-column-pagination plan, 2026-08-06): the SIDEBAR's "Load more" button aggregates the per-column state.
 const hasMoreTasksForSidebar = computed(() => {
   const colPagination = props.item.columnPagination
   if (!colPagination) return false
@@ -290,34 +246,25 @@ const handleLoadMoreTasks = (event: Event) => {
   emit('loadMoreTasks', props.workspaceId, props.item.id)
 }
 
-// NEW (pinned-tasks feature): pin/unpin forwarded from
-// <WorkspaceItemTaskRow>. ProjectsList re-emits these to Sidebar.
+// NEW (pinned-tasks feature): pin/unpin forwarded from <WorkspaceItemTaskRow>.
 const handlePinTask = (workspaceId: string, itemId: string, taskId: string, isPinned: boolean) => {
   emit('pinTask', workspaceId, itemId, taskId, isPinned)
 }
 
-// NEW (pinned-tasks feature): drag-reorder of the pinned subset. The drag handler captures the
-// dragged task's id via data-task-id and the drop handler splices the row to the bottom of the
-// pinned region. v1: simple "move to bottom on drop" semantics.
+// NEW (pinned-tasks feature): drag-reorder of the pinned subset.
 const handleReorderPinnedTasks = (orderedIds: string[]) => {
   emit('reorderPinnedTasks', props.workspaceId, props.item.id, orderedIds)
 }
 
-// NEW (design-pages-in-workspace-tree plan, 2026-08-06): pass-through handlers for design-page
-// events emitted by <DesignPageRow>. Sidebar receives them and calls the matching store actions
-// (`setActiveDesignPage` / `setActiveWorkspaceItem` / `deleteDesignPage` / `addDesignPage`).
+// NEW (design-pages-in-workspace-tree plan, 2026-08-06): pass-through handlers for design-page events emitted by <DesignPageRow>.
 const handleSelectDesignPage = (page: DesignPage) => {
-  // 1. Set the page as active first so the click handler in the
-  // store's setActiveWorkspaceItem flow doesn't race.
+  // 1.
   workspacesStore.setActiveDesignPage(page.id)
-  // 2. Activate the design item (which fires the click emit that ProjectsList → Sidebar route to
-  // the design view). Only do this if it's not already active — otherwise we re-emit and trigger an
-  // unnecessary watcher in AppLayout.
+  // 2.
   if (workspacesStore.activeWorkspaceItemId !== props.item.id) {
     workspacesStore.setActiveWorkspaceItem(props.item.id)
   }
-  // 3. Also activate the page's chat task (each design page has a 1:1 FK to a workspace_item_tasks
-  // row, see Migration 066).
+  // 3.
   if (page.workspace_item_task_id) {
     workspacesStore.setActiveTask(page.workspace_item_task_id)
   }
@@ -329,15 +276,12 @@ const handleDeleteDesignPage = (page: DesignPage) => {
   emit('deleteDesignPage', props.workspaceId, props.item.id, page.id)
 }
 
-// NEW (rename-design-pages plan, 2026-08-06): pass-through for the "Rename" item from the
-// <DesignPageRow> ⋮ menu. ProjectsList / Sidebar are responsible for opening the modal; we just
-// bubble the payload up the chain.
+// NEW (rename-design-pages plan, 2026-08-06): pass-through for the "Rename" item from the <DesignPageRow> ⋮ menu.
 const handleRenameDesignPage = (page: DesignPage) => {
   emit('renameDesignPage', props.workspaceId, props.item.id, page.id, page.name)
 }
 
-// Right-click "Open in new tab" on a design page row. Fills in the
-// workspace/item ids so Sidebar can build the page URL directly.
+// Right-click "Open in new tab" on a design page row.
 const handleOpenDesignPageInBackground = (page: DesignPage) => {
   emit('openDesignPageInBackground', {
     workspaceId: props.workspaceId,
@@ -346,24 +290,19 @@ const handleOpenDesignPageInBackground = (page: DesignPage) => {
   })
 }
 
-// "+ Add Page" — emits to Sidebar which calls the store action. The store handles the API call +
-// cache update + setting the new page as active.
+// "+ Add Page" — emits to Sidebar which calls the store action.
 const handleAddDesignPage = (event: Event) => {
   event.stopPropagation()
   emit('addDesignPage', props.workspaceId, props.item.id)
 }
 
 // Reactive view of the design-pages cache for THIS design item.
-// Empty array while the fetch is in-flight or for an item that
-// hasn't been expanded yet.
 const designPages = computed<DesignPage[]>(() => {
   if (props.item.item_type !== 'design') return []
   return workspacesStore.designPagesByItemId[props.item.id] ?? []
 })
 
-// Capture the dragged task's id from the data-task-id attribute on the row's root button (added in
-// WorkspaceItemTaskRow.vue). The pinned region uses event delegation — the dragstart bubbles from
-// the row to the region, which calls closest('[data-task-id]') to find the source.
+// Capture the dragged task's id from the data-task-id attribute on the row's root button (added in WorkspaceItemTaskRow.vue).
 const handlePinnedDragStart = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
@@ -371,24 +310,18 @@ const handlePinnedDragStart = (event: DragEvent) => {
   if (!row) return
   const taskId = row.dataset.taskId
   if (!taskId) return
-  // Use a custom MIME type instead of `text/plain`. The pinned region lives inside a workspace-item
-  // `<li>`, and the parent's <ProjectsList> attaches its own `@dragstart` handler on the outer
-  // `<ul>` for item reorder.
+  // Use a custom MIME type instead of `text/plain`.
   event.dataTransfer?.setData('application/x-pinned-task-id', taskId)
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
   }
 }
 
-// dragOver bookkeeping: which pinned row the cursor is currently over, and whether the insertion
-// point is above (cursor in the row's top half) or below (cursor in the bottom half). Reset on
-// dragleave / drop.
+// dragOver bookkeeping: which pinned row the cursor is currently over, and whether the insertion point is above (cursor in the row's top half) or below (cursor …
 const dragOverTaskId = ref<string | null>(null)
 const dragInsertBefore = ref(false) // true = insert before the target row
 
-// Per-row drop indicator: 'above' | 'below' | null. Returned to the v-for as the `drop-indicator`
-// prop on each WorkspaceItemTaskRow so the row can render a 2px yellow border on the appropriate
-// edge.
+// Per-row drop indicator: 'above' | 'below' | null.
 type DropIndicator = 'above' | 'below' | null
 const dropIndicatorFor = (taskId: string): DropIndicator => {
   if (dragOverTaskId.value !== taskId) return null
@@ -396,31 +329,23 @@ const dropIndicatorFor = (taskId: string): DropIndicator => {
 }
 
 const handlePinnedDragOver = (event: DragEvent) => {
-  // preventDefault is REQUIRED to mark this element as a valid drop target. Without it the
-  // browser's dragend fires without a drop and the drop event never reaches us. We also use it to
-  // update the cursor position for the insertion-point math.
+  // preventDefault is REQUIRED to mark this element as a valid drop target.
   event.preventDefault()
   const target = event.target as HTMLElement | null
   if (!target) return
   const row = target.closest('[data-task-id]') as HTMLElement | null
   if (!row || !row.dataset.taskId) {
-    // Cursor is in the region but not over a row (e.g. on the gap
-    // between rows or on the region's padding). Keep the previous
-    // target — better than flickering the indicator off then on.
+    // Cursor is in the region but not over a row (e.g. on the gap between rows or on the region's padding).
     return
   }
-  // If the cursor is over the same row as before, just refresh the
-  // before/after decision based on the cursor Y. Otherwise, switch
-  // the target and reset the before/after flag.
+  // If the cursor is over the same row as before, just refresh the before/after decision based on the cursor Y.
   if (dragOverTaskId.value !== row.dataset.taskId) {
     dragOverTaskId.value = row.dataset.taskId
     dragInsertBefore.value = true // default; refined below
   }
   const rect = row.getBoundingClientRect()
   const midpoint = rect.top + rect.height / 2
-  // When clientY is unavailable (synthetic event from a test), keep
-  // the previous value. In normal browser drag flows clientY is
-  // always set during dragover.
+  // When clientY is unavailable (synthetic event from a test), keep the previous value.
   const clientY = event.clientY
   if (clientY != null) {
     dragInsertBefore.value = clientY < midpoint
@@ -428,24 +353,19 @@ const handlePinnedDragOver = (event: DragEvent) => {
 }
 
 const handlePinnedDragLeave = (event: DragEvent) => {
-  // Only clear the indicator when the cursor LEAVES the region entirely. If it moves between rows
-  // inside the region, dragleave fires too but `relatedTarget` is still inside the region — keep
-  // the indicator visible in that case.
+  // Only clear the indicator when the cursor LEAVES the region entirely.
   const region = event.currentTarget as HTMLElement | null
   const next = event.relatedTarget as Node | null
   if (region && next && region.contains(next)) return
   dragOverTaskId.value = null
 }
 
-// On drop, splice the dragged row to the cursor's target position
-// (not the end). The optimistic store action will reorder the
-// local array and persist via the API.
+// On drop, splice the dragged row to the cursor's target position (not the end).
 const handlePinnedDrop = (event: DragEvent) => {
   event.preventDefault()
   const dataTransfer = event.dataTransfer
   if (!dataTransfer) return
-  // Read from the custom MIME type written by handlePinnedDragStart. See the long comment in
-  // handlePinnedDragStart.
+  // Read from the custom MIME type written by handlePinnedDragStart.
   const draggedId = dataTransfer.getData('application/x-pinned-task-id')
   if (!draggedId) return
 
@@ -456,24 +376,18 @@ const handlePinnedDrop = (event: DragEvent) => {
   if (fromIdx === -1) return // drag came from outside the pinned region
 
   // Snapshot the target BEFORE we reset the visual state below.
-  // (If we reset first, the splice math falls back to "move to
-  // end" even when the user dropped on a different row.)
   const targetId = dragOverTaskId.value
   const insertBefore = dragInsertBefore.value
 
   // Reset visual state regardless of outcome.
   dragOverTaskId.value = null
 
-  // Default: move to the end (preserves the v1 fallback behavior
-  // when no target row is recorded — e.g. a fast drop without a
-  // preceding dragover, or a drop on the region's empty padding).
+  // Default: move to the end (preserves the v1 fallback behavior when no target row is recorded — e.g. a fast drop without a preceding dragover, or a drop on the …
   let toIdx = pinned.length - 1
   if (targetId && targetId !== draggedId) {
     const targetIdx = pinned.findIndex((t) => t.id === targetId)
     if (targetIdx !== -1) {
-      // "Cursor in top half" = "I want the dragged row to be just ABOVE the target row"
-      // (insertBefore=true). "Cursor in bottom half" = "I want the dragged row to be just BELOW the
-      // target row" (insertBefore=false).
+      // "Cursor in top half" = "I want the dragged row to be just ABOVE the target row" (insertBefore=true).
       const sourceBeforeTarget = fromIdx < targetIdx
       if (insertBefore) {
         toIdx = sourceBeforeTarget ? targetIdx - 1 : targetIdx

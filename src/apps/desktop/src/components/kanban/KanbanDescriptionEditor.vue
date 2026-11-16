@@ -54,13 +54,9 @@ const props = withDefaults(
   defineProps<{
     modelValue: string
     cwd: string
-    // Required for image upload. The kanban task id is used as the upload bucket — files land in
-    // `<item.path>/.pabrik/attachments/<taskId>/<n>.<ext>`.
-    // Empty string disables image upload (the editor still works for text + @path references).
+    // Required for image upload.
     taskId?: string
-    // Optional cap. `undefined` (default) = unlimited, no maxlength
-    // enforcement. When set, the textarea enforces it via `maxlength`
-    // and the counter renders `<len> / <max>`.
+    // Optional cap.
     maxLength?: number
     placeholder?: string
     testId?: string
@@ -77,9 +73,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-// ─── State ────────────────────────────────────────────────────────────── Local editable copy of
-// the prop (uncontrolled between parent syncs: typing works even when the parent does not
-// round-trip our emits, e.g. in specs that mount without v-model).
+// ─── State ──────────────────────────────────────────────────────────────
 const text = ref(props.modelValue)
 let lastSeenText = props.modelValue
 const commitText = (v: string): void => {
@@ -88,9 +82,7 @@ const commitText = (v: string): void => {
   emit('update:modelValue', v)
 }
 const previewFiles = ref<PreviewFile[]>([])
-// Files staged in CREATE mode (taskId='') — uploaded by the host AFTER the task exists. Mirrors
-// previewFiles but exists only for the create-mode flow; in edit mode it stays empty because
-// uploads happen inline (see addImageFile).
+// Files staged in CREATE mode (taskId='') — uploaded by the host AFTER the task exists.
 const pendingFiles = ref<PreviewFile[]>([])
 const showFilePicker = ref(false)
 const fileQuery = ref('')
@@ -112,19 +104,15 @@ const counterText = computed<string>(() =>
 )
 
 // ─── @-trigger file picker ──────────────────────────────────────────────
-// Ported 1:1 from FileInput.vue Task 2 (plan:
-// N-sequential-fetch full-tree walk (`loadAllFiles`, deleted).
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0
 let fileSearchAbort: AbortController | null = null
-// Per-cwd cache for EMPTY-query top-N only (bounded: max 3 cwds, oldest
-// evicted). Non-empty queries always hit the server (fresh ranking).
+// Per-cwd cache for EMPTY-query top-N only (bounded: max 3 cwds, oldest evicted).
 const fileSearchCache = new Map<string, FileEntry[]>()
 const FILE_SEARCH_CACHE_MAX_CWDS = 3
 // Total entries returned by the server for the current query (footer Y).
 const serverTotal = ref(0)
-// True when the server errored and `filteredFiles` falls back to the
-// client subsequence filter over the cached top-N.
+// True when the server errored and `filteredFiles` falls back to the client subsequence filter over the cached top-N.
 const serverFailed = ref(false)
 
 onBeforeUnmount(() => {
@@ -141,9 +129,7 @@ const setFileSearchCache = (cwd: string, entries: FileEntry[]) => {
   fileSearchCache.set(cwd, entries)
 }
 
-// Server rows are snake_case (`is_directory`); legacy raw-walk rows were
-// camelCase (`isDirectory`). Accept both so mixed shapes never render a
-// dir with the file mark.
+// Server rows are snake_case (`is_directory`); legacy raw-walk rows were camelCase (`isDirectory`).
 const toRelativeFileEntry = (
   rootPath: string,
   entry: { name: string; path: string; is_directory?: boolean; isDirectory?: boolean },
@@ -180,8 +166,7 @@ const scheduleFileSearch = (immediate: boolean) => {
     clearTimeout(fileSearchTimer)
     fileSearchTimer = null
   }
-  // Cancel any in-flight request (retype/close) — the generation counter
-  // below discards responses that still resolve afterwards.
+  // Cancel any in-flight request (retype/close) — the generation counter below discards responses that still resolve afterwards.
   fileSearchAbort?.abort()
   const run = () => {
     const cwd = props.cwd
@@ -217,9 +202,7 @@ const closeFilePicker = () => {
   isLoadingFiles.value = false
 }
 
-// Out-of-order char match (FileInput pattern): "comp" matches
-// "components" because all chars appear in order, not contiguously.
-// Used ONLY as the server-error fallback (operates on cached top-N).
+// Out-of-order char match (FileInput pattern): "comp" matches "components" because all chars appear in order, not contiguously.
 const matchesOutOfOrder = (path: string, query: string): boolean => {
   const lowerPath = path.toLowerCase()
   const lowerQuery = query.toLowerCase()
@@ -271,9 +254,7 @@ const selectFile = (file: FileEntry) => {
   const pos = textareaRef.value.selectionStart ?? 0
   const before = text.value.slice(0, pos)
   const after = text.value.slice(pos)
-  // Strip the `@` trigger token but keep the file path verbatim (e.g. `/src/main.zig` inserts as-is
-  // — no `@` prefix). The path chip detector in <MarkdownDescription> matches `/path/to/file`
-  // directly, so a leading `@` is unnecessary noise.
+  // Strip the `@` trigger token but keep the file path verbatim (e.g.
   const atMatch = before.match(/@([\w./\\:-]*)$/)
   const insertText = file.path
   if (atMatch && atMatch.index !== undefined) {
@@ -298,8 +279,7 @@ const handleTextareaInput = () => {
 
 const scrollSelectedIntoView = () => {
   setTimeout(() => {
-    // Scoped to this picker's DOM node (not document) so sibling chat
-    // tabs / kanban editors never steal the scroll target.
+    // Scoped to this picker's DOM node (not document) so sibling chat tabs / kanban editors never steal the scroll target.
     const root = filePickerRef.value
     if (!root) return
     const buttons = root.querySelectorAll('button')
@@ -384,9 +364,7 @@ const downscaleIfTooLarge = async (file: File): Promise<File> => {
   if (!ctx) return file
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
   const out = canvas.toDataURL('image/jpeg', 0.85)
-  // Convert data URL back to a File object so PreviewFile's previewUrl
-  // stays a blob: URL (preview thumbnail), separate from the markdown
-  // payload (data: URL).
+  // Convert data URL back to a File object so PreviewFile's previewUrl stays a blob: URL (preview thumbnail), separate from the markdown payload (data: URL).
   const blob = await (await fetch(out)).blob()
   return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
     type: 'image/jpeg',
@@ -399,8 +377,6 @@ const addImageFile = async (file: File) => {
   const downscaled = await downscaleIfTooLarge(file)
 
   // Show a preview slot so the user sees the image they just pasted.
-  // The blob URL is cheap and revoked on preview-removal (see
-  // handlePreviewUpdate).
   const previewUrl = URL.createObjectURL(downscaled)
   const previewEntry: PreviewFile = { file: downscaled, previewUrl }
   previewFiles.value.push(previewEntry)
@@ -411,9 +387,7 @@ const addImageFile = async (file: File) => {
     return
   }
 
-  // EDIT MODE (Migration 069 — kanban image urls column). The task exists on the server. We stage
-  // the new image in `pendingFiles` and let the host PATCH the new column (`image_urls`) on Save —
-  // same orchestration as create mode.
+  // EDIT MODE (Migration 069 — kanban image urls column).
   pendingFiles.value.push(previewEntry)
   return
 }
@@ -487,16 +461,12 @@ const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
   }
   for (const r of removed) {
     if (r.previewUrl.startsWith('blob:')) URL.revokeObjectURL(r.previewUrl)
-    // In edit mode the description carries an `![name](<url>)` block we need to strip — same logic
-    // as before. In create mode the description never received a markdown block (the file is only
-    // in previewFiles/pendingFiles), so the regex find/replace is a safe no-op (nothing matches).
+    // In edit mode the description carries an `![name](<url>)` block we need to strip — same logic as before.
     const fileName = r.file.name
     const escapedName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const blockRegex = new RegExp(`!\\[${escapedName}\\]\\([^)]+\\)`, 'g')
     commitText(text.value.replace(blockRegex, '').replace(/[ \t]+(\n|$)/g, '$1'))
     // Drop the corresponding entry from pendingFiles (create mode).
-    // The user's intent on removing a preview is "don't upload this either" — otherwise the host
-    // would silently upload a file the user already discarded.
     const pendingIdx = pendingFiles.value.findIndex((p) => p.previewUrl === r.previewUrl)
     if (pendingIdx !== -1) pendingFiles.value.splice(pendingIdx, 1)
   }
@@ -504,8 +474,6 @@ const handlePreviewUpdate = (newFiles: PreviewFile[]) => {
 }
 
 // ─── Mount: re-hydrate previewFiles from existing modelValue ───────────
-// Decode a `data:<mime>;base64,<payload>` URL into a File. Avoids
-// `fetch(dataUrl)` because jsdom does not implement data: URL fetch.
 const dataUrlToFile = (dataUrl: string, name: string): File => {
   const [meta, base64] = dataUrl.split(',')
   const mimeMatch = meta?.match(/data:([^;]+)/)
@@ -517,9 +485,7 @@ const dataUrlToFile = (dataUrl: string, name: string): File => {
   return new File([bytes], name || `pasted-image-${Date.now()}.${ext}`, { type: mime })
 }
 
-// Fetch a server-side attachment and convert it to a File for the
-// preview thumbnail. Uses fetch() which jsdom supports (unlike
-// data: URLs).
+// Fetch a server-side attachment and convert it to a File for the preview thumbnail.
 const serverUrlToFile = async (url: string, filename: string): Promise<File | null> => {
   try {
     const response = await fetch(url)
@@ -546,8 +512,7 @@ const guessMimeFromFilename = (filename: string): string => {
 }
 
 const rehydratePreviews = () => {
-  // Match both inline data: URLs (legacy / fallback) and server-side
-  // attachment URLs.
+  // Match both inline data: URLs (legacy / fallback) and server-side attachment URLs.
   const imageRegex =
     /!\[([^\]]*)\]\((data:image\/[^)]+|[^)]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp))\)/g
   const matches = [...text.value.matchAll(imageRegex)]
@@ -577,30 +542,24 @@ const rehydratePreviews = () => {
 }
 
 onMounted(() => {
-  // Only rehydrate if there's existing image content (i.e. editing an
-  // existing task). For empty modelValue the for-loop above is a no-op.
+  // Only rehydrate if there's existing image content (i.e. editing an existing task).
   rehydratePreviews()
 })
 
-// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ── We only re-hydrate when the
-// modelValue grows (new image added externally). `lastSeenText` is set by the bridge setter above,
-// so the parent's round-trip echo of our own keystrokes is recognised and skipped here.
+// ─── Rehydrate on external modelValue changes (e.g. dialog re-open) ──
 const prevModelValue = ref(props.modelValue)
 onUpdated(() => {
   const v = props.modelValue
   if (v === prevModelValue.value) return
   prevModelValue.value = v
-  // Mirror externally-changed props into the editable copy (mount seeds it; this covers dialog
-  // re-opens with new content).
+  // Mirror externally-changed props into the editable copy (mount seeds it; this covers dialog re-opens with new content).
   if (v !== text.value) {
     text.value = v
     emit('update:modelValue', v)
   }
   if (v === lastSeenText) return
   lastSeenText = v
-  // Only re-hydrate when the new value contains image references
-  // (inline data: OR server-side attachment URLs) and the preview
-  // list is currently empty (avoids duplicate previews).
+  // Only re-hydrate when the new value contains image references (inline data: OR server-side attachment URLs) and the preview list is currently empty (avoids …
   if (previewFiles.value.length === 0 && /!\[.*?\]\(((data:image\/|\/api\/))/.test(v)) {
     rehydratePreviews()
   }
@@ -612,9 +571,7 @@ const autoResize = (event: Event) => {
   target.style.height = `${Math.min(target.scrollHeight, 400)}px`
 }
 
-// Expose `pendingFiles` to the parent dialog so it can pass the staged files up to the host's
-// create-then-upload orchestrator. See KanbanDescriptionEditor.spec.ts for the pendingFiles
-// contract (5 tests).
+// Expose `pendingFiles` to the parent dialog so it can pass the staged files up to the host's create-then-upload orchestrator.
 defineExpose({ pendingFiles })
 </script>
 

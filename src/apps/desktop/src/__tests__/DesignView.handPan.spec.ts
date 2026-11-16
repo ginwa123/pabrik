@@ -1,5 +1,4 @@
-/** Behavioral tests for DesignView.vue's hand-mode (Space + drag to pan). 4 tests covering: 1.
- * Holding Space sets body cursor to grab. 2. Releasing Space restores the default cursor. 3. */
+/** Behavioral tests for DesignView.vue's hand-mode (Space + drag to pan). 4 tests covering: 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -25,9 +24,7 @@ describe('DesignView hand-mode pan', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
-    // DesignView's onMounted calls loadPages() which calls
-    // listDesignPages -> fetch. Return a valid page so the canvas
-    // container renders and we can target it from the tests.
+    // DesignView's onMounted calls loadPages() which calls listDesignPages -> fetch.
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -108,8 +105,7 @@ describe('DesignView hand-mode pan', () => {
     const container = wrapper
       .find('[data-testid="design-canvas-scroll-container"]')
       .element as HTMLElement
-    // jsdom doesn't fully implement pointer capture / scroll properties
-    // — stub them so the drag math runs deterministically.
+    // jsdom doesn't fully implement pointer capture / scroll properties — stub them so the drag math runs deterministically.
     container.setPointerCapture = () => {}
     container.releasePointerCapture = () => {}
     container.hasPointerCapture = () => true
@@ -127,9 +123,7 @@ describe('DesignView hand-mode pan', () => {
         scrollTop = v
       },
     })
-    // Capture the pointermove listener registered inside startCanvasPan
-    // so we can simulate it directly (faster + more deterministic than
-    // dispatching PointerEvents through the html element).
+    // Capture the pointermove listener registered inside startCanvasPan so we can simulate it directly (faster + more deterministic than dispatching PointerEvents …
     let onMove: ((e: PointerEvent) => void) | null = null
      
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,9 +149,7 @@ describe('DesignView hand-mode pan', () => {
     expect(document.body.style.cursor).toBe('grabbing')
     expect(onMove).not.toBeNull()
 
-    // Simulate a 50-px-left, 20-px-up drag — the canvas should have scrolled +50 horizontally and
-    // +20 vertically (cursor delta is subtracted from the original scroll position, so a leftward
-    // drag with a positive delta increases scrollLeft).
+    // Simulate a 50-px-left, 20-px-up drag — the canvas should have scrolled +50 horizontally and +20 vertically (cursor delta is subtracted from the original scroll …
     onMove!(
       new PointerEvent('pointermove', {
         clientX: 50,

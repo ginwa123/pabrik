@@ -1,6 +1,4 @@
-/** The Projects/Documents divider. The report was that the Projects list grows without limit and
- * pushes Documents out of reach — the Recent/Projects divider already lets a user set how much of
- * the panel Recent takes, so this one has to do the same for Projects. */
+/** The Projects/Documents divider. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'

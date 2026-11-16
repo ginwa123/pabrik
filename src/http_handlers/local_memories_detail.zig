@@ -1,5 +1,4 @@
-//! `GET /api/local-memories/:name?cwd=...` — read a local memory file's
-//! content + metadata.
+//! `GET /api/local-memories/:name?cwd=...` — read a local memory file's content + metadata.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,9 +6,7 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// Response payload for `GET /api/local-memories/:name`. `content` is
-/// JSON-escaped automatically by `std.json.Stringify.valueAlloc` — do not
-/// hand-roll JSON for the body.
+/// Response payload for `GET /api/local-memories/:name`.
 pub const LocalMemoryDetailPayload = struct {
     name: []const u8,
     title: []const u8,
@@ -18,11 +15,9 @@ pub const LocalMemoryDetailPayload = struct {
     content: []const u8,
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code.
+/// Domain-level error set for `useCase`.
 pub const LocalMemoryDetailError = error{
-    /// Neither the per-request `cwd` query nor the io fallback
-    /// yielded a usable local-memories directory. Maps to 500.
+    /// Neither the per-request `cwd` query nor the io fallback yielded a usable local-memories directory.
     NoCwdAvailable,
     /// `:name` path param was missing or empty.
     NameRequired,
@@ -46,12 +41,9 @@ pub const LocalMemoryDetailOutput = struct {
     payload: LocalMemoryDetailPayload,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Read a local memory file's content and metadata. Steps: 1. Validate `name`
-/// (non-empty + `isValidMemoryName`). 2.
+/// Read a local memory file's content and metadata.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -76,8 +68,7 @@ fn useCase(
     };
     defer allocator.free(content);
 
-    // Re-list for title/path/size. The re-list is cheap (single
-    // openDir + iterate).
+    // Re-list for title/path/size.
     const list = memories_mod.listMemoriesInDir(allocator, io, dir_path);
     defer memories_mod.freeMemoriesList(allocator, list);
 
@@ -92,8 +83,7 @@ fn useCase(
         return error.NotFound;
     };
 
-    // Duplicate the matched slices + content so the output survives
-    // the `free` defers above.
+    // Duplicate the matched slices + content so the output survives the `free` defers above.
     var duped_name: ?[]u8 = null;
     var duped_title: ?[]u8 = null;
     var duped_path: ?[]u8 = null;
@@ -118,9 +108,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 const LocalMemoryDetailResponse = struct {
     memory: ?LocalMemoryDetailPayload = null,

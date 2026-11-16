@@ -41,16 +41,12 @@ export function useFilePickerSelection<T>(deps: FilePickerSelectionDeps<T>) {
   }
 
   function handleItemDoubleClick(item: T) {
-    // Double-click on a folder navigates INTO it — it must never select + close the dialog. Single
-    // click already selects the folder (folder/both mode); the Select button / Enter confirms. This
-    // mirrors Finder / Explorer / zenity --directory.
+    // Double-click on a folder navigates INTO it — it must never select + close the dialog.
     if (deps.isExpandable(item)) {
       void deps.navigateTo(deps.pathFor(item))
       return
     }
-    // Double-click on a file confirms it (file/both mode only —
-    // handleItemClick is a no-op for files in folder mode, so
-    // selectedPath stays empty and we don't close).
+    // Double-click on a file confirms it (file/both mode only — handleItemClick is a no-op for files in folder mode, so selectedPath stays empty and we don't close).
     handleItemClick(item)
     if (deps.selectedPath.value) {
       handleSelect()
@@ -60,17 +56,12 @@ export function useFilePickerSelection<T>(deps: FilePickerSelectionDeps<T>) {
   function handleSelect() {
     const path = effectiveSelection.value
     if (!path) return
-    // Defense-in-depth (Windows cwd fix, 2026-09-05): never emit a relative path. Selections must be
-    // absolute on at least one platform — this is the last gate before a picked path is persisted as
-    // workspace_items.path and flows into sessions.cwd and the agent prompt.
+    // Defense-in-depth (Windows cwd fix, 2026-09-05): never emit a relative path.
     if (!isAbsPath(path)) return
-    // Record every selection in the recent store (Recent rows AND Browse
-    // rows both go through handleSelect). The store dedupes by path.
+    // Record every selection in the recent store (Recent rows AND Browse rows both go through handleSelect).
     deps.addRecent(path)
     deps.emitSelect(path)
-    // Note: Vue 3.5 auto-defaults `boolean?` to `false`, so the only way to opt
-    // INTO close-on-select is to explicitly pass `closeOnSelect={true}`. If the
-    // prop is omitted, the dialog stays open after selection.
+    // Note: Vue 3.5 auto-defaults `boolean?` to `false`, so the only way to opt INTO close-on-select is to explicitly pass `closeOnSelect={true}`.
     if (deps.closeOnSelect()) {
       deps.emitClose()
     }
@@ -91,9 +82,7 @@ export function useFilePickerSelection<T>(deps: FilePickerSelectionDeps<T>) {
     return ''
   })
 
-  // Whether the footer should show the "← current folder" hint. Only when the fallback path is in
-  // use: folder mode, no explicit click, but a non-root folder is open. Hidden in file mode (the
-  // fallback isn't active there) and hidden after an explicit click (the click is more specific).
+  // Whether the footer should show the "← current folder" hint.
   const showCurrentFolderHint = computed<boolean>(
     () =>
       deps.mode() === 'folder' &&

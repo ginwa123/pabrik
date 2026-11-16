@@ -1,5 +1,4 @@
-// Functional tests for session wire (Tier 1.5). Zig port of
-// `tests/functional/session_wire_test.py` (same test names, same order).
+// Functional tests for session wire (Tier 1.5).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// `POST /api/workspaces` -> the new workspace's id (owned). Python's
-/// `_create_workspace`.
+/// `POST /api/workspaces` -> the new workspace's id (owned).
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -30,8 +26,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `PUT /api/llm/session/<session_id>` to auto-create + name the row.
-/// `session_update.zig` auto-creates the row via `ensureSessionExists` then
-/// UPDATEs it.
 fn createSessionViaUpdate(h: *Harness, session_id: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -42,13 +36,9 @@ fn createSessionViaUpdate(h: *Harness, session_id: []const u8, name: []const u8)
     r.deinit();
 }
 
-// ============================================================================
 // Test 1: PUT session renames it; response echoes new name
-// ============================================================================
 
-// PUT /api/llm/session/:id {name: 'renamed'} -> 200 with new name.
-// session_update.zig auto-creates the row via ensureSessionExists so PUT can
-// be the first call against a fresh session id (the user can land on this
+// PUT /api/llm/session/:id {name: 'renamed'} -> 200 with new name. session_update.zig auto-creates the row via ensureSessionExists so PUT can be the first call …
 test "put_session_rename_round_trips" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -77,9 +67,7 @@ test "put_session_rename_round_trips" {
         );
     }
 
-    // Second rename: re-PUT and verify the new name comes back (proves
-    // the first rename persisted to the DB; the response isn't just
-    // echoing the input).
+    // Second rename: re-PUT and verify the new name comes back (proves the first rename persisted to the DB; the response isn't just echoing the input).
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
         defer gpa.free(path);
@@ -99,9 +87,7 @@ test "put_session_rename_round_trips" {
     }
 }
 
-// ============================================================================
 // Test 2: PUT session updates selected_profile_model
-// ============================================================================
 
 // PUT {selected_profile_model: 'alt-profile'} -> response echoes it.
 test "put_session_updates_profile_model" {
@@ -131,9 +117,7 @@ test "put_session_updates_profile_model" {
     );
 }
 
-// ============================================================================
 // Test 3: PUT session updates is_auto_retry_until_stop
-// ============================================================================
 
 // PUT {is_auto_retry_until_stop: '1'} -> response echoes '1'.
 test "put_session_updates_unattended_flag" {
@@ -148,9 +132,7 @@ test "put_session_updates_unattended_flag" {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
 
-    // `is_auto_retry_until_stop` rides the wire as a STRING ("1" / "0"),
-    // not a JSON bool — the frontend's checkbox writes a digit so the
-    // stored INTEGER column and the wire value never disagree.
+    // `is_auto_retry_until_stop` rides the wire as a STRING ("1" / "0"), not a JSON bool — the frontend's checkbox writes a digit so the stored INTEGER column and …
     {
         var r = try h.http(io, .PUT, path, .{
             .json_body = "{\"is_auto_retry_until_stop\":\"1\"}",
@@ -184,13 +166,9 @@ test "put_session_updates_unattended_flag" {
     }
 }
 
-// ============================================================================
 // Test 4: POST /stop returns 200 + sets cancel flag
-// ============================================================================
 
-// POST /api/llm/session/:session/stop -> 200 {success, session_id}. The
-// handler calls `llm_history.cancelSession` which sets the `cancelled` flag
-// in the DB; the workflow loop checks this flag and breaks out.
+// POST /api/llm/session/:session/stop -> 200 {success, session_id}.
 test "stop_session_returns_200" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -223,9 +201,7 @@ test "stop_session_returns_200" {
     );
 }
 
-// ============================================================================
 // Test 5: GET queue_messages returns empty array for fresh session
-// ============================================================================
 
 // GET /api/llm/session/:id/queue_messages -> 200 with empty list.
 test "queue_messages_empty_for_fresh_session" {
@@ -262,12 +238,9 @@ test "queue_messages_empty_for_fresh_session" {
     try testing.expectEqual(@as(i64, 0), count);
 }
 
-// ============================================================================
 // Test 6: GET /api/workers returns a list
-// ============================================================================
 
-// GET /api/workers -> 200 with a `workers` array (possibly empty).
-// worker_list.zig returns `{workers: [...], count}`.
+// GET /api/workers -> 200 with a `workers` array (possibly empty). worker_list.zig returns `{workers: [...], count}`.
 test "workers_list_returns_array" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -280,8 +253,7 @@ test "workers_list_returns_array" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Response shape: {workers: [...], count: N} — the wire field is
-    // `workers` (the array), `count` is the length.
+    // Response shape: {workers: [...], count: N} — the wire field is `workers` (the array), `count` is the length.
     const workers = doc.array("workers") orelse {
         std.debug.print("missing 'workers' field; got body: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -293,8 +265,7 @@ test "workers_list_returns_array" {
     try testing.expectEqual(@as(i64, @intCast(workers.items.len)), count);
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = createWorkspace;
     _ = createSessionViaUpdate;

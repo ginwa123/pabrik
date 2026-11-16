@@ -1,6 +1,4 @@
 //! `PUT /api/local-memories/:name` — replace the body of a local memory file.
-//! Body: `{"content":"...","cwd":"/abs/path"}`. On success: 200 with
-//! `{"memory":{name,title,path,size}}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,19 +6,15 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// JSON request body for `PUT /api/local-memories/:name`. `content` is the
-/// new file body (required). `cwd` is optional — when omitted, the handler
-/// falls back to the pabrik server's CWD.
+/// JSON request body for `PUT /api/local-memories/:name`.
 const UpdateLocalMemoryBody = struct {
     content: []const u8,
     cwd: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code.
+/// Domain-level error set for `useCase`.
 pub const LocalMemoryUpdateError = error{
-    /// Neither the body `cwd` nor the io fallback yielded a usable
-    /// local-memories directory. Maps to 500.
+    /// Neither the body `cwd` nor the io fallback yielded a usable local-memories directory.
     NoCwdAvailable,
     /// `:name` path param was missing or empty.
     NameRequired,
@@ -30,8 +24,7 @@ pub const LocalMemoryUpdateError = error{
     NotFound,
     /// `writeLocalMemoryFile` returned false (validation / IO failure).
     WriteFailed,
-    /// Update succeeded but the file wasn't visible in the
-    /// subsequent `listMemoriesInDir` (consistency violation).
+    /// Update succeeded but the file wasn't visible in the subsequent `listMemoriesInDir` (consistency violation).
     NotVisible,
     /// `allocator.dupe` failed while building the heap-owned output.
     OutOfMemory,
@@ -41,23 +34,18 @@ pub const LocalMemoryUpdateError = error{
 pub const LocalMemoryUpdateInput = struct {
     name: []const u8,
     content: []const u8,
-    /// Body `cwd` (may be null/empty — the use-case falls back to
-    /// the io CWD in that case).
+    /// Body `cwd` (may be null/empty — the use-case falls back to the io CWD in that case).
     cwd: []const u8,
 };
 
-/// Output of the update use-case. `memory` is HEAP-OWNED by the
-/// use-case. The handler is responsible for freeing each slice.
+/// Output of the update use-case.
 pub const LocalMemoryUpdateOutput = struct {
     memory: memories_mod.MemoryInfo,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Replace the body of an existing local memory file. Steps: 1. Validate
-/// `name` (non-empty + `isValidMemoryName`). 2.
+/// Replace the body of an existing local memory file.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -77,8 +65,7 @@ fn useCase(
     const dir_path = dir_path_alloc orelse return error.NoCwdAvailable;
     defer allocator.free(dir_path);
 
-    // Update only succeeds for existing memories. 404 (not 400) so
-    // the UI can distinguish "edit non-existent" from "bad input".
+    // Update only succeeds for existing memories. 404 (not 400) so the UI can distinguish "edit non-existent" from "bad input".
     if (!memories_mod.localMemoryExists(allocator, io, dir_path, input.name)) {
         return error.NotFound;
     }
@@ -121,9 +108,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 const UpdateLocalMemoryResponse = struct {
     memory: ?memories_mod.MemoryInfo = null,

@@ -1,5 +1,4 @@
-/** Behavioural test for the design-page-sync fix.Tests: 1. setActiveDesignPage(newId) on
- * the store → local activePageId updates within one tick. 2. */
+/** Behavioural test for the design-page-sync fix.Tests: 1. setActiveDesignPage(newId) on the store → local activePageId updates within one tick. 2. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -70,8 +69,7 @@ describe('DesignView — activePageId syncs from store activeDesignPageId', () =
   })
 
   it('sets initial activePageId from the store after loadPages()', async () => {
-    // Pre-set the store so the first click is a sync test, not an
-    // initial-load test.
+    // Pre-set the store so the first click is a sync test, not an initial-load test.
     const store = useWorkspacesStore()
     store.setActiveDesignPage(PAGE_ID_1)
     const wrapper = mountDesignView()
@@ -99,9 +97,7 @@ describe('DesignView — activePageId syncs from store activeDesignPageId', () =
   })
 
   it('does NOT mirror when the store value matches the local value (no-op guard)', async () => {
-    // Setting the store to the same value the local ref already has should not trigger any work. We
-    // assert this implicitly: the fix uses an equality guard so a no-op set doesn't fire the
-    // elements-fetch watcher below (which would be a redundant GET).
+    // Setting the store to the same value the local ref already has should not trigger any work.
     const store = useWorkspacesStore()
     store.setActiveDesignPage(PAGE_ID_1)
     const wrapper = mountDesignView()
@@ -109,7 +105,6 @@ describe('DesignView — activePageId syncs from store activeDesignPageId', () =
     const vm = wrapper.vm as unknown as { activePageId: string }
 
     // After mount, fetchMock has been called once for loadPages.
-    // Reset the spy to count only subsequent calls.
     fetchMock.mockClear()
 
     // Setting the SAME pageId shouldn't trigger another fetch.
@@ -130,9 +125,7 @@ describe('DesignView — activePageId syncs from store activeDesignPageId', () =
       handleSelectPage: (id: string) => void
     }
     expect(vm.activePageId).toBe(PAGE_ID_1)
-    // Existing flow: clicking a page row inside DesignView itself
-    // (e.g. the empty state's "+ Add the first page" followed by
-    // a different page picker). Should still work.
+    // Existing flow: clicking a page row inside DesignView itself (e.g. the empty state's "+ Add the first page" followed by a different page picker).
     vm.handleSelectPage(PAGE_ID_2)
     expect(vm.activePageId).toBe(PAGE_ID_2)
     expect(store.activeDesignPageId).toBe(PAGE_ID_2)

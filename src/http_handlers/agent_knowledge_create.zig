@@ -1,5 +1,4 @@
-//! `POST /api/agents/:agent_id/knowledge`. Adds a markdown knowledge file to
-//! an Agent. Body: `{file_path, label?, position?}`.
+//! `POST /api/agents/:agent_id/knowledge`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -13,8 +12,7 @@ const agent_db = @import("../models/agent.db.zig");
 const CreateKnowledgeBody = struct {
     file_path: []const u8 = "",
     label: []const u8 = "",
-    /// Inline manual text. Mutually exclusive with `file_path`
-    /// (exactly one must be non-empty). Empty = file-backed row.
+    /// Inline manual text.
     content: []const u8 = "",
 };
 
@@ -29,8 +27,7 @@ pub const KnowledgeCreateError = error{
     FilePathRequired,
     /// `file_path` is not absolute.
     NotAbsolutePath,
-    /// Both `file_path` and `content` were provided — exactly one
-    /// source must be set.
+    /// Both `file_path` and `content` were provided — exactly one source must be set.
     BothSourcesSet,
     /// `db.query` failed while looking up the agent.
     LookupFailed,
@@ -42,9 +39,7 @@ pub const KnowledgeCreateError = error{
     RefetchFailed,
     /// Refetched row vanished (should be impossible — surfaces as 500).
     RowVanished,
-    /// `std.fmt.allocPrint` failed on id generation. Unreachable under arena
-    /// allocator (test builds with `testing.allocator` can hit it), but the
-    /// type system requires the variant so `try` propagates a typed error.
+    /// `std.fmt.allocPrint` failed on id generation.
     OutOfMemory,
 };
 
@@ -57,15 +52,12 @@ pub const KnowledgeCreateInput = struct {
     content: []const u8 = "",
 };
 
-/// Output of the knowledge-create use-case. `knowledge` is owned by
-/// the caller (lifetime = request arena).
+/// Output of the knowledge-create use-case.
 pub const KnowledgeCreateOutput = struct {
     knowledge: Knowledge,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a knowledge row for the given agent.
 fn useCase(
@@ -100,13 +92,9 @@ fn useCase(
     return .{ .knowledge = knowledge };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentKnowledgeCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -174,8 +162,6 @@ pub fn agentKnowledgeCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 5 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -195,16 +181,13 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try Migration116.up(&db, testing.allocator);
-    // mirror that, or the `content` column (Migration 079) is missing
-    // and the INSERT in useCase fails with PrepareFailed.
+    // mirror that, or the `content` column (Migration 079) is missing and the INSERT in useCase fails with PrepareFailed.
 
     // Seed: 1 workspace_item of type 'agent' + matching agents row.
     try db.exec(testing.allocator,

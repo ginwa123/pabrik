@@ -11,8 +11,7 @@ const vmd_policy = @import("../vmd/policy.zig");
 
 const saas_picker_hint = "SaaS mode lists a workspace's VM: pass workspace_id";
 
-/// Where `GET /api/system/folder` may read from. Local mode keeps the host; a
-/// `--saas` process answers only for a workspace, and refuses without one.
+/// Where `GET /api/system/folder` may read from.
 pub const PickerRoute = union(enum) {
     host,
     guest: []const u8,
@@ -73,8 +72,7 @@ fn jsonEscape(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
     return try result.toOwnedSlice(allocator);
 }
 
-/// Serialize entries into the JSON array literal used on the wire:
-/// `[{"name":...,"path":...,"is_directory":...,"is_symlink":...},...]`.
+/// Serialize entries into the JSON array literal used on the wire
 pub fn buildEntriesJson(allocator: std.mem.Allocator, entries: []const FolderEntry) ![]u8 {
     var out = std.ArrayList(u8).empty;
     errdefer out.deinit(allocator);
@@ -97,8 +95,7 @@ pub fn buildEntriesJson(allocator: std.mem.Allocator, entries: []const FolderEnt
     return out.toOwnedSlice(allocator);
 }
 
-/// `action=list` / `action=search` against a workspace's VM. The guest root is
-/// the picker's home, so "Up" stops at `/workspace` and no host path is read.
+/// `action=list` / `action=search` against a workspace's VM.
 fn guestFolderResponse(
     allocator: std.mem.Allocator,
     req: gserverz.HttpRequest,
@@ -211,9 +208,7 @@ pub fn buildFolderListJson(
     return printFolderJson(allocator, relative, absolute, home, parent, entries_json);
 }
 
-/// Body for a request with no `action` (or an unknown one) -- that shape
-/// has no `entries` key. Kept byte-compatible with the pre-refactor
-/// response so an existing client cannot notice the change.
+/// Body for a request with no `action` (or an unknown one) -- that shape has no `entries` key.
 pub fn buildFolderInfoJson(
     allocator: std.mem.Allocator,
     relative: []const u8,
@@ -224,9 +219,7 @@ pub fn buildFolderInfoJson(
     return printFolderJson(allocator, relative, absolute, home, parent, null);
 }
 
-/// System folder endpoint GET /api/system/folder GET
-/// /api/system/folder?path=/some/relative/path GET
-/// /api/system/folder?path=/some/relative/path&action=list GET
+/// System folder endpoint GET /api/system/folder GET /api/system/folder?path=/some/relative/path GET /api/system/folder?path=/some/relative/path&action=list GET
 pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -301,8 +294,7 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
             allocator.free(entries);
         }
 
-        // Build entries JSON via the shared serializer (the search
-        // branch below uses the same one).
+        // Build entries JSON via the shared serializer (the search branch below uses the same one).
         const entries_json = try buildEntriesJson(allocator, entries);
         defer allocator.free(entries_json);
 
@@ -316,9 +308,7 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         ) });
     }
 
- // Recursive server-side search for the ChatView `@` picker: GET
- // /api/system/folder?action=search&path=<root>&q=comp&limit=50 Same route as
- // list (no new main.zig registration); same entry shape ({name, path,
+ // Recursive server-side search for the ChatView `@` picker: GET /api/system/folder?action=search&path=<root>&q=comp&limit=50 Same route as list (no new main.zig …
     if (do_search) {
         const q = req.query.get("q") orelse "";
         const limit = SystemFolder.parseSearchLimit(req.query.get("limit"));
@@ -341,8 +331,7 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
             allocator.free(entries);
         }
 
-        // Build entries JSON via the same serializer the list branch
-        // uses -- SAME wire shape for both.
+        // Build entries JSON via the same serializer the list branch uses -- SAME wire shape for both.
         const search_entries_json = try buildEntriesJson(allocator, entries);
         defer allocator.free(search_entries_json);
 
@@ -356,9 +345,7 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     if (do_read_write) {
         const file_name = req.query.get("file") orelse "";
 
-        // Use native absolute-path semantics. A Windows-looking path on
-        // POSIX (or a drive-relative `C:file` on Windows) is not absolute
-        // and must be joined to the already-validated base path.
+        // Use native absolute-path semantics.
         const is_abs = std.fs.path.isAbsolute(file_name);
         const full_path: []u8 = if (is_abs)
             allocator.dupe(u8, file_name) catch return res.jsonResponse( .{ .status_code = 500, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Out of memory" }) })
@@ -389,8 +376,7 @@ pub fn systemFolderHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
             .{ escaped_content }) });
     }
 
-    // No recognised action: return the location WITHOUT an `entries`
-    // key -- that shape predates the list/search split, so keep it.
+    // No recognised action: return the location WITHOUT an `entries` key -- that shape predates the list/search split, so keep it.
     return res.jsonResponse(.{ .status_code = 200, .data = try buildFolderInfoJson(
         allocator,
         relative,
@@ -522,11 +508,8 @@ test "pickerEntries: the limit caps the list at the first matches" {
 
 
 // ===== Behavioural tests: the Windows wire format ========================
-// These guard the wire format: none of them would notice if the response body
-// stopped being valid JSON.
 
-/// Parse a built body and return the value, so a body that is not JSON
-/// fails the test instead of silently comparing as text.
+/// Parse a built body and return the value, so a body that is not JSON fails the test instead of silently comparing as text.
 fn parseBody(allocator: std.mem.Allocator, body: []const u8) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, allocator, body, .{});
 }
@@ -556,9 +539,7 @@ test "buildFolderListJson: Windows backslash paths round-trip through JSON" {
     );
     defer allocator.free(body);
 
-    // The raw text must carry DOUBLED backslashes — this is the exact
-    // property that was lost before, and `std.json` below is what proves
-    // the doubling was necessary in the first place.
+    // The raw text must carry DOUBLED backslashes — this is the exact property that was lost before, and `std.json` below is what proves the doubling was necessary …
     try testing.expect(std.mem.indexOf(u8, body, "C:\\\\Users\\\\ginwa") != null);
 
     const parsed = try parseBody(allocator, body);
@@ -578,15 +559,12 @@ test "buildFolderListJson: Windows backslash paths round-trip through JSON" {
 }
 
 test "buildFolderListJson: a raw (unescaped) interpolation would not be JSON" {
-    // The control for the test above. Same values, interpolated the way
-    // the handler used to, MUST fail to parse — otherwise the escaping
-    // assertion above proves nothing.
+    // The control for the test above.
     var bad = std.ArrayList(u8).empty;
     defer bad.deinit(testing.allocator);
     try bad.appendSlice(testing.allocator,
         "{\"path\":\"/Documents\",\"absolute\":\"C:\\Users\\ginwa\",\"home\":\"C:\\Users\\ginwa\"}");
-    // Any parse failure is the point — the exact error type is a stdlib
-    // detail (`\U` is an invalid escape), not the contract.
+    // Any parse failure is the point — the exact error type is a stdlib detail (`\U` is an invalid escape), not the contract.
     if (parseBody(testing.allocator, bad.items)) |ok| {
         var parsed = ok;
         defer parsed.deinit();
@@ -638,9 +616,7 @@ test "buildFolderInfoJson: no-action body keeps its shape (no entries key)" {
         try testing.expect(parsed.value.object.get("entries") == null);
     }
 
-    // The home root: `getParentPath` returns null there, so the body has
-    // no `parent` key at all. Asserted separately so adding one later is
-    // a deliberate wire change.
+    // The home root: `getParentPath` returns null there, so the body has no `parent` key at all.
     const at_home = try buildFolderInfoJson(
         allocator,
         "/",

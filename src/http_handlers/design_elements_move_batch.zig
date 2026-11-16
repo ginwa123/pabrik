@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/move-batch`.
-//! Server-side cascade move.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/move-batch`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,9 +9,7 @@ const gserverz = pabrikcore.gserverz;
 const design_model = @import("../modules/agent/loop/design_model.zig");
 const http_response = @import("http_response.zig");
 
-/// HTTP request body for move-batch. Each `items[i]`'s `(dx, dy)`
-/// cascades to the element + every transitive descendant. Optional
-/// fields apply only to the root.
+/// HTTP request body for move-batch.
 const MoveBatchBody = struct {
     items: []const MoveItemWire = &.{},
 };
@@ -27,41 +23,28 @@ const MoveItemWire = struct {
     rotation: ?f64 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code via a single exhaustive switch.
+/// Domain-level error set for `useCase`.
 pub const DesignElementsMoveBatchError = error{
     /// `items` array was empty — would result in a no-op transaction.
-    /// Maps to 400.
     EmptyItems,
-    /// `design_model.moveElementsWithDescendantsBatch` returned
-    /// `PageNotFound` — the `:page_id` path param doesn't resolve.
-    /// Maps to 404.
+    /// `design_model.moveElementsWithDescendantsBatch` returned `PageNotFound` — the `:page_id` path param doesn't resolve.
     PageNotFound,
     /// One or more `element_id` values didn't resolve on the page.
-    /// Whole batch is rejected — no partial writes.
-    /// Maps to 404.
     ElementNotFound,
     /// A wire item had an empty `element_id`.
-    /// Maps to 400.
     BadItem,
-    /// Any DB-level failure (PrepareFailed, ExecuteFailed, BindFailed,
-    /// QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.).
-    /// Maps to 500.
+    /// Any DB-level failure (PrepareFailed, ExecuteFailed, BindFailed, QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.).
     DbError,
-    /// `allocator.dupe` / `std.json.Stringify.valueAlloc` failed while
-    /// building the response body. Maps to 500.
+    /// `allocator.dupe` / `std.json.Stringify.valueAlloc` failed while building the response body.
     OutOfMemory,
 };
 
-/// Output of the move-batch use-case. Heap-owned; caller releases
-/// `updated` via `design_model.freeElements(allocator, updated)`.
+/// Output of the move-batch use-case.
 pub const MoveBatchOutput = struct {
     updated: []design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub const UseCaseInput = struct {
     page_id: []const u8,
@@ -88,9 +71,7 @@ pub fn useCase(
     return .{ .updated = updated };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designElementsMoveBatchHandler(
     ctx: gserverz.HttpContext,
@@ -131,15 +112,11 @@ pub fn designElementsMoveBatchHandler(
         });
     };
 
-    // 3. Translate the wire body's `MoveItemWire[]` into
-    //    `design_model.MoveItem[]`. Reuse the model struct so the
-    //    use-case layer doesn't have to invent its own.
+    // 3.
     var inputs_buf: std.ArrayList(design_model.MoveItem) = .empty;
     defer inputs_buf.deinit(allocator);
     for (parsed.items) |it| {
-        // Empty element_id → 400 with an explicit message (the model
-        // would also reject these as ElementNotFound, but a clearer
-        // 400 here helps the frontend debug its batch construction).
+        // Empty element_id → 400 with an explicit message (the model would also reject these as ElementNotFound, but a clearer 400 here helps the frontend debug its …
         if (it.element_id.len == 0) {
             return res.jsonResponse(.{
                 .status_code = 400,
@@ -205,9 +182,7 @@ pub fn designElementsMoveBatchHandler(
     });
 }
 
-// Local helper — mirrors `http_response.makeErrorResponse` but avoids
-// the cross-import. The handler is the only caller; the helper is here
-// so the response-building block stays small.
+// Local helper — mirrors `http_response.makeErrorResponse` but avoids the cross-import.
 fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     return try std.json.Stringify.valueAlloc(
         allocator,
@@ -256,8 +231,7 @@ fn insertHandlerMoveBatchElement(
     const h_str = try std.fmt.allocPrint(alloc, "{d}", .{height});
     defer alloc.free(h_str);
 
-    // Bind empty string as NULL parent_id (the project's COALESCE
-    // convention — see `design_model.zig::setElementParent` step 2).
+    // Bind empty string as NULL parent_id (the project's COALESCE convention — see `design_model.zig::setElementParent` step 2).
     const parent_to_bind: []const u8 = if (parent_id.len == 0) "" else parent_id;
 
     try db.exec(alloc,

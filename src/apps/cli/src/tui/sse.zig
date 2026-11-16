@@ -9,9 +9,7 @@ pub const Event = struct {
     data: []const u8,
 };
 
-/// Parse ALL complete SSE events in `buf`. Returns how many bytes were
-/// consumed (events are complete only when terminated by a blank line —
-/// either `\n\n` or `\r\n\r\n`).
+/// Parse ALL complete SSE events in `buf`.
 pub fn parse(buf: []const u8, out: *std.ArrayList(Event), allocator: std.mem.Allocator) !usize {
     var consumed: usize = 0;
     var rest = buf;
@@ -62,9 +60,7 @@ fn chooseFrameEnd(lf_lf: ?usize, crlf: ?usize) ?struct { usize, usize } {
     return .{ crlf.?, 4 };
 }
 
-/// Join multiple `data:` payload pieces with newlines, per the SSE
-/// spec ("If the line starts with a colon, ... If the line is empty,
-/// ... Otherwise concatenate the lines with newlines"). Caller owns.
+/// Join multiple `data:` payload pieces with newlines, per the SSE spec ("If the line starts with a colon, ...
 fn joinDataLines(allocator: std.mem.Allocator, pieces: []const []const u8) ![]u8 {
     var total: usize = 0;
     for (pieces) |p| total += p.len;
@@ -82,8 +78,7 @@ fn joinDataLines(allocator: std.mem.Allocator, pieces: []const []const u8) ![]u8
     return out;
 }
 
-/// Extract `"action"` from an SSE data payload (JSON). Returns null if
-/// absent.
+/// Extract `"action"` from an SSE data payload (JSON).
 pub fn actionOf(data: []const u8) ?[]const u8 {
     return stringField(data, "action");
 }
@@ -94,8 +89,7 @@ pub fn sessionIdOf(data: []const u8) ?[]const u8 {
 }
 
 fn stringField(data: []const u8, field: []const u8) ?[]const u8 {
-    // Cheap scan for "\"field\":\"value\"" without a full JSON parse —
-    // the payloads are small and this avoids arena churn per event.
+    // Cheap scan for "\"field\":\"value\"" without a full JSON parse — the payloads are small and this avoids arena churn per event.
     var pat_buf: [64]u8 = undefined;
     const pat = std.fmt.bufPrint(&pat_buf, "\"{s}\":\"", .{field}) catch return null;
     const start = std.mem.indexOf(u8, data, pat) orelse return null;
@@ -104,9 +98,7 @@ fn stringField(data: []const u8, field: []const u8) ?[]const u8 {
     return data[vstart..vend];
 }
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -149,12 +141,8 @@ test "sessionIdOf: extracts session_id" {
 }
 
 // ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) =====
-// Section 2 of tdd_round2_test.zig: the `sse.parse` regression tests
-// (CRLF-terminated frames + multi-line data).
 
-// ============================================================================
 // 2. sse.parse — CRLF frames + multi-line data
-// ============================================================================
 
 test "sse parse: CRLF-terminated frame yields one event" {
     var events = std.ArrayList(Event).empty;

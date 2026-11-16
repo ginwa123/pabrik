@@ -46,8 +46,7 @@ const canSubmit = computed(() => {
 
 const handleSubmit = () => {
   if (!canSubmit.value) return
-  // Don't close the dialog here — let the parent decide based on the
-  // server response. The parent toggles `show=false` on success.
+  // Don't close the dialog here — let the parent decide based on the server response.
   if (props.row) {
     emit('save', props.row.id, { title: title.value, content: content.value })
   } else {
@@ -64,9 +63,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && !props.busy) handleClose()
 }
 
-// Populate on every open. Runs as the open-sync guard below,
-// which also covers the mount-with-show=true case the old
-// { immediate: true } watcher handled.
+// Populate on every open.
 const handleOpen = async () => {
   // Populate from the row in edit mode; blank in add mode.
   title.value = props.row?.title ?? ''
@@ -75,9 +72,7 @@ const handleOpen = async () => {
   titleInput.value?.focus()
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

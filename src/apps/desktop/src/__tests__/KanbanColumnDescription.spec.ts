@@ -1,5 +1,4 @@
-/** Tests for the column description subtitle rendered between the header row (name + count + ⋮
- * menu) and the cards drop zone in KanbanColumn.vue. */
+/** Tests for the column description subtitle rendered between the header row (name + count + ⋮ menu) and the cards drop zone in KanbanColumn.vue. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

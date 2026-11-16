@@ -1,6 +1,4 @@
-/** The pure half of the documents tree: how a level orders itself, how a cycle
- * is recognised, and how the folder cache is read and written. Kept out of the
- * store so the store stays about state and requests. */
+/** The pure half of the documents tree: how a level orders itself, how a cycle is recognised, and how the folder cache is read and written. */
 import type { Document, DocumentFolder } from '../api'
 
 export type TreeEntry =
@@ -12,8 +10,7 @@ export function folderCacheKey(workspaceId: string): string {
   return FOLDER_CACHE_PREFIX + workspaceId
 }
 
-/** Within one level: folders first, then documents, each in saved order. The
- * backend keeps two ordering spaces, so this merge rule lives here only. */
+/** Within one level: folders first, then documents, each in saved order. */
 export function mergeLevel(
   folders: DocumentFolder[],
   documents: Document[],
@@ -30,8 +27,7 @@ export function mergeLevel(
   return [...levelFolders, ...levelDocuments]
 }
 
-/** True when `candidateId` sits at or below `ancestorId`, so a cycle can be
- * refused before any request is sent. Mirrors the server's own rule. */
+/** True when `candidateId` sits at or below `ancestorId`, so a cycle can be refused before any request is sent. */
 export function isAtOrBelow(
   folders: DocumentFolder[],
   ancestorId: string,
@@ -48,8 +44,7 @@ export function isAtOrBelow(
   return false
 }
 
-/** The folder names from the root down: `Split bill` inside
- * `Sales debit note` reads `['Sales debit note', 'Split bill']`. */
+/** The folder names from the root down: `Split bill` inside `Sales debit note` reads `['Sales debit note', 'Split bill']`. */
 export function folderPath(folders: DocumentFolder[], folderId: string | null): string[] {
   const byId = new Map(folders.map((f) => [f.id, f]))
   const path: string[] = []
@@ -63,9 +58,7 @@ export function folderPath(folders: DocumentFolder[], folderId: string | null): 
   return path
 }
 
-/** A cold boot paints the placement the last session saw; the revalidate that
- * follows is the source of truth, so a cache miss is an empty answer, not an
- * error. */
+/** A cold boot paints the placement the last session saw; the revalidate that follows is the source of truth, so a cache miss is an empty answer, not an error. */
 export function readCachedFolders(workspaceId: string): DocumentFolder[] {
   try {
     const raw = globalThis.localStorage?.getItem(folderCacheKey(workspaceId))

@@ -1,5 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent_routine`. Body:
-//! `{description}`.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent_routine`. Body
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -13,12 +12,10 @@ const UpdateAgentRoutineBody = struct {
     description: []const u8 = "",
 };
 
-/// Subset of the agent_routines row returned by the use-case. Field
-/// strings are owned by the caller (lifetime = request arena).
+/// Subset of the agent_routines row returned by the use-case.
 pub const AgentRoutine = agent_routine_db.AgentRoutineRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const AgentRoutineUpdateError = error{
     /// `workspace_id` or `item_id` path param was missing or empty.
     IdsRequired,
@@ -52,13 +49,9 @@ pub const AgentRoutineUpdateOutput = struct {
     agent_routine: AgentRoutine,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Update an agent-routines config's description. Validates that the
-/// workspace_item exists, is of type `'routine'`, and has an
-/// `agent_routines` row. Transport-agnostic (arena + testing allocators).
+/// Update an agent-routines config's description.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -81,16 +74,13 @@ fn useCase(
     const handle: agent_routine_db.DbOrTx = .{ .db = db };
 
     // Require an existing config row (spec D3: id == workspace_item_id).
-    // Empty-slice-as-NULL guard: COALESCE keeps '' descriptions intact.
     const agent_routine = (agent_routine_db.updateDescription(allocator, handle, input.item_id, input.description) catch
         return error.UpdateFailed) orelse return error.NotConfigured;
 
     return .{ .agent_routine = agent_routine };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentRoutinesUpdateHandler(
@@ -158,7 +148,6 @@ pub fn agentRoutinesUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

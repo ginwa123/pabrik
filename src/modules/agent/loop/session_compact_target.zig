@@ -1,6 +1,4 @@
-//! What one compaction call runs against. The agentic loop and the manual
-//! `/compact` endpoint resolve their LLM target, profile and cwd here, so a
-//! manual compact cannot pick a different model than the next loop turn would.
+//! What one compaction call runs against.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -29,8 +27,7 @@ pub const Outcome = struct {
     message: []const u8,
 };
 
-/// The `LlmConfig` in force for a session: the owner's stored config under
-/// `--auth`, the process-global singleton otherwise.
+/// The `LlmConfig` in force for a session: the owner's stored config under `--auth`, the process-global singleton otherwise.
 pub fn sessionConfig(
     allocator: std.mem.Allocator,
     app: *pabrikcore.App,
@@ -40,9 +37,7 @@ pub fn sessionConfig(
     return session_llm_config.forSession(allocator, db, session_id) orelse pabrikcore.getLlmConfig(app);
 }
 
-/// The cascades the loop re-resolves every iteration, read from the session
-/// row: `selected_profile_model` walks to the effective model/key/base_url/
-/// url_style, and the same name resolves the profile the threshold reads.
+/// The cascades the loop re-resolves every iteration, read from the session row: `selected_profile_model` walks to the effective model/key/base_url/url_style, and …
 pub fn resolve(
     allocator: std.mem.Allocator,
     llm_config: *const LlmConfig,
@@ -67,8 +62,7 @@ pub fn resolve(
     };
 }
 
-/// The compaction trigger's token input: the largest `total_tokens` across the
-/// rows that feed the model.
+/// The compaction trigger's token input: the largest `total_tokens` across the rows that feed the model.
 pub fn totalTokens(rows: anytype) u32 {
     var max: u32 = 0;
     for (rows) |row| {
@@ -77,8 +71,7 @@ pub fn totalTokens(rows: anytype) u32 {
     return max;
 }
 
-/// Compact `session_id` exactly the way the loop's call site does, and report
-/// whether anything was actually written.
+/// Compact `session_id` exactly the way the loop's call site does, and report whether anything was actually written.
 pub fn compactSession(
     comptime deps: compact_mod.CompactDeps,
     allocator: std.mem.Allocator,
@@ -96,18 +89,14 @@ pub fn compactSession(
         .db = db,
         .session_id = session_id,
     });
-    // Every row owns its strings, and the slice is the caller's. Deferred so it
-    // runs after the compaction has consumed them: this path is called once per
-    // agent-initiated compaction, so a per-call leak is a leak in a loop.
+    // Every row owns its strings, and the slice is the caller's.
     defer {
         for (db_messages) |*m| m.deinit(allocator);
         allocator.free(db_messages);
     }
 
     var messages: std.ArrayList(agent.AgentMessage) = .empty;
-    // `buildMessages` hands back a heap SLICE, and `appendSlice` copies the
-    // elements out of it: the slice's own backing store has to be released or
-    // every compaction call leaks it.
+    // `buildMessages` hands back a heap SLICE, and `appendSlice` copies the elements out of it: the slice's own backing store has to be released or every compaction …
     const built = try buildMessages(allocator, io, db, resolved.cwd, session_id, "", false, db_messages, tools, "", "", "");
     defer allocator.free(built);
     try messages.appendSlice(allocator, built);
@@ -181,9 +170,7 @@ fn seedSession(db: *database.Db, id: []const u8, selected_profile_model: []const
     );
 }
 
-/// Top-level `gpt-4o` on the OpenAI wire, plus one Anthropic-profile the
-/// session can select. A compaction sent with the top-level fields would go to
-/// the wrong host with the wrong key and the wrong wire format.
+/// Top-level `gpt-4o` on the OpenAI wire, plus one Anthropic-profile the session can select.
 fn twoTargetConfig(allocator: std.mem.Allocator) !*LlmConfig {
     const body =
         "{\"model\":\"gpt-4o\",\"base_url\":\"https://top.example/v1\",\"api_key\":\"sk-top\"," ++
@@ -216,8 +203,7 @@ test "manual compact targets the selected session profile not the top-level conf
     try testing.expectEqualStrings("/work/project", target.cwd);
     try testing.expect(target.llm_config == cfg);
 
-    // Positive control: the top-level fields this used to send are different,
-    // so the assertions above can actually fail.
+    // Positive control: the top-level fields this used to send are different, so the assertions above can actually fail.
     try testing.expectEqualStrings("gpt-4o", cfg.model);
     try testing.expectEqualStrings("sk-top", cfg.api_key);
 }

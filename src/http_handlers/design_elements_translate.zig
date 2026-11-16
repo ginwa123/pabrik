@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/translate`.
-//! Translate (move) a single element by a `(dx, dy)` delta.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/translate`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -16,8 +14,7 @@ const TranslateBody = struct {
     dy: ?i64 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message.
+/// Domain-level error set for `useCase`.
 pub const DesignElementTranslateError = error{
     ElementIdRequired,
     /// `dx` or `dy` was missing from the body.
@@ -28,9 +25,7 @@ pub const DesignElementTranslateError = error{
 };
 
 pub const TranslateOutput = struct {
-    /// The cascaded set of updated elements (1 element for leaves,
-    /// 1 + N for group/frame cascade). Heap-owned; caller frees
-    /// with `design_model.freeElements`.
+    /// The cascaded set of updated elements (1 element for leaves, 1 + N for group/frame cascade).
     updated: []design_model.DesignElement,
 };
 
@@ -52,9 +47,7 @@ pub fn useCase(
         };
     defer design_model.freeElement(allocator, target);
 
-    // Cascade if the target is a group/frame. The recursive CTE walks DOWN
-    // through `parent_id` and updates the whole subtree in one SQL
-    // transaction.
+    // Cascade if the target is a group/frame.
     if (std.mem.eql(u8, target.elem_type, "group") or
         std.mem.eql(u8, target.elem_type, "frame"))
     {
@@ -90,8 +83,7 @@ pub fn useCase(
     const element = design_model.getElement(allocator, db, updated_id) catch
         return error.DbError;
 
-    // Wrap the single element in a 1-element slice so the response shape is
-    // uniform with the cascade path.
+    // Wrap the single element in a 1-element slice so the response shape is uniform with the cascade path.
     const wrapped = try allocator.alloc(design_model.DesignElement, 1);
     wrapped[0] = element;
     return .{ .updated = wrapped };
@@ -195,8 +187,7 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     );
 }
 
-// ===== Tests merged from design_elements_translate_test.zig (2026-09-11
-// flatten) ===== Behavioural tests for the `POST .../translate` handler.
+// ===== Tests merged from design_elements_translate_test.zig (2026-09-11 flatten) ===== Behavioural tests for the `POST .../translate` handler.
 
 const http_handlers = @import("mod.zig");
 const migration = @import("../migrations/migration.zig");
@@ -222,8 +213,7 @@ fn teardownTranslateCtx(ctx: *TestCtx) void {
     testing_alloc.free(ctx.tmpdir_path);
 }
 
-/// Open a fresh in-memory DB and walk every migration in
-/// `src/migrations/migration.zig` so the schema matches production exactly.
+/// Open a fresh in-memory DB and walk every migration in `src/migrations/migration.zig` so the schema matches production exactly.
 fn setupTranslateCtx() !TestCtx {
     var threaded = std.Io.Threaded.init(testing_alloc, .{});
     errdefer threaded.deinit();
@@ -333,9 +323,7 @@ test "useCase translates a group and CASCADES the delta to its descendants (the 
     var ctx = try setupTranslateCtx();
     defer teardownTranslateCtx(&ctx);
 
-    // Layout: group G (x=50, y=100) — type='group' child1 c1 (x=60, y=110,
-    // parent=G) — type='rectangle' child2 c2 (x=200, y=200, parent=G) —
-    // type='rectangle'
+    // Layout: group G (x=50, y=100) — type='group' child1 c1 (x=60, y=110, parent=G) — type='rectangle' child2 c2 (x=200, y=200, parent=G) — type='rectangle'
     const group = try insertTranslateElement(alloc, &ctx.db, ctx.page_id, "g", "group", 50, 100, 200, 200, "");
     defer alloc.free(group);
     const child1 = try insertTranslateElement(alloc, &ctx.db, ctx.page_id, "c1", "rectangle", 60, 110, 30, 30, group);

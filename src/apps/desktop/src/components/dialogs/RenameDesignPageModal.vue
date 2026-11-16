@@ -46,9 +46,7 @@ const handleClose = () => {
 
 const handleRename = () => {
   const trimmed = name.value.trim()
-  // Same guard as RenameTaskModal: only emit when the trimmed value
-  // is non-empty AND actually different from the current name. No-op
-  // closes the modal silently.
+  // Same guard as RenameTaskModal: only emit when the trimmed value is non-empty AND actually different from the current name.
   if (trimmed && trimmed !== props.currentName) {
     emit('rename', trimmed)
   }
@@ -63,9 +61,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

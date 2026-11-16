@@ -1,5 +1,4 @@
-// Wire tests for the `used_tools` agent tool. Zig port of
-// `tests/functional/used_tools_test.py` (same test names, same order).
+// Wire tests for the `used_tools` agent tool.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,13 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// An owned copy of a wire `tools` string array. Python compared
-/// `"used_tools" in tools` against the live list and printed it in the
-/// failure message.
+/// An owned copy of a wire `tools` string array.
 const ToolNames = struct {
     items: [][]u8,
 
@@ -57,7 +52,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/{ws}/items/agent` → the new agent's id.
-/// Caller frees.
 fn createAgent(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     // Derived from `h.temp_dir`, not a literal "/tmp/..." — see header.
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"used-tools-test"});
@@ -81,7 +75,6 @@ fn createAgent(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/{ws}/items/kanban` → the new board's id.
-/// Caller frees.
 fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -206,9 +199,7 @@ test "registry_exposes_used_tools_with_description" {
     }
 }
 
-// ============================================================================
 // TestUsedToolsSeeded
-// ============================================================================
 
 // Agent mode: DEFAULT_AGENT_TOOLS seeds used_tools at creation.
 test "fresh_agent_allowlist_contains_used_tools" {
@@ -260,9 +251,7 @@ test "fresh_kanban_allowlist_contains_used_tools" {
     }
 }
 
-// ============================================================================
 // TestUsedToolsLifecycle
-// ============================================================================
 
 // DELETE removes it; re-POST restores it (first-class tool).
 test "disable_and_reenable_round_trip" {

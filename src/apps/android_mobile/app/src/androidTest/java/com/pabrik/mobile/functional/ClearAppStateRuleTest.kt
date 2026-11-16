@@ -22,26 +22,7 @@ import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 
-/**
- * What [ClearAppStateRule] removes, and that it removes it *before* the test.
- *
- * Both halves matter and they fail differently. A rule that clears the wrong
- * cache still runs and still passes its own contentness check, so the value of
- * this file is that every one of the six kinds of state is written and then
- * read back as absent — a cache this misses becomes an intermittent failure in
- * whichever scenario happens to run second.
- *
- * Names are camelCase rather than backticked: this module's `minSdk` is 26,
- * so `androidTest` is dexed below version 040, and D8 rejects a space in a
- * method name ("Space characters in SimpleName ... are not allowed prior to DEX
- * version 040"). The JVM suite can use backticks; this source set cannot.
- *
- * The ordering half is the one that is easy to get quietly wrong: `@Before`
- * would be too late, because `ActivityScenarioRule` launches the app while the
- * rules are still running. `a rule installed on a test clears what ran before
- * it` proves the order rather than asserting it, by chaining a rule that writes
- * state *ahead* of the one under test.
- */
+/** What [ClearAppStateRule] removes, and that it removes it *before* the test. */
 @RunWith(AndroidJUnit4::class)
 class ClearAppStateRuleTest {
 
@@ -49,13 +30,7 @@ class ClearAppStateRuleTest {
 
     private val clear = ClearAppStateRule(context)
 
-    /**
-     * Dirty the app, then clear it — the order every real test runs in.
-     *
-     * Wiring it here rather than in one test is deliberate: if the chain ever
-     * stops running, every test in this class starts seeing its own leftovers,
-     * which is the failure mode worth catching early.
-     */
+    /** Dirty the app, then clear it — the order every real test runs in. */
     @get:Rule
     val chain: TestRule = RuleChain.outerRule(DirtyTheApp()).around(clear)
 
@@ -63,10 +38,7 @@ class ClearAppStateRuleTest {
 
     @Test
     fun aRuleInstalledOnATestClearsWhatRanBeforeIt() {
-        // `DirtyTheApp` wrote both of these in its own `before()`, which the
-        // RuleChain runs before the clear. Seeing them gone from the test body
-        // is the proof that the rule is what removed them — a `@Before` in this
-        // class could not have, because it would have run after the Activity.
+        // `DirtyTheApp` wrote both of these in its own `before()`, which the RuleChain runs before the clear.
         assertNull(SessionCookieStore(context).read())
         assertTrue(PrefsLastPositionStore(context).read(USER).isEmpty)
     }

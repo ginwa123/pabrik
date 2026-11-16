@@ -1,16 +1,11 @@
-// src/apps/desktop_app/extraction.zig Runtime asset extraction: write a flat
-// list of `AssetEntry` records (the source: webapp_assets.assets — see
-// tools/codegen_webapp_assets.zig) to a fresh per-user temp dir.
+// src/apps/desktop_app/extraction.zig Runtime asset extraction: write a flat list of `AssetEntry` records (the source: webapp_assets.assets — see …
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// A flat asset entry. Source: the generated webapp_assets.zig at comptime
-/// (one `pub const assets: []const Asset` slice for the whole app).
+/// A flat asset entry.
 pub const AssetEntry = struct {
-    /// Path as served by the webserver, e.g. "/index.html" or
-    /// "/assets/app.js". Must start with "/"; the leading slash is
-    /// stripped before writing to disk.
+    /// Path as served by the webserver, e.g. "/index.html" or "/assets/app.js".
     path: []const u8,
     /// File contents (use as-is; do not modify).
     content: []const u8,
@@ -18,9 +13,7 @@ pub const AssetEntry = struct {
     mime: []const u8,
 };
 
-/// Extract the given assets to a fresh per-pid temp subdir. Returns the
-/// absolute path of the temp dir. The caller MUST call `cleanup(allocator,
-/// dir)` on shutdown.
+/// Extract the given assets to a fresh per-pid temp subdir.
 pub fn extract(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     const tmp_base = tmpDirBase(allocator);
     defer allocator.free(tmp_base);
@@ -53,29 +46,23 @@ pub fn extract(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     return full_path;
 }
 
-/// Recursively remove the temp dir and free the path slice. Best-effort:
-/// any deleteTree error is logged but not propagated (the caller is
-/// shutting down; there's nothing useful they can do with the error).
+/// Recursively remove the temp dir and free the path slice. Best-effort
 pub fn cleanup(allocator: std.mem.Allocator, dir: []const u8) void {
     deleteTreeBestEffort(dir);
     allocator.free(dir);
 }
 
 /// Name of the marker file written LAST inside a persistent webapp dir.
-/// Its presence is what `dirIsComplete` checks before reusing a dir, so a
-/// run killed mid-extraction can never be mistaken for a complete one.
 pub const complete_marker_name = ".pabrik-webapp-complete";
 
-/// Materialise the webapp into a **persistent, content-addressed** dir and
-/// return its absolute path.
+/// Materialise the webapp into a **persistent, content-addressed** dir and return its absolute path.
 pub fn ensurePersistent(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     const base = persistentBaseDir(allocator);
     defer allocator.free(base);
     return ensurePersistentIn(allocator, base, assets);
 }
 
-/// `ensurePersistent` with an explicit base dir. Split out so tests can
-/// point it at a tmpDir instead of the user's real data dir.
+/// `ensurePersistent` with an explicit base dir.
 pub fn ensurePersistentIn(
     allocator: std.mem.Allocator,
     base: []const u8,
@@ -88,14 +75,11 @@ pub fn ensurePersistentIn(
     errdefer allocator.free(final_dir);
 
     // Fast path: a complete dir from an earlier run of the same build.
-    // This is the property that keeps a long-lived daemon's --static-dir
-    // valid, so it is deliberately checked before anything else.
     if (dirIsComplete(final_dir)) return final_dir;
 
     try makePathAbsolute(base);
 
-    // Stage in a sibling dir so a crash mid-write can never leave a
-    // partial tree under the final name.
+    // Stage in a sibling dir so a crash mid-write can never leave a partial tree under the final name.
     const pid: u64 = switch (builtin.os.tag) {
         .windows => @intFromPtr(std.c.getpid()),
         else => @intCast(std.c.getpid()),
@@ -116,17 +100,13 @@ pub fn ensurePersistentIn(
     defer allocator.free(marker_path);
     try writeFileAbsolute(marker_path, hash);
 
-    // Publish. An incomplete leftover under the final name (a torn write
-    // from an earlier crash, or a dir left by the old per-pid layout)
-    // must go first — rename(2) refuses to replace a non-empty directory.
+    // Publish.
     if (pathExistsAbs(final_dir) and !dirIsComplete(final_dir)) {
         deleteTreeBestEffort(final_dir);
     }
 
     renameAbsolute(staging, final_dir) catch |err| switch (err) {
         // Another process published between our check and the rename.
-        // Its dir was built from the same content hash, so it is
-        // byte-identical — keep theirs and drop our staging copy.
         error.TargetExists => deleteTreeBestEffort(staging),
         else => return err,
     };
@@ -138,17 +118,14 @@ pub fn ensurePersistentIn(
 /// Name of the stable symlink inside the persistent base dir.
 pub const stable_link_name = "current";
 
-/// `ensurePersistent` with a stable return path: materialise the assets into
-/// `<base>/<hash>` as usual, then atomically point `<base>/current` at it and
-/// return the `<base>/current` path.
+/// `ensurePersistent` with a stable return path: materialise the assets into `<base>/<hash>` as usual, then atomically point `<base>/current` at it and return the …
 pub fn ensurePersistentStable(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     const base = persistentBaseDir(allocator);
     defer allocator.free(base);
     return ensurePersistentStableIn(allocator, base, assets);
 }
 
-/// `ensurePersistentStable` with an explicit base dir. Split out so tests
-/// can point it at a tmpDir instead of the user's real data dir.
+/// `ensurePersistentStable` with an explicit base dir.
 pub fn ensurePersistentStableIn(
     allocator: std.mem.Allocator,
     base: []const u8,
@@ -162,8 +139,7 @@ pub fn ensurePersistentStableIn(
     const stable = try std.fs.path.join(allocator, &.{ base, stable_link_name });
     errdefer allocator.free(stable);
 
-    // Relative target (the hash basename) keeps the link relocatable and
-    // `readlink` output short.
+    // Relative target (the hash basename) keeps the link relocatable and `readlink` output short.
     const target = std.fs.path.basename(hash_dir);
     pointSymlinkAt(allocator, stable, target) catch |err| {
         std.log.warn("stable webapp link {s} -> {s} failed ({s}); using versioned dir", .{
@@ -175,8 +151,6 @@ pub fn ensurePersistentStableIn(
 }
 
 /// Atomically point `link_path` at `target` via a temp symlink + rename.
-/// `target` is stored as given (callers pass the hash basename, making the
-/// link relative).
 fn pointSymlinkAt(allocator: std.mem.Allocator, link_path: []const u8, target: []const u8) !void {
     const pid: u64 = switch (builtin.os.tag) {
         .windows => @intFromPtr(std.c.getpid()),
@@ -190,8 +164,7 @@ fn pointSymlinkAt(allocator: std.mem.Allocator, link_path: []const u8, target: [
     errdefer unlinkAbsolute(tmp_link);
 
     renameAbsolute(tmp_link, link_path) catch |err| switch (err) {
-        // `link_path` is a real dir, not a symlink — refuse to clobber
-        // user data; the caller falls back to the versioned dir.
+        // `link_path` is a real dir, not a symlink — refuse to clobber user data; the caller falls back to the versioned dir.
         error.TargetExists => return error.LinkTargetIsDir,
         else => return err,
     };
@@ -245,9 +218,7 @@ fn persistentBaseDir(allocator: std.mem.Allocator) []u8 {
     return persistentBaseFallback(allocator);
 }
 
-/// Last resort when no per-user data dir can be resolved. Still a shared,
-/// stable location (not per-pid), so daemons started by earlier launches
-/// keep working within the session.
+/// Last resort when no per-user data dir can be resolved.
 fn persistentBaseFallback(allocator: std.mem.Allocator) []u8 {
     const tmp = tmpDirBase(allocator);
     defer allocator.free(tmp);
@@ -281,9 +252,7 @@ fn assetSetHashHex(allocator: std.mem.Allocator, assets: anytype) ![]u8 {
     return allocator.dupe(u8, hex);
 }
 
-/// True when `dir` holds a completed extraction. Only the marker is checked:
-/// it is written after every asset, so its presence implies the whole tree
-/// landed.
+/// True when `dir` holds a completed extraction. Only the marker is checked
 fn dirIsComplete(dir: []const u8) bool {
     if (!pathExistsAbs(dir)) return false;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -293,8 +262,7 @@ fn dirIsComplete(dir: []const u8) bool {
 
 /// Write one asset into `dir`, creating parent dirs as needed.
 fn writeAssetInto(allocator: std.mem.Allocator, dir: []const u8, asset: anytype) !void {
-    // Strip the leading "/" from the path; everything else is relative to the
-    // webapp root.
+    // Strip the leading "/" from the path; everything else is relative to the webapp root.
     const rel = if (asset.path.len > 0 and asset.path[0] == '/')
         asset.path[1..]
     else
@@ -303,8 +271,7 @@ fn writeAssetInto(allocator: std.mem.Allocator, dir: []const u8, asset: anytype)
     const abs_path = try std.fs.path.join(allocator, &.{ dir, rel });
     defer allocator.free(abs_path);
 
-    // Make parent dirs as needed (e.g. "/assets/app.js" needs
-    // "<dir>/assets" to exist before the file create).
+    // Make parent dirs as needed (e.g.
     if (std.fs.path.dirname(abs_path)) |parent| {
         try makePathAbsolute(parent);
     }
@@ -312,8 +279,7 @@ fn writeAssetInto(allocator: std.mem.Allocator, dir: []const u8, asset: anytype)
     try writeFileAbsolute(abs_path, asset.content);
 }
 
-/// Pick a base temp dir for this platform. The returned slice is freshly
-/// allocated; the caller owns it.
+/// Pick a base temp dir for this platform.
 fn tmpDirBase(allocator: std.mem.Allocator) []u8 {
     const builtin_os = builtin.os.tag;
     return switch (builtin_os) {
@@ -343,16 +309,12 @@ fn tmpDirBase(allocator: std.mem.Allocator) []u8 {
     };
 }
 
-/// Last-resort fallback for tmpDirBase. A dupe failure here would
-/// mean we're out of memory before the app even started, so we
-/// panic — there's nothing useful the caller can do.
+/// Last-resort fallback for tmpDirBase.
 fn fallbackTmp(allocator: std.mem.Allocator) []u8 {
     return allocator.dupe(u8, "/tmp") catch @panic("out of memory resolving temp dir");
 }
 
-// ===================================================================== Raw
-// syscall helpers
-// ===================================================================== Zig
+// ===================================================================== Raw syscall helpers ===================================================================== …
 
 fn copyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]const u8 {
     if (path.len >= buf.len) @panic("path too long for null-terminated buffer");
@@ -361,8 +323,7 @@ fn copyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]const u8
     return buf;
 }
 
-/// `mkdir -p` for an absolute path. Walks the path component by component,
-/// calling `mkdir(2)` for each missing segment.
+/// `mkdir -p` for an absolute path.
 fn makePathAbsolute(path: []const u8) !void {
     if (path.len == 0 or (path.len == 1 and path[0] == '.')) return;
 
@@ -392,7 +353,6 @@ fn pathExistsAbs(path: []const u8) bool {
             const written = std.unicode.wtf8ToWtf16Le(&path_w, path) catch return false;
             path_w[written] = 0;
             // INVALID_FILE_ATTRIBUTES (0xFFFFFFFF) = "not found / error".
-            // Any other value = file/dir exists.
             return GetFileAttributesW(@ptrCast(&path_w)) != 0xFFFFFFFF;
         },
         else => {
@@ -404,9 +364,7 @@ fn pathExistsAbs(path: []const u8) bool {
     }
 }
 
-/// `rename(2)` with the "target already exists" case (a concurrent
-/// publisher won the race) split out as `error.TargetExists` so callers
-/// can treat it as "someone else did the work" rather than a failure.
+/// `rename(2)` with the "target already exists" case (a concurrent publisher won the race) split out as `error.TargetExists` so callers can treat it as "someone …
 fn renameAbsolute(from: []const u8, to: []const u8) !void {
     switch (builtin.os.tag) {
         .windows => {
@@ -416,9 +374,7 @@ fn renameAbsolute(from: []const u8, to: []const u8) !void {
             from_w[from_len] = 0;
             const to_len = std.unicode.wtf8ToWtf16Le(&to_w, to) catch return error.RenameFailed;
             to_w[to_len] = 0;
-            // Win32 `BOOL` is a typed enum in Zig 0.16 (not a raw integer),
-            // so compare against `.FALSE` — `!= 0` is a compile error for
-            // the Windows target. Same pattern as FindNextFileW below.
+            // Win32 `BOOL` is a typed enum in Zig 0.16 (not a raw integer), so compare against `.FALSE` — `!= 0` is a compile error for the Windows target.
             if (win32_dir_apis.MoveFileW(@ptrCast(&from_w), @ptrCast(&to_w)) != .FALSE) return;
             const last_err = win32_dir_apis.GetLastError();
             if (last_err == win32_dir_apis.ERROR_ALREADY_EXISTS or
@@ -437,9 +393,7 @@ fn renameAbsolute(from: []const u8, to: []const u8) !void {
             const rc = std.c.rename(from_z, to_z);
             if (rc == 0) return;
             switch (std.c.errno(rc)) {
-                // EEXIST (target dir non-empty / existing file),
-                // ENOTEMPTY (target dir non-empty), ENOTDIR (target is a
-                // non-dir) all mean "something is already published there".
+                // EEXIST (target dir non-empty / existing file), ENOTEMPTY (target dir non-empty), ENOTDIR (target is a non-dir) all mean "something is already published there".
                 .EXIST, .NOTEMPTY, .NOTDIR => return error.TargetExists,
                 else => return error.RenameFailed,
             }
@@ -451,8 +405,6 @@ fn renameAbsolute(from: []const u8, to: []const u8) !void {
 extern "kernel32" fn GetFileAttributesW(lpFileName: [*:0]const u16) callconv(.winapi) std.os.windows.DWORD;
 
 /// Create (or truncate) a file at an absolute path and write the given bytes.
-/// Returns nothing on success; on write error the partial file is left on
-/// disk (the caller can `deleteTree` to clean up).
 fn writeFileAbsolute(path: []const u8, content: []const u8) !void {
     var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
     const path_z = copyToNull(&path_buf, path);
@@ -464,9 +416,7 @@ fn writeFileAbsolute(path: []const u8, content: []const u8) !void {
 }
 
 fn writeFileAbsolutePosix(path_z: [*:0]const u8, content: []const u8) !void {
-    // `std.c.O` is a Zig packed struct mirroring the kernel's open-flag
-    // bits for the target platform. The struct layout differs across
-    // platforms but the field names are portable.
+    // `std.c.O` is a Zig packed struct mirroring the kernel's open-flag bits for the target platform.
     const flags: std.c.O = .{
         .ACCMODE = .WRONLY,
         .CREAT = true,
@@ -507,8 +457,7 @@ fn writeFileAbsoluteWindows(path: []const u8, content: []const u8) !void {
     const h = h_opt orelse return error.OpenOutFailed;
     defer _ = CloseHandle(h);
 
-    // Truncate to 0 (OPEN_ALWAYS preserves existing content; we want
-    // truncation for the "overwrite" semantic).
+    // Truncate to 0 (OPEN_ALWAYS preserves existing content; we want truncation for the "overwrite" semantic).
     const set_rc = SetFilePointerEx(h, 0, null, 2); // FILE_END = 2
     _ = set_rc; // best-effort; if it fails the write below will surface it
 
@@ -553,11 +502,9 @@ extern "kernel32" fn SetFilePointerEx(
     dwMoveMethod: std.os.windows.DWORD,
 ) callconv(.winapi) std.os.windows.BOOL;
 
-// Win32 FindFirstFileW / FindNextFileW bindings for the Windows-only
-// deleteTree path.
+// Win32 FindFirstFileW / FindNextFileW bindings for the Windows-only deleteTree path.
 const win32_dir_apis = if (builtin.os.tag == .windows) struct {
-    /// `WIN32_FIND_DATAW` per Win32 SDK. Layout MUST match the OS struct —
-    /// the kernel writes directly into this buffer via FindFirstFileW.
+    /// `WIN32_FIND_DATAW` per Win32 SDK.
     const WIN32_FIND_DATAW = extern struct {
         dwFileAttributes: std.os.windows.DWORD,
         ftCreationTime: std.os.windows.FILETIME,
@@ -604,12 +551,9 @@ const win32_dir_apis = if (builtin.os.tag == .windows) struct {
     extern "kernel32" fn GetLastError() callconv(.winapi) std.os.windows.DWORD;
 } else struct {};
 
-/// Windows-only recursive-delete implementation, mirrors the POSIX path's
-/// semantics (best-effort, errors swallowed at the top-level caller) but uses
-/// Win32 `FindFirstFileW` / `FindNextFileW` because `std.c.readdir` is `{}`
+/// Windows-only recursive-delete implementation, mirrors the POSIX path's semantics (best-effort, errors swallowed at the top-level caller) but uses Win32 …
 fn deleteTreeRecursiveWindows(path: []const u8) !void {
-    // Build "<path>\*" in a WTF-16 buffer. FindFirstFileW needs the wildcard
-    // suffix to enumerate children.
+    // Build "<path>\*" in a WTF-16 buffer.
     var pattern_buf: [std.fs.max_path_bytes:0]u16 = undefined;
     if (path.len + 3 > std.fs.max_path_bytes) return error.NameTooLong;
     const sep_index = std.unicode.wtf8ToWtf16Le(pattern_buf[0 .. pattern_buf.len - 1], path) catch
@@ -621,15 +565,13 @@ fn deleteTreeRecursiveWindows(path: []const u8) !void {
     var find_data: win32_dir_apis.WIN32_FIND_DATAW = undefined;
     const find_handle = win32_dir_apis.FindFirstFileW(&pattern_buf, &find_data);
     if (find_handle == win32_dir_apis.INVALID_HANDLE_VALUE) {
-        // ERROR_FILE_NOT_FOUND here just means the dir is empty — that's fine,
-        // we can still RemoveDirectoryW below.
+        // ERROR_FILE_NOT_FOUND here just means the dir is empty — that's fine, we can still RemoveDirectoryW below.
         const err = win32_dir_apis.GetLastError();
         if (err != win32_dir_apis.ERROR_FILE_NOT_FOUND) return error.OpenDirFailed;
     } else {
         defer _ = win32_dir_apis.FindClose(find_handle);
 
-        // First entry was already returned by FindFirstFileW; process it, then
-        // loop over FindNextFileW until it returns 0 (no more entries).
+        // First entry was already returned by FindFirstFileW; process it, then loop over FindNextFileW until it returns 0 (no more entries).
         var child_path_buf: [std.fs.max_path_bytes:0]u16 = undefined;
         while (true) {
             // Copy cFileName into a temp slice up to the first NUL.
@@ -649,8 +591,7 @@ fn deleteTreeRecursiveWindows(path: []const u8) !void {
                 child_path_buf[sep_index + 1 + name_len] = 0;
 
                 if ((find_data.dwFileAttributes & win32_dir_apis.FILE_ATTRIBUTE_DIRECTORY) != 0) {
-                    // Convert the WTF-16 child path back to WTF-8 so we can
-                    // recurse — the helper functions take `[]const u8`.
+                    // Convert the WTF-16 child path back to WTF-8 so we can recurse — the helper functions take `[]const u8`.
                     var child_utf8: [std.fs.max_path_bytes]u8 = undefined;
                     const written = std.unicode.wtf16LeToWtf8(&child_utf8, child_path_buf[0 .. sep_index + 1 + name_len]);
                     try deleteTreeRecursiveWindows(child_utf8[0..written]);
@@ -660,9 +601,7 @@ fn deleteTreeRecursiveWindows(path: []const u8) !void {
                 }
             }
 
-            // Advance to the next entry. FindNextFileW returns FALSE when
-            // there are no more entries (sets GetLastError to
-            // ERROR_NO_MORE_FILES).
+            // Advance to the next entry.
             const more = win32_dir_apis.FindNextFileW(find_handle, &find_data);
             if (more == .FALSE) break;
         }
@@ -677,7 +616,6 @@ fn deleteTreeRecursiveWindows(path: []const u8) !void {
 }
 
 /// `rm -rf` via libc `opendir` / `readdir` / `closedir` + `unlink` / `rmdir`.
-/// Best-effort: errors are logged but not propagated.
 fn deleteTreeBestEffort(path: []const u8) void {
     switch (builtin.os.tag) {
         .windows => deleteTreeRecursiveWindows(path) catch |err| {
@@ -697,19 +635,15 @@ fn deleteTreeRecursive(path: []const u8) !void {
     const dir = std.c.opendir(dir_path_z) orelse return error.OpenDirFailed;
     defer _ = std.c.closedir(dir);
 
-    // Iterate entries. `std.c.readdir` returns `?*dirent`; null = end of
-    // stream (errno unchanged) or error (errno set).
+    // Iterate entries.
     var child_path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
 
     while (std.c.readdir(dir)) |entry| {
-        // The libc `dirent` struct uses the field name `name` (NOT `d_name`,
-        // which is a glibc extension we don't have here) on both Linux and
-        // macOS.
+        // The libc `dirent` struct uses the field name `name` (NOT `d_name`, which is a glibc extension we don't have here) on both Linux and macOS.
         const name = switch (builtin.os.tag) {
             .macos => entry.name[0..entry.namlen],
             else => blk: {
-                // Linux / *BSD: kernel guarantees NUL termination in the
-                // fixed-size `name` array.
+                // Linux / *BSD: kernel guarantees NUL termination in the fixed-size `name` array.
                 var end: usize = 0;
                 while (end < entry.name.len and entry.name[end] != 0) : (end += 1) {}
                 break :blk entry.name[0..end];
@@ -731,9 +665,7 @@ fn deleteTreeRecursive(path: []const u8) !void {
         var child_z: [std.fs.max_path_bytes:0]u8 = undefined;
         const child_z_ptr = copyToNull(&child_z, child_path);
 
-        // `entry.type` is the libc dirent's `d_type` field — the
-        // file-type discriminator (DT_DIR=4, DT_REG=8, etc.). Same
-        // values on Linux + macOS via `std.c.DT`.
+        // `entry.type` is the libc dirent's `d_type` field — the file-type discriminator (DT_DIR=4, DT_REG=8, etc.).
         if (entry.type == std.c.DT.DIR) {
             // Recurse, then rmdir.
             try deleteTreeRecursive(child_path);
@@ -744,22 +676,18 @@ fn deleteTreeRecursive(path: []const u8) !void {
         }
     }
 
-    // Finally rmdir the now-empty directory itself. Best-effort: a non-zero
-    // return (e.g. ENOTEMPTY because of a race) is swallowed by the caller
-    // via deleteTreeBestEffort.
+    // Finally rmdir the now-empty directory itself.
     _ = std.c.rmdir(dir_path_z);
 }
 
 // ===== Tests merged from extraction_test.zig (2026-09-29 flatten) =====
-// Tests for the runtime extraction module.
 
 const testing = std.testing;
 
 test "extract: writes all assets to a temp dir, returns absolute path" {
     const allocator = testing.allocator;
 
-    // Use a tiny in-memory asset list. The "/assets/app.js" path tests
-    // that extract() handles the parent-dir creation for nested files.
+    // Use a tiny in-memory asset list.
     const assets = [_]AssetEntry{
         .{ .path = "/index.html", .content = "<html>hi</html>", .mime = "text/html" },
         .{ .path = "/assets/app.js", .content = "console.log('x')", .mime = "application/javascript" },
@@ -768,12 +696,10 @@ test "extract: writes all assets to a temp dir, returns absolute path" {
     const dir = try extract(allocator, &assets);
     defer cleanup(allocator, dir);
 
-    // Returned path must be absolute so the webview can resolve it
-    // regardless of cwd.
+    // Returned path must be absolute so the webview can resolve it regardless of cwd.
     try testing.expect(std.fs.path.isAbsolute(dir));
 
-    // Verify both files exist with the right content. Read the files
-    // back via raw open(2) + read(2) since std.fs.cwd() is gone in 0.16.
+    // Verify both files exist with the right content.
     try readBackAndExpect(dir, "index.html", "<html>hi</html>");
     try readBackAndExpect(dir, "assets/app.js", "console.log('x')");
 }
@@ -790,20 +716,17 @@ test "extract: cleanup removes the dir" {
     // Sanity: the dir exists right after extract.
     try testing.expect(dirExists(dir));
 
-    // `cleanup` frees the `dir` slice (it owns the path), so copy it
-    // first if we want to inspect the on-disk state after.
+    // `cleanup` frees the `dir` slice (it owns the path), so copy it first if we want to inspect the on-disk state after.
     const dir_copy = try allocator.dupe(u8, dir);
     defer allocator.free(dir_copy);
 
     cleanup(allocator, dir);
 
-    // After cleanup, the dir should not exist. Read via the copy
-    // (the original `dir` is now freed).
+    // After cleanup, the dir should not exist.
     try testing.expect(!dirExists(dir_copy));
 }
 
-/// Read `subpath` (relative to `dir`) and assert its content equals
-/// `expected`. Uses raw syscalls because `std.fs.cwd()` is gone in 0.16.
+/// Read `subpath` (relative to `dir`) and assert its content equals `expected`.
 fn readBackAndExpect(dir: []const u8, subpath: []const u8, expected: []const u8) !void {    const allocator = testing.allocator;
     const full = try std.fs.path.join(allocator, &.{ dir, subpath });
     defer allocator.free(full);
@@ -856,9 +779,7 @@ fn dirExists(path: []const u8) bool {
     return rc == 0;
 }
 
-// Distinct from the module's own `copyToNull` above: this copy panics on
-// overflow instead of returning a "too long" sentinel, which is what the
-// test's read-back path wants.
+// Distinct from the module's own `copyToNull` above: this copy panics on overflow instead of returning a "too long" sentinel, which is what the test's read-back …
 fn testCopyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]const u8 {
     if (path.len >= buf.len) @panic("path too long for null-terminated buffer");
     @memcpy(buf[0..path.len], path);
@@ -866,9 +787,7 @@ fn testCopyToNull(buf: *[std.fs.max_path_bytes:0]u8, path: []const u8) [*:0]cons
     return buf;
 }
 
-// =====================================================================
-// ensurePersistentIn — the persistent, content-addressed webapp dir
-// ===================================================================== Why
+// ensurePersistentIn — the persistent, content-addressed webapp dir ===================================================================== Why
 
 /// Return a tmpDir's real absolute path into `buf`.
 fn tmpBase(tmp: *std.testing.TmpDir, buf: *[std.fs.max_path_bytes]u8) ![]const u8 {
@@ -892,23 +811,19 @@ test "ensurePersistentIn: materialises assets, marks the dir complete, and reuse
     const dir1 = try ensurePersistentIn(allocator, base, &assets);
     defer allocator.free(dir1);
 
-    // The path the spawned daemon is handed must be absolute and must live
-    // under the persistent base (never a per-pid temp dir).
+    // The path the spawned daemon is handed must be absolute and must live under the persistent base (never a per-pid temp dir).
     try testing.expect(std.fs.path.isAbsolute(dir1));
     try testing.expect(std.mem.startsWith(u8, dir1, base));
 
     try readBackAndExpect(dir1, "index.html", "<html>one</html>");
     try readBackAndExpect(dir1, "assets/app.js", "console.log(1)");
 
-    // The completion marker is what makes the dir reusable — and, for the
-    // caller, what makes it safe to hand to a daemon that will outlive us.
+    // The completion marker is what makes the dir reusable — and, for the caller, what makes it safe to hand to a daemon that will outlive us.
     const marker = try std.fs.path.join(allocator, &.{ dir1, complete_marker_name });
     defer allocator.free(marker);
     try testing.expect(dirExists(marker));
 
-    // Second call with the same assets: identical path, and it must NOT be
-    // re-extracted. A sentinel dropped in between proves the difference —
-    // a re-extract would wipe this directory and take the sentinel with it.
+    // Second call with the same assets: identical path, and it must NOT be re-extracted.
     const sentinel = try std.fs.path.join(allocator, &.{ dir1, "sentinel.txt" });
     defer allocator.free(sentinel);
     try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = sentinel, .data = "keep me" });
@@ -940,9 +855,7 @@ test "ensurePersistentIn: changed asset bytes land in a different dir" {
     const dir2 = try ensurePersistentIn(allocator, base, &v2);
     defer allocator.free(dir2);
 
-    // A new build must never be served out of the old dir: an old daemon
-    // still pointing at `dir1` keeps serving v1, while the new desktop
-    // hands `dir2` to anything it spawns.
+    // A new build must never be served out of the old dir: an old daemon still pointing at `dir1` keeps serving v1, while the new desktop hands `dir2` to anything it …
     try testing.expect(!std.mem.eql(u8, dir1, dir2));
     try readBackAndExpect(dir1, "index.html", "<html>v1</html>");
     try readBackAndExpect(dir2, "index.html", "<html>v2</html>");
@@ -963,9 +876,7 @@ test "ensurePersistentIn: republishes a torn (marker-less) dir" {
     const dir1 = try ensurePersistentIn(allocator, base, &assets);
     defer allocator.free(dir1);
 
-    // Simulate a run killed between "assets written" and "marker written"
-    // (or a future process wiping the marker): drop the marker so the dir
-    // looks incomplete, then truncate a file to make the corruption real.
+    // Simulate a run killed between "assets written" and "marker written" (or a future process wiping the marker): drop the marker so the dir looks incomplete, then …
     const marker = try std.fs.path.join(allocator, &.{ dir1, complete_marker_name });
     defer allocator.free(marker);
     try std.Io.Dir.cwd().deleteFile(testing.io, marker);
@@ -983,9 +894,7 @@ test "ensurePersistentIn: republishes a torn (marker-less) dir" {
 
 test "ensurePersistentIn: zero assets still publishes a reusable dir" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    // The CI stub build (-Dno-webapp-rebuild) embeds zero assets. It must
-    // not error, and it must not rewrite the dir on every launch either —
-    // otherwise the path handed to a long-lived daemon keeps changing.
+    // The CI stub build (-Dno-webapp-rebuild) embeds zero assets.
     const allocator = testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

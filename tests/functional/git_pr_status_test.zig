@@ -1,5 +1,4 @@
-// Functional wire tests for GET /api/git/pr/status. Zig port of
-// `tests/functional/git_pr_status_test.py` (same test names, same order).
+// Functional wire tests for GET /api/git/pr/status.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// The suite's own scratch directory (the git repo + every fake bin),
-/// outside the harness's tempdir namespace.
+/// The suite's own scratch directory (the git repo + every fake bin), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -21,9 +17,7 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered
-    /// first — a defer that freed the slice before the cleaner read it is a
-    /// use-after-free that happens to read as a plausible path.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered first — a defer that freed the slice before the cleaner read it is a use-after-free that …
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -34,8 +28,7 @@ const Scratch = struct {
     }
 };
 
-/// Python's `_git`: `git` in `cwd` with the fixture identity baked in, so the
-/// fixture never depends on the machine's global git config.
+/// Python's `_git`: `git` in `cwd` with the fixture identity baked in, so the fixture never depends on the machine's global git config.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -63,9 +56,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// Python's `repo` fixture: `git init --initial-branch=main` plus one
-/// committed file, so the directory is a real worktree rather than a
-/// bare `.git`.
+/// Python's `repo` fixture: `git init --initial-branch=main` plus one committed file, so the directory is a real worktree rather than a bare `.git`.
 fn buildRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-status-proj"});
     errdefer gpa.free(cwd);
@@ -91,15 +82,11 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     var f = try std.Io.Dir.cwd().createFile(io, path, .{});
     defer f.close(io);
     try f.writeStreamingAll(io, contents);
-    // `setFilePermissions(..., .executable_file, ...)` is the portable
-    // spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also makes the
-    // file READABLE, which OR-ing the exec bit into a fresh file's mode does
+    // `setFilePermissions(..., .executable_file, ...)` is the portable spelling of Python's `chmod(st_mode | stat.S_IEXEC)` and also makes the file READABLE, which …
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Put an executable `gh` stub in its OWN bindir inside `s`, so prepending
-/// that directory to PATH cannot shadow another command the server needs
-/// (`git` in particular — the repo gate runs it).
+/// Put an executable `gh` stub in its OWN bindir inside `s`, so prepending that directory to PATH cannot shadow another command the server needs (`git` in …
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -112,8 +99,7 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -160,12 +146,9 @@ const PathShadow = struct {
     }
 };
 
-// ============================================================================
 // The fake `gh` payloads
-// ============================================================================
 
-/// PR #42, MERGED, with every date populated. `json.dumps(payload)` on
-/// one line inside a heredoc, exactly as the Python original wrote it.
+/// PR #42, MERGED, with every date populated.
 const GH_MERGED_SCRIPT =
     \\#!/bin/sh
     \\cat <<'EOF'
@@ -173,9 +156,7 @@ const GH_MERGED_SCRIPT =
     \\EOF
 ;
 
-/// PR #584, OPEN. `mergedAt` / `closedAt` are JSON `null` — the shape
-/// the backend's optional-string struct used to reject, turning every
-/// open PR into a 502.
+/// PR #584, OPEN.
 const GH_OPEN_SCRIPT =
     \\#!/bin/sh
     \\cat <<'EOF'
@@ -183,25 +164,21 @@ const GH_OPEN_SCRIPT =
     \\EOF
 ;
 
-/// A `gh` that fails the way an expired login does — the message the
-/// 502 body must surface.
+/// A `gh` that fails the way an expired login does — the message the 502 body must surface.
 const GH_FAIL_SCRIPT =
     \\#!/bin/sh
     \\echo 'gh: To authenticate, run: gh auth login' >&2
     \\exit 1
 ;
 
-/// A `gh` for a branch nobody opened a change request for: the stderr and
-/// exit code `gh pr view` itself produces.
+/// A `gh` for a branch nobody opened a change request for: the stderr and exit code `gh pr view` itself produces.
 const GH_NO_PR_SCRIPT =
     \\#!/bin/sh
     \\echo 'no pull requests found for branch "worktree/no-pr-here"' >&2
     \\exit 1
 ;
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // 1. Missing path → 400 (the route is registered and the validator runs).
 test "missing_path_is_400" {
@@ -217,8 +194,7 @@ test "missing_path_is_400" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // `assert "error" in r` — an ABSENT key must fail, so `orelse`
-    // rather than a defaulted empty string.
+    // `assert "error" in r` — an ABSENT key must fail, so `orelse` rather than a defaulted empty string.
     if (doc.get("error") == null) {
         std.debug.print("400 body carries no `error` field: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -256,8 +232,7 @@ test "unknown_provider_is_400" {
     }
 }
 
-// 3. `provider=gitlab` reaches the glab path instead of a hard 400.
-// `provider=gitlab` used to be a hard 400 before any lookup.
+// 3.
 test "gitlab_provider_is_not_rejected_up_front" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -327,8 +302,7 @@ test "non_repo_path_is_404" {
     var s = try Scratch.init();
     defer s.deinit();
 
-    // Python: `plain = tmp_path / "not-a-repo"` — a plain directory
-    // inside the suite's own scratch dir, never a git worktree.
+    // Python: `plain = tmp_path / "not-a-repo"` — a plain directory inside the suite's own scratch dir, never a git worktree.
     const plain = try s.path(&.{"not-a-repo"});
     defer gpa.free(plain);
     try std.Io.Dir.cwd().createDirPath(io, plain);
@@ -420,9 +394,7 @@ test "open_pr_with_null_dates_is_200" {
     var r = try h.http(io, .GET, "/api/git/pr/status", .{
         .params = &.{
             .{ .name = "path", .value = repo },
-            // The kanban card sends `pr=<git_branch>`, so the value
-            // carries slashes. The harness percent-encodes it; the
-            // server has to decode it back.
+            // The kanban card sends `pr=<git_branch>`, so the value carries slashes.
             .{ .name = "pr", .value = "worktree/sync-engine-phase2-cached-delta" },
         },
         .expect = &.{200},
@@ -480,9 +452,7 @@ test "fetch_failure_surfaces_gh_stderr" {
         std.debug.print("502 error swallowed the gh stderr: {s}\n", .{message});
         return error.TestUnexpectedResult;
     }
-    // The prefix names the forge's own noun ("pull request" on GitHub,
-    // "merge request" on GitLab) instead of a hardcoded "PR", so the
-    // message matches whichever CLI actually ran.
+    // The prefix names the forge's own noun ("pull request" on GitHub, "merge request" on GitLab) instead of a hardcoded "PR", so the message matches whichever CLI …
     const prefix = "failed to fetch pull request status: ";
     if (!std.mem.startsWith(u8, message, prefix)) {
         std.debug.print("502 error does not start with \"{s}\": {s}\n", .{ prefix, message });
@@ -531,12 +501,9 @@ test "no_pr_for_branch_is_200_with_has_pr_false" {
     try expectEqualStr(&doc, "state", "");
 }
 
-// ============================================================================
 // Assertion helpers
-// ============================================================================
 
-/// Is a `glab` binary resolvable on PATH? Probed with `std.process.run` so it
-/// is the same PATH the server's own `execLookPath` will see.
+/// Is a `glab` binary resolvable on PATH?
 fn hasGlabOnPath() bool {
     var child = std.process.spawn(io, .{
         .argv = &.{ "sh", "-c", "command -v glab >/dev/null 2>&1" },
@@ -591,9 +558,7 @@ fn expectEqualBool(doc: *const harness.Json, key: []const u8, want: bool) !void 
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one is invisible until a
-    // caller appears.
+    // Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one is invisible until a caller appears.
     _ = Scratch.init;
     _ = Scratch.deinit;
     _ = Scratch.path;

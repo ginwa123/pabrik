@@ -1,6 +1,4 @@
-/** Tests for the lazy task-media endpoint client (media-flags change). List/get return only
- * `is_have_image` / `is_have_video` flags so board fetches stay small; `getTaskMedia` fetches the
- * full `||`-delimited base64 TEXT columns on demand (called only when a flag is true). */
+/** Tests for the lazy task-media endpoint client (media-flags change). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getTaskMedia, getTasksMedia } from '@/api/index'

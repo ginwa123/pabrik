@@ -1,6 +1,4 @@
-//! `document` — the read/search half of the document tools: one format-agnostic
-//! tool over the same store `document_markdown` and `document_html` write to.
-//! Two actions: `read` (a bounded slice at a byte position) and `search`.
+//! `document` — the read/search half of the document tools: one format-agnostic tool over the same store `document_markdown` and `document_html` write to.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -97,8 +95,7 @@ pub const DEFAULT_READ_LIMIT: usize = 20_000;
 
 pub const MAX_READ_LIMIT: usize = 200_000;
 
-/// `content` is a SLICE of the body, and `next_offset` is how the caller
-/// continues — null means the end.
+/// `content` is a SLICE of the body, and `next_offset` is how the caller continues — null means the end.
 pub const DocumentReadSuccess = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -106,8 +103,7 @@ pub const DocumentReadSuccess = struct {
     format: []const u8,
     updated_at: []const u8,
     content: []const u8,
-    /// The WHOLE body's length, so the caller can size the document without
-    /// reading it.
+    /// The WHOLE body's length, so the caller can size the document without reading it.
     content_bytes: usize,
     offset: usize,
     next_offset: ?usize,
@@ -120,8 +116,7 @@ const BodySlice = struct {
     next_offset: ?usize,
 };
 
-/// `body[offset..]` cut to at most `limit` bytes, on a UTF-8 boundary so a
-/// multi-byte character is never split across two pages.
+/// `body[offset..]` cut to at most `limit` bytes, on a UTF-8 boundary so a multi-byte character is never split across two pages.
 pub fn sliceBody(body: []const u8, offset: usize, limit: usize) BodySlice {
     const start = @min(offset, body.len);
     var end = @min(start + limit, body.len);
@@ -154,9 +149,7 @@ fn readSuccessJSON(
     }, .{});
 }
 
-/// Execute the `read` action: one document, body included, cut to a bounded
-/// slice. Returns an inner JSON string the exec wrapper embeds. Caller owns
-/// the returned slice and must free it.
+/// Execute the `read` action: one document, body included, cut to a bounded slice.
 pub fn executeReadDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -206,9 +199,7 @@ pub fn executeReadDocument(
     return readSuccessJSON(allocator, row, offset, limit);
 }
 
-// =====================================================================
 // Exec adapter
-// =====================================================================
 
 const tools = @import("../loop/tools.zig");
 const documents_search = @import("../loop/documents_search.zig");
@@ -280,9 +271,7 @@ fn execFailure(ctx: ToolExecContext, tc: agent.ToolCall, err: anyerror) !ToolExe
 }
 
 fn runSearch(ctx: ToolExecContext, tc: agent.ToolCall, input: DocumentViewInput) !ToolExecResult {
-    // Paging bounds are rejected, never silently clamped: the model pages by
-    // offset from the `total` it was shown, so a quiet clamp makes its next
-    // call land on the wrong page.
+    // Paging bounds are rejected, never silently clamped: the model pages by offset from the `total` it was shown, so a quiet clamp makes its next call land on the …
     const limit: usize = blk: {
         const raw = input.limit orelse @as(i64, @intCast(documents_search.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
@@ -344,8 +333,7 @@ fn runSearch(ctx: ToolExecContext, tc: agent.ToolCall, input: DocumentViewInput)
     const query = input.query orelse "";
     const literal = input.literal orelse false;
 
-    // The SQL narrowing runs FIRST and only when it is provably a superset of
-    // the regex's matches — see `documents_search.literalPrefilter`.
+    // The SQL narrowing runs FIRST and only when it is provably a superset of the regex's matches — see `documents_search.literalPrefilter`.
     const rows = exec_documents_store.searchDocuments(
         ctx.allocator,
         ctx.db,
@@ -365,8 +353,7 @@ fn runSearch(ctx: ToolExecContext, tc: agent.ToolCall, input: DocumentViewInput)
     const page = documents_search.pageSlice(outcome.hits, offset, limit);
     const include_content = input.include_content orelse false;
 
-    // `include_content` is the "I am about to edit" path. The body is not a
-    // column any more, so fetch it for the PAGE only — never for every match.
+    // `include_content` is the "I am about to edit" path.
     var hydrated: std.ArrayList(documents_search.Hit) = .empty;
     defer hydrated.deinit(ctx.allocator);
     var bodies: std.ArrayList([]u8) = .empty;
@@ -423,8 +410,7 @@ fn contentKeyOf(rows: []const exec_documents_store.DocumentRow, id: []const u8) 
 const testing = std.testing;
 const database = pabrikcore.database;
 
-/// Flattened view of one `read` payload. Every field is OWNED, so `deinit`
-/// can free it even when the payload was a refusal.
+/// Flattened view of one `read` payload.
 const ReadJson = struct {
     allocator: std.mem.Allocator,
     id: []const u8 = "",
@@ -533,8 +519,7 @@ test "document read: returns a bounded slice and the byte offset that continues 
 
     try testing.expect(p.err == null);
     try testing.expectEqualStrings("2345", p.content);
-    // The whole body's length, so the caller can size the document without
-    // reading the rest of it.
+    // The whole body's length, so the caller can size the document without reading the rest of it.
     try testing.expectEqual(@as(usize, 10), p.content_bytes);
     try testing.expectEqual(@as(usize, 2), p.offset);
     try testing.expectEqual(@as(?usize, 6), p.next_offset);
@@ -740,8 +725,7 @@ test "document search: a metacharacter query is NOT narrowed by the SQL prefilte
     var ctx = try document_mod.exec_setupDb();
     defer ctx.deinit();
 
-    // `release.` as a regex is "release" + any one character, so "releaseX"
-    // matches while the literal substring "release." does not occur.
+    // `release.` as a regex is "release" + any one character, so "releaseX" matches while the literal substring "release." does not occur.
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Zebra", "releaseX the thing\n");
 
     var env = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "search", "{\"query\":\"release.\"}");
@@ -750,8 +734,7 @@ test "document search: a metacharacter query is NOT narrowed by the SQL prefilte
     try testing.expectEqual(@as(usize, 1), env.total);
     try testing.expectEqualStrings("Zebra", env.titles[0]);
 
-    // And the same query with literal:true genuinely matches nothing — the
-    // flag, not the prefilter, is what makes the two answers differ.
+    // And the same query with literal:true genuinely matches nothing — the flag, not the prefilter, is what makes the two answers differ.
     var lit = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "search", "{\"query\":\"release.\",\"literal\":true}");
     defer lit.deinit();
     try testing.expectEqualStrings("literal", lit.pattern_mode);
@@ -803,9 +786,7 @@ test "document search: an invalid pattern is a warning, not a failed tool call" 
     var env = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "search", "{\"query\":\"releas(\"}");
     defer env.deinit();
 
-    // success=true: the search RAN. It just ran in fallback mode, and said
-    // so. Reporting this as an error would teach the model to give up on a
-    // query that had an obvious literal reading.
+    // success=true: the search RAN.
     try testing.expect(env.success);
     try testing.expectEqualStrings("literal_fallback", env.pattern_mode);
     try testing.expect(env.pattern_warning != null);
@@ -853,8 +834,7 @@ test "document search: paging reports total, truncated, next_offset and the offs
     var page2 = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "search", "{\"query\":\"shared\",\"limit\":2,\"offset\":2}");
     defer page2.deinit();
     try testing.expectEqual(@as(usize, 2), page2.count);
-    // next_offset is offset + count, i.e. where page 3 STARTS — not the
-    // offset page 2 started at.
+    // next_offset is offset + count, i.e. where page 3 STARTS — not the offset page 2 started at.
     try testing.expectEqual(@as(usize, 4), page2.next_offset.?);
     // Page 2 must not repeat page 1's rows.
     for (page1.ids) |id| {
@@ -931,8 +911,7 @@ test "document search: a workspace never sees another workspace's documents" {
     defer created.deinit();
     try testing.expectEqualStrings("ws_2", created.workspace_id);
 
-    // The shared query matches exactly one row per workspace, and each
-    // search returns only its own — no ids, no titles, no excerpts leaking.
+    // The shared query matches exactly one row per workspace, and each search returns only its own — no ids, no titles, no excerpts leaking.
     var mine = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "search", "{\"query\":\"sharedword\"}");
     defer mine.deinit();
     try testing.expectEqual(@as(usize, 1), mine.total);
@@ -953,9 +932,7 @@ test "document search: an unresolvable session is a refusal, NOT an empty result
     var ctx = try document_mod.exec_setupDb();
     defer ctx.deinit();
 
-    // "no documents matched" and "you have no workspace" are different facts
-    // and the model has to be able to tell them apart — a silent empty
-    // page would read as "your notes are gone".
+    // "no documents matched" and "you have no workspace" are different facts and the model has to be able to tell them apart — a silent empty page would read as …
     var orphan = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", "search", "{}");
     defer orphan.deinit();
     try testing.expect(!orphan.success);
@@ -994,8 +971,7 @@ test "document search: an empty document body is searchable by title, not by con
     defer by_title.deinit();
     try testing.expectEqual(@as(usize, 1), by_title.total);
     try testing.expectEqual(@as(usize, 0), by_title.content_lengths[0]);
-    // An empty body yields an empty excerpt, not a crash and not the title
-    // silently standing in for it.
+    // An empty body yields an empty excerpt, not a crash and not the title silently standing in for it.
     try testing.expectEqualStrings("Stub", by_title.excerpts[0]);
 
     var none = try viewTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "search", "{\"query\":\"hippopotamus\"}");
@@ -1008,9 +984,7 @@ test "document search: a body hit in a large document yields a bounded excerpt" 
     var ctx = try document_mod.exec_setupDb();
     defer ctx.deinit();
 
-    // 8 KiB of padding AFTER the needle: without a window the result would
-    // carry 8 KiB of markdown into the context for a one-line answer. The
-    // needle sits inside the preview, which is what search reads.
+    // 8 KiB of padding AFTER the needle: without a window the result would carry 8 KiB of markdown into the context for a one-line answer.
     const filler = "y" ** 8192;
     const body = try std.fmt.allocPrint(alloc, "NEEDLE{s}", .{filler});
     defer alloc.free(body);
@@ -1029,9 +1003,7 @@ test "document search: a multi-byte body still produces valid JSON" {
     var ctx = try document_mod.exec_setupDb();
     defer ctx.deinit();
 
-    // The excerpt window can land mid-codepoint. A split produces an invalid
-    // UTF-8 sequence, which surfaces as a stringify failure — i.e. the whole
-    // search tool call errors for a query that found a real match.
+    // The excerpt window can land mid-codepoint.
     const body = "日本語のテキスト" ** 400;
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Ünïcödé", body);
 

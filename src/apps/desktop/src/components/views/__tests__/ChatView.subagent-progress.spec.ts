@@ -1,5 +1,4 @@
-/** Tests for ChatView's SSE routing of `role="subagent_progress"` events into the per-tool_call_id
- * progress map. 2026-08-23 spawn-subagent-live-progress. */
+/** Tests for ChatView's SSE routing of `role="subagent_progress"` events into the per-tool_call_id progress map. 2026-08-23 spawn-subagent-live-progress. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref, nextTick } from 'vue'
 
@@ -10,9 +9,7 @@ import {
   type SubAgentProgressMap,
 } from '../../../helpers/subagentProgress'
 
-// Inline the ChatView-style bus handler so we can test the routing logic in isolation. This mirrors
-// the real ChatView.vue:2033 early branch: progress events go into the map; everything else falls
-// through (in this test, we just count "ignored").
+// Inline the ChatView-style bus handler so we can test the routing logic in isolation.
 type RegularEvent = { type: 'full' | 'chunk'; role?: string; session_id?: string; content?: string }
 
 function makeHandler() {

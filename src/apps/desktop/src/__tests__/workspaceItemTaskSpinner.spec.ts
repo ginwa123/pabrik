@@ -1,5 +1,4 @@
-/** Regression tests for the per-task activity marker. WorkspaceItem must read from the same
- * processingState ref App.vue provides. */
+/** Regression tests for the per-task activity marker. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -52,9 +51,7 @@ function mountWorkspaceItem(tasks: Array<{ id: string; name: string }> = itemWit
 }
 
 function expandItem(): void {
-  // Tasks are only rendered when the parent item is expanded (WorkspaceItem.vue:125). The store
-  // mutates `expandedItemIds` and reassigns the ref to trigger reactivity, matching the production
-  // toggle in stores/workspaces.ts:toggleExpandedItem.
+  // Tasks are only rendered when the parent item is expanded (WorkspaceItem.vue:125).
   const ws = useWorkspacesStore()
   ws.expandedItemIds['item_1'] = true
   ws.expandedItemIds = { ...ws.expandedItemIds }
@@ -95,8 +92,7 @@ describe('WorkspaceItem task elapsed chip', () => {
     await nextTick()
     expect(visibleSpinners(wrapper)).toHaveLength(0)
     expect(visibleChips(wrapper)).toHaveLength(1)
-    // The alpha row is the one with the chip; the alpha name is
-    // still rendered in the row.
+    // The alpha row is the one with the chip; the alpha name is still rendered in the row.
     expect(wrapper.text()).toContain('Alpha task')
   })
 

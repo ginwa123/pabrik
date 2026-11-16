@@ -1,5 +1,4 @@
-/** Behavioural tests for DesignView's `<LayersPanel @reparent>` wire (Chunk 4 Task 4.3 of
- * drag-to-reparent plan). */
+/** Behavioural tests for DesignView's `<LayersPanel @reparent>` wire (Chunk 4 Task 4.3 of drag-to-reparent plan). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -104,8 +103,6 @@ describe('DesignView LayersPanel @reparent wire (Chunk 4 Task 4.3)', () => {
 
  
 
-    // The LayersPanel emits `reparent` with the composable's result
-    // shape: { elementIds, newParentId }.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper.vm as any).handleLayerReparent({ elementIds: ['a', 'b'], newParentId: null })
     await flushPromises()
@@ -172,9 +169,7 @@ describe('DesignView LayersPanel @reparent wire (Chunk 4 Task 4.3)', () => {
    
   it('handleLayerReparent is a quiet no-op when activePageId is empty', async () => {
     const store = useWorkspacesStore()
-    // Mount with workspaceId='' so useDesignHandlers.reparentLayers short-circuits (workspaceId
-    // empty → no-op). This exercises the same guard as "activeDesignPageId empty" in production —
-    // the composable short-circuits when ANY of the three ids is empty.
+    // Mount with workspaceId='' so useDesignHandlers.reparentLayers short-circuits (workspaceId empty → no-op).
     const storeSpy = vi
       .spyOn(store, 'reparentDesignElementsBatch')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

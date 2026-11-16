@@ -6,11 +6,7 @@ import com.pabrik.mobile.auth.HttpsAuthTransport
 import com.pabrik.mobile.auth.SessionStore
 import java.net.HttpURLConnection
 
-/**
- * Reads the sidebar's two lists over the same [AuthTransport] the auth flow
- * uses, so the app keeps a single call site and the in-app network inspector
- * shows these requests alongside sign-in.
- */
+/** Reads the sidebar's two lists over the same [AuthTransport] the auth flow uses, so the app keeps a single call site and the in-app network inspector shows … */
 sealed interface RecentsResult<out T> {
     data class Loaded<out T>(val value: T) : RecentsResult<T>
 
@@ -34,14 +30,7 @@ class RecentsClient(
         parse = RecentsApi::parseWorkspaces,
     )
 
-    /**
-     * One page of recents for [workspaceId]. Pass the previous page's
-     * `nextCursor` to get the next one; leave it null for the first page.
-     *
-     * One request per call on purpose: `HomeViewModel` owns the drain, so the
-     * loop that stops it, re-seeds it on a workspace switch and drops it on
-     * sign-out all live in one place rather than being spread across here.
-     */
+    /** One page of recents for [workspaceId]. */
     fun loadChats(
         workspaceId: String,
         cursor: String? = null,
@@ -64,8 +53,7 @@ class RecentsClient(
         val response = try {
             transport.get(
                 path = path,
-                // The backend reads the session from this cookie and from
-                // nowhere else, so it has to ride along on every call.
+                // The backend reads the session from this cookie and from nowhere else, so it has to ride along on every call.
                 headers = sessionCookie
                     ?.let { cookie -> mapOf("Cookie" to "${AuthConfig.SESSION_COOKIE_NAME}=$cookie") }
                     .orEmpty(),

@@ -1,5 +1,4 @@
-/** `IndexedDbStoreLive` — the production `SyncStore` Layer. One service, one database connection,
- * three object stores. */
+/** `IndexedDbStoreLive` — the production `SyncStore` Layer. */
 import { Effect, Layer } from 'effect'
 import { SyncStorageError } from './SyncError'
 import { SyncStore, type SyncStoreShape, sortNewestFirst } from './SyncStore'
@@ -8,8 +7,7 @@ import { getCurrentUserId } from '../helpers/userScope'
 
 const DB_NAME = 'pabrik-sync'
 
-/** Per-user database name. The sync cache holds full message bodies, so one shared database means B
- * inherits A's cached chats. */
+/** Per-user database name. */
 function dbName(): string {
   const userId = getCurrentUserId()
   return userId ? `${DB_NAME}:${userId}` : DB_NAME
@@ -28,8 +26,7 @@ const keyPathFor = (store: string): string | string[] =>
 
 type IdbModule = typeof import('idb')
 
-/** Builds the live `SyncStore`. Exported separately from the Layer so specs
- * can drive the adapter with a stubbed `idb` module. */
+/** Builds the live `SyncStore`. */
 export const makeIndexedDbSyncStore = (): SyncStoreShape => {
   let dbPromise: Promise<import('idb').IDBPDatabase> | null = null
   let idbFailed = false
@@ -78,8 +75,7 @@ export const makeIndexedDbSyncStore = (): SyncStoreShape => {
     }
   }
 
-  /** Wraps an IndexedDB operation so a rejection becomes a typed
-   * `SyncStorageError` instead of an unhandled promise rejection. */
+  /** Wraps an IndexedDB operation so a rejection becomes a typed `SyncStorageError` instead of an unhandled promise rejection. */
   const attempt = <A>(
     store: string,
     op: string,

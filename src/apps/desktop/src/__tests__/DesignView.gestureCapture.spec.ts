@@ -1,6 +1,4 @@
-/** Gesture-capture wiring tests for the undo/redo plan. These tests verify that the existing
- * gesture handlers in DesignView.vue push the right `useDesignHistory` capture calls at the right
- * times — drag-start, drag-end, delete, reorder, group. */
+/** Gesture-capture wiring tests for the undo/redo plan. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'

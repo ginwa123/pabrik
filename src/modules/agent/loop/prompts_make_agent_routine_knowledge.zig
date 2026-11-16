@@ -1,13 +1,11 @@
-//! Builds the `## Routine Knowledge` system-prompt section for sessions bound
-//! to a routine workspace-item WITH an `agent_routines` row (Migration 081).
+//! Builds the `## Routine Knowledge` system-prompt section for sessions bound to a routine workspace-item WITH an `agent_routines` row (Migration 081).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_routine_db = @import("../../../models/agent_routine.db.zig");
 
-/// 100 MiB per-file OOM safety. NOT a content budget — purely to prevent
-/// the server from OOM-ing on a misconfigured path like `/dev/zero`.
+/// 100 MiB per-file OOM safety.
 pub const MAX_FILE_BYTES_OOM_SAFETY: usize = 100 * 1024 * 1024;
 
 /// Resolve the workspace_item_id for a session. Two paths (in order): 1.
@@ -37,8 +35,7 @@ fn resolveWorkspaceItemId(
     return try allocator.dupe(u8, "");
 }
 
-/// Read a single file's full contents. Caller owns the returned slice.
-/// Returns `null` (logged + skipped by caller) on failure.
+/// Read a single file's full contents.
 fn readFileContents(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -62,7 +59,6 @@ fn readFileContents(
 }
 
 /// Resolve `workspace_item_id` → is-it-a-configured-routine check.
-/// True only when item_type == 'routine' AND an agent_routines row exists.
 fn isConfiguredRoutineItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -81,8 +77,7 @@ fn isConfiguredRoutineItem(
     return false;
 }
 
-/// Build the `## Routine Knowledge` system-prompt section. Returns an
-/// owned slice (empty for non-configured-routine sessions). Caller frees.
+/// Build the `## Routine Knowledge` system-prompt section.
 pub fn makeAgentRoutineKnowledge(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -152,8 +147,7 @@ pub fn makeAgentRoutineKnowledge(
             continue;
         }
 
-        // File-backed entry — read FIRST so an unreadable file is
-        // skipped without leaking its header into the section.
+        // File-backed entry — read FIRST so an unreadable file is skipped without leaking its header into the section.
         const contents = readFileContents(io, allocator, row.file_path) catch continue;
         const owned = contents orelse continue;
         defer allocator.free(owned);
@@ -176,8 +170,7 @@ pub fn makeAgentRoutineKnowledge(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;
@@ -261,8 +254,7 @@ fn insertConfig(ctx: *TestCtx, config_id: []const u8, workspace_item_id: []const
 
 var test_file_counter: std.atomic.Value(u64) = .init(0);
 
-/// Writes `contents` to a uniquely-named file inside `tmp` and returns its
-/// ABSOLUTE path (caller-owned: `alloc.free` it).
+/// Writes `contents` to a uniquely-named file inside `tmp` and returns its ABSOLUTE path (caller-owned: `alloc.free` it).
 fn writeTestFile(tmp: *std.testing.TmpDir, allocator: std.mem.Allocator, io: std.Io, contents: []const u8) ![]u8 {
     const n = test_file_counter.fetchAdd(1, .seq_cst);
     var name_buf: [64]u8 = undefined;
@@ -453,8 +445,7 @@ test "makeAgentRoutineKnowledge: resolves routine-fire sessions via workspace_ro
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Fire path: session id IS the routine id (fire.zig sid = routine.id),
-    // with NO workspace_item_tasks row.
+    // Fire path: session id IS the routine id (fire.zig sid = routine.id), with NO workspace_item_tasks row.
     try insertWorkspaceItem(&ctx, "ws_item_1", "routine");
     try insertRoutine(&ctx, "ws_item_1", "ws_item_1");
     try insertConfig(&ctx, "ws_item_1", "ws_item_1");

@@ -11,7 +11,7 @@
       ],
       "deepLinks": [],
       "isStart": true,
-      "line": 751,
+      "line": 443,
       "placeholders": [],
       "route": "SHELL",
       "screens": [
@@ -36,7 +36,7 @@
         "pabrik://chat/{sessionId}"
       ],
       "isStart": false,
-      "line": 828,
+      "line": 508,
       "placeholders": [
         "sessionId"
       ],
@@ -61,7 +61,7 @@
         "pabrik://chats/{workspaceId}"
       ],
       "isStart": false,
-      "line": 978,
+      "line": 595,
       "placeholders": [
         "workspaceId"
       ],
@@ -87,7 +87,7 @@
         "pabrik://project/{workspaceId}/{itemId}"
       ],
       "isStart": false,
-      "line": 1037,
+      "line": 640,
       "placeholders": [
         "workspaceId",
         "itemId"
@@ -111,7 +111,7 @@
         "pabrik://network"
       ],
       "isStart": false,
-      "line": 1116,
+      "line": 700,
       "placeholders": [],
       "route": "NETWORK",
       "screens": [
@@ -133,7 +133,7 @@
         "pabrik://network/record/{recordId}"
       ],
       "isStart": false,
-      "line": 1126,
+      "line": 710,
       "placeholders": [
         "recordId"
       ],
@@ -157,7 +157,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 263,
+          "line": 195,
           "note": "PabrikRoutes.SHELL"
         }
       ],
@@ -177,7 +177,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 487,
+          "line": 285,
           "note": "PabrikRoutes.NETWORK"
         }
       ],
@@ -197,7 +197,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 528,
+          "line": 304,
           "note": "PabrikRoutes.chats(workspaceId)"
         }
       ],
@@ -217,7 +217,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 528,
+          "line": 304,
           "note": "PabrikRoutes.chats(workspaceId)"
         }
       ],
@@ -237,13 +237,13 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 544,
+          "line": 313,
           "note": "PabrikRoutes.project(workspaceId, itemId)"
         }
       ],
       "source": "app",
       "target": "project/{workspaceId}/{itemId}",
-      "trigger": "a project's “See all chats” row",
+      "trigger": "the drawer's “See all chats” row",
       "via": "PabrikRoutes.project(workspaceId, itemId)"
     },
     {
@@ -257,13 +257,13 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 544,
+          "line": 313,
           "note": "PabrikRoutes.project(workspaceId, itemId)"
         }
       ],
       "source": "chat/{sessionId}",
       "target": "project/{workspaceId}/{itemId}",
-      "trigger": "a project's “See all chats” row",
+      "trigger": "the drawer's “See all chats” row",
       "via": "PabrikRoutes.project(workspaceId, itemId)"
     },
     {
@@ -277,7 +277,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 579,
+          "line": 338,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -297,13 +297,13 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 601,
+          "line": 349,
           "note": "PabrikRoutes.chat(chatId)"
         }
       ],
       "source": "chat/{sessionId}",
       "target": "chat/{sessionId}",
-      "trigger": "switching chat from the sidebar",
+      "trigger": "a chat this app just created",
       "via": "PabrikRoutes.chat(chatId)"
     },
     {
@@ -317,7 +317,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 792,
+          "line": 481,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -337,7 +337,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1030,
+          "line": 633,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -357,7 +357,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1083,
+          "line": 673,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -377,7 +377,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1122,
+          "line": 706,
           "note": "PabrikRoutes.recordDetail(recordId)"
         }
       ],
@@ -397,13 +397,13 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1284,
+          "line": 800,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
       "source": "graph",
       "target": "chat/{sessionId}",
-      "trigger": "navigating",
+      "trigger": "the launch resume",
       "via": "PabrikRoutes.chat(sessionId)"
     },
     {
@@ -417,7 +417,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 828,
+          "line": 508,
           "note": "pabrik://chat/{sessionId}"
         }
       ],
@@ -437,7 +437,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 978,
+          "line": 595,
           "note": "pabrik://chats/{workspaceId}"
         }
       ],
@@ -457,7 +457,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1037,
+          "line": 640,
           "note": "pabrik://project/{workspaceId}/{itemId}"
         }
       ],
@@ -477,7 +477,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1116,
+          "line": 700,
           "note": "pabrik://network"
         }
       ],
@@ -497,7 +497,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1126,
+          "line": 710,
           "note": "pabrik://network/record/{recordId}"
         }
       ],
@@ -517,7 +517,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 828,
+          "line": 508,
           "note": "BackHandler { goBack() }"
         }
       ],
@@ -537,7 +537,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 978,
+          "line": 595,
           "note": "onBack = goBack"
         }
       ],
@@ -557,7 +557,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1037,
+          "line": 640,
           "note": "onBack = goBack"
         }
       ],
@@ -577,7 +577,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1116,
+          "line": 700,
           "note": "onBack = goBack"
         }
       ],
@@ -597,7 +597,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 1126,
+          "line": 710,
           "note": "onBack = goBack"
         }
       ],
@@ -615,7 +615,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 140,
+        "line": 106,
         "note": "SETTINGS"
       },
       "subject": "graph",
@@ -627,7 +627,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 141,
+        "line": 107,
         "note": "WORKSPACE_SETTINGS"
       },
       "subject": "graph",
@@ -639,7 +639,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 142,
+        "line": 108,
         "note": "KANBAN_SETTINGS"
       },
       "subject": "graph",
@@ -651,7 +651,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 143,
+        "line": 109,
         "note": "DOCUMENTS"
       },
       "subject": "graph",
@@ -663,7 +663,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 144,
+        "line": 110,
         "note": "DOCUMENT"
       },
       "subject": "graph",
@@ -675,7 +675,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 146,
+        "line": 112,
         "note": "AGENT"
       },
       "subject": "graph",
@@ -687,7 +687,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 147,
+        "line": 113,
         "note": "DESIGN"
       },
       "subject": "graph",
@@ -699,7 +699,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 148,
+        "line": 114,
         "note": "ROUTINE"
       },
       "subject": "graph",
@@ -711,7 +711,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 149,
+        "line": 115,
         "note": "GIT"
       },
       "subject": "graph",
@@ -723,7 +723,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 150,
+        "line": 116,
         "note": "MEMORY"
       },
       "subject": "graph",
@@ -735,7 +735,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 151,
+        "line": 117,
         "note": "SECRETS"
       },
       "subject": "graph",
@@ -747,7 +747,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 152,
+        "line": 118,
         "note": "MEMBERS"
       },
       "subject": "graph",
@@ -759,7 +759,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 153,
+        "line": 119,
         "note": "SKILLS"
       },
       "subject": "graph",
@@ -771,7 +771,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 154,
+        "line": 120,
         "note": "MCP"
       },
       "subject": "graph",
@@ -783,7 +783,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 155,
+        "line": 121,
         "note": "LLM_CONFIG"
       },
       "subject": "graph",
@@ -795,7 +795,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 156,
+        "line": 122,
         "note": "TOOLS"
       },
       "subject": "graph",
@@ -807,7 +807,7 @@
       "severity": "warn",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 157,
+        "line": 123,
         "note": "NOTIFICATIONS"
       },
       "subject": "graph",
@@ -827,7 +827,7 @@
       "severity": "info",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 1126,
+        "line": 710,
         "note": "RECORD_DETAIL"
       },
       "subject": "network/record/{recordId}",
@@ -875,7 +875,7 @@
   },
   "meta": {
     "generatedBy": "tools/navgraph/build.py",
-    "gitSha": "33ae0b880",
+    "gitSha": "dee481851",
     "manifestFile": "src/apps/android_mobile/app/src/main/AndroidManifest.xml",
     "manifestHosts": {
       "chat": 53,
@@ -890,7 +890,7 @@
   "routeConstants": [
     {
       "kind": "route",
-      "line": 86,
+      "line": 81,
       "name": "SHELL",
       "synthetic": false,
       "template": "app",
@@ -898,7 +898,7 @@
     },
     {
       "kind": "route",
-      "line": 87,
+      "line": 82,
       "name": "CHAT",
       "synthetic": false,
       "template": "chat/{sessionId}",
@@ -906,7 +906,7 @@
     },
     {
       "kind": "argument",
-      "line": 88,
+      "line": 83,
       "name": "ARG_SESSION_ID",
       "synthetic": false,
       "template": "sessionId",
@@ -914,7 +914,7 @@
     },
     {
       "kind": "route",
-      "line": 89,
+      "line": 84,
       "name": "NETWORK",
       "synthetic": false,
       "template": "network",
@@ -922,7 +922,7 @@
     },
     {
       "kind": "route",
-      "line": 90,
+      "line": 85,
       "name": "RECORD_DETAIL",
       "synthetic": false,
       "template": "network/record/{recordId}",
@@ -930,7 +930,7 @@
     },
     {
       "kind": "argument",
-      "line": 91,
+      "line": 86,
       "name": "ARG_RECORD_ID",
       "synthetic": false,
       "template": "recordId",
@@ -938,7 +938,7 @@
     },
     {
       "kind": "route",
-      "line": 110,
+      "line": 89,
       "name": "PROJECT",
       "synthetic": false,
       "template": "project/{workspaceId}/{itemId}",
@@ -946,7 +946,7 @@
     },
     {
       "kind": "argument",
-      "line": 111,
+      "line": 90,
       "name": "ARG_WORKSPACE_ID",
       "synthetic": false,
       "template": "workspaceId",
@@ -954,7 +954,7 @@
     },
     {
       "kind": "argument",
-      "line": 112,
+      "line": 91,
       "name": "ARG_ITEM_ID",
       "synthetic": false,
       "template": "itemId",
@@ -962,7 +962,7 @@
     },
     {
       "kind": "route",
-      "line": 128,
+      "line": 94,
       "name": "CHATS",
       "synthetic": false,
       "template": "chats/{workspaceId}",
@@ -970,7 +970,7 @@
     },
     {
       "kind": "route",
-      "line": 140,
+      "line": 106,
       "name": "SETTINGS",
       "synthetic": false,
       "template": "settings",
@@ -978,7 +978,7 @@
     },
     {
       "kind": "route",
-      "line": 141,
+      "line": 107,
       "name": "WORKSPACE_SETTINGS",
       "synthetic": false,
       "template": "workspace/{workspaceId}/settings",
@@ -986,7 +986,7 @@
     },
     {
       "kind": "route",
-      "line": 142,
+      "line": 108,
       "name": "KANBAN_SETTINGS",
       "synthetic": false,
       "template": "kanban/{workspaceId}/{itemId}/settings",
@@ -994,7 +994,7 @@
     },
     {
       "kind": "route",
-      "line": 143,
+      "line": 109,
       "name": "DOCUMENTS",
       "synthetic": false,
       "template": "documents/{workspaceId}",
@@ -1002,7 +1002,7 @@
     },
     {
       "kind": "route",
-      "line": 144,
+      "line": 110,
       "name": "DOCUMENT",
       "synthetic": false,
       "template": "documents/{workspaceId}/{documentId}",
@@ -1010,7 +1010,7 @@
     },
     {
       "kind": "argument",
-      "line": 145,
+      "line": 111,
       "name": "ARG_DOCUMENT_ID",
       "synthetic": false,
       "template": "documentId",
@@ -1018,7 +1018,7 @@
     },
     {
       "kind": "route",
-      "line": 146,
+      "line": 112,
       "name": "AGENT",
       "synthetic": false,
       "template": "agent/{workspaceId}/{itemId}",
@@ -1026,7 +1026,7 @@
     },
     {
       "kind": "route",
-      "line": 147,
+      "line": 113,
       "name": "DESIGN",
       "synthetic": false,
       "template": "design/{workspaceId}/{itemId}",
@@ -1034,7 +1034,7 @@
     },
     {
       "kind": "route",
-      "line": 148,
+      "line": 114,
       "name": "ROUTINE",
       "synthetic": false,
       "template": "routine/{workspaceId}/{itemId}",
@@ -1042,7 +1042,7 @@
     },
     {
       "kind": "route",
-      "line": 149,
+      "line": 115,
       "name": "GIT",
       "synthetic": false,
       "template": "git/{workspaceId}/{itemId}",
@@ -1050,7 +1050,7 @@
     },
     {
       "kind": "route",
-      "line": 150,
+      "line": 116,
       "name": "MEMORY",
       "synthetic": false,
       "template": "memory/{workspaceId}",
@@ -1058,7 +1058,7 @@
     },
     {
       "kind": "route",
-      "line": 151,
+      "line": 117,
       "name": "SECRETS",
       "synthetic": false,
       "template": "secrets/{workspaceId}",
@@ -1066,7 +1066,7 @@
     },
     {
       "kind": "route",
-      "line": 152,
+      "line": 118,
       "name": "MEMBERS",
       "synthetic": false,
       "template": "members/{workspaceId}",
@@ -1074,7 +1074,7 @@
     },
     {
       "kind": "route",
-      "line": 153,
+      "line": 119,
       "name": "SKILLS",
       "synthetic": false,
       "template": "skills/{workspaceId}",
@@ -1082,7 +1082,7 @@
     },
     {
       "kind": "route",
-      "line": 154,
+      "line": 120,
       "name": "MCP",
       "synthetic": false,
       "template": "mcp/{workspaceId}",
@@ -1090,7 +1090,7 @@
     },
     {
       "kind": "route",
-      "line": 155,
+      "line": 121,
       "name": "LLM_CONFIG",
       "synthetic": false,
       "template": "llm-config/{workspaceId}",
@@ -1098,7 +1098,7 @@
     },
     {
       "kind": "route",
-      "line": 156,
+      "line": 122,
       "name": "TOOLS",
       "synthetic": false,
       "template": "tools/{workspaceId}",
@@ -1106,7 +1106,7 @@
     },
     {
       "kind": "route",
-      "line": 157,
+      "line": 123,
       "name": "NOTIFICATIONS",
       "synthetic": false,
       "template": "notifications",
@@ -1114,7 +1114,7 @@
     },
     {
       "kind": "route",
-      "line": 130,
+      "line": 96,
       "name": "chat",
       "synthetic": true,
       "template": "chat/{sessionId}",
@@ -1122,7 +1122,7 @@
     },
     {
       "kind": "route",
-      "line": 132,
+      "line": 98,
       "name": "recordDetail",
       "synthetic": true,
       "template": "network/record/{recordId}",
@@ -1130,7 +1130,7 @@
     },
     {
       "kind": "route",
-      "line": 134,
+      "line": 100,
       "name": "project",
       "synthetic": true,
       "template": "project/{workspaceId}/{itemId}",
@@ -1138,7 +1138,7 @@
     },
     {
       "kind": "route",
-      "line": 137,
+      "line": 103,
       "name": "chats",
       "synthetic": true,
       "template": "chats/{workspaceId}",
@@ -1146,7 +1146,7 @@
     },
     {
       "kind": "route",
-      "line": 159,
+      "line": 125,
       "name": "settings",
       "synthetic": true,
       "template": "workspace/{workspaceId}/settings",
@@ -1154,7 +1154,7 @@
     },
     {
       "kind": "route",
-      "line": 161,
+      "line": 127,
       "name": "workspaceSettings",
       "synthetic": true,
       "template": "workspace/{workspaceId}/settings",
@@ -1162,7 +1162,7 @@
     },
     {
       "kind": "route",
-      "line": 164,
+      "line": 130,
       "name": "kanbanSettings",
       "synthetic": true,
       "template": "kanban/{workspaceId}/{itemId}/settings",
@@ -1170,7 +1170,7 @@
     },
     {
       "kind": "route",
-      "line": 167,
+      "line": 133,
       "name": "documents",
       "synthetic": true,
       "template": "documents/{workspaceId}",
@@ -1178,7 +1178,7 @@
     },
     {
       "kind": "route",
-      "line": 170,
+      "line": 136,
       "name": "document",
       "synthetic": true,
       "template": "documents/{workspaceId}/{documentId}",
@@ -1186,7 +1186,7 @@
     },
     {
       "kind": "route",
-      "line": 173,
+      "line": 139,
       "name": "agent",
       "synthetic": true,
       "template": "agent/{workspaceId}/{itemId}",
@@ -1194,7 +1194,7 @@
     },
     {
       "kind": "route",
-      "line": 176,
+      "line": 142,
       "name": "design",
       "synthetic": true,
       "template": "design/{workspaceId}/{itemId}",
@@ -1202,7 +1202,7 @@
     },
     {
       "kind": "route",
-      "line": 179,
+      "line": 145,
       "name": "routine",
       "synthetic": true,
       "template": "routine/{workspaceId}/{itemId}",
@@ -1210,7 +1210,7 @@
     },
     {
       "kind": "route",
-      "line": 182,
+      "line": 148,
       "name": "git",
       "synthetic": true,
       "template": "git/{workspaceId}/{itemId}",
@@ -1218,7 +1218,7 @@
     },
     {
       "kind": "route",
-      "line": 185,
+      "line": 151,
       "name": "memory",
       "synthetic": true,
       "template": "memory/{workspaceId}",
@@ -1226,7 +1226,7 @@
     },
     {
       "kind": "route",
-      "line": 188,
+      "line": 154,
       "name": "secrets",
       "synthetic": true,
       "template": "secrets/{workspaceId}",
@@ -1234,7 +1234,7 @@
     },
     {
       "kind": "route",
-      "line": 191,
+      "line": 157,
       "name": "members",
       "synthetic": true,
       "template": "members/{workspaceId}",
@@ -1242,7 +1242,7 @@
     },
     {
       "kind": "route",
-      "line": 194,
+      "line": 160,
       "name": "skills",
       "synthetic": true,
       "template": "skills/{workspaceId}",
@@ -1250,7 +1250,7 @@
     },
     {
       "kind": "route",
-      "line": 197,
+      "line": 163,
       "name": "mcp",
       "synthetic": true,
       "template": "mcp/{workspaceId}",
@@ -1258,7 +1258,7 @@
     },
     {
       "kind": "route",
-      "line": 200,
+      "line": 166,
       "name": "llmConfig",
       "synthetic": true,
       "template": "llm-config/{workspaceId}",
@@ -1266,7 +1266,7 @@
     },
     {
       "kind": "route",
-      "line": 203,
+      "line": 169,
       "name": "tools",
       "synthetic": true,
       "template": "tools/{workspaceId}",

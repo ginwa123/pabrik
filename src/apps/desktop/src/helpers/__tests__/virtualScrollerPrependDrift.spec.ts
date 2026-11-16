@@ -62,9 +62,7 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
     setRealHeights()
     await flushMeasure()
 
-    // Phase 2: loadMore prepend — real app calls beginPreserve(N) before mutating the array and
-    // endPreserve() after. endPreserve awaits rAF internally; under fake timers we fire-and-forget
-    // it and advance the clock so its internal awaits resolve.
+    // Phase 2: loadMore prepend — real app calls beginPreserve(N) before mutating the array and endPreserve() after. endPreserve awaits rAF internally; under fake …
     const vm = wrapper.vm as unknown as {
       beginPreserve: (n: number) => void
       endPreserve: () => Promise<void>
@@ -88,9 +86,7 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
       await flushMeasure()
     }
 
-    // FINAL: 43 items at indices 0..42. Heights stored through the prepend must still describe
-    // their own items, so the sizer equals Σ realHeight(i) for i in 0..42 — measured ones exactly,
-    // unmeasured ones within estimate tolerance.
+    // FINAL: 43 items at indices 0..42.
     let expected = 0
     for (let i = 0; i < 43; i++) expected += realHeight(i)
     const total = sizerTotal()
@@ -99,9 +95,7 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
   })
 
   it('a prepended item keeps its own measured height (stable-key cache, no remap needed)', async () => {
-    // Focused unit — UPDATED for the stable-key cache (2026-08-26). The old design remapped index
-    // keys by +N inside beginPreserve; the new design keys heights by itemKey, so heights travel
-    // with their items automatically and the remap is gone.
+    // Focused unit — UPDATED for the stable-key cache (2026-08-26).
     const wrapper = mount(VirtualScroller, {
       props: {
         items: mk(3),
@@ -134,9 +128,7 @@ describe('VirtualScroller prepend height remap (100-message lifecycle)', () => {
     const vm = wrapper.vm as unknown as { beginPreserve: (n: number) => void }
     vm.beginPreserve(2)
     await nextTick()
-    // Stable keys: heights are untouched by beginPreserve — the sizer stays 600 (the heights still
-    // describe their own items). The corruption the old remap guarded against is now impossible by
-    // construction.
+    // Stable keys: heights are untouched by beginPreserve — the sizer stays 600 (the heights still describe their own items).
     expect(
       parseFloat((el.querySelector('.virtual-scroller-sizer') as HTMLElement).style.height),
     ).toBe(600)

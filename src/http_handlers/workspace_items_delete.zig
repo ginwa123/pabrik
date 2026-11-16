@@ -45,8 +45,7 @@ pub fn workspaceItemsDeleteHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeWorkspaceItemResponse(allocator, .{ .id = result.id }) });
 }
 
-/// The 500 body says only "Failed to delete workspace item"; this is the line
-/// that names what actually went wrong.
+/// The 500 body says only "Failed to delete workspace item"; this is the line that names what actually went wrong.
 fn logDeleteFailure(item_id: []const u8, err: WorkspaceItemsDeleteError) void {
     const logger = loggermod.getGlobal() orelse return;
     logger.warnFmt("workspace_items_delete: '{s}' failed: {s}", .{ item_id, @errorName(err) });
@@ -70,8 +69,7 @@ pub fn useCase(
     if (existing == null) return error.WorkspaceItemNotFound;
     defer existing.?.deinit(allocator);
 
-    // For design items, rmdir the .pabrik/design/ folder from disk BEFORE the
-    // SQL DELETE.
+    // For design items, rmdir the .pabrik/design/ folder from disk BEFORE the SQL DELETE.
     const existing_item_type = existing.?.item_type;
     if (std.mem.eql(u8, existing_item_type, "design")) {
         if (existing.?.path) |p| {

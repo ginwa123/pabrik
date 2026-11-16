@@ -14,8 +14,7 @@ describe('workspacesStore.reparentDesignElementsBatch', () => {
 
   function makeWorkspacesStore() {
     const store = useWorkspacesStore()
-    // Seed the workspaces array with one workspace + one item + a few
-    // design_elements rows.
+    // Seed the workspaces array with one workspace + one item + a few design_elements rows.
     store.workspaces = [
       {
         id: 'ws_1',

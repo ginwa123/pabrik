@@ -1,5 +1,4 @@
-//! Python hooks: the same `init(event, data)` contract as the Lua hooks, run
-//! in a child interpreter with the payload as JSON on stdin.
+//! Python hooks: the same `init(event, data)` contract as the Lua hooks, run in a child interpreter with the payload as JSON on stdin.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -10,16 +9,12 @@ const Logger = pabrik.loggermod.Logger;
 
 pub const HOOK_PY_TIMEOUT_MS: u32 = 5000;
 
-/// Tried in order when neither the workspace setting nor the environment
-/// names an interpreter. `py` is the Windows launcher; the other two cover
-/// POSIX and macOS.
+/// Tried in order when neither the workspace setting nor the environment names an interpreter.
 pub const CANDIDATES = [_][]const u8{ "python", "python3", "py" };
 
 const PY3_PROBE = "import sys;sys.exit(0 if sys.version_info[0]==3 else 1)";
 
-/// `python3 -c <this> <hook_file> <event>`: import the hook file, call
-/// `init(event, data)`, print the returned dict as JSON. A dict-valued
-/// `arguments` is serialized so both languages hand back the same shape.
+/// `python3 -c <this> <hook_file> <event>`: import the hook file, call `init(event, data)`, print the returned dict as JSON.
 const BOOTSTRAP =
     \\import json,sys,importlib.util
     \\path,event=sys.argv[1],sys.argv[2]
@@ -60,9 +55,7 @@ pub fn isPython3(io: std.Io, name: []const u8) bool {
     };
 }
 
-/// The scan result is a process-lifetime cache: probing costs one spawn per
-/// candidate, and a hook event already costs one spawn. A settings change
-/// takes effect on the next boot.
+/// The scan result is a process-lifetime cache: probing costs one spawn per candidate, and a hook event already costs one spawn.
 var cached_interpreter: ?[]const u8 = null;
 var cache_lock: std.Io.Mutex = .init;
 
@@ -82,8 +75,7 @@ fn scanForPython3(io: std.Io) ![]const u8 {
     return fallback;
 }
 
-/// `configured` (the workspace setting) wins, then `PABRIK_HOOK_PYTHON`, then
-/// the first of `python`, `python3`, `py` that is a Python 3. Caller frees.
+/// `configured` (the workspace setting) wins, then `PABRIK_HOOK_PYTHON`, then the first of `python`, `python3`, `py` that is a Python 3.
 pub fn resolveInterpreter(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -99,9 +91,7 @@ pub fn resolveInterpreter(
     return allocator.dupe(u8, try scanForPython3(io));
 }
 
-/// Run one Python hook. Returns its JSON return value (caller frees), or null
-/// when it produced nothing usable. Every failure mode — no interpreter,
-/// non-zero exit, timeout, empty stdout — is a null, never an error.
+/// Run one Python hook.
 pub fn runPythonHook(
     allocator: std.mem.Allocator,
     io: std.Io,

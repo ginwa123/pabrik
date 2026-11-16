@@ -1,5 +1,4 @@
-// Wire test: the Skill Evals HTTP surface. Zig port of
-// `tests/functional/skill_evals_api_test.py` (same test names, same order).
+// Wire test: the Skill Evals HTTP surface.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // SQLite CLI helpers
-// ============================================================================
 
 /// Exit code for a finished child, or null if a signal stopped it.
 fn exitCode(term: std.process.Child.Term) ?u8 {
@@ -55,15 +52,12 @@ fn sqlLit(s: []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// The sqlite file the running binary opened. Owned. `helpers/db_path.zig`
-/// resolves this path on every platform; the harness points HOME at an
-/// isolated tmpdir, so it is always under `h.temp_dir`.
+/// The sqlite file the running binary opened.
 fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
-/// Run the statement(s) in `sql` against the harness DB. Caller frees the
-/// returned stdout.
+/// Run the statement(s) in `sql` against the harness DB.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", db_path, sql },
@@ -86,8 +80,7 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     return res.stdout;
 }
 
-/// Python `_seed_result`: one run row plus one result row, the shape
-/// `run_skill_eval` writes.
+/// Python `_seed_result`: one run row plus one result row, the shape `run_skill_eval` writes.
 fn seedResult(h: *Harness, result_id: []const u8, verdict: []const u8) !void {
     try requireSqlite3Cli();
 
@@ -125,8 +118,7 @@ fn seedResult(h: *Harness, result_id: []const u8, verdict: []const u8) !void {
     gpa.free(out);
 }
 
-/// Python's inline `UPDATE skill_eval_results SET status = 'stale'` in
-/// `test_apply_on_a_stale_result_is_409`.
+/// Python's inline `UPDATE skill_eval_results SET status = 'stale'` in `test_apply_on_a_stale_result_is_409`.
 fn markResultStale(h: *Harness, result_id: []const u8) !void {
     const db = try dbPath(h.temp_dir);
     defer gpa.free(db);
@@ -142,9 +134,7 @@ fn markResultStale(h: *Harness, result_id: []const u8) !void {
     gpa.free(out);
 }
 
-// ============================================================================
 // Wire helpers
-// ============================================================================
 
 /// `GET /api/skill-evals/runs` with the given filters.
 fn getRuns(h: *Harness, params: []const harness.Harness.Param) !harness.Response {
@@ -184,9 +174,7 @@ fn firstOf(doc: *const harness.Json, key: []const u8) !std.json.ObjectMap {
     };
 }
 
-/// The `counts` tally Python built as
-/// `{c["verdict"]: c["n"] for c in body["counts"]}` — here just the `n` for
-/// one verdict, or null when that verdict is absent.
+/// The `counts` tally Python built as `{c["verdict"]: c["n"] for c in body["counts"]}` — here just the `n` for one verdict, or null when that verdict is absent.
 fn countFor(doc: *const harness.Json, verdict: []const u8) ?i64 {
     const arr = doc.array("counts") orelse return null;
     for (arr.items) |item| {
@@ -207,9 +195,7 @@ fn countFor(doc: *const harness.Json, verdict: []const u8) ?i64 {
     return null;
 }
 
-/// Does the body text (lower-cased by the caller where needed) contain the
-/// needle? Python's `json.dumps(body).lower()` idiom, kept as a plain
-/// substring search over the raw body — the needle is ASCII.
+/// Does the body text (lower-cased by the caller where needed) contain the needle?
 fn bodyHas(body: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, body, needle) != null;
 }
@@ -226,13 +212,9 @@ fn expectJson(r: *harness.Response) !void {
     doc.deinit();
 }
 
-// ============================================================================
 // Test 1: an unmatched filter is an empty 200, not a 404
-// ============================================================================
 
-// A filter that matches nothing is a 200 with empty arrays. Not a 404 and not
-// a 500: `?run_id=` is a filter, and "no rows" is a legitimate answer to a
-// filter.
+// A filter that matches nothing is a 200 with empty arrays.
 test "runs_returns_valid_json_with_empty_arrays_when_nothing_matches" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -267,9 +249,7 @@ test "runs_returns_valid_json_with_empty_arrays_when_nothing_matches" {
     }
 }
 
-// ============================================================================
 // Test 2: the seeded run and its results come back
-// ============================================================================
 
 test "runs_returns_a_seeded_run_and_its_results" {
     try harness.requirePabrikBin(io, gpa);
@@ -317,9 +297,7 @@ test "runs_returns_a_seeded_run_and_its_results" {
     try testing.expectEqualStrings("wire-skill", try strField(res0, "skill_name"));
     try testing.expectEqualStrings("update", try strField(res0, "verdict"));
 
-    // Not applied yet, so the UI offers Apply. `applied` is derived by the
-    // server from `applied_at IS NOT NULL`, so this also pins that the seed
-    // left `applied_at` NULL.
+    // Not applied yet, so the UI offers Apply.
     const applied = switch (res0.get("applied") orelse {
         std.debug.print("result row has no `applied`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -336,9 +314,7 @@ test "runs_returns_a_seeded_run_and_its_results" {
     }
 }
 
-// ============================================================================
 // Test 3: a non-numeric limit is a 400 naming the parameter
-// ============================================================================
 
 test "runs_rejects_a_non_numeric_limit_with_400" {
     try harness.requirePabrikBin(io, gpa);
@@ -361,9 +337,7 @@ test "runs_rejects_a_non_numeric_limit_with_400" {
     }
 }
 
-// ============================================================================
 // Test 4: limit=0 is a 400
-// ============================================================================
 
 test "runs_rejects_limit_zero_with_400" {
     try harness.requirePabrikBin(io, gpa);
@@ -380,12 +354,9 @@ test "runs_rejects_limit_zero_with_400" {
     defer r.deinit();
 }
 
-// ============================================================================
 // Test 5: an oversized limit is clamped, not rejected
-// ============================================================================
 
-// `limit=99999` is clamped to MAX_LIMIT, not rejected. A caller asking for
-// more than we serve gets what we serve; only a malformed value is a 400.
+// `limit=99999` is clamped to MAX_LIMIT, not rejected.
 test "runs_clamps_an_oversized_limit_rather_than_erroring" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -409,9 +380,7 @@ test "runs_clamps_an_oversized_limit_rather_than_erroring" {
     }
 }
 
-// ============================================================================
 // Test 6: the summary tallies the seeded rows
-// ============================================================================
 
 test "summary_is_valid_json_and_tallies_the_seeded_rows" {
     try harness.requirePabrikBin(io, gpa);
@@ -440,8 +409,7 @@ test "summary_is_valid_json_and_tallies_the_seeded_rows" {
     };
     try testing.expectEqual(@as(i64, 2), total);
 
-    // `counts.get("keep") == 2`. A missing `keep` entry reads as null, which
-    // is the assertion failing rather than a silent pass.
+    // `counts.get("keep") == 2`.
     const keep = countFor(&doc, "keep") orelse {
         std.debug.print("summary counts carry no `keep` row: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -449,9 +417,7 @@ test "summary_is_valid_json_and_tallies_the_seeded_rows" {
     try testing.expectEqual(@as(i64, 2), keep);
 }
 
-// ============================================================================
 // Test 7: an empty table is a zero, not an error
-// ============================================================================
 
 test "summary_on_an_empty_table_is_zero_not_an_error" {
     try harness.requirePabrikBin(io, gpa);
@@ -487,13 +453,9 @@ test "summary_on_an_empty_table_is_zero_not_an_error" {
     }
 }
 
-// ============================================================================
 // Test 8: a stored quote survives JSON encoding
-// ============================================================================
 
 // The response must parse even when a stored string contains a quote.
-// `rationale` is free text written by an LLM, so a raw `"` in it is normal
-// input, not an edge case.
 test "a_rationale_containing_a_quote_survives_json_encoding" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -511,8 +473,7 @@ test "a_rationale_containing_a_quote_survives_json_encoding" {
         return error.TestUnexpectedResult;
     };
 
-    // Byte-identical to the Python seed, including the double quotes inside
-    // the single-quoted SQL literal.
+    // Byte-identical to the Python seed, including the double quotes inside the single-quoted SQL literal.
     const sql =
         \\INSERT OR IGNORE INTO skill_eval_runs
         \\ (id, session_id, scope, trigger, status)
@@ -543,9 +504,7 @@ test "a_rationale_containing_a_quote_survives_json_encoding" {
     }
 }
 
-// ============================================================================
 // Test 9: apply without a result_id is a 400 naming the parameter
-// ============================================================================
 
 test "apply_requires_a_result_id" {
     try harness.requirePabrikBin(io, gpa);
@@ -564,9 +523,7 @@ test "apply_requires_a_result_id" {
     }
 }
 
-// ============================================================================
 // Test 10: apply on an unknown result is a 404
-// ============================================================================
 
 test "apply_on_an_unknown_result_is_404" {
     try harness.requirePabrikBin(io, gpa);
@@ -583,13 +540,9 @@ test "apply_on_an_unknown_result_is_404" {
     defer r.deinit();
 }
 
-// ============================================================================
 // Test 11: the first apply wins; the second is a 409
-// ============================================================================
 
 // The first apply wins; the second is a 409, not a second write.
-//
-// Two clicks, two clients or two humans must not both write the skill.
 test "apply_records_the_action_and_is_idempotent_guarded" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -624,8 +577,7 @@ test "apply_records_the_action_and_is_idempotent_guarded" {
         });
     }
 
-    // The second attempt is refused, and the refusal is a 409 — the caller
-    // can tell "someone already did this" from "that does not exist".
+    // The second attempt is refused, and the refusal is a 409 — the caller can tell "someone already did this" from "that does not exist".
     {
         var second = try h.http(io, .POST, "/api/skill-evals/results/apply", .{
             .params = &.{
@@ -660,9 +612,7 @@ test "apply_records_the_action_and_is_idempotent_guarded" {
     }
 }
 
-// ============================================================================
 // Test 12: a stale verdict is a 409
-// ============================================================================
 
 // A verdict whose body moved on is not applicable.
 test "apply_on_a_stale_result_is_409" {
@@ -683,9 +633,7 @@ test "apply_on_a_stale_result_is_409" {
     defer r.deinit();
 }
 
-// The helpers exist for their callers, not for the reader: a function body is
-// never type-checked until something references it, so an unreferenced helper
-// is where a stdlib rename hides until the day a test needs it.
+// The helpers exist for their callers, not for the reader: a function body is never type-checked until something references it, so an unreferenced helper is …
 comptime {
     _ = getRuns;
     _ = strField;

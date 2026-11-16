@@ -1,5 +1,4 @@
-// Wire-level proof that workspace visibility is driven by
-// `workspace_members`.
+// Wire-level proof that workspace visibility is driven by `workspace_members`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Wire helpers
-// ============================================================================
 
-/// Issue a request WITHOUT a status assertion — the caller asserts. Python's
-/// `_raw` was the suite's private HTTP client.
+/// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -58,8 +54,7 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         std.debug.print("login cookie carries no session: {s}\n", .{set_cookie});
         return error.TestUnexpectedResult;
     }
-    // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`:
-    // the token is the text BETWEEN the name and the next `;`.
+    // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -93,9 +88,7 @@ fn createWorkspace(h: *Harness, name: []const u8, cookie: ?[]const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/workspaces?is_include_items=false` -> every visible id. Owned
-/// slices: a `harness.Json` borrows its `Response` body, so the ids are duped
-/// before the response is released.
+/// `GET /api/workspaces?is_include_items=false` -> every visible id.
 fn listWorkspaceIds(h: *Harness, cookie: ?[]const u8) ![][]u8 {
     var r = try rawHttp(h, .GET, "/api/workspaces", null, cookie);
     defer r.deinit();
@@ -153,8 +146,7 @@ fn containsId(ids: []const []u8, want: []const u8) bool {
     return false;
 }
 
-/// `pabrik create-admin` against the harness HOME. `runPabrikCommand`
-/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
+/// `pabrik create-admin` against the harness HOME.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -169,9 +161,7 @@ fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force:
     }
 }
 
-/// Auth mode, two admins, ONE database — Python's `_two_users`. A STRUCT
-/// rather than a function returning a tuple, because the harness must be torn
-/// down by whoever owns the `defer`, and Zig has no `finally`.
+/// Auth mode, two admins, ONE database — Python's `_two_users`.
 const TwoUsers = struct {
     h: Harness,
     tok_a: []u8,
@@ -191,9 +181,7 @@ const TwoUsers = struct {
         return .{ .h = h, .tok_a = tok_a, .tok_b = tok_b };
     }
 
-    /// LIFO note: the tokens are freed AFTER `h.deinit` has run, and
-    /// `h.deinit` is the only thing that reads the harness — so the
-    /// frees are registered first.
+    /// LIFO note: the tokens are freed AFTER `h.deinit` has run, and `h.deinit` is the only thing that reads the harness — so the frees are registered first.
     fn deinit(self: *TwoUsers) void {
         self.h.deinit(io) catch |err| {
             std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -203,9 +191,7 @@ const TwoUsers = struct {
     }
 };
 
-// ============================================================================
 // DB helpers — the membership row is the unit of sharing, so assert on it
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -214,8 +200,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
-/// in SQLite 3.33 (2020).
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -259,8 +244,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run statements against `db_path`, return the CLI's stdout (owned).
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
-/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 10000", "-json", db_path, sql },
@@ -285,14 +268,11 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
 }
 
 /// The agent DB inside the isolated tmpdir HOME.
-///
-/// Python: `Path(h.temp_dir) / ".config" / "pabrik" / "agent.db"`.
 fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
-/// Python's `_db_connect`: the CLI replaces the connection, and the
-/// `p.exists()` assertion becomes an `access` check here.
+/// Python's `_db_connect`: the CLI replaces the connection, and the `p.exists()` assertion becomes an `access` check here.
 fn requireDb(temp_dir: []const u8) ![]u8 {
     const db = try dbPath(temp_dir);
     errdefer gpa.free(db);
@@ -350,7 +330,6 @@ fn freeMemberships(rows: []Membership) void {
 }
 
 /// `SELECT user_id, role FROM workspace_members WHERE workspace_id = ?
-/// ORDER BY user_id` — Python's `_members_of`.
 fn membersOf(temp_dir: []const u8, workspace_id: []const u8) ![]Membership {
     const db = try requireDb(temp_dir);
     defer gpa.free(db);
@@ -428,9 +407,7 @@ fn expectMembers(rows: []const Membership, want_user: []const u8, want_role: []c
     }
 }
 
-/// Python's `_add_member`: a direct INSERT, because the
-/// `/api/workspaces/:id/members` endpoints are out of scope for this
-/// change (they were a follow-up in the plan).
+/// Python's `_add_member`: a direct INSERT, because the `/api/workspaces/:id/members` endpoints are out of scope for this change (they were a follow-up in the …
 fn addMember(temp_dir: []const u8, workspace_id: []const u8, user_id: []const u8, role: []const u8) !void {
     const db = try requireDb(temp_dir);
     defer gpa.free(db);
@@ -470,8 +447,7 @@ fn expectListed(
     }
 }
 
-/// Assert the status of `GET /api/workspaces/<id>` without asserting on
-/// the body (Python's `(status, _, _)` reads).
+/// Assert the status of `GET /api/workspaces/<id>` without asserting on the body (Python's `(status, _, _)` reads).
 fn expectGetStatus(h: *Harness, cookie: ?[]const u8, id: []const u8, want: u16) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}", .{id});
     defer gpa.free(path);
@@ -487,8 +463,7 @@ fn expectGetStatus(h: *Harness, cookie: ?[]const u8, id: []const u8, want: u16) 
     }
 }
 
-/// `GET /api/workspaces/<id>` must answer 200 AND carry the expected
-/// name — Python read the body and asserted `name`.
+/// `GET /api/workspaces/<id>` must answer 200 AND carry the expected name — Python read the body and asserted `name`.
 fn expectGetNamed(h: *Harness, cookie: ?[]const u8, id: []const u8, want_name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}", .{id});
     defer gpa.free(path);
@@ -514,9 +489,7 @@ fn expectGetNamed(h: *Harness, cookie: ?[]const u8, id: []const u8, want_name: [
     }
 }
 
-// ============================================================================
 // Test 1: the create transaction writes the membership row
-// ============================================================================
 
 // The create tx must commit the membership row too, or nobody sees it.
 test "create_writes_a_membership_row_for_the_real_user" {
@@ -546,18 +519,14 @@ test "create_writes_a_membership_row_for_the_real_user" {
     try expectListed(&t.h, cookie_a, ws, true);
 }
 
-// ============================================================================
 // Test 2: auth-off create stores the sentinel membership
-// ============================================================================
 
 // Auth off -> owner resolves to the sentinel, and the row must land anyway.
 test "auth_off_create_stores_the_sentinel_membership" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
 
-    // Python passed `""` as the cookie for the auth-off case; here
-    // `null` is passed so NO cookie header is sent at all, which is
-    // what the server actually sees with `--auth` off.
+    // Python passed `""` as the cookie for the auth-off case; here `null` is passed so NO cookie header is sent at all, which is what the server actually sees with …
     var h = try Harness.boot(io, gpa, .{});
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -572,12 +541,9 @@ test "auth_off_create_stores_the_sentinel_membership" {
     try expectMembers(members, "user_system", "owner");
 }
 
-// ============================================================================
 // Test 3: one membership row is the entire difference
-// ============================================================================
 
-// The feature: one membership row is the entire difference. A's workspace is
-// private, so B gets a 404 and never sees it in the list.
+// The feature: one membership row is the entire difference.
 test "shared_workspace_becomes_visible_to_the_second_user" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -608,8 +574,7 @@ test "shared_workspace_becomes_visible_to_the_second_user" {
     try expectListed(&t.h, cookie_b, ws, true);
     try expectGetNamed(&t.h, cookie_b, ws, "A shares this");
 
-    // The child routes are gated by the middleware choke point, so they
-    // must open up too — otherwise sharing half-works.
+    // The child routes are gated by the middleware choke point, so they must open up too — otherwise sharing half-works.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items", .{ws});
         defer gpa.free(path);
@@ -629,9 +594,7 @@ test "shared_workspace_becomes_visible_to_the_second_user" {
     try expectListed(&t.h, cookie_a, ws, true);
 }
 
-// ============================================================================
 // Test 4: sharing is not a one-way door
-// ============================================================================
 
 test "removing_a_membership_revokes_access" {
     try harness.requirePabrikBin(io, gpa);
@@ -677,18 +640,13 @@ test "removing_a_membership_revokes_access" {
     try expectListed(&t.h, cookie_b, ws, false);
     try expectGetStatus(&t.h, cookie_b, ws, 404);
 
-    // The workspace itself is untouched — nothing was left behind on the
-    // workspaces row that would keep re-granting access.
+    // The workspace itself is untouched — nothing was left behind on the workspaces row that would keep re-granting access.
     try expectListed(&t.h, cookie_a, ws, true);
 }
 
-// ============================================================================
 // Test 5: the upgrade regression
-// ============================================================================
 
-// The sentinel membership keeps a legacy workspace visible to everyone. The
-// upgrade regression: an operator must not lose their sidebar. A workspace
-// created before `--auth` was switched on carries no real owner.
+// The sentinel membership keeps a legacy workspace visible to everyone.
 test "the_sentinel_membership_keeps_a_legacy_workspace_visible_to_everyone" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -709,8 +667,7 @@ test "the_sentinel_membership_keeps_a_legacy_workspace_visible_to_everyone" {
     };
     defer gpa.free(uid_a);
 
-    // Rewrite A's membership to exactly what the backfill emits for a
-    // user_system-owned workspace: one sentinel row, owner role.
+    // Rewrite A's membership to exactly what the backfill emits for a user_system-owned workspace: one sentinel row, owner role.
     {
         const db = try requireDb(t.h.temp_dir);
         defer gpa.free(db);
@@ -739,14 +696,10 @@ test "the_sentinel_membership_keeps_a_legacy_workspace_visible_to_everyone" {
 
     // The original owner keeps access too.
     try expectListed(&t.h, cookie_a, ws, true);
-    // Python kept `uid_a` alive with a bare `assert uid_a`; here the
-    // lookup above already proved it is non-empty, and the `defer`
-    // above is what keeps the port leak-free.
+    // Python kept `uid_a` alive with a bare `assert uid_a`; here the lookup above already proved it is non-empty, and the `defer` above is what keeps the port …
 }
 
-// ============================================================================
 // Test 6: delete cleans up the membership rows
-// ============================================================================
 
 test "delete_removes_the_membership_rows" {
     try harness.requirePabrikBin(io, gpa);
@@ -800,9 +753,7 @@ test "delete_removes_the_membership_rows" {
     }
 }
 
-// ============================================================================
 // Test 7: Migration 100 is WIRED, not merely callable
-// ============================================================================
 
 // Prove Migration 100 is WIRED, not merely callable.
 test "migration_100_actually_runs_on_a_real_boot" {
@@ -875,8 +826,7 @@ test "migration_100_actually_runs_on_a_real_boot" {
         }
     }
 
-    // 3. And recorded in the ledger, not merely applied — this is the
-    // table the migration runner uses to skip work on the next boot.
+    // 3.
     {
         const sql = "SELECT name FROM schema_migrations WHERE version = 100";
         const out = try sqliteRun(db, sql);
@@ -906,8 +856,7 @@ test "migration_100_actually_runs_on_a_real_boot" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = rawHttp;
     _ = login;

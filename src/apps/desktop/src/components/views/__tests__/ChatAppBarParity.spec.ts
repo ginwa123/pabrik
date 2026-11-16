@@ -20,15 +20,11 @@ const agentChatViewSrc = templateOf(src('AgentChatView.vue'))
 const standardTaskChatViewSrc = templateOf(src('StandardTaskChatView.vue'))
 const appBarSrc = src('ChatAppBar.vue')
 
-/**  * The bar's rendered markup, normalised. Vue leaves `<!--v-if-->` markers where a slot rendered
- * nothing, and the indentation of a slotted-but-empty `extras` differs from an absent slot —
- * neither is a visual difference, so both are stripped before comparing. */
+/** The bar's rendered markup, normalised. */
 const barHtml = (w: { get: (s: string) => { html: () => string } }) =>
   templateOf(w.get('[data-testid="chat-app-bar"]').html()).replace(/>\s+</g, '><').trim()
 
-// ─── A ChatView stand-in that honours the real showHeader contract ────────── It renders the REAL
-// ChatAppBar (so the assertions below run against the shipped bar, not a copy) and re-emits `close`
-// from the bar's ✕, exactly like ChatView does.
+// ─── A ChatView stand-in that honours the real showHeader contract ──────────
 const ChatViewStub = defineComponent({
   name: 'ChatView',
   props: ['chatId', 'chatName', 'type', 'cwd', 'showHeader', 'embedded'],
@@ -52,8 +48,7 @@ const globalOpts = { stubs: { ChatView: ChatViewStub } }
 describe('app-bar parity — the three workspace-item chat modes', () => {
   // ── Static contract: one app bar, three callers ──────────────────────────
   it('ChatAppBar.vue is the only component that renders a chat app bar', () => {
-    // Nothing else in the views tree may mint the bar's testid — if a
-    // mode grows its own bar again, it shows up here.
+    // Nothing else in the views tree may mint the bar's testid — if a mode grows its own bar again, it shows up here.
     const offenders: string[] = []
     for (const file of readdirSync(viewsDir)) {
       if (!file.endsWith('.vue') || file === 'ChatAppBar.vue') continue
@@ -63,9 +58,7 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
   })
 
   it('the visual contract lives in exactly one file', () => {
-    // The four things that made the three bars look different: the height, the padding, the
-    // background token, the border. They are declared once, in ChatAppBar.vue — no host re-declares
-    // any of them, so a mode cannot opt out of the shared look.
+    // The four things that made the three bars look different: the height, the padding, the background token, the border.
     for (const token of ['h-11', 'px-3', '--semantic-sidebar-bg', 'border-bottom']) {
       expect(appBarSrc).toContain(token)
       expect(agentChatViewSrc).not.toContain(token)
@@ -78,16 +71,14 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
     expect(chatViewSrc).toContain('<ChatAppBar')
     expect(chatViewSrc).toContain(':title="chatName"')
     expect(chatViewSrc).not.toMatch(/<header[\s>]/)
-    // The old per-chat header testids are gone — the shared bar's
-    // stable ones replace them, so specs stop depending on chatId.
+    // The old per-chat header testids are gone — the shared bar's stable ones replace them, so specs stop depending on chatId.
     expect(chatViewSrc).not.toContain('chat-header-name-')
     expect(chatViewSrc).not.toContain('chat-header-close-')
     expect(chatViewSrc).not.toContain('chat-sidebar-toggle-')
   })
 
   it('ChatView keeps the headerless surfaces on the floating sidebar toggle', () => {
-    // The standalone `chat-<id>` branch and the sub-agent peek still
-    // render no bar, so the toggle must stay reachable there.
+    // The standalone `chat-<id>` branch and the sub-agent peek still render no bar, so the toggle must stay reachable there.
     expect(chatViewSrc).toMatch(/v-if="!showHeader && !embedded && !chatSidebar\.isOpen\.value"/)
     expect(chatViewSrc).toContain('data-testid="chat-sidebar-open"')
   })
@@ -114,8 +105,7 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
 
   // ── Behavioural parity ──────────────────────────────────────────────────
   it('kanban mode renders the shared bar with the task name as title', () => {
-    // The kanban branch mounts ChatView directly with
-    // :show-header="true" — same contract the two wrappers forward.
+    // The kanban branch mounts ChatView directly with :show-header="true" — same contract the two wrappers forward.
     const wrapper = mount(ChatViewStub, {
       props: { chatId: 'task_k', chatName: 'gitlab support', showHeader: true },
       global: globalOpts,
@@ -177,8 +167,7 @@ describe('app-bar parity — the three workspace-item chat modes', () => {
       global: globalOpts,
     })
 
-    // The three bars differ only in where they sit in the tree, not in
-    // how they render — the exact regression the user reported.
+    // The three bars differ only in where they sit in the tree, not in how they render — the exact regression the user reported.
     expect(barHtml(agent)).toBe(barHtml(kanban))
     expect(barHtml(standard)).toBe(barHtml(kanban))
   })

@@ -3,17 +3,13 @@ import { mount } from '@vue/test-utils'
 import UiIcon from '../components/ui/UiIcon.vue'
 import { ICON_PATHS, type UiIconName } from '../components/ui/icons'
 
-/** `UiIcon` is the replacement for every emoji that used to stand in for an icon, so these tests
- * answer three questions the app depends on: 1. Does every name in the registry actually render
- * geometry? */
+/** `UiIcon` is the replacement for every emoji that used to stand in for an icon, so these tests answer three questions the app depends on: 1. */
 describe('UiIcon', () => {
   const names = Object.keys(ICON_PATHS) as UiIconName[]
 
   it('has a non-empty path list for every name in the registry', () => {
     expect(names.length).toBeGreaterThan(0)
-    // `ICON_PATHS` is `as const`, so TS knows each entry's exact length and flags a `=== 0`
-    // comparison as impossible. That is the point: this test is the runtime witness that the
-    // registry still holds geometry, and a widened view is what lets it say so out loud.
+    // `ICON_PATHS` is `as const`, so TS knows each entry's exact length and flags a `=== 0` comparison as impossible.
     const pathsOf = (name: UiIconName): readonly string[] => ICON_PATHS[name]
     expect(names.filter((n) => pathsOf(n).length === 0)).toEqual([])
     // Every `d` must actually look like geometry, not an empty attribute.
@@ -41,7 +37,6 @@ describe('UiIcon', () => {
 
   it('inherits its colour instead of baking one in', () => {
     // The palette rule: colour comes from the surrounding CSS variable.
-    // A hard-coded hex here is how GitLab orange ended up in a muted UI.
     const wrapper = mount(UiIcon, { props: { name: 'trash' } })
     const svg = wrapper.find('svg')
     expect(svg.attributes('stroke')).toBe('currentColor')
@@ -61,9 +56,7 @@ describe('UiIcon', () => {
   })
 
   it('carries the layout classes that keep the box equal to the glyph', () => {
-    // Without these an inline SVG opens descender space below the text
-    // baseline and a flex parent happily squashes it — the exact
-    // "row is taller than it should be" failure the emoji swap fixes.
+    // Without these an inline SVG opens descender space below the text baseline and a flex parent happily squashes it — the exact "row is taller than it should be" …
     const el = mount(UiIcon, { props: { name: 'file' } }).find('svg')
     expect(el.classes()).toContain('inline-block')
     expect(el.classes()).toContain('shrink-0')

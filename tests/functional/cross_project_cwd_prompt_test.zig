@@ -1,6 +1,4 @@
-// Functional coverage for the cross-project cwd system prompt. Zig port of
-// `tests/functional/cross_project_cwd_prompt_test.py` (same test names, same
-// order).
+// Functional coverage for the cross-project cwd system prompt.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,29 +8,23 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// More than the former 20-sibling cap. This is the whole point of the suite:
-/// a cap regression would drop rows 21..25 and the loop below would miss them.
+/// More than the former 20-sibling cap. This is the whole point of the suite
 const SIBLING_COUNT: usize = 25;
 
-/// The workspace-item root every sibling hangs off. Python's
-/// `Path(harness.temp_dir) / "cross-project-cwd-self"`.
+/// The workspace-item root every sibling hangs off.
 const SELF_DIR_NAME = "cross-project-cwd-self";
 
 /// `POST /api/workspaces/:ws/items/agent` body (`CreateAgentBody`).
 const AgentBody = struct { name: []const u8, path: []const u8 };
 
-/// `POST /api/workspaces/:ws/items` body. `item_type` is optional server-side
-/// (it defaults to `folder`); the Python seeded `'chat'`, so this port sends
-/// the same value.
+/// `POST /api/workspaces/:ws/items` body.
 const ItemBody = struct {
     name: []const u8,
     path: []const u8,
     item_type: []const u8,
 };
 
-/// `POST .../items/:item_id/tasks` body (`TaskCreateRequest`). Only `name` is
-/// needed; `task_type` defaults to `'standard'`, the branch that INSERTs the
-/// `workspace_item_tasks` row.
+/// `POST .../items/:item_id/tasks` body (`TaskCreateRequest`).
 const TaskBody = struct { name: []const u8 };
 
 /// `POST /api/llm/session` body (`RequestSession`).
@@ -43,8 +35,7 @@ const SessionBody = struct {
     cwd_session: []const u8,
 };
 
-/// Poll `GET /test/system-prompt/:id` until it stops 404. POLLING THE
-/// ENDPOINT UNDER TEST IS THE POINT, NOT A SHORTCUT.
+/// Poll `GET /test/system-prompt/:id` until it stops 404.
 fn waitForSystemPrompt(h: *Harness, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/test/system-prompt/{s}", .{session_id});
     defer gpa.free(path);
@@ -66,8 +57,7 @@ fn waitForSystemPrompt(h: *Harness, session_id: []const u8) !void {
     return error.TestUnexpectedResult;
 }
 
-// Every sibling project path reaches the prompt, and the session's OWN item
-// does not appear in the sibling list.
+// Every sibling project path reaches the prompt, and the session's OWN item does not appear in the sibling list.
 test "system_prompt_contains_every_workspace_item_sibling_path" {
     try harness.requirePabrikBin(io, gpa);
     // `stub_llm_profile` is LOAD-BEARING, not a convenience.
@@ -94,8 +84,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
     defer gpa.free(self_root);
     try std.Io.Dir.cwd().createDirPath(io, self_root);
 
-    // Python's `UPDATE sessions SET cwd = str(root / "self")`: the session's
-    // cwd is a SUBDIRECTORY of the agent item's path, not the path itself.
+    // Python's `UPDATE sessions SET cwd = str(root / "self")`: the session's cwd is a SUBDIRECTORY of the agent item's path, not the path itself.
     const session_cwd = try std.fs.path.join(gpa, &.{ self_root, "self" });
     defer gpa.free(session_cwd);
 
@@ -130,9 +119,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
             };
         };
 
-        // 4. The 25 siblings: real directories plus one workspace_items row
-        //    each. Owned by `siblings` so the assertion loop below can read
-        //    them after every response has been deinit'd.
+        // 4.
         var siblings: std.ArrayList([]u8) = .empty;
         defer {
             for (siblings.items) |p| gpa.free(p);
@@ -160,8 +147,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
             }, .{});
             defer gpa.free(item_body);
 
-            // `defer` inside a loop body runs at the end of EACH
-            // iteration, so 25 responses are all released and none pile up.
+            // `defer` inside a loop body runs at the end of EACH iteration, so 25 responses are all released and none pile up.
             var item_r = try h.http(io, .POST, items_path, .{ .json_body = item_body, .expect = &.{201} });
             defer item_r.deinit();
         }
@@ -186,8 +172,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
             return error.TestUnexpectedResult;
         };
 
-        // 6. The session row: cwd (so /test/system-prompt does not 404) and
-        //    one history message (the Python seeded an `llm_history` row).
+        // 6.
         const sess_body = try std.json.Stringify.valueAlloc(gpa, SessionBody{
             .session_id = session_id,
             .session_name = "Cross-project cwd prompt test",
@@ -225,9 +210,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
         };
 
         for (siblings.items) |path| {
-            // The backticks are load-bearing: `<self_root>` is a PREFIX of
-            // every `<self_root>/sibling-N`, so without them the final
-            // "self must not appear" assertion could never hold.
+            // The backticks are load-bearing: `<self_root>` is a PREFIX of every `<self_root>/sibling-N`, so without them the final "self must not appear" assertion could …
             const needle = try std.fmt.allocPrint(gpa, "`{s}`", .{path});
             defer gpa.free(needle);
             if (std.mem.indexOf(u8, sibling_section, needle) == null) {
@@ -251,9 +234,7 @@ test "system_prompt_contains_every_workspace_item_sibling_path" {
     }
 }
 
-/// How many of `paths` are rendered in the sibling section. Only used to make
-/// a failure message say WHICH rows were dropped — a cap regression takes the
-/// tail, and "missing sibling cwd: X" alone does not tell you it took 21..25.
+/// How many of `paths` are rendered in the sibling section.
 fn countRendered(sibling_section: []const u8, paths: []const []u8) usize {
     var n: usize = 0;
     for (paths) |path| {

@@ -36,8 +36,7 @@ const results = ref<SkillEvalResult[]>([])
 const counts = ref<{ verdict: string; n: number }[]>([])
 const total = ref(0)
 const loading = ref(false)
-/**  * The failure is held in a ref the template RENDERS, never swallowed into an empty list. "There is
- * nothing new" and "we could not check" must not look the same to the user. */
+/** The failure is held in a ref the template RENDERS, never swallowed into an empty list. */
 const error = ref<string | null>(null)
 const applying = ref<string | null>(null)
 const applyError = ref<string | null>(null)
@@ -52,20 +51,15 @@ const syncRunParam = (runId: string) => {
   const query = { ...route.query }
   if (runId) query.eval_run = runId
   else delete query.eval_run
-  // `replace`, not `push`: selecting a run is a view switch, not a navigation
-  // step the user should have to Back through.
+  // `replace`, not `push`: selecting a run is a view switch, not a navigation step the user should have to Back through.
   void router.replace({ query })
 }
 
 const selectedRunId = ref<string>(readRunParam())
 
-/** Empty-state shortcut to the toggle that actually controls this panel. `?section=evals` is the
- * URL-backed tab param PabrikConfigEditor.vue reads, so the destination is deep-linkable and
- * survives a refresh. */
+/** Empty-state shortcut to the toggle that actually controls this panel. */
 function openSettings() {
-  // `evals` is a WORKSPACE-scoped section (Migration 105), so the shortcut has
-  // to carry the workspace in the path the way the settings nav does. Pushing
-  // `/app/settings` (user scope, General only) showed General instead.
+  // `evals` is a WORKSPACE-scoped section (Migration 105), so the shortcut has to carry the workspace in the path the way the settings nav does.
   const wsId = resolveWorkspaceId(route.params.workspaceId, null)
   void router.push({
     path: wsId ? `/app/${wsId}/settings` : '/app/settings',
@@ -90,8 +84,7 @@ async function load() {
     counts.value = summaryRes.counts
     total.value = summaryRes.total
   } catch (e) {
-    // A failure must reach the UI as a failure. Returning an empty list here
-    // would render "no evals yet" for a backend that is simply unreachable.
+    // A failure must reach the UI as a failure.
     error.value = e instanceof Error ? e.message : String(e)
     runs.value = []
     results.value = []
@@ -117,8 +110,7 @@ async function apply(result: SkillEvalResult) {
     await applySkillEvalResult(result.id, result.verdict === 'delete' ? 'delete' : 'edit')
     await load()
   } catch (e) {
-    // A 409 is meaningful: either someone already applied it, or the body
-    // changed since the verdict was computed. Both need the user to see it.
+    // A 409 is meaningful: either someone already applied it, or the body changed since the verdict was computed.
     applyError.value = e instanceof Error ? e.message : String(e)
   } finally {
     applying.value = null
@@ -130,9 +122,7 @@ let unsubscribe: (() => void) | null = null
 
 onMounted(() => {
   void load()
-  // The backend pushes a lifecycle event when an eval finishes, so the tab
-  // refreshes without polling. A listener that throws must not take down the
-  // SSE client, so the callback is defensive.
+  // The backend pushes a lifecycle event when an eval finishes, so the tab refreshes without polling.
   try {
     const bus = useSseBus()
     unsubscribe = bus.on('skillEvals', (event: { session_id: string }) => {
@@ -140,8 +130,7 @@ onMounted(() => {
       void load()
     })
   } catch {
-    // No bus installed (tests, or a host that never installed it). The panel
-    // still works — it just does not live-refresh.
+    // No bus installed (tests, or a host that never installed it).
   }
 })
 
@@ -150,12 +139,9 @@ onUnmounted(() => {
   unsubscribe = null
 })
 
-// Reload when the session or the selected run changes: mount covers the initial load, prev-value
-// guards on update cover both. The run branch keeps the select+load pairing the old watcher had — a
-// param echo of our own selectRun (param already equals selectedRunId) stays load-free.
+// Reload when the session or the selected run changes: mount covers the initial load, prev-value guards on update cover both.
 const readEvalRun = () => (typeof route.query.eval_run === 'string' ? route.query.eval_run : '')
-// Subscribed in the template (data-eval-run below) so back/forward navigation that changes
-// ?eval_run= re-renders this panel — that render is what fires the onUpdated guard above.
+// Subscribed in the template (data-eval-run below) so back/forward navigation that changes ?eval_run= re-renders this panel — that render is what fires the …
 const evalRunParam = computed(readEvalRun)
 const prevSessionId = ref(props.sessionId)
 const prevEvalRun = ref(readEvalRun())

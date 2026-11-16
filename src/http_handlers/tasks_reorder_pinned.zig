@@ -1,6 +1,4 @@
 //! `POST /api/workspaces/:workspace_id/items/:item_id/tasks/reorder_pinned`.
-//! Body: `{ "ordered_ids": ["id1", "id2", ..., "idN"] }` (top-to-bottom
-//! display order of the pinned subset).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -14,16 +12,13 @@ pub const TasksReorderPinnedError = error{
     OrderedIdsRequired,
     OrderedIdsMustBeArray,
     ReorderFailed,
-    /// `makeTasksReorderPinnedResponse` / `std.json.Stringify.valueAlloc`
-    /// can fail with `OutOfMemory`. Unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `makeTasksReorderPinnedResponse` / `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
 pub const TasksReorderPinnedInput = struct {
     item_id: []const u8,
-    /// Pre-extracted array of task ids (the use-case doesn't have to
-    /// know about `std.json.Value`).
+    /// Pre-extracted array of task ids (the use-case doesn't have to know about `std.json.Value`).
     ordered_ids: []const []const u8,
 };
 
@@ -31,9 +26,7 @@ pub const TasksReorderPinnedResult = struct {
     count: usize,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -52,9 +45,7 @@ fn useCase(
     return .{ .count = input.ordered_ids.len };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn tasksReorderPinnedHandler(
     ctx: gserverz.HttpContext,
@@ -91,9 +82,7 @@ pub fn tasksReorderPinnedHandler(
     const ordered_ids_val = root.get("ordered_ids") orelse {
         return res.jsonResponse(.{
             .status_code = 400,
-            // The contract substring "ordered_ids" must appear in the source
-            // for the static-contract test (see
-            // tasks_reorder_pinned_test.zig).
+            // The contract substring "ordered_ids" must appear in the source for the static-contract test (see tasks_reorder_pinned_test.zig).
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "ordered_ids required" }),
         });
     };

@@ -24,8 +24,7 @@ const llm_models = @import("pabrikcore").llm_models;
 const on_event_sent = @import("on_event_sent.zig");
 const model_guard = @import("llm_history_model_guard.zig");
 const parsing = @import("parsing.zig");
-// NOTE: routines_model import deleted with the per-task `routines`
-// table (Migration 084, plan 2026-09-10-workspace-items-routines).
+// NOTE: routines_model import deleted with the per-task `routines` table (Migration 084, plan 2026-09-10-workspace-items-routines).
 
 /// Session info for list view
 pub const SessionInfo = struct {
@@ -37,35 +36,23 @@ pub const SessionInfo = struct {
     updated_at: []const u8,
     agent: []const u8,
     selected_profile_model: []const u8,
-    /// Migration 063 — "0" / "1" opt-in flag for unattended mode. Matches
-    /// the SQL `is_auto_retry_until_stop` column convention. COALESCE'd to
-    /// "0" at the SELECT boundary so callers always see a defined value.
+    /// Migration 063 — "0" / "1" opt-in flag for unattended mode.
     is_auto_retry_until_stop: []const u8,
-    /// Migration 063 — denormalized cache of the most recent finish_reason
-    /// the workflow observed for this session. Empty string until the
-    /// first successful turn; never NULL at the API edge.
+    /// Migration 063 — denormalized cache of the most recent finish_reason the workflow observed for this session.
     last_finish_reason: []const u8,
-    /// Migration 082 - unix-ms of the last time a HUMAN (not the AI agent)
-    /// interacted with this session.
+    /// Migration 082 - unix-ms of the last time a HUMAN (not the AI agent) interacted with this session.
     last_human_touched_at: []const u8,
-    /// Bound git worktree path ("" = none). Mirrors
-    /// `sessions.git_worktree_cwd`; COALESCE'd to "" at the SELECT boundary.
+    /// Bound git worktree path ("" = none).
     git_worktree_cwd: []const u8,
-    /// Current git branch for the session's effective cwd (worktree cwd when
-    /// bound, else the session cwd).
+    /// Current git branch for the session's effective cwd (worktree cwd when bound, else the session cwd).
     git_branch: []const u8,
-    /// The project this session belongs to
-    /// (`workspace_item_tasks.workspace_item_id`, "" when it belongs to
-    /// none).
+    /// The project this session belongs to (`workspace_item_tasks.workspace_item_id`, "" when it belongs to none).
     workspace_item_id: []const u8 = "",
     /// Migration 104 - pinned sessions (PINNED section above RECENT).
-    /// True when the user pinned this session via right-click menu.
     is_pinned: bool = false,
-    /// Migration 104 - position inside the pinned region. MAX+1 on pin,
-    /// 0 when unpinned.
+    /// Migration 104 - position inside the pinned region.
     pinned_position: i64 = 0,
-    /// 1 when the AI finished a turn and no human has touched the session
-    /// since. Same CASE predicate as the kanban card's index 13.
+    /// 1 when the AI finished a turn and no human has touched the session since.
     needs_human_review: bool = false,
 
     pub fn deinit(self: *const SessionInfo, allocator: std.mem.Allocator) void {
@@ -82,9 +69,7 @@ pub const SessionInfo = struct {
         allocator.free(self.last_human_touched_at);
         allocator.free(self.git_worktree_cwd);
         allocator.free(self.git_branch);
-        // Zero-length when the field was left at its default, and
-        // `Allocator.free` short-circuits on len 0 — so a literal that never
-        // set it is not freeing a string constant.
+        // Zero-length when the field was left at its default, and `Allocator.free` short-circuits on len 0 — so a literal that never set it is not freeing a string …
         allocator.free(self.workspace_item_id);
     }
 };
@@ -101,13 +86,10 @@ pub fn enumFromString(comptime T: type, s: []const u8) !T {
 }
 pub const SessionSortDirection = enum { asc, desc };
 
-/// Sort field for the paginated workspace-item tasks endpoint (`GET
-/// /api/workspaces/:wid/items/:iid/tasks`). Mirrors `SessionSortField`
-/// (above) so the API surface is consistent.
+/// Sort field for the paginated workspace-item tasks endpoint (`GET /api/workspaces/:wid/items/:iid/tasks`).
 pub const TaskSortField = enum { created_at, updated_at, name };
 
-/// Sort direction for workspace-item tasks. Asc/desc. Mirrors
-/// `SessionSortDirection` (above).
+/// Sort direction for workspace-item tasks.
 pub const TaskSortDirection = enum { asc, desc };
 
 /// Detailed session info
@@ -143,8 +125,7 @@ pub const SessionBroadcastInfo = struct {
     agent: []const u8,
     selected_profile_model: []const u8,
     git_worktree_cwd: []const u8,
-    /// Migration 086 — attached PR URL ("" = none). Defaults keep older
-    /// literal sites compiling; populated by getSessionsForBroadcast.
+    /// Migration 086 — attached PR URL ("" = none).
     pr_url: []const u8 = "",
     /// Migration 086 — effective PR provider. Same defaulting rationale.
     pr_provider: []const u8 = "",
@@ -170,8 +151,7 @@ pub fn getSessionList(
     _ = status;
     _ = agent_type;
 
-    // Rewritten to use idx_llm_history_created_session(created_at DESC,
-    // session_id) — see Migration 048.
+    // Rewritten to use idx_llm_history_created_session(created_at DESC, session_id) — see Migration 048.
     const sql =
         \\SELECT sub.session_id,
         \\       sub.created_at,
@@ -235,8 +215,7 @@ pub fn getSessionList(
             .last_human_touched_at = try allocator.dupe(u8, ""),
             .git_worktree_cwd = try allocator.dupe(u8, ""),
             .git_branch = try allocator.dupe(u8, ""),
-            // row.values[7] = workspace_item_id. COALESCE'd to "" by the
-            // SELECT, so a session outside any project is "" and never NULL.
+            // row.values[7] = workspace_item_id.
             .workspace_item_id = try allocator.dupe(u8, row.values[7]),
         };
         try sessions.append(allocator, session);
@@ -260,9 +239,7 @@ pub fn getSessionList(
     };
 }
 
-/// Get a list of sessions with cursor-based pagination Queries from sessions
-/// table with LEFT JOIN to llm_history `workspace_ids` scopes the list to a
-/// workspace's sessions (as resolved by
+/// Get a list of sessions with cursor-based pagination Queries from sessions table with LEFT JOIN to llm_history `workspace_ids` scopes the list to a workspace's …
 pub fn getSessionListWithCursor(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -284,32 +261,27 @@ pub fn getSessionListWithCursor(
     defer where_parts.deinit(allocator);
 
     // Fragments this function heap-allocates (freed on the way out).
-    // Tracked separately from where_parts so static literals are not
-    // freed; keeps the tests' testing.allocator leak-clean.
     var owned_where_fragments = std.ArrayList([]u8).empty;
     defer {
         for (owned_where_fragments.items) |f| allocator.free(f);
         owned_where_fragments.deinit(allocator);
     }
 
-    // Bound ids for the `s.id IN (...)` predicate — passed to BOTH
-    // the main query and the count query (they share where_clause).
+    // Bound ids for the `s.id IN (...)` predicate — passed to BOTH the main query and the count query (they share where_clause).
     var id_binds = std.ArrayList([]const u8).empty;
     defer id_binds.deinit(allocator);
 
     try where_parts.append(allocator, "s.id NOT LIKE '%subagent%'");
 
     if (cwd) |dir| {
-        // A bind, not a literal: an injected `OR` here re-scopes the whole
-        // WHERE past the owner clause appended below.
+        // A bind, not a literal: an injected `OR` here re-scopes the whole WHERE past the owner clause appended below.
         try where_parts.append(allocator, "s.cwd = ?");
         try id_binds.append(allocator, dir);
     }
 
     if (workspace_ids) |ids| {
         if (ids.len == 0) {
-            // Empty scope fails closed. `1 = 0` keeps the SQL valid
-            // without emitting `IN ()` or binding an empty string.
+            // Empty scope fails closed.
             try where_parts.append(allocator, "1 = 0");
         } else {
             var frag_list = std.ArrayList(u8).empty;
@@ -390,8 +362,7 @@ pub fn getSessionListWithCursor(
     , .{ where_with_cursor, order_by, limit });
     defer allocator.free(sql_final);
 
-    // The cursor is a bind for the MAIN query only: the count query below
-    // shares `id_binds` but has no cursor predicate.
+    // The cursor is a bind for the MAIN query only: the count query below shares `id_binds` but has no cursor predicate.
     var main_binds = std.ArrayList([]const u8).empty;
     defer main_binds.deinit(allocator);
     try main_binds.appendSlice(allocator, id_binds.items);
@@ -416,26 +387,17 @@ pub fn getSessionListWithCursor(
             .updated_at = try allocator.dupe(u8, row.values[5]),
             .agent = try allocator.dupe(u8, row.values[6]),
             .selected_profile_model = try allocator.dupe(u8, row.values[7]),
-            // Migration 063 — the SELECT adds 2 trailing columns, so
-            // the index shifts by 2. row.values[8] = is_auto_retry_until_stop,
-            // row.values[9] = last_finish_reason.
+            // Migration 063 — the SELECT adds 2 trailing columns, so the index shifts by 2. row.values[8] = is_auto_retry_until_stop, row.values[9] = last_finish_reason.
             .is_auto_retry_until_stop = try allocator.dupe(u8, row.values[8]),
             .last_finish_reason = try allocator.dupe(u8, row.values[9]),
             // Migration 082 - row.values[10] = last_human_touched_at_nano.
-            // Aliased to last_human_touched_at on the wire (D3 - SQL
-            // column keeps the _nano suffix, the wire field is bare).
             .last_human_touched_at = try allocator.dupe(u8, row.values[10]),
-            // Sidebar git badge - row.values[11] = git_worktree_cwd.
-            // git_branch is resolved per request in session_list.zig
-            // (read off <effective-cwd>/.git/HEAD), so the DB layer leaves it empty.
+            // Sidebar git badge - row.values[11] = git_worktree_cwd. git_branch is resolved per request in session_list.zig (read off <effective-cwd>/.git/HEAD), so the DB …
             .git_worktree_cwd = try allocator.dupe(u8, row.values[11]),
             .git_branch = try allocator.dupe(u8, ""),
-            // row.values[12] = workspace_item_id, appended after the git
-            // columns so every existing index in this literal is unchanged.
-            // "" for a session that is in no project.
+            // row.values[12] = workspace_item_id, appended after the git columns so every existing index in this literal is unchanged.
             .workspace_item_id = try allocator.dupe(u8, row.values[12]),
-            // Migration 104 - row.values[13] = is_pinned (0/1),
-            // row.values[14] = pinned_position.
+            // Migration 104 - row.values[13] = is_pinned (0/1), row.values[14] = pinned_position.
             .is_pinned = std.mem.eql(u8, row.values[13], "1"),
             .pinned_position = std.fmt.parseInt(i64, row.values[14], 10) catch 0,
             // row.values[15] = needs_human_review (CASE derived).
@@ -445,9 +407,7 @@ pub fn getSessionListWithCursor(
         row.deinit(allocator);
     }
 
-    // Count query: the SAME filter as the main query (shared where_clause),
-    // aliased `s` so the `s.`-prefixed fragments apply verbatim, and WITHOUT
-    // the cursor — `total` is the full filtered size that the cursor
+    // Count query: the SAME filter as the main query (shared where_clause), aliased `s` so the `s.`-prefixed fragments apply verbatim, and WITHOUT the cursor — …
     const count_sql: []u8 = try std.fmt.allocPrint(allocator, "SELECT COUNT(*) FROM sessions s WHERE {s}", .{where_clause});
     defer allocator.free(count_sql);
 
@@ -487,27 +447,17 @@ pub const SessionInfoJson = struct {
     is_auto_retry_until_stop: []const u8 = "",
     /// Migration 063 — most recent finish_reason (Migration 063).
     last_finish_reason: []const u8 = "",
-    /// Migration 082 - unix-ms of the last human touch. Empty string for
-    /// legacy rows (frontend falls back to updated_at).
+    /// Migration 082 - unix-ms of the last human touch.
     last_human_touched_at: []const u8 = "",
-    /// Bound git worktree path ("" = none). The sidebar shows the
-    /// kanban-style branch badge when `git_branch` is non-empty and
-    /// uses this path as the tooltip + PR-status cwd.
+    /// Bound git worktree path ("" = none).
     git_worktree_cwd: []const u8 = "",
     /// Current git branch for the effective cwd ("" = no badge).
-    /// Computed per request in `session_list.zig` by reading the cwd's
-    /// `.git/HEAD` — the same helper the kanban task badge uses.
     git_branch: []const u8 = "",
-    /// The project this session belongs to ("" = not in one). Additive:
-    /// a client that has never heard of it ignores the field, and the web
-    /// (`api/index.ts`) does not read it today.
+    /// The project this session belongs to ("" = not in one). Additive
     workspace_item_id: []const u8 = "",
-    /// Migration 104 - pinned sessions (PINNED section above RECENT). True
-    /// when the user pinned this session via right-click menu. COALESCE'd to
-    /// false at the SELECT boundary so legacy rows read as unpinned.
+    /// Migration 104 - pinned sessions (PINNED section above RECENT).
     is_pinned: bool = false,
-    /// Migration 104 - position inside the pinned region. MAX+1 on pin
-    /// (lands at bottom), 0 when unpinned. COALESCE'd to 0.
+    /// Migration 104 - position inside the pinned region.
     pinned_position: i64 = 0,
     needs_human_review: bool = false,
 };
@@ -536,12 +486,9 @@ pub fn buildSessionListJson(
             // Migration 063 — pass through.
             .is_auto_retry_until_stop = sess.is_auto_retry_until_stop,
             .last_finish_reason = sess.last_finish_reason,
-            // Migration 082 - forward the chat-side stamp value to the
-            // wire. Empty string for legacy rows means the frontend
-            // falls back to updated_at (per ChatsList.vue display logic).
+            // Migration 082 - forward the chat-side stamp value to the wire.
             .last_human_touched_at = sess.last_human_touched_at,
-            // Sidebar git badge - forward the worktree path and the
-            // per-request resolved branch ("" = no badge).
+            // Sidebar git badge - forward the worktree path and the per-request resolved branch ("" = no badge).
             .git_worktree_cwd = sess.git_worktree_cwd,
             .git_branch = sess.git_branch,
             .workspace_item_id = sess.workspace_item_id,
@@ -620,9 +567,7 @@ pub fn get_session(
     return null;
 }
 
-/// Get the latest finish_reason for a session from the database
-/// Returns the most recent finish_reason value (e.g., "stop", "tool_calls", "length", etc.)
-/// Returns null if no history exists for the session
+/// Get the latest finish_reason for a session from the database Returns the most recent finish_reason value (e.g., "stop", "tool_calls", "length", etc.) Returns …
 pub fn getLatestFinishReason(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -661,15 +606,13 @@ pub const SessionMessage = struct {
     diffview_after: ?[]const u8 = null,
     image_urls: ?[][]const u8 = null,
     video_urls: ?[][]const u8 = null,
-    /// The attached files as metadata only (name, mime, bytes) — the bytes
-    /// never cross the read path.
+    /// The attached files as metadata only (name, mime, bytes) — the bytes never cross the read path.
     file_attachments_meta: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
     tool_calls_json: ?[]const u8 = null,
     /// The agent that wrote this row. Empty when the row never carried one.
     agent: []const u8 = "",
-    /// `llm_history.is_feed_to_llm` — false once the row is dropped from the
-    /// model's context. The transcript still shows it; `getLLMHistories` skips it.
+    /// `llm_history.is_feed_to_llm` — false once the row is dropped from the model's context.
     is_feed_to_llm: bool = true,
 
     pub fn deinit(self: *const SessionMessage, allocator: std.mem.Allocator) void {
@@ -707,18 +650,13 @@ pub const SessionMessageResponse = struct {
     has_more: bool,
     next_cursor: ?[]const u8,
     cwd: ?[]const u8 = null,
-    /// Session's bound git worktree path (NULL/empty when no worktree is
-    /// bound). Mirrors `sessions.git_worktree_cwd`.
+    /// Session's bound git worktree path (NULL/empty when no worktree is bound).
     git_worktree_cwd: ?[]const u8 = null,
-    /// Attached PR URL (NULL/empty when no PR is bound). Mirrors
-    /// `sessions.pr_url`. Added for the set_pull_request tool so the
-    /// ChatView right panel can switch to PR-changes mode.
+    /// Attached PR URL (NULL/empty when no PR is bound).
     pr_url: ?[]const u8 = null,
-    /// Effective PR provider (NULL/empty when no PR is bound). Mirrors
-    /// `sessions.pr_provider`.
+    /// Effective PR provider (NULL/empty when no PR is bound).
     pr_provider: ?[]const u8 = null,
-    /// Session's selected profile name (NULL/empty when no profile is
-    /// selected). Mirrors `sessions.selected_profile_model`.
+    /// Session's selected profile name (NULL/empty when no profile is selected).
     selected_profile_model: ?[]const u8 = null,
     /// Migration 091 — resolved sub-agent name (e.g. "implementator").
     sub_agent_name: ?[]const u8 = null,
@@ -743,17 +681,13 @@ pub const SortSpec = union(enum) {
     role_desc: void,
 };
 
-/// Parse a SQLite INTEGER column value (returned by the SQL binder as a
-/// `[]const u8` slice) into a bool. Empty string is `false` (matches
-/// `COALESCE(col, 0)` semantics).
+/// Parse a SQLite INTEGER column value (returned by the SQL binder as a `[]const u8` slice) into a bool.
 fn parseRowBool(s: []const u8) bool {
     if (s.len == 0) return false;
     return s[0] == '1';
 }
 
-/// Get messages for a session with cursor-based pagination and sorting
-/// `profile` — the session's selected profile, resolved by the caller (HTTP
-/// handler) from `sessions.selected_profile_model` via
+/// Get messages for a session with cursor-based pagination and sorting `profile` — the session's selected profile, resolved by the caller (HTTP handler) from …
 pub fn getSessionMessagesSorted(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -801,8 +735,7 @@ pub fn getSessionMessagesSorted(
         , .{ cursor_cmp, order_part });
         argv = &.{ session_id, c, limit_str };
     } else {
-        // 2026-10-02-scrollback-order-key: the FIRST page (no cursor) must
-        // order by the MESSAGE's own timestamp, not `s.created_at`.
+        // 2026-10-02-scrollback-order-key: the FIRST page (no cursor) must order by the MESSAGE's own timestamp, not `s.created_at`.
         const order_part = switch (sort_spec) {
             .created_at_asc => " ORDER BY h.created_at_nano ASC, h.id ASC",
             .created_at_desc => " ORDER BY h.created_at_nano DESC, h.id DESC",
@@ -828,11 +761,9 @@ pub fn getSessionMessagesSorted(
     defer allocator.free(sql);
 
     var rows = db.query(allocator, sql, argv) catch blk: {
-        // Fallback for pre-Migration-091 tables: retry without the new
-        // sessions columns. New identity fields stay null.
+        // Fallback for pre-Migration-091 tables: retry without the new sessions columns.
         allocator.free(sql);
         // Rebuild the legacy SELECT (same branch, without new cols).
-        // We rebuild from scratch to keep column indices consistent.
         if (cursor) |c| {
             const is_asc = switch (sort_spec) {
                 .created_at_asc, .role_asc, .id_asc => true,
@@ -860,9 +791,7 @@ pub fn getSessionMessagesSorted(
             , .{ cursor_cmp, order_part });
             argv = &.{ session_id, c, limit_str };
         } else {
-            // 2026-10-02-scrollback-order-key: the first page must order by
-            // the Same 2026-10-02-scrollback-order-key fix as the primary
-            // branch above: the no-cursor fallback must order by
+            // 2026-10-02-scrollback-order-key: the first page must order by the Same 2026-10-02-scrollback-order-key fix as the primary branch above: the no-cursor fallback …
             const order_part = switch (sort_spec) {
                 .created_at_asc => " ORDER BY h.created_at_nano ASC, h.id ASC",
                 .created_at_desc => " ORDER BY h.created_at_nano DESC, h.id DESC",
@@ -899,17 +828,14 @@ pub fn getSessionMessagesSorted(
     var git_worktree_cwd: ?[]u8 = null;
     var pr_url: ?[]u8 = null;
     var pr_provider: ?[]u8 = null;
-    // 2026-08-07-profile-persist-read: also extract
-    // `selected_profile_model` from the joined sessions row so the
-    // frontend's profile chip survives a page refresh.
+    // 2026-08-07-profile-persist-read: also extract `selected_profile_model` from the joined sessions row so the frontend's profile chip survives a page refresh.
     var selected_profile_model: ?[]u8 = null;
     // Migration 091 — sub-agent identity, same first-row pattern.
     var sub_agent_name: ?[]u8 = null;
     var parent_session_id: ?[]u8 = null;
 
     while (try rows.next()) |row| {
-        // Extract cwd + git_worktree_cwd + selected_profile_model from the
-        // first row (same for all rows since we filter by session_id).
+        // Extract cwd + git_worktree_cwd + selected_profile_model from the first row (same for all rows since we filter by session_id).
         if (cwd == null) {
             const cwd_val = row.values[9];
             if (cwd_val.len > 0) {
@@ -922,8 +848,7 @@ pub fn getSessionMessagesSorted(
                 git_worktree_cwd = try allocator.dupe(u8, wt_val);
             }
         }
-        // Column indices 21/22 appended after selected_profile_model
-        // at 20 (see SELECT above). Same first-row-only pattern.
+        // Column indices 21/22 appended after selected_profile_model at 20 (see SELECT above).
         if (pr_url == null) {
             const pr_val = row.values[21];
             if (pr_val.len > 0) {
@@ -1011,16 +936,13 @@ pub fn getSessionMessagesSorted(
     // Check if there are more results
     const has_more = messages.items.len > @as(usize, limit);
 
-    // Get next cursor from last message if has_more
-    // Use created_at timestamp as cursor for proper pagination
+    // Get next cursor from last message if has_more Use created_at timestamp as cursor for proper pagination
     const next_cursor: ?[]const u8 = if (has_more and messages.items.len > 0)
         messages.items[@as(usize, limit) - 1].timestamp
     else
         null;
 
-    // `toOwnedSlice` reallocs to the exact length, so the caller's
-    // `allocator.free(res.messages)` is legal. `messages.items` is shorter
-    // than its allocation, which the debug allocator rejects as "Invalid free".
+    // `toOwnedSlice` reallocs to the exact length, so the caller's `allocator.free(res.messages)` is legal.
     if (has_more) messages.shrinkRetainingCapacity(limit);
     const result_messages = try messages.toOwnedSlice(allocator);
 
@@ -1043,12 +965,10 @@ pub fn getSessionMessagesSorted(
         .parent_session_id = parent_session_id,
         .max_total_tokens = getMaxTotalTokensForSession(allocator, db, session_id) catch 0,
         .max_capacity_total_tokens = blk: {
-            // Resolve the per-config override when the singleton is alive,
-            // otherwise fall back to the built-in per-model default.
+            // Resolve the per-config override when the singleton is alive, otherwise fall back to the built-in per-model default.
             const di_opt = pabrikcore.getSingleton() catch null;
             if (di_opt) |di| {
-                // The window a session renders with belongs to the session's
-                // owner under `--auth` (`session_llm_config.zig`).
+                // The window a session renders with belongs to the session's owner under `--auth` (`session_llm_config.zig`).
                 const cfg = session_llm_config.forSession(allocator, db, session_id) orelse
                     pabrikcore.getLlmConfig(di);
                 break :blk resolveMaxCapacityTotalTokens(cfg, profile, cfg.model);
@@ -1088,15 +1008,12 @@ pub fn getSessionProfileName(
     if (maybe_row) |row| {
         defer row.deinit(allocator);
         // CRITICAL: row.deinit() frees row.values[0]'s backing memory.
-        // Dupe into `allocator` so the returned slice outlives the
-        // deferred free (same pattern as re_read_selected_profile_model).
         return allocator.dupe(u8, row.values[0]);
     }
     return "";
 }
 
-/// Attached-PR binding for one session, read straight from the `sessions`
-/// row.
+/// Attached-PR binding for one session, read straight from the `sessions` row.
 pub const SessionPrFields = struct {
     pr_url: []const u8,
     pr_provider: []const u8,
@@ -1124,8 +1041,7 @@ pub fn getSessionPrFields(
     return .{ .pr_url = "", .pr_provider = "" };
 }
 
-/// When this session's transcript moved to the sibling `archive.db`, as
-/// `YYYY-MM-DD HH:MM:SS`; empty while the messages are still in this database.
+/// When this session's transcript moved to the sibling `archive.db`, as `YYYY-MM-DD HH:MM:SS`; empty while the messages are still in this database.
 pub fn getSessionTranscriptArchivedAt(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1142,23 +1058,17 @@ pub fn getSessionTranscriptArchivedAt(
     return allocator.dupe(u8, "");
 }
 
-/// Resolve the effective context window for a session view. Pure function
-/// over (config, profile, model) so tests can pin the cascade without the
-/// process-global singleton.
+/// Resolve the effective context window for a session view.
 pub fn resolveMaxCapacityTotalTokens(
     cfg: *const config_mod.LlmConfig,
     profile: ?*const config_mod.LlmConfig.LlmAgent,
     model: []const u8,
 ) u32 {
-    // The live catalog is what makes a non-MiniMax model resolve to its real
-    // window instead of the built-in 200k. `null` (no catalog yet) degrades to
-    // exactly the previous behaviour.
+    // The live catalog is what makes a non-MiniMax model resolve to its real window instead of the built-in 200k.
     return cfg.maxCapacityForModelWith(profile, cfg, model, model_catalog.getSingleton());
 }
 
-/// Resolve the profile a session effectively runs under — the shared cascade
-/// used by BOTH the workflow loop (workflow.zig `iter_profile`) and the HTTP
-/// read paths (messages endpoint, manual compact).
+/// Resolve the profile a session effectively runs under — the shared cascade used by BOTH the workflow loop (workflow.zig `iter_profile`) and the HTTP read paths …
 pub fn resolveSessionProfile(
     cfg: *const config_mod.LlmConfig,
     selected_profile_model: []const u8,
@@ -1266,7 +1176,6 @@ pub fn buildSessionMessagesJson(
         defer allocator.free(escaped_reasoning_content);
 
         // is_input / is_output are bool — emit as JSON booleans (not strings).
-        // `"is_input":"1"` is the old wrong format; `"is_input":true` is correct.
         const is_input_str = if (msg.is_input) "true" else "false";
         const is_output_str = if (msg.is_output) "true" else "false";
         const msg_json = try std.fmt.allocPrint(allocator,
@@ -1402,9 +1311,7 @@ pub fn buildSessionMessagesXml(
     return try xml_messages.toOwnedSlice(allocator);
 }
 
-// =============================================================================
 // Session Creation
-// =============================================================================
 
 /// Create a new session in the database
 pub fn createSession(
@@ -1437,9 +1344,7 @@ pub fn createSession(
     return session_id;
 }
 
-// =============================================================================
 // Save Message Functions
-// =============================================================================
 
 /// Serialize tool_calls array to JSON string
 pub fn serializeToolCalls(allocator: std.mem.Allocator, tool_calls: []agent.ToolCall) ![]u8 {
@@ -1472,8 +1377,7 @@ pub const SaveMessageInput = struct {
     prompt_tokens: usize = 0,
     completion_tokens: usize = 0,
     total_tokens: usize = 0,
-    /// Anthropic-only cache breakdown (billed at discounted rates; see
-    /// `LLMHistory` in `modules/agent/loop/llm_history.zig`). 0 for OpenAI rows.
+    /// Anthropic-only cache breakdown (billed at discounted rates; see `LLMHistory` in `modules/agent/loop/llm_history.zig`). 0 for OpenAI rows.
     cache_creation_input_tokens: usize = 0,
     cache_read_input_tokens: usize = 0,
     diffview_before: ?[]const u8 = null,
@@ -1489,17 +1393,13 @@ pub fn saveMessage(
     db: *database.Db,
     input: SaveMessageInput,
 ) !void {
-    // Get the current timestamp ONCE (two separate `Timestamp.now` calls can
-    // return nanoseconds that differ by 1+, which would make `id` and
-    // `created_at` disagree).
+    // Get the current timestamp ONCE (two separate `Timestamp.now` calls can return nanoseconds that differ by 1+, which would make `id` and `created_at` disagree).
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(id);
     const created_at_nano = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(created_at_nano);
 
-    // Compute `created_iso` (the UTC‑formatted ISO string for the
-    // `since`/`until` filter columns) IN APPLICATION CODE rather than via
-    // SQLite triggers.
+    // Compute `created_iso` (the UTC‑formatted ISO string for the `since`/`until` filter columns) IN APPLICATION CODE rather than via SQLite triggers.
     const created_iso = try helpers.currentTimeIsoLocal(allocator, io);
     defer allocator.free(created_iso);
 
@@ -1509,16 +1409,13 @@ pub fn saveMessage(
     const reasoningStr = input.reasoning_content orelse "";
     const agentStr = input.agent_name orelse "Agent";
 
-    // Option A envelopes (mirrors insert_llm_histories): user rows carry
-    // {user,name,msg}, non-empty assistant text carries {agent,msg}.
+    // Option A envelopes (mirrors insert_llm_histories): user rows carry {user,name,msg}, non-empty assistant text carries {agent,msg}.
     var enveloped_owned: ?[]u8 = null;
     defer if (enveloped_owned) |e| allocator.free(e);
     var effective_content: []const u8 = contentStr;
     if (contentStr.len > 0 and !parsing.isChatEnvelope(allocator, contentStr)) {
         if (std.mem.eql(u8, roleStr, "user")) {
-            // Logged-in identity when the session has an owner; legacy
-            // defaults otherwise (auth off). Lookup failures never block
-            // the insert.
+            // Logged-in identity when the session has an owner; legacy defaults otherwise (auth off).
             var ident = parsing.resolveChatUser(allocator, db, input.session_id) catch null;
             defer if (ident) |*ci| ci.deinit(allocator);
             const uid: []const u8 = if (ident) |*ci| ci.user_id else "";
@@ -1526,8 +1423,7 @@ pub fn saveMessage(
             enveloped_owned = try parsing.encodeUserContent(allocator, uid, nm, contentStr);
             effective_content = enveloped_owned.?;
         } else if (std.mem.eql(u8, roleStr, "assistant")) {
-            // Profile name the user picked (e.g. "900ribu"); raw model id
-            // when Default / auth off / lookup fails.
+            // Profile name the user picked (e.g.
             const profile_owned: ?[]u8 = parsing.resolveProfileName(allocator, db, input.session_id) catch null;
             defer if (profile_owned) |pr| allocator.free(pr);
             var label: []const u8 = model_guard.resolve(input.model);
@@ -1539,8 +1435,7 @@ pub fn saveMessage(
         }
     }
 
-    // tool_calls_json holds ONLY the serialized tool_calls array (assistant
-    // message wire format).
+    // tool_calls_json holds ONLY the serialized tool_calls array (assistant message wire format).
     var toolCallsJson: []const u8 = "";
     var toolCallsOwned: ?[]u8 = null;
     if (input.tool_calls) |tc| {
@@ -1592,9 +1487,7 @@ pub fn saveMessage(
 
     const copy_session_id = try allocator.dupe(u8, input.session_id);
     defer allocator.free(copy_session_id);
-    // Never bind an empty model: `Backend.exec` binds a zero-length
-    // slice as SQL NULL, which violates `model TEXT NOT NULL` and fails the
-    // whole INSERT. See llm_history_model_guard.zig.
+    // Never bind an empty model: `Backend.exec` binds a zero-length slice as SQL NULL, which violates `model TEXT NOT NULL` and fails the whole INSERT.
     const copy_model = try allocator.dupe(u8, model_guard.resolve(input.model));
     defer allocator.free(copy_model);
     const copy_content = try allocator.dupe(u8, effective_content);
@@ -1661,9 +1554,7 @@ pub fn saveMessage(
     }
     defer if (copy_image_urls) |c| allocator.free(c);
 
-    // Join multiple video URLs with || delimiter (empty string binds as
-    // '' literal downstream — never pass a zero-length slice as a bind
-    // arg since Backend.exec binds "" as NULL).
+    // Join multiple video URLs with || delimiter (empty string binds as '' literal downstream — never pass a zero-length slice as a bind arg since Backend.exec binds …
     var video_urls_str: []const u8 = "";
     var copy_video_urls: ?[]u8 = null;
     if (input.video_urls) |urls| {
@@ -1689,9 +1580,7 @@ pub fn saveMessage(
     defer allocator.free(copy_cwd);
     try db.exec(allocator, "UPDATE sessions SET cwd = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", &.{ copy_cwd, copy_session_id });
 }
-// =============================================================================
 // Get Messages Functions
-// =============================================================================
 
 pub fn getMessages(
     allocator: std.mem.Allocator,
@@ -1805,9 +1694,7 @@ pub fn getMessages(
     return results.toOwnedSlice(allocator);
 }
 
-// =============================================================================
 // Compacted Messages Query (is_feed_to_llm = 0)
-// =============================================================================
 
 /// Filter on the `is_feed_to_llm` column.
 pub const FeedFilter = enum { all, live_only, compacted_only };
@@ -1815,57 +1702,39 @@ pub const FeedFilter = enum { all, live_only, compacted_only };
 /// Options for filtering `getCompactedMessages`.
 pub const CompactedMessagesOptions = struct {
     /// When non-null, only return messages whose id is in this list.
-    /// Used by `read_workspace_session` (READ with message_ids=[...]).
     message_ids: ?[]const []const u8 = null,
-    /// When non-null, only return messages with `role` matching this value
-    /// (e.g. "user", "assistant", "tool").
+    /// When non-null, only return messages with `role` matching this value (e.g.
     role: ?[]const u8 = null,
     /// When non-null, only return messages with `created_at >= since`.
     since: ?[]const u8 = null,
     /// When non-null, only return messages with `created_at <= until`.
     until: ?[]const u8 = null,
-    /// When non-null, only return messages with `tool_name` matching
-    /// this value exactly (e.g. "bash", "read_file", "read_workspace_session").
-    /// Useful for "all `bash` invocations that ran `cargo test`".
+    /// When non-null, only return messages with `tool_name` matching this value exactly (e.g.
     tool_name: ?[]const u8 = null,
-    /// When non-null, only return messages with `parent_session_id` matching
-    /// this value. Used for sub-agent debugging — find every message in
-    /// any session whose parent is the given session id.
+    /// When non-null, only return messages with `parent_session_id` matching this value.
     parent_session_id: ?[]const u8 = null,
-    /// When non-null, only return messages with `agent` matching this value
-    /// exactly. Useful when one session has multiple agents (planning vs
-    /// chat vs sub-agent).
+    /// When non-null, only return messages with `agent` matching this value exactly.
     agent: ?[]const u8 = null,
-    /// Max number of rows to return. Defaults to 100 for safety — the caller
-    /// can request up to 1000 explicitly. The `read_workspace_session` tool
-    /// wraps this in its own user-facing limit parameter.
+    /// Max number of rows to return.
     limit: ?u32 = 100,
-    /// DEPRECATED alias for `feed_filter = .all`. When `true`, equivalent to
-    /// `feed_filter = .all`; when `false` (default), equivalent to
-    /// `feed_filter = .compacted_only`.
+    /// DEPRECATED alias for `feed_filter = .all`.
     include_all: bool = false,
-    /// When non-null, restrict rows by their `is_feed_to_llm` value via this
-    /// enum.
+    /// When non-null, restrict rows by their `is_feed_to_llm` value via this enum.
     feed_filter: ?FeedFilter = null,
-    /// Sort direction for `created_at`. Default `.asc` (chronological
-    /// forward).
+    /// Sort direction for `created_at`.
     order: Order = .asc,
 
-    /// Named enum so callers can reference it as
-    /// `llm_history.CompactedMessagesOptions.Order` and use
-    /// `@tagName(...)` to render it as a string for the wire format.
+    /// Named enum so callers can reference it as `llm_history.CompactedMessagesOptions.Order` and use `@tagName(...)` to render it as a string for the wire format.
     pub const Order = enum { asc, desc };
 
-    /// Resolve the effective feed filter, falling back to the legacy
-    /// `include_all` boolean when `feed_filter` was not explicitly set.
+    /// Resolve the effective feed filter, falling back to the legacy `include_all` boolean when `feed_filter` was not explicitly set.
     pub fn effectiveFeedFilter(self: CompactedMessagesOptions) FeedFilter {
         if (self.feed_filter) |ff| return ff;
         return if (self.include_all) .all else .compacted_only;
     }
 };
 
-/// Lighter-weight return struct than `TUIHistory` — only the fields the
-/// `read_workspace_session` tool actually surfaces.
+/// Lighter-weight return struct than `TUIHistory` — only the fields the `read_workspace_session` tool actually surfaces.
 pub const CompactedMessage = struct {
     id: []const u8,
     session_id: []const u8,
@@ -1877,7 +1746,6 @@ pub const CompactedMessage = struct {
     agent: []const u8,
     created_at: []const u8,
     /// Total number of rows that matched the WHERE clause (before LIMIT).
-    /// Surfaced via `COUNT(*) OVER ()` so it's computed in the same query.
     total_count: u32,
 
     pub fn deinit(self: *const CompactedMessage, allocator: std.mem.Allocator) void {
@@ -1893,15 +1761,11 @@ pub const CompactedMessage = struct {
     }
 };
 
-/// Options for `searchMessagesFts`. Mirrors the shape of
-/// `CompactedMessagesOptions` so callers can build either kind of query
-/// with a consistent input.
+/// Options for `searchMessagesFts`.
 pub const SearchOptions = struct {
     /// When non-null, only return hits whose `llm_history.session_id` equals this.
-    /// Useful for "search within this conversation only".
     session_id: ?[]const u8 = null,
-    /// When non-null and non-empty, only return hits whose
-    /// `llm_history.session_id` is in this list.
+    /// When non-null and non-empty, only return hits whose `llm_history.session_id` is in this list.
     session_ids: ?[]const []const u8 = null,
     /// When non-null, exact-match filter on `llm_history.role` ("user", "assistant", "tool").
     role: ?[]const u8 = null,
@@ -1909,31 +1773,21 @@ pub const SearchOptions = struct {
     since: ?[]const u8 = null,
     /// When non-null, upper bound on `created_at` (inclusive).
     until: ?[]const u8 = null,
-    /// When non-null, restrict rows by their `is_feed_to_llm` value via
-    /// the `FeedFilter` enum. See `getCompactedMessages` for the
-    /// per-enum-value SQL mapping. Default = `.all` (no filter).
+    /// When non-null, restrict rows by their `is_feed_to_llm` value via the `FeedFilter` enum.
     feed_filter: FeedFilter = .all,
-    /// When non-null, exact-match filter on `llm_history.tool_name`.
-    /// e.g. `tool_name = "bash"` returns only `role=tool` rows where the
-    /// tool that produced the result was `bash`.
+    /// When non-null, exact-match filter on `llm_history.tool_name`. e.g. `tool_name = "bash"` returns only `role=tool` rows where the tool that produced the result …
     tool_name: ?[]const u8 = null,
-    /// When non-null, exact-match filter on `llm_history.parent_session_id`.
-    /// e.g. `parent_session_id = "s_parent"` returns only rows in any
-    /// session whose parent is `s_parent` (typically sub-agent runs).
+    /// When non-null, exact-match filter on `llm_history.parent_session_id`. e.g. `parent_session_id = "s_parent"` returns only rows in any session whose parent is …
     parent_session_id: ?[]const u8 = null,
     /// When non-null, exact-match filter on `llm_history.agent`.
     agent: ?[]const u8 = null,
-    /// Max rows to return. Defaults to 20 for safety; the caller can
-    /// request up to 200 (the tool layer caps there). The FTS ranking
-    /// does the rest of the filtering.
+    /// Max rows to return.
     limit: ?u32 = 20,
-    /// Skip the first N results. Used by `read_workspace_session` search to
-    /// walk forward through FTS results that exceed `limit`.
+    /// Skip the first N results.
     offset: ?u32 = null,
 };
 
-/// One FTS hit. Mirrors `CompactedMessage` but adds `snippet` (the
-/// FTS5-generated preview with `[match]` markers around matched tokens).
+/// One FTS hit.
 pub const SearchHit = struct {
     id: []const u8,
     session_id: []const u8,
@@ -1942,9 +1796,7 @@ pub const SearchHit = struct {
     tool_call_id: ?[]const u8,
     tool_name: ?[]const u8,
     created_at: []const u8,
-    /// Total number of rows that matched the WHERE clause (before LIMIT and
-    /// OFFSET). Surfaced via `COUNT(*) OVER ()` so it's computed in the same
-    /// query.
+    /// Total number of rows that matched the WHERE clause (before LIMIT and OFFSET).
     total_count: u32,
 
     pub fn deinit(self: *const SearchHit, allocator: std.mem.Allocator) void {
@@ -1967,8 +1819,7 @@ pub fn getCompactedMessages(
 ) ![]CompactedMessage {
     const effective_limit = opts.limit orelse 100;
 
-    // Build the WHERE clause incrementally. Each filter appends AND <clause>
-    // to the base `h.session_id = ?`.
+    // Build the WHERE clause incrementally.
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
     try sql.appendSlice(allocator,
@@ -2054,9 +1905,7 @@ pub fn getCompactedMessages(
 
     while (try rows.next()) |row| {
         defer row.deinit(allocator);
-        // `total` is column index 9 (COUNT(*) OVER ()) — computed before
-        // LIMIT/OFFSET so it represents the total count of rows that
-        // matched the WHERE clause, not the returned page size.
+        // `total` is column index 9 (COUNT(*) OVER ()) — computed before LIMIT/OFFSET so it represents the total count of rows that matched the WHERE clause, not the …
         const total_count: u32 = std.fmt.parseInt(u32, row.values[9], 10) catch 0;
         const msg = CompactedMessage{
             .id = try allocator.dupe(u8, row.values[0]),
@@ -2139,8 +1988,7 @@ pub fn getMessagesByIds(
     return try results.toOwnedSlice(allocator);
 }
 
-/// Walks the tokens of a search query: alphanumerics and `_`, everything else
-/// is a boundary. Shared by both engines' query builders.
+/// Walks the tokens of a search query: alphanumerics and `_`, everything else is a boundary.
 const Tokenizer = struct {
     query: []const u8,
     at: usize = 0,
@@ -2158,8 +2006,7 @@ const Tokenizer = struct {
     }
 };
 
-/// The query text sqlite's FTS5 `MATCH` takes: every token a quoted phrase,
-/// OR-ed together, so an operator in the user's text cannot break the parser.
+/// The query text sqlite's FTS5 `MATCH` takes: every token a quoted phrase, OR-ed together, so an operator in the user's text cannot break the parser.
 pub fn escapeFtsQuery(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -2177,7 +2024,6 @@ pub fn escapeFtsQuery(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
 }
 
 /// The query text postgres' `to_tsquery` takes: the same tokens, OR-ed.
-/// `to_tsquery` rejects the phrase quotes FTS5 wants, so bare lexemes.
 pub fn escapeTsQuery(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -2200,9 +2046,7 @@ pub fn searchQueryText(allocator: std.mem.Allocator, query: []const u8) ![]u8 {
         escapeFtsQuery(allocator, query);
 }
 
-// ---------------------------------------------------------------------------
 // escapeFtsQuery inline tests
-// ---------------------------------------------------------------------------
 
 test "escapeFtsQuery: single token is emitted in phrase quotes (no OR)" {
     const alloc = testing.allocator;
@@ -2235,8 +2079,7 @@ test "escapeFtsQuery: consecutive whitespace collapses to single token boundary"
 test "escapeFtsQuery: FTS5 operators are replaced with token boundaries" {
     const alloc = testing.allocator;
 
-    // Each operator becomes a token boundary — adjacent operators
-    // don't collapse to a single boundary.
+    // Each operator becomes a token boundary — adjacent operators don't collapse to a single boundary.
     {
         const out = try escapeFtsQuery(alloc, "2026-08-06");
         defer alloc.free(out);
@@ -2290,8 +2133,7 @@ test "escapeFtsQuery: leading/trailing whitespace is harmless" {
 }
 
 test "escapeFtsQuery: realistic multi-word recall query (regression for task_1787050039216_3)" {
-    // The user's complaint: load_memory({query: "preferred model"}) returned
-    // 0 hits because the query was wrapped in FTS5 phrase syntax.
+    // The user's complaint: load_memory({query: "preferred model"}) returned 0 hits because the query was wrapped in FTS5 phrase syntax.
     const alloc = testing.allocator;
     const out = try escapeFtsQuery(alloc, "preferred model");
     defer alloc.free(out);
@@ -2306,19 +2148,15 @@ pub fn searchMessagesFts(
 ) ![]SearchHit {
     const effective_limit = opts.limit orelse 20;
 
-    // Sanitize the user query so plain text with FTS5 operators (`.`, `-`,
-    // `:`) doesn't blow up the MATCH parser. See `escapeFtsQuery` for the
-    // full rationale and the exact transformation.
+    // Sanitize the user query so plain text with FTS5 operators (`.`, `-`, `:`) doesn't blow up the MATCH parser.
     const sanitized_query = try searchQueryText(allocator, query);
     defer allocator.free(sanitized_query);
-    // Empty after sanitization (query was all FTS5 operators) — bail
-    // before FTS5 sees `MATCH ''` and throws "empty query".
+    // Empty after sanitization (query was all FTS5 operators) — bail before FTS5 sees `MATCH ''` and throws "empty query".
     if (sanitized_query.len == 0) return allocator.alloc(SearchHit, 0);
 
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
-    // The subquery is the only engine-specific part: sqlite reads the FTS5
-    // index through `messages_fts`, postgres ranks `to_tsvector` directly.
+    // The subquery is the only engine-specific part: sqlite reads the FTS5 index through `messages_fts`, postgres ranks `to_tsvector` directly.
     if (dialect.is_postgres) {
         try sql.appendSlice(allocator,
             \\SELECT
@@ -2342,9 +2180,7 @@ pub fn searchMessagesFts(
             \\ @@ q.tsq
         );
     } else {
-        // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window
-        // function runs over the regular subquery result, not directly over
-        // the FTS5 virtual table.
+        // Wrap FTS5 access in a subquery so the COUNT(*) OVER () window function runs over the regular subquery result, not directly over the FTS5 virtual table.
         try sql.appendSlice(allocator,
             \\SELECT
             \\    id, session_id, role, snippet, tool_call_id, tool_name, created_at,
@@ -2442,9 +2278,7 @@ pub fn searchMessagesFts(
 
     while (try rows.next()) |row| {
         defer row.deinit(allocator);
-        // `total` is column index 7 (COUNT(*) OVER ()) — computed
-        // before LIMIT/OFFSET so it represents the total count of rows
-        // that matched the WHERE clause, not the returned page size.
+        // `total` is column index 7 (COUNT(*) OVER ()) — computed before LIMIT/OFFSET so it represents the total count of rows that matched the WHERE clause, not the …
         const total_count: u32 = std.fmt.parseInt(u32, row.values[7], 10) catch 0;
         const hit = SearchHit{
             .id = try allocator.dupe(u8, row.values[0]),
@@ -2573,9 +2407,7 @@ pub fn getLatestMessage(
     return null;
 }
 
-/// Fetch ONE llm_history row by its exact id (scoped to session_id).
-/// 2026-08-23 B1 fix — handle_tool.zig used to emit tool-result SSE via
-/// `getLatestMessage` (ORDER BY created_at_nano DESC LIMIT 1), which returns
+/// Fetch ONE llm_history row by its exact id (scoped to session_id). 2026-08-23 B1 fix — handle_tool.zig used to emit tool-result SSE via `getLatestMessage` …
 pub fn getMessageById(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2686,9 +2518,7 @@ pub fn getMessageById(
     return null;
 }
 
-// =============================================================================
 // Get Sessions By Directory Functions
-// =============================================================================
 
 pub fn get_sessions_by_dir(
     allocator: std.mem.Allocator,
@@ -2723,8 +2553,7 @@ pub fn get_sessions_by_dir(
     return results.toOwnedSlice(allocator);
 }
 
-/// Get the latest session for a given directory
-/// Returns null if no sessions exist for that directory
+/// Get the latest session for a given directory Returns null if no sessions exist for that directory
 pub fn getLatestSessionByDir(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2757,9 +2586,7 @@ pub fn getLatestSessionByDir(
     return null;
 }
 
-// =============================================================================
 // Get Current Agent By Session ID Functions
-// =============================================================================
 
 pub const AgentState = struct {
     agent: []const u8,
@@ -2795,9 +2622,7 @@ pub fn get_current_agent_by_session_id(
     }
 }
 
-// =============================================================================
 // WORKER INFO - For activity registry display
-// =============================================================================
 
 /// Worker info for displaying in agent prompts
 pub const WorkerInfo = struct {
@@ -2805,8 +2630,7 @@ pub const WorkerInfo = struct {
     working_directory: []const u8,
     last_activity: i64,
     last_activity_description: []const u8,
-    /// Bound git worktree path for this worker's session (empty when no
-    /// worktree is bound). Mirrors `sessions.git_worktree_cwd`.
+    /// Bound git worktree path for this worker's session (empty when no worktree is bound).
     git_worktree_cwd: []const u8,
 
     pub fn deinit(self: *const WorkerInfo, allocator: std.mem.Allocator) void {
@@ -2887,8 +2711,7 @@ pub fn updateWorkerActivityWithDescription(
     }) catch {};
 }
 
-/// Append a single row to the `session_activity` per-session log (Migration
-/// 073).
+/// Append a single row to the `session_activity` per-session log (Migration 073).
 pub fn recordSessionActivity(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -2985,9 +2808,7 @@ pub fn deleteQueuedMessagesBySessionId(
     try db.exec(allocator, sql, &.{session_id});
 }
 
-/// Get a worker by session_id Returns `null` when no worker row matches
-/// `session_id` (e.g. when no LLM call has been issued yet for this session,
-/// or when the session/worker has been cancelled).
+/// Get a worker by session_id Returns `null` when no worker row matches `session_id` (e.g. when no LLM call has been issued yet for this session, or when the …
 pub fn getWorkerBySessionId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3023,9 +2844,7 @@ pub fn getWorkerBySessionId(
     return null;
 }
 
-/// Check if a task is currently running (a worker row exists for it). The
-/// pabrik convention is `task.id == session.id`, so the worker table's
-/// `session_id` column holds the task's id.
+/// Check if a task is currently running (a worker row exists for it).
 pub fn isTaskRunning(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3039,9 +2858,7 @@ pub fn isTaskRunning(
     return true;
 }
 
-/// Cancel a session (set cancelled flag) and the sessions it spawned: a
-/// sub-agent is its own session under `llm_history.parent_session_id`, and the
-/// parent is parked in `Group.await` until the children return. Best-effort.
+/// Cancel a session (set cancelled flag) and the sessions it spawned: a sub-agent is its own session under `llm_history.parent_session_id`, and the parent is …
 pub fn cancelSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3058,8 +2875,7 @@ pub fn cancelSession(
 
 // ─── Stop propagation ───────────────────────────────────────────────────────
 
-/// One worker row's `cancelled` column, read straight from SQL so the
-/// assertion cannot be satisfied by the writer's own bookkeeping.
+/// One worker row's `cancelled` column, read straight from SQL so the assertion cannot be satisfied by the writer's own bookkeeping.
 fn cancelledFlag(db: *database.Db, allocator: std.mem.Allocator, worker_id: []const u8) !i64 {
     var rows = try db.query(allocator, "SELECT cancelled FROM worker WHERE id = ?", &.{worker_id});
     defer rows.deinit();
@@ -3084,8 +2900,7 @@ test "cancelSession also stops the child sessions this one spawned" {
     try db.exec(allocator,
         \\INSERT INTO worker (id) VALUES ('parent'), ('child'), ('sibling')
     , &.{});
-    // `child` ran a turn under `parent` (the link `spawn_sub_agent` writes);
-    // `sibling` is an unrelated session that must be left alone.
+    // `child` ran a turn under `parent` (the link `spawn_sub_agent` writes); `sibling` is an unrelated session that must be left alone.
     try db.exec(allocator,
         \\INSERT INTO llm_history (id, session_id, parent_session_id) VALUES
         \\  ('m_parent', 'parent', NULL),
@@ -3100,7 +2915,6 @@ test "cancelSession also stops the child sessions this one spawned" {
     try testing.expectEqual(@as(i64, 0), try cancelledFlag(&db, allocator, "sibling"));
 }
 
-// =============================================================================
 // Tool-call loading placeholder (Migration 068) The
 
 /// Options for `saveToolResultPlaceholder`.
@@ -3114,17 +2928,14 @@ pub const SaveToolResultPlaceholderOptions = struct {
     parent_session_id: []const u8 = "",
 };
 
-/// Options for `updateToolResultById`. Only `content` is required;
-/// `diffview_before` / `diffview_after` are optional (text_replace
-/// uses them; most tools don't).
+/// Options for `updateToolResultById`.
 pub const UpdateToolResultOptions = struct {
     content: []const u8,
     diffview_before: ?[]const u8,
     diffview_after: ?[]const u8,
 };
 
-/// INSERT a `role=tool` placeholder row with `is_loading=1`. Returns the new
-/// row's `id` (a nanosecond timestamp string, same shape as `saveMessage`).
+/// INSERT a `role=tool` placeholder row with `is_loading=1`.
 pub fn saveToolResultPlaceholder(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -3159,9 +2970,7 @@ pub fn saveToolResultPlaceholder(
     const sqlArgs = &.{
         id,
         opts.session_id,
-        // Guarded for the same reason as `saveMessage`: an empty bind lands
-        // as NULL and fails `model TEXT NOT NULL`. See
-        // llm_history_model_guard.zig.
+        // Guarded for the same reason as `saveMessage`: an empty bind lands as NULL and fails `model TEXT NOT NULL`.
         model_guard.resolve(opts.model),
         opts.tool_call_id,
         opts.tool_name,
@@ -3172,8 +2981,7 @@ pub fn saveToolResultPlaceholder(
     };
     try db.exec(allocator, sql, sqlArgs);
 
-    // Return a copy the caller can own (the local `id` would be
-    // freed by the deferred `allocator.free` above).
+    // Return a copy the caller can own (the local `id` would be freed by the deferred `allocator.free` above).
     return try allocator.dupe(u8, id);
 }
 
@@ -3196,9 +3004,7 @@ pub fn updateToolResultById(
         \\WHERE id = ?
     ;
 
-    // For diffview: an empty slice binds as NULL per project memory
-    // `sqlite-backend-empty-slice-binds-as-null` — so passing '' is
-    // indistinguishable from passing null.
+    // For diffview: an empty slice binds as NULL per project memory `sqlite-backend-empty-slice-binds-as-null` — so passing '' is indistinguishable from passing null.
     const sqlArgs = &.{
         opts.content,
         opts.diffview_before orelse "",
@@ -3208,8 +3014,7 @@ pub fn updateToolResultById(
     try db.exec(allocator, sql, sqlArgs);
 }
 
-/// Attach an image to an already-persisted tool result, so the next turn hands
-/// the model the picture itself rather than a description of it.
+/// Attach an image to an already-persisted tool result, so the next turn hands the model the picture itself rather than a description of it.
 pub fn setToolResultImageUrl(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3223,16 +3028,13 @@ pub fn setToolResultImageUrl(
     );
 }
 
-/// Replace every `is_loading=1` row in the session with a synthetic
-/// "<interrupted>...</interrupted>" message so the next LLM call's
-/// tool_call_id contract is satisfied after an agent crash.
+/// Replace every `is_loading=1` row in the session with a synthetic "<interrupted>...</interrupted>" message so the next LLM call's tool_call_id contract is …
 pub fn resolveStaleLoadingToolResults(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
 ) !void {
-    // The placeholder content is empty (Phase 1 inserts); replace it with the
-    // synthetic interrupted message.
+    // The placeholder content is empty (Phase 1 inserts); replace it with the synthetic interrupted message.
     const sql =
         \\UPDATE llm_history SET
         \\    response_content = '<interrupted>Tool execution was interrupted by server restart. Please retry this action.</interrupted>',
@@ -3252,8 +3054,7 @@ pub const QueuedMessage = struct {
     video_url: []const u8 = "",
 };
 
-/// Returns null if no messages queued
-/// Caller must free the returned slice
+/// Returns null if no messages queued Caller must free the returned slice
 pub fn getQueueMessages(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3288,9 +3089,7 @@ pub fn getQueueMessages(
     return messages;
 }
 
-// =============================================================================
 // Session Table Functions (migrated from session_table.zig)
-// =============================================================================
 
 /// Session info for CRUD operations (from session_table.zig)
 pub const SessionTableInfo = struct {
@@ -3305,15 +3104,11 @@ pub const SessionTableInfo = struct {
     /// Migration 086 — attached PR URL + effective provider ("" = unset).
     pr_url: []u8,
     pr_provider: []u8,
-    /// Migration 063 — opt-in flag for unattended mode. Stored as text
-    /// ("0" / "1") to match `is_auto_retry_until_stop`'s INTEGER column
-    /// convention used by the rest of the codebase.
+    /// Migration 063 — opt-in flag for unattended mode.
     is_auto_retry_until_stop: []u8,
-    /// Migration 063 — most recent `finish_reason` the workflow observed
-    /// for this session. Empty string before the first successful turn.
+    /// Migration 063 — most recent `finish_reason` the workflow observed for this session.
     last_finish_reason: []u8,
     /// Migration 091 — resolved sub-agent name for sub-agent sessions (e.g.
-    /// "implementator"). Empty for main-agent sessions.
     sub_agent_name: []u8,
     /// Migration 091 — parent session id for sub-agent sessions.
     parent_session_id: []u8,
@@ -3336,9 +3131,7 @@ pub const SessionTableInfo = struct {
     }
 };
 
-/// Create a new session with status set to 'active'
-/// `is_auto_retry_until_stop`: "1" enables unattended mode for this session
-/// (workflow keeps retrying past the 10-attempt TooManyRetries bail).
+/// Create a new session with status set to 'active' `is_auto_retry_until_stop`: "1" enables unattended mode for this session (workflow keeps retrying past the …
 pub fn create_session(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3352,8 +3145,7 @@ pub fn create_session(
         "VALUES (?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)";
     try db.exec(allocator, sql, &.{ id, name, flag });
 
-    // Broadcast session created event — carry the new columns in the
-    // SSE payload so ChatsList updates live without a refetch.
+    // Broadcast session created event — carry the new columns in the SSE payload so ChatsList updates live without a refetch.
     on_event_sent.onEventSendSessions(allocator, .{
         .action = "created",
         .id = id,
@@ -3374,9 +3166,7 @@ pub fn create_session(
         .id = try allocator.dupe(u8, id),
         .name = try allocator.dupe(u8, name),
         .status = try allocator.dupe(u8, "active"),
-        // cwd is intentionally empty in create_session — the worker upserts
-        // the cwd on the first llm_history insert (see
-        // insert_llm_histories.zig:183).
+        // cwd is intentionally empty in create_session — the worker upserts the cwd on the first llm_history insert (see insert_llm_histories.zig:183).
         .cwd = try allocator.dupe(u8, ""),
         .created_at = try allocator.dupe(u8, ""),
         .updated_at = try allocator.dupe(u8, ""),
@@ -3384,9 +3174,7 @@ pub fn create_session(
         .git_worktree_cwd = try allocator.dupe(u8, ""),
         .pr_url = try allocator.dupe(u8, ""),
         .pr_provider = try allocator.dupe(u8, ""),
-        // Migration 063 — populated with the just-bound value for the
-        // flag; last_finish_reason is empty until the workflow writes
-        // the first value (Chunk 2 Task 2.1).
+        // Migration 063 — populated with the just-bound value for the flag; last_finish_reason is empty until the workflow writes the first value (Chunk 2 Task 2.1).
         .is_auto_retry_until_stop = try allocator.dupe(u8, flag),
         .last_finish_reason = try allocator.dupe(u8, ""),
         // Migration 091 — empty until workflow stamps sub-agent identity.
@@ -3395,9 +3183,7 @@ pub fn create_session(
     };
 }
 
-/// Ensure a session row exists for `session_id`. If no row matches, INSERT a
-/// minimal row with sensible defaults (name='New Session',
-/// is_auto_retry_until_stop='0', empty selected_profile_model).
+/// Ensure a session row exists for `session_id`.
 pub fn ensureSessionExists(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3429,9 +3215,7 @@ pub fn getSession(
     ;
 
     var rows = db.query(allocator, sql, &.{id}) catch {
-        // Fallback for pre-Migration-091 DBs and minimal test schemas
-        // without the new columns: read the legacy column set and
-        // return empty sub-agent identity.
+        // Fallback for pre-Migration-091 DBs and minimal test schemas without the new columns: read the legacy column set and return empty sub-agent identity.
         return getSessionLegacy(allocator, db, id);
     };
     defer rows.deinit();
@@ -3448,9 +3232,7 @@ pub fn getSession(
             .git_worktree_cwd = try allocator.dupe(u8, row.values[7]),
             .pr_url = try allocator.dupe(u8, row.values[10]),
             .pr_provider = try allocator.dupe(u8, row.values[11]),
-            // Migration 063 — row.values[8] = is_auto_retry_until_stop
-            // (COALESCE'd to '0'); row.values[9] = last_finish_reason
-            // (COALESCE'd to '').
+            // Migration 063 — row.values[8] = is_auto_retry_until_stop (COALESCE'd to '0'); row.values[9] = last_finish_reason (COALESCE'd to '').
             .is_auto_retry_until_stop = try allocator.dupe(u8, row.values[8]),
             .last_finish_reason = try allocator.dupe(u8, row.values[9]),
             // Migration 091 — sub-agent identity (empty for main sessions).
@@ -3464,9 +3246,7 @@ pub fn getSession(
     return null;
 }
 
-/// Legacy getSession without Migration-091 columns. Used as a fallback
-/// when the sessions table predates the migration or a minimal test
-/// schema omits the new columns. Returns empty sub-agent identity.
+/// Legacy getSession without Migration-091 columns.
 fn getSessionLegacy(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3579,9 +3359,7 @@ pub fn updateTaskName(
     const task_sql = "UPDATE workspace_item_tasks SET name = ?, updated_at = datetime('now') WHERE id = ?";
     try db.exec(allocator, task_sql, &.{ new_name, id });
 
-    // 2) Verify the task exists. If not (rare — e.g. the caller's
-    // id is wrong) there's nothing to cascade. Return early; the
-    // UPDATE above is a no-op in that case.
+    // 2) Verify the task exists.
     const task = (getWorkspaceItemTask(allocator, db, id) catch null) orelse return;
     defer task.deinit(allocator);
 
@@ -3593,7 +3371,6 @@ pub fn updateTaskName(
 }
 
 /// Update the unattended-mode flag for an existing session (Migration 063).
-/// `value` must be "1" or "0" — handler layer validates the input shape.
 pub fn updateSessionAutoRetryUntilStop(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3626,8 +3403,7 @@ pub fn updateSessionAutoRetryUntilStop(
     }
 }
 
-/// Update the most-recent `finish_reason` cache for an existing session
-/// (Migration 063).
+/// Update the most-recent `finish_reason` cache for an existing session (Migration 063).
 pub fn updateSessionLastFinishReason(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3659,8 +3435,7 @@ pub fn updateTaskLastHumanTouchedAt(
     try db.exec(allocator, sql, &.{ touched_at_str, task_id });
 }
 
-/// Stamp `sessions.last_human_touched_at_nano = <unix_ms>`. Sibling of
-/// `updateTaskLastHumanTouchedAt` (which targets `workspace_item_tasks`).
+/// Stamp `sessions.last_human_touched_at_nano = <unix_ms>`.
 pub fn updateSessionLastHumanTouchedAt(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3681,9 +3456,7 @@ pub fn updateSessionLastHumanTouchedAt(
     try db.exec(allocator, sql, &.{ touched_at_str, session_id });
 }
 
-/// Current Unix epoch time in milliseconds. Used by
-/// `updateTaskLastHumanTouchedAt` as the default timestamp; can also be
-/// called directly by handlers that need a unix-ms stamp.
+/// Current Unix epoch time in milliseconds.
 const builtin = @import("builtin");
 const Clong = if (@bitSizeOf(usize) == 64 and builtin.os.tag != .windows)
     i64
@@ -3711,15 +3484,13 @@ pub fn unixMillisNow() i64 {
 }
 
 test "unixMillisNow: returns positive value within sane range (catches macOS suseconds_t = i32 struct-layout fix)" {
-    // On macOS ARM64, `suseconds_t` is `__int32_t` (4 bytes), not
-    // `__int64_t`.
+    // On macOS ARM64, `suseconds_t` is `__int32_t` (4 bytes), not `__int64_t`.
     const ts = unixMillisNow();
     try std.testing.expect(ts > 1_577_836_800_000);
     try std.testing.expect(ts < 4_102_444_800_000);
 }
 
-/// Update session selected_profile_model (the name of a profile in
-/// LlmConfig.profiles_models). Pass empty string or null to clear.
+/// Update session selected_profile_model (the name of a profile in LlmConfig.profiles_models).
 pub fn updateSessionSelectedProfileModel(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3750,9 +3521,7 @@ pub fn updateSessionSelectedProfileModel(
     }
 }
 
-/// Migration 091 — stamp sub-agent identity onto a session row.
-/// sub_agent_name is the resolved sub-agent name (e.g. "implementator"),
-/// parent_session_id links back to the spawner.
+/// Migration 091 — stamp sub-agent identity onto a session row. sub_agent_name is the resolved sub-agent name (e.g.
 pub fn updateSessionSubAgentInfo(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3770,8 +3539,7 @@ pub fn updateSessionSubAgentInfo(
     }
 }
 
-/// Read `sessions.git_worktree_cwd` for `session_id`. Empty string when the
-/// session has no binding or no row — the caller then works in `cwd`.
+/// Read `sessions.git_worktree_cwd` for `session_id`.
 pub fn getSessionGitWorktreeCwd(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3788,9 +3556,7 @@ pub fn getSessionGitWorktreeCwd(
     return allocator.dupe(u8, row.values[0]);
 }
 
-/// Update session git_worktree_cwd. Pass empty string or null to clear.
-/// When the value changes, broadcast a session.updated SSE event so the
-/// ChatsList sidebar updates its 🌳 badge in real time.
+/// Update session git_worktree_cwd.
 pub fn updateSessionGitWorktreeCwd(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3820,8 +3586,7 @@ pub fn updateSessionGitWorktreeCwd(
     }
 }
 
-/// Update session attached-PR binding. Pass nulls (or empty strings) to
-/// clear.
+/// Update session attached-PR binding.
 pub fn updateSessionPrUrl(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -3880,8 +3645,7 @@ pub fn delete_session(
 
 // ─── Single-message admin: delete, restore, drop from context ─────────────
 
-/// One `llm_history` row with every column as text, so it round-trips through
-/// JSON unchanged. The delete returns it; the restore takes it back.
+/// One `llm_history` row with every column as text, so it round-trips through JSON unchanged.
 pub const MessageRow = struct {
     id: []const u8,
     session_id: []const u8,
@@ -3942,8 +3706,7 @@ const MESSAGE_ROW_SELECT =
     \\FROM llm_history WHERE id = ?
 ;
 
-/// Same order as `MESSAGE_ROW_SELECT`. A narrower insert would drop
-/// `usage_json`, `temperature` and the token counters on the way back.
+/// Same order as `MESSAGE_ROW_SELECT`.
 const MESSAGE_ROW_INSERT =
     \\INSERT INTO llm_history (id, session_id, model, response_content, tool_calls_json,
     \\  finish_reason, usage_json, created_at_nano, role, reasoning_content, is_feed_to_llm,
@@ -3976,8 +3739,7 @@ pub fn getMessageRow(allocator: std.mem.Allocator, db: *database.Db, id: []const
     return try rowFromValues(allocator, row.values);
 }
 
-/// Delete one row and hand it back so the caller can offer an undo. Refuses
-/// while the loop is still writing the row (`is_loading = 1`).
+/// Delete one row and hand it back so the caller can offer an undo.
 pub fn deleteMessageById(allocator: std.mem.Allocator, db: *database.Db, id: []const u8) MessageAdminError!MessageRow {
     const row = (getMessageRow(allocator, db, id) catch return error.QueryFailed) orelse return error.NotFound;
     if (std.mem.eql(u8, row.is_loading, "1")) {
@@ -3991,8 +3753,7 @@ pub fn deleteMessageById(allocator: std.mem.Allocator, db: *database.Db, id: []c
     return row;
 }
 
-/// Re-insert a row with the same id. The `llm_history_ai` trigger puts the
-/// `messages_fts` entry back, so no FTS statement is needed here.
+/// Re-insert a row with the same id.
 pub fn restoreMessage(allocator: std.mem.Allocator, db: *database.Db, row: MessageRow) MessageAdminError!void {
     const existing = getMessageRow(allocator, db, row.id) catch return error.QueryFailed;
     if (existing) |e| {
@@ -4005,8 +3766,7 @@ pub fn restoreMessage(allocator: std.mem.Allocator, db: *database.Db, row: Messa
     db.exec(allocator, MESSAGE_ROW_INSERT, &argv) catch return error.QueryFailed;
 }
 
-/// Flip `is_feed_to_llm` on one row. `getLLMHistories` already filters on it,
-/// so false takes the row out of the model's context without deleting it.
+/// Flip `is_feed_to_llm` on one row.
 pub fn setMessageFeedToLlm(allocator: std.mem.Allocator, db: *database.Db, id: []const u8, feed: bool) MessageAdminError!void {
     const existing = getMessageRow(allocator, db, id) catch return error.QueryFailed;
     if (existing) |e| {
@@ -4057,9 +3817,7 @@ pub fn list_sessions(
     return try sessions.toOwnedSlice(allocator);
 }
 
-// =============================================================================
 // Session Skills Functions (migrated from session_skills.zig)
-// =============================================================================
 
 /// Check if a skill is already loaded in the database
 pub fn isSkillLoaded(
@@ -4144,9 +3902,7 @@ pub fn getSessionSkills(
     return try skills.toOwnedSlice(allocator);
 }
 
-// =============================================================================
-// Session Progressive Tool Functions (progressive tool search, Migration 085)
-// The agent enables tools for itself with `use_tool`; the record lives here.
+// Session Progressive Tool Functions (progressive tool search, Migration 085) The agent enables tools for itself with `use_tool`; the record lives here.
 
 pub const ProgressiveToolInfo = struct {
     tool_name: []u8,
@@ -4159,8 +3915,7 @@ pub const ProgressiveToolInfo = struct {
     }
 };
 
-/// Check whether a tool is already enabled for this session. The caller
-/// uses this for the "already equipped → do not insert" rule.
+/// Check whether a tool is already enabled for this session.
 pub fn isProgressiveToolEquipped(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4180,8 +3935,7 @@ pub fn isProgressiveToolEquipped(
     return false;
 }
 
-/// Enable `tool_name` for `session_id`. Returns `true` only when a row was
-/// actually INSERTed.
+/// Enable `tool_name` for `session_id`.
 pub fn saveProgressiveTool(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4192,9 +3946,7 @@ pub fn saveProgressiveTool(
 ) !bool {
     if (session_id.len == 0 or tool_name.len == 0) return false;
 
-    // COALESCE on server_name is REQUIRED, not cosmetic: Backend binds
-    // an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so a
-    // built-in (always passed with "") would violate the constraint and
+    // COALESCE on server_name is REQUIRED, not cosmetic: Backend binds an empty `[]const u8` as SQL NULL, and `server_name` is NOT NULL — so a built-in (always …
     const sql = "INSERT INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), strftime('%s', 'now')) ON CONFLICT DO NOTHING";
     try db.exec(allocator, sql, &.{ session_id, tool_name, server_name });
 
@@ -4208,9 +3960,7 @@ pub fn saveProgressiveTool(
     return inserted;
 }
 
-/// All tools this session has enabled, oldest first (see
-/// `saveProgressiveTool` for the ordering rule). Caller owns each entry and
-/// the slice.
+/// All tools this session has enabled, oldest first (see `saveProgressiveTool` for the ordering rule).
 pub fn getProgressiveTools(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4244,8 +3994,7 @@ pub fn getProgressiveTools(
     return try out.toOwnedSlice(allocator);
 }
 
-/// Drop a tool from this session's progressive set. Used by tests and by a
-/// future "unload" affordance; the normal path never removes a row.
+/// Drop a tool from this session's progressive set.
 pub fn deleteProgressiveTool(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4260,9 +4009,7 @@ pub fn deleteProgressiveTool(
     );
 }
 
-// =============================================================================
 // Workspace Items Functions (migrated from workspace_items_table.zig)
-// =============================================================================
 
 /// WorkspaceItem info for CRUD operations
 pub const WorkspaceItemInfo = struct {
@@ -4275,8 +4022,7 @@ pub const WorkspaceItemInfo = struct {
     updated_at: ?[]u8 = null,
     /// Migration 094 — 1 when this item is the workspace's default project.
     is_default: i64 = 0,
-    /// Migration 147 — the project's own glyph name. NULL means "no override":
-    /// the UI derives `folder` / `folder-open` from the expanded state.
+    /// Migration 147 — the project's own glyph name. NULL means "no override"
     icon: ?[]u8 = null,
 
     pub fn deinit(self: WorkspaceItemInfo, allocator: std.mem.Allocator) void {
@@ -4378,9 +4124,7 @@ pub fn updateWorkspaceItemName(
     try db.exec(allocator, sql, &.{ name, id });
 }
 
-/// Update only the `icon` column of a workspace item (Migration 147). `null`
-/// clears the override — what "Reset to default" writes — so the row falls back
-/// to `folder` / `folder-open`.
+/// Update only the `icon` column of a workspace item (Migration 147).
 pub fn updateWorkspaceItemIcon(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4396,9 +4140,7 @@ pub fn updateWorkspaceItemIcon(
     }
 }
 
-/// Delete a workspace item and its own subtree in one transaction. sqlite
-/// declares no foreign key from `workspace_item_tasks` to `workspace_items`,
-/// so a bare DELETE leaves the board's tasks and dependency edges orphaned.
+/// Delete a workspace item and its own subtree in one transaction. sqlite declares no foreign key from `workspace_item_tasks` to `workspace_items`, so a bare …
 pub fn deleteWorkspaceItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4428,8 +4170,7 @@ pub fn deleteWorkspaceItem(
 
 const item_tasks = "SELECT id FROM workspace_item_tasks WHERE workspace_item_id = ?";
 
-/// List all workspace items by workspace_id. Sorted by `wi.position DESC,
-/// wi.id ASC`.
+/// List all workspace items by workspace_id.
 pub fn listWorkspaceItems(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4465,8 +4206,7 @@ pub fn listWorkspaceItems(
     return try items.toOwnedSlice(allocator);
 }
 
-/// List ALL workspace items (for N+1 fix). Same sort as the per-workspace
-/// list: `wi.position DESC, wi.id ASC`.
+/// List ALL workspace items (for N+1 fix).
 pub fn listAllWorkspaceItems(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -4500,9 +4240,7 @@ pub fn listAllWorkspaceItems(
     return try items.toOwnedSlice(allocator);
 }
 
-// =============================================================================
-// Workspace Context (used by prompts_build_messages_for_agent_prompt.zig to
-// render the `## Workspace Context` section of the system prompt — see
+// Workspace Context (used by prompts_build_messages_for_agent_prompt.zig to render the `## Workspace Context` section of the system prompt — see
 
 /// Maximum number of sibling items returned per session.
 pub const MAX_SIBLING_ITEMS: u32 = 20;
@@ -4510,9 +4248,7 @@ pub const MAX_SIBLING_ITEMS: u32 = 20;
 /// Maximum number of tasks listed under each sibling item.
 pub const MAX_TASKS_PER_ITEM: u32 = 5;
 
-/// Context for the "Workspace Context" dynamic prompt section. Returned by
-/// `getWorkspaceContext`; the tui layer's `BuildWorkspaceContext` consumes
-/// this struct and renders the markdown block.
+/// Context for the "Workspace Context" dynamic prompt section.
 pub const WorkspaceContext = struct {
     workspace_id: []u8,
     self_item_id: []u8, // task's own item id
@@ -4554,8 +4290,6 @@ pub const WorkspaceContext = struct {
     };
 
     /// Free all heap-allocated fields of this `WorkspaceContext`.
-    /// Callers MUST call `deinit` on a non-null value returned by
-    /// `getWorkspaceContext` exactly once.
     pub fn deinit(self: WorkspaceContext, allocator: std.mem.Allocator) void {
         allocator.free(self.workspace_id);
         allocator.free(self.self_item_id);
@@ -4603,9 +4337,7 @@ pub fn getWorkspaceContext(
     );
     defer count_q.deinit();
     const count_row = (try count_q.next()) orelse {
-        // Defensive: COUNT(*) should always return a row. If not,
-        // synthesize an empty siblings list so the caller still
-        // gets a usable context.
+        // Defensive: COUNT(*) should always return a row.
         return WorkspaceContext{
             .workspace_id = workspace_id,
             .self_item_id = self_item_id,
@@ -4649,8 +4381,7 @@ pub fn getWorkspaceContext(
         const is_self_owned = std.mem.eql(u8, row.values[4], "1");
         row.deinit(allocator);
 
-        // 4. Enumerate tasks under this item (capped at
-        // MAX_TASKS_PER_ITEM). Same inlined-LIMIT pattern as above.
+        // 4.
         const tasks_sql = try std.fmt.allocPrint(allocator,
             \\SELECT t.id, t.name, t.task_type
             \\FROM workspace_item_tasks t
@@ -4685,8 +4416,7 @@ pub fn getWorkspaceContext(
             });
         }
 
-        // 4b. Truncation detection for tasks: see if there are
-        // more tasks than we loaded.
+        // 4b.
         var task_count_q = try db.query(
             allocator,
             "SELECT COUNT(*) FROM workspace_item_tasks t WHERE t.workspace_item_id = ?",
@@ -4695,7 +4425,6 @@ pub fn getWorkspaceContext(
         defer task_count_q.deinit();
         const task_count_row = (try task_count_q.next()) orelse {
             // Defensive — COUNT(*) should always return a row.
-            // Use the loaded count as the truth.
             try siblings.append(allocator, .{
                 .id = item_id_owned,
                 .item_type = item_type_owned,
@@ -4742,13 +4471,9 @@ pub fn getWorkspaceContext(
     };
 }
 
-// =============================================================================
 // Workspace Item Tasks Functions (migrated from workspace_item_tasks_table.zig)
-// =============================================================================
 
-// NOTE: RoutineMeta deleted with the per-task `routines` table
-// (Migration 084, plan 2026-09-10-workspace-items-routines).
-// Routines are now first-class workspace items (`workspace_routines`).
+// NOTE: RoutineMeta deleted with the per-task `routines` table (Migration 084, plan 2026-09-10-workspace-items-routines).
 
 /// WorkspaceItemTask info for CRUD operations
 pub const WorkspaceItemTaskInfo = struct {
@@ -4757,72 +4482,50 @@ pub const WorkspaceItemTaskInfo = struct {
     workspace_item_id: []u8,
     /// Task type. 'standard' for legacy rows; 'memory' for memory files.
     task_type: []u8 = &.{},
-    /// Free-form description (Migration 062). Empty string is the
-    /// canonical "no description" sentinel — the column is NOT NULL
-    /// DEFAULT ''. Owned by the lister; freed by `deinit`.
+    /// Free-form description (Migration 062).
     description: []u8 = &.{},
     created_at: ?[]u8 = null,
     updated_at: ?[]u8 = null,
-    /// Pin flag. `true` when the user has pinned this task; the lister
-    /// surfaces pinned tasks first (in `pinned_position` order, DESC),
-    /// then unpinned tasks in the existing sort order.
+    /// Pin flag.
     is_pinned: bool = false,
-    /// Position within the pinned subset of a single workspace item. Higher =
-    /// higher in the pinned region. Only meaningful when `is_pinned == true`.
+    /// Position within the pinned subset of a single workspace item.
     pinned_position: i64 = 0,
-    /// Kanban column this task belongs to, when the parent workspace item is
-    /// a kanban. `null` for standard tasks and for tasks whose parent is not
-    /// a kanban.
+    /// Kanban column this task belongs to, when the parent workspace item is a kanban.
     kanban_column_id: ?[]u8 = null,
     /// Position within the kanban column (lower = higher in the column).
-    /// `0` for non-kanban tasks. Mirrors `workspace_item_tasks.kanban_position`
-    /// (Migration 048).
     kanban_position: i64 = 0,
-    /// Unattended-mode flag, joined from `sessions` for routine tasks (where
-    /// `task.id == session.id` per the project convention). `'0'` for
-    /// standard tasks that have no session row.
+    /// Unattended-mode flag, joined from `sessions` for routine tasks (where `task.id == session.id` per the project convention).
     is_auto_retry_until_stop: []u8 = &.{},
 
-    /// Last `finish_reason` reported by the workflow (joined from
-    /// `sessions`).
+    /// Last `finish_reason` reported by the workflow (joined from `sessions`).
     last_finish_reason: []u8 = &.{},
 
-    /// Computed boolean for the kanban card "AI finished — awaiting review"
-    /// orange dot.
+    /// Computed boolean for the kanban card "AI finished — awaiting review" orange dot.
     needs_human_review: bool = false,
 
-    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags
-    /// feature).
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags feature).
     tags: []u8 = &.{},
 
-    /// `||`-delimited base64 data URLs (Migration 069 — kanban image urls
-    /// column).
+    /// `||`-delimited base64 data URLs (Migration 069 — kanban image urls column).
     image_urls: []u8 = &.{},
 
-    /// `||`-delimited base64 data URLs (Migration 090 — kanban video urls
-    /// column). Empty string is the canonical "no videos" sentinel, matching
-    /// the `image_urls` pattern. Owned by the lister; freed by `deinit`.
+    /// `||`-delimited base64 data URLs (Migration 090 — kanban video urls column).
     video_urls: []u8 = &.{},
 
-    /// Lightweight media-presence flags, derived in SQL via `CASE WHEN <urls>
-    /// != ''` (no stored columns, nothing to keep in sync).
+    /// Lightweight media-presence flags, derived in SQL via `CASE WHEN <urls> != ''` (no stored columns, nothing to keep in sync).
     is_have_image: bool = false,
     is_have_video: bool = false,
 
     /// Per-task cwd override (Migration 070).
     cwd: []u8 = &.{},
 
-    /// `||`-joined skill names for this task (Migration 112). Empty string is
-    /// the canonical "no skill" sentinel.
+    /// `||`-joined skill names for this task (Migration 112).
     skill_names: []u8 = &.{},
 
-    /// Joined from `sessions.git_worktree_cwd` (Migration 046). Empty string
-    /// when no session row exists or no worktree is bound. Owned by the
-    /// lister; freed by `deinit`.
+    /// Joined from `sessions.git_worktree_cwd` (Migration 046).
     git_worktree_cwd: []u8 = &.{},
 
-    /// The branch the task's cwd has checked out, read from its `.git/HEAD`
-    /// (`git_worktree_cwd` or the parent `workspace_items.path`).
+    /// The branch the task's cwd has checked out, read from its `.git/HEAD` (`git_worktree_cwd` or the parent `workspace_items.path`).
     git_branch: ?[]u8 = null,
 
     pub fn deinit(self: WorkspaceItemTaskInfo, allocator: std.mem.Allocator) void {
@@ -4849,13 +4552,10 @@ pub const WorkspaceItemTaskInfo = struct {
 /// One distinct tag suggestion for a kanban's autocomplete dropdown.
 pub const KanbanTagSuggestion = struct {
     /// The tag value as it appeared in some task's tags JSON array.
-    /// First-occurrence casing wins (matches tags_validation.zig).
     name: []u8,
-    /// Number of tasks on this kanban whose `tags` JSON array contains
-    /// this value (after json_each expansion).
+    /// Number of tasks on this kanban whose `tags` JSON array contains this value (after json_each expansion).
     count: u32,
-    /// `updated_at` of the MOST RECENT task that uses this tag, in the same
-    /// `YYYY-MM-DD HH:MM:SS` format the DB stores it in.
+    /// `updated_at` of the MOST RECENT task that uses this tag, in the same `YYYY-MM-DD HH:MM:SS` format the DB stores it in.
     last_used_at: ?[]u8,
 
     pub fn deinit(self: KanbanTagSuggestion, allocator: std.mem.Allocator) void {
@@ -4864,9 +4564,7 @@ pub const KanbanTagSuggestion = struct {
     }
 };
 
-/// Result of a single page of tag suggestions. The caller KNOWS the page size
-/// (`limit` arg) so it can detect `has_more` by comparing `tags.len >=
-/// limit`.
+/// Result of a single page of tag suggestions.
 pub const KanbanTagSuggestionsPage = struct {
     tags: []KanbanTagSuggestion,
     has_more: bool,
@@ -4886,28 +4584,21 @@ pub fn createWorkspaceItemTask(
     workspace_item_id: []const u8,
     task_type: []const u8,
     description: ?[]const u8,
-    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags
-    /// feature).
+    /// JSON-encoded array of tag strings (Migration 067 — kanban task tags feature).
     tags: ?[]const u8,
     image_urls: ?[]const u8,
-    /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional
-    /// plan, 2026-08-06).
+    /// Per-task cwd override (Migration 070 — kanban-cwd-session- optional plan, 2026-08-06).
     cwd: ?[]const u8,
     /// `||`-delimited `data:video/...;base64,...` URLs (Migration 090).
-    /// Same null/empty/literal contract as image_urls above.
     video_urls: ?[]const u8,
-    /// `||`-joined skill names this task asks its agent to use (Migration
-    /// 112, which widened Migration 110's single name). Empty = no skill.
-    /// Names, not ids — `use_skill({ name })` takes the name.
+    /// `||`-joined skill names this task asks its agent to use (Migration 112, which widened Migration 110's single name).
     skill_names: ?[]const u8,
 ) !WorkspaceItemTaskInfo {
     if (!std.mem.eql(u8, task_type, "standard") and !std.mem.eql(u8, task_type, "routine")) {
         return error.InvalidTaskType;
     }
 
-    // Note: this used to take a separate `session_id` parameter. The `task.id
-    // == session_id` convention made the column redundant (Migration 052
-    // dropped it).
+    // Note: this used to take a separate `session_id` parameter.
     const returned_desc: []const u8 = description orelse "";
     const returned_tags: []const u8 = tags orelse "";
     const returned_image_urls: []const u8 = image_urls orelse "";
@@ -4939,9 +4630,7 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 067 — same dynamic-SQL builder pattern for tags. Note:
-        // empty string MUST be a SQL '' literal — see the Backend.exec
-        // empty-slice-binds-as-NULL rule cited above.
+        // Migration 067 — same dynamic-SQL builder pattern for tags. Note
         if (tags) |t| {
             if (t.len == 0) {
                 try cols_buf.appendSlice(allocator, ", tags");
@@ -4954,8 +4643,6 @@ pub fn createWorkspaceItemTask(
         }
 
         // Migration 069 — same dynamic-SQL builder pattern for image_urls.
-        // The `||`-delimited string is opaque to the DB (TEXT), so we just
-        // bind it as a single slice.
         if (image_urls) |u| {
             if (u.len == 0) {
                 try cols_buf.appendSlice(allocator, ", image_urls");
@@ -4979,8 +4666,7 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 070 — same dynamic-SQL builder pattern for the per-task
-        // cwd override.
+        // Migration 070 — same dynamic-SQL builder pattern for the per-task cwd override.
         if (cwd) |c| {
             if (c.len == 0) {
                 try cols_buf.appendSlice(allocator, ", cwd");
@@ -4992,9 +4678,7 @@ pub fn createWorkspaceItemTask(
             }
         }
 
-        // Migration 112 — same dynamic-SQL builder pattern for the skill
-        // names. Empty string MUST be a SQL '' literal (see the
-        // Backend.exec empty-slice-binds-as-NULL rule above).
+        // Migration 112 — same dynamic-SQL builder pattern for the skill names.
         if (skill_names) |sk| {
             if (sk.len == 0) {
                 try cols_buf.appendSlice(allocator, ", skill_names");
@@ -5022,27 +4706,20 @@ pub fn createWorkspaceItemTask(
         .name = try allocator.dupe(u8, name),
         .workspace_item_id = try allocator.dupe(u8, workspace_item_id),
         .task_type = try allocator.dupe(u8, task_type),
-        // Persist the description we just INSERTed (so the caller's
-        // view of the new task matches what's in the DB without a
-        // round-trip SELECT).
+        // Persist the description we just INSERTed (so the caller's view of the new task matches what's in the DB without a round-trip SELECT).
         .description = try allocator.dupe(u8, returned_desc),
-        // Persist the tags we just INSERTed (Migration 067). dupe
-        // unconditionally so `deinit` can free consistently.
+        // Persist the tags we just INSERTed (Migration 067). dupe unconditionally so `deinit` can free consistently.
         .tags = try allocator.dupe(u8, returned_tags),
-        // Migration 069 — persist image_urls we just INSERTed. dupe
-        // unconditionally so `deinit` can free consistently.
+        // Migration 069 — persist image_urls we just INSERTed. dupe unconditionally so `deinit` can free consistently.
         .image_urls = try allocator.dupe(u8, returned_image_urls),
         // Migration 090 — persist video_urls we just INSERTed.
         .video_urls = try allocator.dupe(u8, returned_video_urls),
         // Media-flags change — flags mirror the TEXT columns above.
         .is_have_image = returned_image_urls.len > 0,
         .is_have_video = returned_video_urls.len > 0,
-        // Migration 070 — persist the per-task cwd we just INSERTed. dupe
-        // unconditionally so `deinit` can free consistently (the empty-string
-        // path also gets duped — a 0-byte allocation, freed via `free('cwd')`
+        // Migration 070 — persist the per-task cwd we just INSERTed. dupe unconditionally so `deinit` can free consistently (the empty-string path also gets duped — a …
         .cwd = try allocator.dupe(u8, returned_cwd),
-        // Migration 112 — persist the skill names we just INSERTed. Same
-        // unconditional dupe so `deinit` frees consistently.
+        // Migration 112 — persist the skill names we just INSERTed.
         .skill_names = try allocator.dupe(u8, returned_skill_names),
     };
 }
@@ -5053,9 +4730,7 @@ pub fn getWorkspaceItemTask(
     db: *database.Db,
     id: []const u8,
 ) !?WorkspaceItemTaskInfo {
-    // Column index map for `row.values[N]`: 0: id 1: name 2:
-    // workspace_item_id 3: description (Migration 062 — added right after
-    // workspace_item_id) 4: created_at 5: updated_at 6: task_type (Migration
+    // Column index map for `row.values[N]`: 0: id 1: name 2
     const sql = "SELECT id, name, workspace_item_id, description, created_at, updated_at, task_type, tags FROM workspace_item_tasks t WHERE t.id = ?";
 
     var rows = try db.query(allocator, sql, &.{id});
@@ -5066,16 +4741,12 @@ pub fn getWorkspaceItemTask(
             .id = try allocator.dupe(u8, row.values[0]),
             .name = try allocator.dupe(u8, row.values[1]),
             .workspace_item_id = try allocator.dupe(u8, row.values[2]),
-            // description is NOT NULL DEFAULT '' (Migration 062) so the row
-            // value is always present. dupe unconditionally (an empty slice
-            // still gets a fresh allocation so deinit can free it
+            // description is NOT NULL DEFAULT '' (Migration 062) so the row value is always present. dupe unconditionally (an empty slice still gets a fresh allocation so …
             .description = try allocator.dupe(u8, row.values[3]),
             .created_at = if (row.values[4].len > 0) try allocator.dupe(u8, row.values[4]) else null,
             .updated_at = if (row.values[5].len > 0) try allocator.dupe(u8, row.values[5]) else null,
             .task_type = if (row.values[6].len > 0) try allocator.dupe(u8, row.values[6]) else try allocator.dupe(u8, "standard"),
-            // tags is NOT NULL DEFAULT '' (Migration 067). The frontend
-            // decodes via JSON.parse. Stored value is a JSON-encode
-            // array string ('' when no tags).
+            // tags is NOT NULL DEFAULT '' (Migration 067).
             .tags = try allocator.dupe(u8, row.values[7]),
         };
         row.deinit(allocator);
@@ -5136,9 +4807,7 @@ pub fn setTaskPinned(
     is_pinned: bool,
 ) !i64 {
     if (is_pinned) {
-        // Bump pinned_position to MAX+1 for the relevant workspace_item. The
-        // MAX subquery is correlated on workspace_item_id (derived from the
-        // row being pinned) so the position is scoped per item, not globally.
+        // Bump pinned_position to MAX+1 for the relevant workspace_item.
         var max_q = try db.query(
             allocator,
             "SELECT COALESCE(MAX(t.pinned_position), -1) FROM workspace_item_tasks t WHERE t.is_pinned = 1 AND t.workspace_item_id = (SELECT workspace_item_id FROM workspace_item_tasks WHERE id = ?)",
@@ -5158,9 +4827,7 @@ pub fn setTaskPinned(
             "UPDATE workspace_item_tasks SET is_pinned = 1, pinned_position = ?, updated_at = datetime('now') WHERE id = ?",
             &.{ new_pos_str, id },
         );
-        // Migration 104 - keep the linked session row in sync so the PINNED
-        // section above RECENT reflects kanban pins (same id convention,
-        // best-effort: a task with no session row only touches
+        // Migration 104 - keep the linked session row in sync so the PINNED section above RECENT reflects kanban pins (same id convention, best-effort: a task with no …
         db.exec(
             allocator,
             "UPDATE sessions SET is_pinned = 1, pinned_position = ?, updated_at = datetime('now') WHERE id = ?",
@@ -5189,8 +4856,7 @@ pub fn setSessionPinned(
     id: []const u8,
     is_pinned: bool,
 ) !i64 {
-    // Verify the session exists first so unknown ids 404 instead of
-    // silently succeeding with zero rows touched.
+    // Verify the session exists first so unknown ids 404 instead of silently succeeding with zero rows touched.
     var exist_q = try db.query(
         allocator,
         "SELECT id FROM sessions WHERE id = ?",
@@ -5243,8 +4909,6 @@ pub fn setSessionPinned(
 }
 
 /// Reorder the global pinned-sessions subset (Migration 104, drag-drop).
-/// `ordered_ids` is the full top-to-bottom display order of pinned session
-/// ids.
 pub fn reorderPinnedSessions(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -5299,9 +4963,7 @@ pub fn listWorkspaceItemTasks(
     db: *database.Db,
     workspace_item_id: []const u8,
 ) ![]WorkspaceItemTaskInfo {
-    // Migration 062: added `t.description` to the SELECT column list,
-    // positioned right after `t.workspace_item_id`. All subsequent
-    // column indices shift by one.
+    // Migration 062: added `t.description` to the SELECT column list, positioned right after `t.workspace_item_id`.
     const sql =
         \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type,
         \\       COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0),
@@ -5322,9 +4984,7 @@ pub fn listWorkspaceItemTasks(
     }
 
     while (try rows.next()) |row| {
-        // Row indices (post-Migration-061, post-Migration-084 which dropped
-        // the routines JOIN): 0: id, 1: name, 2: workspace_item_id, 3:
-        // description, 4: created_at, 5: updated_at, 6: task_type, 7:
+        // Row indices (post-Migration-061, post-Migration-084 which dropped the routines JOIN): 0: id, 1: name, 2: workspace_item_id, 3: description, 4: created_at, 5 …
         const task_type = if (row.values[6].len > 0)
             try allocator.dupe(u8, row.values[6])
         else
@@ -5351,9 +5011,7 @@ pub fn listWorkspaceItemTasks(
     return try tasks.toOwnedSlice(allocator);
 }
 
-/// List workspace item tasks with cursor pagination. The `cursor` is the
-/// value of the `sort_field` for the last task from the previous page; pass
-/// null to fetch the first page.
+/// List workspace item tasks with cursor pagination.
 fn escapeLikePattern(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -5366,18 +5024,14 @@ fn escapeLikePattern(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return try out.toOwnedSlice(allocator);
 }
 
-/// `q` is an optional case-insensitive substring filter applied at the SQL
-/// level against `name`, `description`, and `tags` (Migration 067 JSON-encode
-/// text).
+/// `q` is an optional case-insensitive substring filter applied at the SQL level against `name`, `description`, and `tags` (Migration 067 JSON-encode text).
 pub fn getWorkspaceItemTaskById(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_item_id: []const u8,
     task_id: []const u8,
 ) !?WorkspaceItemTaskInfo {
-    // SQL + row mapping mirror listWorkspaceItemTasksWithCursor (same
-    // 18-column contract, indices 0-17) minus cursor/sort/pagination —
-    // replaced by `WHERE t.id = ? ...
+    // SQL + row mapping mirror listWorkspaceItemTasksWithCursor (same 18-column contract, indices 0-17) minus cursor/sort/pagination — replaced by `WHERE t.id = ? ...
     const sql =
         \\SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ? AND t.id = ? LIMIT 1
     ;
@@ -5386,9 +5040,7 @@ pub fn getWorkspaceItemTaskById(
     defer rows.deinit();
 
     if (try rows.next()) |row| {
-        // Row indices are identical to the lister (see its mapping block):
-        // 0-10 task/kanban fields, 11-12 session-joined fields, 13
-        // needs_human_review, 14 tags, 15 worktree cwd, 16 per-task cwd, 17
+        // Row indices are identical to the lister (see its mapping block)
         const task_type = if (row.values[6].len > 0)
             try allocator.dupe(u8, row.values[6])
         else
@@ -5425,9 +5077,7 @@ pub fn getWorkspaceItemTaskById(
     return null;
 }
 
-/// Lazy media fetch for a single task (media-flags change). Returns the raw
-/// `||`-delimited `image_urls` / `video_urls` TEXT columns for one row,
-/// scoped by both parent item id and task id.
+/// Lazy media fetch for a single task (media-flags change).
 pub const TaskMedia = struct {
     image_urls: []u8,
     video_urls: []u8,
@@ -5466,23 +5116,19 @@ pub fn listWorkspaceItemTasksWithCursor(
     cursor: ?[]const u8,
     sort_field: TaskSortField,
     sort_direction: TaskSortDirection,
-    /// Per-column pagination filter (kanban-per-column-pagination,
-    /// 2026-08-06).
+    /// Per-column pagination filter (kanban-per-column-pagination, 2026-08-06).
     column_id: ?[]const u8,
     q: ?[]const u8,
 ) !struct {
     tasks: []WorkspaceItemTaskInfo,
     has_more: bool,
 } {
-    // Fetch `limit + 1` rows so we can detect "there are more pages"
-    // without a separate COUNT query.
+    // Fetch `limit + 1` rows so we can detect "there are more pages" without a separate COUNT query.
     const query_limit = limit + 1;
     const limit_str = try std.fmt.allocPrint(allocator, "{d}", .{query_limit});
     defer allocator.free(limit_str);
 
-    // Build the ORDER BY column expression for the sort field. We hardcode
-    // the column name (not the value) into the SQL string — only the values
-    // are parameterized, so this is safe.
+    // Build the ORDER BY column expression for the sort field.
     const sort_col = switch (sort_field) {
         .created_at => "t.created_at",
         .updated_at => "t.updated_at",
@@ -5499,9 +5145,7 @@ pub fn listWorkspaceItemTasksWithCursor(
     );
     defer allocator.free(order_by);
 
-    // Cursor "<sort_value>|<id>": both halves are binds, or the value drops out
-    // of the `workspace_item_id` scope below. sort_value binds twice — the
-    // clause compares it twice — then id.
+    // Cursor "<sort_value>|<id>": both halves are binds, or the value drops out of the `workspace_item_id` scope below. sort_value binds twice — the clause compares …
     var cursor_binds: [3][]const u8 = undefined;
     var cursor_bind_count: usize = 0;
     const cursor_clause: []u8 = blk: {
@@ -5527,8 +5171,7 @@ pub fn listWorkspaceItemTasksWithCursor(
     };
     defer allocator.free(cursor_clause);
 
-    // Optional q filter — case-insensitive substring match on name /
-    // description / tags.
+    // Optional q filter — case-insensitive substring match on name /description / tags.
     var q_pattern: ?[]u8 = null;
     defer if (q_pattern) |p| allocator.free(p);
     var q_clause: []u8 = try allocator.dupe(u8, "");
@@ -5547,9 +5190,7 @@ pub fn listWorkspaceItemTasksWithCursor(
     }
     defer allocator.free(q_clause);
 
-    // Optional column_id filter (per-column pagination, 2026-08-06). When
-    // `column_id` is null OR empty, column_id_clause is "" (no WHERE addition
-    // — matches the original behavior).
+    // Optional column_id filter (per-column pagination, 2026-08-06).
     var column_id_clause: []u8 = try allocator.dupe(u8, "");
     errdefer allocator.free(column_id_clause);
     if (column_id) |cid| {
@@ -5565,23 +5206,17 @@ pub fn listWorkspaceItemTasksWithCursor(
 
     const sql = try std.fmt.allocPrint(
         allocator,
-        // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id
-        // (per the project convention task.id == session.id; standard tasks
-        // that have no matching session row get NULL → COALESCE to '0').
+        // Auto-retry-until-stop: LEFT JOIN sessions on t.id = sessions.id (per the project convention task.id == session.id; standard tasks that have no matching session …
         "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, t.task_type, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), k.kanban_column_id, COALESCE(k.kanban_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), COALESCE(CAST(s.last_finish_reason AS TEXT), ''), CASE WHEN COALESCE(CAST(s.last_finish_reason AS TEXT), '') = 'stop' AND (t.last_human_touched_at_nano IS NULL OR t.last_human_touched_at_nano < CAST(strftime('%s', s.updated_at) * 1000 AS BIGINT)) THEN 1 ELSE 0 END, t.tags, COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), t.cwd, CASE WHEN COALESCE(CAST(t.image_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, CASE WHEN COALESCE(CAST(t.video_urls AS TEXT), '') != '' THEN 1 ELSE 0 END, COALESCE(CAST(t.skill_names AS TEXT), '') FROM workspace_item_tasks t LEFT JOIN kanban k ON k.workspace_item_task_id = t.id LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id = ?{s}{s}{s} {s} LIMIT {s}",
         .{ cursor_clause, column_id_clause, q_clause, order_by, limit_str },
     );
     defer allocator.free(sql);
 
-    // Build binds: always workspace_item_id; when column_id is set, append it
-    // once (one bind slot for the `?` in column_id_clause); when q is set,
-    // append the q_pattern 3 times (one per OR'd LIKE clause).
+    // Build binds: always workspace_item_id; when column_id is set, append it once (one bind slot for the `?` in column_id_clause); when q is set, append the …
     var binds = std.ArrayList([]const u8).empty;
     defer binds.deinit(allocator);
     try binds.append(allocator, workspace_item_id);
-    // Cursor binds come immediately after the workspace scope: the clause is
-    // emitted before column_id and q in the SQL above, so the bind order must
-    // mirror it.
+    // Cursor binds come immediately after the workspace scope: the clause is emitted before column_id and q in the SQL above, so the bind order must mirror it.
     for (cursor_binds[0..cursor_bind_count]) |v| try binds.append(allocator, v);
     if (column_id) |cid| {
         if (cid.len > 0) {
@@ -5604,9 +5239,7 @@ pub fn listWorkspaceItemTasksWithCursor(
     }
 
     while (try rows.next()) |row| {
-        // Row indices (post-Migration-063-attended-toggle JOIN,
-        // post-Migration-065-notification-icon JOIN, post-Migration-067-tags,
-        // post-kanban-task-git-branch plan 2026-08-06,
+        // Row indices (post-Migration-063-attended-toggle JOIN, post-Migration-065-notification-icon JOIN, post-Migration-067-tags, post-kanban-task-git-branch plan …
         const task_type = if (row.values[6].len > 0)
             try allocator.dupe(u8, row.values[6])
         else
@@ -5628,26 +5261,18 @@ pub fn listWorkspaceItemTasksWithCursor(
             .kanban_column_id = if (row.values[9].len > 0) try allocator.dupe(u8, row.values[9]) else null,
             .kanban_position = std.fmt.parseInt(i64, row.values[10], 10) catch 0,
             // Auto-retry-until-stop: index 11 (joined from sessions).
-            // COALESCE'd to '0' in the SQL so this is always non-empty.
             .is_auto_retry_until_stop = try allocator.dupe(u8, row.values[11]),
             // Kanban notification icon (Migration 065): index 12.
-            // COALESCE'd to '' in the SQL so this is always non-empty.
             .last_finish_reason = try allocator.dupe(u8, row.values[12]),
             // Kanban notification icon (Migration 065): index 13.
-            // SQL CASE produces '1' or '0'; parse to bool.
             .needs_human_review = std.mem.eql(u8, row.values[13], "1"),
-            // Kanban task tags (Migration 067): index 14. NOT NULL
-            // DEFAULT '' so always present.
+            // Kanban task tags (Migration 067): index 14.
             .tags = try allocator.dupe(u8, row.values[14]),
-            // Session worktree cwd (Migration 046): index 15. COALESCE'd
-            // to '' in the SQL when no session row exists. Empty string
-            // is the canonical "no worktree" sentinel.
+            // Session worktree cwd (Migration 046): index 15.
             .git_worktree_cwd = try allocator.dupe(u8, row.values[15]),
             // Per-task cwd (Migration 070): index 16.
             .cwd = try allocator.dupe(u8, row.values[16]),
-            // Image urls (Migration 069 read-path fix): index 17. NOT NULL
-            // DEFAULT '' so always present; empty string is the "no images"
-            // sentinel.
+            // Image urls (Migration 069 read-path fix): index 17.
             .is_have_image = std.mem.eql(u8, row.values[17], "1"),
             // Video urls (Migration 090): index 18. Same contract.
             .is_have_video = std.mem.eql(u8, row.values[18], "1"),
@@ -5671,9 +5296,7 @@ pub fn listWorkspaceItemTasksWithCursor(
     };
 }
 
-/// Returns one page of distinct tags on tasks belonging to the given
-/// workspace item, ordered by frequency DESC then by most-recent usage DESC.
-/// Used by the kanban task detail dialog autocomplete dropdown.
+/// Returns one page of distinct tags on tasks belonging to the given workspace item, ordered by frequency DESC then by most-recent usage DESC.
 pub fn listKanbanDistinctTags(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -5681,17 +5304,13 @@ pub fn listKanbanDistinctTags(
     limit: u32,
     offset: u32,
 ) anyerror!KanbanTagSuggestionsPage {
-    // Defensive: clamp limit to a sane max even if the caller passes
-    // a huge value. The handler also clamps but defense-in-depth.
+    // Defensive: clamp limit to a sane max even if the caller passes a huge value.
     const clamped_limit: u32 = if (limit == 0) 1 else if (limit > 50) 50 else limit;
 
-    // LIMIT N+1 trick: fetch one extra row so we can detect has_more
-    // in a single query. If the result has <= N rows, has_more=false.
+    // LIMIT N+1 trick: fetch one extra row so we can detect has_more in a single query.
     const fetch_limit: u32 = clamped_limit + 1;
 
-    // Format the u32 LIMIT/OFFSET to strings for bind. db.query
-    // only binds TEXT, so integers must be string-formatted. SQLite
-    // coerces numeric-looking TEXT in numeric contexts.
+    // Format the u32 LIMIT/OFFSET to strings for bind. db.query only binds TEXT, so integers must be string-formatted.
     const limit_str = std.fmt.allocPrint(allocator, "{d}", .{fetch_limit}) catch "";
     const offset_str = std.fmt.allocPrint(allocator, "{d}", .{offset}) catch "";
     defer {
@@ -5699,9 +5318,7 @@ pub fn listKanbanDistinctTags(
         if (offset_str.len > 0) allocator.free(offset_str);
     }
 
-    // `json_each` is sqlite's table-valued JSON expander, `jsonb_array_elements_text`
-    // its postgres counterpart. The `LIKE '[%'` guard stands in for sqlite's
-    // `json_valid`/`json_type`: a value that is not an array expands to nothing.
+    // `json_each` is sqlite's table-valued JSON expander, `jsonb_array_elements_text` its postgres counterpart.
     const sql = if (dialect.is_postgres)
         \\SELECT je.value AS tag, COUNT(*) AS cnt, MAX(t.updated_at) AS last_used
         \\FROM workspace_item_tasks t
@@ -5751,8 +5368,7 @@ pub fn listKanbanDistinctTags(
         try results.append(allocator, suggestion);
     }
 
-    // Apply the LIMIT N+1 trick: if we got back more than the
-    // requested limit, truncate and set has_more = true.
+    // Apply the LIMIT N+1 trick: if we got back more than the requested limit, truncate and set has_more = true.
     const has_more = results.items.len > clamped_limit;
     if (has_more) {
         // Drop the last (extra) row; we don't want to return it.
@@ -5830,8 +5446,7 @@ pub fn updateWorkspaceUpdatedAt(allocator: std.mem.Allocator, db: *database.Db, 
     try db.exec(allocator, sql, &.{session_id});
 }
 
-// ===================================================================== Tests
-// for listKanbanDistinctTags
+// ===================================================================== Tests for listKanbanDistinctTags
 
 fn setupDbWithTagsForKanban() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
@@ -5842,9 +5457,7 @@ fn setupDbWithTagsForKanban() !struct { db: database.Db, threaded: std.Io.Thread
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Minimal schema: workspace_items + workspace_item_tasks with the
-    // tags column (Migration 067). We don't run all 66 prior migrations
-    // — the model fn doesn't depend on them.
+    // Minimal schema: workspace_items + workspace_item_tasks with the tags column (Migration 067).
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
@@ -5860,8 +5473,7 @@ fn setupDbWithTagsForKanban() !struct { db: database.Db, threaded: std.Io.Thread
 }
 
 fn insertKanbanTask(db: *database.Db, alloc: std.mem.Allocator, id: []const u8, item_id: []const u8, tags_json: []const u8) !void {
-    // Backend.exec binds empty `[]const u8` as SQL NULL — which would
-    // fail the NOT NULL constraint on `tags`.
+    // Backend.exec binds empty `[]const u8` as SQL NULL — which would fail the NOT NULL constraint on `tags`.
     if (tags_json.len == 0) {
         try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, workspace_item_id, tags) VALUES (?, ?, '')", &.{ id, item_id });
     } else {
@@ -6028,20 +5640,16 @@ test "listKanbanDistinctTags skips rows with malformed tags JSON (defensive)" {
     try testing.expectEqual(@as(usize, 1), page.tags.len);
     try testing.expectEqualStrings("good", page.tags[0].name);
 }
-// ════════════════════════════════════════════════════════════════════════════
 // Inline behavioural tests for the kanban task search q-parameter Per project
 
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
-    /// Allocator (the testing.allocator) — needed by the tool-call-loading
-    /// test that has to allocate row data via `createSession` and
-    /// `saveToolResultPlaceholder`. Other tests don't use this field.
+    /// Allocator (the testing.allocator) — needed by the tool-call-loading test that has to allocate row data via `createSession` and `saveToolResultPlaceholder`.
     alloc: std.mem.Allocator,
 };
 
-/// Set up an in-memory SQLite DB with the minimum schema needed for
-/// `listWorkspaceItemTasksWithCursor` to run.
+/// Set up an in-memory SQLite DB with the minimum schema needed for `listWorkspaceItemTasksWithCursor` to run.
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -6110,8 +5718,7 @@ fn insertTask(
     , &.{ id, name, description, tags });
 }
 
-/// Per-column pagination helper (plan 2026-08-06-kanban-per-column-
-/// pagination.md, Task 3).
+/// Per-column pagination helper (plan 2026-08-06-kanban-per-column-pagination.md, Task 3).
 fn insertTaskInColumn(
     ctx: *TestCtx,
     alloc: std.mem.Allocator,
@@ -6128,8 +5735,6 @@ fn insertTaskInColumn(
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{position});
     defer alloc.free(pos_str);
     // Post-Migration-072: the task→column mapping lives in `kanban`.
-    // Insert the task row first (no kanban columns), then optionally
-    // insert a kanban row when column_id is set.
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_item_tasks
         \\(id, name, workspace_item_id, description, updated_at, task_type, tags)
@@ -6143,8 +5748,7 @@ fn insertTaskInColumn(
     }
 }
 
-/// Free a returned tasks slice — mirrors the production deinit pattern
-/// (each row's heap-allocated fields + the slice itself).
+/// Free a returned tasks slice — mirrors the production deinit pattern (each row's heap-allocated fields + the slice itself).
 fn freeTasks(alloc: std.mem.Allocator, tasks: []WorkspaceItemTaskInfo) void {
     for (tasks) |*t| t.deinit(alloc);
     alloc.free(tasks);
@@ -6453,9 +6057,7 @@ test "listWorkspaceItemTasksWithCursor q + cursor advances through matches only"
     try testing.expectEqualStrings("task_m5", page1.tasks[0].id);
     try testing.expectEqualStrings("task_m4", page1.tasks[1].id);
 
-    // Cursor = "<updated_at>|<id>". production handler encodes this; the
-    // DB fn just splits on the pipe. Use the first page's last row's
-    // updated_at + id to construct the next cursor.
+    // Cursor = "<updated_at>|<id>". production handler encodes this; the DB fn just splits on the pipe.
     const cursor_value = page1.tasks[1].updated_at orelse return error.UpdatedAtMissing;
     var cursor_buf: [256]u8 = undefined;
     const cursor_str = try std.fmt.bufPrint(
@@ -6535,7 +6137,6 @@ test "listWorkspaceItemTasksWithCursor with nonexistent q returns empty + has_mo
 }
 
 // ─── Contract 12: sort by name returns A→Z (asc) and Z→A (desc) ─────────
-// Locks in the kanban-sort-by plan (2026-08-06).
 
 test "listWorkspaceItemTasksWithCursor sorts by name asc and desc" {
     const alloc = testing.allocator;
@@ -6543,8 +6144,7 @@ test "listWorkspaceItemTasksWithCursor sorts by name asc and desc" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Insert in non-alphabetical order so a correct sort proves
-    // itself (insertion-order is not the natural return order).
+    // Insert in non-alphabetical order so a correct sort proves itself (insertion-order is not the natural return order).
     try insertTask(&ctx, alloc, "task_z", "Zeta", "", "[]");
     try insertTask(&ctx, alloc, "task_a", "Alpha", "", "[]");
     try insertTask(&ctx, alloc, "task_m", "Mike", "", "[]");
@@ -6585,7 +6185,6 @@ test "listWorkspaceItemTasksWithCursor sorts by name asc and desc" {
 }
 
 // ─── Contract 13: sort by created_at returns oldest/newest first ────────
-// Locks in the kanban-sort-by plan (2026-08-06).
 
 test "listWorkspaceItemTasksWithCursor sorts by created_at asc and desc" {
     const alloc = testing.allocator;
@@ -6593,14 +6192,12 @@ test "listWorkspaceItemTasksWithCursor sorts by created_at asc and desc" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Insert with the same updated_at so updated_at is not a
-    // tiebreaker; the test exercises the created_at ORDER BY alone.
+    // Insert with the same updated_at so updated_at is not a tiebreaker; the test exercises the created_at ORDER BY alone.
     try insertTask(&ctx, alloc, "task_old", "oldest", "", "[]");
     try insertTask(&ctx, alloc, "task_mid", "middle", "", "[]");
     try insertTask(&ctx, alloc, "task_new", "newest", "", "[]");
 
-    // Set explicit created_at values (oldest < middle < newest) so the
-    // sort is deterministic regardless of insertion order.
+    // Set explicit created_at values (oldest < middle < newest) so the sort is deterministic regardless of insertion order.
     try ctx.db.exec(alloc, "UPDATE workspace_item_tasks SET created_at = '2024-01-01 00:00:00' WHERE id = 'task_old'", &.{});
     try ctx.db.exec(alloc, "UPDATE workspace_item_tasks SET created_at = '2024-06-15 12:00:00' WHERE id = 'task_mid'", &.{});
     try ctx.db.exec(alloc, "UPDATE workspace_item_tasks SET created_at = '2024-12-31 23:59:59' WHERE id = 'task_new'", &.{});
@@ -6639,7 +6236,6 @@ test "listWorkspaceItemTasksWithCursor sorts by created_at asc and desc" {
     try testing.expectEqualStrings("task_mid", desc.tasks[1].id);
     try testing.expectEqualStrings("task_old", desc.tasks[2].id);
 }
-// ════════════════════════════════════════════════════════════════════════════
 // Inline behavioural tests for the kanban per-column pagination filter.
 
 test "listWorkspaceItemTasksWithCursor column_id=col_a returns only col_a tasks" {
@@ -6666,9 +6262,7 @@ test "listWorkspaceItemTasksWithCursor column_id=col_a returns only col_a tasks"
     defer freeTasks(alloc, result.tasks);
 
     try testing.expectEqual(@as(usize, 2), result.tasks.len);
-    // ORDER BY is_pinned DESC, ..., updated_at DESC, id DESC. The tiebreaker
-    // is `id DESC`, so the alphabetically-greater id comes first: task_a2
-    // then task_a1. task_b1 is filtered out by the column_id WHERE clause.
+    // ORDER BY is_pinned DESC, ..., updated_at DESC, id DESC.
     try testing.expectEqualStrings("task_a2", result.tasks[0].id);
     try testing.expectEqualStrings("task_a1", result.tasks[1].id);
     try testing.expect(!result.has_more);
@@ -6717,9 +6311,7 @@ test "listWorkspaceItemTasksWithCursor column_id=col_a + cursor advances through
     try insertTaskInColumn(&ctx, alloc, "task_b1", "b1", "", "[]", "col_b", 0);
     try insertTaskInColumn(&ctx, alloc, "task_b2", "b2", "", "[]", "col_b", 1);
 
-    // Page 1: limit 2 + col_a filter — should return task_a3 + task_a2
-    // (id DESC tiebreak, both within the same updated_at bucket since
-    // they're inserted in quick succession). task_a1 falls into page 2.
+    // Page 1: limit 2 + col_a filter — should return task_a3 + task_a2 (id DESC tiebreak, both within the same updated_at bucket since they're inserted in quick …
     const page1 = try listWorkspaceItemTasksWithCursor(
         alloc,
         &ctx.db,
@@ -6737,9 +6329,7 @@ test "listWorkspaceItemTasksWithCursor column_id=col_a + cursor advances through
     try testing.expectEqualStrings("task_a2", page1.tasks[1].id);
     try testing.expect(page1.has_more);
 
-    // Construct the cursor from page1's last task id. The handler encodes the
-    // cursor as "<sort_value>|<id>" — for updated_at DESC the sort_value is
-    // the last task's updated_at.
+    // Construct the cursor from page1's last task id.
     const cursor_str = try std.fmt.allocPrint(
         alloc,
         "{s}|{s}",
@@ -6771,8 +6361,7 @@ test "listWorkspaceItemTasksWithCursor column_id=col_a + q filters within the co
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // col_a has 2 tasks (one matching 'login'); col_b has 2 tasks (one
-    // matching 'login'). Filter by col_a + q=login → 1 task.
+    // col_a has 2 tasks (one matching 'login'); col_b has 2 tasks (one matching 'login').
     try insertTaskInColumn(&ctx, alloc, "task_a1", "fix login bug", "", "[]", "col_a", 0);
     try insertTaskInColumn(&ctx, alloc, "task_a2", "unrelated", "", "[]", "col_a", 1);
     try insertTaskInColumn(&ctx, alloc, "task_b1", "login screen", "", "[]", "col_b", 0);
@@ -6853,9 +6442,7 @@ test "listWorkspaceItemTasksWithCursor column_id includes NULL-column legacy tas
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Insert 1 task in col_a, 1 task in col_b, 1 task with NULL
-    // column (legacy). Filter by col_a → expect col_a task + NULL-
-    // column task (per the defensive OR clause).
+    // Insert 1 task in col_a, 1 task in col_b, 1 task with NULL column (legacy).
     try insertTaskInColumn(&ctx, alloc, "task_a", "in_a", "", "[]", "col_a", 0);
     try insertTaskInColumn(&ctx, alloc, "task_b", "in_b", "", "[]", "col_b", 0);
     try insertTaskInColumn(&ctx, alloc, "task_null", "null_col", "", "[]", null, 0);
@@ -6884,9 +6471,7 @@ test "listWorkspaceItemTasksWithCursor column_id includes NULL-column legacy tas
     try testing.expect(!found_task_b);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// getWorkspaceItemTaskById — single-task fetch for the kanban Task details
-// dialog (plan:
+// getWorkspaceItemTaskById — single-task fetch for the kanban Task details dialog (plan
 
 test "getWorkspaceItemTaskById returns the matching task" {
     const alloc = testing.allocator;
@@ -6929,9 +6514,7 @@ test "getWorkspaceItemTaskById is scoped to the parent workspace item" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // task_other lives under a DIFFERENT item (wi_2). Fetching it
-    // through wi_1 must return null — the item scoping prevents
-    // cross-item task reads.
+    // task_other lives under a DIFFERENT item (wi_2).
     try ctx.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_2', 'ws_1', 'kanban') ON CONFLICT DO NOTHING", &.{});
     try ctx.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id, description, updated_at, task_type, tags) VALUES ('task_other', 'elsewhere', 'wi_2', '', datetime('now'), 'standard', '[]')", &.{});
 
@@ -6953,8 +6536,7 @@ test "getWorkspaceItemTaskById joins sessions for unattended flag + worktree cwd
     defer ctx.threaded.deinit();
 
     try insertTask(&ctx, alloc, "task_s", "with session", "", "[]");
-    // Session row sharing the task id (project convention task.id ==
-    // session.id): unattended ON, AI finished, worktree bound.
+    // Session row sharing the task id (project convention task.id == session.id): unattended ON, AI finished, worktree bound.
     try ctx.db.exec(alloc, "INSERT INTO sessions (id, is_auto_retry_until_stop, last_finish_reason, updated_at, git_worktree_cwd) " ++
         "VALUES ('task_s', '1', 'stop', datetime('now'), '/tmp/worktree-x')", &.{});
 
@@ -6993,9 +6575,7 @@ test "getWorkspaceItemTaskById returns media flags and cwd passthrough" {
     try testing.expectEqualStrings("data:image/png;base64,AAA||data:image/png;base64,BBB", media.image_urls);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from session_update_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 fn sessionUpdateSetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -7006,8 +6586,7 @@ fn sessionUpdateSetupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Canonical post-Migration-063 schema (matches
-    // migration_063_runtime_test.zig).
+    // Canonical post-Migration-063 schema (matches migration_063_runtime_test.zig).
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
@@ -7029,8 +6608,7 @@ fn sessionUpdateSetupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded, .alloc = alloc };
 }
 
-/// Read a single TEXT column from `sessions` by id. Returns null when
-/// the row is missing. Used to assert the post-fix state.
+/// Read a single TEXT column from `sessions` by id.
 fn sessionUpdateReadColumn(
     ctx: *TestCtx,
     allocator: std.mem.Allocator,
@@ -7094,8 +6672,7 @@ test "ensureSessionExists: creates a row when missing, returns true" {
     defer alloc.free(name);
     try testing.expectEqualStrings("New Session", name);
 
-    // is_auto_retry_until_stop defaults to '0' (matches
-    // create_session's coercion).
+    // is_auto_retry_until_stop defaults to '0' (matches create_session's coercion).
     const flag = (try sessionUpdateReadColumn(&ctx, alloc, "is_auto_retry_until_stop", "s_brand_new")) orelse
         return error.NoRow;
     defer alloc.free(flag);
@@ -7124,8 +6701,7 @@ test "ensureSessionExists: idempoent — calling twice on a missing row creates 
 }
 
 test "ensureSessionExists + updateSessionSelectedProfileModel: preserves the profile when session is created on the fly" {
-    // This is the exact bug: PUT /api/session/:id 404'd when the user picked
-    // a profile on a brand-new chat.
+    // This is the exact bug: PUT /api/session/:id 404'd when the user picked a profile on a brand-new chat.
     const alloc = testing.allocator;
     var ctx = try sessionUpdateSetupDb();
     defer ctx.db.deinit();
@@ -7169,15 +6745,11 @@ test "updateSessionSubAgentInfo: stamps sub-agent name and parent" {
     try testing.expectEqualStrings("parent_1", sess.parent_session_id);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from get_session_list_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables
-/// present (matching the production schema columns that `getSessionList`
-/// reads), plus the `idx_llm_history_created_session` index from Migration
+/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables present (matching the production schema columns that `getSessionList` reads), plus …
 fn getSessionListSetupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -7209,8 +6781,7 @@ fn getSessionListSetupDb() !struct {
         \\)
     , &.{});
 
-    // sessions — only the columns the rewritten query reads (id, cwd,
-    // name). SELECT coalesces NULLs to '' so empty strings are fine.
+    // sessions — only the columns the rewritten query reads (id, cwd, name).
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
@@ -7219,9 +6790,7 @@ fn getSessionListSetupDb() !struct {
         \\)
     , &.{});
 
-    // The covering index added in Migration 048. We create it inline
-    // (rather than running the migration) to keep this test focused on
-    // the rewritten SQL, not on migration plumbing.
+    // The covering index added in Migration 048.
     try db.exec(alloc, "CREATE INDEX idx_llm_history_created_session " ++
         "ON llm_history(created_at_nano DESC, session_id)", &.{});
 
@@ -7229,8 +6798,6 @@ fn getSessionListSetupDb() !struct {
 }
 
 /// Run a query and assert it returns exactly `expected_len` rows.
-/// Returns the rows' `values` slices so the caller can assert on
-/// individual columns.
 fn runAndCollect(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -7268,8 +6835,7 @@ test "getSessionList inner subquery returns sessions in created_at DESC order" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Three sessions, distinct created_at values. Newest first by
-    // insert order means s_jan < s_feb < s_mar.
+    // Three sessions, distinct created_at values.
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
         "VALUES ('h1', 's_jan', 'm1', '1704067200000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
@@ -7277,9 +6843,7 @@ test "getSessionList inner subquery returns sessions in created_at DESC order" {
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, created_at_nano) " ++
         "VALUES ('h3', 's_mar', 'm1', '1709251200000000')", &.{});
 
-    // Exact inner subquery the production rewrite uses (see
-    // zig getSessionList). Asserts the order is the
-    // contract the outer query depends on.
+    // Exact inner subquery the production rewrite uses (see zig getSessionList).
     const inner_sql =
         \\SELECT h.session_id
         \\  FROM llm_history h
@@ -7307,8 +6871,7 @@ test "getSessionList inner subquery respects LIMIT and OFFSET" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Five sessions, distinct created_at values. The full ordering
-    // (newest first) is: s5, s4, s3, s2, s1.
+    // Five sessions, distinct created_at values.
     const inserts = [_][]const u8{
         "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h1', 's1', 'm1', '1704067200000000')",
         "INSERT INTO llm_history (id, session_id, model, created_at_nano) VALUES ('h2', 's2', 'm1', '1706745600000000')",
@@ -7352,8 +6915,7 @@ test "getSessionList inner subquery respects LIMIT and OFFSET" {
     try testing.expectEqualStrings("s3", page2[0]);
     try testing.expectEqualStrings("s2", page2[1]);
 
-    // Page 1 and Page 2 must not overlap (regression guard: if the
-    // OFFSET clause were dropped, page 2 would be s4, s3).
+    // Page 1 and Page 2 must not overlap (regression guard: if the OFFSET clause were dropped, page 2 would be s4, s3).
     for (page1) |p1| {
         for (page2) |p2| {
             if (std.mem.eql(u8, p1, p2)) {
@@ -7375,16 +6937,13 @@ test "getSessionList agent field is from the latest message in the session" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Two messages for the same session. The OLDER one is agent='A', the
-    // NEWER one is agent='B'.
+    // Two messages for the same session.
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
         "VALUES ('h_old', 's1', 'm1', 'A', '1704067200000000')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO llm_history (id, session_id, model, agent, created_at_nano) " ++
         "VALUES ('h_new', 's1', 'm1', 'B', '1706745600000000')", &.{});
 
-    // Exact correlated subquery the production rewrite uses (see
-    // zig getSessionList). Asserts the new "agent of the
-    // LATEST message" semantics.
+    // Exact correlated subquery the production rewrite uses (see zig getSessionList).
     const agent_sql =
         \\SELECT COALESCE(
         \\  (SELECT h2.agent
@@ -7413,9 +6972,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Seed enough rows that the planner has a reason to use the index
-    // (small tables often hit a SCAN regardless because the cost
-    // estimate favors it). 100 rows is plenty.
+    // Seed enough rows that the planner has a reason to use the index (small tables often hit a SCAN regardless because the cost estimate favors it). 100 rows is …
     var i: usize = 0;
     while (i < 100) : (i += 1) {
         var buf: [256]u8 = undefined;
@@ -7428,8 +6985,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
         try ctx.db.exec(alloc, sql, &.{});
     }
 
-    // EXPLAIN QUERY PLAN is sqlite's plan text, and the assertion below reads a
-    // sqlite index name out of it: postgres cannot answer this question.
+    // EXPLAIN QUERY PLAN is sqlite's plan text, and the assertion below reads a sqlite index name out of it: postgres cannot answer this question.
     if (dialect.is_postgres) return error.SkipZigTest;
 
     var q = try ctx.db.query(alloc,
@@ -7442,9 +6998,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
     , &.{});
     defer q.deinit();
 
-    // Accumulate all plan rows into a single string so the
-    // assertion can scan for the index name regardless of how
-    // SQLite splits the plan across rows.
+    // Accumulate all plan rows into a single string so the assertion can scan for the index name regardless of how SQLite splits the plan across rows.
     var plan_text = std.ArrayList(u8).empty;
     defer plan_text.deinit(alloc);
     while (try q.next()) |row| {
@@ -7467,9 +7021,7 @@ test "getSessionList inner subquery uses idx_llm_history_created_session (EXPLAI
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_is_input_output_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 fn llmHistoryIsInputOutputMakeResponse(messages: []SessionMessage) SessionMessageResponse {
     return .{
@@ -7484,8 +7036,7 @@ fn llmHistoryIsInputOutputMakeResponse(messages: []SessionMessage) SessionMessag
 test "buildSessionMessagesJson emits is_input/is_output as JSON booleans" {
     const allocator = testing.allocator;
 
-    // Build a minimal SessionMessageResponse with known bool values:
-    // is_input: true, is_output: false.
+    // Build a minimal SessionMessageResponse with known bool values
     const messages = [_]SessionMessage{
         .{
             .id = "m1",
@@ -7550,9 +7101,7 @@ test "buildSessionMessagesXml emits is_input/is_output as text 'true'/'false'" {
 }
 
 test "buildSessionMessagesJson emits true/false values in both directions" {
-    // Defense-in-depth: confirm that BOTH true AND false round-trip through
-    // the bool wire format. The single-message test above only exercises
-    // (is_input=true, is_output=false); this one flips them.
+    // Defense-in-depth: confirm that BOTH true AND false round-trip through the bool wire format.
     const allocator = testing.allocator;
 
     const messages = [_]SessionMessage{
@@ -7578,13 +7127,9 @@ test "buildSessionMessagesJson emits true/false values in both directions" {
     try testing.expect(std.mem.indexOf(u8, json, "\"is_output\":true") != null);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_notification_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
-// ───────────────────────────────────────────────────────────────────────
 // 1. updateTaskLastHumanTouchedAt is callable + persists the value
-// ───────────────────────────────────────────────────────────────────────
 
 test "updateTaskLastHumanTouchedAt stamps the unix-ms value on the task" {
     const alloc = testing.allocator;
@@ -7642,9 +7187,7 @@ test "updateTaskLastHumanTouchedAt overwrites on repeated calls" {
     try testing.expectEqualStrings("500", row.values[0]);
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // updateSessionLastHumanTouchedAt (Migration 082 / chat sidebar)
-// ───────────────────────────────────────────────────────────────────────
 
 test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
     const alloc = testing.allocator;
@@ -7655,8 +7198,7 @@ test "updateSessionLastHumanTouchedAt stamps the unix-ms value on the session" {
     defer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Minimal sessions table that already declares the Migration 082
-    // column (so the writer doesn't have to run migrations in tests).
+    // Minimal sessions table that already declares the Migration 082 column (so the writer doesn't have to run migrations in tests).
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
@@ -7694,8 +7236,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('sess_real', 'Real')", &.{});
 
-    // Stamp with null — should read real clock and produce a recent
-    // unix-ms value (not 0, not NULL).
+    // Stamp with null — should read real clock and produce a recent unix-ms value (not 0, not NULL).
     const before_ms = unixMillisNow();
     try updateSessionLastHumanTouchedAt(alloc, &db, "sess_real", null);
     const after_ms = unixMillisNow();
@@ -7706,8 +7247,7 @@ test "updateSessionLastHumanTouchedAt with now_unix_ms=null reads the real clock
     defer row.deinit(alloc);
 
     const stamped_ms = try std.fmt.parseInt(i64, row.values[0], 10);
-    // Real-clock stamp must be within the [before, after] window
-    // (allows for clock noise — both bounds are observed times).
+    // Real-clock stamp must be within the [before, after] window (allows for clock noise — both bounds are observed times).
     try testing.expect(stamped_ms >= before_ms);
     try testing.expect(stamped_ms <= after_ms);
     // And reasonably close to now — must not be 0 or null.
@@ -7732,8 +7272,7 @@ test "updateSessionLastHumanTouchedAt is a no-op for unknown session_id" {
     , &.{});
     // No rows inserted.
 
-    // Stamping an unknown id must NOT raise — the UPDATE affects 0 rows and
-    // returns success.
+    // Stamping an unknown id must NOT raise — the UPDATE affects 0 rows and returns success.
     try updateSessionLastHumanTouchedAt(alloc, &db, "unknown_id", 12345);
 
     // Sanity: still zero rows.
@@ -7834,8 +7373,6 @@ test "buildSessionListJson emits last_human_touched_at when the row has a value 
     const alloc = testing.allocator;
 
     // Construct a SessionInfo with a known last_human_touched_at value.
-    // All fields are heap-allocated so the deinit in buildSessionListJson's
-    // caller doesn't trip the leak detector.
     const sess = SessionInfo{
         .session_id = try alloc.dupe(u8, "sess_1"),
         .session_name = try alloc.dupe(u8, "Test chat"),
@@ -7847,8 +7384,7 @@ test "buildSessionListJson emits last_human_touched_at when the row has a value 
         .selected_profile_model = try alloc.dupe(u8, ""),
         .is_auto_retry_until_stop = try alloc.dupe(u8, "0"),
         .last_finish_reason = try alloc.dupe(u8, ""),
-        // The mapper test injects the wire shape directly (NOT
-        // the raw unix-ms from the column).
+        // The mapper test injects the wire shape directly (NOT the raw unix-ms from the column).
         .last_human_touched_at = try alloc.dupe(u8, "2026-08-29 10:00:00"),
         .git_worktree_cwd = try alloc.dupe(u8, ""),
         .git_branch = try alloc.dupe(u8, ""),
@@ -7858,9 +7394,7 @@ test "buildSessionListJson emits last_human_touched_at when the row has a value 
     const json = try buildSessionListJson(alloc, &[_]SessionInfo{sess}, 1, false, null);
     defer alloc.free(json);
 
-    // The wire field MUST be exactly `last_human_touched_at` (no `_nano`
-    // suffix - per Migration 075 convention, SQL column keeps the suffix,
-    // wire field is bare).
+    // The wire field MUST be exactly `last_human_touched_at` (no `_nano` suffix - per Migration 075 convention, SQL column keeps the suffix, wire field is bare).
     try testing.expect(std.mem.indexOf(u8, json, "\"last_human_touched_at\":\"2026-08-29 10:00:00\"") != null);
 }
 
@@ -7892,8 +7426,6 @@ test "buildSessionListJson emits last_human_touched_at as empty string for legac
     try testing.expect(std.mem.indexOf(u8, json, "\"last_human_touched_at\":\"\"") != null);
 }
 // Migration 082 - SELECT-layer unix-ms -> SQLite datetime conversion.
-// The wire format is SQLite datetime UTC, NOT raw unix-ms. The
-// SELECT layer is the sole conversion point (via strftime()).
 test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on the wire (Migration 082)" {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -7925,9 +7457,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
     try db.exec(alloc,
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
-    // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
-    // than at the assertion.
+    // The session-list SELECT correlated-subqueries this table for `workspace_item_id`, so a fixture that omits it fails at Prepare rather than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -7936,8 +7466,7 @@ test "getSessionListWithCursor converts unix-ms storage to SQLite datetime on th
         \\)
     , &.{});
 
-    // Insert a session with a known unix-ms stamp.
-    // 2026-08-29 10:00:00 UTC = 1788008400 epoch seconds = 1788008400000 ms.
+    // Insert a session with a known unix-ms stamp. 2026-08-29 10:00:00 UTC = 1788008400 epoch seconds = 1788008400000 ms.
     try db.exec(alloc,
         \\INSERT INTO sessions (id, name, cwd, last_human_touched_at_nano)
         \\VALUES ('sess_conv', 'Test', '', '1788008400000')
@@ -8000,9 +7529,7 @@ test "getSessionListWithCursor returns empty string for NULL last_human_touched_
     try db.exec(alloc,
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
-    // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
-    // than at the assertion.
+    // The session-list SELECT correlated-subqueries this table for `workspace_item_id`, so a fixture that omits it fails at Prepare rather than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8075,14 +7602,12 @@ test "getSessionListWithCursor derives needs_human_review for the sidebar status
         \\)
     , &.{});
 
-    // Row 1: AI finished, human never touched -> awaiting review.
-    // updated_at is pinned so the strftime comparison is deterministic.
+    // Row 1: AI finished, human never touched -> awaiting review. updated_at is pinned so the strftime comparison is deterministic.
     try db.exec(alloc,
         \\INSERT INTO sessions (id, name, cwd, updated_at, last_finish_reason)
         \\VALUES ('sess_await', 'Awaiting', '', '2026-08-29 10:00:00', 'stop')
     , &.{});
-    // Row 2: AI finished, human touched AFTER -> reviewed.
-    // 2026-08-29 12:00:00 UTC = 1788014400 epoch seconds.
+    // Row 2: AI finished, human touched AFTER -> reviewed. 2026-08-29 12:00:00 UTC = 1788014400 epoch seconds.
     try db.exec(alloc,
         \\INSERT INTO sessions (id, name, cwd, updated_at, last_finish_reason, last_human_touched_at_nano)
         \\VALUES ('sess_reviewed', 'Reviewed', '', '2026-08-29 10:00:00', 'stop', '1788014400000')
@@ -8185,9 +7710,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
     try db.exec(alloc,
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
-    // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
-    // than at the assertion.
+    // The session-list SELECT correlated-subqueries this table for `workspace_item_id`, so a fixture that omits it fails at Prepare rather than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8196,9 +7719,7 @@ test "getSessionListWithCursor pages on the sort field's column, not created_at"
         \\)
     , &.{});
 
-    // `created_at` and `updated_at` are deliberately INVERTED: every row was
-    // created in early 2026 and touched later, so the two columns disagree
-    // about ordering for every single row.
+    // `created_at` and `updated_at` are deliberately INVERTED: every row was created in early 2026 and touched later, so the two columns disagree about ordering for …
     try db.exec(alloc,
         \\INSERT INTO sessions (id, name, cwd, created_at, updated_at) VALUES
         \\  ('s_a', 'A', '', '2026-01-01 00:00:00', '2026-09-20 00:00:00'),
@@ -8286,9 +7807,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
     try db.exec(alloc,
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
-    // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
-    // than at the assertion.
+    // The session-list SELECT correlated-subqueries this table for `workspace_item_id`, so a fixture that omits it fails at Prepare rather than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8303,9 +7822,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
         \\  ('s_old', 'Old', '', '2026-01-01 00:00:00', '2026-09-20 00:00:00')
     , &.{});
 
-    // `created_at` desc puts s_new first; the cursor is its created_at, and
-    // s_old is the only row created before it. Switching the filter column
-    // must not have regressed the default sort.
+    // `created_at` desc puts s_new first; the cursor is its created_at, and s_old is the only row created before it.
     const result = getSessionListWithCursor(
         alloc,
         &db,
@@ -8328,9 +7845,7 @@ test "getSessionListWithCursor keeps the created_at filter when sorting by creat
     try testing.expectEqualStrings("s_old", result.sessions[0].session_id);
 }
 
-// ───────────────────────────────────────────────────────────────────────
-// Workspace-scoped list (plan: workspace-scoped chat sessions) — the count
-// query must honor the same `s.id IN (...)` predicate as the main query,
+// Workspace-scoped list (plan: workspace-scoped chat sessions) — the count query must honor the same `s.id IN (...)` predicate as the main query,
 
 test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count honors the filter)" {
     const alloc = testing.allocator;
@@ -8361,9 +7876,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     try db.exec(alloc,
         \\CREATE TABLE llm_history (id TEXT PRIMARY KEY, session_id TEXT, agent TEXT)
     , &.{});
-    // The session-list SELECT correlated-subqueries this table for
-    // `workspace_item_id`, so a fixture that omits it fails at Prepare rather
-    // than at the assertion.
+    // The session-list SELECT correlated-subqueries this table for `workspace_item_id`, so a fixture that omits it fails at Prepare rather than at the assertion.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -8379,8 +7892,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
         \\  ('s_drop_2', 'Drop 2', '/proj/c')
     , &.{});
 
-    // Non-null + non-empty: only the listed ids — sessions AND total
-    // are both bounded (total must NOT stay at the global 4).
+    // Non-null + non-empty: only the listed ids — sessions AND total are both bounded (total must NOT stay at the global 4).
     const scoped = try alloc.alloc([]const u8, 2);
     defer alloc.free(scoped);
     scoped[0] = "s_keep_a";
@@ -8405,9 +7917,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     try testing.expectEqual(@as(usize, 2), scoped_result.sessions.len);
     try testing.expectEqual(@as(u32, 2), scoped_result.total);
 
-    // Non-null + EMPTY: fail closed with zero sessions and zero
-    // total. Also proves we never emit `IN ()` (a syntax error that
-    // would make this db.query throw instead of returning 0 rows).
+    // Non-null + EMPTY: fail closed with zero sessions and zero total.
     const empty_result = try getSessionListWithCursor(
         alloc,
         &db,
@@ -8428,8 +7938,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     try testing.expectEqual(@as(usize, 0), empty_result.sessions.len);
     try testing.expectEqual(@as(u32, 0), empty_result.total);
 
-    // null: global list unchanged (back-compat with pre-scoping
-    // callers — SQL and binds are identical to before the param).
+    // null: global list unchanged (back-compat with pre-scoping callers — SQL and binds are identical to before the param).
     const global_result = try getSessionListWithCursor(
         alloc,
         &db,
@@ -8451,9 +7960,7 @@ test "getSessionListWithCursor: workspace_ids bounds sessions AND total (count h
     try testing.expectEqual(@as(u32, 4), global_result.total);
 }
 
-// ───────────────────────────────────────────────────────────────────────
-// Behavioural — the SQL predicate for needs_human_review works end-to-end on
-// a real in-memory DB.
+// Behavioural — the SQL predicate for needs_human_review works end-to-end on a real in-memory DB.
 
 test "needs_human_review predicate returns 1 when finish_reason='stop' AND no human touch" {
     const alloc = testing.allocator;
@@ -8464,8 +7971,7 @@ test "needs_human_review predicate returns 1 when finish_reason='stop' AND no hu
     defer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Parent table + task table with the Migration 065 column +
-    // sessions table to JOIN against.
+    // Parent table + task table with the Migration 065 column + sessions table to JOIN against.
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
@@ -8624,8 +8130,7 @@ test "needs_human_review predicate returns 0 when finish_reason is 'tool_calls' 
 }
 
 test "needs_human_review predicate returns 0 when no sessions row exists for the task" {
-    // Tasks that never had any AI work (e.g. user created a card and
-    // hasn't sent a chat message yet) should not show the dot.
+    // Tasks that never had any AI work (e.g. user created a card and hasn't sent a chat message yet) should not show the dot.
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -8663,9 +8168,7 @@ test "needs_human_review predicate returns 0 when no sessions row exists for the
     try testing.expectEqualStrings("0", row.values[0]);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_search_fts_query_safety_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 const migration = @import("../../../migrations/migration.zig");
 
@@ -8678,8 +8181,7 @@ fn llmHistorySearchFtsQuerySafetySetupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Walk every production migration so the schema (including `messages_fts`
-    // + its triggers) matches what production runs.
+    // Walk every production migration so the schema (including `messages_fts` + its triggers) matches what production runs.
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -8693,8 +8195,7 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-/// Insert a row whose `response_content` contains all of the "needle" words
-/// in `needles` so we can prove the FTS5 query finds it.
+/// Insert a row whose `response_content` contains all of the "needle" words in `needles` so we can prove the FTS5 query finds it.
 fn insertRow(ctx: *TestCtx, id: []const u8, content: []const u8) !void {
     const alloc = testing.allocator;
     var sql_buf: [512]u8 = undefined;
@@ -8712,8 +8213,6 @@ fn freeHits(alloc: std.mem.Allocator, hits: []SearchHit) void {
 }
 
 // ─── Tests that prove the failing-queries bug ──────────────────────────
-// Each test below reproduces a specific query the user ran that returned "FTS
-// search failed: QueryFailed".
 
 test "searchMessagesFts: dotted identifier handle_tool.zig returns the inserted row" {
     var ctx = try llmHistorySearchFtsQuerySafetySetupDb();
@@ -8751,9 +8250,7 @@ test "searchMessagesFts: column-syntax colon agentic_loop/handle_tool.zig:18 ret
 
     try insertRow(&ctx, "h_col", "the bug at agentic_loop/handle_tool.zig:18 references the broken import");
 
-    // This is the exact query the user tried. Without the fix, FTS5
-    // sees the trailing `:18` as a column-name filter on a column that
-    // does not exist and returns SQLITE_ERROR.
+    // This is the exact query the user tried.
     const hits = try searchMessagesFts(alloc, &ctx.db, "agentic_loop/handle_tool.zig:18", .{});
     defer freeHits(alloc, hits);
 
@@ -8791,9 +8288,7 @@ test "searchMessagesFts: plain words still match (regression guard)" {
     try testing.expectEqualStrings("h_plain", hits[0].id);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_search_messages_fts_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -8836,8 +8331,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
         , &.{});
     }
 
-    // Sync triggers — same shape as Migration 058 in production (now
-    // non-external-content so snippet() can read from messages_fts).
+    // Sync triggers — same shape as Migration 058 in production (now non-external-content so snippet() can read from messages_fts).
     if (dialect.has_fts5) try db.exec(alloc,
         \\CREATE TRIGGER llm_history_ai AFTER INSERT ON llm_history BEGIN
         \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(CAST(new.response_content AS TEXT), ''));
@@ -9057,9 +8551,7 @@ test "getCompactedMessages: include_all=true returns live AND compacted rows" {
     try testing.expectEqual(@as(usize, 2), all_rows.len);
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Regression tests for the since/until bug (historical note: fixed under the
-// old global history search; the `created_iso` semantics are unchanged).
+// Regression tests for the since/until bug (historical note: fixed under the old global history search; the `created_iso` semantics are unchanged).
 
 test "searchMessagesFts: filters by since using ISO date string (regression for since/until bug)" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
@@ -9073,21 +8565,18 @@ test "searchMessagesFts: filters by since using ISO date string (regression for 
     const old_micros: []const u8 = "1780000000000000"; // ~2026-05-29 17:33 UTC
     const new_micros: []const u8 = "1785000000000000"; // ~2026-06-23 12:40 UTC
 
-    // Production code in `saveMessage` computes `created_iso` from
-    // `created_at` via libc `localtime_r` + `strftime`.
+    // Production code in `saveMessage` computes `created_iso` from `created_at` via libc `localtime_r` + `strftime`.
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_old','s1','user','old message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ old_micros, old_micros });
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
-    // Compute the ISO date for `new_micros` using the SAME expression the
-    // migration uses — that's what `created_iso` will contain.
+    // Compute the ISO date for `new_micros` using the SAME expression the migration uses — that's what `created_iso` will contain.
     var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
 
-    // FTS match for "message" — both rows match. Filter on since=new_iso
-    // should return only `h_new`.
+    // FTS match for "message" — both rows match.
     const hits = try searchMessagesFts(alloc, &s.db, "message", .{
         .since = new_iso,
     });
@@ -9120,8 +8609,6 @@ test "searchMessagesFts: filters by until using ISO date string (regression for 
         "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
     // Compute the ISO for `old_micros` — `until=old_iso` should keep only h_old.
-    // Use the same `substr(_,1,10)` expression as the inserted rows so
-    // the lex comparison matches exactly.
     var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{old_micros});
     defer iso_q.deinit(alloc);
     const old_iso = iso_q.values[0];
@@ -9159,8 +8646,7 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
         "VALUES ('h_new','s1','user','new message',?,datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch'))", &.{ new_micros, new_micros });
 
-    // Use the same substr(_,1,10) expression as the inserted rows so the
-    // lex comparison matches exactly.
+    // Use the same substr(_,1,10) expression as the inserted rows so the lex comparison matches exactly.
     var iso_q = try s.db.queryRow(alloc,
         \\SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS since_iso,
         \\       datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch') AS until_iso
@@ -9181,9 +8667,7 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
         alloc.free(hits);
     }
     try testing.expectEqual(@as(usize, 2), hits.len);
-    // Expectation: h_mid and h_new (the "since..until" inclusive window)
-    // — but order is by rank, which is the same as no ORDER BY since
-    // the MATCH score ties. Check that both are present.
+    // Expectation: h_mid and h_new (the "since..until" inclusive window) — but order is by rank, which is the same as no ORDER BY since the MATCH score ties.
     var ids: [2][]const u8 = undefined;
     for (hits, 0..) |h, i| ids[i] = h.id;
     // Both h_mid and h_new should be present (h_old should not).
@@ -9191,9 +8675,7 @@ test "searchMessagesFts: since AND until together produce a date range (regressi
         std.mem.indexOf(u8, ids[1], "h_old") == null);
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// created_at shape The `since`/`until` filters above take an ISO date string,
-// so the `created_at` we hand back has to be an ISO string too — returning
+// created_at shape The `since`/`until` filters above take an ISO date string, so the `created_at` we hand back has to be an ISO string too — returning
 
 test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecond epoch" {
     var s = try llmHistorySearchMessagesFtsSetupDb();
@@ -9203,9 +8685,7 @@ test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecon
     }
     const alloc = testing.allocator;
 
-    // Seed both columns the way production writes them: `created_at_nano`
-    // is a 19-digit nanosecond epoch, `created_iso` is the local-time
-    // string `saveMessage` populates.
+    // Seed both columns the way production writes them: `created_at_nano` is a 19-digit nanosecond epoch, `created_iso` is the local-time string `saveMessage` …
     const nano: []const u8 = "1790706338823948836";
     const iso: []const u8 = "2026-09-30 19:53:35";
     try s.db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, created_iso) " ++
@@ -9217,8 +8697,7 @@ test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecon
     try testing.expectEqual(@as(usize, 1), hits.len);
 
     const created_at = hits[0].created_at;
-    // `YYYY-MM-DD HH:MM:SS`: dashes at 4/7, space at 10, colons at 13/16,
-    // digits everywhere else.
+    // `YYYY-MM-DD HH:MM:SS`: dashes at 4/7, space at 10, colons at 13/16, digits everywhere else.
     const shape_ok = created_at.len == 19 and
         std.ascii.isDigit(created_at[0]) and std.ascii.isDigit(created_at[1]) and
         std.ascii.isDigit(created_at[2]) and std.ascii.isDigit(created_at[3]) and
@@ -9244,9 +8723,7 @@ test "searchMessagesFts: created_at is a readable ISO timestamp, not a nanosecon
     try testing.expect(!std.mem.eql(u8, created_at, nano));
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_compacted_messages_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 fn llmHistoryCompactedMessagesSetupDb() !struct {
     db: database.Db,
@@ -9315,8 +8792,6 @@ fn llmHistoryCompactedMessagesSeedMessage(
     const feed_str = if (is_feed == 1) "1" else "0";
 
     // `created_at` is either: - A microsecond timestamp string (e.g.
-    // "1785000000000000"), OR - A pre-formatted ISO localtime string (e.g.
-    // "2025-01-01 00:01:00").
     var created_iso_buf: [20]u8 = undefined;
     const created_iso_len: usize = blk: {
         if (created_at.len >= 10 and std.mem.indexOfScalar(u8, created_at, '-') == null) {
@@ -9434,24 +8909,20 @@ test "getCompactedMessages: returns empty slice when session has no compacted me
     try testing.expectEqual(@as(usize, 0), results.len);
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Regression tests for the since/until bug (historical note: fixed under the
-// old global history search; the `created_iso` semantics are unchanged).
+// Regression tests for the since/until bug (historical note: fixed under the old global history search; the `created_iso` semantics are unchanged).
 
 test "getCompactedMessages: filters by since using ISO date string (regression)" {
     var s = try llmHistoryCompactedMessagesSetupDb();
     defer llmHistoryCompactedMessagesTeardownDb(&s);
     const alloc = testing.allocator;
 
-    // Two compacted messages at known microsecond timestamps. They
-    // compare against `is_feed_to_llm=0` so they pass the default filter.
+    // Two compacted messages at known microsecond timestamps.
     const old_micros: []const u8 = "1780000000000000";
     const new_micros: []const u8 = "1785000000000000";
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_old", "sess_1", "user", "old", 0, old_micros);
     try llmHistoryCompactedMessagesSeedMessage(alloc, &s.db, "h_new", "sess_1", "user", "new", 0, new_micros);
 
-    // Compute the ISO for `new_micros` using the SAME expression the
-    // migration uses — that's what `created_iso` will contain.
+    // Compute the ISO for `new_micros` using the SAME expression the migration uses — that's what `created_iso` will contain.
     var iso_q = try s.db.queryRow(alloc, "SELECT datetime(CAST(? AS BIGINT) / 1000000, 'unixepoch')", &.{new_micros});
     defer iso_q.deinit(alloc);
     const new_iso = iso_q.values[0];
@@ -9540,8 +9011,7 @@ test "getCompactedMessages: since AND until together produce a date range (regre
 }
 
 test "saveMessage: writes a correct-year (2026-ish) created_iso from current time" {
-    // Regression check for the year-58,507 bug. Pre-fix `saveMessage` passed
-    // raw nanoseconds to the ISO conversion helper, producing year 58,507.
+    // Regression check for the year-58,507 bug.
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -9625,8 +9095,7 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
 }
 
 test "saveMessage: created_at column is stored as Unix microseconds (length <= 17)" {
-    // Regression check: saveMessage must store `created_at` as microseconds
-    // (16 digits for year 2026).
+    // Regression check: saveMessage must store `created_at` as microseconds (16 digits for year 2026).
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -9704,15 +9173,11 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
 
-    // Microsecond format is at most 17 digits for any plausible
-    // timestamp (year ~9999). 19 digits = nanoseconds, which is the
-    // bug we're guarding against.
+    // Microsecond format is at most 17 digits for any plausible timestamp (year ~9999). 19 digits = nanoseconds, which is the bug we're guarding against.
     try testing.expect(row.values[0].len <= 19);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_tool_call_loading_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     const alloc = testing.allocator;
@@ -9723,9 +9188,7 @@ fn llmHistoryToolCallLoadingSetupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Walk every production migration (001 → 068) so the schema matches
-    // production. Manual schema setup drifts the moment a migration lands;
-    // see project memory `llm-history-test-use-migrations-module.md`.
+    // Walk every production migration (001 → 068) so the schema matches production.
     var manager = migration.MigrationManager.init(alloc, &db);
     defer manager.deinit();
     try migration.registerAllMigrations(&manager);
@@ -9740,8 +9203,6 @@ fn llmHistoryToolCallLoadingTeardown(ctx: *TestCtx) void {
 }
 
 /// Insert a session row so we can FK-reference it in tests below.
-/// The production schema (after all migrations) requires a
-/// `sessions` row before llm_history rows reference its id.
 fn llmHistoryToolCallLoadingCreateSession(ctx: *TestCtx, session_id: []const u8) !void {
     var buf: [256]u8 = undefined;
     const stmt = try std.fmt.bufPrint(buf[0..], "INSERT INTO sessions (id, name) VALUES ('{s}', 'test-session')", .{session_id});
@@ -9794,8 +9255,7 @@ test "saveToolResultPlaceholder enforces the UNIQUE INDEX on tool_call_id" {
 }
 
 test "saveToolResultPlaceholder allows multiple empty tool_call_id rows (assistant message shape)" {
-    // The partial UNIQUE INDEX excludes empty-string tool_call_ids (`WHERE
-    // tool_call_id IS NOT NULL AND tool_call_id != ''`).
+    // The partial UNIQUE INDEX excludes empty-string tool_call_ids (`WHERE tool_call_id IS NOT NULL AND tool_call_id != ''`).
     var ctx = try llmHistoryToolCallLoadingSetupDb();
     defer llmHistoryToolCallLoadingTeardown(&ctx);
     try llmHistoryToolCallLoadingCreateSession(&ctx, "sess_1");
@@ -9817,8 +9277,7 @@ test "updateToolResultById on a non-existent tool_call_id is a no-op (no error)"
     var ctx = try llmHistoryToolCallLoadingSetupDb();
     defer llmHistoryToolCallLoadingTeardown(&ctx);
 
-    // No pre-existing placeholder — the UPDATE must be a no-op,
-    // returning Ok(()) with 0 rows affected.
+    // No pre-existing placeholder — the UPDATE must be a no-op, returning Ok(()) with 0 rows affected.
     try updateToolResultById(ctx.alloc, ctx.threaded.io(), &ctx.db, "tc_ghost", .{
         .content = "should be discarded",
         .diffview_before = null,
@@ -9945,13 +9404,9 @@ test "resolveStaleLoadingToolResults only touches the target session" {
     try testing.expectEqualStrings("", row2.values[1]);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from llm_history_worker_info_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
-/// Open a fresh in-memory sqlite DB with the minimum schema needed for
-/// `getActiveWorker` + `getWorkerBySessionId` (the `worker` + `sessions`
-/// tables, the latter with `git_worktree_cwd` from Migration 046).
+/// Open a fresh in-memory sqlite DB with the minimum schema needed for `getActiveWorker` + `getWorkerBySessionId` (the `worker` + `sessions` tables, the latter …
 fn llmHistoryWorkerInfoSetupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -9965,9 +9420,7 @@ fn llmHistoryWorkerInfoSetupDb() !struct {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Minimal `sessions` schema (matches the columns touched by
-    // `getActiveWorker`'s JOIN). `git_worktree_cwd` (Migration 046)
-    // is the column we're exercising — it is TEXT, NULLable.
+    // Minimal `sessions` schema (matches the columns touched by `getActiveWorker`'s JOIN).
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
@@ -10040,9 +9493,7 @@ test "getActiveWorker returns empty string when session row has NULL git_worktre
     }
 
     try testing.expectEqual(@as(usize, 1), workers.len);
-    // COALESCE(CAST(s.git_worktree_cwd AS TEXT), '') maps NULL → empty string so the prompt
-    // builder's `if (worker.git_worktree_cwd.len > 0)` guard works as
-    // designed (skips the "(git worktree: ...)" suffix when no worktree is
+    // COALESCE(CAST(s.git_worktree_cwd AS TEXT), '') maps NULL → empty string so the prompt builder's `if (worker.git_worktree_cwd.len > 0)` guard works as designed …
     try testing.expectEqualStrings("", workers[0].git_worktree_cwd);
 }
 
@@ -10054,8 +9505,7 @@ test "getActiveWorker returns worker with empty git_worktree_cwd when session ro
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Worker exists; no corresponding session row (deleted orphan — should
-    // not happen in normal flow, but the LEFT JOIN must not filter it out).
+    // Worker exists; no corresponding session row (deleted orphan — should not happen in normal flow, but the LEFT JOIN must not filter it out).
     try ctx.db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('w1', 'orphan_sid')", &.{});
 
     const workers = try getActiveWorker(alloc, &ctx.db);
@@ -10077,8 +9527,7 @@ test "WorkerInfo.deinit frees git_worktree_cwd without leaking" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Populated git_worktree_cwd — the case that would leak if deinit forgot
-    // the field. The `testing.allocator` will flag any leaked allocation.
+    // Populated git_worktree_cwd — the case that would leak if deinit forgot the field.
     try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, git_worktree_cwd) VALUES ('s1', 't', '/some/abs/path')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('w1', 's1')", &.{});
 
@@ -10143,9 +9592,7 @@ test "getWorkerBySessionId returns worker with empty git_worktree_cwd for orphan
     try testing.expectEqualStrings("", worker.git_worktree_cwd);
 }
 
-// =============================================================================
 // Session progressive tool persistence (Migration 085)
-// =============================================================================
 
 const ProgressiveTestCtx = struct {
     db: database.Db,
@@ -10291,9 +9738,7 @@ test "getProgressiveTools: order is deterministic for tools equipped in the same
 }
 
 test "saveMessage: user envelope carries owner identity, assistant carries profile name" {
-    // Follow-up on the Option A envelopes: when the session has an owner
-    // (`sessions.user_id -> users.name`) and a picked profile
-    // (`sessions.selected_profile_model`), the persisted envelopes carry
+    // Follow-up on the Option A envelopes: when the session has an owner (`sessions.user_id -> users.name`) and a picked profile (`sessions.selected_profile_model`) …
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -10457,9 +9902,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Behaviour: `cwd` and `cursor` arrive from HTTP query strings, so a filter
-// value must never change the shape of the WHERE clause it lands in.
+// Behaviour: `cwd` and `cursor` arrive from HTTP query strings, so a filter value must never change the shape of the WHERE clause it lands in.
 
 /// Two sessions in different directories, owned by different users.
 fn setupOwnedSessionsDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
@@ -10560,8 +10003,7 @@ test "a cursor carrying an OR does not widen the session list" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // The system user sees every row, so the cursor is the only filter that
-    // could fail here: a literal comparison keeps both rows out.
+    // The system user sees every row, so the cursor is the only filter that could fail here: a literal comparison keeps both rows out.
     const result = try getSessionListWithCursor(
         alloc,
         &ctx.db,
@@ -10607,9 +10049,7 @@ test "a task cursor carrying an OR does not escape the item's tasks" {
 
     try testing.expectEqual(@as(usize, 0), page.tasks.len);
 }
-// ════════════════════════════════════════════════════════════════════════════
 // deleteWorkspaceItem — a project row does not outlive its own children
-// ════════════════════════════════════════════════════════════════════════════
 
 fn deleteWorkspaceItemDb() !TestCtx {
     const alloc = testing.allocator;

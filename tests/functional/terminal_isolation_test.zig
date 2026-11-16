@@ -1,6 +1,4 @@
 // Functional tests for per-user terminal isolation (plan 2026-09-25, W2.5).
-// Zig port of `tests/functional/terminal_isolation_test.py` (same test names,
-// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,14 +11,10 @@ const io = testing.io;
 /// The session cookie's name, as `Set-Cookie` spells it.
 const COOKIE_NAME = "pabrik_session=";
 
-/// Every user in this suite shares one password, exactly as in the
-/// Python original — the variable under test is the IDENTITY, not the
-/// secret.
+/// Every user in this suite shares one password, exactly as in the Python original — the variable under test is the IDENTITY, not the secret.
 const PASSWORD = "supersecret123";
 
-/// Issue a request WITHOUT a status assertion — the caller asserts. `cookie`
-/// is the raw `Cookie:` header value (`pabrik_session=<tok>`), or null for no
-/// cookie at all.
+/// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -46,8 +40,7 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
-/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
+/// Run `pabrik create-admin` against the harness HOME.
 fn createAdmin(home: []const u8, email: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -84,9 +77,7 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
         return error.TestUnexpectedResult;
     }
 
-    // The token is the SEGMENT between `pabrik_session=` and the next `;` —
-    // Python's `set_cookie.split("pabrik_session=", 1)[1].split(";",
-    // 1)[0].strip()`.
+    // The token is the SEGMENT between `pabrik_session=` and the next `;` — Python's `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(
@@ -101,9 +92,7 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
 fn createTerminal(h: *Harness, cookie: ?[]const u8) ![]u8 {
     const cwd = try harness.harnessPath(gpa, h.temp_dir, &.{});
     defer gpa.free(cwd);
-    // `std.json.Stringify`, never a hand-built template: a Windows cwd is
-    // full of backslashes and `{"cwd":"C:\Users\..."}` is NOT JSON, so the
-    // server answers 400 "Invalid JSON body" and the failure reads like a
+    // `std.json.Stringify`, never a hand-built template: a Windows cwd is full of backslashes and `{"cwd":"C:\Users\..."}` is NOT JSON, so the server answers 400 …
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .cwd = cwd }, .{});
     defer gpa.free(body);
 
@@ -295,9 +284,7 @@ test "terminal_auth_off_is_unchanged" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Python passed `cookie=""` on create, which `_raw` turned into an
-    // empty-string `Cookie:` header. Passing null here sends no header
-    // at all, which is what an auth-off frontend does.
+    // Python passed `cookie=""` on create, which `_raw` turned into an empty-string `Cookie:` header.
     const term = try createTerminal(&h, null);
     defer gpa.free(term);
 

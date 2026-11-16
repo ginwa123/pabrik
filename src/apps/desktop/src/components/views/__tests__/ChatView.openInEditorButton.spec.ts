@@ -1,6 +1,4 @@
-/** The center-diff ⤴ "Open file in code browser" button — BEHAVIOURAL. THE BUG (user report:
- * "button open code editor not work"). Clicking the ⤴ button in a stacked center-diff file header
- * did nothing. ROOT CAUSE. */
+/** The center-diff ⤴ "Open file in code browser" button — BEHAVIOURAL. THE BUG (user report */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -27,8 +25,7 @@ const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
     path: '/app',
     fullPath: '/app',
   })),
-  // ChatView's URL sync does `router.replace(...).catch(...)`, so the
-  // mock must return a thenable like the real router does.
+  // ChatView's URL sync does `router.replace(...).catch(...)`, so the mock must return a thenable like the real router does.
   useRouterMock: vi.fn(() => ({
     replace: vi.fn(() => Promise.resolve()),
     push: vi.fn(() => Promise.resolve()),
@@ -98,8 +95,7 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
   let app: VueApp | null = null
   let openInEditor: Mock<OpenInCodeEditorFn>
 
-  /**    * Mount ChatView under a real `OPEN_IN_CODE_EDITOR_KEY` provider — the same provide AppLayout
-   * does — then open a center diff so the stacked sections (and their ⤴ buttons) actually render. */
+  /** Mount ChatView under a real `OPEN_IN_CODE_EDITOR_KEY` provider — the same provide AppLayout does — then open a center diff so the stacked sections (and their ⤴ … */
   async function mountChatWithDiff() {
     openInEditor = vi.fn<OpenInCodeEditorFn>()
     const Host = defineComponent({
@@ -113,9 +109,7 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
     await flushPromises()
     for (let i = 0; i < 30; i++) await nextTick()
 
-    // Drive the REAL user path: the chat-owned right sidebar emits `show-diff`, ChatView stores it,
-    // and the stacked center sections (which host the ⤴ button) render. Nothing reaches into the
-    // component's internals — this is the same chain a click takes.
+    // Drive the REAL user path: the chat-owned right sidebar emits `show-diff`, ChatView stores it, and the stacked center sections (which host the ⤴ button) render.
     const sidebar = wrapper.findComponent(ChatRightSidebar)
     expect(sidebar.exists()).toBe(true)
     sidebar.vm.$emit('show-diff', DIFF_SELECTION)
@@ -125,13 +119,9 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
   }
 
   beforeEach(() => {
-    // CenterDiffSection lazily mounts its SidebarDiffView behind an
-    // IntersectionObserver; jsdom has none, so the section falls back to
-    // mounting immediately and the ⤴ button exists for us to click.
+    // CenterDiffSection lazily mounts its SidebarDiffView behind an IntersectionObserver; jsdom has none, so the section falls back to mounting immediately and the ⤴ …
     vi.stubGlobal('IntersectionObserver', undefined)
-    // show-diff scrolls the section into view. jsdom implements neither
-    // `scrollIntoView` nor `scrollTo`, on the prototype (the call is
-    // `el.scrollIntoView(...)`, not a global).
+    // show-diff scrolls the section into view. jsdom implements neither `scrollIntoView` nor `scrollTo`, on the prototype (the call is `el.scrollIntoView(...)`, not …
     Element.prototype.scrollIntoView = vi.fn()
     Element.prototype.scrollTo = vi.fn()
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
@@ -169,9 +159,7 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
     const button = section.get('[data-testid="sidebar-diff-open-file"]')
     await button.trigger('click')
 
-    // THE ASSERTION THAT WAS IMPOSSIBLE WITH A SOURCE GREP. On the
-    // pre-fix source this is 0 calls: `inject()` inside the handler
-    // returned undefined and the guard returned silently.
+    // THE ASSERTION THAT WAS IMPOSSIBLE WITH A SOURCE GREP.
     expect(openInEditor).toHaveBeenCalledTimes(1)
     expect(openInEditor).toHaveBeenCalledWith({
       filePath: 'docs/task3.md',
@@ -181,9 +169,7 @@ describe('ChatView center-diff ⤴ opens the file in the code viewer', () => {
   })
 
   it('keeps the injection at setup scope (the grep that would have caught it)', () => {
-    // Assert the SCOPE, not just the string. `inject()` must be called in the setup body — i.e. the
-    // `const` starts at column 0, never indented inside a function. On the pre-fix source this line
-    // is indented two spaces (nested in onChatSidebarOpenFile) and fails.
+    // Assert the SCOPE, not just the string.
     expect(chatViewSrc).toMatch(/^const openInEditor = useInjectOpenInCodeEditor\(\)$/m)
     // …and the handler itself must NOT call the injector.
     const handler = chatViewSrc.slice(

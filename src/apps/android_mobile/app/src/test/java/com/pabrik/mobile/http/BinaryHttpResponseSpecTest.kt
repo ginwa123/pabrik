@@ -7,19 +7,10 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.IOException
 
-/**
- * [BinaryHttpResponseSpec]'s own equality, and the one thing about it that is
- * easy to get wrong.
- */
+/** [BinaryHttpResponseSpec]'s own equality, and the one thing about it that is easy to get wrong. */
 class BinaryHttpResponseSpecTest {
 
-    /**
-     * `data class` + `ByteArray` gives you an `equals` that compares the array
-     * by *identity*, so a fake returning a freshly-decoded body never equals an
-     * expected body with the same bytes. Every test in this package that
-     * asserts on fetched bytes would pass for the wrong reason — or fail for
-     * no reason at all — without the override.
-     */
+    /** `data class` + `ByteArray` gives you an `equals` that compares the array by *identity*, so a fake returning a freshly-decoded body never equals an expected … */
     @Test
     fun `two specs with equal bytes are equal`() {
         val first = BinaryHttpResponseSpec(200, "image/png", byteArrayOf(1, 2, 3))
@@ -52,22 +43,12 @@ class BinaryHttpResponseSpecTest {
     }
 }
 
-/**
- * The capped read behind every binary fetch.
- *
- * The cap is the reason this path exists at all: `InputStream.readBytes()` on
- * a stream whose length is not known in advance allocates whatever it is given,
- * and a phone asked to hold a file it did not want dies instead of grumbling.
- * Driven from a `ByteArrayInputStream` because a socket is not available on the
- * JVM.
- */
+/** The capped read behind every binary fetch. */
 class ReadBytesCappedTest {
 
     @Test
     fun `bytes come back verbatim, not utf-8 decoded`() {
-        // A PNG header plus bytes that are invalid UTF-8. Decoded as a String
-        // these become U+FFFD and the original is unrecoverable — which is the
-        // whole reason the JSON exchange cannot be reused here.
+        // A PNG header plus bytes that are invalid UTF-8.
         val png = byteArrayOf(
             0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
             0x00, 0xFF.toByte(), 0xFE.toByte(), 0x7F,

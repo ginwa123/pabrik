@@ -2,15 +2,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const timing = @import("Timing.zig");
 
-// `getentropy` is not exposed by std.c on macOS — declare it locally so the
-// macOS CI test suite can use the kernel CSPRNG.
+// `getentropy` is not exposed by std.c on macOS — declare it locally so the macOS CI test suite can use the kernel CSPRNG.
 extern "c" fn getentropy(buffer: [*]u8, size: usize) c_int;
 
-/// Request ID format: REQ-YYYYMMDD-HHMMSS-XXXX (24 characters)
-/// where XXXX is a 4-character random hex suffix
+/// Request ID format: REQ-YYYYMMDD-HHMMSS-XXXX (24 characters) where XXXX is a 4-character random hex suffix
 pub const RequestId = struct {
-    /// Fixed-size buffer for the request ID string
-    /// REQ- (4) + YYYYMMDD (8) + - (1) + HHMMSS (6) + - (1) + XXXX (4) = 24
+    /// Fixed-size buffer for the request ID string REQ- (4) + YYYYMMDD (8) + - (1) + HHMMSS (6) + - (1) + XXXX (4) = 24
     value: [24]u8,
 
     /// Initialize a new RequestId with current timestamp and random suffix
@@ -33,9 +30,7 @@ pub const RequestId = struct {
         // Generate random 4-character hex suffix using entropy
         const entropy = ts_ns ^ @as(u64, @intFromPtr(&self));
         var random_bytes: [2]u8 = undefined;
-        // std.mem.writeInt handles alignment internally — safe on any
-        // stack-allocated buffer. Avoids Zig 0.16's strict `@alignCast`
-        // panic when the buffer happens to land on a non-2-byte boundary.
+        // std.mem.writeInt handles alignment internally — safe on any stack-allocated buffer.
         std.mem.writeInt(u16, &random_bytes, @as(u16, @truncate(@as(u64, @intCast(entropy)))), .little);
         
         // Format: REQ-YYYYMMDD-HHMMSS-XXXX
@@ -64,31 +59,24 @@ pub fn generateRequestId() RequestId {
     return RequestId.init();
 }
 
-/// Session ID format: SES-XXXXXXXX (11 characters)
-/// where XXXXXXXX is an 8-character random hex
-/// SES- (4) + XXXXXXXX (8) = 12 characters (not 11!)
+/// Session ID format: SES-XXXXXXXX (11 characters) where XXXXXXXX is an 8-character random hex SES- (4) + XXXXXXXX (8) = 12 characters (not 11!)
 pub const SessionId = struct {
     value: [12]u8,
 
-    /// Initialize a new SessionId with random hex. Uses libc `getrandom` on
-    /// Linux, `getentropy` on macOS for guaranteed entropy.
+    /// Initialize a new SessionId with random hex.
     pub fn init() SessionId {
         var self: SessionId = undefined;
         var random_bytes: [4]u8 = undefined;
 
         if (builtin.os.tag == .windows) {
-            // Windows fallback. Use timestamp + output buffer address
-            // as the seed — enough entropy for the 1000-call
-            // uniqueness test.
+            // Windows fallback.
             const ts = std.Io.Timestamp.now(std.testing.io, .real);
             const seed: u64 = @as(u64, @intCast(ts.nanoseconds)) ^
                 @as(u64, @intFromPtr(&self.value));
             const truncated_val: u32 = @truncate(seed);
             std.mem.writeInt(u32, random_bytes[0..4], truncated_val, .little);
         } else {
-            // POSIX: pull 4 fresh bytes from the kernel CSPRNG. - Linux: libc
-            // `getrandom` (loops on partial reads). - macOS: libc
-            // `getentropy` (always fills in one call, max 256 bytes; we ask
+            // POSIX: pull 4 fresh bytes from the kernel CSPRNG. - Linux: libc `getrandom` (loops on partial reads). - macOS: libc `getentropy` (always fills in one call, max …
             var ok = false;
             if (builtin.os.tag == .linux) {
                 var filled: usize = 0;
@@ -111,8 +99,7 @@ pub const SessionId = struct {
                 const rc = getentropy(&random_bytes, random_bytes.len);
                 ok = (rc == 0);
             } else {
-                // Other POSIX without `getrandom` or `getentropy`
-                // — best-effort pseudo-random from timestamp.
+                // Other POSIX without `getrandom` or `getentropy` — best-effort pseudo-random from timestamp.
                 const ts = std.Io.Timestamp.now(std.testing.io, .real);
                 const seed: u64 = @as(u64, @intCast(ts.nanoseconds)) ^
                     @as(u64, @intFromPtr(&self.value));
@@ -145,8 +132,7 @@ pub fn generateSessionId() SessionId {
 
 // Tests
 
-// The request-id tests that used to live in request_id_test.zig are now
-// inline at the bottom of this file (2026-09-29 flatten).
+// The request-id tests that used to live in request_id_test.zig are now inline at the bottom of this file (2026-09-29 flatten).
 
 // ===== Tests merged from request_id_test.zig (2026-09-29 flatten) =====
 test "RequestId has correct format" {
@@ -206,9 +192,7 @@ test "SessionIds are unique" {
 }
 
 test "SessionIds are unique across 1000 back-to-back calls" {
-    // Regression for the macOS CI failure where two back-to-back calls in the
-    // same nanosecond produced identical SessionIds (CI run 28568881975). Now
-    // uses libc `getrandom` for guaranteed entropy.
+    // Regression for the macOS CI failure where two back-to-back calls in the same nanosecond produced identical SessionIds (CI run 28568881975).
     const N: usize = 1000;
     var seen: [N][12]u8 = undefined;
     var unique_count: usize = 0;

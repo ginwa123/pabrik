@@ -85,8 +85,6 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 // Focus the dialog wrapper on open so Esc works without a prior click.
-// (Do NOT auto-focus the chat input — would steal typing position
-// from a previously-open chat.)
 const dialogRootRef = ref<HTMLDivElement | null>(null)
 const focusOnOpen = async () => {
   await nextTick()
@@ -102,9 +100,7 @@ onUpdated(() => {
   wasShownChat.value = props.show
 })
 
-// Header title: prefer the pageName (matches the FK pair name pattern)
-// when set, otherwise fall back to the task name. Mirrors the
-// "Design Chat: <pageName>" naming used elsewhere (DesignView).
+// Header title: prefer the pageName (matches the FK pair name pattern) when set, otherwise fall back to the task name.
 const headerTitle = (): string => {
   if (props.pageName) return `Design Chat: ${props.pageName}`
   return props.task?.name || 'Chat'

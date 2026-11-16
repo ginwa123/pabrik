@@ -1,6 +1,4 @@
-/** Unit tests for the kanban API client (createKanban, listKanbanColumns, addKanbanColumn,
- * updateKanbanColumn, deleteKanbanColumn, moveTask). Mocks global.fetch to assert URL, method, body
- * shape, and error handling without hitting the network. */
+/** Unit tests for the kanban API client (createKanban, listKanbanColumns, addKanbanColumn, updateKanbanColumn, deleteKanbanColumn, moveTask). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -19,8 +17,6 @@ describe('api.kanban', () => {
 
   beforeEach(() => {
     // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
-    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
-    // for each test so the toast path can run without crashing.
     setActivePinia(createPinia())
   })
 
@@ -34,9 +30,7 @@ describe('api.kanban', () => {
       ok: status >= 200 && status < 300,
       status,
       json: () => Promise.resolve(body),
-      // text() is what apiFetch calls on every non-OK response to
-      // extract the body for the error notification — see the
-      // apiFetch-mock-must-include-text-and-pinia memory.
+      // text() is what apiFetch calls on every non-OK response to extract the body for the error notification — see the apiFetch-mock-must-include-text-and-pinia …
       text: () => Promise.resolve(JSON.stringify(body)),
     } as Response)
     global.fetch = fetchMock as unknown as typeof fetch
@@ -64,9 +58,7 @@ describe('api.kanban', () => {
       expect(url).toContain('/api/workspaces/ws_1/items/kanban')
       expect(init.method).toBe('POST')
       const body = JSON.parse(init.body as string)
-      // path defaults to '' when omitted (matches the API: NULLIF(?, '') turns '' into NULL on the
-      // backend). The frontend always passes a non-empty path via the AddKanbanDialog picker; the
-      // '' fallback is just for direct API callers / tests.
+      // path defaults to '' when omitted (matches the API: NULLIF(?, '') turns '' into NULL on the backend).
       expect(body).toEqual({ name: 'My Sprint', path: '' })
       expect(result.item.id).toBe('kanban_1')
       expect(result.item.name).toBe('My Sprint')
@@ -93,9 +85,7 @@ describe('api.kanban', () => {
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(init.body as string)
-      // The cwd path round-trips through the API unchanged. The
-      // backend's NULLIF guards against the empty-string-to-NULL
-      // conversion, but a real path passes through verbatim.
+      // The cwd path round-trips through the API unchanged.
       expect(body).toEqual({ name: 'My Sprint', path: '/abs/projects/sprint' })
     })
   })
@@ -179,18 +169,14 @@ describe('api.kanban', () => {
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(init.body as string)
-      // apiFetch wraps via JSON.stringify(body), and JSON.stringify strips `undefined` values from
-      // objects — so the optional `position` is omitted from the wire payload when the caller
-      // didn't supply it.
+      // apiFetch wraps via JSON.stringify(body), and JSON.stringify strips `undefined` values from objects — so the optional `position` is omitted from the wire …
       expect(body).toEqual({ name: 'review', description: '' })
     })
   })
 
   describe('updateKanbanColumn', () => {
     it('PATCHes the column with the patch and returns the full updated board', async () => {
-      // The backend's PATCH handler returns the full kanban board (same {columns, count} envelope
-      // as listKanbanColumns) on success so the frontend can mirror sibling renumbering in a single
-      // round-trip. Assert the wire shape here so any future drift is caught at the API boundary.
+      // The backend's PATCH handler returns the full kanban board (same {columns, count} envelope as listKanbanColumns) on success so the frontend can mirror sibling …
       mockFetchOnce(200, {
         columns: [
           {
@@ -212,9 +198,7 @@ describe('api.kanban', () => {
       expect(init.method).toBe('PATCH')
       const body = JSON.parse(init.body as string)
       expect(body).toEqual({ name: 'backlog' })
-      // Full board shape — the store slices result.columns for the
-      // patched column; the test asserts the envelope type here so
-      // a regression to the old single-column shape would fail.
+      // Full board shape — the store slices result.columns for the patched column; the test asserts the envelope type here so a regression to the old single-column …
       expect(result.count).toBe(1)
       expect(result.columns).toHaveLength(1)
       expect(result.columns[0]!.name).toBe('backlog')

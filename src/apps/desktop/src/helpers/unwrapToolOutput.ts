@@ -1,5 +1,4 @@
-/** Parsed parts of the standardized tool result envelope (JSON form). Returned by
- * `unwrapToolOutput` / `tryUnwrapToolOutput`. */
+/** Parsed parts of the standardized tool result envelope (JSON form). */
 export interface UnwrappedToolOutput {
   /** Tool name (e.g. "read_file") */
   name: string
@@ -17,8 +16,7 @@ export interface UnwrappedToolOutput {
   pending: boolean
 }
 
-/**  * Parse a JSON tool envelope. Throws on malformed input — use `tryUnwrapToolOutput` for a null
- * fallback. Hard cut: legacy `<tool>…</tool>` XML is rejected, never parsed. */
+/** Parse a JSON tool envelope. */
 export function unwrapToolOutput(content: string): UnwrappedToolOutput {
   let parsed: unknown
   try {
@@ -69,9 +67,7 @@ export function unwrapToolOutput(content: string): UnwrappedToolOutput {
   }
 }
 
-/**
- * Like `unwrapToolOutput` but returns `null` instead of throwing.
- */
+/** Like `unwrapToolOutput` but returns `null` instead of throwing. */
 export function tryUnwrapToolOutput(content: string): UnwrappedToolOutput | null {
   try {
     return unwrapToolOutput(content)

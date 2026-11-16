@@ -1,6 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/usage` — token, cache and tool totals
-//! for one workspace over a range. Every field is derived from `llm_history`
-//! through `sessions`; nothing here is stored.
+//! `GET /api/workspaces/:workspace_id/usage` — token, cache and tool totals for one workspace over a range.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -145,9 +143,7 @@ const SHAPE_SCOPE =
     \\WHERE s.workspace_id = ? AND h.created_at_nano > CAST(? AS BIGINT)
 ;
 
-/// Every distinct `tool_name` in range, ungrouped beyond that: the handler
-/// splits comma-joined parallel batches and aggregates them itself, so a
-/// batch can never become its own bar.
+/// Every distinct `tool_name` in range, ungrouped beyond that: the handler splits comma-joined parallel batches and aggregates them itself, so a batch can never …
 const TOOLS_SQL =
     "SELECT h.tool_name, COUNT(*) " ++ SHAPE_SCOPE ++
     "  AND h.role = 'tool' AND h.tool_name IS NOT NULL AND h.tool_name <> '' " ++
@@ -289,9 +285,7 @@ pub fn useCase(
             }
         }
         {
-            // Tool histogram. A row can store a PARALLEL BATCH as one
-            // comma-joined name ("command,command"); split it, or the batch
-            // becomes its own bar and hides the tools inside it.
+            // Tool histogram.
             var rows = db.query(allocator, TOOLS_SQL, &.{ workspace_id, cutoff }) catch return error.QueryFailed;
             defer rows.deinit();
             while (rows.next() catch return error.QueryFailed) |row| {
@@ -313,8 +307,7 @@ pub fn useCase(
                 }
             }
 
-            // The total counts every call, batches included, so "8 of N"
-            // always agrees with the bars it summarizes.
+            // The total counts every call, batches included, so "8 of N" always agrees with the bars it summarizes.
             var total_calls: i64 = 0;
             for (tools.items) |tool| total_calls += tool.calls;
             totals.tool_calls = total_calls;
@@ -728,9 +721,7 @@ test "tool bars merge parallel batches instead of fragmenting the chart" {
     defer teardown(&ctx);
     try insertWorkspace(&ctx, "s1", "ws_a");
 
-    // A batch row stores "command,command" as ONE tool_name: two calls of the
-    // same tool. Unsplit, it became its own bar while still counting toward
-    // the total.
+    // A batch row stores "command,command" as ONE tool_name: two calls of the same tool.
     try insertRow(&ctx, .{ .id = "b1", .session_id = "s1", .role = "tool", .tool = "command,command", .iso = "2026-10-21 10:00:01", .at = 2000 });
     try insertRow(&ctx, .{ .id = "b2", .session_id = "s1", .role = "tool", .tool = "command", .iso = "2026-10-21 10:00:02", .at = 2000 });
     try insertRow(&ctx, .{ .id = "b3", .session_id = "s1", .role = "tool", .tool = "read_file,search", .iso = "2026-10-21 10:00:03", .at = 2000 });
@@ -742,8 +733,7 @@ test "tool bars merge parallel batches instead of fragmenting the chart" {
     try testing.expectEqual(@as(usize, 3), tools.items.len);
     try testing.expectEqualStrings("command", tools.items[0].object.get("tool_name").?.string);
     try testing.expectEqual(@as(i64, 3), tools.items[0].object.get("calls").?.integer);
-    // read_file and search tie at 1: the tie breaks on name so the order is
-    // deterministic instead of depending on row order.
+    // read_file and search tie at 1: the tie breaks on name so the order is deterministic instead of depending on row order.
     try testing.expectEqualStrings("read_file", tools.items[1].object.get("tool_name").?.string);
     try testing.expectEqualStrings("search", tools.items[2].object.get("tool_name").?.string);
 

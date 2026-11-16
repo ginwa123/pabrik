@@ -9,19 +9,13 @@ const PrProvider = pr_provider.PrProvider;
 const pr_cli = @import("pr_cli.zig");
 const run_captured = @import("helpers").run_captured;
 
-/// Input structure for status_pull_request tool (read-only: reports the
-/// state of a pull/merge request via the forge CLI; it never creates,
-/// mutates, or (un)binds anything).
+/// Input structure for status_pull_request tool (read-only: reports the state of a pull/merge request via the forge CLI; it never creates, mutates, or (un)binds …
 pub const StatusPullRequestInput = struct {
     /// Which PR/MR to report on.
     pr_url: []const u8 = "",
-    /// Optional provider override: "github" | "gitlab" | "generic". Empty
-    /// (the default) = auto-detect from the URL, falling back to the session
-    /// binding's provider and then the worktree's origin remote.
+    /// Optional provider override: "github" | "gitlab" | "generic".
     provider: []const u8 = "",
-    /// The session_id whose PR binding is the default target. The LLM
-    /// does NOT supply this — the exec wrapper injects `ctx.session_id`
-    /// at call time.
+    /// The session_id whose PR binding is the default target.
     session_id: []const u8 = "",
 };
 
@@ -74,8 +68,7 @@ pub const status_pull_request_tool = AgentTool{
 
 const sanitize = @import("helpers").sanitize_control_chars;
 
-/// Success payload. Mirrors the HTTP `GitPrStatusResponse` wire shape so
-/// the agent and the frontend panel read the same vocabulary.
+/// Success payload.
 pub fn statusToJSON(
     allocator: std.mem.Allocator,
     url: []const u8,
@@ -155,7 +148,6 @@ pub fn validateProviderOverride(provider: []const u8) ?[]const u8 {
 // ─── Status normalization (pure, no IO) ─────────────────────────────────
 
 /// Normalize a forge state to the lowercase status the panel switches on.
-/// GitHub says OPEN/CLOSED/MERGED; GitLab says opened/closed/merged/ locked.
 pub fn normalizeStatusAlloc(allocator: std.mem.Allocator, state: []const u8) ![]u8 {
     if (std.ascii.eqlIgnoreCase(state, "OPEN") or std.ascii.eqlIgnoreCase(state, "OPENED")) return allocator.dupe(u8, "open");
     if (std.ascii.eqlIgnoreCase(state, "CLOSED")) return allocator.dupe(u8, "closed");
@@ -168,9 +160,7 @@ pub fn normalizeStatusAlloc(allocator: std.mem.Allocator, state: []const u8) ![]
 
 // ─── Forge output shapes (pure parsing, no IO) ───────────────────────────
 
-/// Raw shape of `gh pr view --json ...` output. All fields optional with
-/// defaults so a future `gh` version adding/removing a key does not break
-/// parsing.
+/// Raw shape of `gh pr view --json ...` output.
 const GhPrView = struct {
     number: i64 = 0,
     title: []const u8 = "",
@@ -184,8 +174,7 @@ const GhPrView = struct {
     updatedAt: []const u8 = "",
     mergedAt: ?[]const u8 = null,
     closedAt: ?[]const u8 = null,
-    /// Nullable on the wire: a PR whose author account was deleted comes back
-    /// as `author: null`, which a non-optional struct rejects outright.
+    /// Nullable on the wire: a PR whose author account was deleted comes back as `author: null`, which a non-optional struct rejects outright.
     author: ?Author = null,
     additions: i64 = 0,
     deletions: i64 = 0,
@@ -197,9 +186,7 @@ const GhPrView = struct {
 /// Build the success JSON from `gh pr view --json` stdout.
 pub fn parseGithubStatus(allocator: std.mem.Allocator, provider: PrProvider, raw: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, raw, " \n\r");
-    // parseFromSliceLeaky borrows string slices from `trimmed`, which the
-    // caller owns — but statusToJSON sanitizes (dupes) every string, so no
-    // lifetime escapes this call.
+    // parseFromSliceLeaky borrows string slices from `trimmed`, which the caller owns — but statusToJSON sanitizes (dupes) every string, so no lifetime escapes this …
     const leaked: GhPrView = std.json.parseFromSliceLeaky(GhPrView, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         return try jsonError(allocator, "could not parse the GitHub CLI response (unexpected gh output shape)");
     };
@@ -316,22 +303,16 @@ pub fn parseGitlabStatus(allocator: std.mem.Allocator, provider: PrProvider, raw
 
 pub const StatusError = error{ CliMissing, NoAssociatedPr, FetchFailed, NotARepository };
 
-/// Max bytes of CLI stderr surfaced in the error payload. Forge failures
-/// are usually one line (`HTTP 401: ...`), but auth hints can run a few
-/// lines — 500 bytes keeps the real cause without dumping pages.
+/// Max bytes of CLI stderr surfaced in the error payload.
 const MAX_FETCH_DETAIL: usize = 500;
 
-/// Wall-clock budget for one PR/MR view invocation. The forge CLIs are
-/// thin HTTP clients; anything slower is a hung network call or a
-/// credential prompt nobody can answer.
+/// Wall-clock budget for one PR/MR view invocation.
 const VIEW_TIMEOUT_MS: u32 = 20_000;
 
-/// Per-stream capture cap. A `view` payload is a few hundred bytes;
-/// anything past this is an error message we truncate anyway.
+/// Per-stream capture cap.
 const VIEW_MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
-/// Whether a non-zero-exit stderr means "that PR/MR does not exist" rather
-/// than "the lookup blew up".
+/// Whether a non-zero-exit stderr means "that PR/MR does not exist" rather than "the lookup blew up".
 fn isNotFoundStderr(stderr: []const u8, provider: PrProvider) bool {
     if (std.mem.indexOf(u8, stderr, "404") != null) return true;
     if (std.ascii.indexOfIgnoreCase(stderr, "not found") != null) return true;
@@ -347,8 +328,7 @@ fn isNotFoundStderr(stderr: []const u8, provider: PrProvider) bool {
     };
 }
 
-/// Run the forge CLI's read-only view command in `worktree_path` and return
-/// the raw stdout JSON (owned).
+/// Run the forge CLI's read-only view command in `worktree_path` and return the raw stdout JSON (owned).
 fn runStatusView(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -427,9 +407,7 @@ pub fn executeStatusPullRequestToJSON(
         return try jsonError(allocator, "no worktree path: bind one with set_git_worktree first");
     }
 
-    // Normalize URL-shaped args (strip credentials + /files, /commits UI
-    // suffixes) so a pasted browser URL works verbatim. Bare numbers /
-    // IIDs / branch names pass through untouched.
+    // Normalize URL-shaped args (strip credentials + /files, /commits UI suffixes) so a pasted browser URL works verbatim.
     var owned_arg: ?[]u8 = null;
     defer if (owned_arg) |a| allocator.free(a);
     var effective_arg: []const u8 = pr_arg;
@@ -636,14 +614,11 @@ test "execute missing CLI reports install guidance, not a stack trace" {
 }
 
 // ─── Fixture-script run-path tests (POSIX only) ────────────────────────────
-// These drive the REAL spawn path (runStatusView → fixture `gh`/`glab` →
-// parse) so both forges are proven end to end without a CLI install, auth, or
 
 const builtin_t = @import("builtin");
 const hf = @import("helpers").host_fixture;
 
-/// A throwaway directory plus fixture programs, written by `host_fixture`
-/// so they run on POSIX (`#!/bin/sh`) and Windows (`.cmd`) alike.
+/// A throwaway directory plus fixture programs, written by `host_fixture` so they run on POSIX (`#!/bin/sh`) and Windows (`.cmd`) alike.
 const Fixture = struct {
     inner: hf.Fixture,
     allocator: std.mem.Allocator,
@@ -661,9 +636,7 @@ const Fixture = struct {
         return self.inner.root;
     }
 
-    /// Write a fixture program that behaves as `payload` describes. NOT
-    /// `renderProgram` + `writeProgramText`: on Windows the payloads live in
-    /// sidecar files only THIS path writes, so that way emits nothing.
+    /// Write a fixture program that behaves as `payload` describes.
     fn writeProgram(self: *Fixture, name: []const u8, payload: hf.Payload) ![]u8 {
         return self.inner.writeProgram(name, payload);
     }
@@ -771,7 +744,6 @@ test "execute run path surfaces an auth-failure stderr instead of not-found" {
 }
 
 // Exec adapter — merged from `status_pull_request.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
@@ -784,8 +756,7 @@ const llm_history = pabrikcore.llm_history;
 const exec_pr_provider = pabrikcore.pr_provider;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
-/// The guest git budget: what the module's own host spawns spend, so a reply
-/// that would fit on the host fits over the RPC too.
+/// The guest git budget: what the module's own host spawns spend, so a reply that would fit on the host fits over the RPC too.
 const git_timeout_ms: u32 = 20_000;
 const git_output_bytes: usize = 256 * 1024;
 fn payloadString(inner_parsed: ?std.json.Parsed(std.json.Value), field: []const u8) ?[]const u8 {
@@ -797,9 +768,7 @@ fn payloadString(inner_parsed: ?std.json.Parsed(std.json.Value), field: []const 
     return v.string;
 }
 
-/// Best-effort provider sniff from the worktree's own `origin` remote, or null
-/// when there is no origin, git cannot be asked, or the remote names no known
-/// forge. A non-null `guest` asks the workspace's VM, never the host.
+/// Best-effort provider sniff from the worktree's own `origin` remote, or null when there is no origin, git cannot be asked, or the remote names no known forge.
 pub fn providerFromOrigin(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -856,19 +825,15 @@ pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
         return ToolExecResult{ .output = output, .output_allocated = true };
     }
 
-    // The worktree is the lookup scope: the session binding if set,
-    // otherwise the session's own directory. The forge CLIs resolve the
-    // repo (and the current branch's PR/MR) from the cwd they run in.
+    // The worktree is the lookup scope: the session binding if set, otherwise the session's own directory.
     const worktree_path = ctx.cwd_override orelse ctx.cwd;
 
-    // Which git may be asked about this tree. Under `--saas` that is the
-    // workspace's VM or nobody: a workspace whose VM is down answers nothing.
+    // Which git may be asked about this tree.
     var route = workspace_fs.routeForSession(ctx.allocator, ctx.db, ctx.session_id);
     defer route.deinit();
     const guest = route.guestFs();
 
-    // Which PR/MR: explicit arg wins; otherwise the session binding from
-    // `set_pull_request`. Neither means there is nothing to report on.
+    // Which PR/MR: explicit arg wins; otherwise the session binding from `set_pull_request`.
     var owned_binding_url: ?[]u8 = null;
     defer if (owned_binding_url) |b| ctx.allocator.free(b);
     var owned_binding_provider: ?[]u8 = null;
@@ -880,9 +845,7 @@ pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
         if (fields) |f| {
             owned_binding_url = ctx.allocator.dupe(u8, f.pr_url) catch null;
             owned_binding_provider = ctx.allocator.dupe(u8, f.pr_provider) catch null;
-            // getSessionPrFields returns string literals (not owned) on the
-            // missing-row path — only free non-empty slices, which always
-            // come from the owned-dupe found-row path.
+            // getSessionPrFields returns string literals (not owned) on the missing-row path — only free non-empty slices, which always come from the owned-dupe found-row …
             if (f.pr_url.len > 0) ctx.allocator.free(f.pr_url);
             if (f.pr_provider.len > 0) ctx.allocator.free(f.pr_provider);
             if (owned_binding_url) |b| {
@@ -898,9 +861,7 @@ pub fn execStatusPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
         }
     }
 
-    // Which forge, most explicit first: the `provider` arg, then a
-    // URL-shaped `pr_url`, then the session binding's provider, then the
-    // worktree's origin remote, then GitHub (the pre-existing default).
+    // Which forge, most explicit first: the `provider` arg, then a URL-shaped `pr_url`, then the session binding's provider, then the worktree's origin remote, then …
     var provider: exec_pr_provider.PrProvider = .github;
     if (parsed.value.provider.len > 0) {
         provider = exec_pr_provider.PrProvider.fromString(parsed.value.provider).?;
@@ -979,9 +940,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Build a `ToolExecContext` for the exec wrapper. Fields the wrapper
-/// never dereferences on the tested paths (`logger`, `config`)
-/// are left `undefined`, mirroring the get_plan harness.
+/// Build a `ToolExecContext` for the exec wrapper.
 fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
@@ -1016,8 +975,7 @@ test "execStatusPullRequest: no binding and no pr_url points at set_pull_request
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Session does not exist, so the binding read degrades to empty (the
-    // string-literal path) — this must answer with guidance, never crash.
+    // Session does not exist, so the binding read degrades to empty (the string-literal path) — this must answer with guidance, never crash.
     const tcx = makeTestCtx(alloc, &ctx.db, "sess_no_binding");
     const tc = fakeToolCall("{}");
 
@@ -1058,9 +1016,7 @@ test "execStatusPullRequest: session binding supplies the PR when pr_url is empt
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A `generic`-provider binding answers WITHOUT spawning any CLI, so
-    // this proves the binding was read from the session row (not the
-    // args) while staying hermetic: no `gh`/`glab`, no network, fast.
+    // A `generic`-provider binding answers WITHOUT spawning any CLI, so this proves the binding was read from the session row (not the args) while staying hermetic …
     try ctx.db.exec(alloc, "INSERT INTO sessions (id, name, status, pr_url, pr_provider) VALUES ('s_bound', 'B', 'active', 'https://git.corp.example.com/a/b/changes/9', 'generic')", &.{});
 
     const tcx = makeTestCtx(alloc, &ctx.db, "s_bound");
@@ -1074,8 +1030,7 @@ test "execStatusPullRequest: session binding supplies the PR when pr_url is empt
     const obj = parsed.value.object;
     try testing.expect(!obj.get("success").?.bool);
     const err_text = obj.get("error").?.string;
-    // The generic-provider answer proves the DB binding resolved: had it
-    // not, the error would say "no pull request bound" instead.
+    // The generic-provider answer proves the DB binding resolved: had it not, the error would say "no pull request bound" instead.
     try testing.expect(std.mem.indexOf(u8, err_text, "no pull request bound") == null);
     try testing.expect(std.mem.indexOf(u8, err_text, "generic") != null);
 }
@@ -1111,8 +1066,7 @@ test "providerFromOrigin: a guest answers the question, and never the host's git
         providerFromOrigin(allocator, std.testing.io, repo, null).?,
     );
 
-    // With a guest that cannot answer, there is no provider — where the host's
-    // git, if it were asked, would have said github.
+    // With a guest that cannot answer, there is no provider — where the host's git, if it were asked, would have said github.
     var fs = workspace_fs.Fs{
         .allocator = allocator,
         .workspace_id = @constCast("w1"),

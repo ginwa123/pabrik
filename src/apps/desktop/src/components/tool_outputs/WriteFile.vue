@@ -16,9 +16,7 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
@@ -30,9 +28,7 @@ const parsed = computed(() => {
   return p
 })
 
-// Parameters as a JSON object (null when unparseable). Used to pull the
-// `content` arg out for readable rendering and to decide expandability
-// without double-counting the excluded blob.
+// Parameters as a JSON object (null when unparseable).
 const paramsObj = computed((): Record<string, unknown> | null => {
   try {
     const raw = (props.parameters ?? '').trim()
@@ -45,9 +41,7 @@ const paramsObj = computed((): Record<string, unknown> | null => {
   }
 })
 
-// File body to render readably. Preserves explicit empty strings (writing
-// an empty file is valid) — null only when the key is missing/non-string
-// and no XML fallback matches.
+// File body to render readably.
 const writeContent = computed((): string | null => {
   const obj = paramsObj.value
   if (obj) {
@@ -65,8 +59,7 @@ const writeContent = computed((): string | null => {
 
 const hasContent = computed(() => writeContent.value !== null)
 
-// Raw content lines. A single trailing "" produced by a final "\n" is
-// a split artifact, not a real line — drop it so the gutter stays exact.
+// Raw content lines.
 const contentLines = computed(() => {
   const c = writeContent.value
   if (c === null || c === '') return []
@@ -85,9 +78,7 @@ const contentPath = computed((): string | null => {
   return p && p.trim() !== '' ? p : null
 })
 
-// Prefer the envelope's path (<file_write>); fall back to the parameters
-// prop so a still-running tool (placeholder envelope with empty <data>)
-// shows its path.
+// Prefer the envelope's path (<file_write>); fall back to the parameters prop so a still-running tool (placeholder envelope with empty <data>) shows its path.
 const displayPath = computed((): string | null => {
   return contentPath.value ?? extractParam(props.parameters, 'path')
 })
@@ -97,8 +88,7 @@ const isRunning = computed(() => {
   return isEmptyContent(props.content) && displayPath.value !== null
 })
 
-// `content` is visualized as readable lines above — hide it from Arguments
-// so the expanded card doesn't repeat the whole file body as escaped JSON.
+// `content` is visualized as readable lines above — hide it from Arguments so the expanded card doesn't repeat the whole file body as escaped JSON.
 const ARGS_EXCLUDE = ['content']
 
 const hasFilteredArgs = computed(() => {
@@ -110,12 +100,10 @@ const hasFilteredArgs = computed(() => {
   return p !== '' && p !== '{}'
 })
 
-// Language for code coloring, derived from the target file path. Unknown
-// extensions fall back to plaintext (plain-text rendering).
+// Language for code coloring, derived from the target file path.
 const fileLanguage = computed(() => detectLanguage(displayPath.value ?? ''))
 
-// Per-line tokens for code coloring. Tokens render as framework text
-// nodes (never HTML strings), so file content cannot inject markup.
+// Per-line tokens for code coloring.
 const highlightedLines = computed((): Token[][] => {
   const lang = fileLanguage.value
   return contentLines.value.map((line) => highlightLine(line, lang))

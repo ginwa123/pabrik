@@ -1,5 +1,4 @@
-//! `POST /api/agent-routines/:routine_id/knowledge`. Adds a knowledge entry
-//! to an agent-routines config.
+//! `POST /api/agent-routines/:routine_id/knowledge`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,8 +19,7 @@ const CreateKnowledgeBody = struct {
 /// Subset of the knowledge row returned by the use-case.
 pub const Knowledge = agent_routine_db.KnowledgeRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const KnowledgeCreateError = error{
     /// `routine_id` path param was missing or empty.
     RoutineIdRequired,
@@ -33,8 +31,7 @@ pub const KnowledgeCreateError = error{
     BothSourcesSet,
     /// `db.query` failed while looking up the routine.
     LookupFailed,
-    /// The workspace_item doesn't exist / isn't a routine, OR the routine
-    /// has no `agent_routines` row yet.
+    /// The workspace_item doesn't exist / isn't a routine, OR the routine has no `agent_routines` row yet.
     RoutineNotFound,
     /// `db.exec` failed on the INSERT.
     InsertFailed,
@@ -59,9 +56,7 @@ pub const KnowledgeCreateOutput = struct {
     knowledge: Knowledge,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a knowledge row for the given agent-routines config.
 fn useCase(
@@ -80,8 +75,6 @@ fn useCase(
     const handle: agent_routine_db.DbOrTx = .{ .db = db };
 
     // Validate routine exists + is a routine + has an agent_routines row.
-    // (spec D3: agent_routines.id == workspace_item_id, so routine_id IS
-    // the workspace_item_id.)
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'routine'
         \\AND EXISTS (SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'routine')
@@ -98,9 +91,7 @@ fn useCase(
     return .{ .knowledge = knowledge };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentRoutineKnowledgeCreateHandler(
@@ -170,7 +161,6 @@ pub fn agentRoutineKnowledgeCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

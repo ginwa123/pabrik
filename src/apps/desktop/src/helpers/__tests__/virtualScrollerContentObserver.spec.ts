@@ -22,8 +22,7 @@ class ControllableRO {
 }
 
 function fireContentRO(): void {
-  // The LAST observer constructed is the content observer (the
-  // container observer is constructed first in onMounted).
+  // The LAST observer constructed is the content observer (the container observer is constructed first in onMounted).
   const cb = roCallbacks[roCallbacks.length - 1]
   if (!cb) throw new Error('content ResizeObserver was not constructed')
   cb([], null)
@@ -90,8 +89,7 @@ describe('VirtualScroller idle content-size observer', () => {
     const { wrapper, el } = mountFullList()
     await nextTick()
 
-    // Settle at 100px/child with a fully drained cascade: model = 2000
-    // and nothing pending.
+    // Settle at 100px/child with a fully drained cascade: model = 2000 and nothing pending.
     el.scrollTop = 0
     el.dispatchEvent(new Event('scroll'))
     mockAllChildren(el, 100)
@@ -99,9 +97,7 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // Async growth with NO scroll (image decode / fetch resolving). Only the content observer can
-    // pick this up: without the fix the model parks at 2000 until the user's next scroll applies
-    // the whole correction at once.
+    // Async growth with NO scroll (image decode / fetch resolving).
     mockAllChildren(el, 200)
     mockContentH(el, 4000)
     fireContentRO()
@@ -121,8 +117,7 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // A scroll just happened (Date.now is fake-timer controlled, so the observer sees it as recent)
-    // and growth lands on top of it.
+    // A scroll just happened (Date.now is fake-timer controlled, so the observer sees it as recent) and growth lands on top of it.
     el.dispatchEvent(new Event('scroll'))
     mockAllChildren(el, 200)
     mockContentH(el, 4000)
@@ -146,16 +141,12 @@ describe('VirtualScroller idle content-size observer', () => {
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // Sync the observer baseline: fire once at the settled box size (in a real browser the observer
-    // fires on every change and the baseline tracks; in jsdom it only fires when the test says so).
-    // The scheduled measure is a no-op (children already exact).
+    // Sync the observer baseline: fire once at the settled box size (in a real browser the observer fires on every change and the baseline tracks; in jsdom it only …
     fireContentRO()
     await drain()
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // 1px of box noise: no measure may be scheduled. (Children are deliberately moved to 130 — a
-    // 30px growth the observer must NOT pick up from a 1px box delta. In a real browser the box
-    // always reflects child growth, so this only exercises the noise gate.
+    // 1px of box noise: no measure may be scheduled.
     mockAllChildren(el, 130)
     mockContentH(el, 2001)
     fireContentRO()

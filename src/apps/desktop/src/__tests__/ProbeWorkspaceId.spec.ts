@@ -5,8 +5,7 @@ import type { LlmTestResult, McpTestResult } from '../api'
 import LlmConfigModal, { type LlmConfigModalValue } from '../components/pabrik/LlmConfigModal.vue'
 import McpServerModal, { type McpServerModalValue } from '../components/pabrik/McpServerModal.vue'
 
-/** A stored credential reference, assembled from pieces so this file never
- * carries the literal token in one string. */
+/** A stored credential reference, assembled from pieces so this file never carries the literal token in one string. */
 const SECRET_REF = '{' + '{SECRETS:commandcodeapikey}' + '}'
 
 const mockTestLlmProfile = vi.fn(

@@ -25,23 +25,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The sidebar's two sections, on the JVM.
- *
- * The instrumented `RecentsSidebarTest` and `ProjectsSectionTest` cover these
- * gestures too, but an instrumented test needs an emulator and CI has none, so
- * everything asserted there sat unrun. Under Robolectric the real drawer
- * composes, measures and scrolls, which is the only way to assert the two parts
- * of this feature that are actually about layout: **the section titles pin
- * while their rows scroll under them**, and **every chat the drawer is handed
- * is a row it will draw**. A unit test that only counted items would pass just
- * as happily for a plain `item` header, which is the bug.
- *
- * A phone-sized screen is pinned explicitly. Robolectric's default viewport is
- * small enough that a 320dp permanent drawer and two section headers do not
- * fit, and "displayed" would then be answering a layout-arithmetic question
- * instead of the one this file is asking.
- */
+/** The sidebar's two sections, on the JVM. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
 class RecentsSidebarSectionsTest {
@@ -66,11 +50,7 @@ class RecentsSidebarSectionsTest {
         errorMessage = null,
     )
 
-    /**
-     * The recents fold is passed as *state*, for the reason it always was: a
-     * test that folds the section has to fold it without composing the drawer
-     * twice, and `setContent` may only be called once.
-     */
+    /** The recents fold is passed as *state*, for the reason it always was: a test that folds the section has to fold it without composing the drawer twice, and … */
     private fun showDrawer(
         chats: List<ChatSummary> = this.chats,
         projects: ProjectsState = oneProject(),
@@ -112,8 +92,7 @@ class RecentsSidebarSectionsTest {
         composeTestRule.onNodeWithTag("projects_section_header").assertIsDisplayed()
         composeTestRule.onNodeWithText("Projects").assertIsDisplayed()
 
-        // Unfolded by default: a section the reader has to open before it shows
-        // anything is a section most people never open.
+        // Unfolded by default: a section the reader has to open before it shows anything is a section most people never open.
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertIsDisplayed()
         composeTestRule.onNodeWithTag("project_row_item-a").assertIsDisplayed()
     }
@@ -122,9 +101,7 @@ class RecentsSidebarSectionsTest {
     fun theDrawerHasNoAllChatsRow() {
         showDrawer()
 
-        // The hamburger opens the list that row used to lead to, so the row was
-        // a second route to where the reader already stands. Asserted absent:
-        // a test that only checked it existed could not have caught its removal.
+        // The hamburger opens the list that row used to lead to, so the row was a second route to where the reader already stands.
         composeTestRule.onNodeWithText("All chats").assertDoesNotExist()
     }
 
@@ -144,8 +121,7 @@ class RecentsSidebarSectionsTest {
         composeTestRule.waitForIdle()
 
         assertEquals(1, toggles)
-        // Folded: the rows go, the section's own title stays, and the *other*
-        // section is untouched — a fold belongs to its own section only.
+        // Folded: the rows go, the section's own title stays, and the *other* section is untouched — a fold belongs to its own section only.
         composeTestRule.onNodeWithTag("recents_section_header").assertIsDisplayed()
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertDoesNotExist()
         composeTestRule.onNodeWithTag("chats_list_footer").assertDoesNotExist()
@@ -159,23 +135,11 @@ class RecentsSidebarSectionsTest {
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertIsDisplayed()
     }
 
-    // The *recents* pin has no test here, and that is a fact about the design
-    // rather than an omission. A section can only show its sticky title while
-    // its own rows scroll under it, and a five-row preview on a 891dp viewport
-    // cannot overflow — so the assertion would have to be written against a
-    // list this drawer no longer builds. It used to be here, and it passed by
-    // scrolling sixty chats the drawer will never hold.
-    //
-    // The header is still `stickyHeader`, still needed on a short viewport
-    // where the preview plus the gap is more than a screen, and still covered
-    // by the structural fact that both section titles are drawn by the same
-    // composable. `theProjectsTitlePinsWhileItsOwnRowsScrollUnderIt` below
-    // asserts the pin behaviour itself, on the one section that still scrolls.
+    // The *recents* pin has no test here, and that is a fact about the design rather than an omission.
 
     @Test
     fun theProjectsTitlePinsWhileItsOwnRowsScrollUnderIt() {
-        // One chat, so the list is short enough that scrolling lands inside the
-        // projects section — which is the only place the second pin shows.
+        // One chat, so the list is short enough that scrolling lands inside the projects section — which is the only place the second pin shows.
         showDrawer(chats = manyChats(1))
 
         composeTestRule.onNodeWithTag("sidebar_chat_list").performScrollToIndex(2)
@@ -186,20 +150,13 @@ class RecentsSidebarSectionsTest {
     }
 
     // ── The preview, and the button behind it ─────────────────────────
-    //
-    // The complaint this answers: a drawer that opened on five chat titles and
-    // a row reading "See 25 more chats", then paged the rest in as the reader
-    // scrolled. The shape now is the workspace-item kanban's: five rows, a
-    // button, and a full-screen page behind it.
 
     @Test
     fun theDrawerShowsThePreviewRows() {
         showDrawer(chats = manyChats(30), hasMoreChats = true)
 
         composeTestRule.onNodeWithTag("chat_row_chat-5").assertIsDisplayed()
-        // Absent, not merely off-screen: a lazy list composes only what it has
-        // been scrolled to, so "exists" after a scroll is the claim — and
-        // finding it needs the same gesture a reader would use.
+        // Absent, not merely off-screen: a lazy list composes only what it has been scrolled to, so "exists" after a scroll is the claim — and finding it needs the same …
         composeTestRule.onNodeWithTag("sidebar_chat_list").performScrollToIndex(7)
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("chat_row_chat-6").assertDoesNotExist()
@@ -211,9 +168,7 @@ class RecentsSidebarSectionsTest {
 
         composeTestRule.onNodeWithTag(SEE_ALL_ROW_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("See all chats").assertIsDisplayed()
-        // Same rule as the project's row, for the same reason: the page behind
-        // it is what has the honest number, and a count here is a second place
-        // for it to go stale.
+        // Same rule as the project's row, for the same reason: the page behind it is what has the honest number, and a count here is a second place for it to go stale.
         composeTestRule.onNodeWithText("See 25 more chats").assertDoesNotExist()
     }
 
@@ -229,17 +184,14 @@ class RecentsSidebarSectionsTest {
         composeTestRule.onNodeWithTag(SEE_ALL_ROW_TAG).performClick()
         composeTestRule.waitForIdle()
 
-        // A destination, not a toggle: the tap has to reach the navigation and
-        // nothing else. There is no "show fewer" half to fall back to.
+        // A destination, not a toggle: the tap has to reach the navigation and nothing else.
         assertEquals(1, opens)
         composeTestRule.onNodeWithText("Show fewer").assertDoesNotExist()
     }
 
     @Test
     fun aWorkspaceWithNothingBehindThePreviewOffersNoRow() {
-        // Three chats, the server said there is no more: a button here opens a
-        // page holding the same three rows, which is a detour dressed as a
-        // destination.
+        // Three chats, the server said there is no more: a button here opens a page holding the same three rows, which is a detour dressed as a destination.
         showDrawer(chats = manyChats(3), hasMoreChats = false)
 
         composeTestRule.onNodeWithTag(SEE_ALL_ROW_TAG).assertDoesNotExist()
@@ -248,17 +200,7 @@ class RecentsSidebarSectionsTest {
 
     @Test
     fun aStaleRefreshThatNeverGotPastThePreviewOffersNoRow() {
-        // Cached rows plus a refresh the server never answered. The cache only
-        // ever holds what the drawer fetched, which is the preview, so this is
-        // the whole of what can be on screen — and with no answer about whether
-        // more exist, a destination here is one the app cannot honour. Retry is
-        // what brings it back.
-        //
-        // Note what this test is *not*: it does not claim a stale drawer can
-        // never hold more than five rows. A reader who paged the destination
-        // page writes a longer list to the same cache, and after that a stale
-        // paint can hold thirty — with the row still offered, because the rows
-        // behind it are real and the page will ask the server again.
+        // Cached rows plus a refresh the server never answered.
         showDrawer(chats = manyChats(5), hasMoreChats = false)
 
         composeTestRule.onNodeWithTag(SEE_ALL_ROW_TAG).assertDoesNotExist()
@@ -268,8 +210,7 @@ class RecentsSidebarSectionsTest {
     fun theHeaderCountsEveryChatRatherThanTheOnesOnScreen() {
         showDrawer(chats = manyChats(30), hasMoreChats = true, chatsTotal = 30)
 
-        // The count is the only summary the section has, so it has to be the
-        // number of chats in the workspace — not the five the drawer holds.
+        // The count is the only summary the section has, so it has to be the number of chats in the workspace — not the five the drawer holds.
         composeTestRule.onNodeWithTag("recents_section_header")
             .assertContentDescriptionEquals("Recent. 30 chats in this workspace")
     }
@@ -278,9 +219,7 @@ class RecentsSidebarSectionsTest {
     fun theHeaderFallsBackToTheRowsWhenTheServerSentNoCount() {
         showDrawer(chats = manyChats(3), hasMoreChats = false)
 
-        // An older server reports no `total`. Three rows on screen is then all
-        // there is to claim, and claiming three is honest; claiming zero would
-        // hide the section's own contents.
+        // An older server reports no `total`.
         composeTestRule.onNodeWithTag("recents_section_header")
             .assertContentDescriptionEquals("Recent. 3 chats in this workspace")
     }
@@ -289,10 +228,7 @@ class RecentsSidebarSectionsTest {
     fun thereIsNoPagingFooterAndNothingToScrollFor() {
         showDrawer(chats = manyChats(30), hasMoreChats = true)
 
-        // "Scroll for older chats" promised a request this drawer does not
-        // make: the pages live on the destination page, behind the row above.
-        // Both footer states would be claims about a list this drawer never
-        // finishes fetching.
+        // "Scroll for older chats" promised a request this drawer does not make: the pages live on the destination page, behind the row above.
         composeTestRule.onNodeWithTag("chats_list_footer").assertDoesNotExist()
         composeTestRule.onNodeWithText("Scroll for older chats").assertDoesNotExist()
         composeTestRule.onNodeWithText("No older chats").assertDoesNotExist()
@@ -300,9 +236,7 @@ class RecentsSidebarSectionsTest {
 
     @Test
     fun aFoldedSectionOffersNoDestination() {
-        // A fold is a fold: the section's rows go, and so does the row that
-        // leaves the drawer. Offering it from a folded header would put a
-        // control where there is nothing to open.
+        // A fold is a fold: the section's rows go, and so does the row that leaves the drawer.
         showDrawer(
             chats = manyChats(30),
             recentsOpen = mutableStateOf(false),

@@ -8,8 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 064 — Add the `logs` table for the frontend_log_post endpoint
-/// (POST /api/log).
+/// Migration 064 — Add the `logs` table for the frontend_log_post endpoint (POST /api/log).
 pub const Migration064AddFrontendLogs = struct {
     pub const version: u32 = 64;
     pub const name = "add_frontend_logs";

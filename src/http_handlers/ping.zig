@@ -15,9 +15,7 @@ pub const PingResult = union(enum) {
     reconnect,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(session_id: []const u8) PingError!PingResult {
     const server = gserverz.global_server orelse return error.ServerNotInitialized;
@@ -25,9 +23,7 @@ fn useCase(session_id: []const u8) PingError!PingResult {
     return .reconnect;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn pingHandler(
     ctx: gserverz.HttpContext,
@@ -37,8 +33,7 @@ pub fn pingHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Per `pabrik-http-handler-thin-wrapper-pattern`, use
-    // `req.params.get` rather than the (non-existent) `path_param`.
+    // Per `pabrik-http-handler-thin-wrapper-pattern`, use `req.params.get` rather than the (non-existent) `path_param`.
     const session_id = req.params.get("session_id") orelse {
         return res.jsonResponse(allocator, .{
             .status_code = 400,

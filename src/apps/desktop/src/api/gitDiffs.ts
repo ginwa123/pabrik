@@ -7,9 +7,7 @@ export interface GitFileDiff {
   staged: boolean
 }
 
-// Batch file diffs — one POST replaces N parallel GET /git/file/diff. Collapses the
-// SidebarDiffPanel fan-out (20 files = 20 git spawns holding 20 Io workers) into at most 2
-// server-side `git diff` invocations. LIST mode: the client names the paths.
+// Batch file diffs — one POST replaces N parallel GET /git/file/diff.
 export interface GitFileDiffsBatchItem {
   file: string
   staged: boolean
@@ -17,8 +15,7 @@ export interface GitFileDiffsBatchItem {
 
 export interface GitFileDiffsResponse {
   diffs: GitFileDiff[]
-  /**    * Whole-file mode only: the file's full-context diff exceeded the server's budget and was REFUSED
-   * (`diff_content` is empty) rather than truncated into something that reads as a complete file. */
+  /** Whole-file mode only: the file's full-context diff exceeded the server's budget and was REFUSED (`diff_content` is empty) rather than truncated into something … */
   whole_file_refused?: boolean
 }
 
@@ -33,9 +30,7 @@ export async function getGitFileDiffs(
   })
 }
 
-// Folder mode — one POST for a whole folder. The server enumerates the changed paths itself (`git
-// status --porcelain -uall -- <folder>`), so the caller neither has to fetch `GET /api/git/changes`
-// first nor send a path-per-file body.
+// Folder mode — one POST for a whole folder.
 export async function getGitFolderDiffs(
   cwd: string,
   folder: string = '',
@@ -47,8 +42,7 @@ export async function getGitFolderDiffs(
   })
 }
 
-// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the caller can render every line of
-// the file with the changes still marked.
+// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the caller can render every line of the file with the changes still marked.
 export async function getGitWholeFileDiff(
   cwd: string,
   filePath: string,
@@ -92,9 +86,7 @@ export async function unstageGitFiles(cwd: string, files: string[]): Promise<Git
   )
 }
 
-// Git commit API — commits the staged index with a message typed in the
-// Files tab's commit box (SidebarDiffPanel). Answers the new HEAD SHA so
-// the panel can refresh history without another round-trip.
+// Git commit API — commits the staged index with a message typed in the Files tab's commit box (SidebarDiffPanel).
 export interface GitCommitCreateResponse {
   success: boolean
   message: string

@@ -4,13 +4,7 @@ import com.pabrik.mobile.http.HttpExchange
 import com.pabrik.mobile.http.HttpRequestSpec
 import com.pabrik.mobile.http.HttpsHttpExchange
 
-/**
- * Re-sends a captured call exactly as recorded, so "why did that POST fail?" can be
- * answered by running it again instead of guessing.
- *
- * Returns the new capture rather than throwing: a replay that fails is itself the
- * interesting result, and it lands in the inspector list like any other record.
- */
+/** Re-sends a captured call exactly as recorded, so "why did that POST fail?" can be answered by running it again instead of guessing. */
 fun replayNetworkEntry(
     entry: NetworkLogEntry,
     store: NetworkLogStore = NetworkLogStore.default,

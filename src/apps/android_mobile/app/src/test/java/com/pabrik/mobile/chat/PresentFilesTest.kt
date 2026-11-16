@@ -5,14 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The decisions a presented file's card makes, with no `Context`, no socket
- * and no device.
- *
- * This is the whole point of splitting [PresentFiles] out of the composable:
- * "is a `.svg` previewable as a picture" is the question that broke, and it is
- * a question about strings.
- */
+/** The decisions a presented file's card makes, with no `Context`, no socket and no device. */
 class PresentFilesTest {
 
     // ── kindOf ───────────────────────────────────────────────────────────────
@@ -30,12 +23,7 @@ class PresentFilesTest {
         )
     }
 
-    /**
-     * The trap this whole file exists for. `image/svg+xml` satisfies every
-     * `startsWith("image/")` test and `BitmapFactory` still cannot decode a
-     * single one of them, so an svg that classified as IMAGE would render as a
-     * permanent "could not be decoded" box.
-     */
+    /** The trap this whole file exists for. */
     @Test
     fun `an svg is external, not an image`() {
         assertEquals(PresentFileKind.EXTERNAL, PresentFiles.kindOf("/a/logo.svg", "image/svg+xml"))
@@ -53,8 +41,7 @@ class PresentFilesTest {
 
     @Test
     fun `markdown wins over the text branch the mime would otherwise pick`() {
-        // The backend maps .md to text/markdown, but an older row in the
-        // offline cache can carry text/plain for the same file.
+        // The backend maps .md to text/markdown, but an older row in the offline cache can carry text/plain for the same file.
         assertEquals(PresentFileKind.MARKDOWN, PresentFiles.kindOf("/a/R.md", "text/plain"))
     }
 
@@ -95,11 +82,7 @@ class PresentFilesTest {
         assertEquals(PresentFileKind.EXTERNAL, PresentFiles.kindOf("/a/bundle.zip", "application/zip"))
     }
 
-    /**
-     * A file type the backend has no table row for comes back as
-     * `application/octet-stream`, and the extension is then the only evidence
-     * there is. Before this, every such file rendered as an inert text row.
-     */
+    /** A file type the backend has no table row for comes back as `application/octet-stream`, and the extension is then the only evidence there is. */
     @Test
     fun `octet-stream falls back to the extension`() {
         assertEquals(PresentFileKind.IMAGE, PresentFiles.kindOf("/a/x.png", "application/octet-stream"))
@@ -118,11 +101,7 @@ class PresentFilesTest {
         assertEquals(PresentFileKind.MARKDOWN, PresentFiles.kindOf("/a/NOTES.md", ""))
     }
 
-    /**
-     * A specific mime beats a contradicting extension. The server sets the
-     * `Content-Type` on the bytes it sends, so a `.png` that is really a JSON
-     * error payload must not be decoded as a picture.
-     */
+    /** A specific mime beats a contradicting extension. */
     @Test
     fun `a known mime overrides the extension`() {
         assertEquals(PresentFileKind.TEXT, PresentFiles.kindOf("/a/photo.png", "text/plain"))
@@ -139,8 +118,7 @@ class PresentFilesTest {
         assertEquals("", PresentFiles.extensionOf("/a/.gitignore"))
         // A trailing dot is not an extension either.
         assertEquals("", PresentFiles.extensionOf("/a/weird."))
-        // The last dot after the last slash wins, so a dotted directory does
-        // not turn `/a.b/c` into a `.b/c` extension.
+        // The last dot after the last slash wins, so a dotted directory does not turn `/a.b/c` into a `.b/c` extension.
         assertEquals("", PresentFiles.extensionOf("/a.b/c"))
     }
 
@@ -261,11 +239,7 @@ class PresentFilesTest {
         assertEquals(512L * 1024L, PresentFiles.MAX_INLINE_TEXT_BYTES)
     }
 
-    /**
-     * Deliberately *not* the web's 200,000. A `LazyColumn` item holding a
-     * 200k-character `Text` lays out on the main thread, so the cap has to be
-     * low enough to stay interactive — see the constant's own comment.
-     */
+    /** Deliberately *not* the web's 200,000. */
     @Test
     fun `the drawn character cap is low enough to stay interactive`() {
         assertEquals(20_000, PresentFiles.MAX_INLINE_TEXT_CHARS)

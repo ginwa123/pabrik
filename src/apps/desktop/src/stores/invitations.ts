@@ -1,6 +1,4 @@
-// Pinia store for workspace invitations. Two lists that must not be confused: `mine` is what I am
-// asked to answer, `pending` is what I have asked others. Both come from the server, never sorted
-// here.
+// Pinia store for workspace invitations.
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { Cause, Data, Effect, Exit } from 'effect'
@@ -11,8 +9,7 @@ import { tryParseJsonErrorField } from '../api/internal'
 export class InvitationsRequestError extends Data.TaggedError('InvitationsRequestError')<{
   readonly op: string
   readonly reason: string
-  /** HTTP status, or 0 for a network failure. A 403 is not a broken fetch — it
-   * is "you may not manage this workspace", which the panel renders as a note. */
+  /** HTTP status, or 0 for a network failure. */
   readonly status: number
 }> {}
 
@@ -20,8 +17,7 @@ export function describeInvitationsError(error: InvitationsRequestError): string
   return `invitations ${error.op} failed: ${error.reason}`
 }
 
-/** The server answers its refusals as `{"error": "…"}`. That sentence is the one the user can act
- * on; `HTTP 409 Conflict` is not. */
+/** The server answers its refusals as `{"error": "…"}`. */
 function reasonOf(e: unknown): string {
   if (e instanceof api.ApiError) {
     return tryParseJsonErrorField(e.body) ?? e.message
@@ -59,9 +55,7 @@ export const useInvitationsStore = defineStore('invitations', () => {
   const saving = ref(false)
   const error = ref<string | null>(null)
   const loaded = ref(false)
-  /** False once the server says this caller is not an owner/admin. Drives the
-   * invite form and the pending block — an editor may read the roster and
-   * nothing else. */
+  /** False once the server says this caller is not an owner/admin. */
   const canManage = ref(true)
 
   const mineCount = computed(() => mine.value.length)
@@ -82,8 +76,7 @@ export const useInvitationsStore = defineStore('invitations', () => {
       request('pending', () => api.listWorkspaceInvitations(workspaceId)),
     )
     if (!result.ok) {
-      // 403 here is an ANSWER, not a failure: this account is a member but not
-      // an owner/admin, so there is no list to show and nothing went wrong.
+      // 403 here is an ANSWER, not a failure: this account is a member but not an owner/admin, so there is no list to show and nothing went wrong.
       if (result.status === 403) {
         canManage.value = false
         pending.value = []
@@ -96,8 +89,7 @@ export const useInvitationsStore = defineStore('invitations', () => {
     pending.value = result.value.invitations ?? []
   }
 
-  /** The inbox is fetched on its own so the sidebar can show a pending ask without knowing which
-   * workspace the user is looking at. */
+  /** The inbox is fetched on its own so the sidebar can show a pending ask without knowing which workspace the user is looking at. */
   async function fetchMine(): Promise<void> {
     loading.value = true
     error.value = null
@@ -113,8 +105,7 @@ export const useInvitationsStore = defineStore('invitations', () => {
     loading.value = false
   }
 
-  /** Ask somebody to join. Returns false and records why on any refusal — the invitee is NOT a
-   * member when this succeeds, which is why the caller must not treat it as an add. */
+  /** Ask somebody to join. */
   async function invite(
     workspaceId: string,
     email: string,
@@ -151,8 +142,7 @@ export const useInvitationsStore = defineStore('invitations', () => {
     return true
   }
 
-  /** Say yes. This is the only client call that can put a new workspace in the sidebar, so the
-   * inbox is re-read afterwards and the caller refreshes the workspace list. */
+  /** Say yes. */
   async function accept(invitationId: string): Promise<string | null> {
     saving.value = true
     error.value = null

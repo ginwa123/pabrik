@@ -16,34 +16,25 @@ const mcp_session_scope = @import("mcp_session_scope.zig");
 const guest_mcp = @import("guest_mcp.zig");
 const workspace_vm = @import("workspace_vm.zig");
 
-/// Session identity that owns a `tools/call`, so the Stop button can reach
-/// the lease wait and the transport reads/writes.
+/// Session identity that owns a `tools/call`, so the Stop button can reach the lease wait and the transport reads/writes.
 pub const CancelSession = struct {
     db: *database.Db,
     session_id: []const u8,
     io: std.Io,
 };
 
-/// Same order of magnitude as one `tools/call` budget (`:86`): a waiter never
-/// waits longer than the holder's own worst case, and every wait is finite.
+/// Same order of magnitude as one `tools/call` budget (`:86`): a waiter never waits longer than the holder's own worst case, and every wait is finite.
 pub const DEFAULT_LEASE_WAIT_NS: u64 = 60 * std.time.ns_per_s;
 
-/// Injectable knobs, both defaulted to production behaviour. They are
-/// parameters rather than constants so a test can drive the busy and cancelled
-/// paths without a 60 s wall-clock wait.
+/// Injectable knobs, both defaulted to production behaviour.
 pub const CallOptions = struct {
-    /// How long to wait for another session's in-flight call on the SAME stdio
-    /// server before reporting the server busy. Never pass 0 — that is the
-    /// `AcquireOptions` sentinel for "wait forever".
+    /// How long to wait for another session's in-flight call on the SAME stdio server before reporting the server busy.
     lease_wait_ns: u64 = DEFAULT_LEASE_WAIT_NS,
-    /// The session whose Stop button must break this call. Null = no hook
-    /// (tests, and callers with no session).
+    /// The session whose Stop button must break this call.
     cancel_session: ?CancelSession = null,
 };
 
-/// `AcquireOptions.is_cancelled`/`recv` take a bare `fn () bool`, so the session
-/// rides on a threadlocal — the shape `workflow.zig` uses for `llm_cancel_thunk`.
-/// The hook is throttled (50 ms, latched) because every wait polls it.
+/// `AcquireOptions.is_cancelled`/`recv` take a bare `fn () bool`, so the session rides on a threadlocal — the shape `workflow.zig` uses for `llm_cancel_thunk`.
 const session_cancel = struct {
     const POLL_INTERVAL_NS: i96 = 50 * std.time.ns_per_ms;
 
@@ -81,9 +72,7 @@ const session_cancel = struct {
     }
 };
 
-/// Handle an MCP tool call by forwarding it to the MCP server IMPORTANT: This
-/// function allocates directly from parent_allocator to avoid nested arena
-/// issues that can cause @memcpy aliasing errors.
+/// Handle an MCP tool call by forwarding it to the MCP server IMPORTANT: This function allocates directly from parent_allocator to avoid nested arena issues that …
 pub fn handle_mcp_tool_run(
     parent_allocator: std.mem.Allocator,
     logger: *logger_mod.Logger,
@@ -91,8 +80,7 @@ pub fn handle_mcp_tool_run(
     config: *const config_mod.LlmConfig,
     opts: CallOptions,
 ) ![]const u8 {
-    // Register BEFORE the first `acquire`: the lease wait and every transport
-    // read/write below reach the hook through `call`.
+    // Register BEFORE the first `acquire`: the lease wait and every transport read/write below reach the hook through `call`.
     if (opts.cancel_session) |s| session_cancel.register(s);
     defer if (opts.cancel_session != null) session_cancel.unregister();
     // Use parent_allocator directly to avoid nested arena memory issues
@@ -101,8 +89,7 @@ pub fn handle_mcp_tool_run(
     // Debug: log the tool call ID we received
     logger.infoFmt("[MCP] Tool call START - name: '{s}', id: '{s}'", .{ tool_call.function.name, tool_call.id });
 
-    // Parse tool name: format is "mcp_serverName_toolName"
-    // First, verify it starts with "mcp_"
+    // Parse tool name: format is "mcp_serverName_toolName" First, verify it starts with "mcp_"
     if (!std.mem.startsWith(u8, tool_call.function.name, "mcp_")) {
         logger.warnFmt("[MCP] Tool name does not start with 'mcp_': {s}", .{tool_call.function.name});
         return error.InvalidMCPToolName;
@@ -144,8 +131,7 @@ pub fn handle_mcp_tool_run(
         },
     };
 
-    // MCP server toggle: reject calls to explicitly-disabled servers AFTER
-    // config lookup but BEFORE any spawn/connect.
+    // MCP server toggle: reject calls to explicitly-disabled servers AFTER config lookup but BEFORE any spawn/connect.
     if (server_obj.get("enabled")) |enabled_val| {
         if (enabled_val == .bool and !enabled_val.bool) {
             logger.warnFmt("[MCP] Server '{s}' is disabled", .{server_name});
@@ -153,13 +139,9 @@ pub fn handle_mcp_tool_run(
         }
     }
 
-    // Transport dispatch: stdio (command) or HTTP (url). stdio takes
-    // precedence when both are present (the parser already rejects that
-    // combo, but the runtime is defensive).
+    // Transport dispatch: stdio (command) or HTTP (url). stdio takes precedence when both are present (the parser already rejects that combo, but the runtime is …
     if (server_obj.get("command")) |_| {
-        // 60s default per-call budget for tools/call (vs 30s for tools/list —
-        // mid-loop tool calls can legitimately take longer because the work
-        // itself is unbounded).
+        // 60s default per-call budget for tools/call (vs 30s for tools/list — mid-loop tool calls can legitimately take longer because the work itself is unbounded).
         const deadline_ns: u64 = 60 * std.time.ns_per_s;
         return callViaSpawnedServer(allocator, logger, server_name, actual_tool_name, tool_call.function.arguments, server_obj, deadline_ns, opts);
     }
@@ -171,9 +153,7 @@ pub fn handle_mcp_tool_run(
 
     logger.debugFmt("MCP HTTP dispatch to {s}", .{url});
 
-    // Build the custom_headers slice from the JSON object. MCP headers
-    // are a small bounded set; we use a stack buffer (max 16) to avoid
-    // a heap allocation on the hot path.
+    // Build the custom_headers slice from the JSON object.
     var std_header_buf: [16]custom_http_client.Header = undefined;
     var header_count: usize = 0;
     if (server_obj.get("headers")) |headers_value| {
@@ -199,9 +179,7 @@ pub fn handle_mcp_tool_run(
     }
     const custom_headers = std_header_buf[0..header_count];
 
-    // Get or build a cached HTTP client for this server. The process- global
-    // registry keeps the client alive for the process lifetime (the arena
-    // memory is freed at process exit).
+    // Get or build a cached HTTP client for this server.
     const http_registry = pabrik_mod.mcpHttpRegistry(allocator);
     var scope_arena = std.heap.ArenaAllocator.init(allocator);
     defer scope_arena.deinit();
@@ -220,17 +198,14 @@ pub fn handle_mcp_tool_run(
         return error.FailedToCallMCPServer;
     };
 
-    // Send the request. callTool returns the raw JSON-RPC response body
-    // (the SSE parser inside the client has already extracted the final
-    // event's data: field if the server returned SSE).
+    // Send the request. callTool returns the raw JSON-RPC response body (the SSE parser inside the client has already extracted the final event's data: field if the …
     const response_body = http_client.callTool(actual_tool_name, tool_call.function.arguments) catch |err| {
         logger.errFmt("MCP HTTP call failed: {s}", .{@errorName(err)});
         return error.FailedToCallMCPServer;
     };
     defer allocator.free(response_body);
 
-    // Extract `result.content[0].text` (this function's contract: the
-    // agent sees the text content, not the raw JSON-RPC envelope).
+    // Extract `result.content[0].text` (this function's contract: the agent sees the text content, not the raw JSON-RPC envelope).
     var parse_arena = std.heap.ArenaAllocator.init(allocator);
     defer parse_arena.deinit();
     const parsed = std.json.parseFromSlice(std.json.Value, parse_arena.allocator(), response_body, .{}) catch {
@@ -257,18 +232,13 @@ pub fn handle_mcp_tool_run(
         }
     }
 
-    // No content extractable — return the raw response body (caller
-    // may want to inspect the JSON-RPC error envelope if any).
+    // No content extractable — return the raw response body (caller may want to inspect the JSON-RPC error envelope if any).
     return try allocator.dupe(u8, response_body);
 }
 
-// ============================================================================
-// stdio transport: spawn a child process per server, send framed JSON-RPC
-// over its stdin, read the framed response from stdout.
+// stdio transport: spawn a child process per server, send framed JSON-RPC over its stdin, read the framed response from stdout.
 
-/// Call a tool on a spawned MCP server: sends a framed `tools/call` JSON-RPC
-/// body over the server process's stdin and reads the framed response. The
-/// process is a host child or a guest duplex, chosen by `guest_mcp.route`.
+/// Call a tool on a spawned MCP server: sends a framed `tools/call` JSON-RPC body over the server process's stdin and reads the framed response.
 fn callViaSpawnedServer(
     allocator: std.mem.Allocator,
     logger: *logger_mod.Logger,
@@ -279,8 +249,7 @@ fn callViaSpawnedServer(
     deadline_ns: u64,
     opts: CallOptions,
 ) ![]const u8 {
-    // `handle_mcp_tool_run` has already registered the session (if any), so
-    // this is the live hook every wait below shares.
+    // `handle_mcp_tool_run` has already registered the session (if any), so this is the live hook every wait below shares.
     const cancel_fn: ?*const fn () bool =
         if (opts.cancel_session != null) &session_cancel.call else null;
     // Build argv: [command, args...]
@@ -318,8 +287,7 @@ fn callViaSpawnedServer(
         if (opts.cancel_session) |s| s.session_id else null,
     );
 
-    // Where this server's process belongs: the host child every local install
-    // has always had, or a duplex in the tenant's VM under `--saas`.
+    // Where this server's process belongs: the host child every local install has always had, or a duplex in the tenant's VM under `--saas`.
     var route = guest_mcp.route(allocator, workspace_vm.mcpPlacementForProcess(), .{
         .db = if (opts.cancel_session) |s| s.db else null,
         .workspace_id = scope.workspace_id,
@@ -334,23 +302,18 @@ fn callViaSpawnedServer(
     }
     const io: ?std.Io = if (opts.cancel_session) |s| s.io else null;
 
-    // Retry loop for cold-start / stale child. Use NDJSON framing (like
-    // the discovery path) — Python and Node SDKs both default to NDJSON.
+    // Retry loop for cold-start / stale child.
     var last_err: anyerror = error.FailedToCallMCPServer;
     var attempt: u8 = 0;
     var resp: []u8 = undefined;
     var resp_owned = false;
-    // `resp` is allocated from the client's arena, which dies with the child
-    // — so the lease that guards it has to outlive the retry loop (the parse
-    // below runs after it).
+    // `resp` is allocated from the client's arena, which dies with the child — so the lease that guards it has to outlive the retry loop (the parse below runs after …
     var held: ?guest_mcp.Held = null;
     defer {
         if (held) |*h| h.release();
     }
     while (attempt < 3) : (attempt += 1) {
-        // Bounded + cancellable lease wait: `wait_ns = 0` means "wait forever",
-        // parking a neighbour session with no deadline and no way for Stop to
-        // reach it.
+        // Bounded + cancellable lease wait: `wait_ns = 0` means "wait forever", parking a neighbour session with no deadline and no way for Stop to reach it.
         var lease = guest_mcp.acquire(allocator, io, route, server_name, argv, .{
             .wait_ns = opts.lease_wait_ns,
             .is_cancelled = cancel_fn,
@@ -358,13 +321,9 @@ fn callViaSpawnedServer(
         }) catch |err| {
             logger.errFmt("stdio MCP lease failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
-            // Busy is contention, not a broken child: retrying would stack the
-            // wait budget and pin this session (and its neighbours) three times
-            // as long. Report it and let the model decide.
+            // Busy is contention, not a broken child: retrying would stack the wait budget and pin this session (and its neighbours) three times as long.
             if (err == error.LeaseTimeout) return error.MCPServerBusy;
-            // A command the OS cannot exec will not start working two
-            // iterations later; retrying only logs the same failure three
-            // times (and, before the spawn preflight, leaked fds each time).
+            // A command the OS cannot exec will not start working two iterations later; retrying only logs the same failure three times (and, before the spawn preflight …
             if (err == error.ChildSpawnFailed) return error.FailedToCallMCPServer;
             if (attempt + 1 < 3) {
                 continue;
@@ -379,9 +338,7 @@ fn callViaSpawnedServer(
         const req = try buildToolCallRequestBody(allocator, tool_name, arguments_json);
         defer allocator.free(req);
 
-        // Send as NDJSON (JSON + '\n'), not Content-Length. The send shares the
-        // call's budget and the cancel hook: a server that stopped draining its
-        // stdin must not hold this lease (and every waiter behind it) open.
+        // Send as NDJSON (JSON + '\n'), not Content-Length.
         client.send(req, deadline_ns, cancel_fn) catch |err| {
             logger.errFmt("stdio MCP send failed for {s}.{s}: {s}", .{ server_name, tool_name, @errorName(err) });
             last_err = err;
@@ -408,9 +365,7 @@ fn callViaSpawnedServer(
         break;
     }
     if (!resp_owned) return last_err;
-    // NOTE: no errdefer free of `resp` here — it is owned by the client's own
-    // arena (client.allocator()), never transferred to the caller (every
-    // return below dupes into `allocator`), so that arena reclaims it.
+    // NOTE: no errdefer free of `resp` here — it is owned by the client's own arena (client.allocator()), never transferred to the caller (every return below dupes …
 
     // Same JSON extraction as the HTTP branch: pull `result.content[0].text`.
     var parse_arena = std.heap.ArenaAllocator.init(allocator);
@@ -437,29 +392,21 @@ fn callViaSpawnedServer(
         }
     }
     if (!needs_copy) tool_result = try allocator.dupe(u8, resp);
-    // Large payload guard: truncate tool results over 100KB to avoid
-    // downstream SEGV / OOM / LLM context overflow. The 120KB graph
-    // data that crashed the backend is a real example.
+    // Large payload guard: truncate tool results over 100KB to avoid downstream SEGV / OOM / LLM context overflow.
     const MAX_TOOL_RESULT_BYTES: usize = 100 * 1024;
     if (tool_result.len > MAX_TOOL_RESULT_BYTES) {
         logger.warnFmt("MCP tool result too large: {} bytes, truncating to {} bytes", .{ tool_result.len, MAX_TOOL_RESULT_BYTES });
         const truncated = try std.fmt.allocPrint(allocator, "{s}\n\n[truncated: original was {} bytes, showing first {} bytes]", .{ tool_result[0..MAX_TOOL_RESULT_BYTES], tool_result.len, MAX_TOOL_RESULT_BYTES });
         allocator.free(tool_result);
-        // resp is arena-allocated (per-iteration arena in workflow.zig), so
-        // it will be freed at iteration end — no need to free here. But if
-        // this is called outside workflow (e.g.
+        // resp is arena-allocated (per-iteration arena in workflow.zig), so it will be freed at iteration end — no need to free here.
         return truncated;
     }
     return tool_result;
 }
 
-// ============================================================================
 // Shared request-body builder (used by both HTTP and stdio transports)
-// ============================================================================
 
 /// Build a JSON-RPC `tools/call` request body for a given tool name + args.
-/// Returns a freshly-allocated slice the caller owns (frees with allocator).
-/// This is the SHAPE the agent sends over the wire — same for HTTP and stdio.
 pub fn buildToolCallRequestBody(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -473,15 +420,12 @@ pub fn buildToolCallRequestBody(
     );
 }
 
-// ============================================================================
 // Tests (inline at the bottom — project convention)
-// ============================================================================
 
 const testing = std.testing;
 
 test "buildToolCallRequestBody: emits jsonrpc tools/call envelope" {
-    // Note: arguments_json is passed through verbatim — the test uses
-    // a compact JSON to make the substring match predictable.
+    // Note: arguments_json is passed through verbatim — the test uses a compact JSON to make the substring match predictable.
     const body = try buildToolCallRequestBody(testing.allocator, "say_hello",
         \\{"name":"world"}
     );
@@ -499,9 +443,7 @@ test "buildToolCallRequestBody: empty arguments is a valid empty object" {
 }
 
 test "handle_mcp_tool_run: disabled server returns MCPServerDisabled (no spawn)" {
-    // MCP server toggle: an explicit `"enabled": false` entry must be
-    // rejected AFTER config lookup but BEFORE any spawn/connect — the same
-    // shape as the existing unknown-server error path (a Zig error the caller
+    // MCP server toggle: an explicit `"enabled": false` entry must be rejected AFTER config lookup but BEFORE any spawn/connect — the same shape as the existing …
     const json_text =
         \\{"off": {"command": "/no/such/binary/should/exist/xyzzy", "args": [], "enabled": false}}
     ;
@@ -528,27 +470,20 @@ test "handle_mcp_tool_run: disabled server returns MCPServerDisabled (no spawn)"
         .agents = config_mod.LlmConfig.AgentsMap.init(testing.allocator),
         .url_style = "openai",
     };
-    // NOTE: no cfg.deinit — the string fields borrow static literals and
-    // both maps are empty (no allocations to release); parsed.deinit()
-    // above frees the JSON tree.
+    // NOTE: no cfg.deinit — the string fields borrow static literals and both maps are empty (no allocations to release); parsed.deinit() above frees the JSON tree.
     const tool_call = agent.ToolCall{
         .id = "t1",
         .function = .{ .name = "mcp_off_ping", .arguments = "{}" },
     };
-    // No-op when the gate above holds (no spawn attempted); cleans up the
-    // global registry if a regression ever lets a spawn through.
+    // No-op when the gate above holds (no spawn attempted); cleans up the global registry if a regression ever lets a spawn through.
     defer mcp_stdio.StdioRegistry.deinitGlobal();
     const err = handle_mcp_tool_run(testing.allocator, &logger, tool_call, &cfg, .{});
     try testing.expectError(error.MCPServerDisabled, err);
 }
 
-// ── Lease-wait behaviour: one stdio child per server per process, so a call
-// must never wait on it unboundedly and Stop has to reach that wait. These
-// tests drive the real `handle_mcp_tool_run` against local children.
+// ── Lease-wait behaviour: one stdio child per server per process, so a call must never wait on it unboundedly and Stop has to reach that wait.
 
-/// A child that never reads its stdin and stays alive long enough to hold a
-/// lease. Host table on purpose (CODING_STANDARDS.md §2): the tests below run
-/// on every platform, and a host the table does not name fails the spawn.
+/// A child that never reads its stdin and stays alive long enough to hold a lease.
 fn neverReadingArgv() []const []const u8 {
     return switch (builtin.os.tag) {
         .windows => &.{ "cmd.exe", "/C", "ping", "-n", "30", "127.0.0.1" },
@@ -557,8 +492,7 @@ fn neverReadingArgv() []const []const u8 {
     };
 }
 
-/// The same child as a config entry — `mcp_<server>_<tool>` splits on the first
-/// underscore, so server names carry none.
+/// The same child as a config entry — `mcp_<server>_<tool>` splits on the first underscore, so server names carry none.
 fn neverReadingServerJson() []const u8 {
     return switch (builtin.os.tag) {
         .windows => "{\"command\": \"cmd.exe\", \"args\": [\"/C\", \"ping\", \"-n\", \"30\", \"127.0.0.1\"]}",
@@ -567,8 +501,7 @@ fn neverReadingServerJson() []const u8 {
     };
 }
 
-/// A child that echoes what it reads (`cat` / `more`), so a round-trip is
-/// observable. Same host table, same rule.
+/// A child that echoes what it reads (`cat` / `more`), so a round-trip is observable.
 fn echoServerJson() []const u8 {
     return switch (builtin.os.tag) {
         .windows => "{\"command\": \"cmd.exe\", \"args\": [\"/C\", \"more\"]}",
@@ -577,13 +510,9 @@ fn echoServerJson() []const u8 {
     };
 }
 
-/// One stdio MCP server entry + everything `handle_mcp_tool_run` needs, wired
-/// to a real local child and to a log file the tests read to count lease
-/// attempts (`.err` is the only level it keeps).
+/// One stdio MCP server entry + everything `handle_mcp_tool_run` needs, wired to a real local child and to a log file the tests read to count lease attempts …
 const StdioCallFixture = struct {
-    /// Heap-allocated on purpose: `std.Io.Threaded.io()` stores
-    /// `userdata = &threaded`, so holding the Threaded BY VALUE here would
-    /// leave `io` pointing at `init`'s dead frame — UB that hangs on Windows.
+    /// Heap-allocated on purpose: `std.Io.Threaded.io()` stores `userdata = &threaded`, so holding the Threaded BY VALUE here would leave `io` pointing at `init`'s …
     threaded: *std.Io.Threaded,
     logger: logger_mod.Logger,
     servers: std.json.Parsed(std.json.Value),
@@ -624,8 +553,7 @@ const StdioCallFixture = struct {
             .servers = servers,
             .io = io,
             .log_path = owned_log_path,
-            // No cfg.deinit: the string fields borrow static literals and both
-            // maps stay empty, so `servers.deinit()` is the whole teardown.
+            // No cfg.deinit: the string fields borrow static literals and both maps stay empty, so `servers.deinit()` is the whole teardown.
             .cfg = .{
                 .allocator = allocator,
                 .api_key = "",
@@ -640,9 +568,7 @@ const StdioCallFixture = struct {
         };
     }
 
-    /// Error lines the call logged — one per lease-acquire attempt, so this is
-    /// the retry count. The only platform-independent way to assert it:
-    /// wall-clock cannot tell one attempt from three on a coarse-timer host.
+    /// Error lines the call logged — one per lease-acquire attempt, so this is the retry count.
     fn leaseAttempts(self: *StdioCallFixture) usize {
         const bytes = std.Io.Dir.cwd().readFileAlloc(self.io, self.log_path, testing.allocator, .limited(1 << 20)) catch return 0;
         defer testing.allocator.free(bytes);
@@ -691,14 +617,11 @@ test "handle_mcp_tool_run: a server another session holds reports MCPServerBusy 
     const elapsed_ms = elapsedMsSince(fx.io, start);
 
     try testing.expect(result == error.MCPServerBusy);
-    // ONE acquire attempt, not three: a busy lease is contention, not a broken
-    // child, so the retry loop must not stack the wait. Counted from the log,
-    // because a 200ms budget measures >1s under macOS/CI timer granularity.
+    // ONE acquire attempt, not three: a busy lease is contention, not a broken child, so the retry loop must not stack the wait.
     try testing.expectEqual(@as(usize, 1), fx.leaseAttempts());
     // The budget was waited out rather than failed instantly…
     try testing.expect(elapsed_ms >= 150);
-    // …and this is a hang guard, not a budget check (see above). Pre-fix the
-    // caller never returned at all.
+    // …and this is a hang guard, not a budget check (see above).
     try testing.expect(elapsed_ms < 30_000);
 }
 
@@ -731,9 +654,7 @@ test "handle_mcp_tool_run: a cancelled session stops waiting for a busy stdio se
 }
 
 test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the busy server" {
-    // The other half of the contract: the cancel hook fires on the row's VALUE,
-    // not on its mere presence — otherwise every MCP call would abort the
-    // moment its session row existed.
+    // The other half of the contract: the cancel hook fires on the row's VALUE, not on its mere presence — otherwise every MCP call would abort the moment its …
     var fx = try StdioCallFixture.init("livewsrv", neverReadingServerJson(), "./test_mcp_lease_uncancelled.log");
     defer fx.deinit();
 
@@ -762,16 +683,14 @@ test "handle_mcp_tool_run: a session that is NOT cancelled still waits out the b
 }
 
 test "handle_mcp_tool_run: an unheld stdio server answers the call" {
-    // Happy path through the new bounded send: an unheld server must still
-    // round-trip the request and hand the child's body back as the tool output.
+    // Happy path through the new bounded send: an unheld server must still round-trip the request and hand the child's body back as the tool output.
     var fx = try StdioCallFixture.init("idlesrv", echoServerJson(), "./test_mcp_lease_unheld.log");
     defer fx.deinit();
 
     const result = try fx.call("mcp_idlesrv_ping", .{});
     defer testing.allocator.free(result);
 
-    // The echo child returns the JSON-RPC request, which carries no
-    // `result.content[0].text`, so the raw body is what the model receives.
+    // The echo child returns the JSON-RPC request, which carries no `result.content[0].text`, so the raw body is what the model receives.
     try testing.expect(std.mem.indexOf(u8, result, "\"method\":\"tools/call\"") != null);
     try testing.expect(std.mem.indexOf(u8, result, "\"name\":\"ping\"") != null);
 }

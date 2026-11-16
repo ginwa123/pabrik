@@ -15,9 +15,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   const sidebarCollapsed = ref(loadSidebarCollapsed())
   const sidebarWidth = ref(loadSidebarWidth())
 
-  // Phone drawer. Deliberately NOT persisted: a reload must never land the reader in a drawer
-  // they did not open, and the desktop collapse flag above must not be reused for it — a phone
-  // that collapsed the rail would collapse the desktop sidebar too.
+  // Phone drawer.
   const mobileNavOpen = ref(false)
 
   // Active chat state
@@ -30,9 +28,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   // Chats sort direction
   const chatsSortDirection = ref(loadChatsSortDirection())
 
-  // Sub-agent peek panel state. When set, <ChatView> renders <SubAgentPeekPanel> for the given
-  // sub-agent session. The payload carries everything the panel needs from the spawn_sub_agent tool
-  // card (so we don't have to re-parse the message).
+  // Sub-agent peek panel state.
   const peekPanel = ref<{
     sessionId: string
     agentName: string

@@ -1,6 +1,4 @@
-// Functional wire tests for FOLDER mode of POST /api/git/file/diffs. LIST
-// mode (`git_file_diffs_test.zig`) still needs the caller to fetch `GET
-// /api/git/changes` first and then post the file list.
+// Functional wire tests for FOLDER mode of POST /api/git/file/diffs.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,8 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Run `git` with a fixed identity so the fixture never depends on the
-/// machine's global git config (which CI does not set).
+/// Run `git` with a fixed identity so the fixture never depends on the machine's global git config (which CI does not set).
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -130,8 +127,7 @@ fn postFolder(h: *Harness, body: []const u8, expect: []const u16) !harness.Respo
     });
 }
 
-/// A borrowed-key index over a parsed `diffs` array, plus the OWNED keys it
-/// points into.
+/// A borrowed-key index over a parsed `diffs` array, plus the OWNED keys it points into.
 const OwnedIndex = struct {
     map: std.StringHashMap([]const u8),
     owned: std.ArrayList([]u8),
@@ -147,9 +143,7 @@ fn initIndex() OwnedIndex {
     return .{ .map = std.StringHashMap([]const u8).init(gpa), .owned = .empty };
 }
 
-/// `(staged, path) -> diff_content`. The python used `{d["staged"],
-/// d["path"]: d["diff_content"] ...}`. A `std.json.Value` cannot be a map
-/// key, so this keys on the FORMATTED `"{staged}:{path}"` string instead.
+/// `(staged, path) -> diff_content`.
 fn indexBySideAndPath(diffs: []const std.json.Value) !OwnedIndex {
     var ix = initIndex();
     errdefer ix.deinit();
@@ -241,9 +235,7 @@ test "folder_mode_returns_every_changed_file_under_the_folder_in_one_call" {
     // The two sides the caller would otherwise have had to enumerate itself.
     try testing.expect(std.mem.indexOf(u8, try expectRow(&by_key.map, false, "src/committed.txt"), "+new") != null);
     try testing.expect(std.mem.indexOf(u8, try expectRow(&by_key.map, true, "src/staged.txt"), "+new") != null);
-    // Untracked under src/ — `git diff` shows nothing for it, so this only
-    // works if the server enumerated the path AND fell back to the synthetic
-    // new-file diff.
+    // Untracked under src/ — `git diff` shows nothing for it, so this only works if the server enumerated the path AND fell back to the synthetic new-file diff.
     try testing.expect(std.mem.indexOf(u8, try expectRow(&by_key.map, false, "src/fresh.txt"), "+brand new") != null);
 }
 
@@ -292,8 +284,7 @@ test "empty_folder_string_means_the_whole_repo" {
     });
 }
 
-// A folder with no changes is a real answer. A 400 would push the client into
-// its per-file fallback and restart the request flood.
+// A folder with no changes is a real answer.
 test "clean_folder_is_an_empty_list_not_a_400" {
     var f = try Fixture.init();
     defer f.deinit();
@@ -366,8 +357,6 @@ test "folder_mode_rejects_a_parent_escaping_path" {
 }
 
 // The response is a LIST of files, each tagged with the side it came from.
-// A path that is both staged and modified appears TWICE — once `staged:true`,
-// once `staged:false` — because those are two different diffs.
 test "folder_response_lists_each_file_with_its_staged_state" {
     var f = try Fixture.init();
     defer f.deinit();
@@ -382,8 +371,7 @@ test "folder_response_lists_each_file_with_its_staged_state" {
 
     const diffs = doc.array("diffs") orelse return error.TestUnexpectedResult;
 
-    // Count the rows per (path, side). `expectRow` cannot express "appears
-    // twice", so count directly.
+    // Count the rows per (path, side).
     var staged_both: usize = 0;
     var unstaged_both: usize = 0;
     for (diffs.items) |row| {
@@ -396,8 +384,7 @@ test "folder_response_lists_each_file_with_its_staged_state" {
     try testing.expectEqual(@as(usize, 1), staged_both);
     try testing.expectEqual(@as(usize, 1), unstaged_both);
 
-    // Every row carries all three fields, so a client can render the list
-    // without a second request to find out what a row means.
+    // Every row carries all three fields, so a client can render the list without a second request to find out what a row means.
     for (diffs.items) |row| {
         try testing.expect(row.object.get("path") != null);
         try testing.expect(row.object.get("diff_content") != null);

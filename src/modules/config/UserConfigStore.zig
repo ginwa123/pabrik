@@ -4,9 +4,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 
-/// Load the raw `config_json` for a user. Returns null when the user
-/// has no row, the column is NULL, or it is empty (all mean
-/// "defaults"). Caller owns the returned slice.
+/// Load the raw `config_json` for a user.
 pub fn loadRaw(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -27,9 +25,7 @@ pub fn loadRaw(
     return try allocator.dupe(u8, r.values[0]);
 }
 
-/// Save the raw `config_json` for a user. Empty input stores NULL (defaults)
-/// — never binds `""` directly since Backend collapses empty slices to
-/// NULL mid-execution anyway; the literal keeps the intent explicit.
+/// Save the raw `config_json` for a user.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -51,9 +47,7 @@ pub fn saveRaw(
     }
 }
 
-// =====================================================================
 // Tests (in-memory SQLite, same pattern as agent_kanban handlers)
-// =====================================================================
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -73,8 +67,7 @@ fn setupDb() !TestCtx {
     var db: database.Db = .{};
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
-    // Migration077 adds user_id to pre-existing workspaces/sessions
-    // tables — stub them so the ALTER has a target.
+    // Migration077 adds user_id to pre-existing workspaces/sessions tables — stub them so the ALTER has a target.
     try db.exec(
         testing.allocator,
         "CREATE TABLE workspaces (id TEXT PRIMARY KEY)",

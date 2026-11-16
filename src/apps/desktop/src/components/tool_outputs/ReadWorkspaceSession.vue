@@ -4,9 +4,7 @@ import ToolParameters from './_shared/ToolParameters.vue'
 import { extractParam } from '../../helpers/extractParam'
 import { normalizeToolContent } from './_shared/toolOutputParser'
 
-/** ReadWorkspaceSession — renders the `read_workspace_session` tool result (see
- * `read_workspace_session.zig`). */
-// ── Shared types ──────────────────────────────────────────────────────────
+// ReadWorkspaceSession — renders the `read_workspace_session` tool result (see `read_workspace_session.zig`). ── Shared types …
 interface WorkspaceSession {
   id: string
   name: string
@@ -22,8 +20,7 @@ interface SearchEntry {
   session_name: string
   role: string
   created_at?: string
-  /** Raw snippet with the FTS match wrapped in bare brackets — we render
-   *  those as a highlighted span rather than raw text. */
+  /** Raw snippet with the FTS match wrapped in bare brackets — we render those as a highlighted span rather than raw text. */
   snippet: string
 }
 
@@ -58,8 +55,7 @@ interface ReadEntry {
   preview: string
   tool_call_id?: string
   tool_name?: string
-  /**    * Present only when the caller passed `message_ids` and the LLM wants the full body. `truncated`
-   * is true if the body was clipped to `MAX_FULL_CONTENT_BYTES` (16 KB) by the backend. */
+  /** Present only when the caller passed `message_ids` and the LLM wants the full body. */
   content?: string
   content_truncated?: boolean
 }
@@ -70,8 +66,7 @@ const props = defineProps<{
   parameters?: string
 }>()
 
-/** The card is presentation-only — it never routes. ChatView listens and
- * owns the navigation, same as `SpawnSubAgent`'s `peek` event. */
+/** The card is presentation-only — it never routes. */
 const emit = defineEmits<{ openSession: [sessionId: string] }>()
 
 function openSession(sessionId: string): void {
@@ -144,9 +139,7 @@ const displaySessionId = computed(
   (): string | null => sessionId.value ?? extractParam(props.parameters, 'session_id'),
 )
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content) && displayBehavior.value !== null)
 
@@ -155,8 +148,7 @@ const sessionId = computed((): string | null => strOrNull(dataRecord.value.sessi
 /** Returned-page size (count of entries in *this* response). */
 const count = computed((): number | null => numOrNull(dataRecord.value.count))
 
-/**  * Total rows matching the WHERE clause (before LIMIT/OFFSET). Used by the LLM to know whether more
- * pages exist. We surface this too so the user can see "showing 20 of 47" at a glance. */
+/** Total rows matching the WHERE clause (before LIMIT/OFFSET). */
 const totalCount = computed((): number | null => numOrNull(dataRecord.value.total_count))
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
@@ -209,8 +201,7 @@ const searchEntries = computed((): SearchEntry[] => {
   return results
 })
 
-/**  * Full message bodies the backend returns when the caller passes `message_ids`. Keyed by message id
- * so a hit can expand into its own body. The card previously ignored this field entirely. */
+/** Full message bodies the backend returns when the caller passes `message_ids`. */
 const fullContents = computed((): Map<string, FullContent> => {
   const map = new Map<string, FullContent>()
   const raw = dataRecord.value.full_contents
@@ -230,8 +221,7 @@ const fullContents = computed((): Map<string, FullContent> => {
   return map
 })
 
-/**  * `YYYY-MM-DD HH:MM:SS` sorts lexicographically, which is why grouping by recency is only correct
- * now that the backend returns `created_iso` instead of a raw nanosecond epoch. */
+/** `YYYY-MM-DD HH:MM:SS` sorts lexicographically, which is why grouping by recency is only correct now that the backend returns `created_iso` instead of a raw … */
 function recencyKey(entry: SearchEntry): string {
   return entry.created_at ?? ''
 }
@@ -267,8 +257,7 @@ const groupedEntries = computed((): SearchGroup[] => {
   return groups
 })
 
-/**  * Stable test-id index per hit, taken from the ORIGINAL result order rather than the grouped render
- * order, so `search-entry-snippet-N` keeps meaning the same row it always did. */
+/** Stable test-id index per hit, taken from the ORIGINAL result order rather than the grouped render order, so `search-entry-snippet-N` keeps meaning the same row … */
 const entryIndexById = computed((): Map<string, number> => {
   const map = new Map<string, number>()
   searchEntries.value.forEach((entry, i) => map.set(entry.id, i))
@@ -295,8 +284,7 @@ const roleFacets = computed((): RoleFacet[] => {
 
 const totalInPage = computed(() => searchEntries.value.length)
 
-/** The card has no execute path, so a facet click cannot re-run the tool. It
- * copies a ready-made call the agent can paste as its next turn. */
+/** The card has no execute path, so a facet click cannot re-run the tool. */
 function facetToolCall(role: string): string {
   const args: Record<string, string> = {}
   const q = queryText.value ?? displayQuery.value
@@ -409,9 +397,7 @@ const copyId = async (e: Event, id: string) => {
   await navigator.clipboard.writeText(id)
 }
 
-// Per-read-entry "show full content" toggle. We only show the
-// full <content> when the user explicitly expands it — keeps the
-// bubble compact even when one entry happens to be huge.
+// Per-read-entry "show full content" toggle.
 const expandedContentIds = ref<Set<string>>(new Set())
 const isContentExpanded = (id: string): boolean => expandedContentIds.value.has(id)
 const toggleContent = (id: string): void => {
@@ -422,17 +408,13 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-/** Truncate `s` to `max` chars, keeping both ends (more useful for
- *  long paths/queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {
   if (s.length <= max) return s
   const half = Math.max(2, Math.floor((max - 1) / 2))
   return `${s.slice(0, half)}…${s.slice(s.length - half)}`
 }
 
-/** Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering. The backend calls
- * `snippet(messages_fts, 0, '[', ']', '...', 10)`, so a real snippet wraps matches in BARE brackets
- * — `...a [portal] that refuses...` — and contains no tags at all. */
+/** Split an FTS5 snippet into (text, isMatch) segments for `<mark>` rendering. */
 function parseSnippet(snippet: string): { text: string; match: boolean }[] {
   const out: { text: string; match: boolean }[] = []
   let inMatch = false

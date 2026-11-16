@@ -1,5 +1,4 @@
-// Wire tests for the data the `list_agents` agent tool reads: the configured
-// agents, as they sit on the wire after a config save.
+// Wire tests for the data the `list_agents` agent tool reads: the configured agents, as they sit on the wire after a config save.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,29 +7,22 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// A prompt long enough that a truncating implementation would be
-// obvious (>80 chars), with a distinct tail the assertions look for.
+// A prompt long enough that a truncating implementation would be obvious (>80 chars), with a distinct tail the assertions look for.
 const LONG_PROMPT =
     "You are a strict code reviewer with deep expertise in systems programming, " ++
     "testing, refactoring, and mentoring junior engineers across many languages. " ++
     "Always explain the why behind every finding.";
 
-/// A prompt containing the CDATA terminator the tool must split on the
-/// wire (`]]><![CDATA[>`). Seeded here so the round-trip proves the exact
-/// bytes the splitter consumes survive config persistence verbatim.
+/// A prompt containing the CDATA terminator the tool must split on the wire (`]]><![CDATA[>`).
 const SPLIT_PROMPT = "First half ]]> second half with <tags> & \"quotes\".";
 
-/// The marker secrets test 4 seeds, and asserts stay confined to their
-/// own two keys.
+/// The marker secrets test 4 seeds, and asserts stay confined to their own two keys.
 const SECRET_KEY = "sk-live-secret-marker-xyz";
 const SECRET_HOST = "secret-host-marker-xyz";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// `PUT /api/config/pabrik` with the object-map agent shape, seeding one
-/// agent whose body is `agent_json`.
+/// `PUT /api/config/pabrik` with the object-map agent shape, seeding one agent whose body is `agent_json`.
 fn putAgent(h: *Harness, name: []const u8, agent_json: []const u8) !void {
     const body = try std.fmt.allocPrint(gpa,
         \\{{"profiles":{{"{s}":{s}}}}}
@@ -44,8 +36,7 @@ fn putAgent(h: *Harness, name: []const u8, agent_json: []const u8) !void {
     defer r.deinit();
 }
 
-/// `GET /api/config/pabrik` → the whole body. Owned (a `harness.Json`
-/// aliases the response body, so it may not be returned from a helper).
+/// `GET /api/config/pabrik` → the whole body.
 fn getConfigBody(h: *Harness) ![]u8 {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -90,8 +81,7 @@ fn expectStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, ctx: []
     }
 }
 
-/// Python `obj.get(key) == n` for a numeric field. Accepts an integer
-/// OR a float payload, because Python's `==` did (`128000 == 128000.0`).
+/// Python `obj.get(key) == n` for a numeric field.
 fn expectNumber(obj: std.json.ObjectMap, key: []const u8, want: f64, ctx: []const u8) !void {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: `{s}` is absent\n", .{ ctx, key });
@@ -112,8 +102,6 @@ fn expectNumber(obj: std.json.ObjectMap, key: []const u8, want: f64, ctx: []cons
 }
 
 /// Python `obj.get(key) is None` — the key is ABSENT or explicitly JSON null.
-/// Anything else (number, string, `0`, `""`) is the regression this guards: a
-/// stored default would make the tool emit a phantom tag.
 fn expectAbsentOrNull(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse return;
     switch (v) {
@@ -137,9 +125,7 @@ fn expectNotString(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !v
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // A seeded agent comes back with the exact fields the tool renders.
 test "populated_agent_round_trips_tool_inputs_verbatim" {
@@ -172,9 +158,7 @@ test "populated_agent_round_trips_tool_inputs_verbatim" {
     try expectStr(agent, "reasoning_effort", "high", "coder.reasoning_effort");
 }
 
-// All-null optionals: the tool's "sparse agent" fixture. Omitted keys must
-// round-trip as absent-or-null (never invented defaults), because the tool
-// treats absent tags as "inherits the default".
+// All-null optionals: the tool's "sparse agent" fixture.
 test "sparse_agent_null_optionals_stay_absent_or_null" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -229,9 +213,7 @@ test "no_sub_agents_key_survives_a_save" {
     }
 }
 
-// A config.json written by an older build still carries a top-level
-// `sub_agents` array. The next save must drop it: the feature is gone, and
-// a stale list must not come back to life.
+// A config.json written by an older build still carries a top-level `sub_agents` array.
 test "the_deprecated_top_level_sub_agents_key_is_dropped_on_save" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -259,8 +241,7 @@ test "the_deprecated_top_level_sub_agents_key_is_dropped_on_save" {
     }
 }
 
-// The secrets stay confined to their own two keys: a marker in api_key or
-// base_url must not leak into another field.
+// The secrets stay confined to their own two keys: a marker in api_key or base_url must not leak into another field.
 test "secrets_confined_to_their_own_keys" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

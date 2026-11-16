@@ -25,8 +25,7 @@ const NO_WAIT = [0, 0, 0, 0]
 
 describe('INITIAL_HISTORY_TIMEOUT_MS', () => {
   it("outlives apiFetch's 15 s default — that abort is what faked an empty session", () => {
-    // apiFetch: `timeoutMs = 15_000`. A transcript page of PAGE_SIZE rows
-    // with base64 image_urls routinely exceeds it.
+    // apiFetch: `timeoutMs = 15_000`.
     expect(INITIAL_HISTORY_TIMEOUT_MS).toBeGreaterThan(15_000)
   })
 
@@ -52,8 +51,7 @@ describe('INITIAL_HISTORY_RETRY_DELAYS_MS', () => {
 
 describe('historyRetrySchedule', () => {
   it('stops immediately when there is no backoff entry', async () => {
-    // A single delay means "try once, never retry" — the schedule must not
-    // keep the effect alive.
+    // A single delay means "try once, never retry" — the schedule must not keep the effect alive.
     const attempt = vi.fn().mockRejectedValue(new Error('nope'))
     const exit = await runExit(
       fetchInitialHistoryWithRetry(() => Effect.tryPromise({ try: () => attempt(), catch: (e) => e as Error }), {
@@ -108,8 +106,7 @@ describe('fetchInitialHistoryWithRetry', () => {
       fetchInitialHistoryWithRetry(() => Effect.tryPromise({ try: () => attempt(), catch: (e) => e as Error }), { delaysMs: NO_WAIT }),
     )
 
-    // The failure must survive as a FAILURE, not degrade into a value — that
-    // is the whole point (AGENTS.md: never let a failure become an "empty").
+    // The failure must survive as a FAILURE, not degrade into a value — that is the whole point (AGENTS.md: never let a failure become an "empty").
     expect(Exit.isFailure(exit)).toBe(true)
     expect(causeOf(exit)).toBeDefined()
     expect(attempt).toHaveBeenCalledTimes(NO_WAIT.length)

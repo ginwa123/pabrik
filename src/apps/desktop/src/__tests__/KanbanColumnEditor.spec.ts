@@ -1,5 +1,4 @@
-/** Tests for KanbanColumnEditor — the modal that handles add / rename / delete of a kanban column.
- * One component, three modes (mode prop). */
+/** Tests for KanbanColumnEditor — the modal that handles add / rename / delete of a kanban column. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import KanbanColumnEditor from '../components/kanban/KanbanColumnEditor.vue'
@@ -232,9 +231,7 @@ describe('KanbanColumnEditor description field', () => {
     document.body.style.overflow = ''
   })
 
-  // Note: tests in this block use document.querySelector (via findInDom) instead of wrapper.find()
-  // because the editor renders inside <Teleport to="body"> — Vue Test Utils' wrapper.find() does
-  // not traverse the teleport destination.
+  // Note: tests in this block use document.querySelector (via findInDom) instead of wrapper.find() because the editor renders inside <Teleport to="body"> — Vue …
   it('shows a description textarea in add mode', async () => {
     document.body.innerHTML = ''
     const wrapper = mount(KanbanColumnEditor, {

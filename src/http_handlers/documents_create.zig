@@ -1,5 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/documents`. Creates a document owned by
-//! `workspace_id`, in one of `documents_store.SUPPORTED_FORMATS`.
+//! `POST /api/workspaces/:workspace_id/documents`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -39,9 +38,7 @@ pub const DocumentsCreateOutput = struct {
     document: documents_store.DocumentRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -58,9 +55,7 @@ fn useCase(
     }) };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn documentsCreateHandler(
     ctx: gserverz.HttpContext,
@@ -74,9 +69,7 @@ pub fn documentsCreateHandler(
 
     const workspace_id = req.params.get("workspace_id") orelse "";
 
-    // An empty body is legal — it means "blank note with the default
-    // title", and the store owns the title validation so the agent tool
-    // gets the same rule. Only unparseable JSON is a 400 here.
+    // An empty body is legal — it means "blank note with the default title", and the store owns the title validation so the agent tool gets the same rule.
     var body = CreateDocumentBody{};
     if (req.body.len > 0) {
         body = std.json.parseFromSliceLeaky(CreateDocumentBody, allocator, req.body, .{}) catch {
@@ -228,9 +221,7 @@ test "useCase: an empty body is stored as \"\" not NULL" {
     var ctx = try setupDb();
     defer ctx.deinit();
 
-    // The empty slice would bind as SQL NULL and violate
-    // `content TEXT NOT NULL`; COALESCE(NULLIF(?, ''), '') is what stops
-    // that, so a blank note must survive the round-trip.
+    // The empty slice would bind as SQL NULL and violate `content TEXT NOT NULL`; COALESCE(NULLIF(?, ''), '') is what stops that, so a blank note must survive the …
     const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Blank", .content = "" },

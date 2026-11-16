@@ -65,9 +65,7 @@ const props = withDefaults(
     workspaceId: string
     itemId: string
     cwd?: string
-    /**      * `comfortable` (default) is the two-line record: name + metadata. `compact` drops the metadata
-     * line back to a single scannable line, for boards like `merged` where 110 two-line rows is a
-     * lot of scrolling. Threaded from <KanbanView> via localStorage. */
+    /** `comfortable` (default) is the two-line record: name + metadata. */
     density?: KanbanRowDensity
   }>(),
   { cwd: '', density: 'comfortable' },
@@ -80,28 +78,20 @@ const emit = defineEmits<{
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   viewTaskDetail: [taskId: string]
-  // Right-click "Run agent" — starts a worker on this task's existing
-  // session. The host (KanbanView) owns the API call; the row only
-  // reports intent, same contract as the card's context menu.
+  // Right-click "Run agent" — starts a worker on this task's existing session.
   runAgent: [payload: { taskId: string }]
 }>()
 
-// Re-injected from App.vue rather than threaded down — same key and same
-// reason as <WorkspaceItemTaskRow>: it is keyed by task.id == session_id
-// and every per-task surface reads it this way.
+// Re-injected from App.vue rather than threaded down — same key and same reason as <WorkspaceItemTaskRow>: it is keyed by task.id == session_id and every …
 const processingState = inject<Ref<Record<string, boolean>>>('processingState', ref({}))
 
-// Shared handler contract (select / pin / rename / delete + the drop
-// indicator). `dropIndicator` is unused in row mode — there is no
-// pinned-region drag here — but the composable requires the prop shape.
+// Shared handler contract (select / pin / rename / delete + the drop indicator).
 const { handleSelectTask, handleDeleteTask, handleRenameTask, handlePinToggle } = useTaskActions(
   { ...props, dropIndicator: null },
   emit,
 )
 
-// ─── Active state ────────────────────────────────────────────────────────── URL-driven, like the
-// sidebar row: the highlight must survive refresh, deep links and Back/Forward, so it is derived
-// from the route rather than from a store flag that can drift.
+// ─── Active state ──────────────────────────────────────────────────────────
 const currentMainView = useCurrentMainView()
 const isActive = computed(
   () =>
@@ -111,8 +101,7 @@ const isActive = computed(
 
 const isBusy = computed(() => !!processingState.value[props.task.id])
 
-// ─── Status rail ─────────────────────────────────────────────────────────── Ordered by what a
-// reader is looking for: an error outranks a review request, which outranks work in flight.
+// ─── Status rail ───────────────────────────────────────────────────────────
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorRetryLabel = computed(() =>
@@ -144,8 +133,7 @@ const RAIL_COLORS: Record<RowState, string> = {
 }
 const railColor = computed(() => RAIL_COLORS[rowState.value])
 
-// A single human-readable sentence for the status slot. Null when
-// nothing is worth saying, so the metadata line can skip the separator.
+// A single human-readable sentence for the status slot.
 const statusLabel = computed<string | null>(() => {
   if (agentError.value) {
     return errorRetryLabel.value ? `⚠ ${errorRetryLabel.value} retries` : '⚠ workflow halted'
@@ -173,24 +161,21 @@ const lastUpdated = computed<Date | string | null>(() => {
 const updatedLabel = computed(() => formatTaskTimestamp(lastUpdated.value))
 const updatedTitle = computed(() => taskTimestampTooltip(lastUpdated.value))
 
-// Branch name or null. Empty string and null both mean "don't render a
-// badge" — the backend returns null for a non-repo cwd or detached HEAD.
+// Branch name or null.
 const gitBranch = computed<string | null>(() => {
   const b = props.task.git_branch
   if (typeof b !== 'string' || b.length === 0) return null
   return b
 })
 
-// Cap the tag chips: a row is a line, not a card, and 8 chips would push
-// the time off the end. The count of hidden tags rides along as "+N".
+// Cap the tag chips: a row is a line, not a card, and 8 chips would push the time off the end.
 const VISIBLE_TAGS_MAX = 3
 const visibleTags = computed<string[]>(() => (props.task.tags ?? []).slice(0, VISIBLE_TAGS_MAX))
 const extraTagsCount = computed(() =>
   Math.max(0, (props.task.tags ?? []).length - VISIBLE_TAGS_MAX),
 )
 
-// Blocked badge (kanban task dependencies). Same count + tooltip
-// contract as the card twin in WorkspaceItemTaskCard.vue.
+// Blocked badge (kanban task dependencies).
 const blockedCount = computed<number>(() => props.task.blocked_by?.length ?? 0)
 const blockedTitle = computed<string>(() => {
   const names = (props.task.blocked_by ?? []).map((b) => b.name).filter((n) => n.length > 0)
@@ -198,16 +183,13 @@ const blockedTitle = computed<string>(() => {
   return names.length > 0 ? `${head}: ${names.join(', ')}` : head
 })
 
-// Same djb2 → 6-hue cycle as <WorkspaceItemTaskCard> and <KanbanTagsInput> (helpers/tagPalette), so
-// a tag keeps its colour wherever it appears.
+// Same djb2 → 6-hue cycle as <WorkspaceItemTaskCard> and <KanbanTagsInput> (helpers/tagPalette), so a tag keeps its colour wherever it appears.
 function tagChipStyle(tag: string): Record<string, string> {
   const style = tagStyle(tag)
   return { backgroundColor: style.backgroundColor, border: style.border, color: style.color }
 }
 
-// ─── Keyboard ────────────────────────────────────────────────────────────── The row root is a
-// <div role="button"> because it hosts nested interactive controls (pin / rename / delete /
-// details) and HTML forbids button-inside-button.
+// ─── Keyboard ──────────────────────────────────────────────────────────────
 const handleRowKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
@@ -228,9 +210,7 @@ const openTaskMenuInBackground = () => {
   })
 }
 
-// Right-click "Run agent". Emits up rather than calling the store —
-// the row has no workspace/item context of its own beyond the props it
-// already forwards, and the endpoint path is built by KanbanView.
+// Right-click "Run agent".
 const runAgentFromMenu = () => {
   closeTaskMenu()
   if (isBusy.value) return

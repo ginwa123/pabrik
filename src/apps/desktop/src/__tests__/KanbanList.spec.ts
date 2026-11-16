@@ -1,6 +1,4 @@
-/** Tests for KanbanList.vue — the tool_output component that renders the XML response from the
- * `kanban_list` agent tool. The component is purely presentational (no API calls), so no mocks are
- * needed. Mirrors the SetGitWorktree / SearchSkills tool_output style. */
+/** Tests for KanbanList.vue — the tool_output component that renders the XML response from the `kanban_list` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

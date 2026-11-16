@@ -1,6 +1,4 @@
-//! open_descriptors — descriptors (POSIX) / handles (Windows) held by THIS
-//! process. `/proc/self/fd` exists on Linux alone, so the leak tests that
-//! used it skipped everywhere else; this names each host's own mechanism.
+//! open_descriptors — descriptors (POSIX) / handles (Windows) held by THIS process.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,14 +10,10 @@ pub const CountError = error{
     CountFailed,
 };
 
-/// How far the POSIX sweep walks the descriptor table: the soft limit is
-/// 1024 on Linux and 256 on macOS, so this is slack for a raised limit, not
-/// a claim about the maximum. Only the delta between two counts matters.
+/// How far the POSIX sweep walks the descriptor table: the soft limit is 1024 on Linux and 256 on macOS, so this is slack for a raised limit, not a claim about …
 const probe_limit_fd: std.posix.fd_t = 4096;
 
-/// Open descriptors (POSIX) / handles (Windows) held by this process right
-/// now. A host nothing here handles gets an ERROR, which fails the caller's
-/// test instead of letting it pass with nothing asserted.
+/// Open descriptors (POSIX) / handles (Windows) held by this process right now.
 pub fn count() CountError!usize {
     return switch (builtin.os.tag) {
         .windows => windowsHandleCount(),
@@ -44,9 +38,7 @@ pub fn count() CountError!usize {
     };
 }
 
-/// `GetProcessHandleCount` on this process: a pipe, a process and a thread
-/// are one handle each, so a handle count is Windows' spelling of an
-/// open-descriptor count. Documented since Windows Vista.
+/// `GetProcessHandleCount` on this process: a pipe, a process and a thread are one handle each, so a handle count is Windows' spelling of an open-descriptor count.
 fn windowsHandleCount() CountError!usize {
     var n: u32 = 0;
     if (!win32.GetProcessHandleCount(std.os.windows.GetCurrentProcess(), &n).toBool()) {
@@ -55,9 +47,7 @@ fn windowsHandleCount() CountError!usize {
     return n;
 }
 
-/// The kernel's own answer: `fcntl(fd, F_GETFD)` answers EBADF for a slot this
-/// process does not hold, so a sweep to `probe_limit_fd` counts exactly the
-/// open descriptors. No `/proc` needed, and no libc on Linux (see posix_arm).
+/// The kernel's own answer: `fcntl(fd, F_GETFD)` answers EBADF for a slot this process does not hold, so a sweep to `probe_limit_fd` counts exactly the open …
 fn posixDescriptorCount() CountError!usize {
     var n: usize = 0;
     var fd: std.posix.fd_t = 0;
@@ -67,9 +57,7 @@ fn posixDescriptorCount() CountError!usize {
     return n;
 }
 
-/// POSIX only. A `poll`/POLLNVAL sweep was the first version and macOS proved
-/// it wrong: Darwin's poll never reported the slot the test had just opened, so
-/// the count never moved — the self-check below is what caught it.
+/// POSIX only.
 const posix_arm = if (builtin.os.tag == .windows) struct {} else struct {
     fn isOpen(fd: std.posix.fd_t) bool {
         return switch (builtin.os.tag) {
@@ -79,8 +67,7 @@ const posix_arm = if (builtin.os.tag == .windows) struct {} else struct {
     }
 };
 
-/// Windows only. `struct {}` elsewhere keeps the Win32 symbol out of the
-/// build on every other host, and out of the way of a cross-compile.
+/// Windows only.
 const win32 = if (builtin.os.tag == .windows) struct {
     extern "kernel32" fn GetProcessHandleCount(
         hProcess: std.os.windows.HANDLE,
@@ -93,9 +80,7 @@ const win32 = if (builtin.os.tag == .windows) struct {
 const testing = std.testing;
 
 test "count: this host's mechanism sees a descriptor the test opens" {
-    // The guard against a mechanism that answers 0 — or the whole table —
-    // for everything: a leak test reading such a number passes vacuously on
-    // every host, which is the skip this file exists to replace.
+    // The guard against a mechanism that answers 0 — or the whole table — for everything: a leak test reading such a number passes vacuously on every host, which is …
     const before = try count();
     try testing.expect(before > 0); // stdin/stdout/stderr at the very least
 

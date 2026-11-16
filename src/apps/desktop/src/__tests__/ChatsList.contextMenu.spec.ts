@@ -107,9 +107,7 @@ describe('ChatsList — right-click context menu', () => {
     expect(
       document.body.querySelector('[data-testid="chat-context-menu-title"]')?.textContent?.trim(),
     ).toBe('Hello')
-    // Idle chat → nothing to stop. Asserting the absence matters: the
-    // "Stop agent" row firing on an idle chat would POST a stop for a
-    // run that never existed.
+    // Idle chat → nothing to stop.
     expect(document.body.querySelector('[data-testid="chat-context-menu-stop"]')).toBeNull()
     wrapper.unmount()
   })
@@ -158,9 +156,7 @@ describe('ChatsList — right-click context menu', () => {
     await row!.trigger('contextmenu', { clientX: 100, clientY: 200 })
     await nextTick()
 
-    // The label states the ACTION, not the state — a static "Unattended
-    // mode" row leaves the user guessing whether picking it turns the
-    // flag on or off.
+    // The label states the ACTION, not the state — a static "Unattended mode" row leaves the user guessing whether picking it turns the flag on or off.
     const unattended = document.body.querySelector('[data-testid="chat-context-menu-unattended"]')
     expect(unattended?.textContent).toContain('Turn off unattended mode')
     expect(unattended?.getAttribute('aria-checked')).toBe('true')
@@ -191,9 +187,7 @@ describe('ChatsList — right-click context menu', () => {
       .querySelector<HTMLButtonElement>('[data-testid="chat-context-menu-rename"]')!
       .click()
     await nextTick()
-    // RenameTaskModal teleports to <body>, so it is reached through the
-    // document rather than the ChatsList wrapper. Drive its input the
-    // way a user would rather than reaching past the component boundary.
+    // RenameTaskModal teleports to <body>, so it is reached through the document rather than the ChatsList wrapper.
     const input = document.body.querySelector<HTMLInputElement>(
       '[data-testid="rename-modal-input"]',
     )!
@@ -208,9 +202,7 @@ describe('ChatsList — right-click context menu', () => {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
 
-    // task.id == session_id (Migration 052), so the id-only task PUT is
-    // the rename path that cascades to sessions.name WITHOUT also
-    // clearing selected_profile_model.
+    // task.id == session_id (Migration 052), so the id-only task PUT is the rename path that cascades to sessions.name WITHOUT also clearing selected_profile_model.
     expect(updateTaskSimple).toHaveBeenCalledWith('chat_1', { name: 'Renamed' })
     expect(updateSession).not.toHaveBeenCalled()
     updateTaskSimple.mockRestore()
@@ -257,9 +249,7 @@ describe('ChatsList — right-click context menu', () => {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
 
-    // The landmine: api.updateSession always PUTs selected_profile_model,
-    // and the server treats '' as CLEAR. Omitting it here would silently
-    // reset this chat back to the default profile.
+    // The landmine: api.updateSession always PUTs selected_profile_model, and the server treats '' as CLEAR.
     expect(updateSession).toHaveBeenCalledWith('chat_1', {
       isAutoRetryUntilStop: '1',
       selectedAgent: 'codex-high',

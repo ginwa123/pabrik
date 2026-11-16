@@ -126,9 +126,7 @@ describe('ChatRightSidebar explorer tab', () => {
     const router = makeRouter()
     router.push({ path: '/', query: {} })
     await router.isReady()
-    // Symbol-keyed injection (OPEN_IN_CODE_EDITOR_KEY) does not travel via
-    // mount `global.provide` — wrap in a parent that provide()s it, same
-    // pattern as ListDirectory.spec.ts.
+    // Symbol-keyed injection (OPEN_IN_CODE_EDITOR_KEY) does not travel via mount `global.provide` — wrap in a parent that provide()s it, same pattern as …
     const Host = defineComponent({
       setup() {
         provide(OPEN_IN_CODE_EDITOR_KEY, openInEditor)

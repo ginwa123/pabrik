@@ -95,16 +95,14 @@ describe('SessionEngineDb delta', () => {
   })
 
   it('loadDelta fails with a typed SyncRemoteError and keeps the painted cache', async () => {
-    // Seed the cache through a working engine, then revalidate with a
-    // failing fetcher against the same store.
+    // Seed the cache through a working engine, then revalidate with a failing fetcher against the same store.
     const store = makeMemorySyncStore()
     const seeded = new SessionEngineDb(fetchOk([]) as never, 'sessions', store)
     await run(seeded.putLocal('ws-fail', [toSessionRow(session({ session_id: 'keep' }))]))
 
     const failing = new SessionEngineDb(fetchFail('offline') as never, 'sessions', store)
 
-    // The old contract returned `null` here, which the caller could not tell
-    // apart from "no new sessions". Now the reason is in the type.
+    // The old contract returned `null` here, which the caller could not tell apart from "no new sessions".
     const exit = await Effect.runPromise(Effect.exit(failing.loadDelta('ws-fail', 30)))
     expect(exit._tag).toBe('Failure')
     const err = exit._tag === 'Failure' ? (Cause.squash(exit.cause) as SyncRemoteError) : null

@@ -1,6 +1,4 @@
-//! The host side of a tenant file: map an absolute host path onto the guest's
-//! `/workspace` and read it through `pabrik-vmd`. Local mode installs nothing —
-//! a caller asks `forSession` and keeps today's behaviour on a null answer.
+//! The host side of a tenant file: map an absolute host path onto the guest's `/workspace` and read it through `pabrik-vmd`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -33,8 +31,7 @@ pub const Error = error{
     GuestWorkspaceRoot,
 };
 
-/// What a walk said a path is. The guest names four kinds; nothing above this
-/// seam has to know which syscall told it.
+/// What a walk said a path is.
 pub const Kind = enum { file, dir, link, other };
 
 fn kindFromGuest(text: []const u8) Kind {
@@ -44,16 +41,13 @@ fn kindFromGuest(text: []const u8) Kind {
     return .other;
 }
 
-/// One path the guest reported, named the way the caller names paths: absolute,
-/// under the workspace root. There is still no host filesystem behind it — the
-/// string is a key for this seam, not a file the host may open.
+/// One path the guest reported, named the way the caller names paths: absolute, under the workspace root.
 pub const Entry = struct {
     abs: []u8,
     kind: Kind,
 };
 
-/// A bounded walk. `truncated` is the guest saying the tree was larger than
-/// the ceilings allowed, which is not the same as a tree that ended.
+/// A bounded walk.
 pub const Walk = struct {
     allocator: std.mem.Allocator,
     entries: []Entry,
@@ -72,8 +66,7 @@ pub const Stat = struct {
     missing: bool,
 };
 
-/// A program's answer from inside the guest. The host spawned nothing: this is
-/// the only way a scan or a git check runs against a tenant tree.
+/// A program's answer from inside the guest.
 pub const Exec = struct {
     code: i64,
     timed_out: bool,
@@ -91,16 +84,13 @@ pub const Exec = struct {
 const git_check_timeout_ms: u32 = 20_000;
 const git_check_output_bytes: usize = 64 * 1024;
 
-/// Which guest file an absolute host path names. There is no host filesystem
-/// behind this: `root` is only the string the DB records, and every byte comes
-/// back over the RPC.
+/// Which guest file an absolute host path names.
 pub const Fs = struct {
     allocator: std.mem.Allocator,
     workspace_id: []u8,
     root: []u8,
     socket: []u8,
-    /// Whether answers are spelled in the guest's vocabulary. A `--saas` caller
-    /// gets `/workspace/...`; local mode keeps the host's own paths.
+    /// Whether answers are spelled in the guest's vocabulary.
     guest_paths: bool = false,
 
     pub fn deinit(self: *Fs) void {
@@ -109,23 +99,19 @@ pub const Fs = struct {
         self.allocator.free(self.socket);
     }
 
-    /// The path relative to the workspace root, or null when `abs` is not under
-    /// it. Borrows from `abs`, so the caller keeps owning its own string.
+    /// The path relative to the workspace root, or null when `abs` is not under it.
     pub fn relative(self: *const Fs, abs: []const u8) ?[]const u8 {
         const rel = policy.relativeWorkspace(self.root, abs) orelse return null;
         if (!fs_policy.pathRelValid(rel)) return null;
         return rel;
     }
 
-    /// The whole file, read in bounded pieces until the guest says `eof`. The
-    /// host never opens it, so the only copy is the one in this allocation.
+    /// The whole file, read in bounded pieces until the guest says `eof`.
     pub fn readAll(self: *const Fs, abs: []const u8) ![]u8 {
         return self.readUpTo(self.allocator, abs, fs_policy.max_read_bytes);
     }
 
-    /// The same read under the caller's own ceiling, for a copy that is allowed
-    /// to be larger than a tool's answer may be. Over the ceiling is a refusal,
-    /// never a truncation — the caller asked for all of it.
+    /// The same read under the caller's own ceiling, for a copy that is allowed to be larger than a tool's answer may be.
     pub fn readUpTo(self: *const Fs, allocator: std.mem.Allocator, abs: []const u8, max_bytes: usize) ![]u8 {
         const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
         var client = vmd.Client.init(allocator, self.socket);
@@ -147,17 +133,14 @@ pub const Fs = struct {
         return out.toOwnedSlice(allocator);
     }
 
-    /// The directory form of `relative`: a listing or a walk may start at the
-    /// workspace root, which is the one path no file op may name.
+    /// The directory form of `relative`: a listing or a walk may start at the workspace root, which is the one path no file op may name.
     pub fn relativeDir(self: *const Fs, abs: []const u8) ?[]const u8 {
         const rel = policy.relativeWorkspace(self.root, abs) orelse return null;
         if (!fs_policy.dirRelValid(rel)) return null;
         return rel;
     }
 
-    /// The absolute path a guest-relative one names, in the caller's own
-    /// vocabulary. The reverse of `relative`, and the only place a walk's
-    /// relative answer becomes a path a tool can hand back to a model.
+    /// The absolute path a guest-relative one names, in the caller's own vocabulary.
     pub fn hostPath(self: *const Fs, rel: []const u8) ![]u8 {
         if (!fs_policy.dirRelValid(rel)) return Error.GuestPathOutsideWorkspace;
         if (self.guest_paths) return policy.guestCwd(self.allocator, policy.guest_root, rel);
@@ -166,8 +149,7 @@ pub const Fs = struct {
         return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ root, rel });
     }
 
-    /// The kind and size of one path, as the guest sees it. The workspace root
-    /// itself has no stat: a caller that needs it should list, or walk, there.
+    /// The kind and size of one path, as the guest sees it.
     pub fn stat(self: *const Fs, abs: []const u8) !Stat {
         const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
         var client = vmd.Client.init(self.allocator, self.socket);
@@ -180,18 +162,14 @@ pub const Fs = struct {
         };
     }
 
-    /// The whole file, written BY THE GUEST. The bytes are the caller's and the
-    /// file is the guest's; the host creates nothing and opens nothing, which
-    /// is what makes the guest the only writer.
+    /// The whole file, written BY THE GUEST.
     pub fn writeAll(self: *const Fs, abs: []const u8, bytes: []const u8, create_dirs: bool) !void {
         const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
         if (bytes.len > fs_policy.max_write_bytes) return Error.GuestWriteTooLarge;
         var client = vmd.Client.init(self.allocator, self.socket);
         client.writeFile(self.workspace_id, rel, bytes, create_dirs) catch |err| {
             if (refusedByRequest(&client)) {
-                // The tools tell "the directory is not there" apart from every
-                // other write failure, so one ask — and only after a refusal —
-                // decides which of the two this was.
+                // The tools tell "the directory is not there" apart from every other write failure, so one ask — and only after a refusal — decides which of the two this was.
                 if (!create_dirs and self.parentMissing(abs)) return error.PathNotFound;
                 return Error.GuestWriteFailed;
             }
@@ -199,9 +177,7 @@ pub const Fs = struct {
         };
     }
 
-    /// A bounded walk of the workspace beneath `abs`. `max_depth` 1 is one
-    /// directory's own entries; the guest enforces both ceilings, and a walk it
-    /// had to cut short says so.
+    /// A bounded walk of the workspace beneath `abs`.
     pub fn walkAll(self: *const Fs, abs: []const u8, max_depth: u32) !Walk {
         const rel = self.relativeDir(abs) orelse return Error.GuestPathOutsideWorkspace;
         var client = vmd.Client.init(self.allocator, self.socket);
@@ -236,21 +212,17 @@ pub const Fs = struct {
         return self.walkAll(abs, 1);
     }
 
-    /// Remove one file, or one empty directory. A missing path is an error, not
-    /// a silent success: the tool reports "nothing there" from its own answer.
+    /// Remove one file, or one empty directory.
     pub fn remove(self: *const Fs, abs: []const u8) !void {
         const rel = self.relative(abs) orelse return Error.GuestPathOutsideWorkspace;
         var client = vmd.Client.init(self.allocator, self.socket);
         client.removeFile(self.workspace_id, rel) catch |err| return managerError(err);
     }
 
-    /// Remove a directory and everything under it, leaves first. The guest's
-    /// `fs.remove` takes one entry by design, so the loop is here — and a tree
-    /// the walk had to cut short is refused rather than half deleted.
+    /// Remove a directory and everything under it, leaves first.
     pub fn removeAll(self: *const Fs, abs: []const u8) !void {
         const rel = self.relativeDir(abs) orelse return Error.GuestPathOutsideWorkspace;
-        // The workspace itself is not a caller's to delete: everything the
-        // tenant owns lives under it.
+        // The workspace itself is not a caller's to delete: everything the tenant owns lives under it.
         if (rel.len == 0) return Error.GuestWorkspaceRoot;
 
         var walked = try self.walkAll(abs, fs_policy.max_walk_depth);
@@ -274,8 +246,7 @@ pub const Fs = struct {
         try self.remove(abs);
     }
 
-    /// Run a program inside the guest, in a directory of the workspace. No
-    /// shell is involved: the argv is the caller's.
+    /// Run a program inside the guest, in a directory of the workspace.
     pub fn run(
         self: *const Fs,
         argv: []const []const u8,
@@ -302,9 +273,7 @@ pub const Fs = struct {
         };
     }
 
-    /// `git`, with the same hardening prefix the host uses, running INSIDE the
-    /// guest with `abs_dir` as its working directory. No `-C` is passed: the
-    /// host path never crosses, so no tenant path is named to the guest's git.
+    /// `git`, with the same hardening prefix the host uses, running INSIDE the guest with `abs_dir` as its working directory.
     pub fn runGit(
         self: *const Fs,
         abs_dir: []const u8,
@@ -320,17 +289,13 @@ pub const Fs = struct {
         return self.run(argv.items, abs_dir, timeout_ms, max_output_bytes);
     }
 
-    /// The absolute path a host path names inside the guest — the guest's own
-    /// vocabulary, for the argv of a program that will run there. The reverse
-    /// of `relative`, and a refusal for anything outside the workspace.
+    /// The absolute path a host path names inside the guest — the guest's own vocabulary, for the argv of a program that will run there.
     pub fn guestAbs(self: *const Fs, abs: []const u8) ![]u8 {
         const rel = self.relativeDir(abs) orelse return Error.GuestPathOutsideWorkspace;
         return policy.guestCwd(self.allocator, policy.guest_root, rel);
     }
 
-    /// Which of `names` git ignores in `abs_dir`, answered by the GUEST's git
-    /// under the same hardening prefix the host uses. A git that cannot answer
-    /// leaves every name unignored, which is what the host's check does too.
+    /// Which of `names` git ignores in `abs_dir`, answered by the GUEST's git under the same hardening prefix the host uses.
     pub fn gitCheckIgnore(
         self: *const Fs,
         abs_dir: []const u8,
@@ -349,8 +314,7 @@ pub const Fs = struct {
 
         const exec = try self.runGit(abs_dir, args, git_check_timeout_ms, git_check_output_bytes);
         defer exec.deinit(self.allocator);
-        // Exit 0 means at least one name was ignored, 1 means none was, and
-        // anything else is not an answer this seam may invent one for.
+        // Exit 0 means at least one name was ignored, 1 means none was, and anything else is not an answer this seam may invent one for.
         if (exec.code != 0) return ignored;
         var lines = std.mem.splitScalar(u8, exec.stdout, '\n');
         while (lines.next()) |line| {
@@ -363,8 +327,7 @@ pub const Fs = struct {
         return ignored;
     }
 
-    /// Whether the directory a path's parent names is there. Only asked after a
-    /// write was refused, so a successful write never pays for it.
+    /// Whether the directory a path's parent names is there.
     fn parentMissing(self: *const Fs, abs: []const u8) bool {
         const parent = std.fs.path.dirname(abs) orelse return false;
         const answer = self.stat(parent) catch return false;
@@ -374,21 +337,16 @@ pub const Fs = struct {
 
 const vmd_read_chunk: usize = vm_wire.max_reply_chunk;
 
-/// The substrate a workspace tree has on this build. A `--saas` process runs a
-/// tenant tree in its VM or not at all: a host with no VM backend compiled in
-/// has no third answer (`runtime_mode.vm_backend_available`).
+/// The substrate a workspace tree has on this build.
 pub const Substrate = enum { host, guest, none };
 
-/// Pure, so every platform can test the `--saas` refusal without a VM — the
-/// seam `runtime_mode.decide` takes a `Probe` for.
+/// Pure, so every platform can test the `--saas` refusal without a VM — the seam `runtime_mode.decide` takes a `Probe` for.
 pub fn substrate(mode: runtime_mode.Mode, backend_available: bool) Substrate {
     if (mode != .saas) return .host;
     return if (backend_available) .guest else .none;
 }
 
 /// The guest filesystem for a session, or null when files belong on the host.
-/// Fails closed: `--saas` is a guest or an error, never a quiet fall back to
-/// reading the host — including when this build has no VM backend at all.
 pub fn forSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -434,9 +392,7 @@ pub fn forWorkspace(allocator: std.mem.Allocator, db: *database.Db, workspace_id
     };
 }
 
-/// The guest filesystem for a directory named by an ABSOLUTE host path: the
-/// call sites that have a path and no session. Same contract as `forSession`,
-/// and the same failure — `--saas` with an unowned path is an error, never the host.
+/// The guest filesystem for a directory named by an ABSOLUTE host path: the call sites that have a path and no session.
 pub fn forPath(
     allocator: std.mem.Allocator,
     db: ?*database.Db,
@@ -464,9 +420,7 @@ pub fn forPath(
     };
 }
 
-/// Who may touch a session's tree: the GUEST under `--saas`, the host in local
-/// mode, or nobody at all when `--saas` cannot reach the workspace's VM. There
-/// is no fourth answer: `unavailable` is never the host.
+/// Who may touch a session's tree: the GUEST under `--saas`, the host in local mode, or nobody at all when `--saas` cannot reach the workspace's VM.
 pub const Route = union(enum) {
     host,
     guest: Fs,
@@ -479,8 +433,7 @@ pub const Route = union(enum) {
         }
     }
 
-    /// The guest to ask, or null when the host is the answer. A caller that
-    /// must fail closed matches `unavailable` FIRST — see `fetchGitStateFor`.
+    /// The guest to ask, or null when the host is the answer.
     pub fn guestFs(self: *Route) ?*const Fs {
         return switch (self.*) {
             .guest => |*fs| fs,
@@ -489,8 +442,7 @@ pub const Route = union(enum) {
     }
 };
 
-/// The route for a session's tree. Local mode is the host, byte-identical to
-/// the days before the seam existed; `--saas` is the guest or a refusal.
+/// The route for a session's tree.
 pub fn routeForSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -501,8 +453,7 @@ pub fn routeForSession(
     return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
 }
 
-/// The route for a directory named by absolute host path, for the call sites
-/// that have a path and no session.
+/// The route for a directory named by absolute host path, for the call sites that have a path and no session.
 pub fn routeForPath(
     allocator: std.mem.Allocator,
     db: ?*database.Db,
@@ -513,9 +464,7 @@ pub fn routeForPath(
     return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
 }
 
-/// The route for a directory the caller names TOGETHER with the workspace it
-/// means. A guest path carries no workspace identity, so `--saas` needs the
-/// caller to say it — exactly what the folder picker already requires.
+/// The route for a directory the caller names TOGETHER with the workspace it means.
 pub fn routeForWorkspace(
     allocator: std.mem.Allocator,
     db: ?*database.Db,
@@ -529,8 +478,7 @@ pub fn routeForWorkspace(
             if (forWorkspace(allocator, db_handle, id)) |fs| {
                 return .{ .guest = fs };
             } else |err| {
-                // Only a workspace with no VM has a second answer: its path
-                // may still name the tree.
+                // Only a workspace with no VM has a second answer: its path may still name the tree.
                 if (err != Error.GuestWorkspaceNotVm) return .{ .unavailable = err };
             }
         }
@@ -538,9 +486,7 @@ pub fn routeForWorkspace(
     return routeForPath(allocator, db, abs_path);
 }
 
-/// One preview exchange through the manager, for the route that reaches a
-/// tenant's dev server. Local mode has no guest to reach, so it fails closed
-/// exactly like every other guest call here.
+/// One preview exchange through the manager, for the route that reaches a tenant's dev server.
 pub fn previewExchange(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -555,9 +501,7 @@ pub fn previewExchange(
     return proxy_rpc.exchange(allocator, socket, workspace_id, port, request_bytes);
 }
 
-/// Whether the manager refused the CALLER'S OWN request — a path it will not
-/// open, a directory it will not enter — rather than failing because the
-/// workspace or the VM is not there. Only the first is the tool's to explain.
+/// Whether the manager refused the CALLER'S OWN request — a path it will not open, a directory it will not enter — rather than failing because the workspace or …
 fn refusedByRequest(client: *const vmd.Client) bool {
     const failure = client.lastFailure() orelse return false;
     return failure.code == .bad_request;
@@ -571,9 +515,7 @@ fn managerError(err: anyerror) anyerror {
     };
 }
 
-// ============================================================================
-// Behaviour tests — the pure half. A live VM is the smoke scripts' job.
-// ============================================================================
+// Behaviour tests — the pure half.
 
 const testing = std.testing;
 
@@ -613,8 +555,7 @@ fn guestTestCtx() !GuestTestCtx {
         \\INSERT INTO sessions (id, name, status, cwd) VALUES ('s1','Task one','active','/proj/a')
     , &.{});
 
-    // Migration 115: which workspaces are VM-backed. `w1` is (it belongs to
-    // the session above), `w_host` is not.
+    // Migration 115: which workspaces are VM-backed.
     try db.exec(testing.allocator,
         \\CREATE TABLE workspaces (id TEXT PRIMARY KEY, is_vm INTEGER NOT NULL DEFAULT 0)
     , &.{});
@@ -697,14 +638,12 @@ test "forWorkspace: a workspace that is not VM-backed gets no Firecracker" {
     defer ctx.deinit();
 
     if (!runtime_mode.vm_backend_available) {
-        // No VM backend on this host: there is no Firecracker to spawn at all,
-        // so the refusal is "no manager" and no VM is spawned either way.
+        // No VM backend on this host: there is no Firecracker to spawn at all, so the refusal is "no manager" and no VM is spawned either way.
         try testing.expectError(Error.GuestManagerUnavailable, forWorkspace(a, &ctx.db, "w_host"));
         return;
     }
 
-    // The refusal comes BEFORE the manager is asked, so no VM is spawned for
-    // a workspace that has none.
+    // The refusal comes BEFORE the manager is asked, so no VM is spawned for a workspace that has none.
     try testing.expectError(Error.GuestWorkspaceNotVm, forWorkspace(a, &ctx.db, "w_host"));
 
     var fs = try forWorkspace(a, &ctx.db, "w1");
@@ -812,8 +751,7 @@ test "every op refuses a path outside the workspace before any RPC" {
         Error.GuestPathOutsideWorkspace,
         fs.run(&.{"rg"}, "/etc", 1000, 4096),
     );
-    // The root's parent is outside it too, so the escape is refused on the way
-    // out as well as on the way in.
+    // The root's parent is outside it too, so the escape is refused on the way out as well as on the way in.
     try testing.expectError(Error.GuestPathOutsideWorkspace, fs.listDir("/proj"));
     try testing.expect(fs.relativeDir("/proj/a") != null);
     try testing.expect(fs.relativeDir("/proj") == null);
@@ -841,8 +779,7 @@ test "hostPath: a walk's answer comes back in the caller's own vocabulary" {
 
 test "writeAll: a body the frame could not carry is refused, not truncated" {
     const fs = testFs("/proj/a");
-    // One byte over the RPC's own ceiling, so the refusal comes from the seam
-    // rather than from a half-written file in the guest.
+    // One byte over the RPC's own ceiling, so the refusal comes from the seam rather than from a half-written file in the guest.
     const big = try testing.allocator.alloc(u8, fs_policy.max_write_bytes + 1);
     defer testing.allocator.free(big);
     @memset(big, 'x');
@@ -924,8 +861,7 @@ test "routeForWorkspace: naming the workspace resolves /workspace, which no item
     var ctx = try guestTestCtx();
     defer ctx.deinit();
 
-    // A SaaS item's recorded path is the server's host home, so nothing the
-    // path route matches can ever be `/workspace`.
+    // A SaaS item's recorded path is the server's host home, so nothing the path route matches can ever be `/workspace`.
     var by_path = routeForPath(testing.allocator, &ctx.db, policy.guest_root);
     defer by_path.deinit();
     try testing.expect(by_path == .unavailable);

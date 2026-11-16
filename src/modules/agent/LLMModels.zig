@@ -18,8 +18,7 @@ pub const MINIMAX_3 = LLMModels{
     .token_count = 500000,
 };
 
-/// Claude Sonnet alias for Claude Code CLI profiles
-/// (`url_style="claude-code"`, `--model sonnet`). 200k context.
+/// Claude Sonnet alias for Claude Code CLI profiles (`url_style="claude-code"`, `--model sonnet`). 200k context.
 pub const CLAUDE_SONNET = LLMModels{
     .name = "sonnet",
     .description = "Claude Sonnet via the Claude Code CLI (subscription auth, no API key). Balanced speed and quality for everyday coding.",
@@ -71,15 +70,12 @@ pub fn isDoCompact(token_count: u32, max_capicity_token: u32) bool {
     return token_count >= threshold;
 }
 
-/// Resolve the effective max-context-window in tokens for `model_name`,
-/// honoring an optional config override.
+/// Resolve the effective max-context-window in tokens for `model_name`, honoring an optional config override.
 pub fn resolveMaxCapacity(model_name: []const u8, override_capacity: ?u32) u32 {
     return override_capacity orelse getModelTokenCount(model_name);
 }
 
-/// Decide whether `token_count` should trigger compaction given a
-/// `max_capacity` (in tokens) and a `threshold_percent` (0-100). Equivalent
-/// to `token_count >= max_capacity * threshold_percent / 100`.
+/// Decide whether `token_count` should trigger compaction given a `max_capacity` (in tokens) and a `threshold_percent` (0-100).
 pub fn shouldCompact(token_count: u32, max_capacity: u32, threshold_percent: ?u8) bool {
     const pct: u32 = threshold_percent orelse 80;
     const threshold = max_capacity * pct / 100;
@@ -90,9 +86,7 @@ pub fn shouldCompact(token_count: u32, max_capacity: u32, threshold_percent: ?u8
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-// ============================================================================
 // get_model_token_count Tests
-// ============================================================================
 
 test "get_model_token_count returns correct token count for MINIMAX_2_7" {
     const result = getModelTokenCount(MINIMAX_2_7.name);
@@ -121,9 +115,7 @@ test "get_model_token_count returns fallback for case-sensitive mismatch" {
     try expectEqual(@as(u32, 200000), result);
 }
 
-// ============================================================================
 // is_do_compact Tests
-// ============================================================================
 
 test "is_do_compact returns false when below 80% threshold" {
     // 50% of capacity
@@ -179,9 +171,7 @@ test "is_do_compact threshold calculation is integer-accurate" {
     try expect(isDoCompact(3, max_capacity)); // Above threshold
 }
 
-// ============================================================================
 // resolve_max_capacity Tests
-// ============================================================================
 
 test "resolve_max_capacity returns override when set" {
     try expectEqual(@as(u32, 128000), resolveMaxCapacity("MiniMax-M3", 128000));
@@ -194,9 +184,7 @@ test "resolve_max_capacity falls back to getModelTokenCount when override is nul
     try expectEqual(@as(u32, 200000), resolveMaxCapacity("Unknown", null));
 }
 
-// ============================================================================
 // should_compact Tests
-// ============================================================================
 
 test "should_compact with custom threshold_percent" {
     // 50% of 200k = 100k threshold

@@ -1,5 +1,4 @@
-//! The Skill Evals judge: a fresh sub-agent per skill, filling the
-//! SESSION-RELATIVE half of the rubric.
+//! The Skill Evals judge: a fresh sub-agent per skill, filling the SESSION-RELATIVE half of the rubric.
 
 const std = @import("std");
 const skill_evals_db = @import("skill_evals_db.zig");
@@ -8,8 +7,7 @@ const Report = skill_evals_db.Report;
 const ReportFinding = skill_evals_db.ReportFinding;
 const Verdict = skill_evals_db.Verdict;
 
-/// A score value that is guaranteed to be outside the 0..3 rubric, used when
-/// the judge wrote something that is not a score. See the module doc.
+/// A score value that is guaranteed to be outside the 0..3 rubric, used when the judge wrote something that is not a score.
 const InvalidScore: u8 = 255;
 
 /// One judge's input.
@@ -17,32 +15,23 @@ pub const JudgeContext = struct {
     skill_name: []const u8,
     /// The skill body as it is on disk right now.
     skill_body: []const u8,
-    /// What this session was actually asked to do. The session-relative half
-    /// is unanswerable without it — "is this relevant?" has no referent
-    /// otherwise.
+    /// What this session was actually asked to do.
     task_context: []const u8,
-    /// False when the skill was only OFFERED and never loaded. The judge is
-    /// told, because "the agent was handed the right skill and ignored it" is
-    /// a different finding from "the skill is wrong".
+    /// False when the skill was only OFFERED and never loaded.
     loaded: bool = true,
-    /// The deterministic half's findings, so the judge does not re-derive
-    /// them and can concentrate on what only it can see.
+    /// The deterministic half's findings, so the judge does not re-derive them and can concentrate on what only it can see.
     intrinsic_summary: []const u8 = "",
     /// The repository root, so the judge can look at real code.
     cwd: []const u8 = "",
 };
 
-/// Truncate to a budget with an explicit marker rather than a silent cut: a
-/// judge that reasons about half a skill and reports confidently about the
-/// whole is worse than one told the body was clipped.
+/// Truncate to a budget with an explicit marker rather than a silent cut: a judge that reasons about half a skill and reports confidently about the whole is worse …
 fn clip(allocator: std.mem.Allocator, s: []const u8, max: usize) ![]u8 {
     if (s.len <= max) return allocator.dupe(u8, s);
     return std.fmt.allocPrint(allocator, "{s}\n… [{d} more bytes omitted]", .{ s[0..max], s.len - max });
 }
 
-/// Build the instruction for one judge sub-agent. The body is embedded
-/// verbatim (clipped) rather than described, because the judge's whole job is
-/// to read it.
+/// Build the instruction for one judge sub-agent.
 pub fn buildPrompt(allocator: std.mem.Allocator, ctx: JudgeContext) ![]u8 {
     const body = try clip(allocator, ctx.skill_body, 24_000);
     defer allocator.free(body);
@@ -138,28 +127,23 @@ pub const ParsedReport = struct {
     }
 };
 
-/// The fence is a raw array: `std.mem` helpers need a sentinel-terminated
-/// slice, and a sentinel inside a `const` slice is legal here.
+/// The fence is a raw array: `std.mem` helpers need a sentinel-terminated slice, and a sentinel inside a `const` slice is legal here.
 const json_fence = "```json";
 
-/// Read one string field. A missing or non-string field is an empty string,
-/// never a guess at what the judge meant — `validateReport` then refuses the
-/// report, which is the outcome we want.
+/// Read one string field.
 fn readString(obj: std.json.ObjectMap, key: []const u8, allocator: std.mem.Allocator) ![]const u8 {
     const v = obj.get(key) orelse return "";
     if (v != .string) return "";
     return allocator.dupe(u8, v.string);
 }
 
-/// Read a 0..3 rubric score, preserving out-of-range values so validation can
-/// see them. See the module doc for why an unrepresentable score becomes 255.
+/// Read a 0..3 rubric score, preserving out-of-range values so validation can see them.
 fn readScore(obj: std.json.ObjectMap, key: []const u8) u8 {
     const v = obj.get(key) orelse return 0;
     const n: f64 = switch (v) {
         .integer => |i| @floatFromInt(i),
         .float => |f| f,
-        // A string or object where a number belongs is not a score of 0; it is
-        // a malformed report.
+        // A string or object where a number belongs is not a score of 0; it is a malformed report.
         else => return InvalidScore,
     };
     if (!std.math.isFinite(n) or n < 0 or n != @trunc(n) or n > 255) return InvalidScore;
@@ -187,8 +171,7 @@ fn readFindings(obj: std.json.ObjectMap, allocator: std.mem.Allocator) ![]const 
             .dimension = try readString(item.object, "dimension", allocator),
             .severity = try readString(item.object, "severity", allocator),
             .claim = try readString(item.object, "claim", allocator),
-            // Left empty when absent, which is exactly what makes
-            // `validateReport` refuse the whole report.
+            // Left empty when absent, which is exactly what makes `validateReport` refuse the whole report.
             .evidence = try readString(item.object, "evidence", allocator),
         });
     }
@@ -196,8 +179,6 @@ fn readFindings(obj: std.json.ObjectMap, allocator: std.mem.Allocator) ![]const 
 }
 
 /// Parse `src` and keep it only if the top-level value is an object.
-/// Otherwise the parse is discarded here, so a judge that emitted `[...]` or
-/// `"text"` produces null rather than a report with every field defaulted.
 fn parseIfObject(allocator: std.mem.Allocator, src: []const u8) ?std.json.Parsed(std.json.Value) {
     const p = std.json.parseFromSlice(std.json.Value, allocator, src, .{}) catch return null;
     if (p.value != .object) {
@@ -229,9 +210,7 @@ fn extractJsonObject(allocator: std.mem.Allocator, text: []const u8) ?std.json.P
     }
     if (parseIfObject(allocator, trimmed)) |p| return p;
 
-    // The outermost brace span — first `{` to last `}` — covers a judge that
-    // wrapped the object in a sentence. `lastIndexOfScalar` is what makes this
-    // "outermost": it cannot be fooled by a `}` inside a string in the middle.
+    // The outermost brace span — first `{` to last `}` — covers a judge that wrapped the object in a sentence.
     if (std.mem.indexOfScalar(u8, trimmed, '{')) |first| {
         if (std.mem.lastIndexOfScalar(u8, trimmed, '}')) |last| {
             if (last > first) {
@@ -243,22 +222,17 @@ fn extractJsonObject(allocator: std.mem.Allocator, text: []const u8) ?std.json.P
 }
 
 /// Turn a judge's reply into a `Report`, or null when it cannot be read.
-/// Returns null — never a defaulted report — when the text is not a JSON
-/// object.
 pub fn parseReport(allocator: std.mem.Allocator, text: []const u8) !?ParsedReport {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
     const a = arena.allocator();
 
-    // The arena is created before the parse so the parse tree and every
-    // string read out of it share one allocation. `errdefer` only fires on an
-    // error, so the unreadable-text path has to release it by hand.
+    // The arena is created before the parse so the parse tree and every string read out of it share one allocation.
     const root = extractJsonObject(a, text) orelse {
         arena.deinit();
         return null;
     };
-    // The arena owns the parse tree, so there is nothing to deinit here; the
-    // strings read out of it below are duped into the same arena.
+    // The arena owns the parse tree, so there is nothing to deinit here; the strings read out of it below are duped into the same arena.
     const obj = root.value.object;
 
     const findings = try readFindings(obj, a);
@@ -282,8 +256,7 @@ pub fn parseReport(allocator: std.mem.Allocator, text: []const u8) !?ParsedRepor
     };
 }
 
-/// Combine the deterministic verdict with a validated judge report. The
-/// judge's verdict can only ever ESCALATE, and only in one direction.
+/// Combine the deterministic verdict with a validated judge report.
 pub fn combineVerdict(intrinsic: Verdict, validation: skill_evals_db.Validation) Verdict {
     if (validation.downgraded) return intrinsic;
     if (validation.verdict == .delete) return .delete;
@@ -328,8 +301,7 @@ test "the parser accepts a bare JSON object" {
     try testing.expectEqualStrings("low", parsed.report.findings[0].severity);
     try testing.expect(skill_evals_db.hasHighFinding(parsed.report.findings) == false);
 
-    // The whole point: a report that parsed is not yet a report that may be
-    // believed.
+    // The whole point: a report that parsed is not yet a report that may be believed.
     const v = skill_evals_db.validateReport(parsed.report);
     try testing.expectEqual(Verdict.keep, v.verdict);
     try testing.expectEqual(false, v.downgraded);
@@ -391,9 +363,7 @@ test "the parser returns null on garbage rather than guessing" {
 
 test "an out-of-range score is refused by validateReport, not clamped" {
     const alloc = testing.allocator;
-    // A judge claiming helpfulness 7 on a 0..3 scale. The parser must PRESERVE
-    // the 7 so the trust boundary is the thing that rejects it — clamping here
-    // would hide a malformed report behind a plausible-looking score.
+    // A judge claiming helpfulness 7 on a 0..3 scale.
     const reply =
         \\{"skill_name":"s","verdict":"keep","confidence":0.9,"freshness":3,"accuracy":3,
         \\"duplication":0,"relevance":3,"used":3,"helpfulness":7,"findings":[],
@@ -411,8 +381,7 @@ test "an out-of-range score is refused by validateReport, not clamped" {
 
 test "a score that is not a score is made to fail validation" {
     const alloc = testing.allocator;
-    // "excellent", -1 and 1e9 are all out of rubric, and 1e9 does not fit a u8
-    // at all. None of them may land on a value that passes.
+    // "excellent", -1 and 1e9 are all out of rubric, and 1e9 does not fit a u8 at all.
     const bad_values = [_][]const u8{ "\"excellent\"", "-1", "1e9", "2.5", "null" };
     for (bad_values) |bad| {
         const reply = try std.fmt.allocPrint(alloc,
@@ -432,8 +401,7 @@ test "a score that is not a score is made to fail validation" {
 
 test "a delete report with no high finding is refused" {
     const alloc = testing.allocator;
-    // The report a judge writes when it is sure a skill is bad but has not
-    // actually shown why. This is how a good skill gets destroyed.
+    // The report a judge writes when it is sure a skill is bad but has not actually shown why.
     const reply =
         \\{"skill_name":"s","verdict":"delete","confidence":0.95,"freshness":1,"accuracy":1,
         \\"duplication":0,"relevance":0,"used":0,"helpfulness":0,
@@ -471,15 +439,12 @@ test "a valid delete report with a high finding is accepted" {
     try testing.expectEqual(false, v.downgraded);
     try testing.expectEqualStrings("", v.reason);
 
-    // Tier 0 structurally cannot reach this. The judge can, and only through
-    // validateReport.
+    // Tier 0 structurally cannot reach this.
     try testing.expectEqual(Verdict.delete, combineVerdict(.keep, v));
 }
 
 test "the judge can never soften a deterministic verdict" {
-    // Relevance is a discovery problem, not a skill problem, and an
-    // irrelevant-but-accurate skill is still accurate. A judge saying "keep"
-    // must not talk the system out of a fact Tier 0 actually checked.
+    // Relevance is a discovery problem, not a skill problem, and an irrelevant-but-accurate skill is still accurate.
     const keep_report = skill_evals_db.Validation{ .verdict = .keep };
     for ([_]Verdict{ .update, .rewrite, .merge, .delete, .needs_human }) |intrinsic| {
         if (intrinsic == .delete) continue; // needs a high finding upstream
@@ -525,9 +490,7 @@ test "update and merge still require their proposal fields" {
 
 test "a finding with no evidence invalidates the whole report" {
     const alloc = testing.allocator;
-    // The claim is plausible and the verdict is keep, but there is nothing
-    // behind it. A verdict with no evidence is the most damaging failure mode
-    // of an LLM judge, so it is rejected structurally.
+    // The claim is plausible and the verdict is keep, but there is nothing behind it.
     const reply =
         \\{"skill_name":"s","verdict":"keep","confidence":0.8,"freshness":3,"accuracy":3,
         \\"duplication":0,"relevance":3,"used":3,"helpfulness":3,
@@ -542,9 +505,7 @@ test "a finding with no evidence invalidates the whole report" {
 }
 
 test "the prompt names the skill, states the task, and pins the output shape" {
-    // The prompt IS the parser's contract: a field named here and not read
-    // there is a silent needs_human in production. These three greps plus the
-    // parser tests above are what keep the two in step.
+    // The prompt IS the parser's contract: a field named here and not read there is a silent needs_human in production.
     const alloc = testing.allocator;
     const prompt = try buildPrompt(alloc, .{
         .skill_name = "chatview-empty-state-gate",

@@ -1,5 +1,4 @@
-// Functional tests for pabrik-tui cwd fix. Zig port of
-// `tests/functional/tui_cwd_test.py` (same test names, same order).
+// Functional tests for pabrik-tui cwd fix.
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,28 +12,23 @@ const poll_timeout_ms: i64 = 5_000;
 /// Python's `time.sleep(0.05)` between polls.
 const poll_interval_ms: i64 = 50;
 
-/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step
-/// must not extend the deadline).
+/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step must not extend the deadline).
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// One `GET /api/llm/session/<id>` answer. `exists` false means the row is
-/// not there yet — 404, which is the EXPECTED answer while the worker has not
-/// inserted it, not a failure.
+/// One `GET /api/llm/session/<id>` answer.
 const SessionCwd = struct {
     exists: bool,
     cwd: []u8,
 };
 
-/// Read `sessions.cwd` over the wire. See the file header for why this is the
-/// wire and not a SQLite read.
+/// Read `sessions.cwd` over the wire.
 fn readSessionCwd(h: *Harness, session_id: []const u8) !SessionCwd {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
 
-    // `assert_status = false`: the 404 is data here, so it must not go
-    // through the harness's status assertion.
+    // `assert_status = false`: the 404 is data here, so it must not go through the harness's status assertion.
     var r = try h.http(io, .GET, path, .{
         .expect = &.{ 200, 404 },
         .assert_status = false,
@@ -53,15 +47,11 @@ fn readSessionCwd(h: *Harness, session_id: []const u8) !SessionCwd {
 }
 
 /// Poll `readSessionCwd` until the row appears, or the deadline passes.
-/// Returns an OWNED cwd (the caller frees), or null when the row never
-/// appeared.
 fn waitForSessionCwd(h: *Harness, session_id: []const u8) !?[]u8 {
     const deadline = nowMs() + poll_timeout_ms;
     while (nowMs() < deadline) {
         const got = try readSessionCwd(h, session_id);
-        // Every branch owns `got.cwd`; a not-found answer carries an
-        // empty placeholder that has to be released too, or a 5-second
-        // poll leaks one buffer per 50ms iteration.
+        // Every branch owns `got.cwd`; a not-found answer carries an empty placeholder that has to be released too, or a 5-second poll leaks one buffer per 50ms …
         if (got.exists) return got.cwd;
         gpa.free(got.cwd);
         std.Io.sleep(io, .fromMilliseconds(poll_interval_ms), .awake) catch {};
@@ -69,9 +59,7 @@ fn waitForSessionCwd(h: *Harness, session_id: []const u8) !?[]u8 {
     return null;
 }
 
-/// The exact JSON body the TUI's `transport.buildSendBody` produces (see
-/// `src/apps/cli/src/tui/transport.zig`) — `POST /api/llm/session` with every
-/// field the desktop client also sends.
+/// The exact JSON body the TUI's `transport.buildSendBody` produces (see `src/apps/cli/src/tui/transport.zig`) — `POST /api/llm/session` with every field the …
 fn sendBody(gpa_: std.mem.Allocator, session_id: []const u8, message: []const u8, cwd_session: []const u8) ![]u8 {
     return std.json.Stringify.valueAlloc(gpa_, .{
         .session_id = session_id,
@@ -84,18 +72,14 @@ fn sendBody(gpa_: std.mem.Allocator, session_id: []const u8, message: []const u8
     }, .{});
 }
 
-/// The cwd the TUI would report for `<temp_dir>/my-proj`. `os.path.realpath`
-/// in Python resolves the EXISTING prefix of a path whose leaf does not
-/// exist, then appends the leaf verbatim.
+/// The cwd the TUI would report for `<temp_dir>/my-proj`.
 fn tuiCwdUnderTemp(h: *Harness, leaf: []const u8) ![]u8 {
     const real_temp = try harness.canonical(io, gpa, h.temp_dir);
     defer gpa.free(real_temp);
     return std.fs.path.join(gpa, &.{ real_temp, leaf });
 }
 
-// POST with cwd_session='/tmp/my-proj' → sessions.cwd == that path. This is
-// what pabrik-tui now does: it captures the shell's cwd via realPath and
-// sends it as cwd_session.
+// POST with cwd_session='/tmp/my-proj' → sessions.cwd == that path.
 test "tui_cwd_reaches_backend_as_working_directory" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -110,9 +94,7 @@ test "tui_cwd_reaches_backend_as_working_directory" {
     const body = try sendBody(gpa, session_id, "hello from tui", cwd);
     defer gpa.free(body);
     {
-        // Python: `expect=(201, 500)` — the worker runs in the
-        // background, so a 500 here is still a healthy boot with a
-        // turn that failed, which the poll below reports on.
+        // Python: `expect=(201, 500)` — the worker runs in the background, so a 500 here is still a healthy boot with a turn that failed, which the poll below reports on.
         var r = try h.http(io, .POST, "/api/llm/session", .{
             .json_body = body,
             .expect = &.{ 201, 500 },
@@ -140,9 +122,7 @@ test "tui_cwd_reaches_backend_as_working_directory" {
     }
 }
 
-// POST with cwd_session='' → sessions.cwd is the sandbox path. Empty cwd is
-// the sentinel for "no override" — the backend falls back to createSandbox →
-// ~/.local/share/pabrik/data/apps/<session_id>.
+// POST with cwd_session='' → sessions.cwd is the sandbox path.
 test "tui_empty_cwd_falls_back_to_sandbox" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -171,9 +151,7 @@ test "tui_empty_cwd_falls_back_to_sandbox" {
     };
     defer gpa.free(got);
 
-    // Windows joins the sandbox with backslashes
-    // (C:\...\pabrik-func-XXX\.local\share\pabrik\data\apps\<session>); POSIX
-    // uses forward slashes.
+    // Windows joins the sandbox with backslashes (C:\...\pabrik-func-XXX\.local\share\pabrik\data\apps\<session>); POSIX uses forward slashes.
     const normalized = try gpa.dupe(u8, got);
     defer gpa.free(normalized);
     for (normalized) |*c| {
@@ -199,9 +177,7 @@ test "tui_empty_cwd_falls_back_to_sandbox" {
     }
 }
 
-// cwd with spaces and quotes must survive JSON escaping.
-// transport.buildSendBody now uses encodeJsonString for cwd, so paths like
-// '/tmp/my project' or '/tmp/a\"b' must round-trip.
+// cwd with spaces and quotes must survive JSON escaping. transport.buildSendBody now uses encodeJsonString for cwd, so paths like '/tmp/my project' or …
 test "tui_cwd_with_special_chars_round_trips" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -238,8 +214,7 @@ test "tui_cwd_with_special_chars_round_trips" {
     }
 }
 
-// Body-analysis barrier. An unreferenced function is never type-checked,
-// so a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = readSessionCwd;
     _ = waitForSessionCwd;

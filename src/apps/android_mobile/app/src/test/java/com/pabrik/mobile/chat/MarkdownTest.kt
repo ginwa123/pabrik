@@ -5,13 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The markdown parse, on the shapes an assistant actually writes.
- *
- * Pure JVM, no device: the parser has no Compose in it by design, so the
- * constructs below are pinned in seconds rather than in an emulator run nobody
- * schedules.
- */
+/** The markdown parse, on the shapes an assistant actually writes. */
 class MarkdownTest {
 
     private fun blocks(source: String) = Markdown.parse(stripContentEnvelope(source))
@@ -22,8 +16,7 @@ class MarkdownTest {
 
     @Test
     fun `the reported answer parses into headings and emphasis`() {
-        // Verbatim the shape from the bug report: a `**PR:**` line, an `##`
-        // heading, and a `**bold**` phrase in a paragraph.
+        // Verbatim the shape from the bug report: a `**PR:**` line, an `##` heading, and a `**bold**` phrase in a paragraph.
         val source = """
             **PR:** https://github.com/ginwa123/ginwaaitoolbox/pull/663
 
@@ -50,8 +43,7 @@ class MarkdownTest {
 
     @Test
     fun `no block ever contains a leftover hash or asterisk`() {
-        // The bug is precisely "the markup is still on screen", so the test is
-        // that the markup is not in the parsed output at all.
+        // The bug is precisely "the markup is still on screen", so the test is that the markup is not in the parsed output at all.
         val source = "# Title\n\n- **a** `b`\n- [link](https://x.dev)\n\n> quoted\n\n---\n"
 
         val everything = blocks(source).joinToString(" ") { block ->
@@ -108,8 +100,7 @@ class MarkdownTest {
 
     @Test
     fun `an ordered list keeps its start number`() {
-        // A plan that starts at 3 renumbering itself to 1 is a plan you cannot
-        // tick off against what you were told.
+        // A plan that starts at 3 renumbering itself to 1 is a plan you cannot tick off against what you were told.
         val parsed = blocks("3. third\n4. fourth")
 
         val list = parsed.single() as MdBlock.ListBlock
@@ -137,8 +128,7 @@ class MarkdownTest {
 
     @Test
     fun `an unterminated fence still renders its body`() {
-        // A streaming answer is a fence that has not closed yet. Dropping the
-        // block would make the code blink out on every delta.
+        // A streaming answer is a fence that has not closed yet.
         val code = blocks("```\nhalf a fence").single() as MdBlock.Code
 
         assertEquals("half a fence", code.code)
@@ -146,8 +136,7 @@ class MarkdownTest {
 
     @Test
     fun `markup inside a code block is not markup`() {
-        // The one rule that matters most for a code block: `**` inside it is two
-        // asterisks, not bold.
+        // The one rule that matters most for a code block: `**` inside it is two asterisks, not bold.
         val code = blocks("```\n**not bold** and # not a heading\n```").single() as MdBlock.Code
 
         assertEquals("**not bold** and # not a heading", code.code)
@@ -211,8 +200,7 @@ class MarkdownTest {
 
     @Test
     fun `an underscore inside a word is not emphasis`() {
-        // `some_file_name` is one word. Turning it into `some<em>file</em>name`
-        // is the difference between a path and a typo.
+        // `some_file_name` is one word.
         val spans = Markdown.parseInline("open some_file_name now")
 
         assertEquals("open some_file_name now", text(spans))

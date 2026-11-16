@@ -2,9 +2,7 @@ const std = @import("std");
 
 const pabrikcore = @import("pabrikcore");
 
-// Puts pabrik's crash reporter at the FRONT of the Windows exception chain
-// (std's vectored handler would otherwise swallow access violations).
-// See `crash_handler.root_debug` for the full ordering argument.
+// Puts pabrik's crash reporter at the FRONT of the Windows exception chain (std's vectored handler would otherwise swallow access violations).
 pub const debug = pabrikcore.crash_handler.root_debug;
 
 const ai_mod = pabrikcore.ai_mod;
@@ -12,33 +10,28 @@ const helpers = @import("helpers");
 const gserverz = pabrikcore.gserverz;
 const http_routes = pabrikcore.http_routes;
 const static_files = pabrikcore.static_files;
-// Re-exported via pabrikcore so the exe module never @imports the file
-// directly (dual-module error — see root.zig).
+// Re-exported via pabrikcore so the exe module never @imports the file directly (dual-module error — see root.zig).
 const cleanup_stale_worker = pabrikcore.cleanup_stale_worker;
 const cleanup_stale_background_process = pabrikcore.cleanup_stale_background_process;
-// Retention crons: `logs` keeps 30 days; a transcript whose newest message is
-// 90 days old moves to the sibling archive.db.
+// Retention crons: `logs` keeps 30 days; a transcript whose newest message is 90 days old moves to the sibling archive.db.
 const prune_logs = pabrikcore.prune_logs;
 const archive_transcripts = pabrikcore.archive_transcripts;
 const background_process = pabrikcore.ai_mod.background_process;
 
-// Boot phases (extracted from this file): the exe module reaches them via
-// pabrikcore.* for the same dual-module reason as above.
+// Boot phases (extracted from this file): the exe module reaches them via pabrikcore.* for the same dual-module reason as above.
 const shutdown = pabrikcore.boot_shutdown;
 const cli_dispatch = pabrikcore.boot_cli_dispatch;
 const db_cli = pabrikcore.boot_db_cli;
 const headless_dispatch = pabrikcore.boot_headless_dispatch;
 const server_boot = pabrikcore.boot_server_boot;
-// The DB policy and its `--db-*` overrides, plus the reader-pool reaper that
-// keeps the elastic pool from holding a burst's readers forever.
+// The DB policy and its `--db-*` overrides, plus the reader-pool reaper that keeps the elastic pool from holding a burst's readers forever.
 const db_config = pabrikcore.boot_db_config;
 // The `--database*` family: which backend to open, and where it lives.
 const db_target = pabrikcore.boot_db_target;
 const static_serve = pabrikcore.http_static_serve;
 const vmd_lifecycle = pabrikcore.vmd_lifecycle;
 
-/// The manager this server started goes down with it: SIGTERM first, so it
-/// stops the VMs it owns, then SIGKILL for a manager that will not go.
+/// The manager this server started goes down with it: SIGTERM first, so it stops the VMs it owns, then SIGKILL for a manager that will not go.
 fn stopManager() void {
     const pid = vmd_lifecycle.spawnedPid() orelse return;
     std.log.info("stopping the VM manager (pid {d})", .{pid});
@@ -58,14 +51,12 @@ pub fn main(init: std.process.Init) !void {
     if (try cli_dispatch.dispatchServiceSubcommand(allocator, io, environment, init)) return;
     if (try db_cli.dispatchDbSubcommand(allocator, io, environment, init)) return;
     if (try cli_dispatch.dispatchCreateAdmin(allocator, io, environment, init)) return;
-    // Headless mode boots the whole backend and runs a turn WITHOUT binding a
-    // port.
+    // Headless mode boots the whole backend and runs a turn WITHOUT binding a port.
     if (try headless_dispatch.dispatchHeadless(allocator, io, environment, init)) return;
 
     server_boot.ignoreSigpipe();
 
-    // Flatten argv for the parser (it dupes what it keeps: the iterator's
-    // buffers are freed on Windows).
+    // Flatten argv for the parser (it dupes what it keeps: the iterator's buffers are freed on Windows).
     var args_iter = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
     defer args_iter.deinit();
     var argv_flat: std.ArrayList([]const u8) = .empty;
@@ -87,8 +78,7 @@ pub fn main(init: std.process.Init) !void {
         std.log.err("Failed to load config: {s}", .{@errorName(err)});
         return err;
     };
-    // Heap-moved for the holder swap below; freed via `freeAllLlmConfigs` at
-    // shutdown, so no defer here.
+    // Heap-moved for the holder swap below; freed via `freeAllLlmConfigs` at shutdown, so no defer here.
     if (llm_config.validate()) |_| {} else |err| {
         std.log.warn(
             "Config validation: {s}. LLM calls will fail until api_key/model/base_url are populated in ~/.config/pabrik/config.json.",
@@ -100,9 +90,7 @@ pub fn main(init: std.process.Init) !void {
     errdefer allocator.destroy(initial_llm_config_ptr);
     initial_llm_config_ptr.* = llm_config;
 
-    // Which backend to open, and where it lives. Stripped before any scope
-    // parser runs because no scope owns these words, and a bad one must be
-    // reported before the database is opened.
+    // Which backend to open, and where it lives.
     var db_request: db_target.Request = .{};
     {
         var leftover: std.ArrayList([]const u8) = .empty;
@@ -113,14 +101,11 @@ pub fn main(init: std.process.Init) !void {
         };
     }
 
-    // `--db-*` flags retune the connection policy (page cache, reader pool,
-    // mmap window), parsed here because that module owns the defaults and a bad
-    // one must be reported before the database is opened.
+    // `--db-*` flags retune the connection policy (page cache, reader pool, mmap window), parsed here because that module owns the defaults and a bad one must be …
     var db_overrides: std.ArrayList(db_config.Override) = .empty;
     defer db_overrides.deinit(allocator);
     if (db_config.parseOverrides(allocator, argv_flat.items, &db_overrides)) |_| {} else |err| {
-        // Name the offending flag: `parseOverrides` stops at the first bad
-        // one, so the last `--db-*` in argv is the one that failed.
+        // Name the offending flag: `parseOverrides` stops at the first bad one, so the last `--db-*` in argv is the one that failed.
         for (argv_flat.items) |arg| {
             if (std.mem.startsWith(u8, arg, "--db-") or std.mem.startsWith(u8, arg, "--db_")) {
                 db_config.reportOverrideError(arg, err);
@@ -147,8 +132,7 @@ pub fn main(init: std.process.Init) !void {
     defer allocator.free(log_file_path);
 
     pabrikcore.setPanicLogPath(log_file_path);
-    // Crash handlers go in BEFORE the HTTP server starts, sharing the panic
-    // log path (see src/service/crash_handler.zig for the contract).
+    // Crash handlers go in BEFORE the HTTP server starts, sharing the panic log path (see src/service/crash_handler.zig for the contract).
     pabrikcore.crash_handler.setCrashLogPath(log_file_path);
     pabrikcore.crash_handler.setCrashIo(io);
     pabrikcore.crash_handler.installCrashHandlers();
@@ -180,8 +164,7 @@ pub fn main(init: std.process.Init) !void {
         .group_bg_watchers = .init,
     };
 
-    // The object store. With nothing configured the supervised rustfs wins
-    // when its binary is installed, and the filesystem store is the fallback.
+    // The object store.
     ctxParent.storage_runtime = pabrikcore.storage.runtime.Runtime.fromEnvironment(allocator, io, environment) catch |err| blk: {
         std.log.err("storage: object store disabled: {s}", .{@errorName(err)});
         break :blk null;
@@ -193,9 +176,7 @@ pub fn main(init: std.process.Init) !void {
         if (cli.static_dir) |dir_arg| allocator.free(dir_arg);
         std.log.info("--no-static-dir: API only, no static files at /.", .{});
     } else if (cli.static_dir) |dir_arg| ctxParent.static_dir_path = dir_arg;
-    // Installer layouts ship html/ beside the install root (install.sh
-    // extracts it next to the binaries, mirroring zig-out/bin/html; Windows
-    // keeps %LOCALAPPDATA%\pabrik\html): serve it without requiring
+    // Installer layouts ship html/ beside the install root (install.sh extracts it next to the binaries, mirroring zig-out/bin/html; Windows keeps …
     if (ctxParent.static_dir_path == null) {
         var candidates: std.ArrayList([]const u8) = .empty;
         defer {
@@ -249,8 +230,7 @@ pub fn main(init: std.process.Init) !void {
             std.log.info("serving installed webapp from {s}", .{dir});
         }
     }
-    // Where this database lives, so the transcript archiver puts `archive.db`
-    // beside it instead of guessing a directory. Empty on postgres.
+    // Where this database lives, so the transcript archiver puts `archive.db` beside it instead of guessing a directory.
     ctxParent.db_path = if (db_handles.target.backend == .sqlite) db_handles.target.sqlite_path else "";
 
     ctxParent.auth_enabled = cli.auth_enabled;
@@ -260,8 +240,7 @@ pub fn main(init: std.process.Init) !void {
 
     _ = try pabrikcore.setSingleton(ctxParent);
 
-    // `mode="background_persistence"` services die with the pabrik that owns
-    // them.
+    // `mode="background_persistence"` services die with the pabrik that owns them.
     if (background_process.sweepServicesOnBoot(db, io, allocator)) |sweep| {
         if (sweep.killed > 0 or sweep.marked_orphaned > 0) {
             std.log.info(
@@ -273,13 +252,10 @@ pub fn main(init: std.process.Init) !void {
         std.log.warn("background service boot sweep failed: {s}", .{@errorName(err)});
     }
 
-    // models.dev model catalog: read the cached snapshot from the DB (local,
-    // no network) and kick the detached hourly sync. This is what makes a
-    // non-MiniMax model resolve to its real context window instead of 200k.
+    // models.dev model catalog: read the cached snapshot from the DB (local, no network) and kick the detached hourly sync.
     server_boot.loadModelCatalog(allocator, db);
 
-    // Eager globals: call sites go through the singleton instead of
-    // lazy-init on first MCP use; the defers free the arenas at shutdown.
+    // Eager globals: call sites go through the singleton instead of lazy-init on first MCP use; the defers free the arenas at shutdown.
     ctxParent.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
     ctxParent.mcp_http_registry = pabrikcore.mcp_http.HttpRegistry.global(allocator);
     defer pabrikcore.mcp_stdio.StdioRegistry.deinitGlobal();
@@ -291,8 +267,7 @@ pub fn main(init: std.process.Init) !void {
     defer event_bus.deinit();
     ctxParent.event_bus = &event_bus;
 
-    // Routine scheduler: a concurrent Io task (no thread spawned), after
-    // setSingleton + event bus so its fire path can emit events.
+    // Routine scheduler: a concurrent Io task (no thread spawned), after setSingleton + event bus so its fire path can emit events.
     ai_mod.startup.start(allocator, db, ctxParent, io) catch |err| {
         std.log.err("Failed to submit routine scheduler: {s}", .{@errorName(err)});
     };
@@ -314,15 +289,12 @@ pub fn main(init: std.process.Init) !void {
     const address = blk: {
         const first = gserverz.Address.init("127.0.0.1", port) catch |err| switch (err) {
             error.BindFailed => {
-                // An explicit --port is operator intent: fail loud so a
-                // typo'd flag never silently serves somewhere unexpected.
+                // An explicit --port is operator intent: fail loud so a typo'd flag never silently serves somewhere unexpected.
                 if (cli.port != null) {
                     std.log.err("cannot bind 127.0.0.1:{d} - address already in use (is another pabrik already running on this port?)", .{port});
                     std.process.exit(1);
                 }
-                // Default-port convenience, on every platform: the user asked
-                // for no port in particular (usually the 8081 default), so a
-                // taken port picks a free one instead of dying.
+                // Default-port convenience, on every platform: the user asked for no port in particular (usually the 8081 default), so a taken port picks a free one instead of …
                 std.log.warn("port {d} is already in use - picking a free port instead", .{port});
                 port = pabrikcore.web_port.pickFreePort(io) catch |pick_err| {
                     std.log.err("no free port available: {s}", .{@errorName(pick_err)});
@@ -339,19 +311,15 @@ pub fn main(init: std.process.Init) !void {
     gs.enable_h2c = cli.enable_h2c;
 
     // The engine's cross-site pre-gate is a TENANT defence: on in --saas only.
-    // The local UI is served from the Vite dev origin, so enabling it for local
-    // mode would 403 every mutation the app makes.
     const allowed_origins = try ai_mod.http_handlers.preview_origin.allowedFor(allocator, environment, address.port);
-    // `allow_same_origin`: the app's own origin passes the gate, so a
-    // deployment behind a proxy serves its public origin with no allowlist.
+    // `allow_same_origin`: the app's own origin passes the gate, so a deployment behind a proxy serves its public origin with no allowlist.
     gs.cors = .{
         .enabled = boot_mode == .saas,
         .allowed_origins = allowed_origins,
         .allow_same_origin = true,
     };
 
-    // SIGINT/SIGTERM close the listener via shutdown(), unblocking listen()
-    // so the post-listen block below runs. Second signal force-exits (130).
+    // SIGINT/SIGTERM close the listener via shutdown(), unblocking listen() so the post-listen block below runs.
     shutdown.setServer(gs);
     shutdown.reset();
     pabrikcore.signal_handlers.installShutdownHandlers(shutdown.handleShutdownSignal);
@@ -388,8 +356,6 @@ pub fn main(init: std.process.Init) !void {
     ctxParent.server.sse_manager.on_disconnect = ai_mod.handleClientDisconnect;
 
     // Durability: a `worker` row is a turn a dead process left mid-flight.
-    // Restart those — AFTER the subscription above, or nothing listens, and
-    // sub-agent workers / live owners are skipped by the resume itself.
     pabrikcore.resume_workers_on_boot.resumeWorkersOnBoot(ctxParent);
 
     pabrikcore.loggermod.debugPrint("Agent is ready to serve!\n", .{});
@@ -420,8 +386,7 @@ pub fn main(init: std.process.Init) !void {
     ) catch |err| {
         std.log.err("Failed to register cleanup_stale_background_process cron: {s}", .{@errorName(err)});
     };
-    // Retention runs daily, in the small hours, and the two never overlap: the
-    // archive frees rows first, the log prune then hands its own pages back.
+    // Retention runs daily, in the small hours, and the two never overlap: the archive frees rows first, the log prune then hands its own pages back.
     _ = gs.cronjob_manager.register(
         "0 4 * * *",
         "prune_logs",
@@ -445,23 +410,18 @@ pub fn main(init: std.process.Init) !void {
     // The manager is this server's child, so it goes down with the server.
     stopManager();
 
-    // Post-listen shutdown. The signal path only sets the flag (handlers
-    // can't log), so logging happens here.
+    // Post-listen shutdown.
     if (shutdown.isRequested()) {
         std.log.info("shutdown signal received — listener closed, flushing in-flight requests", .{});
 
-        // `mode="background_persistence"` processes belong to THIS service,
-        // so they go down with it — a dev server still holding its port after
-        // the user quit pabrik is not "persistent", it is a leak.
+        // `mode="background_persistence"` processes belong to THIS service, so they go down with it — a dev server still holding its port after the user quit pabrik is …
         if (background_process.killServicesForShutdown(db, io, allocator)) |killed| {
             if (killed > 0) std.log.info("background services: stopped {d} on shutdown", .{killed});
         } else |err| {
             std.log.warn("background service shutdown kill failed: {s}", .{@errorName(err)});
         }
 
-        // Exit instead of unwinding: full unwind segfaults and the stops race
-        // signal-interrupted workers. The object store is stopped by hand
-        // first: its defer never runs here, and rustfs would outlive us.
+        // Exit instead of unwinding: full unwind segfaults and the stops race signal-interrupted workers.
         if (ctxParent.storage_runtime) |runtime| {
             runtime.deinit();
             ctxParent.storage_runtime = null;
@@ -470,9 +430,7 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(0);
     }
 
-    // Only /test/shutdown reaches here (the signal path exits above): join
-    // the cron thread BEFORE the defers free its context, or it segfaults
-    // ~10s later (rc=-11).
+    // Only /test/shutdown reaches here (the signal path exits above): join the cron thread BEFORE the defers free its context, or it segfaults ~10s later (rc=-11).
     gs.cronjob_manager.stop();
     gs.sse_manager.stop();
 }

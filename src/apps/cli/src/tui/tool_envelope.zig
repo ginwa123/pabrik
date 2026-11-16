@@ -1,11 +1,9 @@
-//! Parse the JSON tool envelope produced by
-//! `src/modules/agent/tools/tools_wrap_output.zig`.
+//! Parse the JSON tool envelope produced by `src/modules/agent/tools/tools_wrap_output.zig`.
 
 const std = @import("std");
 const testing = std.testing;
 
-/// Parsed shape of the JSON tool envelope. All string slices are OWNED — call
-/// `deinit` to free them.
+/// Parsed shape of the JSON tool envelope.
 pub const ToolEnvelope = struct {
     name: []const u8,
     parameters: []const u8,
@@ -21,8 +19,7 @@ pub const ToolEnvelope = struct {
     }
 };
 
-/// Walk the JSON envelope and return a parsed struct, or `null` when the
-/// input is not a v1 envelope (missing keys, wrong types, unknown `v`).
+/// Walk the JSON envelope and return a parsed struct, or `null` when the input is not a v1 envelope (missing keys, wrong types, unknown `v`).
 pub fn tryParseToolEnvelope(allocator: std.mem.Allocator, content: []const u8) ?ToolEnvelope {
     const trimmed = std.mem.trim(u8, content, &std.ascii.whitespace);
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch return null;
@@ -68,9 +65,7 @@ pub fn tryParseToolEnvelope(allocator: std.mem.Allocator, content: []const u8) ?
     };
 }
 
-/// Extract a string field from a canonical-JSON object slice. Returns a
-/// borrowed slice (valid while `json_obj` lives) or `""` when the key is
-/// missing or not a string.
+/// Extract a string field from a canonical-JSON object slice.
 fn dataField(json_obj: []const u8, allocator: std.mem.Allocator, key: []const u8) []const u8 {
     if (json_obj.len == 0) return "";
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_obj, .{}) catch return "";
@@ -81,8 +76,7 @@ fn dataField(json_obj: []const u8, allocator: std.mem.Allocator, key: []const u8
     return val.string;
 }
 
-/// Pick the most informative primary field for the header line. Whitelist
-/// mirrors the desktop's ToolCardHeader logic.
+/// Pick the most informative primary field for the header line.
 pub fn toolEnvelopePrimary(allocator: std.mem.Allocator, env: ToolEnvelope) ![]u8 {
     if (env.name.len == 0) return try allocator.dupe(u8, "unknown");
 
@@ -112,15 +106,11 @@ pub fn toolEnvelopePrimary(allocator: std.mem.Allocator, env: ToolEnvelope) ![]u
         return try allocator.dupe(u8, stdout[0..limit]);
     }
 
-    // Fallback — empty string (NOT the tool name). The previous behaviour
-    // returned env.name, which produced tool cards like `▶ load_memory
-    // load_memory ✓` — the name appeared twice.
+    // Fallback — empty string (NOT the tool name).
     return try allocator.dupe(u8, "");
 }
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 test "tryParseToolEnvelope: valid envelope returns parsed struct" {
     const allocator = testing.allocator;
@@ -257,17 +247,14 @@ test "toolEnvelopePrimary: unknown tool returns empty (no duplicate)" {
         "{\"tool\":\"weird_thing\",\"parameters\":{},\"success\":true,\"data\":{},\"error\":null,\"v\":1}",
     ) orelse return error.UnexpectedNull;
     defer env.deinit(allocator);
-    // Round-2 fix: the fallback used to return env.name, which made tool
-    // cards render as `▶ load_memory load_memory ✓` (the name appeared
-    // twice).
+    // Round-2 fix: the fallback used to return env.name, which made tool cards render as `▶ load_memory load_memory ✓` (the name appeared twice).
     const primary = try toolEnvelopePrimary(allocator, env);
     defer allocator.free(primary);
     try testing.expectEqualStrings("", primary);
 }
 
 test "toolEnvelopePrimary: whitelisted tool with no matching field returns empty" {
-    // load_memory data has no whitelisted key — must NOT fall back to
-    // the tool name.
+    // load_memory data has no whitelisted key — must NOT fall back to the tool name.
     const allocator = testing.allocator;
     var env = tryParseToolEnvelope(
         allocator,

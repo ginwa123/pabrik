@@ -43,8 +43,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
       elementId,
       geometry,
     )
-    // Mirror the response into the local cache. Defensive no-op when
-    // the item isn't in the local store (stale SSE callers).
+    // Mirror the response into the local cache.
     const item = findItem(workspaceId, itemId)
     if (item?.design_elements) {
       const idx = item.design_elements.findIndex((e) => e.id === elementId)
@@ -54,9 +53,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
     return result
   }
 
-  // NEW (2026-08-06, split-move-resize plan) — single-element translate (move). Body carries a (dx,
-  // dy) DELTA. If the target is a `group`/`frame`, the server cascades to every transitive
-  // descendant via the existing recursive CTE.
+  // NEW (2026-08-06, split-move-resize plan) — single-element translate (move).
   async function translateDesignElement(
     workspaceId: string,
     itemId: string,
@@ -77,8 +74,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
       extra: { elementId },
     })
     const result = await translateDesignElementApi(workspaceId, itemId, pageId, elementId, dx, dy)
-    // Build a Map<id, index> for O(1) lookup; cascade can return
-    // 10+ elements (group + children + grandchildren).
+    // Build a Map<id, index> for O(1) lookup; cascade can return 10+ elements (group + children + grandchildren).
     const item = findItem(workspaceId, itemId)
     if (item?.design_elements) {
       const idxById = new Map<string, number>()
@@ -110,8 +106,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
     return result.updated
   }
 
-  // NEW (2026-08-06, split-move-resize plan) — single-element resize. Body carries absolute
-  // x/y/width/height/rotation fields. Server returns a single DesignElement.
+  // NEW (2026-08-06, split-move-resize plan) — single-element resize.
   async function resizeDesignElement(
     workspaceId: string,
     itemId: string,
@@ -156,8 +151,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
     return result
   }
 
-  // Atomic N-element geometry update. Used by the canvas drag handler for multi-element drag so the
-  // N per-element PATCHes collapse into ONE PATCH per pointermove.
+  // Atomic N-element geometry update.
   async function updateDesignElementsGeometryBatch(
     workspaceId: string,
     itemId: string,
@@ -166,8 +160,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
   ): Promise<DesignElement[]> {
     if (updates.length === 0) return []
     const result = await updateDesignElementsGeometryBatchApi(workspaceId, itemId, pageId, updates)
-    // Mirror every updated row into the local design_elements array
-    // in input order (preserves the array's existing order).
+    // Mirror every updated row into the local design_elements array in input order (preserves the array's existing order).
     const item = findItem(workspaceId, itemId)
     if (item?.design_elements) {
       for (const updated of result.updated) {
@@ -175,9 +168,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
         if (idx !== -1) item.design_elements[idx] = updated
       }
     }
-    // Register all affected element ids so the SSE handler skips the
-    // GET fan-out. Strict superset semantics in the SSE listener:
-    // a missing id falls through to the fetch path (defensive).
+    // Register all affected element ids so the SSE handler skips the GET fan-out.
     registerRecentLocalMutations(
       updates.map((u) => u.element_id),
       Date.now() + RECENT_MUTATION_TTL_MS,
@@ -185,8 +176,7 @@ export function createDesignGeometry(p: DesignGeometryParams) {
     return result.updated
   }
 
-  // Server-side cascade move. Each item's (dx, dy) applies to the element AND every transitive
-  // descendant of that element. Optional width/height/rotation apply ONLY to the root.
+  // Server-side cascade move.
   async function moveDesignElementsBatch(
     workspaceId: string,
     itemId: string,
@@ -208,14 +198,10 @@ export function createDesignGeometry(p: DesignGeometryParams) {
       },
     })
     const result = await moveDesignElementsBatchApi(workspaceId, itemId, pageId, { items })
-    // Mirror every updated row into the local design_elements array (preserves the array's existing
-    // order for non-affected elements). See `api.normalizeDesignElementType` for the full
-    // rationale.
+    // Mirror every updated row into the local design_elements array (preserves the array's existing order for non-affected elements).
     const item = findItem(workspaceId, itemId)
     if (item?.design_elements) {
-      // Build a Map<id, index> for O(1) lookup; the cascade can
-      // include 10+ elements (group + children + grandchildren) and
-      // repeated findIndex inside the loop is O(n²).
+      // Build a Map<id, index> for O(1) lookup; the cascade can include 10+ elements (group + children + grandchildren) and repeated findIndex inside the loop is O(n²).
       const idxById = new Map<string, number>()
       for (let i = 0; i < item.design_elements.length; i++) {
         idxById.set(item.design_elements[i]!.id, i)
@@ -223,16 +209,12 @@ export function createDesignGeometry(p: DesignGeometryParams) {
       for (const updated of result.updated) {
         const idx = idxById.get(updated.id)
         if (idx !== undefined) {
-          // Normalize `type` from either `type` (canonical) or `elem_type` (legacy). Without this
-          // the local mirror clobbers the element's `type` field with `undefined`, which silently
-          // disables the cascade path on every drag after the first (BUG 2026-08-06).
+          // Normalize `type` from either `type` (canonical) or `elem_type` (legacy).
           item.design_elements[idx] = normalizeDesignElementType(updated) as DesignElement
         }
       }
     }
-    // Register all cascaded ids so the SSE handler skips the GET fan-out. The cascade can include
-    // descendants the user didn't explicitly select (e.g. clicking a group with 4 children follows
-    // with all 4 ids).
+    // Register all cascaded ids so the SSE handler skips the GET fan-out.
     registerRecentLocalMutations(
       result.updated.map((e) => e.id),
       Date.now() + RECENT_MUTATION_TTL_MS,

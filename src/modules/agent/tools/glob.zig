@@ -17,9 +17,7 @@ fn joinPath(allocator: std.mem.Allocator, dir: []const u8, name: []const u8) ![]
     return out;
 }
 
-// ============================================================================
 // Gitignore Types
-// ============================================================================
 
 pub const GitignoreEntry = struct {
     negated: bool,
@@ -94,9 +92,7 @@ fn loadGitignore(allocator: std.mem.Allocator, dir_path: []const u8) !?Gitignore
     const gitignore_path = std.fs.path.join(allocator, &.{ dir_path, ".gitignore" }) catch return error.OutOfMemory;
     defer allocator.free(gitignore_path);
 
-    // `std.fs.openFileAbsolute` was removed in Zig 0.16. Use the cross-platform
-    // `helpers.readFile` (libc `fopen`/`fread`) which works on Linux,
-    // macOS, and Windows via UCRT without an `io: std.Io` runtime.
+    // `std.fs.openFileAbsolute` was removed in Zig 0.16.
     const content = helpers.readFile(allocator, gitignore_path) catch return null;
     defer allocator.free(content);
 
@@ -140,8 +136,7 @@ fn isIgnoredByGitignore(gitignore: *const Gitignore, path: []const u8, is_dir: b
         const effective_pattern = if (entry.anchor_to_root) entry.pattern else entry.pattern;
 
         if (matchGitignorePattern(effective_pattern, rel_path, is_dir)) {
-            // Negated entries (whitelist) return false (not ignored)
-            // Regular entries return true (ignored)
+            // Negated entries (whitelist) return false (not ignored) Regular entries return true (ignored)
             return !entry.negated;
         }
     }
@@ -253,63 +248,42 @@ pub fn gitignoreGlobMatch(glob: []const u8, text: []const u8, nocase: bool) bool
     return ti == text.len;
 }
 
-// ============================================================================
 // Glob Constants
-// ============================================================================
 
 pub const DEFAULT_MAX_RESULTS: usize = 100;
 pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 50 * 1024;
 pub const MAX_RECOMMENDED_RESULTS: usize = 500;
 
-/// Default maximum recursion depth for `walkDir`. Set high enough for normal
-/// projects (32 covers any reasonable file tree) but low enough to abort
-/// gracefully on symlink cycles.
+/// Default maximum recursion depth for `walkDir`.
 pub const DEFAULT_MAX_DEPTH: usize = 64;
 
-// ============================================================================
 // Glob Errors
-// ============================================================================
 
 pub const GlobError = error{
-    /// `pattern` was an empty string. Almost certainly a caller bug,
-    /// not a no-match result. Surfaced up-front before allocating the
-    /// expanded-pattern array so we don't pay any IO cost.
+    /// `pattern` was an empty string.
     EmptyPattern,
-    /// `pattern` contained only whitespace characters. Same as
-    /// EmptyPattern in terms of intent; surfaced separately so the
-    /// LLM knows which mistake was made.
+    /// `pattern` contained only whitespace characters.
     WhitespaceOnlyPattern,
-    /// `pattern` contained a NUL byte. expandBraces would silently
-    /// corrupt it; we reject up-front.
+    /// `pattern` contained a NUL byte. expandBraces would silently corrupt it; we reject up-front.
     PatternContainsNulByte,
-    /// `path` does not exist (or is not accessible). Without this check,
-    /// walkDir silently returned zero results for bad paths — confusing.
+    /// `path` does not exist (or is not accessible).
     PathDoesNotExist,
-    /// `file_type` was not in {null, "f", "file", "d", "directory"}. Silently
-    /// ignoring unknown values (the pre-fix behavior) caused callers to get
-    /// all results when they asked for "exec" or "symlink".
+    /// `file_type` was not in {null, "f", "file", "d", "directory"}.
     InvalidFileType,
-    /// `max_results` was 0. Indistinguishable from a real no-match
-    /// result under the old defaulting shim; reject up-front.
+    /// `max_results` was 0.
     InvalidMaxResults,
     /// `pattern` contains an unmatched `{` (depth never returned to 0).
-    /// Without this check, the pattern silently returned no matches.
     InvalidBraceExpansion,
 };
 
-// ============================================================================
 // Glob Constants
-// ============================================================================
 
-// ============================================================================
 // Glob Types
-// ============================================================================
 
 pub const GlobInput = struct {
     pattern: []const u8 = "*",
     path: []const u8 = ".",
-    /// REQUIRED on the wire. Absolute directory this call works in; `path` (a
-    /// directory) resolves against it.
+    /// REQUIRED on the wire.
     cwd: []const u8 = "",
     max_results: ?usize = null,
     offset: ?usize = null,
@@ -317,9 +291,7 @@ pub const GlobInput = struct {
     ignore_case: bool = false,
     file_type: ?[]const u8 = null,
     follow: bool = false,
-    /// When true (default), the tool respects .gitignore / .ignore /
-    /// .rgignore (using glob's own custom parser — supports `!` negation, `/`
-    /// anchors).
+    /// When true (default), the tool respects .gitignore / .ignore /.rgignore (using glob's own custom parser — supports `!` negation, `/` anchors).
     respect_ignore_files: bool = true,
 };
 
@@ -340,9 +312,7 @@ pub const GlobResult = struct {
     }
 };
 
-// ============================================================================
 // Simple Glob Pattern Matching (Iterative)
-// ============================================================================
 
 /// Check if pattern is a negation pattern like !(*.zig) or !*.zig
 fn isNegationPattern(pattern: []const u8) bool {
@@ -465,9 +435,7 @@ fn isWildcardPattern(pat: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Brace Expansion
-// ============================================================================
 
 fn isNumeric(s: []const u8) bool {
     if (s.len == 0) return false;
@@ -481,8 +449,7 @@ fn expandBraces(pattern: []const u8, allocator: std.mem.Allocator) ![]const []co
     var depth: usize = 0;
     var i: usize = 0;
 
-    // First pass: detect unmatched `{` or `}` up-front and report a clear
-    // error to the caller.
+    // First pass: detect unmatched `{` or `}` up-front and report a clear error to the caller.
     {
         var scan_depth: usize = 0;
         for (pattern) |c| {
@@ -577,9 +544,7 @@ fn expandBraces(pattern: []const u8, allocator: std.mem.Allocator) ![]const []co
     return result;
 }
 
-// ============================================================================
 // Directory Walking
-// ============================================================================
 
 /// Gitignore context that tracks rules from all visited directories
 pub const GitignoreContext = struct {
@@ -659,9 +624,7 @@ pub const GitignoreContext = struct {
     }
 };
 
-/// One directory's entries, as whichever substrate produced them. The walk
-/// only ever asks one question of them — is this something to descend into —
-/// so this is the whole shape it needs.
+/// One directory's entries, as whichever substrate produced them.
 pub const Listed = struct {
     name: []const u8,
     kind: ListKind,
@@ -669,9 +632,7 @@ pub const Listed = struct {
 
 pub const ListKind = enum { file, dir };
 
-/// Where a walk's listings and its `.gitignore` reads come from: the host's
-/// own filesystem, or the guest under `--saas`. Nothing else about the walk
-/// changes with the answer.
+/// Where a walk's listings and its `.gitignore` reads come from: the host's own filesystem, or the guest under `--saas`.
 pub const DirSource = struct {
     ctx: *const anyopaque,
     listFn: *const fn (
@@ -680,8 +641,7 @@ pub const DirSource = struct {
         io: std.Io,
         dir_abs: []const u8,
     ) anyerror![]Listed,
-    /// The file's bytes, or null when it cannot be read — a directory with no
-    /// readable `.gitignore` is not a failure, it just has no rules.
+    /// The file's bytes, or null when it cannot be read — a directory with no readable `.gitignore` is not a failure, it just has no rules.
     readFn: *const fn (
         ctx: *const anyopaque,
         allocator: std.mem.Allocator,
@@ -722,9 +682,7 @@ fn listHostDir(
     return out.toOwnedSlice(allocator);
 }
 
-/// A `.gitignore`'s bytes from the host, or null when there is not one to
-/// read. A directory with no rules and a directory whose rules cannot be read
-/// walk the same way.
+/// A `.gitignore`'s bytes from the host, or null when there is not one to read.
 fn readHostGitignore(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -751,9 +709,7 @@ fn walkDir(
     cancelled: *bool,
 ) void {
     if (opts.max_depth) |max| if (depth >= max) return;
-    // The walk returns void and swallows its own errors, so a cancel is
-    // reported through `cancelled` and turned into `error.Cancelled` by the
-    // caller. Results collected so far are NOT presented as a complete list.
+    // The walk returns void and swallows its own errors, so a cancel is reported through `cancelled` and turned into `error.Cancelled` by the caller.
     if (opts.cancel) |hook| {
         if (hook.requested()) {
             cancelled.* = true;
@@ -761,8 +717,7 @@ fn walkDir(
         }
     }
 
-    // One listing, whatever answered it: the loop below cannot tell the two
-    // substrates apart, which is the whole point of the seam.
+    // One listing, whatever answered it: the loop below cannot tell the two substrates apart, which is the whole point of the seam.
     const listed = if (source) |src|
         src.listFn(src.ctx, allocator, io, dir_path) catch return
     else
@@ -792,9 +747,7 @@ fn walkDir(
         const name = entry.name;
         if (!opts.dot and name.len > 0 and name[0] == '.') continue;
 
-        // Always skip the `.git` directory regardless of `opts.dot`. Walking
-        // into `.git/objects/...` returns thousands of pack files that no LLM
-        // caller wants.
+        // Always skip the `.git` directory regardless of `opts.dot`.
         if (entry.kind == .dir and std.mem.eql(u8, name, ".git")) continue;
 
         const full_path = joinPath(allocator, dir_path, name) catch continue;
@@ -828,8 +781,7 @@ fn walkDir(
                 }
             }
 
-            // If no regular patterns, negation means exclude files that match the pattern
-            // If has regular patterns, negation means exclude only if regular pattern also matches
+            // If no regular patterns, negation means exclude files that match the pattern If has regular patterns, negation means exclude only if regular pattern also matches
             if (regular_patterns.items.len > 0) {
                 // Regular patterns exist - negation only excludes if also matched by regular pattern
                 matches = matches and !negated_match;
@@ -847,8 +799,7 @@ fn walkDir(
         }
 
         if (is_dir) {
-            // Build the list of patterns that the "normal recursive descent"
-            // will pass down.
+            // Build the list of patterns that the "normal recursive descent" will pass down.
             var unconsumed: std.ArrayList([]const u8) = .empty;
             defer unconsumed.deinit(allocator);
 
@@ -856,8 +807,7 @@ fn walkDir(
                 var consumed = false;
                 var pat_idx: usize = 0;
 
-                // Skip the prefix-aware logic entirely for wildcard first
-                // segments.
+                // Skip the prefix-aware logic entirely for wildcard first segments.
                 {
                     const first_slash = std.mem.indexOfScalar(u8, pat, '/') orelse pat.len;
                     const first_seg = pat[0..first_slash];
@@ -873,9 +823,7 @@ fn walkDir(
                     const dir_part = remaining_pat[0..slash_idx];
 
                     if (globMatch(dir_part, name, opts.nocase)) {
-                        // Matched a literal prefix segment — recurse with the
-                        // prefix-stripped pattern and mark this pattern as
-                        // consumed (do NOT also re-apply the full pattern via
+                        // Matched a literal prefix segment — recurse with the prefix-stripped pattern and mark this pattern as consumed (do NOT also re-apply the full pattern via
                         const next_idx = pat_idx + slash_idx + 1;
                         if (next_idx < pat.len) {
                             const remaining_pattern = pat[next_idx..];
@@ -884,8 +832,7 @@ fn walkDir(
                                 remaining_pattern[0] == '*' and
                                 remaining_pattern[1] == '*')
                             {
-                                // Recursive "**" suffix — recurse with the
-                                // inner pattern.
+                                // Recursive "**" suffix — recurse with the inner pattern.
                                 var inner_start: usize = 2;
                                 if (inner_start < remaining_pattern.len and
                                     remaining_pattern[inner_start] == '/')
@@ -910,9 +857,7 @@ fn walkDir(
                                 new_patterns.deinit(allocator);
                             }
                         } else {
-                            // Pattern ends with the matched directory name —
-                            // this directory itself matches; recurse to
-                            // check children.
+                            // Pattern ends with the matched directory name — this directory itself matches; recurse to check children.
                             if (pat[pat_idx + slash_idx - 1] != '*') {
                                 walkDir(allocator, io, full_path, patterns, opts, results, depth + 1, gitignore_ctx, source, cancelled);
                             }
@@ -930,15 +875,12 @@ fn walkDir(
                 }
             }
 
-            // Always include negation patterns in the fallback recursion —
-            // they have no leading directory prefix and must be re-applied
-            // at every level.
+            // Always include negation patterns in the fallback recursion — they have no leading directory prefix and must be re-applied at every level.
             for (negation_patterns.items) |pat| {
                 unconsumed.append(allocator, pat) catch continue;
             }
 
-            // Fallback recursion with the unconsumed patterns only. This is
-            // the single recursion path that PASSES PATTERNS DOWN.
+            // Fallback recursion with the unconsumed patterns only.
             if (unconsumed.items.len > 0) {
                 walkDir(allocator, io, full_path, unconsumed.items, opts, results, depth + 1, gitignore_ctx, source, cancelled);
             }
@@ -947,9 +889,7 @@ fn walkDir(
     }
 }
 
-// ============================================================================
 // Glob Options
-// ============================================================================
 
 pub const GlobOptions = struct {
     dot: bool = true,
@@ -958,23 +898,17 @@ pub const GlobOptions = struct {
     follow: bool = false,
     onlydir: bool = false,
     max_depth: ?usize = null,
-    /// Polled once per directory entry — a walk over a huge tree is the long
-    /// part of `glob`, and it is all in-process, so the Stop button has to be
-    /// asked from inside it.
+    /// Polled once per directory entry — a walk over a huge tree is the long part of `glob`, and it is all in-process, so the Stop button has to be asked from inside …
     cancel: ?shell_tool.CancelHook = null,
 };
 
-// ============================================================================
 // Main Glob Execution
-// ============================================================================
 
 pub fn executeGlob(allocator: std.mem.Allocator, io: std.Io, input: GlobInput) !GlobResult {
     return executeGlobWith(allocator, io, input, null);
 }
 
-/// The same walk, with the substrate that answers its listings chosen by the
-/// caller. A null source is the host's own filesystem, which is what every
-/// mode but `--saas` uses.
+/// The same walk, with the substrate that answers its listings chosen by the caller.
 pub fn executeGlobWith(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -984,9 +918,7 @@ pub fn executeGlobWith(
     return executeGlobWithCancel(allocator, io, input, source, null);
 }
 
-/// `executeGlobWith` plus the Stop button. The walk polls the hook once per
-/// directory entry and, on a true answer, abandons the walk and returns
-/// `error.Cancelled` rather than a partial listing that reads as complete.
+/// `executeGlobWith` plus the Stop button.
 pub fn executeGlobWithCancel(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -995,12 +927,9 @@ pub fn executeGlobWithCancel(
     cancel_hook: ?shell_tool.CancelHook,
 ) !GlobResult {
     // ---- Up-front input validation (BEFORE expandBraces / walk) ----
-    // Rationale: most "glob found nothing" results today are actually caller
-    // bugs.
     if (input.pattern.len == 0) return error.EmptyPattern;
 
-    // The LLM chooses `path`; on Windows a malformed NT name panics the
-    // process inside std's Io backend rather than failing this call.
+    // The LLM chooses `path`; on Windows a malformed NT name panics the process inside std's Io backend rather than failing this call.
     if (input.path.len > 0) {
         if (invalidPathReason(input.path)) |reason| {
             std.log.debug("glob rejected path: {s}", .{reason});
@@ -1008,8 +937,7 @@ pub fn executeGlobWithCancel(
         }
     }
 
-    // Whitespace-only pattern check. We strip ASCII whitespace and
-    // accept the result iff non-empty.
+    // Whitespace-only pattern check.
     {
         var has_non_ws = false;
         for (input.pattern) |c| {
@@ -1024,11 +952,9 @@ pub fn executeGlobWithCancel(
     // NUL byte check — expandBraces would silently corrupt the pattern.
     for (input.pattern) |c| if (c == 0) return error.PatternContainsNulByte;
 
-    // Path existence + dir check. The cross-platform approach: try to open it
-    // as a directory. If the open succeeds, path exists and is a directory.
+    // Path existence + dir check.
     if (source) |src| {
-        // Asking the guest for the listing IS the existence check there: the
-        // walk would otherwise find out only after the patterns were built.
+        // Asking the guest for the listing IS the existence check there: the walk would otherwise find out only after the patterns were built.
         const probe = src.listFn(src.ctx, allocator, io, input.path) catch return error.PathDoesNotExist;
         freeListed(allocator, probe);
     } else {
@@ -1048,8 +974,7 @@ pub fn executeGlobWithCancel(
         if (!ok) return error.InvalidFileType;
     }
 
-    // max_results validation. The 0 case is the one that previously
-    // got the silent "use default" treatment and confused callers.
+    // max_results validation.
     if (input.max_results) |mr| if (mr == 0) return error.InvalidMaxResults;
 
     // Brace expansion (also handles `{...}` detection up-front).
@@ -1072,17 +997,13 @@ pub fn executeGlobWithCancel(
 
     // Walk directory
     var results: std.ArrayList([]const u8) = .empty;
-    // Declaration ORDER is the cleanup order: defers run in reverse, so the
-    // backing slice is released LAST — iterating it after `deinit` (a slice
-    // that was just freed) is what a cancelled walk used to hit.
+    // Declaration ORDER is the cleanup order: defers run in reverse, so the backing slice is released LAST — iterating it after `deinit` (a slice that was just …
     defer results.deinit(allocator);
     errdefer {
         for (results.items) |r| allocator.free(r);
     }
 
-    // Create gitignore context only when respect_ignore_files is true.
-    // walkDir's gitignore_ctx slot is already nullable; the if-guards
-    // inside walkDir (lines 677-678, 712-715) light up automatically.
+    // Create gitignore context only when respect_ignore_files is true. walkDir's gitignore_ctx slot is already nullable; the if-guards inside walkDir (lines 677-678 …
     var gitignore_ctx_holder: ?GitignoreContext = if (input.respect_ignore_files)
         GitignoreContext.init(input.path)
     else
@@ -1092,12 +1013,10 @@ pub fn executeGlobWithCancel(
 
     var cancelled = false;
     walkDir(allocator, io, input.path, expanded, opts, &results, 0, gitignore_ctx, source, &cancelled);
-    // `errdefer` above frees every collected match; a cancelled walk has no
-    // answer to give, so it must not fall through to the offset/limit logic.
+    // `errdefer` above frees every collected match; a cancelled walk has no answer to give, so it must not fall through to the offset/limit logic.
     if (cancelled) return error.Cancelled;
 
-    // Apply offset and limit. PRE-EXISTING BUG FIX: The dups in
-    // `results.items` are owned by SOMEONE.
+    // Apply offset and limit.
     const total = results.items.len;
     const offset = input.offset orelse 0;
     // Treat max_results=0 as "no limit" (same as null)
@@ -1117,8 +1036,7 @@ pub fn executeGlobWithCancel(
         matches.deinit(allocator);
     }
 
-    // Transfer ownership of the kept range (results.items[start..end])
-    // into `matches[i].path` so the dups get freed by `result.deinit`.
+    // Transfer ownership of the kept range (results.items[start..end]) into `matches[i].path` so the dups get freed by `result.deinit`.
     for (results.items[start..end]) |r| {
         try matches.append(allocator, .{ .path = r });
     }
@@ -1138,13 +1056,9 @@ pub fn executeGlobWithCancel(
     };
 }
 
-// ============================================================================
 // Output Formatting
-// ============================================================================
 
-/// JSON payload mirrors the old `<glob_summary>` attributes 1:1: `pattern`,
-/// `total`, `returned`, `offset`, `truncated` and `truncated_by_size`, plus
-/// `files` (one entry per former `<f>` tag).
+/// JSON payload mirrors the old `<glob_summary>` attributes 1:1: `pattern`, `total`, `returned`, `offset`, `truncated` and `truncated_by_size`, plus `files` (one …
 pub const GlobJSON = struct {
     pattern: []const u8,
     total: usize,
@@ -1283,9 +1197,7 @@ pub const glob_tool = AgentTool{
     },
 };
 
-// ============================================================================
 // Test Compatibility Aliases (snake_case names for backward compatibility)
-// ============================================================================
 
 const testing = std.testing;
 test "gitignore parse line" {
@@ -1328,8 +1240,7 @@ test "GitignoreContext.isIgnored - direct test" {
     var ctx = GitignoreContext.init(root);
     defer ctx.deinit(allocator);
 
-    // Test isIgnored directly with a known path
-    // The path /tmp/gitignore_test_ctx/debug.log should be checked against the context
+    // Test isIgnored directly with a known path The path /tmp/gitignore_test_ctx/debug.log should be checked against the context
     const test_path = "/tmp/gitignore_test_ctx/debug.log";
 
     // Initially, no rules loaded - nothing should be ignored
@@ -1360,8 +1271,7 @@ test "GitignoreContext with entries" {
 }
 
 test "loadGitignoreForDir with relative path does not crash" {
-    // Regression test: loadGitignoreForDir should not crash when given a relative path
-    // Previously it called openFileAbsolute which asserts the path is absolute
+    // Regression test: loadGitignoreForDir should not crash when given a relative path Previously it called openFileAbsolute which asserts the path is absolute
     const allocator = std.testing.allocator;
 
     // Create a temp directory with a .gitignore file using shell commands
@@ -1380,8 +1290,7 @@ test "loadGitignoreForDir with relative path does not crash" {
     var ctx = GitignoreContext.init(tmp_dir_path);
     defer ctx.deinit(allocator);
 
-    // This should NOT crash even though subdir_path is relative
-    // The function should gracefully handle missing .gitignore or use proper file opening
+    // This should NOT crash even though subdir_path is relative The function should gracefully handle missing .gitignore or use proper file opening
     ctx.loadGitignoreForDir(allocator, std.testing.io, subdir_path, null);
 
     // If we get here without crashing, the test passes
@@ -1410,9 +1319,7 @@ test "loadGitignoreForDir with absolute path and existing gitignore" {
     try std.testing.expect(true);
 }
 
-// ============================================================================
-// Regression tests for walkDir duplicate-results bug (Chunk 1 of the
-// 2026-06-18-fix-glob-duplicate-results plan) The walkDir function used to
+// Regression tests for walkDir duplicate-results bug (Chunk 1 of the 2026-06-18-fix-glob-duplicate-results plan) The walkDir function used to
 
 const TmpTree = struct {
     root: []const u8,
@@ -1422,9 +1329,7 @@ const TmpTree = struct {
     }
 };
 
-/// Create a deterministic tree at `/tmp/glob_walkdir_test_<suffix>/` with
-/// `a/b/c/d/match.txt` inside. The `suffix` MUST be unique per test to
-/// avoid `/tmp` collisions in parallel test runs.
+/// Create a deterministic tree at `/tmp/glob_walkdir_test_<suffix>/` with `a/b/c/d/match.txt` inside.
 fn setupTempTree(allocator: std.mem.Allocator, suffix: []const u8) !TmpTree {
     const root = try std.fmt.allocPrint(allocator, "/tmp/glob_walkdir_test_{s}", .{suffix});
     errdefer allocator.free(root);
@@ -1432,9 +1337,7 @@ fn setupTempTree(allocator: std.mem.Allocator, suffix: []const u8) !TmpTree {
     // Idempotent: clean any prior state, then create
     std.Io.Dir.cwd().deleteTree(std.testing.io, root) catch {};
     try std.Io.Dir.cwd().createDirPath(std.testing.io, root);
-    // Nested subdirs created with path.join (root + "/a/b/c/d" — `++` on
-    // a runtime slice is rejected by Zig 0.16; path.join is correct here
-    // since "/a/b/c/d" is a path component, not a filename suffix).
+    // Nested subdirs created with path.join (root + "/a/b/c/d" — `++` on a runtime slice is rejected by Zig 0.16; path.join is correct here since "/a/b/c/d" is a …
     const nested_path = try std.fs.path.join(allocator, &.{ root, "a/b/c/d" });
     defer allocator.free(nested_path);
     try std.Io.Dir.cwd().createDirPath(std.testing.io, nested_path);
@@ -1452,9 +1355,7 @@ fn setupTempTree(allocator: std.mem.Allocator, suffix: []const u8) !TmpTree {
 }
 
 test "walkDir returns each file once for literal-prefix pattern" {
-    // Regression test for the duplicate-results bug: Pattern with 5 leading
-    // directory components (a/b/c/d/) used to return the file 32 times (=
-    // 2^5) due to the dual-recursion bug in walkDir.
+    // Regression test for the duplicate-results bug: Pattern with 5 leading directory components (a/b/c/d/) used to return the file 32 times (= 2^5) due to the …
     const allocator = std.testing.allocator;
 
     var tree = try setupTempTree(allocator, "literal_prefix");
@@ -1477,8 +1378,6 @@ test "walkDir returns each file once for literal-prefix pattern" {
 
 test "walkDir returns each file once for wildcard-prefix pattern" {
     // Pattern with a leading **/ must also produce a single result per file.
-    // The current code mis-handles wildcard prefixes in the prefix-aware
-    // logic (it strips ** and recurses with the wrong inner pattern).
     const allocator = std.testing.allocator;
 
     var tree = try setupTempTree(allocator, "wildcard_prefix");
@@ -1515,9 +1414,7 @@ test "walkDir with mixed literal and wildcard patterns returns each file once" {
     try std.testing.expectEqual(@as(usize, 2), result.matches.items.len);
 }
 
-// ============================================================================
-// Stay-green coverage (Chunk 3 of the 2026-06-18-fix-glob-duplicate-results
-// plan).
+// Stay-green coverage (Chunk 3 of the 2026-06-18-fix-glob-duplicate-results plan).
 
 test "walkDir with simple wildcard pattern finds files at any depth exactly once" {
     const allocator = std.testing.allocator;
@@ -1567,23 +1464,19 @@ test "walkDir with negation pattern excludes correctly" {
         allocator.free(tree.root);
     }
 
-    // Combine positive + negation patterns with brace expansion.
-    // {pattern1,pattern2} expands to two separate patterns.
+    // Combine positive + negation patterns with brace expansion. {pattern1,pattern2} expands to two separate patterns.
     var result = try executeGlob(allocator, std.testing.io, .{
         .pattern = "{{**/*.txt},{!**/match.txt}}",
         .path = tree.root,
     });
     defer result.deinit(allocator);
 
-    // match.txt should be found by **/*.txt but excluded by the
-    // negation pattern → 0 results.
+    // match.txt should be found by **/*.txt but excluded by the negation pattern → 0 results.
     try std.testing.expectEqual(@as(usize, 0), result.matches.items.len);
 }
 
 test "walkDir with 4-component literal prefix returns each file once (regression)" {
-    // The original bug report used a 4-component literal prefix followed by
-    // `**/Sidebar*.vue` (path = "src/apps/desktop/src/**/Sidebar*.vue") and
-    // returned 16 entries (= 2^4) due to the dual-recursion walkDir bug.
+    // The original bug report used a 4-component literal prefix followed by `**/Sidebar*.vue` (path = "src/apps/desktop/src/**/Sidebar*.vue") and returned 16 entries …
     const allocator = std.testing.allocator;
 
     var tree = try setupTempTree(allocator, "literal_4comp");
@@ -1601,13 +1494,9 @@ test "walkDir with 4-component literal prefix returns each file once (regression
     try std.testing.expectEqual(@as(usize, 1), result.matches.items.len);
 }
 
-// ============================================================================
-// Edge case hardening (2026-07-08-glob-edge-cases plan) Tests follow the
-// project convention of "TDD-first" — these tests are written BEFORE the
+// Edge case hardening (2026-07-08-glob-edge-cases plan) Tests follow the project convention of "TDD-first" — these tests are written BEFORE the
 
-// ============================================================================
 // Section 1: Validation tests (no fs invocation, run everywhere)
-// ============================================================================
 
 test "glob: empty pattern returns EmptyPattern error" {
     const allocator = std.testing.allocator;
@@ -1634,8 +1523,7 @@ test "glob: whitespace-only pattern returns WhitespaceOnlyPattern error" {
 test "glob: pattern with NUL byte returns PatternContainsNulByte error" {
     const allocator = std.testing.allocator;
 
-    // Pattern with embedded NUL — expandBraces would silently corrupt it
-    // without the up-front check.
+    // Pattern with embedded NUL — expandBraces would silently corrupt it without the up-front check.
     const pattern_with_nul: []const u8 = &[_]u8{ '*', '.', 'z', 'i', 'g', 0x00, '.', 'l', 'o', 'g' };
 
     const result = executeGlob(allocator, std.testing.io, .{
@@ -1660,9 +1548,7 @@ test "glob: path that doesn't exist returns PathDoesNotExist error" {
 test "glob: file_type not in {null,f,file,d,directory} returns InvalidFileType error" {
     const allocator = std.testing.allocator;
 
-    // "exec" / "symlink" / "any" are commonly mistyped values that today
-    // silently return ALL results. After hardening, they MUST be rejected
-    // so the LLM caller knows their input was wrong.
+    // "exec" / "symlink" / "any" are commonly mistyped values that today silently return ALL results.
     const result = executeGlob(allocator, std.testing.io, .{
         .pattern = "*",
         .path = "/tmp",
@@ -1686,7 +1572,6 @@ test "glob: max_results = 0 returns InvalidMaxResults error" {
 
 test "glob: valid input passes validation (positive case)" {
     // Sanity check: the up-front validation doesn't reject valid inputs.
-    // Uses a real /tmp tree so walkDir can succeed.
     const allocator = std.testing.allocator;
 
     var tree = try setupTempTree(allocator, "valid_input_positive");
@@ -1720,18 +1605,13 @@ test "glob: pattern '*.zig' matches files in test tree (positive)" {
     defer result.deinit(allocator);
 
     // The tree has exactly 1 .txt file (match.txt at a/b/c/d/match.txt).
-    // Walking with no `**` matches against name OR full path — the
-    // existing implementation matches against both, so 1 result.
     try std.testing.expectEqual(@as(usize, 1), result.matches.items.len);
 }
 
-// ============================================================================
 // Section 2: Behavioral tests (fs invocation, OS-independent)
-// ============================================================================
 
 test "glob: .git directory is skipped even without a .gitignore" {
-    // Setup: temp tree with `.git/` containing files. No .gitignore
-    // present. Pattern `**/*` should NOT match files inside .git/.
+    // Setup: temp tree with `.git/` containing files.
     const allocator = std.testing.allocator;
 
     const suffix = "git_skip";
@@ -1783,9 +1663,7 @@ test "glob: .git directory is skipped even without a .gitignore" {
 test "glob: brace expansion with unmatched `{` returns InvalidBraceExpansion" {
     const allocator = std.testing.allocator;
 
-    // Unmatched `{foo` — depth never returns to 0, the brace logic
-    // returns the pattern as-is. Pre-fix: silent no-match. Post-fix:
-    // clear error so the LLM knows their pattern is malformed.
+    // Unmatched `{foo` — depth never returns to 0, the brace logic returns the pattern as-is.
     const result = executeGlob(allocator, std.testing.io, .{
         .pattern = "{*.zig,*.md",
         .path = "/tmp",
@@ -1797,16 +1675,13 @@ test "glob: brace expansion with unmatched `{` returns InvalidBraceExpansion" {
 test "glob: brace expansion with `{1..5,7}` falls back to literal (no crash)" {
     const allocator = std.testing.allocator;
 
-    // Mixed numeric range + comma — neither branch handles it (the
-    // numeric branch wants `1..5` alone, the comma branch wants
-    // comma-separated). Returns original pattern as-is. Must not crash.
+    // Mixed numeric range + comma — neither branch handles it (the numeric branch wants `1..5` alone, the comma branch wants comma-separated).
     const result = executeGlob(allocator, std.testing.io, .{
         .pattern = "{1..5,7}",
         .path = "/tmp",
     });
 
-    // Don't crash. The behavior is "return as-is and walk"; we accept
-    // either no-match or any safe non-panic result.
+    // Don't crash.
     if (result) |r| {
         var mutable_r = r;
         defer mutable_r.deinit(allocator);
@@ -1832,11 +1707,9 @@ test "glob: file_type = 'f' filters to files only" {
     });
     defer result.deinit(allocator);
 
-    // All matches must be files. The temp tree has only 1 file (match.txt)
-    // and several directories (a, b, c, d). With file_type=f we expect 1.
+    // All matches must be files.
     for (result.matches.items) |m| {
-        // Files don't end with `/` in the joined path. Directories would
-        // be walked and matched if file_type filter is broken.
+        // Files don't end with `/` in the joined path.
         try std.testing.expect(!std.mem.endsWith(u8, m.path, "/"));
     }
     try std.testing.expectEqual(@as(usize, 1), result.matches.items.len);
@@ -1858,12 +1731,9 @@ test "glob: file_type = 'd' filters to directories only" {
     });
     defer result.deinit(allocator);
 
-    // The temp tree has directories a, b, c, d = 4 directories. No
-    // `.txt` files in the directory-only filter.
+    // The temp tree has directories a, b, c, d = 4 directories.
     for (result.matches.items) |m| {
-        // Directories appear with their full path — we can't easily
-        // distinguish them in the output, but the count must be the
-        // expected number of dirs.
+        // Directories appear with their full path — we can't easily distinguish them in the output, but the count must be the expected number of dirs.
         _ = m;
     }
     // Pre-walk directories: a, b, c, d → 4 dirs.
@@ -1912,9 +1782,7 @@ test "glob: offset + max_results exceeds total returns what's available" {
     try std.testing.expectEqual(@as(usize, 1), result.matches.items.len);
 }
 
-// ============================================================================
 // Section 3: Output shape tests (no fs needed — pure formatting)
-// ============================================================================
 
 test "glob: toJSONSuccess with empty results emits empty files array with warning" {
     const allocator = std.testing.allocator;
@@ -1958,8 +1826,7 @@ test "glob: toJSONSuccess keeps pattern with XML metacharacters raw" {
         .truncated_by_size = false,
     };
 
-    // Pattern with `<`, `>`, `&` — JSON needs no escaping for these, so
-    // the field must equal the raw input.
+    // Pattern with `<`, `>`, `&` — JSON needs no escaping for these, so the field must equal the raw input.
     const payload = try toJSONSuccess(allocator, result, "<weird>&pattern.zig");
     defer allocator.free(payload);
 
@@ -1975,21 +1842,16 @@ test "glob: toJSONSuccess keeps pattern with XML metacharacters raw" {
     try std.testing.expect(obj.get("warning").? == .null);
 }
 
-// respect_ignore_files tests (TDD: these reference a not-yet-existing field)
-// =============================================================================
-// Mirrors PR #96 (search's respect_ignore_files).
+// respect_ignore_files tests (TDD: these reference a not-yet-existing field) Mirrors PR #96 (search's respect_ignore_files).
 
 test "glob: respect_ignore_files = false does NOT return a validation error" {
     const allocator = std.testing.allocator;
 
-    // The boolean should flow through executeGlob without triggering any of
-    // the up-front validators (EmptyPattern, etc).
+    // The boolean should flow through executeGlob without triggering any of the up-front validators (EmptyPattern, etc).
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
 
-    // `realPath` of the tmpdir, NOT ".": `invalidPathReason` refuses a
-    // relative path on Windows, so `.` returned error.InvalidPath there while
-    // passing on POSIX.
+    // `realPath` of the tmpdir, NOT ".": `invalidPathReason` refuses a relative path on Windows, so `.` returned error.InvalidPath there while passing on POSIX.
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path_len = try tmpdir.dir.realPath(std.testing.io, &path_buf);
     const root_abs = path_buf[0..path_len];
@@ -2001,8 +1863,7 @@ test "glob: respect_ignore_files = false does NOT return a validation error" {
     });
     defer result.deinit(allocator);
 
-    // Test passes if executeGlob returned Ok (i.e., the `try` above
-    // didn't propagate an error). matches count can be 0 for an empty dir.
+    // Test passes if executeGlob returned Ok (i.e., the `try` above didn't propagate an error). matches count can be 0 for an empty dir.
     try std.testing.expect(result.matches.items.len >= 0);
 }
 
@@ -2012,9 +1873,7 @@ test "glob: respect_ignore_files = true (default) skips .gitignored paths" {
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
 
-    // NOTE: glob's gitignore parser has a pre-existing limitation where
-    // trailing-`/` directory-only patterns are not checked against
-    // directories during the walk (see GitignoreContext.isIgnored's `if
+    // NOTE: glob's gitignore parser has a pre-existing limitation where trailing-`/` directory-only patterns are not checked against directories during the walk (see …
     try tmpdir.dir.writeFile(std.testing.io, .{
         .sub_path = ".gitignore",
         .data = "node_modules\n",
@@ -2040,8 +1899,7 @@ test "glob: respect_ignore_files = true (default) skips .gitignored paths" {
     });
     defer result.deinit(allocator);
 
-    // Default = true respects .gitignore, so only app.js matches.
-    // node_modules/secret.js is skipped because of the .gitignore rule.
+    // Default = true respects .gitignore, so only app.js matches. node_modules/secret.js is skipped because of the .gitignore rule.
     try std.testing.expectEqual(@as(usize, 1), result.matches.items.len);
     try std.testing.expect(std.mem.endsWith(u8, result.matches.items[0].path, "/app.js"));
 }
@@ -2077,8 +1935,7 @@ test "glob: respect_ignore_files = false includes .gitignored paths" {
     });
     defer result.deinit(allocator);
 
-    // Both files matched — .gitignore was un-respected (no GitignoreContext
-    // was created, walkDir skipped filtering).
+    // Both files matched — .gitignore was un-respected (no GitignoreContext was created, walkDir skipped filtering).
     try std.testing.expectEqual(@as(usize, 2), result.matches.items.len);
 
     var saw_app = false;
@@ -2097,9 +1954,7 @@ test "glob: respect_ignore_files = false also un-respects .ignore / .rgignore" {
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
 
-    // NOTE: glob's gitignore parser has a pre-existing limitation with
-    // trailing-`/` directory-only patterns (see GitignoreContext.isIgnored
-    // short-circuit).
+    // NOTE: glob's gitignore parser has a pre-existing limitation with trailing-`/` directory-only patterns (see GitignoreContext.isIgnored short-circuit).
     try tmpdir.dir.writeFile(std.testing.io, .{
         .sub_path = ".ignore",
         .data = "build_artifacts\n",
@@ -2125,9 +1980,7 @@ test "glob: respect_ignore_files = false also un-respects .ignore / .rgignore" {
     });
     defer result.deinit(allocator);
 
-    // With respect_ignore_files=false, the walker lists every file —
-    // including the .ignore file itself (3 files: main.txt,
-    // build_artifacts/cached.dat, .ignore).
+    // With respect_ignore_files=false, the walker lists every file — including the .ignore file itself (3 files: main.txt, build_artifacts/cached.dat, .ignore).
     try std.testing.expectEqual(@as(usize, 3), result.matches.items.len);
 
     var saw_main = false;
@@ -2141,7 +1994,6 @@ test "glob: respect_ignore_files = false also un-respects .ignore / .rgignore" {
 }
 
 // Exec adapter — merged from `glob.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -2154,8 +2006,7 @@ const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const workspace_fs = @import("../loop/workspace_fs.zig");
 
-/// The guest as the walk's directory source: listings and `.gitignore` reads
-/// both come from the agent, so the host opens nothing inside the tenant tree.
+/// The guest as the walk's directory source: listings and `.gitignore` reads both come from the agent, so the host opens nothing inside the tenant tree.
 const GuestSource = struct {
     fs: *workspace_fs.Fs,
 
@@ -2198,8 +2049,7 @@ const GuestSource = struct {
         _ = io;
         _ = allocator;
         const self: *const GuestSource = @ptrCast(@alignCast(ctx));
-        // An unreadable `.gitignore` is a directory with no rules, exactly as
-        // it is on the host.
+        // An unreadable `.gitignore` is a directory with no rules, exactly as it is on the host.
         return self.fs.readAll(abs) catch null;
     }
 };
@@ -2236,9 +2086,7 @@ pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
-    // call works in, and the base a relative `path` resolves against. See
-    // helpers/exec_path_validate.zig for the one implementation of that rule.
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this call works in, and the base a relative `path` resolves against.
     exec_path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -2248,15 +2096,12 @@ pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const path_abs = try exec_path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
     defer ctx.allocator.free(path_abs);
 
-    // Search the RESOLVED directory: a relative `path` would otherwise be
-    // resolved by the globber against the SERVER's directory, not `cwd`.
+    // Search the RESOLVED directory: a relative `path` would otherwise be resolved by the globber against the SERVER's directory, not `cwd`.
     var input = parsed.value;
     input.path = path_abs;
 
     var glob_result = executeGlobThrough(ctx, input) catch |err| {
-        // Map the new domain errors to LLM-friendly messages. Each one
-        // names the fix the LLM can try (different pattern, narrower
-        // path, smaller max_results, etc).
+        // Map the new domain errors to LLM-friendly messages.
         const err_msg: []const u8 = blk: {
             switch (err) {
                 error.EmptyPattern => break :blk "glob pattern was empty — pass a non-empty pattern (this is a caller bug, not 'no match')",
@@ -2269,8 +2114,7 @@ pub fn execGlob(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
                 error.Cancelled => break :blk "the user stopped this run — the walk was abandoned and its matches are incomplete",
                 else => {},
             }
-            // Fall-through for unrecognised errors: the shared table keeps
-            // the raw error name and adds generic repair advice.
+            // Fall-through for unrecognised errors: the shared table keeps the raw error name and adds generic repair advice.
             const msg = error_explain.explain(ctx.allocator, err, null) catch "glob failed with an unknown error";
             break :blk msg;
         };
@@ -2307,7 +2151,6 @@ test "glob: a cancelled session abandons the walk instead of returning a partial
         .cwd = tree.root,
     }, null, .{ .ctx = &state, .is_cancelled = StopRequested.isCancelled });
 
-    // `match.txt` exists below the root, so a walk that ignored the hook would
-    // return it: the error is the difference between "stopped" and "empty".
+    // `match.txt` exists below the root, so a walk that ignored the hook would return it: the error is the difference between "stopped" and "empty".
     try std.testing.expectError(error.Cancelled, result);
 }

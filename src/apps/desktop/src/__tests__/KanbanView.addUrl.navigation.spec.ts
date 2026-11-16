@@ -1,6 +1,4 @@
-/** KanbanView navigation between the board and the add page, over the app's real route table: the
- * board (`/projects/{id}`) and the add page (`/projects/{id}/add`) are ONE route record, so the
- * route guard sees every move between them — the browser Back button included. */
+/** KanbanView navigation between the board and the add page, over the app's real route table: the board (`/projects/{id}`) and the add page (`/projects/{id}/add`) … */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -50,8 +48,7 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   ...overrides,
 })
 
-/** The routed component: the board, rendered INSIDE a <router-view> (so the route guards see a
- * real matched record, exactly like in the app). */
+/** The routed component: the board, rendered INSIDE a <router-view> (so the route guards see a real matched record, exactly like in the app). */
 const makeBoard = () =>
   defineComponent({
     components: { KanbanView },

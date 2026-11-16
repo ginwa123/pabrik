@@ -1,5 +1,4 @@
 //! `DELETE /api/local-memories/:name?cwd=...` — delete a local memory file.
-//! No body. On success: 200 with `{"success":true,"name":"..."}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -13,22 +12,17 @@ pub const DeleteLocalMemoryResponse = struct {
     name: []const u8,
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code.
+/// Domain-level error set for `useCase`.
 pub const LocalMemoryDeleteError = error{
-    /// Neither the per-request `cwd` query nor the io fallback
-    /// yielded a usable local-memories directory. Maps to 500.
+    /// Neither the per-request `cwd` query nor the io fallback yielded a usable local-memories directory.
     NoCwdAvailable,
     /// `:name` path param was missing or empty.
     NameRequired,
     /// The name failed `isValidMemoryName` (path-traversal or non-md).
     InvalidName,
-    /// `deleteLocalMemoryFile` returned false (the helper already
-    /// validated the name + dir, so the only remaining cause is an
-    /// unexpected non-`FileNotFound` IO error). Maps to 400.
+    /// `deleteLocalMemoryFile` returned false (the helper already validated the name + dir, so the only remaining cause is an unexpected non-`FileNotFound` IO error).
     DeleteFailed,
-    /// `allocator.dupe` failed while building the heap-owned name
-    /// slice for the response.
+    /// `allocator.dupe` failed while building the heap-owned name slice for the response.
     OutOfMemory,
 };
 
@@ -39,19 +33,14 @@ pub const LocalMemoryDeleteInput = struct {
     cwd: []const u8,
 };
 
-/// Output of the delete use-case. `name` is HEAP-OWNED by the use-case (the
-/// path param is borrowed; duping it lets the handler hand the response to
-/// the JSON serializer without keeping the request alive).
+/// Output of the delete use-case.
 pub const LocalMemoryDeleteOutput = struct {
     name: []u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Delete a local memory file (idempotent). Steps: 1. Validate `name`
-/// (non-empty + `isValidMemoryName`). 2.
+/// Delete a local memory file (idempotent).
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -78,9 +67,7 @@ fn useCase(
     return .{ .name = try allocator.dupe(u8, input.name) };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn localMemoryDeleteHandler(
     ctx: gserverz.HttpContext,

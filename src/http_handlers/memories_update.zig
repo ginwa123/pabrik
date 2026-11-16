@@ -1,6 +1,4 @@
 //! `PUT /api/memories/:name` — replace the body of a global memory file.
-//! Body: `{"content":"..."}`. On success: 200 with
-//! `{"memory":{name,title,path,size}}`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,14 +6,12 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// JSON request body for `PUT /api/memories/:name`. Only the new content is
-/// editable; the filename is fixed by the URL path parameter.
+/// JSON request body for `PUT /api/memories/:name`.
 const UpdateMemoryBody = struct {
     content: []const u8,
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code.
+/// Domain-level error set for `useCase`.
 pub const MemoryUpdateError = error{
     /// `getSingleton()` failed — server not initialised.
     ServerNotInitialized,
@@ -29,8 +25,7 @@ pub const MemoryUpdateError = error{
     NotFound,
     /// `writeMemoryFile` returned false (validation / IO failure).
     WriteFailed,
-    /// Update succeeded but the file wasn't visible in the
-    /// subsequent `listAllMemories` (consistency violation).
+    /// Update succeeded but the file wasn't visible in the subsequent `listAllMemories` (consistency violation).
     NotVisible,
     /// `allocator.dupe` failed while building the heap-owned output.
     OutOfMemory,
@@ -42,18 +37,14 @@ pub const MemoryUpdateInput = struct {
     content: []const u8,
 };
 
-/// Output of the update use-case. `memory` is HEAP-OWNED by the
-/// use-case. The handler is responsible for freeing each slice.
+/// Output of the update use-case.
 pub const MemoryUpdateOutput = struct {
     memory: memories_mod.MemoryInfo,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Replace the body of an existing global memory file. Steps: 1. Get the
-/// singleton + env. 2.
+/// Replace the body of an existing global memory file.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -65,8 +56,7 @@ fn useCase(
     if (input.name.len == 0) return error.NameRequired;
     if (!memories_mod.isValidMemoryName(input.name)) return error.InvalidName;
 
-    // Update only succeeds for existing memories. 404 (not 400) so
-    // the UI can distinguish "edit non-existent" from "bad input".
+    // Update only succeeds for existing memories. 404 (not 400) so the UI can distinguish "edit non-existent" from "bad input".
     if (!memories_mod.memoryExists(allocator, io, environment, input.name)) {
         return error.NotFound;
     }
@@ -109,9 +99,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 const UpdateMemoryResponse = struct {
     memory: ?memories_mod.MemoryInfo = null,

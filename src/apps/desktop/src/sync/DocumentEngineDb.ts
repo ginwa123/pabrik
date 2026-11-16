@@ -1,6 +1,4 @@
-/** Document-list child of the generic sync engine (sidebar local-first). Mirrors SessionEngineDb:
- * cache-then-revalidate over `api.listDocuments`, each row keeping the full server object in `raw`
- * so cached paints render through the store with no shape drift. */
+/** Document-list child of the generic sync engine (sidebar local-first). Mirrors SessionEngineDb */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Document } from '../api'
@@ -15,8 +13,7 @@ export type DocumentRawRow = Document
 
 export interface DocumentRow {
   id: string
-  /** `updated_at` wall-clock string; the documents list does not paginate, so this is only the
-   * engine's cursor and never the paint order (`compareFn` owns that). */
+  /** `updated_at` wall-clock string; the documents list does not paginate, so this is only the engine's cursor and never the paint order (`compareFn` owns that). */
   sortKey: string
   /** Complete server object, so cached paints match the network shape. */
   raw: DocumentRawRow
@@ -29,9 +26,7 @@ export function documentSortKey(d: Document): string {
   return d.updated_at || ''
 }
 
-/** The backend's list order — `position ASC, updated_at DESC, id DESC` — so a cached paint shows
- * the order the user dragged, not the recency order the cache would otherwise restore. A row
- * cached before the position column existed has no `position` and sorts with the untouched rows. */
+/** The backend's list order — `position ASC, updated_at DESC, id DESC` — so a cached paint shows the order the user dragged, not the recency order the cache would … */
 export function bySidebarOrder(a: Document, b: Document): number {
   const aPosition = a.position ?? 0
   const bPosition = b.position ?? 0
@@ -51,16 +46,13 @@ export function toDocumentRow(d: Document): DocumentRow {
 
 export interface DocumentDelta extends SyncDelta<DocumentRow> {
   total: number
-  /** The folder tree, carried through the same read as the rows (Migration
-   * 140) so the store can paint placement without a second request. */
+  /** The folder tree, carried through the same read as the rows (Migration 140) so the store can paint placement without a second request. */
   folders: api.DocumentFolder[]
 }
 
 export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
   constructor(
-    // Namespace indirection (NOT a bare `listDocuments` import): the property is read at call time
-    // so `vi.spyOn(api, 'listDocuments')` — the seam every Documents spec uses — intercepts engine
-    // fetches too. Same reason as SessionEngineDb.
+    // Namespace indirection (NOT a bare `listDocuments` import): the property is read at call time so `vi.spyOn(api, 'listDocuments')` — the seam every Documents …
     private fetchFn: typeof api.listDocuments = (...args) => api.listDocuments(...args),
     storeName = 'documents',
     store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -84,9 +76,7 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
     return this.fetchDeltaPage(ctx)
   }
 
-  /**    * Full-list revalidate. `listDocuments` is unpaginated and returns the whole workspace, so
-   * `limit` and the stored cursor are both irrelevant — accepted for the base-class contract and
-   * ignored. */
+  /** Full-list revalidate. */
   fetchDeltaPage(ctx: DocumentCtx): Effect.Effect<DocumentDelta, SyncRemoteError> {
     return Effect.tryPromise({
       try: () => this.fetchFn(ctx),
@@ -111,11 +101,8 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
     )
   }
 
-  /** Background refresh for a cached paint: fetch the whole workspace, replace the cached rows for
-   * this ctx, hand back the delta. A body already cached for an opened document is carried forward,
-   * so a revalidate never quietly strips offline access. */
+  /** Background refresh for a cached paint: fetch the whole workspace, replace the cached rows for this ctx, hand back the delta. */
   loadDelta(ctx: DocumentCtx): Effect.Effect<DocumentDelta, SyncError> {
-    // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     return Effect.gen(function* () {

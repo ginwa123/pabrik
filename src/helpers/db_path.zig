@@ -1,8 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
 
-/// Resolve `~/.config/pabrik/agent.db`, creating the directory tree with
-/// `mkdir -p` semantics if it does not yet exist.
+/// Resolve `~/.config/pabrik/agent.db`, creating the directory tree with `mkdir -p` semantics if it does not yet exist.
 pub fn getDbPath(allocator: std.mem.Allocator, io: std.Io, environment: *std.process.Environ.Map) ![:0]const u8 {
     const config_dir = try getConfigDir(allocator, io, environment);
     defer allocator.free(config_dir);
@@ -16,9 +15,7 @@ pub fn getDbPath(allocator: std.mem.Allocator, io: std.Io, environment: *std.pro
     return try allocator.dupeZ(u8, db_path);
 }
 
-/// Resolve `~/.config/pabrik`, creating it if it does not yet exist. The one
-/// place a host's pabrik state directory is derived, so `agent.db` and the
-/// secrets master key cannot end up in different directories.
+/// Resolve `~/.config/pabrik`, creating it if it does not yet exist.
 pub fn getConfigDir(allocator: std.mem.Allocator, io: std.Io, environment: *std.process.Environ.Map) ![:0]const u8 {
     // On POSIX systems, the canonical user-home env var is `HOME`.
     const home = blk: {
@@ -32,9 +29,7 @@ pub fn getConfigDir(allocator: std.mem.Allocator, io: std.Io, environment: *std.
         return error.FailedToGetHome;
     };
 
-    // `home` is fed to `openDirAbsolute` below, which ASSERTS the path is
-    // absolute and ABORTS the whole process (Debug/ReleaseSafe) instead of
-    // returning an error — a relative HOME/USERPROFILE would make pabrik
+    // `home` is fed to `openDirAbsolute` below, which ASSERTS the path is absolute and ABORTS the whole process (Debug/ReleaseSafe) instead of returning an error — a …
     if (!std.fs.path.isAbsolute(home)) {
         std.log.err("HOME/USERPROFILE is not an absolute path: {s}", .{home});
         return error.FailedToGetHome;

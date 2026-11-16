@@ -15,9 +15,7 @@ export type ChatsNavItem = {
   is_auto_retry_until_stop?: string
   last_human_touched_at?: string
   updated_at?: string
-  // Raw `updated_at` sort value (matches the backend
-  // `sort_by=updated_at` order). Used for display sorting and for
-  // cache-first scroll-back (`loadOlderFromCache`).
+  // Raw `updated_at` sort value (matches the backend `sort_by=updated_at` order).
   sortKey?: string
   // Migration 104 — pinned sessions (PINNED section above RECENT).
   is_pinned?: boolean
@@ -35,20 +33,14 @@ export interface ChatsRowsDeps {
 export function useChatsRows(deps: ChatsRowsDeps) {
   const { navItems, chatsSortDirection, scopedWorkspaceId } = deps
 
-  // Sidebar local-first: the cache partition key. Matches the
-  // `scopedWorkspaceId` refetch boundary — each workspace paints its own
-  // cached rows, `'all'` when unscoped (back-compat).
+  // Sidebar local-first: the cache partition key.
   const sessionCacheKey = (): string => scopedWorkspaceId.value ?? 'all'
 
-  // Single mapper for server session → row view model, shared by the cache paint and the network paint
-  // so both shapes stay identical (same "no shape drift" rule as ChatView's toChatMessages).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
   const toNavItem = (session: any) => ({
     id: session.session_id,
     name: session.session_name || 'New Chat',
-    // active state now derives from the URL via isCurrentChat() in the template
-    // (sidebar-single-active fix 2026-08-06). Storing it here would freeze the highlight at
-    // loadChats() time and leave stale `active: true` after navigation away from chat.
+    // active state now derives from the URL via isCurrentChat() in the template (sidebar-single-active fix 2026-08-06).
     active: false,
     // Migration 082 — prefer human-touched timestamp when present.
     relativeTime: formatRelativeTime(session.last_human_touched_at || session.updated_at),
@@ -58,28 +50,21 @@ export function useChatsRows(deps: ChatsRowsDeps) {
     cwd: session.cwd || '',
     git_worktree_cwd: session.git_worktree_cwd || '',
     git_branch: session.git_branch || '',
-    // Migration 063 — defaulted to "0" in getChats mapping so the
-    // `=== '1'` badge check below is well-defined.
+    // Migration 063 — defaulted to "0" in getChats mapping so the `=== '1'` badge check below is well-defined.
     is_auto_retry_until_stop: session.is_auto_retry_until_stop || '0',
-    // Migration 082 — captured separately for the stale-dot check
-    // (compares updated_at vs last_human_touched_at to render the
-    // amber "AI is ahead of you" indicator).
+    // Migration 082 — captured separately for the stale-dot check (compares updated_at vs last_human_touched_at to render the amber "AI is ahead of you" indicator).
     last_human_touched_at: session.last_human_touched_at || '',
     updated_at: session.updated_at || '',
     sortKey: session.updated_at || '',
-    // Migration 104 — pinned sessions. Boolean on the wire; default
-    // false so legacy caches read as unpinned.
+    // Migration 104 — pinned sessions.
     is_pinned: session.is_pinned ?? false,
     pinned_position: session.pinned_position ?? 0,
     last_finish_reason: session.last_finish_reason || '',
-    // NOT `?? false`: a legacy cache row with no field must read as
-    // "no badge", not "reviewed".
+    // NOT `?? false`: a legacy cache row with no field must read as "no badge", not "reviewed".
     needs_human_review: session.needs_human_review ?? undefined,
   })
 
-  // Display order for cached paints. The engine stores newest-first;
-  // the backend serves `direction` order — re-apply it here so a warm
-  // mount in asc mode matches the network order exactly.
+  // Display order for cached paints.
   const sortNavItemsForDisplay = () => {
     const asc = chatsSortDirection.value === 'asc'
     navItems.value.sort((a, b) => {
@@ -90,7 +75,6 @@ export function useChatsRows(deps: ChatsRowsDeps) {
     })
   }
 
-  // Minimal Chat shape for the cache write-through above.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapNavItemToChat = (r: any): any => ({
     session_id: r.id,

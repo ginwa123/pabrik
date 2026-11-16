@@ -7,9 +7,7 @@ import { nextTick } from 'vue'
 import DesignElement from '../components/design/DesignElement.vue'
 import type { DesignElement as DesignElementApi } from '../api'
 
-// Minimal mock element. The ShapeValidator in DesignElement.vue does
-// not run on direct mount (it's only called when the parent canvas
-// writes back a geometry update), so a minimal shape is enough.
+// Minimal mock element.
 function makeElement(overrides: Partial<DesignElementApi> = {}): DesignElementApi {
   return {
     id: 'elem_test',
@@ -42,9 +40,7 @@ function makeElement(overrides: Partial<DesignElementApi> = {}): DesignElementAp
 describe('DesignElement.vue — elementStyle applies z_index as inline CSS z-index', () => {
   let wrapper: VueWrapper | null = null
 
-// Pinia is required because `DesignElement.vue::setup` now imports `useWorkspacesStore` (added
-// 2026-08-06 so the element can look up its parent for the "click on child → select parent"
-// redirect). See DesignElement.drag.spec.ts for the parent-found tests.
+// Pinia is required because `DesignElement.vue::setup` now imports `useWorkspacesStore` (added 2026-08-06 so the element can look up its parent for the "click on …
   beforeEach(() => {
     setActivePinia(createPinia())
   })
@@ -54,9 +50,7 @@ describe('DesignElement.vue — elementStyle applies z_index as inline CSS z-ind
     wrapper = null
   })
 
-  // The wrapper div carries the dynamic testid `design-element-<id>` AND a static
-  // `data-design-element="true"` attribute (per the component's contract at lines 732-733). Use the
-  // static attribute for test selectors so a change in element.id doesn't break the test.
+  // The wrapper div carries the dynamic testid `design-element-<id>` AND a static `data-design-element="true"` attribute (per the component's contract at lines …
   const rootSelector = '[data-design-element="true"]'
 
   it('renders inline z-index: 0 for an element with z_index=0', async () => {
@@ -93,8 +87,7 @@ describe('DesignElement.vue — elementStyle applies z_index as inline CSS z-ind
     let style = wrapper.find(rootSelector).attributes('style') ?? ''
     expect(style).toMatch(/z-index:\s*0\b/)
 
-    // Simulate the store mirror after Bring to front: parent_id stays
-    // "", array order stays the same, but z_index bumped to 7.
+    // Simulate the store mirror after Bring to front: parent_id stays "", array order stays the same, but z_index bumped to 7.
     await wrapper.setProps({ element: makeElement({ z_index: 7 }) })
     await nextTick()
     style = wrapper.find(rootSelector).attributes('style') ?? ''

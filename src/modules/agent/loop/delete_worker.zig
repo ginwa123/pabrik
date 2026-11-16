@@ -16,9 +16,7 @@ pub const DeleteWorkerInput = struct {
     session_id: []const u8,
     event_bus: ?*event_bus_mod.EventBus,
     is_emit_sse: bool,
-    /// The run's lease (see `session_lock.zig`): when set, only the row with
-    /// THIS token is removed, so a run that lost its slot cannot delete the
-    /// winner's row. Empty means "any row for this session" (cancel paths).
+    /// The run's lease (see `session_lock.zig`): when set, only the row with THIS token is removed, so a run that lost its slot cannot delete the winner's row.
     run_token: []const u8 = "",
 };
 
@@ -129,8 +127,7 @@ test "deleteWorker only removes the matching row, not other rows" {
         .is_emit_sse = false,
     });
 
-    // After deleting w2 from {w1, w2, w3}, only w1 and w3 remain (in
-    // alphabetical id order).
+    // After deleting w2 from {w1, w2, w3}, only w1 and w3 remain (in alphabetical id order).
     var q = try s.db.query(testing.allocator, "SELECT id FROM worker ORDER BY id", &.{});
     defer q.deinit();
     var ids: [2]?[]u8 = .{ null, null };

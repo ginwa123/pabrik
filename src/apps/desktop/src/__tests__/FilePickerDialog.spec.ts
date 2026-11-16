@@ -1,14 +1,11 @@
-/** Tests for FilePickerDialog — a generic, data-source-agnostic file/folder picker. The component
- * is generic over the item type T. */
+/** Tests for FilePickerDialog — a generic, data-source-agnostic file/folder picker. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import FilePickerDialog from '../components/FilePickerDialog.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Pinia + localStorage setup is required for FilePickerDialog because the component now imports
-// `useRecentFoldersStore` (the recent-folders tab). Pinia requires an active instance; jsdom 29
-// dropped localStorage from its default globals. Each test file gets a fresh Pinia + a fresh stub.
+// Pinia + localStorage setup is required for FilePickerDialog because the component now imports `useRecentFoldersStore` (the recent-folders tab).
 beforeEach(() => {
   setActivePinia(createPinia())
   Object.defineProperty(globalThis, 'localStorage', {
@@ -29,8 +26,7 @@ function clickInDom(selector: string) {
   ;(el as HTMLElement).click()
 }
 
-// Mock tree: / └── home └── user ├── docs (dir) ├── notes (dir) ├── readme (file) └── .hidden
-// (file, hidden)
+// Mock tree: / └── home └── user ├── docs (dir) ├── notes (dir) ├── readme (file) └── .hidden (file, hidden)
 const tree: Record<string, Array<{ name: string; path: string; is_directory: boolean }>> = {
   '/': [{ name: 'home', path: '/home', is_directory: true }],
   '/home': [{ name: 'user', path: '/home/user', is_directory: true }],
@@ -238,8 +234,7 @@ describe('FilePickerDialog — selection (folder mode)', () => {
     vi.restoreAllMocks()
   })
 
-  // RENAMED + initialPath changed from '/home/user' to '/' to assert the "disabled at root"
-  // invariant. Previously: "Select button is disabled when nothing is selected".
+  // RENAMED + initialPath changed from '/home/user' to '/' to assert the "disabled at root" invariant.
   it('Select button is disabled at root when nothing is selected', async () => {
     wrapper = mountDialog({ initialPath: '/', mode: 'folder' })
     await wrapper.setProps({ modelValue: true })
@@ -288,9 +283,7 @@ describe('FilePickerDialog — selection (folder mode)', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 
-  // UPDATED (plan: 2026-08-13-folder-picker-select-button-current-folder.md). The footer now
-  // reflects effectiveSelection (currentPath fallback), so at /home/user the footer shows the
-  // current folder even before any click.
+  // UPDATED (plan: 2026-08-13-folder-picker-select-button-current-folder.md).
   it('clicking a file in folder mode does NOT select it (mode restricts)', async () => {
     wrapper = mountDialog({ initialPath: '/home/user', mode: 'folder' })
     await wrapper.setProps({ modelValue: true })
@@ -299,8 +292,7 @@ describe('FilePickerDialog — selection (folder mode)', () => {
     expect(findInDom('[data-testid="file-picker-selected-path"]')?.textContent).toBe('/home/user')
     clickInDom('[data-testid="file-picker-item-/home/user/readme.md"]')
     await flushPromises()
-    // Post-click: file click is a no-op in folder mode, so the footer
-    // still reflects currentPath (no explicit click selected the file).
+    // Post-click: file click is a no-op in folder mode, so the footer still reflects currentPath (no explicit click selected the file).
     expect(findInDom('[data-testid="file-picker-selected-path"]')?.textContent).toBe('/home/user')
   })
 })

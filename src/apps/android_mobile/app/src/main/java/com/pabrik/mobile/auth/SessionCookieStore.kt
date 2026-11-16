@@ -20,8 +20,7 @@ class SessionCookieStore(context: Context) : SessionStore {
 
     override fun save(cookieValue: String) {
         require(cookieValue.isNotBlank()) { "Session cookie must not be empty" }
-        // `require` above is a programming error, so it propagates on purpose;
-        // everything after is fail-silent inside EncryptedPrefs.
+        // `require` above is a programming error, so it propagates on purpose; everything after is fail-silent inside EncryptedPrefs.
         prefs.put(EncryptedPrefs.PAYLOAD_KEY, cookieValue)
     }
 

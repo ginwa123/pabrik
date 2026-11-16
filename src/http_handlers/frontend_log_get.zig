@@ -1,5 +1,4 @@
-//! `GET /api/logs` — read rows from the `logs` table for `curl` / scripts /
-//! debug inspection.
+//! `GET /api/logs` — read rows from the `logs` table for `curl` / scripts /debug inspection.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,12 +8,9 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 
-// =====================================================================
 // Whitelists
-// =====================================================================
 
-/// Valid `level` values — matches the POST handler's whitelist. An
-/// unknown value → 400 (LLM-friendly hint in the error message).
+/// Valid `level` values — matches the POST handler's whitelist.
 const VALID_LEVELS = [_][]const u8{ "error", "warn", "info", "debug" };
 
 /// Valid `kind` values — matches the POST handler's whitelist.
@@ -25,27 +21,19 @@ const VALID_KINDS = [_][]const u8{
     "console_warn",
 };
 
-// =====================================================================
 // Constants
-// =====================================================================
 
-/// Default page size when the client doesn't pass `limit`. Matches the
-/// design doc's "default 100".
+/// Default page size when the client doesn't pass `limit`.
 const DEFAULT_LIMIT: u32 = 100;
 
-/// Maximum page size (guards against a client asking for a million
-/// rows). Matches the design doc's "capped at 1000".
+/// Maximum page size (guards against a client asking for a million rows).
 const MAX_LIMIT: u32 = 1000;
 
-// =====================================================================
 // Error set
-// =====================================================================
 
-/// Domain-level error set for `useCase` and `parseInput`. Each variant maps
-/// to a distinct HTTP status code.
+/// Domain-level error set for `useCase` and `parseInput`.
 pub const FrontendLogGetError = error{
-    /// `pabrikcore.getSingleton()` failed (server has not been
-    /// initialised yet). Maps to 500.
+    /// `pabrikcore.getSingleton()` failed (server has not been initialised yet).
     ServerNotInitialized,
     /// `level` query param value is not in the whitelist. Maps to 400.
     InvalidLevel,
@@ -55,41 +43,31 @@ pub const FrontendLogGetError = error{
     InvalidLimit,
     /// DB read failed. Maps to 500.
     QueryFailed,
-    /// Building the response JSON failed (OOM, in practice unreachable
-    /// because the per-request arena reaps everything). Maps to 500.
+    /// Building the response JSON failed (OOM, in practice unreachable because the per-request arena reaps everything).
     OutOfMemory,
 };
 
-// =====================================================================
 // Input / output types
-// =====================================================================
 
-/// Parsed query-string input for `GET /api/logs`. All fields are
-/// optional (null when absent); `limit` has a default.
+/// Parsed query-string input for `GET /api/logs`.
 pub const FrontendLogGetInput = struct {
     level: ?[]const u8 = null,
     kind: ?[]const u8 = null,
     session_id: ?[]const u8 = null,
-    /// Microseconds — null when no `since` was supplied. Stored as
-    /// i64 because SQLite's `created_at` column is INTEGER microseconds.
+    /// Microseconds — null when no `since` was supplied.
     since_us: ?i64 = null,
     /// Already clamped to [1, 1000]. Defaults to 100.
     limit: u32 = DEFAULT_LIMIT,
 };
 
-/// Output of the use-case: pre-serialized JSON body (lives in the
-/// per-request arena; the caller does NOT free).
+/// Output of the use-case: pre-serialized JSON body (lives in the per-request arena; the caller does NOT free).
 pub const FrontendLogGetOutput = struct {
     json_body: []const u8,
 };
 
-// =====================================================================
 // Parse input
-// =====================================================================
 
-/// Pure function: pull the 5 query params out of `req.query` and return a
-/// typed `FrontendLogGetInput`. Whitelist-validates `level` and `kind`;
-/// clamps `limit`.
+/// Pure function: pull the 5 query params out of `req.query` and return a typed `FrontendLogGetInput`.
 fn parseInput(query: std.StringHashMap([]const u8)) FrontendLogGetError!FrontendLogGetInput {
     // level: validate whitelist iff present+non-empty.
     const level_str = query.get("level");
@@ -109,8 +87,7 @@ fn parseInput(query: std.StringHashMap([]const u8)) FrontendLogGetError!Frontend
         break :blk k;
     };
 
-    // session_id: no validation, just pass through. Empty string is
-    // normalized to null for the same reason as level/kind above.
+    // session_id: no validation, just pass through.
     const session_id_opt: ?[]const u8 = blk: {
         const s = query.get("session_id") orelse break :blk null;
         if (s.len == 0) break :blk null;
@@ -118,17 +95,13 @@ fn parseInput(query: std.StringHashMap([]const u8)) FrontendLogGetError!Frontend
     };
 
     // since: parse as i64, defensive fallback to null on any failure.
-    // Project convention (see `tasks_list.zig:67`) treats parse
-    // failures as the default value rather than a hard error.
     const since_opt: ?i64 = blk: {
         const s = query.get("since") orelse break :blk null;
         if (s.len == 0) break :blk null;
         break :blk std.fmt.parseInt(i64, s, 10) catch null;
     };
 
-    // limit: default 100, clamp to [1, 1000]. Absent or empty → use
-    // default. Unparseable, zero, or out-of-range → return InvalidLimit
-    // (the LLM gets a 400 hint instead of a silent clamp).
+    // limit: default 100, clamp to [1, 1000].
     const limit: u32 = blk: {
         const s = query.get("limit") orelse break :blk DEFAULT_LIMIT;
         if (s.len == 0) break :blk DEFAULT_LIMIT;
@@ -147,12 +120,9 @@ fn parseInput(query: std.StringHashMap([]const u8)) FrontendLogGetError!Frontend
     };
 }
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Resolve the singleton, build + execute the SELECT, map rows to
-/// `FrontendLogRow`, and return the pre-serialized JSON.
+/// Resolve the singleton, build + execute the SELECT, map rows to `FrontendLogRow`, and return the pre-serialized JSON.
 fn useCase(
     allocator: std.mem.Allocator,
     input: FrontendLogGetInput,
@@ -160,8 +130,7 @@ fn useCase(
     const di = pabrikcore.getSingleton() catch return error.ServerNotInitialized;
     const db = di.db;
 
-    // Build the SQL string dynamically. We always include `WHERE 1=1` so
-    // subsequent optional filters can append `AND ...` uniformly.
+    // Build the SQL string dynamically.
     var sql_buf = std.ArrayList(u8).empty;
     defer sql_buf.deinit(allocator);
     try sql_buf.appendSlice(
@@ -173,7 +142,6 @@ fn useCase(
     );
 
     // Track which filters are present so we know what to bind.
-    // `limit` is always present at the end; the others are optional.
     var present_level: bool = false;
     var present_kind: bool = false;
     var present_session: bool = false;
@@ -202,9 +170,7 @@ fn useCase(
 
     try sql_buf.appendSlice(allocator, "\nORDER BY created_at_nano DESC\nLIMIT ?");
 
-    // Format i64 / u32 values as decimal strings BEFORE binding — `db.exec` /
-    // `db.query` only bind TEXT, and SQLite coerces numeric-looking text to
-    // INTEGER under INTEGER affinity (verified via :memory: round-trip —
+    // Format i64 / u32 values as decimal strings BEFORE binding — `db.exec` /`db.query` only bind TEXT, and SQLite coerces numeric-looking text to INTEGER under …
     const since_str = if (input.since_us) |us| blk: {
         const s = try std.fmt.allocPrint(allocator, "{d}", .{us});
         break :blk s;
@@ -214,8 +180,7 @@ fn useCase(
     const limit_str = try std.fmt.allocPrint(allocator, "{d}", .{input.limit});
     defer allocator.free(limit_str);
 
-    // Build the bind slice. SQLite binds arguments positionally to `?`
-    // placeholders; the ORDER here must match the SQL build above exactly.
+    // Build the bind slice.
     var args = std.ArrayList([]const u8).empty;
     defer args.deinit(allocator);
     if (present_level) {
@@ -232,8 +197,7 @@ fn useCase(
     }
     try args.append(allocator, limit_str);
 
-    // Run the query. The `sqlite.query` helper returns a `Rows` iterator
-    // whose `.next()` returns `!?Row`.
+    // Run the query.
     var rows = db.query(allocator, sql_buf.items, args.items) catch return error.QueryFailed;
     defer rows.deinit();
 
@@ -242,17 +206,13 @@ fn useCase(
     defer logs_list.deinit(allocator);
 
     while (true) {
-        // `rows.next()` returns the raw Backend.Error set; map any
-        // failure to our domain `QueryFailed` so the function can return
-        // FrontendLogGetError instead of leaking sqlite errors.
+        // `rows.next()` returns the raw Backend.Error set; map any failure to our domain `QueryFailed` so the function can return FrontendLogGetError instead of leaking …
         const row_opt = rows.next() catch |e| {
             std.log.warn("frontend_log_get useCase: rows.next failed: {s}", .{@errorName(e)});
             return error.QueryFailed;
         };
         const row = row_opt orelse break;
-        // Empty slice from `row.values[i]` corresponds to NULL on a nullable
-        // column (project memory `sqlite-backend-empty-slice-binds-as-null`);
-        // non-empty means a value (which may be the textual representation of
+        // Empty slice from `row.values[i]` corresponds to NULL on a nullable column (project memory `sqlite-backend-empty-slice-binds-as-null`); non-empty means a value …
         try logs_list.append(allocator, http_response.FrontendLogRow{
             .id = row.values[0],
             .created_at = std.fmt.parseInt(i64, row.values[1], 10) catch 0,
@@ -276,9 +236,7 @@ fn useCase(
     return .{ .json_body = json_body };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn frontendLogGetHandler(
     ctx: gserverz.HttpContext,
@@ -287,17 +245,13 @@ pub fn frontendLogGetHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Parse query params — pass `req.query` directly (it's the
-    // `StringHashMap([]const u8)` field on the request struct; see
-    // `tasks_list.zig:210` for the same usage pattern).
+    // Parse query params — pass `req.query` directly (it's the `StringHashMap([]const u8)` field on the request struct; see `tasks_list.zig:210` for the same usage …
     const input = parseInput(req.query) catch |err| {
         const status: u16 = switch (err) {
             error.InvalidLevel => 400,
             error.InvalidKind => 400,
             error.InvalidLimit => 400,
-            // parseInput's body only emits the 3 validation variants above;
-            // the wider FrontendLogGetError variants (singleton, query, OOM)
-            // are type-system residue from the shared enum.
+            // parseInput's body only emits the 3 validation variants above; the wider FrontendLogGetError variants (singleton, query, OOM) are type-system residue from the …
             else => 500,
         };
         const message: []const u8 = switch (err) {
@@ -306,9 +260,7 @@ pub fn frontendLogGetHandler(
             error.InvalidLimit => "limit must be between 1 and 1000",
             else => "Internal error parsing request",
         };
-        // Use `std.log.warn` (NOT `std.log.err`) so this handler's error path
-        // doesn't trigger `log_err_count > 0` in `zig build test` (project
-        // memory `zig-0.16-test-log-err-count`).
+        // Use `std.log.warn` (NOT `std.log.err`) so this handler's error path doesn't trigger `log_err_count > 0` in `zig build test` (project memory …
         std.log.warn("frontend_log_get: {s}", .{message});
         return res.jsonResponse(.{
             .status_code = status,
@@ -316,15 +268,13 @@ pub fn frontendLogGetHandler(
         });
     };
 
-    // useCase's inferred error set is {ServerNotInitialized, QueryFailed,
-    // OutOfMemory}.
+    // useCase's inferred error set is {ServerNotInitialized, QueryFailed, OutOfMemory}.
     const outcome = useCase(allocator, input) catch |err| {
         const status: u16 = switch (err) {
             error.ServerNotInitialized => 500,
             error.QueryFailed => 500,
             error.OutOfMemory => 500,
-            // The 3 validation variants are type-system residue from the
-            // shared FrontendLogGetError; useCase cannot actually emit them.
+            // The 3 validation variants are type-system residue from the shared FrontendLogGetError; useCase cannot actually emit them.
             else => 500,
         };
         const message: []const u8 = switch (err) {
@@ -343,9 +293,7 @@ pub fn frontendLogGetHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = outcome.json_body });
 }
 
-// =====================================================================
 // Helpers
-// =====================================================================
 
 /// Returns true if `level` is one of the 4 whitelisted values.
 fn isValidLevel(level: []const u8) bool {
@@ -363,32 +311,25 @@ fn isValidKind(kind: []const u8) bool {
     return false;
 }
 
-/// Convert a TEXT column slice to a `?[]const u8` — empty slice is
-/// treated as NULL (project memory
-/// `sqlite-backend-empty-slice-binds-as-null`).
+/// Convert a TEXT column slice to a `?[]const u8` — empty slice is treated as NULL (project memory `sqlite-backend-empty-slice-binds-as-null`).
 fn nullableText(v: []const u8) ?[]const u8 {
     return if (v.len == 0) null else v;
 }
 
-/// Convert an INTEGER column's textual representation to a `?i64` — empty
-/// slice is NULL (matches the same convention as `nullableText`).
+/// Convert an INTEGER column's textual representation to a `?i64` — empty slice is NULL (matches the same convention as `nullableText`).
 fn nullableInt(v: []const u8) ?i64 {
     if (v.len == 0) return null;
     return std.fmt.parseInt(i64, v, 10) catch null;
 }
 
-// ===== Tests merged from frontend_log_get_test.zig (2026-09-11 flatten)
-// ===== Behavioural SQL tests for `frontend_log_get` (GET /api/logs).
+// ===== Tests merged from frontend_log_get_test.zig (2026-09-11 flatten) ===== Behavioural SQL tests for `frontend_log_get` (GET /api/logs).
 
 const testing = std.testing;
 
-// =============================================================================
-// Behavioural SQL tests These exercise the SAME SQL the use-case runs against
-// an in-memory SQLite DB with the logs table loaded.
+// Behavioural SQL tests These exercise the SAME SQL the use-case runs against an in-memory SQLite DB with the logs table loaded.
 
 
 /// Open a fresh in-memory sqlite DB with the `logs` table loaded.
-/// Mirrors `frontend_log_post_test.zig::setupDbWithLogs`.
 fn setupDbWithLogs() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -403,9 +344,7 @@ fn setupDbWithLogs() !struct {
     try test_db.openMemory(&db, io);
 
     try pabrikcore.migrations_mod.migration.Migration064AddFrontendLogs.up(&db, alloc);
-    // Also apply the logs half of Migration 075 (`logs.created_at` →
-    // `logs.created_at_nano`) so these tests target the production schema
-    // (see `frontend_log_post.zig::setupDbWithLogs` for the precedent — the
+    // Also apply the logs half of Migration 075 (`logs.created_at` → `logs.created_at_nano`) so these tests target the production schema (see …
     try db.exec(alloc, "ALTER TABLE logs RENAME COLUMN created_at TO created_at_nano", &.{});
     try db.exec(alloc, "DROP INDEX IF EXISTS idx_logs_created_at", &.{});
     try db.exec(
@@ -416,9 +355,7 @@ fn setupDbWithLogs() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Insert one log row with a specific id, microsecond timestamp, and
-/// level. Mirrors the use-case's INSERT shape (sans dedup — we
-/// always insert fresh rows here).
+/// Insert one log row with a specific id, microsecond timestamp, and level.
 fn insertLog(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -444,9 +381,7 @@ const SelectedLogRow = struct {
     message: []const u8,
 };
 
-/// Run a SELECT against `logs` with the use-case's exact column order
-/// and ORDER BY/LIMIT shape. Returns owned slices — caller frees via
-/// `alloc.free(slice)` then `defer rows.deinit()`.
+/// Run a SELECT against `logs` with the use-case's exact column order and ORDER BY/LIMIT shape.
 fn selectLogs(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -460,9 +395,7 @@ fn selectLogs(
     );
     defer alloc.free(sql);
 
-    // No bind args — the LIMIT was interpolated directly into the SQL above
-    // (the test exercises the use-case's SQL SHAPE, not its bind-positional
-    // pattern, so we don't need to mirror the limit bind).
+    // No bind args — the LIMIT was interpolated directly into the SQL above (the test exercises the use-case's SQL SHAPE, not its bind-positional pattern, so we …
     var rows = try db.query(alloc, sql, &.{});
     defer rows.deinit();
 
@@ -480,9 +413,7 @@ fn selectLogs(
     return out.toOwnedSlice(alloc);
 }
 
-/// Free the heap-owned strings inside a `[]SelectedLogRow` slice, then free
-/// the outer slice. Mirrors the project's `defer row.deinit(alloc)`-then-free
-/// pattern from `frontend_log_post_test.zig`.
+/// Free the heap-owned strings inside a `[]SelectedLogRow` slice, then free the outer slice.
 fn freeSelectedLogRows(alloc: std.mem.Allocator, rows: []SelectedLogRow) void {
     for (rows) |row| {
         alloc.free(row.id);
@@ -542,9 +473,7 @@ test "behavioural: WHERE created_at >= ? (since filter)" {
     try insertLog(&s.db, alloc, "log_t2", 200, "info", "console_error", "cutoff");
     try insertLog(&s.db, alloc, "log_t3", 300, "info", "console_error", "new-1");
 
-    // Use the exact WHERE clause shape the use-case appends:
-    //   "\n  AND created_at_nano >= ?"
-    // (the newline + 2-space indent is cosmetic but we mirror it).
+    // Use the exact WHERE clause shape the use-case appends
     const rows = try selectLogs(&s.db, alloc, "\n  AND created_at_nano >= '200'", 100);
     defer freeSelectedLogRows(alloc, rows);
 

@@ -1,6 +1,4 @@
-//! Wire test: `pabrik headless compaction` runs the `compaction` tool's path with
-//! no port bound. The session has no history, so an allowed run reports
-//! `compacted:false`: the ALLOW/DENY decision is what this pins.
+//! Wire test: `pabrik headless compaction` runs the `compaction` tool's path with no port bound.
 
 const std = @import("std");
 const testing = std.testing;
@@ -41,8 +39,7 @@ fn createSessionInWorkspace(h: *Harness, workspace_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The exact write the Runtime tab's toggle makes, so this test drives the
-/// setting through its production path rather than by editing a file.
+/// The exact write the Runtime tab's toggle makes, so this test drives the setting through its production path rather than by editing a file.
 fn setAutoCompaction(h: *Harness, workspace_id: []const u8, enabled: bool) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/config", .{workspace_id});
     defer gpa.free(path);
@@ -102,8 +99,7 @@ test "headless compaction: the workspace switch refuses the agent, and --force o
     const session = try createSessionInWorkspace(&h, ws);
     defer gpa.free(session);
 
-    // 1. The key is absent on disk, which reads as ENABLED: the tool an agent
-    //    would call is allowed to run.
+    // 1.
     {
         var run = try compaction(&h, &.{session});
         defer run.deinit();
@@ -126,8 +122,7 @@ test "headless compaction: the workspace switch refuses the agent, and --force o
         );
     }
 
-    // 2. The workspace turns the switch OFF. The agent is now refused, the exit
-    //    code says so, and the message names the setting.
+    // 2.
     {
         try setAutoCompaction(&h, ws, false);
         try testing.expect(!(try readAutoCompaction(&h, ws)));
@@ -145,8 +140,7 @@ test "headless compaction: the workspace switch refuses the agent, and --force o
         );
     }
 
-    // 3. `--force` is what the user's Compact button does (force = true), so the
-    //    switch may not block it.
+    // 3.
     {
         var run = try compaction(&h, &.{ session, "--force" });
         defer run.deinit();

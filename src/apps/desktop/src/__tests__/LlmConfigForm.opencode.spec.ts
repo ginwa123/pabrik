@@ -1,6 +1,4 @@
-/** The OpenCode transport's own picker contract: the list comes from the CLI, and it arrives
- * free-first. The models.dev spec covers the HTTP profile; these cover what changes when the agent
- * runs the local CLI. */
+/** The OpenCode transport's own picker contract: the list comes from the CLI, and it arrives free-first. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 

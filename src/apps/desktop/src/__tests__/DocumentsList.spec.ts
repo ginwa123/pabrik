@@ -1,6 +1,4 @@
-/** Documents sidebar section + URL contract (Migration 095). Three things are proven here, and the
- * third is the one that usually rots: 1. The section renders below Projects, with the same header
- * geometry the spacing spec greps for. 2. */
+/** Documents sidebar section + URL contract (Migration 095). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -60,17 +58,13 @@ async function makeRouter(path = '/app/ws_1', query: Record<string, string> = {}
   return router
 }
 
-/**  * The list is cache-first now (IndexedDB paint, then revalidate), so the DOM settles on a promise
- * boundary rather than a microtask. Two `nextTick()`s no longer reach the painted rows — this does,
- * and it is the same flush `SidebarDiffPanel.tabs.spec.ts` uses. */
+/** The list is cache-first now (IndexedDB paint, then revalidate), so the DOM settles on a promise boundary rather than a microtask. */
 async function settle(): Promise<void> {
   await flushPromises()
   await nextTick()
 }
 
-/** The documents list is cache-first now, and `documentEngineDb` is a module singleton whose
- * IndexedDB fallback is a module-level Map — so rows cached by one test are still primed by the
- * next one. */
+/** The documents list is cache-first now, and `documentEngineDb` is a module singleton whose IndexedDB fallback is a module-level Map — so rows cached by one test … */
 async function clearDocumentsCache(workspaceId = 'ws_1'): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')
@@ -113,8 +107,7 @@ describe('DocumentsList — section chrome', () => {
 
     const title = wrapper.get('[data-testid="documents-section-title"]')
     expect(title.text()).toBe('Documents')
-    // The spacing spec greps the source for these two; asserting the
-    // rendered class keeps the component and the spec in agreement.
+    // The spacing spec greps the source for these two; asserting the rendered class keeps the component and the spec in agreement.
     const header = wrapper.get('[data-testid="documents-section-header"]')
     expect(header.classes()).toContain('px-[var(--sb-gutter)]')
     expect(header.classes()).toContain('h-7')
@@ -164,8 +157,7 @@ describe('DocumentsList — section chrome', () => {
     const wrapper = mountList(router)
     await nextTick()
 
-    // The button opens a menu rather than creating straight away: a document
-    // now has a format, and the user has to say which one.
+    // The button opens a menu rather than creating straight away: a document now has a format, and the user has to say which one.
     await wrapper.get('[data-testid="documents-add-button"]').trigger('click')
     await nextTick()
     expect(wrapper.find('[data-testid="documents-new-menu"]').exists()).toBe(true)
@@ -176,8 +168,7 @@ describe('DocumentsList — section chrome', () => {
     await nextTick()
 
     expect(createDocument).toHaveBeenCalledWith('ws_1', 'Untitled document', '', null, 'markdown')
-    // A document is a PAGE now, so the id lives in the path. Asserting the
-    // query here would pass even if the view still rendered as an overlay.
+    // A document is a PAGE now, so the id lives in the path.
     expect(router.currentRoute.value.path).toBe('/app/ws_1/doc/doc_new')
     expect(router.currentRoute.value.query.doc).toBeUndefined()
     wrapper.unmount()
@@ -204,8 +195,7 @@ describe('DocumentsList — section chrome', () => {
     ]
     expect(call[0]).toBe('ws_1')
     expect(call[1]).toBe('Untitled spreadsheet')
-    // The kind is written at create time, so the editor knows which Univer
-    // product to mount before the first Save.
+    // The kind is written at create time, so the editor knows which Univer product to mount before the first Save.
     expect(JSON.parse(call[2])).toEqual({ kind: 'sheet', snapshot: {} })
     expect(call[3]).toBeNull()
     expect(call[4]).toBe('office')
@@ -233,8 +223,7 @@ describe('DocumentsList — section chrome', () => {
     ]
     expect(call[0]).toBe('ws_1')
     expect(call[1]).toBe('Untitled page')
-    // A blank body would open an empty iframe, so the starter page is written
-    // at create time — the same reason an office document gets its envelope.
+    // A blank body would open an empty iframe, so the starter page is written at create time — the same reason an office document gets its envelope.
     expect(call[2]).toContain('<!doctype html>')
     expect(call[3]).toBeNull()
     expect(call[4]).toBe('html')
@@ -261,19 +250,14 @@ describe('DocumentsList — URL contract', () => {
     await settle()
 
     await wrapper.get('[data-testid="document-row-doc_2"]').trigger('click')
-    // `router.replace` resolves on a microtask, so a bare `nextTick()` can
-    // observe the route BEFORE the navigation lands. This is the
-    // flushPromises pattern SidebarDiffPanel.tabs.spec.ts uses.
+    // `router.replace` resolves on a microtask, so a bare `nextTick()` can observe the route BEFORE the navigation lands.
     await flushPromises()
-    // The click half. Without this, refresh loses the open document.
-    // The id is in the PATH, and the document REPLACES the current main
-    // view rather than layering `?doc=` on top of whatever was open.
+    // The click half.
     expect(router.currentRoute.value.path).toBe('/app/ws_1/doc/doc_2')
     expect(router.currentRoute.value.query.doc).toBeUndefined()
     wrapper.unmount()
 
-    // The mount half. Without this, a shared link opens the right
-    // document with no row highlighted.
+    // The mount half.
     const restored = mountList(await makeRouter('/app/ws_1/doc/doc_2'))
     await settle()
     const style = restored.get('[data-testid="document-row-doc_2"]').attributes('style') ?? ''
@@ -310,9 +294,7 @@ describe('DocumentsList — URL contract', () => {
     await wrapper.get('[data-testid="document-row-doc_1"]').trigger('click')
     await flushPromises()
 
-    // The workspaces store is what ProjectsList and ChatsList read for
-    // their own highlight. Left set, a project row stays highlighted
-    // alongside the document row.
+    // The workspaces store is what ProjectsList and ChatsList read for their own highlight.
     const { useWorkspacesStore } = await import('../stores/workspaces')
     const ws = useWorkspacesStore()
     expect(ws.activeWorkspaceItemId).toBe(null)
@@ -341,9 +323,7 @@ describe('DocumentsList — failure is not emptiness', () => {
     await settle()
     await settle()
 
-    // The regression: `catch` returning `[]` with no error makes this
-    // identical to a workspace with no documents, and the user deletes
-    // real notes to "fix" a backend blip.
+    // The regression: `catch` returning `[]` with no error makes this identical to a workspace with no documents, and the user deletes real notes to "fix" a backend …
     expect(wrapper.find('[data-testid="documents-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="documents-empty"]').exists()).toBe(false)
     wrapper.unmount()
@@ -385,9 +365,7 @@ describe('DocumentsList — failure is not emptiness', () => {
     await store.fetchDocuments('ws_1')
     await settle()
 
-    // Blanking the list on a failed refresh would make a transient network error look like data
-    // loss. The message is now the sync engine's (`sync remote documents.fetchDelta failed: boom`),
-    // because the list load went through the Effect seam.
+    // Blanking the list on a failed refresh would make a transient network error look like data loss.
     expect(store.error).toContain('boom')
     expect(store.documents).toHaveLength(2)
     expect(wrapper.find('[data-testid="document-row-doc_1"]').exists()).toBe(true)
@@ -443,9 +421,7 @@ describe('DocumentsList — drag to reorder', () => {
     )
   })
 
-  /** JSDOM has no `DataTransfer`, so the drag carries a stub with just the surface the component
-   * touches. `getBoundingClientRect()` is zeroed there, so clientY 0 is the TOP half of a row and
-   * anything above 0 is the BOTTOM half. */
+  /** JSDOM has no `DataTransfer`, so the drag carries a stub with just the surface the component touches. */
   function makeDragStore() {
     const store = new Map<string, string>()
     return {
@@ -542,7 +518,5 @@ describe('DocumentsList — drag to reorder', () => {
   })
 })
 
-// `ref` is imported for the pinia `provide` contract shape that sibling
-// specs use; kept so vue-tsc checks this file whole and the import is
-// not silently dead.
+// `ref` is imported for the pinia `provide` contract shape that sibling specs use; kept so vue-tsc checks this file whole and the import is not silently dead.
 void ref

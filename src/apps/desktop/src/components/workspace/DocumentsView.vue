@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// The document page (Migration 095), reached from the sidebar's Documents section, which writes
-// `/app/{ws}/doc/{id}` into the URL — a PAGE shape, so the chat it was opened from is unmounted.
-// Three formats share it: `markdown`, `office` (a Univer editor) and `html` (a sandboxed iframe).
+// The document page (Migration 095), reached from the sidebar's Documents section, which writes `/app/{ws}/doc/{id}` into the URL — a PAGE shape, so the chat it …
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDocumentsStore } from '../../stores/documents'
@@ -38,24 +36,18 @@ const router = useRouter()
 const editing = ref(false)
 const draftTitle = ref('')
 const draftContent = ref('')
-/** Last persisted body, so `isDirty` compares against what is STORED,
- *  not against the last keystroke. */
+/** Last persisted body, so `isDirty` compares against what is STORED, not against the last keystroke. */
 const savedContent = ref('')
 const savedTitle = ref('')
 const showPreview = ref(true)
-/** An office document's edits live inside Univer, so the only signal that the
- *  stored body is stale is the editor telling us a command ran. */
+/** An office document's edits live inside Univer, so the only signal that the stored body is stale is the editor telling us a command ran. */
 const officeDirty = ref(false)
 const officeEditor = ref<InstanceType<typeof OfficeDocumentEditor> | null>(null)
-/** True once the body has been read. The office editor mounts ONCE with the
- *  body it is handed, so an empty body would open a blank spreadsheet and Save
- *  would write that workbook under the document's real kind. */
+/** True once the body has been read. */
 const bodyLoaded = ref(false)
-/** The width an HTML page is previewed at. Per document, so opening another
- *  page never inherits a phone frame the user forgot they chose. */
+/** The width an HTML page is previewed at. */
 const viewport = ref<HtmlViewportId>(DEFAULT_HTML_VIEWPORT)
-/** The Custom viewport's width. Kept across documents — it is a preference,
- *  not a property of the page. */
+/** The Custom viewport's width. */
 const customWidth = ref<number>(DEFAULT_CUSTOM_WIDTH)
 
 // The resolved workspace, not the raw `activeWorkspaceId` ref.
@@ -67,9 +59,7 @@ const isOffice = computed(() => isOfficeFormat(document_.value?.format))
 
 const isHtml = computed(() => isHtmlFormat(document_.value?.format))
 
-/** Which Univer product renders this document. The mounted editor wins: it is
- *  the thing holding the snapshot Save will store, so the envelope's `kind` and
- *  the snapshot inside it can never disagree. */
+/** Which Univer product renders this document. */
 const officeKind = computed(
   () =>
     officeEditor.value?.kind() ??
@@ -85,8 +75,7 @@ const isDirty = computed(
 
 const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
 
-/** The iframe's own size. A non-desktop width is a fixed device width, centred
- *  in the stage and ringed so it reads as a device rather than a broken page. */
+/** The iframe's own size. */
 const frameStyle = computed(() => {
   const width = viewportWidth(viewport.value, customWidth.value)
   if (width === null) return 'width: 100%; height: 100%;'
@@ -96,9 +85,7 @@ const frameStyle = computed(() => {
 /** The id whose body is being fetched, so a retry cannot stack up requests. */
 let loadingId: string | null = null
 
-// Load on mount AND on id change: a Back/Forward between two documents keeps the same component
-// mounted, so an `onMounted`-only fetch would leave the previous document's body on screen under
-// the new title. Prev-value guard on update — same load the watcher did.
+// Load on mount AND on id change: a Back/Forward between two documents keeps the same component mounted, so an `onMounted`-only fetch would leave the previous …
 async function loadForDocument(id: string) {
   if (!id || !workspaceId.value || loadingId === id) return
   loadingId = id
@@ -119,30 +106,23 @@ async function loadForDocument(id: string) {
 
 let prevDocumentId = props.documentId
 
-// True once the store has held a row for this id, so a later absence means "deleted", not
-// "the list has not loaded yet".
+// True once the store has held a row for this id, so a later absence means "deleted", not "the list has not loaded yet".
 let hadDocumentRow = false
 
-/** Adopt a row that changed underneath us — an agent `document_markdown` edit reaches this view as an SSE
- * refresh. Unsaved edits win: the draft is kept and only the saved baseline moves, so Save still
- * sends just the user's own fields. */
+/** Adopt a row that changed underneath us — an agent `document_markdown` edit reaches this view as an SSE refresh. */
 function syncFromStore() {
   const row = document_.value
   if (!row) {
     if (!hadDocumentRow || !documentsStore.loaded) return
     // The open document is gone from a fully-loaded list — an agent `document_markdown` delete removed it.
-    // Staying would render "Loading document…" forever.
     hadDocumentRow = false
     router.replace(buildAppUrl({ workspaceId: workspaceId.value ?? '' })).catch(() => {
-      // Nothing to recover: a rejected duplicate navigation already means the URL is what the
-      // user asked for.
+      // Nothing to recover: a rejected duplicate navigation already means the URL is what the user asked for.
     })
     return
   }
   hadDocumentRow = true
-  // A list refresh replaces the row with a body-less one. The title still
-  // tracks the server; the body is left alone, because the open document's
-  // body is the editor's, not the sidebar's.
+  // A list refresh replaces the row with a body-less one.
   const rowContent = typeof row.content === 'string' ? row.content : null
   if (
     row.title === savedTitle.value &&
@@ -170,9 +150,7 @@ onUpdated(() => {
     void loadForDocument(props.documentId)
     return
   }
-  // On a cold load the workspace resolves AFTER mount, so the first
-  // `loadForDocument` returns early and the body would never arrive. Retry
-  // until it does; `bodyLoaded` stops this the moment the body is in.
+  // On a cold load the workspace resolves AFTER mount, so the first `loadForDocument` returns early and the body would never arrive.
   if (!bodyLoaded.value && workspaceId.value && document_) {
     void loadForDocument(props.documentId)
   }
@@ -194,14 +172,11 @@ const save = async () => {
     editing.value = false
     return
   }
-  // Send ONLY the fields the user actually changed. Sending both is safe when the draft is fresh,
-  // but this view can sit open for a long time and the agent's `document_markdown` edit may have rewritten
-  // the body in the meantime — a whole-body PATCH would then silently revert that edit.
+  // Send ONLY the fields the user actually changed.
   const patch: { title?: string; content?: string } = {}
   if (draftTitle.value !== savedTitle.value) patch.title = draftTitle.value
   if (isOffice.value) {
-    // Only when the editor reported an edit: a rename must not rewrite the
-    // body, or it would revert an agent `document_markdown` edit that landed meanwhile.
+    // Only when the editor reported an edit: a rename must not rewrite the body, or it would revert an agent `document_markdown` edit that landed meanwhile.
     if (officeDirty.value) {
       const snapshot = officeEditor.value?.snapshot()
       if (snapshot !== null && snapshot !== undefined) {
@@ -230,12 +205,9 @@ const remove = async () => {
   if (!workspaceId.value) return
   const ok = await documentsStore.deleteDocument(workspaceId.value, props.documentId)
   if (!ok) return
-  // Leaving a deleted document selected would render a permanently empty view. The document owns
-  // its path, so there is no query param to drop — leave the page by going back to the workspace
-  // root, which is where the user was before they opened any document.
+  // Leaving a deleted document selected would render a permanently empty view.
   router.replace(buildAppUrl({ workspaceId: workspaceId.value })).catch(() => {
-    // Nothing to recover: a rejected duplicate navigation already means
-    // the URL is what the user asked for.
+    // Nothing to recover: a rejected duplicate navigation already means the URL is what the user asked for.
   })
 }
 </script>

@@ -1,5 +1,4 @@
-//! `DELETE /api/workspaces/:workspace_id/secrets/:secret_id`. Removes one
-//! secret.
+//! `DELETE /api/workspaces/:workspace_id/secrets/:secret_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,9 +20,7 @@ pub const SecretsDeleteInput = struct {
     secret_id: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -36,9 +33,7 @@ fn useCase(
         error.IdsRequired => return error.SecretIdRequired,
         error.NotFound => return error.NotFound,
         error.DeleteFailed => return error.DeleteFailed,
-        // The guards above already caught an empty workspace_id, so this
-        // variant cannot reach the client from here — but the switch is
-        // exhaustive over the store's shared error set on purpose, so a
+        // The guards above already caught an empty workspace_id, so this variant cannot reach the client from here — but the switch is exhaustive over the store's shared …
         error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
         error.NameRequired,
         error.ValueRequired,
@@ -54,9 +49,7 @@ fn useCase(
     };
 }
 
-// ===================================================================== Error
-// mapping
-// ===================================================================== Two
+// ===================================================================== Error mapping ===================================================================== Two
 
 fn statusFor(err: SecretsDeleteError) u16 {
     return switch (err) {
@@ -75,9 +68,7 @@ fn messageFor(err: SecretsDeleteError) []const u8 {
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn secretsDeleteHandler(
     ctx: gserverz.HttpContext,
@@ -106,8 +97,7 @@ pub fn secretsDeleteHandler(
         });
     };
 
-    // The id comes back because the caller needs it to reconcile its local
-    // list; the row's name and value are not part of the answer.
+    // The id comes back because the caller needs it to reconcile its local list; the row's name and value are not part of the answer.
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .id = secret_id,
         .success = true,
@@ -166,8 +156,7 @@ test "useCase: deletes the secret and leaves the sibling alone" {
         error.NotFound,
         secrets_store.getSecret(alloc, &ctx.db, "ws_1", "sec_a"),
     );
-    // The other workspace's identically named secret is untouched — the
-    // scope lives in the WHERE clause, so a delete cannot reach across.
+    // The other workspace's identically named secret is untouched — the scope lives in the WHERE clause, so a delete cannot reach across.
     const survivor = try secrets_store.getSecret(alloc, &ctx.db, "ws_2", "sec_b");
     defer secrets_store.freeSecretRow(alloc, survivor);
     try testing.expectEqualStrings("GITHUB_TOKEN", survivor.name);

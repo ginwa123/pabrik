@@ -10,8 +10,7 @@ import { highlightLinesForFile, type Token } from '../../helpers/codeHighlight'
 const props = withDefaults(
   defineProps<{
     cwd?: string
-    /** When true (default) a file click expands its diff inline below the row — the only view
-     * available to hosts without a center column (RightSidebar). */
+    /** When true (default) a file click expands its diff inline below the row — the only view available to hosts without a center column (RightSidebar). */
     inlineFileDiff?: boolean
   }>(),
   { inlineFileDiff: true },
@@ -36,8 +35,7 @@ const error = ref<string | null>(null)
 const selectedSha = ref<string | null>(null)
 const detailCache = ref<Record<string, api.GitCommitDetail>>({})
 const detailLoading = ref<string | null>(null)
-// Per-file unified diffs, keyed `${sha}::${path}`. Read-only inline view:
-// click a touched file to expand its diff at that commit.
+// Per-file unified diffs, keyed `${sha}::${path}`. Read-only inline view
 const fileDiffCache = ref<Record<string, ParsedDiffLine[]>>({})
 const fileDiffLoading = ref<Record<string, boolean>>({})
 const fileDiffError = ref<Record<string, boolean>>({})
@@ -94,8 +92,7 @@ const loadCommits = async (append = false) => {
     if (data.is_git_repo) {
       const rows = data.commits || []
       commits.value = append ? [...commits.value, ...rows] : rows
-      // More pages remain when a full page came back and (when known)
-      // we have not reached the total yet.
+      // More pages remain when a full page came back and (when known) we have not reached the total yet.
       hasMore.value =
         rows.length >= PAGE_SIZE &&
         (totalCount.value <= 0 || commits.value.length < totalCount.value)
@@ -192,9 +189,7 @@ const ensureFileDiff = async (commit: api.GitCommit, file: api.GitCommitFile, ke
   }
 }
 
-// The inline diff of the ONE open file (only one row's diff is open at a
-// time). Precomputed here so the render below never re-tokenizes per
-// render — `fileKey` is `<sha>::<path>`, so the path is the part after it.
+// The inline diff of the ONE open file (only one row's diff is open at a time).
 const openFileLines = computed(() =>
   openFileKey.value ? (fileDiffCache.value[openFileKey.value] ?? []) : [],
 )
@@ -205,17 +200,14 @@ const openFileTokens = computed<Token[][]>(() => {
     lines.map((line) => line.content),
     openFilePath.value,
   )
-  // A hunk header is diff metadata, not code — tokenizing it would paint its
-  // numbers over the row's hunk colour. Rendered plain, like every other
-  // unified surface in the app.
+  // A hunk header is diff metadata, not code — tokenizing it would paint its numbers over the row's hunk colour.
   return lines.map((line, i) =>
     line.type === 'hunk' ? [{ text: line.content, type: 'plain' }] : tokens[i]!,
   )
 })
 
 const diffLineStyle = (line: ParsedDiffLine): Record<string, string> => {
-  // The base colour is explicit: `.tok-plain` inherits, and the colour a diff
-  // line falls back to must not depend on whatever hosts this list.
+  // The base colour is explicit: `.tok-plain` inherits, and the colour a diff line falls back to must not depend on whatever hosts this list.
   const base = { color: 'var(--semantic-text)' }
   if (line.type === 'add') return { ...base, backgroundColor: 'rgba(34, 197, 94, 0.12)' }
   if (line.type === 'remove') return { ...base, backgroundColor: 'rgba(239, 68, 68, 0.12)' }
@@ -223,8 +215,7 @@ const diffLineStyle = (line: ParsedDiffLine): Record<string, string> => {
   return base
 }
 
-// Reload on cwd change (prev-value guard on update — same reset+load the
-// watcher did; the mount call covers the initial load).
+// Reload on cwd change (prev-value guard on update — same reset+load the watcher did; the mount call covers the initial load).
 function syncCommitsCwd(newCwd: string | undefined) {
   selectedSha.value = null
   if (newCwd) void loadCommits(false)

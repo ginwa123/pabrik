@@ -39,9 +39,7 @@ type Deps = {
 export function useDesignElementEvents(deps: Deps) {
   const { emit, selectedIds, workspaceId, effectiveItemId, activePageId, designHandlers } = deps
 
-  // Figma-style multi-select toggle. Plain click (additive=false) replaces the selection with just
-  // this element. Shift+click (additive=true) adds or removes membership without disturbing the rest
-  // of the selection.
+  // Figma-style multi-select toggle.
   const handleElementToggle = (elementId: string, additive: boolean): void => {
     if (additive) {
       const next = new Set(selectedIds.value)
@@ -56,9 +54,7 @@ export function useDesignElementEvents(deps: Deps) {
 
   const handleElementUpdate = (patch: Partial<DesignElementApi>): void => {
     if (selectedIds.value.size === 0) return
-    // When multiple elements are selected, apply the patch to every one
-    // of them (Figma semantics — editing the X/Y in the PropertiesPanel
-    // moves the whole selection together).
+    // When multiple elements are selected, apply the patch to every one of them (Figma semantics — editing the X/Y in the PropertiesPanel moves the whole selection …
     if (selectedIds.value.size === 1) {
       const id = selectedIds.value.values().next().value as string
       emit('updateElement', id, patch)
@@ -69,13 +65,9 @@ export function useDesignElementEvents(deps: Deps) {
     }
   }
 
-  /** NEW (2026-08-06, split-move-resize plan) — handler for the `translate` event fired by
-   * DesignElement during a single-element drag (move mode). The payload is the cursor DELTA in
-   * design-px PLUS the source element id. */
+  /** NEW (2026-08-06, split-move-resize plan) — handler for the `translate` event fired by DesignElement during a single-element drag (move mode). */
   const handleElementTranslate = (payload: { elementId?: string; dx: number; dy: number }): void => {
     // Prefer the elementId from the event (the drag SOURCE knows what it is).
-    // Fall back to selectedIds only if the event doesn't carry it (older
-    // callers that emit `{ dx, dy }` without elementId).
     let id: string | undefined = payload.elementId
     if (!id && selectedIds.value.size === 1) {
       id = selectedIds.value.values().next().value as string
@@ -104,9 +96,7 @@ export function useDesignElementEvents(deps: Deps) {
     emit('translateElement', id, payload.dx, payload.dy)
   }
 
-  /** NEW (2026-08-06, split-move-resize plan) — handler for the `resize` event fired by DesignElement
-   * during a resize gesture. The payload is the absolute target geometry after applying the cursor
-   * delta. Routes through `useDesignHandlers.resizeElement` → POST /resize. */
+  /** NEW (2026-08-06, split-move-resize plan) — handler for the `resize` event fired by DesignElement during a resize gesture. */
   const handleElementResize = (patch: Partial<DesignElementApi>): void => {
     if (selectedIds.value.size !== 1) {
       designLogger.warn({
@@ -129,17 +119,14 @@ export function useDesignElementEvents(deps: Deps) {
 
   const handleElementHtmlChanged = (html: string): void => {
     if (selectedIds.value.size !== 1) return
-    // HTML body editing only applies to a single selected element —
-    // there's no sensible "merge HTML across 3 elements" semantic.
+    // HTML body editing only applies to a single selected element — there's no sensible "merge HTML across 3 elements" semantic.
     const id = selectedIds.value.values().next().value as string
     emit('htmlChanged', id, html)
   }
 
   const handleElementDelete = (elementId: string): void => {
     emit('deleteElement', elementId)
-    // Remove the deleted id from the selection Set (don't clear the
-    // whole selection — if the user multi-selected and deleted one,
-    // the others should remain selected for further action).
+    // Remove the deleted id from the selection Set (don't clear the whole selection — if the user multi-selected and deleted one, the others should remain selected …
     if (selectedIds.value.has(elementId)) {
       const next = new Set(selectedIds.value)
       next.delete(elementId)
@@ -151,14 +138,12 @@ export function useDesignElementEvents(deps: Deps) {
     emit('reorderElements', orderedElementIds)
   }
 
-  // LayersPanel emits a structured payload so Shift+click can be
-  // distinguished from a plain click. Both call into handleElementToggle.
+  // LayersPanel emits a structured payload so Shift+click can be distinguished from a plain click.
   const handleLayerSelect = (payload: { elementId: string; additive: boolean }): void => {
     handleElementToggle(payload.elementId, payload.additive)
   }
 
-  // NEW (Chunk 4 Task 4.3 of drag-to-reparent plan): the LayersPanel emits `reparent` after a
-  // successful drag-and-drop.
+  // NEW (Chunk 4 Task 4.3 of drag-to-reparent plan): the LayersPanel emits `reparent` after a successful drag-and-drop.
   const handleLayerReparent = (payload: {
     elementIds: string[]
     newParentId: string | null

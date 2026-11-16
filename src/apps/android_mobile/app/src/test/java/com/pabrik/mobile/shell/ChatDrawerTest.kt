@@ -5,30 +5,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The chat's drawer, on the two halves CI can run without a device.
- *
- * The behaviour — the hamburger opens the sheet, a picked chat closes it — is
- * `ChatDrawerTest`, which needs a real Compose tree. What is left is the rule
- * that the picked chat is the one the *route* names, which is a pure function,
- * and the shape of the wiring that produced the blank-window bug once already:
- * the chat's top bar must not grow a back arrow back, and a chat picked from
- * the chat route must replace the destination rather than stack on it.
- */
+/** The chat's drawer, on the two halves CI can run without a device. */
 class ChatDrawerTest {
 
     @Test
     fun theRouteNamesTheHighlightedChat() {
-        // A deep link, or a session opened from a push, puts a chat on screen
-        // that the sidebar never marked as selected. The drawer says "this one"
-        // or it claims the reader is somewhere they are not.
+        // A deep link, or a session opened from a push, puts a chat on screen that the sidebar never marked as selected.
         assertEquals("sess_deep", chatDrawerSelectedChatId("sess_deep", "sess_from_list"))
     }
 
     @Test
     fun aBlankRouteFallsBackToTheListsOwnSelection() {
-        // The route knows nothing here, so the list's memory is the best
-        // available answer rather than nothing at all.
+        // The route knows nothing here, so the list's memory is the best available answer rather than nothing at all.
         assertEquals("sess_from_list", chatDrawerSelectedChatId("", "sess_from_list"))
         assertEquals("sess_from_list", chatDrawerSelectedChatId("   ", "sess_from_list"))
     }
@@ -50,10 +38,7 @@ class ChatDrawerTest {
 
     @Test
     fun theDrawerHasNoAllChatsRow() {
-        // The row used to be the only in-app way off a deep-linked chat. The
-        // drawer opens the very list it led to, so keeping it would be a second
-        // route to where the reader already stands — and both callers of this
-        // drawer would have to keep wiring it.
+        // The row used to be the only in-app way off a deep-linked chat.
         val drawer = moduleSource("shell/RecentsDrawer.kt")
         assertTrue(
             "no row in the drawer may lead out of it; that is what removed the " +
@@ -64,14 +49,7 @@ class ChatDrawerTest {
 
     @Test
     fun theChatRouteClaimsTheSystemBackButton() {
-        // Removing the "All chats" row removed the only in-app way out of a chat
-        // that has nothing stacked under it — a `pabrik://chat/…` link. The
-        // system Back callback is disabled while the back stack is one deep, so
-        // without this the reader's only way off such a chat is leaving the app.
-        //
-        // The assertion is on the *call*, not on the word: a `BackHandler` wired
-        // to nothing at all would satisfy a grep and leave the dead end exactly
-        // where it was.
+        // Removing the "All chats" row removed the only in-app way out of a chat that has nothing stacked under it — a `pabrik://chat/…` link.
         val graph = navGraphSource()
         val claimsBack = Regex("BackHandler\\s*\\{\\s*goBack\\(\\)\\s*\\}").containsMatchIn(graph)
         assertTrue(
@@ -84,8 +62,7 @@ class ChatDrawerTest {
     @Test
     fun aChatPickedFromTheChatRouteReplacesItInsteadOfStacking() {
         val graph = navGraphSource()
-        // Pushing would leave a back stack with one chat entry per chat ever
-        // opened this session, so Back would walk through all of them.
+        // Pushing would leave a back stack with one chat entry per chat ever opened this session, so Back would walk through all of them.
         assertTrue(
             "switching chats from inside a chat must pop back to the shell " +
                 "rather than stack another chat destination on top",
@@ -113,11 +90,7 @@ class ChatDrawerTest {
         )
     }
 
-    /**
-     * The module's own sources, or an error when the test runs from somewhere
-     * that cannot see them. The behavioural tests above stand on their own;
-     * only the shape assertions need the files.
-     */
+    /** The module's own sources, or an error when the test runs from somewhere that cannot see them. */
     private fun navGraphSource(): String = moduleSource("network/PabrikNavGraph.kt")
 
     private fun chatScreenSource(): String = moduleSource("chat/ChatScreen.kt")

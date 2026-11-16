@@ -7,9 +7,7 @@ import { useSecretNames } from '../../helpers/secretNames'
 import McpHeadersEditor, { type McpHeader } from './McpHeadersEditor.vue'
 import SecretSuggestionMenu from './SecretSuggestionMenu.vue'
 
-/** MCP server modal value — discriminated by `transport`: - 'http'   → uses `url` + `headers` -
- * 'stdio'  → uses `command` + `args` + `env` + `cwd` The UI shows both branches under a transport
- * toggle at the top of the form. */
+/** MCP server modal value — discriminated by `transport`: - 'http' → uses `url` + `headers` -'stdio' → uses `command` + `args` + `env` + `cwd` The UI shows both … */
 export interface McpServerModalValue {
   name: string
   transport: 'http' | 'stdio'
@@ -19,8 +17,7 @@ export interface McpServerModalValue {
   args: string[]
   env: string[]
   cwd: string
-  /** When false the agent skips this server. Missing renders as
-   *  enabled (checkbox checked). */
+  /** When false the agent skips this server. */
   enabled?: boolean
 }
 
@@ -30,13 +27,11 @@ const props = withDefaults(
     errors?: { name?: string; url?: string; command?: string }
     mode: 'add' | 'edit'
     initialTransport?: 'http' | 'stdio'
-    /** The workspace whose secrets the Test probe resolves headers/env
-     * against. Absent in user scope, where a placeholder cannot be resolved. */
+    /** The workspace whose secrets the Test probe resolves headers/env against. */
     workspaceId?: string
   }>(),
   {
-    // Default to 'http' for backward compat with legacy callers that
-    // never passed an initialTransport.
+    // Default to 'http' for backward compat with legacy callers that never passed an initialTransport.
     initialTransport: 'http',
   },
 )
@@ -47,23 +42,17 @@ const emit = defineEmits<{
   save: []
 }>()
 
-// Local edit-state for the stdio textareas (parsed on save). Keeping
-// them as raw strings until the user clicks Save means the wire shape
-// (newline-separated) round-trips without a parse→stringify roundtrip.
+// Local edit-state for the stdio textareas (parsed on save).
 const argsText = ref((props.modelValue.args ?? []).join('\n'))
 const envText = ref((props.modelValue.env ?? []).join('\n'))
 const cwdLocal = ref(props.modelValue.cwd ?? '')
 
-// If the parent passes a new modelValue (e.g. user picked a different server to edit), re-seed the
-// local textareas from it. Prev-identity guard on update — the watcher this replaces was shallow,
-// so a new object identity is exactly the trigger.
+// If the parent passes a new modelValue (e.g. user picked a different server to edit), re-seed the local textareas from it.
 function reseedFromModelValue(v: McpServerModalValue) {
   argsText.value = (v.args ?? []).join('\n')
   envText.value = (v.env ?? []).join('\n')
   cwdLocal.value = v.cwd ?? ''
-  // Editing any field invalidates a previous test result — the server may now be misconfigured even
-  // though the prior probe succeeded. Clearing prevents stale "looks good!" badges from lulling the
-  // user into saving a broken config.
+  // Editing any field invalidates a previous test result — the server may now be misconfigured even though the prior probe succeeded.
   testResult.value = null
 }
 
@@ -74,24 +63,18 @@ onUpdated(() => {
   reseedFromModelValue(props.modelValue)
 })
 
-// Track which transport the form is currently showing. Initialized from
-// props.initialTransport so the parent can default new entries to either
-// branch (legacy callers default to 'http').
+// Track which transport the form is currently showing.
 const transport = ref<'http' | 'stdio'>(props.modelValue.transport ?? props.initialTransport)
 
 // True iff the currently-visible branch's required fields are present.
 const stdioValid = computed(() => props.modelValue.command.trim().length > 0)
 const httpValid = computed(() => props.modelValue.url.trim().length > 0)
 
-// ─── Test button state ───────────────────────────────────────────────────── `testResult` carries
-// the last probe response (or null = "no probe yet"). `testing` is the loading flag — true while
-// the HTTP call is in-flight so the button shows a spinner + "Testing…" label.
+// ─── Test button state ─────────────────────────────────────────────────────
 const testResult = ref<McpTestResult | null>(null)
 const testing = ref(false)
 
-// Re-derive whether Test is enabled per branch: - stdio: command present (we send the CURRENT
-// textarea contents, not modelValue.args which the parent only refreshes on Save). - http: URL
-// present (headers come from modelValue, which updates live via updateHeaders).
+// Re-derive whether Test is enabled per branch: - stdio: command present (we send the CURRENT textarea contents, not modelValue.args which the parent only …
 const stdioTestValid = computed(() => {
   if (transport.value !== 'stdio') return false
   if (props.modelValue.command.trim().length === 0) return false
@@ -110,8 +93,7 @@ async function onTest() {
     testing.value = true
     testResult.value = null
     try {
-      // Send the CURRENT textarea contents (not modelValue.args, which
-      // is only updated on Save) so the user tests what they see.
+      // Send the CURRENT textarea contents (not modelValue.args, which is only updated on Save) so the user tests what they see.
       const args = argsText.value
         .split('\n')
         .map((s) => s.trim())
@@ -129,8 +111,7 @@ async function onTest() {
         workspace_id: props.workspaceId,
       })
     } catch (err) {
-      // `testMcpServer` always returns a `McpTestResult`; this catch
-      // only fires for unexpected exceptions (network down, etc.).
+      // `testMcpServer` always returns a `McpTestResult`; this catch only fires for unexpected exceptions (network down, etc.).
       testResult.value = {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -234,8 +215,7 @@ function onSave() {
       .split('\n')
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
-    // Push the parsed arrays back into modelValue so the parent saves
-    // the canonical shape.
+    // Push the parsed arrays back into modelValue so the parent saves the canonical shape.
     emit('update:modelValue', {
       ...props.modelValue,
       args,
@@ -243,18 +223,15 @@ function onSave() {
       cwd: cwdLocal.value.trim(),
     })
     if (!stdioValid.value) {
-      // Don't emit save — the parent will see the same modelValue with
-      // command still empty and apply its own validation.
+      // Don't emit save — the parent will see the same modelValue with command still empty and apply its own validation.
       return
     }
     emit('save')
     return
   }
-  // HTTP branch: no textarea parsing needed — url/headers already live
-  // in modelValue.
+  // HTTP branch: no textarea parsing needed — url/headers already live in modelValue.
   if (!httpValid.value) {
-    // Don't emit save — the parent applies its own 'URL is required'
-    // validation on the same modelValue.
+    // Don't emit save — the parent applies its own 'URL is required' validation on the same modelValue.
     return
   }
   emit('save')

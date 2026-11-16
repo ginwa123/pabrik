@@ -1,5 +1,4 @@
-// Functional tests for pabrik config (Tier 1.7). Zig port of
-// `tests/functional/pabrik_config_test.py` (same test names, same order).
+// Functional tests for pabrik config (Tier 1.7).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,13 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Boot with the harness-installed `stub` profile already on disk.
-///
-/// This is Python's `config_harness` fixture: `stub_llm_profile=True`.
 fn bootConfig() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
@@ -78,20 +73,15 @@ fn strField(o: std.json.ObjectMap, key: []const u8) ![]const u8 {
     };
 }
 
-/// Is `active_profile` explicitly JSON `null` on this response? Python:
-/// `after.get("active_profile") is None`, which is true for BOTH an absent
-/// key and a `null` value.
+/// Is `active_profile` explicitly JSON `null` on this response? Python
 fn activeProfileIsAbsent(doc: *const harness.Json) bool {
     const v = doc.get("active_profile") orelse return true;
     return v == .null;
 }
 
-// ============================================================================
 // Test 1: GET returns the harness-installed stub profile
-// ============================================================================
 
-// GET /api/config/pabrik → 200 with `profiles_models` map that contains the
-// harness-installed `stub` profile.
+// GET /api/config/pabrik → 200 with `profiles_models` map that contains the harness-installed `stub` profile.
 test "get_pabrik_config_returns_stub_profile" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -109,13 +99,9 @@ test "get_pabrik_config_returns_stub_profile" {
     try testing.expectEqualStrings("http://127.0.0.1:1", try strField(stub, "base_url"));
 }
 
-// ============================================================================
 // Test 2: PUT round-trips a new profile
-// ============================================================================
 
 // PUT a fresh `profiles_models` object → GET returns the new profile.
-// Existing fields (stub) are replaced wholesale by the on-disk PUT body
-// (PUT is a full replace).
 test "put_pabrik_config_round_trips_a_new_profile" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -158,12 +144,9 @@ test "put_pabrik_config_round_trips_a_new_profile" {
     });
 }
 
-// ============================================================================
 // Test 3: a malformed JSON body is a 400 naming the problem
-// ============================================================================
 
-// PUT with `{not json}` → 400 'Invalid JSON input'. Python reached for
-// `urllib.request` here because its helper took a dict.
+// PUT with `{not json}` → 400 'Invalid JSON input'.
 test "put_pabrik_config_rejects_invalid_json" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -189,13 +172,9 @@ test "put_pabrik_config_rejects_invalid_json" {
     }
 }
 
-// ============================================================================
 // Test 4: PUT {} preserves what is on disk
-// ============================================================================
 
-// PUT `{}` → 200; an empty body has all fields defaulted, which means the
-// existing on-disk config is read first and the empty PUT's defaulted fields
-// (api_endpoint='', model='', etc.) are applied as 'no change' (the apply
+// PUT `{}` → 200; an empty body has all fields defaulted, which means the existing on-disk config is read first and the empty PUT's defaulted fields …
 test "put_pabrik_config_empty_body_preserves_existing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -218,12 +197,9 @@ test "put_pabrik_config_empty_body_preserves_existing" {
     try testing.expectEqualStrings("stub-model", try strField(stub, "model"));
 }
 
-// ============================================================================
 // Test 5: DELETE /profiles/stub removes it
-// ============================================================================
 
-// DELETE /api/config/pabrik/profiles/stub → 200; GET no longer contains the
-// `stub` profile.
+// DELETE /api/config/pabrik/profiles/stub → 200; GET no longer contains the `stub` profile.
 test "delete_profile_removes_it_from_list" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -258,13 +234,9 @@ test "delete_profile_removes_it_from_list" {
     }
 }
 
-// ============================================================================
 // Test 5b: deleting one profile keeps every OTHER key of the config
-// ============================================================================
 
-// DELETE /api/config/pabrik/profiles/<name> rewrites config.json. It must take
-// the profile and nothing else: the other profiles, the MCP servers, the tool
-// checklist, the web-search provider and the General settings all stay.
+// DELETE /api/config/pabrik/profiles/<name> rewrites config.json.
 test "delete_profile_keeps_the_rest_of_the_config" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -335,8 +307,7 @@ test "delete_profile_keeps_the_rest_of_the_config" {
         return error.TestUnexpectedResult;
     };
     try testing.expectEqual(true, evals.get("enabled").?.bool);
-    // The provider block still ships (its `key` is masked on the wire, so the
-    // section's presence is the strongest available assertion here).
+    // The provider block still ships (its `key` is masked on the wire, so the section's presence is the strongest available assertion here).
     if (doc.get("web_search") == null) {
         std.debug.print("the delete dropped web_search\n", .{});
         return error.TestUnexpectedResult;
@@ -355,13 +326,9 @@ test "delete_profile_keeps_the_rest_of_the_config" {
     }
 }
 
-// ============================================================================
 // Test 6: DELETE of an unknown profile is a 404 with a message
-// ============================================================================
 
-// DELETE /api/config/pabrik/profiles/no-such-profile → 404. The handler
-// returns `{success: false, profile_name, error_message}` with HTTP 404 when
-// the profile is not found.
+// DELETE /api/config/pabrik/profiles/no-such-profile → 404.
 test "delete_profile_404_for_unknown_name" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -389,13 +356,9 @@ test "delete_profile_404_for_unknown_name" {
     }
 }
 
-// ============================================================================
 // Test 7: deleting one profile leaves the others alone
-// ============================================================================
 
-// PUT {profiles: {A: {...}, B: {...}}}, DELETE A → B survives. Tests that
-// DELETE is scoped to a single name and the rest of the profiles_models map
-// is preserved.
+// PUT {profiles: {A: {...}, B: {...}}}, DELETE A → B survives.
 test "delete_one_profile_does_not_touch_others" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -466,12 +429,9 @@ test "delete_one_profile_does_not_touch_others" {
     try testing.expectEqualStrings("model-b", try strField(b, "model"));
 }
 
-// ============================================================================
 // Test 8: deleting the active profile clears `active_profile`
-// ============================================================================
 
-// PUT {active_profile: 'target'}, DELETE /profiles/target →
-// `active_profile_was_cleared: true` and the field is null on GET.
+// PUT {active_profile: 'target'}, DELETE /profiles/target → `active_profile_was_cleared: true` and the field is null on GET.
 test "delete_active_profile_clears_active_profile_field" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -530,9 +490,7 @@ test "delete_active_profile_clears_active_profile_field" {
     }
 }
 
-// The helpers are referenced so their bodies are type-checked; an
-// unreferenced function is never analysed, which is where a stdlib rename
-// would hide.
+// The helpers are referenced so their bodies are type-checked; an unreferenced function is never analysed, which is where a stdlib rename would hide.
 comptime {
     _ = bootConfig;
     _ = getConfig;

@@ -1,34 +1,24 @@
-//! Test-only helper that turns a bare file NAME into a path the agent
-//! tools accept on every platform.
+//! Test-only helper that turns a bare file NAME into a path the agent tools accept on every platform.
 
 const std = @import("std");
 
-/// `<cwd>/<name>`, written into `buf`; the result borrows `buf`. ## Why this
-/// exists The agent tools reject a relative `path` on Windows.
+/// `<cwd>/<name>`, written into `buf`; the result borrows `buf`.
 pub fn absPath(buf: []u8, name: []const u8) ![]const u8 {
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-    // libc `getcwd` needs no `std.Io` handle, which is what keeps the
-    // call site to two lines. Same call `helpers.getcwd` makes in
-    // mod.zig; it resolves against the UCRT on Windows.
+    // libc `getcwd` needs no `std.Io` handle, which is what keeps the call site to two lines.
     const raw = std.c.getcwd(cwd_buf[0..].ptr, cwd_buf.len) orelse
         return error.CwdUnavailable;
     const cwd = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(raw)), 0);
-    // `fmtJoin` is the buffer-writing form of `std.fs.path.join` (whose Zig
-    // 0.16 signature takes an Allocator, not a buffer): it inserts the native
-    // separator and collapses a duplicated one, so a cwd that already ends in
+    // `fmtJoin` is the buffer-writing form of `std.fs.path.join` (whose Zig 0.16 signature takes an Allocator, not a buffer): it inserts the native separator and …
     return std.fmt.bufPrint(buf, "{f}", .{std.fs.path.fmtJoin(&.{ cwd, name })});
 }
 
-/// Both path separators, on every platform — mirrors `isSep` in
-/// `path_validate.zig`. Duplicated rather than imported so this file stays
-/// std-only and therefore compiles standalone for a cross-target check.
+/// Both path separators, on every platform — mirrors `isSep` in `path_validate.zig`.
 fn isSep(c: u8) bool {
     return c == '\\' or c == '/';
 }
 
-/// The subset of `invalidPathReason`'s Windows branch that a produced test
-/// path can plausibly violate, evaluated with the `builtin.os.tag !=
-/// .windows` gate REMOVED so the assertions below run on every host.
+/// The subset of `invalidPathReason`'s Windows branch that a produced test path can plausibly violate, evaluated with the `builtin.os.tag != .windows` gate …
 fn reasonWindowsWouldReject(path: []const u8) ?[]const u8 {
     if (path.len == 0) return "path cannot be empty";
     if (path.len > 32767) return "path too long";
@@ -43,15 +33,12 @@ fn reasonWindowsWouldReject(path: []const u8) ?[]const u8 {
             else => {},
         }
     }
-    // Colon is only legal as a drive prefix (`X:`); anything else is an
-    // ADS suffix (`file:stream`) or garbage.
+    // Colon is only legal as a drive prefix (`X:`); anything else is an ADS suffix (`file:stream`) or garbage.
     for (path, 0..) |c, i| {
         if (c != ':') continue;
         if (!(i == 1 and std.ascii.isAlphabetic(path[0]))) return "path contains invalid character";
     }
-    // Per-segment: no empty segments (`C:\foo\\bar`), no `..`, no trailing
-    // dot or space. The leading root separator and a trailing separator
-    // both yield an empty first/last segment and are legal.
+    // Per-segment: no empty segments (`C:\foo\\bar`), no `..`, no trailing dot or space.
     var seg_start: usize = 0;
     var i: usize = 0;
     while (i <= path.len) : (i += 1) {
@@ -71,12 +58,9 @@ fn reasonWindowsWouldReject(path: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Assert `path` clears every rule the Windows branch of
-/// `invalidPathReason` enforces. Prints the offending path and the
-/// reason on failure so the fix is obvious from the log alone.
+/// Assert `path` clears every rule the Windows branch of `invalidPathReason` enforces.
 fn expectAcceptedByWindowsRule(path: []const u8) !void {
-    // The single check the whole Windows branch is gated on. Asserted on
-    // its own so the most likely regression reads clearly.
+    // The single check the whole Windows branch is gated on.
     if (!std.fs.path.isAbsoluteWindows(path)) {
         std.debug.print("absPath produced {s}, which is not an absolute Windows path\n", .{path});
         return error.TestUnexpectedResult;
@@ -87,7 +71,6 @@ fn expectAcceptedByWindowsRule(path: []const u8) !void {
     }
 }
 
-// ===========================================================================
 // Tests — every one of these runs on EVERY platform (no os.tag gate).
 
 test "absPath: produces a path the Windows branch of invalidPathReason accepts" {
@@ -105,8 +88,7 @@ test "absPath: a nested name also satisfies every Windows-branch rule" {
 }
 
 test "absPath: a name with spaces, a leading dot and a single char are all accepted" {
-    // The shapes the tool tests actually use (write_file.zig has a
-    // "dir with spaces" case, a dotfile case and a one-character case).
+    // The shapes the tool tests actually use (write_file.zig has a "dir with spaces" case, a dotfile case and a one-character case).
     const names = [_][]const u8{
         "test_wf dir with spaces/file.txt",
         ".test_wf_hidden",
@@ -122,17 +104,12 @@ test "absPath: a name with spaces, a leading dot and a single char are all accep
 }
 
 test "absPath: the bare name it replaces is exactly what a Windows runner refuses" {
-    // Guards the reason this helper exists. Without it, a future edit
-    // could "simplify" the call sites back to bare names and the Linux
-    // suite would keep passing while Windows went red again.
+    // Guards the reason this helper exists.
     try std.testing.expect(!std.fs.path.isAbsoluteWindows("test_wf_basic.txt"));
     try std.testing.expect(reasonWindowsWouldReject("test_wf_basic.txt") != null);
-    // A POSIX-shaped name is rooted, so isAbsoluteWindows accepts it —
-    // which is why "make the test absolute" had to mean a REAL absolute
-    // path, not just one that starts with a separator.
+    // A POSIX-shaped name is rooted, so isAbsoluteWindows accepts it — which is why "make the test absolute" had to mean a REAL absolute path, not just one that …
     try std.testing.expect(std.fs.path.isAbsoluteWindows("/tmp/x.txt"));
-    // ...but a drive-RELATIVE name is still not absolute. Tests must not
-    // "fix" this by using `C:foo.txt`, which is not a valid absolute path.
+    // ...but a drive-RELATIVE name is still not absolute.
     try std.testing.expect(!std.fs.path.isAbsoluteWindows("C:foo.txt"));
 }
 
@@ -144,14 +121,12 @@ test "absPath: result is <cwd>/<name>, not a rewrite of the name" {
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const p = try absPath(&buf, "test_wf_basic.txt");
-    // The cwd is the prefix (up to the separator the join inserts) and the
-    // name is the untouched tail.
+    // The cwd is the prefix (up to the separator the join inserts) and the name is the untouched tail.
     try std.testing.expectEqualStrings(cwd, p[0..cwd.len]);
     try std.testing.expectEqualStrings("test_wf_basic.txt", std.mem.trimStart(u8, p[cwd.len..], "/\\"));
     try std.testing.expectEqual(cwd.len + 1 + "test_wf_basic.txt".len, p.len);
 
-    // Two calls into the same buffer must agree — the helper never
-    // allocates, so nothing else can move.
+    // Two calls into the same buffer must agree — the helper never allocates, so nothing else can move.
     const again = try absPath(&buf, "test_wf_basic.txt");
     try std.testing.expectEqualStrings(p, again);
 }

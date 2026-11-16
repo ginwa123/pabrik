@@ -16,17 +16,13 @@ interface DesignPagesParams {
 export function createDesignPages(p: DesignPagesParams) {
   const { designPagesByItemId, designPagesInFlight, activeDesignPageId } = p
 
-  // Reset design-pages cache for an item. Used on store init so a
-  // re-init doesn't show stale pages from the previous session.
-  // Currently called from `init()` at the bottom of the file.
+  // Reset design-pages cache for an item.
   function resetDesignPagesCache(): void {
     designPagesByItemId.value = {}
     designPagesInFlight.clear()
   }
 
-  // Update a design page's width/height (UI resize from the canvas header W × H inputs). Backend's
-  // PATCH /pages/:page_id validates the ranges (width 320-4096, height 240-4096) and returns 400
-  // with an explicit error message otherwise.
+  // Update a design page's width/height (UI resize from the canvas header W × H inputs).
   async function updateDesignPage(
     workspaceId: string,
     itemId: string,
@@ -36,9 +32,7 @@ export function createDesignPages(p: DesignPagesParams) {
     return await updateDesignPageApi(workspaceId, itemId, pageId, patch)
   }
 
-  // NEW (2026-08-06 — design page rename menu). Rename a single design page in-place. Mirrors the
-  // optimistic-update + rollback pattern from `renameTask`: 1. Trim the new name; refuse empty /
-  // unchanged (no-op → return). 2.
+  // NEW (2026-08-06 — design page rename menu).
   async function renameDesignPage(
     workspaceId: string,
     itemId: string,
@@ -55,8 +49,7 @@ export function createDesignPages(p: DesignPagesParams) {
     if (!trimmed || trimmed === page.name) return
 
     const previousName = page.name
-    // Optimistic update on the cached struct (Pinia's reactive proxy
-    // sees this assignment and re-renders the sidebar tree).
+    // Optimistic update on the cached struct (Pinia's reactive proxy sees this assignment and re-renders the sidebar tree).
     page.name = trimmed
 
     try {
@@ -66,9 +59,7 @@ export function createDesignPages(p: DesignPagesParams) {
         name: trimmed,
       })
     } catch (err) {
-      // Roll back to the previous name on any error. The cache ref
-      // is the same — the rollback re-assignment is visible to
-      // every active component reading from the store.
+      // Roll back to the previous name on any error.
       page.name = previousName
       console.error('Failed to rename design page:', err)
       throw err
@@ -90,9 +81,7 @@ export function createDesignPages(p: DesignPagesParams) {
       ...designPagesByItemId.value,
       [itemId]: remaining,
     }
-    // 2. If the deleted page was active, fall back to a sensible next page. The pre-fix convention
-    // (VS Code / Figma parity): prefer the page AT THE SAME INDEX in the OLD order (i.e. what used
-    // to be next), or the previous one if we deleted the last.
+    // 2.
     if (activeDesignPageId.value === pageId) {
       if (remaining.length === 0) {
         activeDesignPageId.value = ''
@@ -103,9 +92,7 @@ export function createDesignPages(p: DesignPagesParams) {
     }
   }
 
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06). Fetch pages for a design workspace item
-  // from the backend and cache them in `designPagesByItemId`. Concurrent calls for the same item
-  // share the same in-flight promise (no double-fetch on sidebar-expand + DesignView-mount race).
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06).
   async function fetchDesignPages(workspaceId: string, itemId: string): Promise<DesignPage[]> {
     const inFlight = designPagesInFlight.get(itemId)
     if (inFlight) return await inFlight
@@ -125,9 +112,7 @@ export function createDesignPages(p: DesignPagesParams) {
     return await p
   }
 
-  // NEW: append a new design page to the cache + mirror it on the server, AND set it as the active
-  // page so the user immediately sees the empty canvas they can start populating. Returns the
-  // created page (with backend-assigned id, timestamps) on success, or `undefined` on failure.
+  // NEW: append a new design page to the cache + mirror it on the server, AND set it as the active page so the user immediately sees the empty canvas they can …
   async function addDesignPage(
     workspaceId: string,
     itemId: string,

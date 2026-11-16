@@ -5,24 +5,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The arithmetic behind both paged chat screens' "ask for the next page".
- *
- * Pure and on the JVM because this *is* the bug. The screens it runs in are
- * Robolectric, which lays a list out at whatever height the device profile
- * happens to be — a screen that fits five rows on one profile and twenty on
- * another cannot be reasoned about from a test that only knows one of them.
- * The numbers below are the decision, so they are the thing asserted.
- */
+/** The arithmetic behind both paged chat screens' "ask for the next page". */
 class ChatListPagingTest {
 
-    /**
-     * What a `LazyColumn` reports for the screen this screen opens on: the
-     * drawer's five-row preview, plus the footer row. Six items, six visible.
-     *
-     * This is the shape the reader was stuck in — the whole list on screen, no
-     * scroll offset, a footer promising older chats.
-     */
+    /** What a `LazyColumn` reports for the screen this screen opens on: the drawer's five-row preview, plus the footer row. */
     @Test
     fun aListShorterThanTheScreenIsReportedAsUnscrollableRatherThanAsAnEnd() {
         val paging = chatListPagingState(
@@ -42,8 +28,7 @@ class ChatListPagingTest {
 
     @Test
     fun anUnscrollableListAndAnApproachedEndAreNeverBothTrue() {
-        // The two answers drive two separate latches, so a list claiming both
-        // would be counted twice for one position.
+        // The two answers drive two separate latches, so a list claiming both would be counted twice for one position.
         val cases = listOf(
             Triple(6, 6, 5),
             Triple(6, 6, 0),
@@ -69,9 +54,7 @@ class ChatListPagingTest {
 
     @Test
     fun aListThatOverflowsTheScreenOnlyArmsNearItsLastRows() {
-        // 101 rows in a viewport of 20. The band is two rows deep, so the
-        // fetch is in flight before the reader reaches the end rather than
-        // starting from a standstill.
+        // 101 rows in a viewport of 20.
         val atTop = chatListPagingState(
             canPage = true,
             totalItemsCount = 101,
@@ -102,8 +85,7 @@ class ChatListPagingTest {
 
     @Test
     fun aListThatCannotPageDisarmsEveryReason() {
-        // `canPage` is in the *condition*, not only in the effect's key, so a
-        // list that stops being pageable disarms an already-armed trigger.
+        // `canPage` is in the *condition*, not only in the effect's key, so a list that stops being pageable disarms an already-armed trigger.
         val unlaidOut = chatListPagingState(
             canPage = true,
             totalItemsCount = 0,
@@ -134,16 +116,7 @@ class ChatListPagingTest {
 
     @Test
     fun anEmptyScreenReportsItAsUnscrollableAndNeverAsAnApproachedEnd() {
-        // An empty list holds one placeholder row at index 0, which is inside
-        // any band. So the band must not answer for it — but the honest
-        // reading of a one-row list is still "it fits", and flattening that
-        // into `false` would make a *short* list look scrollable.
-        //
-        // What actually stops the fetch onto nothing is `canPage`: see
-        // [recentsChatsCanPage], which refuses an empty list, and
-        // [com.pabrik.mobile.recents.HomeViewModel.loadMoreChats], which returns
-        // before it issues a request. This function reports the layout; the
-        // screen decides whether the layout is one it may act on.
+        // An empty list holds one placeholder row at index 0, which is inside any band.
         val paging = chatListPagingState(
             canPage = true,
             totalItemsCount = 1,
@@ -158,9 +131,7 @@ class ChatListPagingTest {
 
     @Test
     fun theRowCountTravelsWithTheAnswer() {
-        // It is what tells "the reader is still parked at the end of the list
-        // they already paged" from "the list has grown under them" — the
-        // second is a new end, and a new end has not been asked about.
+        // It is what tells "the reader is still parked at the end of the list they already paged" from "the list has grown under them" — the second is a new end, and a …
         val before = chatListPagingState(
             canPage = true,
             totalItemsCount = 6,

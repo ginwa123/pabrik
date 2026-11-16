@@ -1,6 +1,4 @@
-/** Regression test for the `?view=chat&session=X` welcome-page bug (2026-07-16): when the URL
- * pointed at a chat session, AppLayout rendered <Chats/> (the static welcome page) instead of
- * <ChatView/>, even though the navigation store's `activeChatId` was set correctly to. */
+/** Regression test for the `?view=chat&session=X` welcome-page bug (2026-07-16): when the URL pointed at a chat session, AppLayout rendered <Chats/> (the static … */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
@@ -52,8 +50,7 @@ vi.mock('vue-router', async () => {
 const SESSION_ID = 'task_xxx'
 
 function mountAppLayoutForChatTest() {
-  // Pre-seed stores the same way AppLayout's onMounted would, so
-  // the route watcher doesn't have to wait for any fetch.
+  // Pre-seed stores the same way AppLayout's onMounted would, so the route watcher doesn't have to wait for any fetch.
   const ws = useWorkspacesStore()
   ws.workspaces = [] // empty workspace tree (no kanban / no parent task)
   return mount(AppLayout, {
@@ -63,8 +60,7 @@ function mountAppLayoutForChatTest() {
         RightSidebar: true,
         GitFileViewer: true,
         SkillDetail: true,
-        // STUB ChatView with a stub-active flag so the test can
-        // assert it actually mounted.
+        // STUB ChatView with a stub-active flag so the test can assert it actually mounted.
         ChatView: {
           template: '<div data-testid="chatview-stub" />',
           props: [
@@ -100,8 +96,7 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
       writable: true,
       configurable: true,
     })
-    // Mock the workspace-store API calls fired by onMounted →
-    // initializeFromSystemFolder → init()/fetchSystemFolder().
+    // Mock the workspace-store API calls fired by onMounted → initializeFromSystemFolder → init()/fetchSystemFolder().
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -111,9 +106,7 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
       absolute: '/',
       home: '/',
     })
-    // fetchChatSessionCwd (AppLayout.vue) fires from onMounted when the URL has a `session` query
-    // param. Stub the session detail read (getSession) plus getChatHistory (used by other mount
-    // paths).
+    // fetchChatSessionCwd (AppLayout.vue) fires from onMounted when the URL has a `session` query param.
     vi.spyOn(api, 'getSessionWorkspaceId').mockResolvedValue('ws_chatview')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.spyOn(api, 'getSession').mockResolvedValue({ cwd: '' } as any)
@@ -147,12 +140,9 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('renders <ChatView/> (not <Chats/>) when URL is ?view=chat&session=X', async () => {
-    // This is the core regression: before the fix, the v-else-if chain at AppLayout.vue:1611
-    // evaluated `activeChatId.startsWith('chat-')` to false (because the unconditional
-    // clearActiveChat() in setActiveTask had re-cleared the activeChatId that onMounted had just.
+    // This is the core regression: before the fix, the v-else-if chain at AppLayout.vue:1611 evaluated `activeChatId.startsWith('chat-')` to false (because the …
     const wrapper = mountAppLayoutForChatTest()
-    // Two ticks: the async boot rewrite sets the chat on the first,
-    // Vue re-renders the ChatView branch on the second.
+    // Two ticks: the async boot rewrite sets the chat on the first, Vue re-renders the ChatView branch on the second.
     await nextTick()
     await nextTick()
     expect(wrapper.find('[data-testid="chatview-stub"]').exists()).toBe(true)
@@ -161,9 +151,7 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('regression: explicitly invoking the chat-nav sequence (setActiveChat + setActiveTask(null)) does NOT clear activeChatId', async () => {
-    // Simulates the exact sequence that Sidebar.vue:316-322 and ChatsList.vue:220-232 perform when
-    // the user clicks a chat: navigationStore.setActiveChat(sessionId, name)
-    // workspacesStore.setActiveWorkspaceItem(null) workspacesStore.setActiveTask(null) // ← used.
+    // Simulates the exact sequence that Sidebar.vue:316-322 and ChatsList.vue:220-232 perform when the user clicks a chat: navigationStore.setActiveChat(sessionId …
     const ws = useWorkspacesStore()
     const nav = useNavigationStore()
 
@@ -178,9 +166,7 @@ describe('AppLayout — ?view=chat&session=X renders <ChatView>, not <Chats/> (r
   })
 
   it('regression: activating a task STILL clears the chat (the opposite-direction invariant)', async () => {
-    // The 2026-07-14 original fix wanted this property: when the user clicks a task, any active
-    // chat should be cleared so subsequent SSE session_created events can't navigate back into the
-    // previous chat.
+    // The 2026-07-14 original fix wanted this property: when the user clicks a task, any active chat should be cleared so subsequent SSE session_created events can't …
     const ws = useWorkspacesStore()
     const nav = useNavigationStore()
 

@@ -1,5 +1,4 @@
-/** Regression guard for the banned-code rules. A lint rule that silently stops matching is worse
- * than no rule — it looks enforced and enforces nothing. */
+/** Regression guard for the banned-code rules. */
 import { describe, expect, it } from 'vitest'
 import { Linter } from 'eslint'
 import tsParser from '@typescript-eslint/parser'
@@ -28,24 +27,21 @@ const ALL_RULES: RuleName[] = [
   'local/no-any-unknown',
 ]
 
-/** Lint `code` with ONLY `rules` enabled and return the rule ids that fired. Isolation matters
- * here: the rules legitimately OVERLAP. */
+/** Lint `code` with ONLY `rules` enabled and return the rule ids that fired. */
 function lint(code: string, rules: RuleName[] = ALL_RULES): string[] {
   const messages = linter.verify(
     code,
     {
       files: ['**/*.ts'],
       languageOptions: {
-        // The same parser the app lints with, so a rule that only works under
-        // one parser cannot pass here and fail in `pnpm run lint:check`.
+        // The same parser the app lints with, so a rule that only works under one parser cannot pass here and fail in `pnpm run lint:check`.
         parser: tsParser as never,
         parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
       },
       plugins: { local: plugin as never },
       rules: Object.fromEntries(rules.map((r) => [r, 'error'])),
     },
-    // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a
-    // path to match against the block is silently skipped and every rule reports nothing.
+    // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a path to match against the block is silently skipped and every rule …
     'probe.ts',
   )
   return messages.map((m) => m.ruleId as string)
@@ -68,8 +64,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('flags prop-mirroring, the most mechanical form of the bug', () => {
-    // 10 real sites of this shape exist today (FileInput.vue:159,
-    // TextReplace.vue:34, McpServerModal.vue:63, …).
+    // 10 real sites of this shape exist today (FileInput.vue:159, TextReplace.vue:34, McpServerModal.vue:63, …).
     expect(
       lint(
         `watch(() => props.expanded, (next) => { isExpanded.value = next ?? false })`,
@@ -90,8 +85,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows a watch that assigns AND fetches', () => {
-    // Mixed bodies are the legitimate refactor target: pull the side effect
-    // in, and the rule stops firing. That is what the message tells you.
+    // Mixed bodies are the legitimate refactor target: pull the side effect in, and the rule stops firing.
     expect(
       lint(`watch(id, async (v) => { rows.value = await fetchRows(v) })`, ONLY_DERIVED),
     ).toEqual([])
@@ -102,9 +96,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows an accumulator mixed with a real side effect', () => {
-    // SseStatusBadge.vue:54 does `attempt.value += 1` alongside a diagnostic. `+=` is not
-    // expressible as computed(), and the body touches the outside world, so neither half of the
-    // rule applies. Flagging it would be a false positive against the rule's own contract.
+    // SseStatusBadge.vue:54 does `attempt.value += 1` alongside a diagnostic.
     expect(
       lint(
         `watch(bus.state, (s) => { if (s === 'up') { attempt.value += 1 }
@@ -120,9 +112,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('flags a body that assigns only inside an if-guard with no else', () => {
-    // Regression: treating the absent `alternate` as a failure dropped 11 of the 26 real sites —
-    // including this exact shape, FileInput.vue:230 (`if (newVal) { inputText.value = newVal }`).
-    // The rule still looked configured and simply stopped matching.
+    // Regression: treating the absent `alternate` as a failure dropped 11 of the 26 real sites — including this exact shape, FileInput.vue:230 (`if (newVal) { …
     expect(
       lint(
         `watch(() => props.initialMessage, (newVal) => { if (newVal) { inputText.value = newVal } })`,
@@ -148,9 +138,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('allows a mirror into a ref the code also writes elsewhere', () => {
-    // The defining property of derived state is that you CANNOT write it yourself. `draft` is bound
-    // with v-model, so it is real state and replacing the watcher with `computed()` would make the
-    // input read-only. 15 of the original 26 sites are this shape.
+    // The defining property of derived state is that you CANNOT write it yourself.
     expect(
       lint(
         `const draft = ref('')\nwatch(() => props.x, (v) => { draft.value = v ?? '' })\ndraft.value = 'typed'`,
@@ -160,8 +148,7 @@ describe('local/no-derived-state-watch', () => {
   })
 
   it('still flags a one-way mirror that reads the new value', () => {
-    // The exemption must not swallow the real thing: `pure` is never written
-    // anywhere else, so it genuinely is derived state.
+    // The exemption must not swallow the real thing: `pure` is never written anywhere else, so it genuinely is derived state.
     expect(
       lint(
         `const pure = ref('')\nwatch(() => props.x, (v) => { pure.value = v ?? '' })`,
@@ -197,8 +184,7 @@ describe('local/no-watch-feedback-loop', () => {
   })
 
   it('flags a deep watch that mutates an element of the watched array', () => {
-    // ChatsList.vue:978 is exactly this shape, and is the one real site in
-    // the repo. A `deep` watcher re-runs on ANY nested mutation.
+    // ChatsList.vue:978 is exactly this shape, and is the one real site in the repo.
     expect(
       lint(`watch(list, (v) => { v.forEach(i => { i.done = true }) }, { deep: true })`, ONLY_LOOP),
     ).toEqual(['local/no-watch-feedback-loop'])
@@ -211,17 +197,14 @@ describe('local/no-watch-feedback-loop', () => {
   })
 
   it('allows a prop mirrored into a SEPARATE local ref', () => {
-    // Regression: an early version treated the property name as a dependency, so `() =>
-    // props.isStopping` "watched" `isStopping` and every prop-mirror (FileInput.vue:159,
-    // TextReplace.vue:34, McpServerModal.vue:63) was reported as a loop.
+    // Regression: an early version treated the property name as a dependency, so `() => props.isStopping` "watched" `isStopping` and every prop-mirror …
     expect(
       lint(`watch(() => props.isStopping, (v) => { isStopping.value = v ?? false })`, ONLY_LOOP),
     ).toEqual([])
   })
 
   it('allows a watch that writes document.title', () => {
-    // useDocumentTitle.ts does this. A global is outside the reactivity
-    // graph, so it cannot retrigger anything.
+    // useDocumentTitle.ts does this.
     expect(lint(`watch(() => vm.name, (n) => { document.title = n })`, ONLY_LOOP)).toEqual([])
   })
 
@@ -233,8 +216,7 @@ describe('local/no-watch-feedback-loop', () => {
   })
 
   it('allows a NON-deep nested mutation, which does not notify', () => {
-    // Without `deep`, mutating a nested field fires no trigger, so this is a
-    // one-shot write rather than a loop.
+    // Without `deep`, mutating a nested field fires no trigger, so this is a one-shot write rather than a loop.
     expect(lint(`watch(list, (v) => { v.forEach(i => { i.done = true }) })`, ONLY_LOOP)).toEqual([])
   })
 })
@@ -271,16 +253,14 @@ describe('local/no-watch-array-source', () => {
   })
 
   it('flags the array form with options', () => {
-    // PresentFiles.vue:376 carried `{ immediate: true }` — the option does
-    // not exempt the shape.
+    // PresentFiles.vue:376 carried `{ immediate: true }` — the option does not exempt the shape.
     expect(
       lint(`watch([isExpanded, files], () => fetch(), { immediate: true })`, ONLY_ARRAY_SOURCE),
     ).toEqual(['local/no-watch-array-source'])
   })
 
   it('flags a single-element array source', () => {
-    // Still the array form — wrapping one dep in `[]` hides nothing and
-    // normalises nothing.
+    // Still the array form — wrapping one dep in `[]` hides nothing and normalises nothing.
     expect(lint(`watch([a], () => { void load() })`, ONLY_ARRAY_SOURCE)).toEqual([
       'local/no-watch-array-source',
     ])
@@ -302,9 +282,7 @@ describe('local/no-watch-array-source', () => {
   })
 
   it('allows a getter that builds an array (out of scope)', () => {
-    // `watch(() => [a.value, b.value], fn)` is a single reactive source as far as this rule
-    // resolves — reporting it would require resolving the getter body. Documented boundary, not a
-    // dodge endorsement: prefer two single-source watchers sharing a handler.
+    // `watch(() => [a.value, b.value], fn)` is a single reactive source as far as this rule resolves — reporting it would require resolving the getter body.
     expect(
       lint(`watch(() => [a.value, b.value], () => { void load() })`, ONLY_ARRAY_SOURCE),
     ).toEqual([])
@@ -317,9 +295,7 @@ describe('local/no-watch', () => {
   })
 
   it('flags the side-effect getter idiom, including the route-query shape', () => {
-    // KanbanView.vue watches `() => route.query?.detail` to open/close the
-    // panel on Back/Forward. Legitimate under the old settlement, banned
-    // under the blanket ban — pinned here so the policy change is visible.
+    // KanbanView.vue watches `() => route.query?.detail` to open/close the panel on Back/Forward.
     expect(lint(`watch(() => props.id, () => { void load() })`, ONLY_NO_WATCH)).toEqual([
       'local/no-watch',
     ])
@@ -353,8 +329,7 @@ describe('local/no-watch', () => {
 
 describe('local/no-silent-fallback-catch', () => {
   it('flags a catch that returns [] with no diagnostic', () => {
-    // This is PR #719: an outage and an empty session reached the UI as the
-    // same value, so the error UI was dead code.
+    // This is PR #719: an outage and an empty session reached the UI as the same value, so the error UI was dead code.
     expect(lint(`try { await load() } catch { return [] }`, ONLY_CATCH)).toEqual([
       'local/no-silent-fallback-catch',
     ])
@@ -384,9 +359,7 @@ describe('local/no-silent-fallback-catch', () => {
   })
 
   it('allows an empty catch whose comment explains the fallback', () => {
-    // AGENTS.md sanctions this explicitly ("say a comment why"). authMe.ts
-    // and designHistory.ts both use it. Flagging it would train people to
-    // delete the rule instead of obey it.
+    // AGENTS.md sanctions this explicitly ("say a comment why"). authMe.ts and designHistory.ts both use it.
     expect(
       lint(
         `try { localStorage.getItem('k') } catch {
@@ -411,8 +384,7 @@ describe('local/no-silent-fallback-catch', () => {
 
 describe('the rules compose without false positives on real shapes', () => {
   it('a realistic component using computed + side-effect watch + logged catch trips ONLY the blanket bans', () => {
-    // Under the blanket bans this previously-clean shape reports exactly two hits —
-    // `local/no-watch` and `local/no-try-catch` — and nothing else.
+    // Under the blanket bans this previously-clean shape reports exactly two hits — `local/no-watch` and `local/no-try-catch` — and nothing else.
     const code = `
       import { ref, watch, computed } from 'vue'
       export function useRows(props) {
@@ -442,8 +414,7 @@ describe('the rules compose without false positives on real shapes', () => {
 
 describe('local/no-try-catch', () => {
   it('flags a try/catch around an await', () => {
-    // The dominant shape in the corpus: one `await` wrapped so the failure
-    // becomes `unknown` and the signature still claims success.
+    // The dominant shape in the corpus: one `await` wrapped so the failure becomes `unknown` and the signature still claims success.
     expect(
       lint(
         `async function load() { try { return await fetchRows() } catch (e) { return [] } }`,
@@ -460,34 +431,28 @@ describe('local/no-try-catch', () => {
   })
 
   it('flags a catch that only logs', () => {
-    // Logging is better than silence, but the caller still cannot see the
-    // failure and the signature still claims success. That is the point of
-    // banning the construct rather than the silent-fallback shape.
+    // Logging is better than silence, but the caller still cannot see the failure and the signature still claims success.
     expect(lint(`try { go() } catch (e) { console.error(e) }`, ONLY_TRY_CATCH)).toEqual([
       'local/no-try-catch',
     ])
   })
 
   it('flags a catch that rethrows', () => {
-    // oxlint's `no-useless-catch` already rejects this shape; the ban is
-    // about the construct, so it fires here too.
+    // oxlint's `no-useless-catch` already rejects this shape; the ban is about the construct, so it fires here too.
     expect(lint(`try { go() } catch (e) { throw e }`, ONLY_TRY_CATCH)).toEqual([
       'local/no-try-catch',
     ])
   })
 
   it('flags a nested catch independently of its outer try', () => {
-    // Two handlers, two reports — the baseline count is per-site, so a
-    // nested pair must not collapse into one.
+    // Two handlers, two reports — the baseline count is per-site, so a nested pair must not collapse into one.
     expect(
       lint(`try { try { go() } catch (e) { log(e) } } catch (e) { log(e) }`, ONLY_TRY_CATCH),
     ).toEqual(['local/no-try-catch', 'local/no-try-catch'])
   })
 
   it('allows try/finally with no handler', () => {
-    // AGENTS.md sanctions `finally` for releasing a resource, and that is
-    // not handling a failure — there is no error channel to widen. 57 such
-    // blocks exist today.
+    // AGENTS.md sanctions `finally` for releasing a resource, and that is not handling a failure — there is no error channel to widen. 57 such blocks exist today.
     expect(lint(`try { return await open() } finally { release() }`, ONLY_TRY_CATCH)).toEqual([])
   })
 
@@ -496,15 +461,12 @@ describe('local/no-try-catch', () => {
   })
 
   it('allows promise.catch(fn)', () => {
-    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget `router.replace(...)`
-    // navigations and 3 are best-effort `res.text()` reads, where the failure genuinely cannot
-    // reach the user. The dangerous subset is `local/no-silent-fallback-catch`'s job.
+    // Deliberately out of scope: 10 of the 30 sites are fire-and-forget `router.replace(...)` navigations and 3 are best-effort `res.text()` reads, where the failure …
     expect(lint(`router.replace({ path }).catch(() => {})`, ONLY_TRY_CATCH)).toEqual([])
   })
 
   it('does not fire on a method literally named catch', () => {
-    // `Effect.catchTags` / `Effect.catchTag` are the REPLACEMENT, so a rule
-    // that matched the word would ban the fix.
+    // `Effect.catchTags` / `Effect.catchTag` are the REPLACEMENT, so a rule that matched the word would ban the fix.
     expect(
       lint(
         `const p = getUser('42').pipe(Effect.catchTags({ NotFoundError: () => Effect.succeed(null) }))`,
@@ -514,9 +476,7 @@ describe('local/no-try-catch', () => {
   })
 
   it('does not fire on the word catch in a string or comment', () => {
-    // The corpus has 606 regex matches for `try {` but only 537 AST nodes —
-    // the difference is fixtures and prose. A rule that matched text would
-    // have pinned those as debt.
+    // The corpus has 606 regex matches for `try {` but only 537 AST nodes — the difference is fixtures and prose.
     expect(
       lint(
         `const doc = 'try { go() } catch { return null }' // try/catch is banned`,

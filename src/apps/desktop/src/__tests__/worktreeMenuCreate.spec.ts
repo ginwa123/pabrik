@@ -1,5 +1,4 @@
-/** Tests for the new "Create worktree" item in WorktreeMenu's no-worktree branch. The other menu
- * items are tested in worktreeMenu.spec.ts (regression tests for the v1.0 WorktreeMenu). */
+/** Tests for the new "Create worktree" item in WorktreeMenu's no-worktree branch. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

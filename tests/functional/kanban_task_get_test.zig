@@ -1,5 +1,4 @@
-// Functional tests for the single-task GET endpoint. Zig port of
-// `tests/functional/kanban_task_get_test.py` (same test names, same order).
+// Functional tests for the single-task GET endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers (mirror the Python module-level functions)
-// ============================================================================
 
 /// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -33,8 +30,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/kanban {"name": ...}` → the kanban
-/// item's id. Owned.
+/// `POST /api/workspaces/<ws>/items/kanban {"name": ...}` → the kanban item's id.
 fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -65,9 +61,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with
-/// `mode: "create_session"` — mirrors the frontend's "Create task"
-/// button (no agent run) → the new task's id. Owned.
+/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with `mode: "create_session"` — mirrors the frontend's "Create task" button (no agent run) → the new …
 fn createTask(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .mode = "create_session",
@@ -106,8 +100,7 @@ fn createTask(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, name
     return gpa.dupe(u8, id);
 }
 
-/// The `error` field of a task GET response, owned. Python's
-/// `body.get("error", "")` — an absent key reads as the empty string.
+/// The `error` field of a task GET response, owned.
 fn getTaskError(
     h: *Harness,
     workspace_id: []const u8,
@@ -131,9 +124,7 @@ fn getTaskError(
     return gpa.dupe(u8, msg);
 }
 
-/// The single-task GET body, parsed in the CALLER's scope. Returns owned
-/// bytes — the caller parses them itself, because a `harness.Json` built here
-/// would alias a `Response` body this frame already freed.
+/// The single-task GET body, parsed in the CALLER's scope.
 fn getTaskBody(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, task_id: []const u8, expect: []const u16) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -178,8 +169,7 @@ fn taskName(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, task_i
     return gpa.dupe(u8, name);
 }
 
-/// Assert every key in `keys` is present on `obj` (Python's
-/// `assert "tags" in task`).
+/// Assert every key in `keys` is present on `obj` (Python's `assert "tags" in task`).
 fn expectKeysPresent(obj: std.json.ObjectMap, keys: []const []const u8, label: []const u8) !void {
     for (keys) |k| {
         if (obj.get(k) == null) {
@@ -191,8 +181,7 @@ fn expectKeysPresent(obj: std.json.ObjectMap, keys: []const []const u8, label: [
     }
 }
 
-/// Assert no key in `keys` is present on `obj` (Python's
-/// `assert "image_urls" not in task, sorted(task)`).
+/// Assert no key in `keys` is present on `obj` (Python's `assert "image_urls" not in task, sorted(task)`).
 fn expectKeysAbsent(obj: std.json.ObjectMap, keys: []const []const u8, label: []const u8) !void {
     for (keys) |k| {
         if (obj.get(k) != null) {
@@ -204,8 +193,7 @@ fn expectKeysAbsent(obj: std.json.ObjectMap, keys: []const []const u8, label: []
     }
 }
 
-/// Comma-joined keys, sorted — the failure-message shape Python's
-/// `sorted(task)` produced.
+/// Comma-joined keys, sorted — the failure-message shape Python's `sorted(task)` produced.
 fn renderKeys(obj: std.json.ObjectMap) ![]u8 {
     var keys: std.ArrayList([]const u8) = .empty;
     defer keys.deinit(gpa);
@@ -243,12 +231,9 @@ fn expectEqualFieldString(obj: std.json.ObjectMap, key: []const u8, want: []cons
     }
 }
 
-// ============================================================================
 // Test 1: happy path — full task shape
-// ============================================================================
 
-// Create → GET by id → 200 `{ task }` with the fields the detail dialog
-// reads (name, description, tags, unattended flag, images).
+// Create → GET by id → 200 `{ task }` with the fields the detail dialog reads (name, description, tags, unattended flag, images).
 test "get_task_by_id_returns_full_task" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -280,8 +265,7 @@ test "get_task_by_id_returns_full_task" {
     try expectEqualFieldString(task, "description", "desc");
     try expectEqualFieldString(task, "workspace_item_id", kanban_id);
 
-    // Fields the dialog renders — must be present in the single-task
-    // response exactly as in the list response.
+    // Fields the dialog renders — must be present in the single-task response exactly as in the list response.
     try expectKeysPresent(task, &.{
         "tags",
         "is_auto_retry_until_stop",
@@ -322,9 +306,7 @@ test "get_task_media_endpoint_returns_lazy_payloads" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python: `set(media) == {"image_urls", "video_urls"}`. The body IS
-    // the media map (there is no wrapper), so read the ROOT object —
-    // `doc.object(key)` looks a key up inside the root.
+    // Python: `set(media) == {"image_urls", "video_urls"}`.
     const media = switch (doc.value().*) {
         .object => |o| o,
         else => {
@@ -339,9 +321,7 @@ test "get_task_media_endpoint_returns_lazy_payloads" {
         return error.TestUnexpectedResult;
     }
 
-    // No media was ever attached, so both are the empty string — not
-    // null and not a 404. A task row must always exist before the media
-    // route is asked about it.
+    // No media was ever attached, so both are the empty string — not null and not a 404.
     try expectEqualFieldString(media, "image_urls", "");
     try expectEqualFieldString(media, "video_urls", "");
 }
@@ -378,9 +358,7 @@ test "get_task_media_unknown_id_returns_404" {
     }
 }
 
-// ============================================================================
 // Test 2: unknown task → 404
-// ============================================================================
 
 test "get_task_unknown_id_returns_404" {
     try harness.requirePabrikBin(io, gpa);
@@ -402,12 +380,9 @@ test "get_task_unknown_id_returns_404" {
     }
 }
 
-// ============================================================================
 // Test 3: item scoping — task under another kanban → 404
-// ============================================================================
 
-// A task under kanban B must NOT be readable through kanban A's
-// path — the DB fn scopes by BOTH workspace_item_id and task id.
+// A task under kanban B must NOT be readable through kanban A's path — the DB fn scopes by BOTH workspace_item_id and task id.
 test "get_task_scoped_to_parent_item" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -441,9 +416,7 @@ test "get_task_scoped_to_parent_item" {
     try testing.expectEqualStrings("on board b", name);
 }
 
-// ============================================================================
 // Test 4: empty task_id → 400 (empty-slice-as-NULL guard)
-// ============================================================================
 
 test "get_task_empty_id_returns_400" {
     try harness.requirePabrikBin(io, gpa);
@@ -457,9 +430,7 @@ test "get_task_empty_id_returns_400" {
     const kanban_id = try createKanban(&h, ws_id, "sprint-get");
     defer gpa.free(kanban_id);
 
-    // A trailing-slash URL yields an empty :task_id capture; the
-    // handler must 400 BEFORE any DB call (SqliteBackend binds "" as
-    // SQL NULL).
+    // A trailing-slash URL yields an empty :task_id capture; the handler must 400 BEFORE any DB call (SqliteBackend binds "" as SQL NULL).
     const path = try std.fmt.allocPrint(
         gpa,
         "/api/workspaces/{s}/items/{s}/tasks/",
@@ -479,12 +450,9 @@ test "get_task_empty_id_returns_400" {
     }
 }
 
-// ============================================================================
 // Test 5: list route still works (route-order shadowing guard)
-// ============================================================================
 
-// matchRoute walks routes in registration order — the list route
-// must still match after the single-task route was registered.
+// matchRoute walks routes in registration order — the list route must still match after the single-task route was registered.
 test "list_route_not_shadowed_by_single_task_route" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

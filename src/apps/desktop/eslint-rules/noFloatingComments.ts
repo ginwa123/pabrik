@@ -1,10 +1,11 @@
 /**
  * `local/no-floating-comments` — a comment must attach to the code it explains.
  *
- * `local/max-comment-lines` caps a comment block at three lines. The obvious
- * way to satisfy that cap is to cut one long comment into several three-line
- * blocks separated by blank lines, which is exactly what happened while paying
- * that debt down:
+ * `local/max-comment-lines` caps a comment block at ONE line. The obvious way
+ * to satisfy that cap is to cut one long comment into several one-line blocks
+ * separated by blank lines, which is exactly what happened while paying that
+ * debt down: the example below is three two-line blocks that used to be one
+ * six-line comment.
  *
  *     // Alias the key rather than mirroring it into a local ref. This used to be `const keyRef =
  *     // ref(initialKey)` plus a `{ immediate: true }` watcher copying `storageKey.value` into it.

@@ -1,6 +1,4 @@
-/** The chat names the agent that answers: the composer chip and the transcript
- * badge both follow the backend's `selected → active_profile → top-level`
- * cascade, where a name that is not a configured profile is a miss. */
+/** The chat names the agent that answers: the composer chip and the transcript badge both follow the backend's `selected → active_profile → top-level` cascade … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -222,9 +220,7 @@ describe('ChatView — the chat names the agent that answers', () => {
   })
 
   it('does not badge a row whose narration the compact run card already holds', async () => {
-    // The report's ~25 bare "deepseek auto" rows: a turn narrates before each call, the compact
-    // view folds that narration INTO the run card, and the group that carried it was left with an
-    // empty body — but kept its author badge.
+    // The report's ~25 bare "deepseek auto" rows: a turn narrates before each call, the compact view folds that narration INTO the run card, and the group that …
     ctl.rows = [
       { id: 'u1', role: 'user', content: 'fix this conflict first', created_at: 1_700_000_001 },
       {

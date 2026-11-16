@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** PlantUmlDiagram — one `<plantuml>…</plantuml>` block of an assistant turn. The SVG comes from a
- * PlantUML server (see `helpers/plantuml.ts`); there is no local renderer to fail, only a request
- * that can fail, so a refusal shows the source rather than an empty frame. */
+/** PlantUmlDiagram — one `<plantuml>…</plantuml>` block of an assistant turn. */
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import DiagramViewer from './DiagramViewer.vue'
@@ -18,8 +16,7 @@ const available = ref(0)
 const natural = ref<DiagramSize | null>(null)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
-/** Both outcomes are keyed on the source they belong to, so new source is a new request without a
- * watcher — a stale `failed` from the previous block can never hide the next one's image. */
+/** Both outcomes are keyed on the source they belong to, so new source is a new request without a watcher — a stale `failed` from the previous block can never … */
 const failedFor = ref<string | null>(null)
 const loadedFor = ref<string | null>(null)
 const failed = computed(() => failedFor.value === props.source)

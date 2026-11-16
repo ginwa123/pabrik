@@ -7,9 +7,7 @@ import {
   unwrapDataRecord,
 } from './internal'
 
-// ─── web_search ──────────────────────────────────────────────────────────── Parses the JSON
-// `data` payload produced by `exec_web_search` in `src/agentic_loop/tools_exec_web_search.zig`.
-/** The nine reasons a `web_search` envelope can fail, as the card spells them. */
+// ─── web_search ────────────────────────────────────────────────────────────
 export type WebSearchErrorFlag =
   | 'configured'
   | 'unknown_provider'
@@ -30,9 +28,7 @@ export interface WebSearchProviderRef {
 export interface ParsedWebSearchError {
   /** The backend's sentence, verbatim. */
   message: string
-  /**    * Which reasons this envelope claims, in a fixed order so two renderings of the same failure
-   * never disagree. `transport` is the residual: it is the one failure with no key of its own, so a
-   * flagless error is reported as it. Every other flag is read off a key the backend sets. */
+  /** Which reasons this envelope claims, in a fixed order so two renderings of the same failure never disagree. */
   flags: WebSearchErrorFlag[]
   /** True only for `configured:false` — nothing is set up in Settings yet. */
   configured: boolean
@@ -59,8 +55,7 @@ export interface ParsedWebSearch {
   error: ParsedWebSearchError | null
 }
 
-/** Read a list of alternative providers. Accepts both spellings the backend
- * and the plan use: `[{name,url}]` objects, and a bare `["tinyfish"]` of names. */
+/** Read a list of alternative providers. */
 function providerRefs(o: Record<string, unknown>, key: string): WebSearchProviderRef[] {
   const raw = o[key]
   if (!Array.isArray(raw)) return []
@@ -112,9 +107,7 @@ export function parseWebSearchError(o: Record<string, unknown>): ParsedWebSearch
   }
 }
 
-/** The exec wrapper reports a failure in TWO places: the envelope's `error` field, and — for the
- * reasons the model can recover from on its own — the whole inner JSON envelope as that field's
- * TEXT. */
+/** The exec wrapper reports a failure in TWO places: the envelope's `error` field, and — for the reasons the model can recover from on its own — the whole inner … */
 export function parseWebSearchErrorText(text: string): ParsedWebSearchError {
   const o = asRecord(text)
   if (typeof o.error === 'string' && Object.keys(o).length > 1) return parseWebSearchError(o)
@@ -151,9 +144,7 @@ export function parseWebSearch(data: unknown): ParsedWebSearch {
   }
 }
 
-// ─── list_web_search_providers ───────────────────────────────────────────── The
-// `exec_list_web_search_providers` payload (D14):
-// {"providers":[{"name":"tinyfish","url":"https://api.search.tinyfish.ai".
+// ─── list_web_search_providers ─────────────────────────────────────────────
 export interface ParsedSearchProviderEntry {
   name: string
   url: string

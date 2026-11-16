@@ -73,8 +73,7 @@ const emit = defineEmits<{
   'update:modelValue': [tags: string[]]
 }>()
 
-// What the user is typing. Local state — we don't v-model the inner
-// input itself (chip add/remove is a discrete event).
+// What the user is typing.
 const draftInput = ref<string>('')
 // Transient error message (char whitelist / length cap / duplicate).
 const errorMessage = ref<string | null>(null)
@@ -83,26 +82,22 @@ const errorMessage = ref<string | null>(null)
 const isFocused = ref(false)
 const highlightedIndex = ref<number>(-1)
 
-// Allowed chars: a-z, A-Z, 0-9, underscore, hyphen. Matches the
-// backend's tags_validation.zig whitelist.
+// Allowed chars: a-z, A-Z, 0-9, underscore, hyphen.
 const TAG_CHAR_WHITELIST = /^[a-zA-Z0-9_-]$/
 const TAG_LENGTH_CAP = 50
 
-// Same djb2 → 6-hue cycle as the row and the card (helpers/tagPalette), so the dialog chips and the
-// card chips share colours.
+// Same djb2 → 6-hue cycle as the row and the card (helpers/tagPalette), so the dialog chips and the card chips share colours.
 function tagChipStyle(tag: string): Record<string, string> {
   const style = tagStyle(tag)
   return { backgroundColor: style.backgroundColor, border: style.border, color: style.color }
 }
 
-// Sanitize the draft: strip leading/trailing whitespace. Returns
-// the cleaned string (NOT mutate draftInput).
+// Sanitize the draft: strip leading/trailing whitespace.
 function cleanDraft(): string {
   return draftInput.value.replace(/^\s+|\s+$/g, '')
 }
 
-// Validate a tag string against the project's rules. Returns null
-// when valid, or a short error string otherwise.
+// Validate a tag string against the project's rules.
 function validateTag(raw: string): string | null {
   const tag = raw.trim()
   if (tag.length === 0) return 'Tag cannot be empty.'
@@ -152,14 +147,11 @@ function removeTag(idx: number): void {
 }
 
 function onInput(): void {
-  // Live-clear the error as the user types (re-enables the Submit
-  // affordance without forcing them to dismiss the message).
+  // Live-clear the error as the user types (re-enables the Submit affordance without forcing them to dismiss the message).
   if (errorMessage.value !== null) clearDraftError()
 }
 
-// Autocomplete dropdown — filtered suggestions exposed to the
-// template. Filters by the trimmed lowercase draft prefix (case
-// insensitive) and excludes tags already on the task.
+// Autocomplete dropdown — filtered suggestions exposed to the template.
 const filteredSuggestions = computed<string[]>(() => {
   if (!isFocused.value) return []
   const draft = draftInput.value.trim().toLowerCase()
@@ -171,8 +163,7 @@ const filteredSuggestions = computed<string[]>(() => {
   return filtered.filter((s) => !modelLower.has(s.toLowerCase()))
 })
 
-// The dropdown stays open as long as the input is focused AND the parent has provided at least one
-// suggestion to filter from.
+// The dropdown stays open as long as the input is focused AND the parent has provided at least one suggestion to filter from.
 const showDropdown = computed<boolean>(() => isFocused.value && props.suggestions.length > 0)
 
 function onFocus(): void {
@@ -181,9 +172,7 @@ function onFocus(): void {
 }
 
 function onBlur(): void {
-  // Delay closing so click events on dropdown items can fire first.
-  // 150ms is the value in the plan; long enough to outlast a mousedown
-  // event on a suggestion but short enough to feel snappy.
+  // Delay closing so click events on dropdown items can fire first. 150ms is the value in the plan; long enough to outlast a mousedown event on a suggestion but …
   setTimeout(() => {
     isFocused.value = false
     highlightedIndex.value = -1
@@ -240,21 +229,16 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-// Whether the input shows an error style (red border). Drives the
-// `aria-invalid` attr and the red border class.
+// Whether the input shows an error style (red border).
 const hasError = computed(() => errorMessage.value !== null)
 
-// IntersectionObserver lifecycle — lazily load the next page of suggestions when the scroll
-// sentinel at the bottom of the dropdown becomes visible. The sentinel is rendered only when
-// `hasMore` is true, so the observer is attached/detached as the dropdown opens/closes.
+// IntersectionObserver lifecycle — lazily load the next page of suggestions when the scroll sentinel at the bottom of the dropdown becomes visible.
 const scrollSentinel = ref<HTMLLIElement | null>(null)
 let observer: IntersectionObserver | null = null
 
 function attachObserver(): void {
   if (!scrollSentinel.value || observer) return
-  // Lazy-load the next page when the sentinel scrolls into view. `rootMargin: 0px 0px 100px 0px`
-  // triggers ~100px BEFORE the sentinel reaches the bottom of the visible area, so the next page
-  // arrives by the time the user hits the very bottom.
+  // Lazy-load the next page when the sentinel scrolls into view.
   observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -275,9 +259,7 @@ function detachObserver(): void {
   }
 }
 
-// The sentinel mounts/unmounts with the dropdown (v-if on hasMore, and the dropdown itself
-// opens/closes), so re-attach whenever the ref element changes: mount covers the initial render,
-// prev-element guard on update covers focus-open and hasMore flips.
+// The sentinel mounts/unmounts with the dropdown (v-if on hasMore, and the dropdown itself opens/closes), so re-attach whenever the ref element changes: mount …
 let prevSentinel: HTMLLIElement | null = null
 onMounted(() => {
   prevSentinel = scrollSentinel.value
@@ -295,8 +277,7 @@ onBeforeUnmount(() => {
   detachObserver()
 })
 
-// Expose commitDraft so the host (KanbanTaskDetailDialog) can call it imperatively right before
-// reading the modelValue.
+// Expose commitDraft so the host (KanbanTaskDetailDialog) can call it imperatively right before reading the modelValue.
 defineExpose({ commitDraft })
 </script>
 

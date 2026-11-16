@@ -1,5 +1,4 @@
-// Functional wire tests for POST /api/git/file/diffs (batch endpoint). Zig
-// port of `tests/functional/git_file_diffs_test.py` (same test names).
+// Functional wire tests for POST /api/git/file/diffs (batch endpoint).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,8 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Run `git` with a fixed identity so the fixture never depends on the
-/// machine's global git config (which CI does not set).
+/// Run `git` with a fixed identity so the fixture never depends on the machine's global git config (which CI does not set).
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -35,8 +33,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// Run `git` and return its stdout, for use as an ORACLE the handler is
-/// checked against.
+/// Run `git` and return its stdout, for use as an ORACLE the handler is checked against.
 fn gitCapture(cwd: []const u8, args: []const []const u8) ![]u8 {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -55,8 +52,7 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// The fixture repo, built inside `scratch`. Returns the owned repo path;
-/// the caller frees it and cleans `scratch` via `cleanupExtraDir`.
+/// The fixture repo, built inside `scratch`.
 fn buildDiffCwd(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "batch-diff-proj" });
     errdefer gpa.free(repo);
@@ -65,8 +61,7 @@ fn buildDiffCwd(scratch: []const u8) ![]u8 {
     var repo_dir = try std.Io.Dir.cwd().openDir(io, repo, .{});
     defer repo_dir.close(io);
 
-    // `--initial-branch=main` is what makes the fixture deterministic
-    // across git versions.
+    // `--initial-branch=main` is what makes the fixture deterministic across git versions.
     try git(scratch, &.{ "init", "--initial-branch=main", "--quiet", repo });
 
     try writeFileAt(repo_dir, "committed.txt", "keep\nold\n");
@@ -82,9 +77,7 @@ fn buildDiffCwd(scratch: []const u8) ![]u8 {
     return repo;
 }
 
-/// Boot a harness plus a fixture repo, with both cleaned up on the way
-/// out. The repo path is returned; `*h` and `*scratch` are for the caller's
-/// `defer`s.
+/// Boot a harness plus a fixture repo, with both cleaned up on the way out.
 fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -185,8 +178,7 @@ test "batch_matches_git_diff_output" {
     defer gpa.free(repo);
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
-    // There is no per-file endpoint to compare against any more — it is
-    // deleted.
+    // There is no per-file endpoint to compare against any more — it is deleted.
     const git_out = try gitCapture(repo, &.{ "diff", "--", "committed.txt" });
     defer gpa.free(git_out);
 
@@ -208,8 +200,7 @@ test "batch_matches_git_diff_output" {
     try testing.expectEqual(@as(usize, 1), diffs.items.len);
     const got = diffs.items[0].object.get("diff_content").?.string;
     try testing.expectEqualStrings(git_out, got);
-    // …and the row carries the side it was asked for, which is how the
-    // client tells a staged diff from a worktree one.
+    // …and the row carries the side it was asked for, which is how the client tells a staged diff from a worktree one.
     try testing.expectEqual(false, diffs.items[0].object.get("staged").?.bool);
     try testing.expectEqualStrings("committed.txt", diffs.items[0].object.get("path").?.string);
 }

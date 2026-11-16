@@ -76,8 +76,7 @@ export function saveExpandedItemIds(expandedIds: Record<string, boolean>) {
   )
 }
 
-// jsdom 29 dropped localStorage from the default globals — specs
-// that don't install the stub must not crash the getter.
+// jsdom 29 dropped localStorage from the default globals — specs that don't install the stub must not crash the getter.
 export function readActiveWorkspaceKey(): string | null {
   try {
     return localStorage.getItem(userScopedKey(STORAGE_KEY_ACTIVE_WORKSPACE))

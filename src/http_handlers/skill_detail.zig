@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/skills/:skill_name`. One skill's body
-//! and metadata, scoped to one workspace.
+//! `GET /api/workspaces/:workspace_id/skills/:skill_name`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,9 +19,7 @@ pub const SkillDetailInput = struct {
     skill_name: []const u8,
 };
 
-/// The row as it goes on the wire. `asset_count`, not the asset list: the
-/// dialog shows "11 companion files" and shipping every body to render that
-/// number would put the bundle in the payload. `metadata` comes from the table.
+/// The row as it goes on the wire.
 pub const SkillDetailRow = struct {
     name: []const u8,
     description: []const u8,
@@ -33,12 +30,9 @@ pub const SkillDetailRow = struct {
 };
 
 pub const SkillDetailOutput = struct {
-    /// Null on a miss. Owned when present; free with
-    /// `skills_store.freeSkillRow`.
+    /// Null on a miss.
     skill: ?skills_store.SkillRow = null,
-    /// Workspace-scoped skill NAMES, populated only on a miss. Borrowed
-    /// from the rows returned alongside, so it lives no longer than the
-    /// `available` slice below.
+    /// Workspace-scoped skill NAMES, populated only on a miss.
     asset_count: usize = 0,
     /// Owned rows backing `available_skills` on a miss; empty otherwise.
     available: []skills_store.SkillRow = &.{},
@@ -52,18 +46,14 @@ const SkillDetailFoundResponse = struct {
     error_message: []const u8,
 };
 
-/// 404 shape. `available_skills` is present here and ABSENT on success,
-/// mirroring `use_skill`: a caller only needs the list when it does not
-/// have what it asked for.
+/// 404 shape.
 const SkillDetailMissingResponse = struct {
     skill: ?SkillDetailRow,
     error_message: []const u8,
     available_skills: []const []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -74,23 +64,17 @@ fn useCase(
         return error.IdsRequired;
     }
 
-    // A name that exists in ANOTHER workspace lands here as `NotFound` too,
-    // and that is deliberate: a 403 would confirm the name exists, which is
-    // the thing the workspace scoping exists to hide.
+    // A name that exists in ANOTHER workspace lands here as `NotFound` too, and that is deliberate: a 403 would confirm the name exists, which is the thing the …
     const row = skills_store.getSkillByName(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
         error.NotFound => return error.NotFound,
-        // Both ids are non-empty by the guard above, so the store can only
-        // reach this arm if the two checks ever drift apart. Treat it as
-        // a caller error rather than a silent not-found.
+        // Both ids are non-empty by the guard above, so the store can only reach this arm if the two checks ever drift apart.
         error.WorkspaceIdNameRequired => return error.IdsRequired,
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
     };
     errdefer skills_store.freeSkillRow(allocator, row);
 
-    // Counted by loading the companions rather than with a `COUNT(*)` query:
-    // `skills_store` exposes one read for assets and adding a second shape
-    // here would mean a second hand-written SELECT against `skill_assets`
+    // Counted by loading the companions rather than with a `COUNT(*)` query
     const assets = skills_store.listAssets(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
@@ -108,29 +92,22 @@ fn useCase(
     return .{ .skill = row, .asset_count = assets.len, .metadata = metadata };
 }
 
-/// The workspace's skill names, for the "not found — here is what there
-/// is" payload. Separate from `useCase` because it runs only on the miss
-/// path; a hit must not pay for it.
+/// The workspace's skill names, for the "not found — here is what there is" payload.
 fn availableNames(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     workspace_id: []const u8,
 ) SkillDetailError![]skills_store.SkillRow {
-    // Mapped by hand for the same reason as `useCase` above: this
-    // function's error set is part of the wire contract, and it should not
-    // change because a guard inside the store was renamed.
+    // Mapped by hand for the same reason as `useCase` above: this function's error set is part of the wire contract, and it should not change because a guard inside …
     return skills_store.listSkills(allocator, db, workspace_id) catch |err| switch (err) {
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
-        // Only reachable with an empty workspace_id, which the handler has
-        // already turned into a 400.
+        // Only reachable with an empty workspace_id, which the handler has already turned into a 400.
         error.WorkspaceIdRequired => return error.IdsRequired,
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn skillDetailHandler(
     ctx: gserverz.HttpContext,
@@ -155,16 +132,14 @@ pub fn skillDetailHandler(
         };
         const message: []const u8 = switch (err) {
             error.IdsRequired => "workspace_id and skill_name required",
-            // One message for "no such name" and "belongs to another
-            // workspace" on purpose — see the file header.
+            // One message for "no such name" and "belongs to another workspace" on purpose — see the file header.
             error.NotFound => "skill not found",
             error.QueryFailed => "DB error",
             error.OutOfMemory => "Out of memory",
         };
 
         if (err == error.NotFound) {
-            // The one branch that answers with the skill's own payload rather
-            // than the generic error envelope.
+            // The one branch that answers with the skill's own payload rather than the generic error envelope.
             const available = availableNames(allocator, sqlite_db, input.workspace_id) catch {
                 return res.jsonResponse(.{
                     .status_code = 404,
@@ -216,8 +191,7 @@ pub fn skillDetailHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-// See the note in `skill_delete.zig`: the test binary has no HTTP server,
-// so nothing else in `zig build test` would analyse this handler's body.
+// See the note in `skill_delete.zig`: the test binary has no HTTP server, so nothing else in `zig build test` would analyse this handler's body.
 comptime {
     _ = &skillDetailHandler;
 }
@@ -255,8 +229,7 @@ fn seed(ctx: *TestCtx, workspace_id: []const u8, name: []const u8, assets: []con
         .workspace_id = workspace_id,
         .name = name,
         .description = "Work with PDFs",
-        // The body keeps its frontmatter: sha256(body) is the skill_eval
-        // identity, so trimming it here would stale every cached verdict.
+        // The body keeps its frontmatter: sha256(body) is the skill_eval identity, so trimming it here would stale every cached verdict.
         .content = BUNDLED_BODY,
     });
     defer skills_store.freeSkillRow(testing.allocator, row);
@@ -318,8 +291,7 @@ test "useCase: the detail read carries the frontmatter the columns do not hold" 
     defer skills_store.freeSkillRow(alloc, row);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    // The UI never sees the fence: `tags` and `origin` arrive as data, so the
-    // detail pane can render them without parsing markdown a second time.
+    // The UI never sees the fence: `tags` and `origin` arrive as data, so the detail pane can render them without parsing markdown a second time.
     try testing.expectEqual(@as(usize, 2), output.metadata.len);
     try testing.expectEqualStrings("origin", output.metadata[0].key);
     try testing.expectEqualStrings("ECC", output.metadata[0].value);
@@ -365,8 +337,7 @@ test "useCase: a locked skill reports its lock on the detail read" {
     defer skills_store.freeSkillRow(alloc, row);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    // The detail pane owns the checkbox, so the flag has to be on this
-    // read or the toggle would always render as checked.
+    // The detail pane owns the checkbox, so the flag has to be on this read or the toggle would always render as checked.
     try testing.expect(!row.is_can_auto_improve);
 }
 
@@ -377,8 +348,7 @@ test "useCase: another workspace's skill name is NotFound, not forbidden" {
     defer ctx.db.deinit();
     try seed(&ctx, "ws_1", "pdf", &.{});
 
-    // 403 here would confirm the name exists — the exact leak the
-    // workspace scoping exists to prevent.
+    // 403 here would confirm the name exists — the exact leak the workspace scoping exists to prevent.
     try testing.expectError(
         error.NotFound,
         useCase(alloc, &ctx.db, .{ .workspace_id = "ws_2", .skill_name = "pdf" }),

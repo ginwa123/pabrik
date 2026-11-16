@@ -1,5 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/skills/:skill_name`. Edits one
-//! workspace-scoped skill.
+//! `PATCH /api/workspaces/:workspace_id/skills/:skill_name`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,9 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const skills_store = @import("../modules/agent/loop/skills_store.zig");
 
-/// PATCH body. Both fields default to `null` so an omitted field is
-/// distinguishable from an explicit `""` — the latter is a real "clear
-/// this" request, and it is honoured.
+/// PATCH body.
 const UpdateSkillBody = struct {
     name: ?[]const u8 = null,
     description: ?[]const u8 = null,
@@ -39,14 +36,11 @@ pub const SkillUpdateInput = struct {
 pub const SkillUpdateOutput = struct {
     /// Owned; free with `skills_store.freeSkillRow`.
     skill: skills_store.SkillRow,
-    /// Owned; free with `skills_store.freeSkillMetadataRows`. A patch that
-    /// rewrites the body re-derives this, so it is not the set the caller
-    /// sent.
+    /// Owned; free with `skills_store.freeSkillMetadataRows`.
     metadata: []skills_store.SkillMetadataRow = &.{},
 };
 
-/// The skill plus the metadata projected from its body. Shared by the
-/// patch path and the no-op path so both answer with the same shape.
+/// The skill plus the metadata projected from its body.
 fn withMetadata(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -61,9 +55,7 @@ fn withMetadata(
     return .{ .skill = row, .metadata = metadata };
 }
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -73,9 +65,7 @@ fn useCase(
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (input.skill_name.len == 0) return error.SkillNameRequired;
 
-    // A `name` in the body is a claim about which row is being addressed, not
-    // a rename instruction: renaming would silently break every `use_skill({
-    // name })` call and every `skill_eval` verdict keyed on the name.
+    // A `name` in the body is a claim about which row is being addressed, not a rename instruction: renaming would silently break every `use_skill({ name })` call …
     if (input.body.name) |name| {
         if (!skills_store.isValidSkillName(name)) return error.InvalidName;
         const current = try readRow(allocator, db, input.workspace_id, input.skill_name);
@@ -83,9 +73,7 @@ fn useCase(
         if (!std.mem.eql(u8, current.name, name)) return error.NotFound;
     }
 
-    // A PATCH with no field keeps the stored row, and the cheapest way to
-    // keep a skill is not to write it: no UPDATE means the row is returned
-    // as-is and `updated_at` does not advance either.
+    // A PATCH with no field keeps the stored row, and the cheapest way to keep a skill is not to write it: no UPDATE means the row is returned as-is and `updated_at` …
     if (input.body.description == null and input.body.content == null and input.body.is_can_auto_improve == null) {
         return withMetadata(
             allocator,
@@ -125,19 +113,15 @@ fn readRow(
     };
 }
 
-// ===================================================================== Error
-// mapping
-// ===================================================================== Two
+// ===================================================================== Error mapping ===================================================================== Two
 
 fn statusFor(err: SkillUpdateError) u16 {
     return switch (err) {
         error.WorkspaceIdRequired, error.SkillNameRequired, error.InvalidName => 400,
         error.ContentTooLarge => 413,
-        // 404, never 403: a 403 would confirm the name exists, which is
-        // the one thing workspace scoping exists to withhold.
+        // 404, never 403: a 403 would confirm the name exists, which is the one thing workspace scoping exists to withhold.
         error.NotFound => 404,
-        // 409, not 200: the caller asked for a change and got none. A 200
-        // here would render a saved-looking pane that saved nothing.
+        // 409, not 200: the caller asked for a change and got none.
         error.NothingToChange => 409,
         error.QueryFailed, error.UpdateFailed, error.OutOfMemory => 500,
     };
@@ -157,9 +141,7 @@ fn messageFor(err: SkillUpdateError) []const u8 {
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn skillUpdateHandler(
     ctx: gserverz.HttpContext,
@@ -209,9 +191,7 @@ pub fn skillUpdateHandler(
             .name = output.skill.name,
             .description = output.skill.description,
             .content = output.skill.content,
-            // The stored row, not the patch: an edit that mentions only
-            // the description must come back with the body it did not
-            // touch, or the caller would render a blank instruction set.
+            // The stored row, not the patch: an edit that mentions only the description must come back with the body it did not touch, or the caller would render a blank …
             .asset_count = 0,
             .is_can_auto_improve = output.skill.is_can_auto_improve,
             .metadata = entries,
@@ -220,8 +200,7 @@ pub fn skillUpdateHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-// See the note in `skill_delete.zig`: the test binary has no HTTP server,
-// so nothing else in `zig build test` would analyse this handler's body.
+// See the note in `skill_delete.zig`: the test binary has no HTTP server, so nothing else in `zig build test` would analyse this handler's body.
 comptime {
     _ = &skillUpdateHandler;
 }
@@ -269,9 +248,7 @@ fn seed(ctx: *TestCtx, workspace_id: []const u8, name: []const u8, description: 
     defer skills_store.freeSkillRow(testing.allocator, row);
 }
 
-/// Read the stored body straight from SQL, bypassing the store, so an
-/// assertion about what was persisted cannot be satisfied by the same code
-/// path it is testing.
+/// Read the stored body straight from SQL, bypassing the store, so an assertion about what was persisted cannot be satisfied by the same code path it is testing.
 fn storedContent(ctx: *TestCtx, workspace_id: []const u8, name: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
@@ -301,9 +278,7 @@ test "useCase: patches the description and keeps the body it does not mention" {
     defer skills_store.freeSkillRow(alloc, output.skill);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    // Without the load-current-first step inside the store, a
-    // description-only patch would blank the instruction set — which IS
-    // the whole skill.
+    // Without the load-current-first step inside the store, a description-only patch would blank the instruction set — which IS the whole skill.
     try testing.expectEqualStrings("new description", output.skill.description);
     try expectBodyIs(output.skill.content, "the body that must survive");
 }
@@ -334,9 +309,7 @@ test "useCase: an explicit empty string clears the field rather than keeping it"
     defer ctx.db.deinit();
     try seed(&ctx, "ws_1", "pdf", "a description", "a body");
 
-    // `""` is a real "clear this" request, which is why the body fields are
-    // `?[]const u8` and not `[]const u8` with a "" default: an omitted
-    // field keeps its value, an explicit empty one does not.
+    // `""` is a real "clear this" request, which is why the body fields are `?[]const u8` and not `[]const u8` with a "" default: an omitted field keeps its value …
     const output = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .skill_name = "pdf",
@@ -373,8 +346,7 @@ test "useCase: a body with neither field keeps the stored row, untouched" {
     defer skills_store.freeSkillRow(alloc, output.skill);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    // "Omitted means keep" is only honest if nothing at all moved: the
-    // values stay AND updated_at stays, because no write happened.
+    // "Omitted means keep" is only honest if nothing at all moved: the values stay AND updated_at stays, because no write happened.
     try testing.expectEqualStrings("a description", output.skill.description);
     try expectBodyIs(output.skill.content, "a body");
     try testing.expectEqualStrings("2000-01-01 00:00:00", output.skill.updated_at);
@@ -406,9 +378,7 @@ test "useCase: a rename is refused, and the body is left as it was" {
     defer ctx.db.deinit();
     try seed(&ctx, "ws_1", "pdf", "a description", "the body that must survive");
 
-    // A rename would break every `use_skill({ name })` call and every
-    // `skill_eval` verdict keyed on the name, so the answer is "no such
-    // skill" rather than a quiet half-applied edit — and the same answer a
+    // A rename would break every `use_skill({ name })` call and every `skill_eval` verdict keyed on the name, so the answer is "no such skill" rather than a quiet …
     try testing.expectError(
         error.NotFound,
         useCase(alloc, &ctx.db, .{
@@ -471,8 +441,7 @@ test "useCase: another workspace's skill name is NotFound — 404, never 403" {
     defer ctx.db.deinit();
     try seed(&ctx, "ws_1", "pdf", "a description", "the body that must survive");
 
-    // A 403 would confirm the name exists, which is exactly what workspace
-    // scoping exists to withhold.
+    // A 403 would confirm the name exists, which is exactly what workspace scoping exists to withhold.
     try testing.expectError(
         error.NotFound,
         useCase(alloc, &ctx.db, .{
@@ -519,9 +488,7 @@ test "useCase: a flag-only patch toggles the lock and keeps the body" {
     defer ctx.db.deinit();
     try seed(&ctx, "ws_1", "pdf", "a description", "the body that must survive");
 
-    // The checkbox in the Skills panel sends exactly this: one field, and
-    // a skill whose other fields are identical. Without the flag in the
-    // store's no-op comparison the server would answer 409 to it.
+    // The checkbox in the Skills panel sends exactly this: one field, and a skill whose other fields are identical.
     const locked = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .skill_name = "pdf",
@@ -560,9 +527,7 @@ test "useCase: the human editor still edits a LOCKED skill" {
     });
     defer skills_store.freeSkillRow(alloc, created);
 
-    // The flag blocks the AGENT tools, not the human. This route is the
-    // only way to correct a skill the agent is no longer allowed to touch,
-    // so refusing here would leave a pinned skill unfixable.
+    // The flag blocks the AGENT tools, not the human.
     const output = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .skill_name = "pinned",

@@ -43,8 +43,7 @@ const isRunning = computed(() => {
 // Warning when the search found no matches.
 const warningMessage = computed(() => parsed.value.warning)
 
-// Error from the envelope (ChatView falls back to the full envelope content),
-// if any.
+// Error from the envelope (ChatView falls back to the full envelope content), if any.
 const errorMessage = computed(() => normalized.value.error)
 
 // File results with matches, straight from the JSON data object.
@@ -66,8 +65,7 @@ const hasTruncation = computed(
   () => parsed.value.truncated || parsed.value.outputTruncated || !!truncationHint.value,
 )
 
-/** Collection summary (`returned`/`total`/`truncated`). Null when the payload carries no counts,
- * and the header keeps its plain wording. */
+/** Collection summary (`returned`/`total`/`truncated`). */
 interface SearchSummary {
   returned: number
   total: number
@@ -80,8 +78,7 @@ const searchSummary = computed((): SearchSummary | null => {
   return { returned, total, truncated }
 })
 
-// Arguments guard (mirrors ToolParameters.vue hasArgs): non-empty params
-// mean there is something worth expanding even with zero file results.
+// Arguments guard (mirrors ToolParameters.vue hasArgs): non-empty params mean there is something worth expanding even with zero file results.
 const hasArgs = computed(() => {
   const p = (props.parameters ?? '').trim()
   return p !== '' && p !== '{}'
@@ -119,9 +116,7 @@ const handleOpenInEditor = (e: Event, path: string) => {
   openInEditor({ filePath: path, cwd: props.cwd })
 }
 
-// Per-snippet tokens for code coloring. Language comes from the result file path so each file block
-// highlights in its own language; unknown extensions fall back to plaintext (single plain token, as
-// before).
+// Per-snippet tokens for code coloring.
 const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
   return highlightLine(snippet, detectLanguage(filePath ?? ''))
 }

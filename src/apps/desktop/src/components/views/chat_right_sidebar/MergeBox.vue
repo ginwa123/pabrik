@@ -65,12 +65,10 @@ const wording = computed(() =>
   }),
 )
 
-/** The PR's already-known merge state, so the box never renders a spinner for
- *  something the poll already answered. */
+/** The PR's already-known merge state, so the box never renders a spinner for something the poll already answered. */
 const ready = computed(() => props.status !== null)
 
-// The reasons the merge is held, as a countable sentence. The wording table
-// says WHICH state; this says HOW MANY, which is the part a reviewer acts on.
+// The reasons the merge is held, as a countable sentence.
 const reasonParts = computed<string[]>(() => {
   const parts: string[] = []
   const failed = props.failedChecks ?? 0
@@ -124,9 +122,7 @@ const dotGlyph = computed(() => {
 
 // ── the method, remembered per repo ───────────────────────────────────────
 const repoKey = computed(() => repoKeyFor(props.prUrl, props.cwd))
-/** The method shown and used. No watcher: a `watch` that copies the remembered value into a ref is
- * banned here (local/no-watch), and it is not needed — the remembered value is a pure function of
- * the repo key, so a `computed` reads it lazily. */
+/** The method shown and used. */
 const picked = ref<{ key: string; method: MergeMethod } | null>(null)
 const method = computed<MergeMethod>(() => {
   const key = repoKey.value
@@ -136,9 +132,7 @@ const method = computed<MergeMethod>(() => {
 // ── the confirm step ──────────────────────────────────────────────────────
 const menuOpen = ref(false)
 const confirming = ref(false)
-/**  * OFF by default. In this app the source branch is usually the session's OWN worktree branch, so a
- * pre-ticked box could delete the branch the user is standing on. The name is always shown next to
- * it. */
+/** OFF by default. */
 const deleteBranch = ref(false)
 const message = ref('')
 
@@ -202,13 +196,9 @@ async function submit() {
   }
   rememberMethod(repoKey.value, method.value)
   confirming.value = false
-  // `success` is the FORGE's answer, not an exit code. A zero exit that only armed an auto-merge
-  // (GitLab) or joined a merge queue (GitHub) is `pending`, and saying "Merged" for it is the one
-  // failure a merge button cannot afford.
+  // `success` is the FORGE's answer, not an exit code.
   pendingNotice.value = result.value.pending
-  // The merge moved this BRANCH's change-request state, and the sidebar's RECENT icon and the
-  // kanban card badge read the shared 60s cache — which still holds the `open` answer they fetched
-  // before this click. Drop it and call the registered badges back so they re-read now.
+  // The merge moved this BRANCH's change-request state, and the sidebar's RECENT icon and the kanban card badge read the shared 60s cache — which still holds the …
   if (props.status?.head_ref) invalidatePrStatus(props.cwd, props.status.head_ref)
   emit('merged')
 }

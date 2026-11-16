@@ -98,8 +98,7 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
     app = createApp({})
     installSseBus(app)
     __setSseBusGlobalClient(stubSseClient())
-    // The session cache is a module-level singleton with an in-memory
-    // mirror; without this the rows painted by one test leak into the next.
+    // The session cache is a module-level singleton with an in-memory mirror; without this the rows painted by one test leak into the next.
     await Effect.runPromise(sessionEngineDb.clear(WS_A))
     await Effect.runPromise(sessionEngineDb.clear(WS_B))
     useRouteMock.mockReturnValue({
@@ -116,14 +115,12 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
   })
 
   it('keeps the painted rows when a refresh comes back empty', async () => {
-    // Page 1 has rows, page 2 is what `getChats` resolves to when the
-    // request fails (the failure is swallowed inside the api layer).
+    // Page 1 has rows, page 2 is what `getChats` resolves to when the request fails (the failure is swallowed inside the api layer).
     queueGetChats([[makeSession(0), makeSession(1), makeSession(2)], []])
     const wrapper = mountChatsList()
     await flush()
     expect(chatRowNames(wrapper).length).toBe(3)
 
-    // A refresh (what the SSE session-event handler triggers) returns empty.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (wrapper.vm as any).loadChats()
     await flush()
@@ -183,8 +180,7 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(chatRowNames(wrapper)).toHaveLength(0)
 
-    // The failure is treated as a failed refresh, so the first backoff step
-    // (1s) comes back for an answer instead of leaving RECENT at zero.
+    // The failure is treated as a failed refresh, so the first backoff step (1s) comes back for an answer instead of leaving RECENT at zero.
     await vi.advanceTimersByTimeAsync(1_000)
     await vi.advanceTimersByTimeAsync(0)
     expect(chatRowNames(wrapper).length).toBe(1)
@@ -200,8 +196,7 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(chatRowNames(wrapper)).toHaveLength(0)
 
-    // Nothing to protect, so no retry storm: a genuinely empty scope
-    // settles after the single request.
+    // Nothing to protect, so no retry storm: a genuinely empty scope settles after the single request.
     await vi.advanceTimersByTimeAsync(60_000)
     expect(spy).toHaveBeenCalledTimes(1)
     expect(chatRowNames(wrapper)).toHaveLength(0)
@@ -237,8 +232,6 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
       )
     const wrapper = mountChatsList()
     await flush()
-    // Selected by name: the SFC is generic (`<script setup generic="T">`),
-    // so the component value does not satisfy findComponent's overload.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const scroller = wrapper.findComponent({ name: 'VirtualScroller' }) as any
     expect(scroller.props('totalCount')).toBe(5)
@@ -247,8 +240,7 @@ describe('ChatsList — empty refresh must not blank the RECENT list', () => {
     route.fullPath = route.path
     await nextTick()
     await flush()
-    // ws_B's response never lands; the total from ws_A must not survive,
-    // or the scroller's `items.length < totalCount` gate pages past the end.
+    // ws_B's response never lands; the total from ws_A must not survive, or the scroller's `items.length < totalCount` gate pages past the end.
     expect(getChats).toHaveBeenCalled()
     expect(scroller.props('totalCount')).toBe(0)
     wrapper.unmount()

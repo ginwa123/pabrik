@@ -1,6 +1,4 @@
-// Functional: chat content envelopes (Option A) stay wire-compatible. POST
-// /api/llm/session with a plain `queue_message`, then poll GET
-// /api/llm/session/:id/messages until the user row lands.
+// Functional: chat content envelopes (Option A) stay wire-compatible.
 
 const std = @import("std");
 const testing = std.testing;

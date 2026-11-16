@@ -1,5 +1,4 @@
-//! `DELETE /api/workspaces/:workspace_id/skills/:skill_name`. Removes one
-//! skill row and its companion assets, scoped to one workspace.
+//! `DELETE /api/workspaces/:workspace_id/skills/:skill_name`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -19,18 +18,14 @@ pub const SkillDeleteInput = struct {
     skill_name: []const u8,
 };
 
-/// Every response this handler emits — success and failure alike — has
-/// this shape, so a client that reads `success` never has to branch on
-/// which status code it got first.
+/// Every response this handler emits — success and failure alike — has this shape, so a client that reads `success` never has to branch on which status code it …
 pub const SkillDeleteResponse = struct {
     success: bool,
     skill_name: []const u8,
     error_message: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -44,16 +39,12 @@ fn useCase(
     skills_store.deleteSkill(allocator, db, input.workspace_id, input.skill_name) catch |err| switch (err) {
         error.NotFound => return error.NotFound,
         error.DeleteFailed => return error.DeleteFailed,
-        // Both ids are non-empty by the guard above, so this arm is only
-        // reachable if the two checks ever drift apart. Caller error, not
-        // a silent not-found.
+        // Both ids are non-empty by the guard above, so this arm is only reachable if the two checks ever drift apart.
         error.WorkspaceIdNameRequired => return error.IdsRequired,
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn skillDeleteHandler(
     ctx: gserverz.HttpContext,
@@ -78,9 +69,7 @@ pub fn skillDeleteHandler(
         };
         const message: []const u8 = switch (err) {
             error.IdsRequired => "workspace_id and skill_name required",
-            // A name that belongs to another workspace reports the same
-            // message as one that does not exist: a 403 would confirm the
-            // name exists, which is the leak the scoping exists to hide.
+            // A name that belongs to another workspace reports the same message as one that does not exist: a 403 would confirm the name exists, which is the leak the …
             error.NotFound => "skill not found",
             error.DeleteFailed => "DB error",
         };
@@ -102,9 +91,7 @@ pub fn skillDeleteHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-// The `zig build test` module graph never CALLS this handler — the test
-// binary contains no HTTP server — so nothing else in that build analyses its
-// body, and an error-set mismatch between the handler and the store it calls
+// The `zig build test` module graph never CALLS this handler — the test binary contains no HTTP server — so nothing else in that build analyses its body, and an …
 comptime {
     _ = &skillDeleteHandler;
 }

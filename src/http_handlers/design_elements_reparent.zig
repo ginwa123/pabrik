@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reparent-batch`.
-//! Atomic N-element reparent.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reparent-batch`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -16,15 +14,13 @@ const ReparentBatchBody = struct {
     reposition: []const u8 = "",
 };
 
-/// Domain-level error set. The handler maps each variant to an
-/// HTTP status code via two exhaustive switches below.
+/// Domain-level error set.
 pub const DesignElementsReparentError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
     /// `element_ids` was missing or empty.
     EmptyElementIds,
-    /// `new_parent_id` was non-null but the target element doesn't
-    /// exist, isn't on this page, or isn't a `group`/`frame`.
+    /// `new_parent_id` was non-null but the target element doesn't exist, isn't on this page, or isn't a `group`/`frame`.
     BadNewParentId,
     /// One or more element_ids is missing from the DB.
     BadElementId,
@@ -40,9 +36,7 @@ pub const DesignElementsReparentError = error{
     OutOfMemory,
 };
 
-/// Translate the wire `reposition` string to the enum. Unknown
-/// values silently map to `null` (no position recompute) for
-/// forward compatibility.
+/// Translate the wire `reposition` string to the enum.
 fn repositionFromString(s: []const u8) ?design_model.RepositionMode {
     if (std.mem.eql(u8, s, "last_in_parent")) return .last_in_parent;
     return null;
@@ -52,15 +46,12 @@ fn repositionFromString(s: []const u8) ?design_model.RepositionMode {
 pub const ReparentBatchInput = struct {
     page_id: []const u8,
     element_ids: []const []const u8,
-    /// null = top-level. The handler passes empty string or null;
-    /// both map to "no parent".
+    /// null = top-level.
     new_parent_id: ?[]const u8,
     reposition: ?design_model.RepositionMode,
 };
 
-/// Use case — thin wrapper over `design_model.reparentElements`
-/// that maps the model's `anyerror` set to the handler's structured
-/// `DesignElementsReparentError`.
+/// Use case — thin wrapper over `design_model.reparentElements` that maps the model's `anyerror` set to the handler's structured `DesignElementsReparentError`.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -84,8 +75,7 @@ pub fn useCase(
     };
 }
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// delegates, and maps the outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn designElementsReparentBatchHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -119,8 +109,7 @@ pub fn designElementsReparentBatchHandler(
         });
     };
 
-    // Translate wire `new_parent_id: null` AND `""` to null
-    // (SQL COALESCE convention: empty string IS top-level).
+    // Translate wire `new_parent_id: null` AND `""` to null (SQL COALESCE convention: empty string IS top-level).
     const new_parent_id: ?[]const u8 = if (parsed.new_parent_id) |p|
         if (p.len == 0) null else p
     else
@@ -187,8 +176,6 @@ pub fn designElementsReparentBatchHandler(
 }
 
 // ─── Behavioural tests for `useCase` (Chunk 1b Tasks 1b.2 + 1b.3) ─────────
-// Pulled in from design_elements_reparent_test.zig — one-file-per-impl
-// convention.
 
 const testing_reparent_handler = std.testing;
 const sqlite_reparent_handler = pabrikcore.sqlite;

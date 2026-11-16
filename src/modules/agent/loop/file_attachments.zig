@@ -1,6 +1,4 @@
-//! Codec + policy for chat file attachments (PDF and documents). One wire field carries them:
-//! `file_attachments`, a JSON array of `{name, mime, b64}`. The backend classifies each file ONCE,
-//! at the HTTP boundary, so the model path never re-decodes them.
+//! Codec + policy for chat file attachments (PDF and documents). One wire field carries them
 const std = @import("std");
 const testing = std.testing;
 
@@ -11,8 +9,7 @@ pub const RequestFile = struct {
     b64: []const u8,
 };
 
-/// A file as the backend stores it. A text-like document carries `text`, a
-/// binary file carries `b64`. Exactly one of the two is set.
+/// A file as the backend stores it.
 pub const StoredFile = struct {
     name: []const u8,
     mime: []const u8,
@@ -34,8 +31,7 @@ pub const Kind = enum {
     text_like,
     /// A PDF — a provider file part.
     pdf,
-    /// A rich binary document (doc/docx/xls/xlsx/ppt/pptx/odt) — a provider
-    /// file part, but only the Responses API accepts one.
+    /// A rich binary document (doc/docx/xls/xlsx/ppt/pptx/odt) — a provider file part, but only the Responses API accepts one.
     rich_binary,
     /// A type the model has no way to read.
     unsupported,
@@ -98,9 +94,7 @@ const RICH_BINARY_EXTENSIONS = [_][]const u8{
     "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf",
 };
 
-/// The MIME each rich binary extension really is. A browser reports
-/// `application/octet-stream` (or nothing) for these, and the provider needs
-/// the true type, so the extension decides.
+/// The MIME each rich binary extension really is.
 const RICH_BINARY_MIME_BY_EXTENSION = [_]struct { ext: []const u8, mime: []const u8 }{
     .{ .ext = "doc", .mime = "application/msword" },
     .{ .ext = "docx", .mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
@@ -149,9 +143,7 @@ pub fn isRichBinaryMime(mime: []const u8) bool {
     return inList(&RICH_BINARY_MIMES, mime);
 }
 
-/// The kind of file this is. A browser that reports no MIME type is judged
-/// by its extension, so a `.md` file still arrives as text. A type the model
-/// has no way to read is `unsupported` — it is rejected, never dropped.
+/// The kind of file this is.
 pub fn classify(name: []const u8, mime: []const u8) Kind {
     if (isPdfMime(mime) or equalsIgnoreCase(extensionOf(name), "pdf")) return .pdf;
     if (isRichBinaryMime(mime)) return .rich_binary;
@@ -163,9 +155,7 @@ pub fn classify(name: []const u8, mime: []const u8) Kind {
     return .unsupported;
 }
 
-/// The MIME a provider should be told for this file. A rich binary document
-/// takes the MIME its extension really is, because the browser reports
-/// `application/octet-stream` for those.
+/// The MIME a provider should be told for this file.
 pub fn providerMime(kind: Kind, name: []const u8, mime: []const u8) []const u8 {
     return switch (kind) {
         .pdf => "application/pdf",
@@ -184,9 +174,7 @@ fn richBinaryMime(name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// True when this wire style can carry a file of this kind. Chat Completions
-/// takes PDF only; the Responses API takes the rich binary documents too;
-/// Anthropic takes PDF only.
+/// True when this wire style can carry a file of this kind.
 pub fn styleCarries(url_style: []const u8, kind: Kind) bool {
     return switch (kind) {
         .text_like => true,
@@ -197,23 +185,18 @@ pub fn styleCarries(url_style: []const u8, kind: Kind) bool {
 }
 
 /// True when this wire style can carry a file of this kind AS A FILE PART.
-/// A text-like document never rides as a file part — it is sent as text,
-/// which every style accepts.
 pub fn styleCarriesFile(url_style: []const u8, kind: Kind) bool {
     if (kind == .text_like) return false;
     return styleCarries(url_style, kind);
 }
 
-/// The text a model reads for a text-like document. The header names the
-/// file so the model knows what the block is.
+/// The text a model reads for a text-like document.
 pub fn textPart(allocator: std.mem.Allocator, file: StoredFile) ![]u8 {
     const text = file.text orelse return error.NotATextFile;
     return std.fmt.allocPrint(allocator, "[Attached file: {s}]\n{s}", .{ file.name, text });
 }
 
-/// The decoded byte count of a base64 payload. The trailing `=` characters are
-/// already accounted for by the leftover-character count, so they are not
-/// subtracted a second time.
+/// The decoded byte count of a base64 payload.
 pub fn decodedSize(b64: []const u8) u64 {
     var len = b64.len;
     while (len > 0 and b64[len - 1] == '=') len -= 1;
@@ -283,8 +266,7 @@ pub const RequestFiles = struct {
     }
 };
 
-/// Parse the `file_attachments` wire field — a JSON array of
-/// `{name, mime, b64}`. An empty string means "no attachments".
+/// Parse the `file_attachments` wire field — a JSON array of `{name, mime, b64}`.
 pub fn parseRequest(allocator: std.mem.Allocator, text: []const u8) !RequestFiles {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -344,8 +326,7 @@ const StoredFileJson = struct {
     b64: ?[]const u8 = null,
 };
 
-/// A parsed attachment list. The strings it holds live in its arena, so
-/// `deinit` releases all of them at once.
+/// A parsed attachment list.
 pub const Stored = struct {
     arena: std.heap.ArenaAllocator,
     files: []const StoredFile,
@@ -482,8 +463,7 @@ test "classify reads a rich binary document" {
 }
 
 test "providerMime gives a rich binary document the mime its extension really is" {
-    // A browser reports `application/octet-stream` for a .docx, and the
-    // provider needs the true type.
+    // A browser reports `application/octet-stream` for a .docx, and the provider needs the true type.
     try testing.expectEqualStrings(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         providerMime(.rich_binary, "a.docx", "application/octet-stream"),
@@ -585,9 +565,7 @@ test "normalize keeps a text document as text and a pdf as base64" {
 }
 
 test "normalize rejects a batch larger than the total byte cap" {
-    // Each file decodes to just over a quarter of the cap, so four of them
-    // cross it. The payload is base64 of zeroes — the cap is checked on the
-    // DECODED size, before anything is decoded.
+    // Each file decodes to just over a quarter of the cap, so four of them cross it.
     const per_file_decoded = MAX_TOTAL_BYTES / 3;
     const per_file_b64 = per_file_decoded / 3 * 4;
     const big = try testing.allocator.alloc(u8, per_file_b64);

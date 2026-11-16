@@ -1,5 +1,4 @@
-/** Static contract: the chatview's EMPTY STATE may only render on a server-confirmed empty
- * transcript. */
+/** Static contract: the chatview's EMPTY STATE may only render on a server-confirmed empty transcript. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -10,9 +9,7 @@ const apiSrc = readFileSync(resolve(__dirname, '../../../api/chatHistory.ts'), '
 
 describe('ChatView empty state is gated on a server-confirmed empty transcript', () => {
   it('the empty state template requires historyConfirmed', () => {
-    // The exact expression, whitespace-tolerantly — prettier wraps this
-    // `v-if` across several lines, so a single-line regex would silently stop
-    // matching and let a broken file pass.
+    // The exact expression, whitespace-tolerantly — prettier wraps this `v-if` across several lines, so a single-line regex would silently stop matching and let a …
     expect(chatViewSrc).toMatch(
       /v-if="[\s\S]{0,120}?historyConfirmed\s*&&\s*!isInitializing\s*&&\s*!isLoading\s*&&\s*!error\s*&&\s*messageGroups\.length === 0[\s\S]{0,20}?"/,
     )
@@ -27,9 +24,7 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
   })
 
   it('the transcript is fetched with the typed variant, not the swallowing one', () => {
-    // `getChatHistory` answering `[]` on failure IS the bug; the initial load must use
-    // `fetchChatHistoryEffect`, whose error channel keeps "the backend is down" separate from
-    // "there are no messages".
+    // `getChatHistory` answering `[]` on failure IS the bug; the initial load must use `fetchChatHistoryEffect`, whose error channel keeps "the backend is down" …
     const attemptBody = chatViewSrc.slice(
       chatViewSrc.indexOf('const runHistoryLoadAttempt = async () =>'),
       chatViewSrc.indexOf('const runHistoryLoadAttemptEffect'),
@@ -42,12 +37,9 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
 
   it('the initial load is wrapped in the retry schedule, with isLoading held across attempts', () => {
     expect(chatViewSrc).toMatch(/fetchInitialHistoryWithRetry\(runHistoryLoadAttemptEffect/)
-    // The attempt body is a separate function so the retry re-runs the whole
-    // thing (cache-prime included) rather than a half-applied load.
+    // The attempt body is a separate function so the retry re-runs the whole thing (cache-prime included) rather than a half-applied load.
     expect(chatViewSrc).toMatch(/const runHistoryLoadAttempt = async \(\) =>/)
-    // `isLoading` is set true in the wrapper and cleared by `Effect.ensuring` — never between
-    // attempts, so the skeleton never flickers out mid-wait. That is the `finally`, expressed on
-    // the error channel (AGENTS.md: no `try`/`catch` in the desktop app).
+    // `isLoading` is set true in the wrapper and cleared by `Effect.ensuring` — never between attempts, so the skeleton never flickers out mid-wait.
     expect(chatViewSrc).toMatch(
       /Effect\.ensuring\([\s\S]*?Effect\.sync\(\(\) => \{\s*\n\s*isLoading\.value = false/,
     )
@@ -55,8 +47,7 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
 
   it('a fully-failed load lands in the error state, not the empty state', () => {
     expect(chatViewSrc).toMatch(/error\.value = 'Failed to load messages'/)
-    // The handler for the exhausted retry schedule: `Effect.tapError`, not a
-    // `catch`, so the failure is read off the error channel.
+    // The handler for the exhausted retry schedule: `Effect.tapError`, not a `catch`, so the failure is read off the error channel.
     expect(chatViewSrc).toMatch(
       /Effect\.tapError\(fetchInitialHistoryWithRetry\([\s\S]*?error\.value = 'Failed to load messages'/,
     )
@@ -65,29 +56,24 @@ describe('ChatView empty state is gated on a server-confirmed empty transcript',
 
 describe('getChatHistory keeps its best-effort contract; fetchChatHistoryEffect does not', () => {
   it('fetchChatHistoryEffect returns an Effect, not a promise that may fake an empty', () => {
-    // The whole point of the function is that it does NOT hand back an empty
-    // transcript on failure, so it must contain no swallowing catch at all
-    // (oxlint's no-useless-catch is what forced this shape; keep it).
+    // The whole point of the function is that it does NOT hand back an empty transcript on failure, so it must contain no swallowing catch at all (oxlint's …
     const body = apiSrc.slice(
       apiSrc.indexOf('export function fetchChatHistoryEffect('),
       apiSrc.indexOf('export function getChatHistory('),
     )
     expect(body).toMatch(/Effect\.Effect<ChatHistoryResponse, ChatHistoryError>/)
     expect(body).toMatch(/Effect\.tryPromise\(\{/)
-    // No `catch`, and no empty-transcript fallback of its own: the failure
-    // leaves on the error channel, which is the entire point.
+    // No `catch`, and no empty-transcript fallback of its own: the failure leaves on the error channel, which is the entire point.
     expect(body).not.toMatch(/\bcatch \(/)
     expect(body).not.toMatch(/messages: \[\]/)
   })
 
   it('getChatHistory still swallows — AppLayout cwd fallback + worktree refresh depend on it', () => {
-    // Pinned by sseSkills.spec.ts too; reverting this reintroduces a silent
-    // failure for the three best-effort metadata callers.
+    // Pinned by sseSkills.spec.ts too; reverting this reintroduces a silent failure for the three best-effort metadata callers.
     expect(apiSrc).toMatch(
       /export function getChatHistory\([\s\S]*?fetchChatHistoryEffect\(sessionId, limit, cursor, direction\)[\s\S]*?Effect\.catchAll\(/,
     )
-    // The empty shape is a named constant, not an inline literal, so a reader
-    // can tell it apart from a real response at a glance.
+    // The empty shape is a named constant, not an inline literal, so a reader can tell it apart from a real response at a glance.
     expect(apiSrc).toMatch(/const EMPTY_CHAT_HISTORY: ChatHistoryResponse = \{/)
   })
 })

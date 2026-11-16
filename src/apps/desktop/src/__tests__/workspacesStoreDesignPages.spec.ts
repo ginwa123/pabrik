@@ -1,6 +1,4 @@
-/** Unit tests for the design-pages cache in the workspaces store. Pre-fix (before the
- * design-pages-in-workspace-tree plan), page CRUD owned its own `pages` ref + handlers in
- * DesignView.vue. The logic was tested via UI clicks against DesignView.spec.ts. */
+/** Unit tests for the design-pages cache in the workspaces store. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -33,14 +31,11 @@ describe('workspacesStore — design pages cache', () => {
 
   afterEach(() => {
     fetchMock.mockReset()
-    // Don't restore global.fetch here — the test file's own teardown
-    // does that. (We do clear the mock, but the global.fetch proxy
-    // stays until the next test re-binds it.)
+    // Don't restore global.fetch here — the test file's own teardown does that.
   })
 
   it('addDesignPage appends to the cache and sets activeDesignPageId', async () => {
-    // Simulate the initial listDesignPages call (returns 2 pages)
-    // then a POST that returns the new page.
+    // Simulate the initial listDesignPages call (returns 2 pages) then a POST that returns the new page.
     fetchMock
       .mockResolvedValueOnce({
         ok: true, status: 200,
@@ -77,9 +72,7 @@ describe('workspacesStore — design pages cache', () => {
   })
 
   it('addDesignPage auto-increments Untitled → Untitled 1 → Untitled 2', async () => {
-    // No existing pages. The first POST uses 'Untitled', the next uses 'Untitled 1', then 'Untitled
-    // 2'. The naming logic lives in the SIDEBAR's handleAddDesignPage (which picks the next name
-    // before calling the store), so this test goes through Sidebar.via's handler chain.
+    // No existing pages.
     fetchMock
       .mockResolvedValueOnce({
         ok: true, status: 200,
@@ -106,8 +99,7 @@ describe('workspacesStore — design pages cache', () => {
     await store.fetchDesignPages(WS_ID, ITEM_ID)
     expect(store.designPagesByItemId[ITEM_ID]).toHaveLength(0)
 
-    // Simulate the three Sidebar handler calls (which compute the
-    // auto-increment name based on the cache at click time).
+    // Simulate the three Sidebar handler calls (which compute the auto-increment name based on the cache at click time).
     const names = ['Untitled', 'Untitled 1', 'Untitled 2']
     for (const name of names) {
       await store.addDesignPage(WS_ID, ITEM_ID, name)
@@ -174,9 +166,7 @@ describe('workspacesStore — design pages cache', () => {
   })
 
   it('addDesignPage + deleteDesignPage in sequence leave the cache consistent', async () => {
-    // Smoke test: add → delete → add → delete → empty cache, active
-    // page id is ''. Validates the cache + active-page fallback
-    // chain stays ordered under interleaved operations.
+    // Smoke test: add → delete → add → delete → empty cache, active page id is ''.
     fetchMock
       .mockResolvedValueOnce({
         ok: true, status: 200,

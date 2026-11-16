@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import router from '../router/index'
 
-/** Global catch-all (`/:pathMatch(.*)*` → `/app`). The backend serves index.html for any
- * route-style path under /app (static_files.zig SPA fallback), so a refresh at a deep link always
- * boots the SPA — but without a matching frontend route Vue renders an empty router-view. */
+/** Global catch-all (`/:pathMatch(.*)*` → `/app`). */
 describe('router catch-all', () => {
   it('redirects an unknown /app deep link to /app', async () => {
     await router.push('/app/kanban/ghost-item')
@@ -26,8 +24,7 @@ describe('router catch-all', () => {
     await router.push('/app/kanban/item_1/settings')
     expect(router.currentRoute.value.path).toBe('/app/kanban/item_1/settings')
 
-    // Would land on /app via the catch-all if this route were registered
-    // after it.
+    // Would land on /app via the catch-all if this route were registered after it.
     await router.push('/app/ws_1/projects/item_7/add')
     expect(router.currentRoute.value.path).toBe('/app/ws_1/projects/item_7/add')
 
@@ -36,8 +33,7 @@ describe('router catch-all', () => {
   })
 
   it('maps the board and its add-task page to ONE route record', () => {
-    // Two records would mean no route guard ever sees the move between them: the browser Back
-    // button would change the URL back to the board while the add page stayed on screen.
+    // Two records would mean no route guard ever sees the move between them: the browser Back button would change the URL back to the board while the add page stayed …
     const board = router.resolve('/app/ws_1/projects/item_7')
     const add = router.resolve('/app/ws_1/projects/item_7/add')
     expect(add.matched[0]).toBe(board.matched[0])

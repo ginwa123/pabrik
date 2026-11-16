@@ -1,6 +1,4 @@
-//! `PATCH /api/agent-kanbans/:kanban_id/system_prompt/:prompt_id`. Updates
-//! title and/or content of an existing system-prompt entry. Body: `{title?,
-//! content?}` (both optional; at least one required).
+//! `PATCH /api/agent-kanbans/:kanban_id/system_prompt/:prompt_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,8 +16,7 @@ const UpdateSystemPromptBody = struct {
 /// Subset of the system-prompt row returned by the use-case.
 pub const SystemPrompt = agent_kanban_db.SystemPromptRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const SystemPromptUpdateError = error{
     /// `kanban_id` or `prompt_id` path param was missing or empty.
     IdsRequired,
@@ -48,13 +45,9 @@ pub const SystemPromptUpdateOutput = struct {
     system_prompt: SystemPrompt,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Update an existing system-prompt row. Validates that at least one of
-/// `title` / `content` is provided, then UPDATE-with-dynamic-SQL the
-/// requested fields and SELECT-refetch the row. Transport-agnostic.
+/// Update an existing system-prompt row.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -82,9 +75,7 @@ fn useCase(
     return .{ .system_prompt = system_prompt };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanSystemPromptUpdateHandler(
@@ -140,7 +131,6 @@ pub fn agentKanbanSystemPromptUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

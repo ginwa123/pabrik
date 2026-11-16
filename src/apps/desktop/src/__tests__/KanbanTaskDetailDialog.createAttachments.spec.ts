@@ -39,8 +39,7 @@ async function pasteImage(textareaSelector: string, file: File) {
   const ta = document.querySelector<HTMLTextAreaElement>(textareaSelector)
   if (!ta) throw new Error(`No textarea found: ${textareaSelector}`)
   ta.dispatchEvent(fakeClipboardEvent(file))
-  // FileReader.onload needs an event-loop tick — flushPromises alone
-  // is not enough (microtask vs macrotask).
+  // FileReader.onload needs an event-loop tick — flushPromises alone is not enough (microtask vs macrotask).
   await new Promise((resolve) => setTimeout(resolve, 50))
   await flushPromises()
 }
@@ -136,9 +135,7 @@ describe('KanbanTaskDetailDialog — create mode image attachments', () => {
     expect(emitted).toBeTruthy()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload = (emitted![0] as any[])[0]
-    // Description still has ONLY the user's text — no `data:image/`
-    // payload, no `![name](…)` block (the editor doesn't insert it
-    // until after upload, which happens server-side).
+    // Description still has ONLY the user's text — no `data:image/` payload, no `![name](…)` block (the editor doesn't insert it until after upload, which happens …
     expect(payload.description).toBe('Some text before the image')
     expect(payload.description).not.toContain('data:image/')
     expect(payload.description).not.toContain('base64')
@@ -206,9 +203,7 @@ describe('KanbanTaskDetailDialog — create mode image attachments', () => {
   })
 
   it('does NOT include pendingFiles in edit-mode save emit (legacy contract)', async () => {
-    // Edit mode is unchanged — uploads happen inline via the editor
-    // before the dialog ever sees the file. The save emit should keep
-    // its current shape (no pendingFiles field).
+    // Edit mode is unchanged — uploads happen inline via the editor before the dialog ever sees the file.
     const task = {
       id: 'task_x',
       name: 'Edit me',
@@ -228,8 +223,7 @@ describe('KanbanTaskDetailDialog — create mode image attachments', () => {
     expect(emitted).toBeTruthy()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload = (emitted![0] as any[])[0]
-    // Edit-mode save stays free of pendingFiles — host doesn't need
-    // to do anything post-upload (the editor already uploaded).
+    // Edit-mode save stays free of pendingFiles — host doesn't need to do anything post-upload (the editor already uploaded).
     expect(payload.pendingFiles).toBeUndefined()
   })
 })

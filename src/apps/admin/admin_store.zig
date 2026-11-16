@@ -1,6 +1,4 @@
-//! Data access for the admin console. Everything here talks to `users`
-//! (Migration 077) and `auth_sessions` (Migration 089), plus the read-only
-//! `workspaces` listing the machines section needs.
+//! Data access for the admin console.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -29,8 +27,7 @@ pub const Overview = struct {
     active_sessions: u32 = 0,
 };
 
-/// The failures the console knows about. A database failure is one of them
-/// (`DatabaseError`), so a caller never has to catch two error sets.
+/// The failures the console knows about.
 pub const Error = error{
     /// No account carries that id.
     UserNotFound,
@@ -44,15 +41,12 @@ pub const Error = error{
     OutOfMemory,
 };
 
-/// `created_at`/`last_login_at` are `TIMESTAMP`; postgres' own cast keeps
-/// microseconds, so both render through `timestampText` into the
-/// `YYYY-MM-DD HH:MM:SS` the console shows.
+/// `created_at`/`last_login_at` are `TIMESTAMP`; postgres' own cast keeps microseconds, so both render through `timestampText` into the `YYYY-MM-DD HH:MM:SS` the …
 const user_columns: []const u8 = "SELECT id, email, COALESCE(CAST(name AS TEXT), ''), role, is_active, " ++
     "COALESCE(" ++ dialect.timestampText("created_at") ++ ", ''), " ++
     "COALESCE(" ++ dialect.timestampText("last_login_at") ++ ", '')";
 
-/// The system account is not a person and can never sign in, so the console
-/// leaves it out of every list.
+/// The system account is not a person and can never sign in, so the console leaves it out of every list.
 fn rowToUser(allocator: std.mem.Allocator, values: []const []const u8) !UserRow {
     if (values.len < 7) return error.QueryFailed;
     return .{
@@ -181,9 +175,7 @@ pub fn emailTaken(allocator: std.mem.Allocator, db: Db, email: []const u8) !bool
     return false;
 }
 
-/// Create an account. The caller owns the id, the email and the hash. The
-/// row is NOT read back: a pooled reader can still be serving the snapshot
-/// it opened before this write, so this returns the row it wrote.
+/// Create an account.
 pub fn insertUser(
     allocator: std.mem.Allocator,
     db: Db,
@@ -210,9 +202,7 @@ pub fn insertUser(
     };
 }
 
-/// Change an account's role and/or whether it may sign in. The last active
-/// owner is never demoted: an installation with no owner cannot be
-/// administered again. The row returned is the one written, not a re-read.
+/// Change an account's role and/or whether it may sign in.
 pub fn updateUser(
     allocator: std.mem.Allocator,
     db: Db,
@@ -271,16 +261,12 @@ pub fn setPasswordHash(
     ) catch return error.DatabaseError;
 }
 
-// =====================================================================
 // Tests — a fresh database on the compiled backend, with the real schema.
-// =====================================================================
 
 const test_db = @import("test_db.zig");
 const testing = std.testing;
 
-/// The DDL migration 077/089 writes, valid on both backends: `is_active` is
-/// `INTEGER` (not `BOOLEAN`) on postgres too, so the `is_active = 1` filters
-/// below read either schema unchanged.
+/// The DDL migration 077/089 writes, valid on both backends: `is_active` is `INTEGER` (not `BOOLEAN`) on postgres too, so the `is_active = 1` filters below read …
 pub fn ensureSchema(allocator: std.mem.Allocator, db: Db) !void {
     try db.exec(allocator,
         \\CREATE TABLE IF NOT EXISTS users (
@@ -540,9 +526,7 @@ test "setPasswordHash replaces the stored hash and reports an unknown id" {
 
 // ─── workspaces: read-only, for the machines section ────────────────────────
 
-/// One workspace as far as a console without a manager can know it: the row in
-/// the database. The machine behind it belongs to a manager this program does
-/// not link, which is why every row says `no manager`.
+/// One workspace as far as a console without a manager can know it: the row in the database.
 pub const WorkspaceRow = struct {
     id: []const u8,
     name: []const u8,
@@ -556,9 +540,7 @@ pub fn freeWorkspaces(allocator: std.mem.Allocator, rows: []WorkspaceRow) void {
     allocator.free(rows);
 }
 
-/// Every workspace, by name. A database the console created for itself has no
-/// `workspaces` table (it only ever needs `users`), and that is an empty list,
-/// not a failure: the console still works, it just has nothing to list.
+/// Every workspace, by name.
 pub fn listWorkspaces(allocator: std.mem.Allocator, db: Db) ![]WorkspaceRow {
     if (!try tableExists(allocator, db, "workspaces")) return allocator.alloc(WorkspaceRow, 0);
 
@@ -588,8 +570,7 @@ pub fn listWorkspaces(allocator: std.mem.Allocator, db: Db) ![]WorkspaceRow {
     return out.toOwnedSlice(allocator);
 }
 
-/// True when the current schema holds a table with that name — `sqlite_master`
-/// on sqlite, `information_schema` on postgres.
+/// True when the current schema holds a table with that name — `sqlite_master` on sqlite, `information_schema` on postgres.
 pub fn tableExists(allocator: std.mem.Allocator, db: Db, name: []const u8) !bool {
     var q = try db.query(
         allocator,

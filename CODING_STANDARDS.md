@@ -417,50 +417,47 @@ should not have to remember it. Before adding one:
 
 ---
 
-## 4. A comment block is at most three lines
+## 4. A comment block is ONE line
 
 **Capped.** The rule is `zginlint/max-comment-lines`, implemented in
 github.com/ginwa123/zglint and pinned by URL + hash in `build.zig.zon`. It
-is run by `zig build zginlint:check`, wired into the `zginlint` job of
-`.github/workflows/ci.yml` and mirrored by `.husky/pre-commit`. The tree is
-at zero findings, so the gate asks for zero — there is no baseline and no
-suppression.
+is run by `zig build zginlint:check` with `--max-comment-lines 1`, wired
+into the `zginlint` job of `.github/workflows/ci.yml` and mirrored by
+`.husky/pre-commit`. The tree is at zero findings, so the gate asks for zero
+— there is no baseline and no suppression.
 
 ```zig
-// WRONG — one block, four lines.
+// WRONG — one block, three lines.
 // The runner reads its own shard of the queue, retries a failed delivery
 // twice, then parks the message in the dead-letter table.
-// Talk to the platform team before changing the retry count.
 
-// RIGHT — three lines. The extra sentences belong in the commit message,
-// the PR body or `docs/`, where they are read once and do not sit in the
-// middle of the function they describe.
+// RIGHT — one line. The operation this guards, and nothing else. The extra
+// sentences belong in the commit message, the PR body or `docs/`.
 ```
 
 ### The rule
 
 - A **comment line** carries comment content and no code byte, so a blank
   line or a line with code on it ends the block.
-- A **comment block** is a run of consecutive comment lines. Three lines
-  pass, four fail, and the finding is reported at the block's first line.
+- A **comment block** is a run of consecutive comment lines. One line
+  passes, two fail, and the finding is reported at the block's first line.
 - The ceiling is a CLI option: `--max-comment-lines N`.
 - `///` doc comments and `//!` container docs are comments like any other.
   There is no doc-string exemption.
 
 ### What is NOT banned
 
-- **Comments.** The rule is about length, not existence. A three-line
-  comment explaining a non-obvious invariant is what it is trying to
-  produce.
+- **Comments.** The rule is about length, not existence. A one-line
+  comment naming a non-obvious invariant is what it is trying to produce.
 - **A trailing comment after code.** `const x = 1; // note` is not a block
   and never counts towards one.
 - **Comment markers inside a literal.** `"// not a comment"` and a
   multi-line string fenced with `\\` are text; the lexer knows the
   difference and is unit-tested on it.
 - **`/* ... */` in any shape.** A block comment counts by the lines it
-  spans, nested or not: a 10-line one is a finding, a 2-line one is not.
+  spans: a 2-line one is a finding, a 1-line one is not.
 - **Prose everywhere else.** Docs, commit messages, PR bodies, issue text
-  and YAML comments are not Zig and are not scanned. Three lines is a
+  and YAML comments are not Zig and are not scanned. One line is a
   ceiling on code comments, not on writing.
 
 ### Why
@@ -469,10 +466,21 @@ A comment block is a paragraph, and a paragraph in the middle of a
 function grows until the code is off the screen. ESLint's `max-len` makes
 the same bet one level down: a number small enough that nobody argues with
 it, enforced by a machine, so that "this comment is too long" stops being
-a review comment. Three lines is enough for the *why* — which operation
-this is guarding, which invariant it is relying on — and not enough to
-smuggle a design document into a function body. The design document goes
-where it can be found: `docs/`, the commit message, the module README.
+a review comment. One line is enough for the *why* — which operation this
+guards, which invariant it relies on — and not enough to smuggle a design
+document into a function body. The design document goes where it can be
+found: `docs/`, the commit message, the module README.
+
+**Why one, and not three.** Three lines is one sentence of preamble, one
+sentence of the actual fact and one of history, and in practice the middle
+sentence was the only one carrying anything: the other two restated the
+code below them or recorded when the code changed, which `git log` already
+answers. A ceiling of one forces that judgement at write time — the author
+picks the load-bearing sentence instead of wrapping a paragraph and calling
+it documentation. The cost is real and this file admits it: the *third*
+sentence of a genuinely three-sentence explanation is now in the commit
+message, and finding it takes `git log -L` rather than a glance. That trade
+is the point — the reader of the function gets one line, not four.
 
 ### Zero, not a ceiling
 
@@ -493,22 +501,50 @@ allowlist is a rule nobody can tell is being followed, and the allowlist
 becomes a second, worse rule to maintain."* The baseline was the second
 rule. It is gone.
 
-**What the conversion did.** Every over-long block was re-wrapped to at
-most three lines, cut at a sentence boundary so no sentence is left
+**What the three-line conversion did.** Every over-long block was re-wrapped
+to at most three lines, cut at a sentence boundary so no sentence is left
 half-written. Where a block held more than three lines of prose, the
 overflow was deleted rather than relocated — 1.8 MB of it, spread over
 6,113 blocks. Relocating it would have meant 33 machine-written
 `README.md` files, three of them clobbering hand-written ones, in a diff
 nobody could review; that is the same failure the baseline was avoiding,
 one level down. The three lines that remain carry the load-bearing *why*.
-The rest was the design document §4 says does not belong in a function
-body.
+
+**What the one-line conversion did.** 24,520 blocks across 2,177 files were
+collapsed to a single line: 15,289 Zig blocks in 896 files, 6,966 Vue/TS
+blocks in 1,081 files, 2,265 Kotlin blocks in 200 files. Each block's lines
+were joined into one sentence stream and the **first complete sentence**
+was kept; everything after it was deleted, not relocated, for the reason
+above. 45,859 comment lines went out and 24,520 came back — a net 21,339
+lines of prose that the reader no longer scrolls past. 390 blocks whose
+first sentence ran past 160 characters were cut at a word boundary and
+marked with `…`, so a truncated sentence never reads as a complete one.
+
+Three shapes are preserved rather than compressed into prose, because
+dropping them changes behaviour or loses the heading entirely:
+
+- A **section banner** (`// ─── Tests ───…`) keeps its banner line and loses
+  its paragraph. The banner is structure; the paragraph was the design
+  document.
+- A **directive** (`// eslint-disable-next-line`, `// @ts-expect-error`,
+  `/// <reference types="vite/client" />`, `// noinspection`,
+  `// zig fmt: off`) survives verbatim, and the block collapses onto it. A
+  whole-file `/* eslint-disable */` keeps its block-comment form, because
+  ESLint honours that directive only in a block comment — a `//` spelling of
+  it silences nothing, which is a green gate that is not checking anything.
+  Two directives in one block cannot be merged into one line, so that shape
+  is left to a human; there are zero of them in this tree.
 
 **How it was checked.** The conversion touched comment lines only, and that
-is not a claim — it was verified. For all 727 files: zero findings remain,
-`zig ast-check` is clean, and the sequence of code-bearing lines is
-byte-identical to the pre-conversion tree. A comment-only refactor cannot
-change behaviour, and the diff proves it did not.
+is not a claim — it was verified. Per language the gate now returns zero
+findings at ceiling one, and per file the sequence of code-bearing lines is
+byte-identical to the pre-conversion tree: strip the comment lines from
+`git show HEAD:<file>` and from the working file and the two lists match,
+line for line. Zig additionally passes `zig ast-check` on every touched
+file; the Vue/TS half is re-parsed by ESLint (a broken `/* */` is a parse
+error) and type-checked by `vue-tsc --build`; the Kotlin half re-runs the
+scanner that produced the findings. A comment-only refactor cannot change
+behaviour, and the diff proves it did not.
 
 ### Running it
 
@@ -537,13 +573,12 @@ half is `local/max-comment-lines`, implemented in
 mirrors.
 
 ```ts
-// WRONG — one block, four lines.
+// WRONG — one block, three lines.
 // The runner reads its own shard of the queue, retries a failed delivery
 // twice, then parks the message in the dead-letter table.
-// Talk to the platform team before changing the retry count.
 
-// RIGHT — three lines. The extra sentences belong in the commit message,
-// the PR body or `docs/`, where they are read once and do not sit in the
+// RIGHT — one line. The extra sentences belong in the commit message, the
+// PR body or `docs/`, where they are read once and do not sit in the
 // middle of the function they describe.
 ```
 
@@ -553,11 +588,11 @@ Identical to §4's, because it is the same rule:
 
 - A **comment line** carries comment content and no code byte, so a blank
   line or a line with code on it ends the block.
-- A **comment block** is a run of consecutive comment lines. Three lines
-  pass, four fail, and the finding is reported at the block's first line.
+- A **comment block** is a run of consecutive comment lines. One line
+  passes, two fail, and the finding is reported at the block's first line.
 - A `/* ... */` comment counts by the lines it spans, nested or not.
 - `/** ... */` JSDoc counts like any other comment. There is no doc-string
-  exemption — the frontend's API docs are the bulk of the baselined debt.
+  exemption.
 
 ### What is NOT banned
 
@@ -574,6 +609,8 @@ Identical to §4's, because it is the same rule:
   `vue-eslint-parser` exposes them as `HTMLComment` nodes, so they ARE
   reachable — capping them means rewriting 153 files of template prose,
   which is the unreviewable whole-repo diff §4 avoided with a baseline.
+  The one-line conversion left them alone for the same reason; this is a
+  gap in the gate, not a claim that template prose is now short.
 - **CSS comments in `<style>`.** Out of scope for a harder reason:
   `vue-eslint-parser` does not parse the style block at all, so there is
   no AST to read and no honest way to count them. 102 exist, 72 of them
@@ -590,35 +627,34 @@ The frontend already has a per-file count ratchet — `eslint
 baseline format for the same job would be a second thing to maintain and a
 second thing to get wrong, so this rule plugs into the existing one.
 
-### Why a ceiling exists at all — and when it goes away
+### Why there is no baseline for this rule
 
-**Zero is the requirement for new code. The ceiling is a dated stopgap for
-the code that is already here**, and it is the third deliberate exception
-to §3's "land it with zero debt".
-
-Measured 2026-10-15 over `src/`: **3,822 findings in 733 files**, with
-`src/api/index.ts` at 289 blocks and
-`src/components/views/ChatView.vue` at 205. The rule's own files are at
-**zero** — `eslint-rules/maxCommentLines.ts`, `eslint.config.ts` and
-`src/__tests__/maxCommentLines.spec.ts` are deliberately absent from the
-baseline, so a block over three lines in one of them fails the gate
-immediately.
-
-Why not convert them in this change: the conversion is 733 files and it is
-not mechanical. Each block has to be shortened, moved into a `///` doc
-comment, or deleted after establishing that nothing depends on it. So the
-ceiling follows §2's and §4's shape:
+The rule shipped with **3,822 findings in 733 files** baselined in
+`eslint-suppressions.json`, because converting them in the same change would
+have buried the rule itself. That conversion has happened twice: first to
+three lines, then to one. The one-line pass collapsed **6,966 blocks in
+1,081 files** and the rule now has **zero suppression entries** — the other
+banned-code rules still ride the ratchet, this one does not. A finding is a
+finding, and a new file cannot sneak in.
 
 | | |
 |---|---|
-| a file over its pinned count | **FAIL** |
-| a file with findings that is not pinned | **FAIL** (a new file cannot sneak in) |
-| a count below its pin | FAIL, naming the value to re-pin |
+| any finding | **FAIL** |
+| a clean tree | PASS |
 
-`eslint-suppressions.json` is the pin, regenerated by
-`pnpm run lint:banned-baseline` — **only after fixing debt, never to
-silence a new violation**. The count may only fall, and the way it falls
-is that you re-pin after the fix lands.
+The rule's own files are outside its scope: `local/max-comment-lines` is
+registered for `src/**/*.{vue,ts}`, so `eslint-rules/maxCommentLines.ts` and
+`eslint.config.ts` are not scanned by it. They carry the rule's rationale in
+long docblocks on purpose — that is the specification, not a function body.
+`src/__tests__/maxCommentLines.spec.ts` IS in scope and is at zero findings;
+its own comments are one line each.
+
+`eslint-suppressions.json` is still the pin for the other banned-code rules,
+regenerated by `pnpm run lint:banned-baseline` — **only after fixing debt,
+never to silence a new violation**. The one-line conversion shortened files
+enough that a few `max-lines` pins no longer occurred, so the file was
+pruned with `pnpm run prune-suppressions`; that is the only change to it in
+this pass.
 
 ### Running it
 
@@ -630,7 +666,7 @@ pnpm run test                  # the rule's own behaviour tests
 ```
 
 `src/__tests__/maxCommentLines.spec.ts` pins both directions — that the
-rule fires on a four-line block and stays silent on a three-line one, on a
+rule fires on a two-line block and stays silent on a one-line one, on a
 trailing comment, on a marker inside a string literal, and on the two
 documented gaps above. A rule that silently stops matching is worse than
 no rule, so those cases are the spec's real subject.
@@ -751,22 +787,21 @@ because "clean" is the one answer that lets a violation merge.
 
 ---
 
-## 7. The same ceiling in Kotlin, at two lines
+## 7. The same ceiling in Kotlin, at one line
 
 **Capped.** The Android app's half of §4's rule, and the third language it
 covers. The rule is `scripts/lint-kt-comment-lines.py`, wired into the
 `lint` job of `.github/workflows/ci.yml` and mirrored by
-`.husky/pre-commit`. The ceiling is **two** lines — one tighter than §4's
-and §5's three — because that is the number this app holds itself to.
+`.husky/pre-commit`. The ceiling is **one** line, the same as §4's and §5's.
 Every other semantic is identical, so "a comment block is a paragraph"
 means the same thing in all three languages.
 
 ```kotlin
-// WRONG — one block, three lines.
+// WRONG — one block, two lines.
 // The shell's drawer and a chat route's drawer are the same drawer, so the
 // fold is forwarded here rather than kept per drawer.
 
-// RIGHT — two lines. The extra sentences belong in the commit message or
+// RIGHT — one line. The extra sentences belong in the commit message or
 // the PR body, where they are read once instead of sitting in the code.
 ```
 
@@ -774,8 +809,8 @@ means the same thing in all three languages.
 
 - A **comment line** carries comment content and no code byte, so a blank
   line or a line with code on it ends the block.
-- A **comment block** is a run of consecutive comment lines. Two lines
-  pass, three fail, and the finding is reported at the block's first line.
+- A **comment block** is a run of consecutive comment lines. One line
+  passes, two fail, and the finding is reported at the block's first line.
 - A `/* ... */` comment counts by the lines it spans. Kotlin's block
   comments **nest**, so `/* a /* b */ c */` is one comment and the lexer
   tracks its depth rather than assuming the first `*/` closes it.
@@ -785,9 +820,8 @@ means the same thing in all three languages.
 
 ### What is NOT banned
 
-- **Comments.** The rule is about length, not existence. A two-line
-  comment explaining a non-obvious invariant is what it is trying to
-  produce.
+- **Comments.** The rule is about length, not existence. A one-line
+  comment naming a non-obvious invariant is what it is trying to produce.
 - **A trailing comment after code.** `val x = 1 // note` has a code byte
   on its line, so it is not a comment line and never joins a block.
 - **Comment markers inside a literal.** `"// not a comment"`, a raw
@@ -795,28 +829,24 @@ means the same thing in all three languages.
   lexer rather than a line scan, so it knows the difference — and the
   selftest pins three such fixtures.
 - **Prose everywhere else.** Docs, commit messages, PR bodies, issue text
-  and YAML comments are not Kotlin and are not scanned. Two lines is a
+  and YAML comments are not Kotlin and are not scanned. One line is a
   ceiling on code comments, not on writing.
 
-### Why two, and why a pin instead of a conversion
+### Why one, and why the pin is empty
 
-Two, because that is the ceiling this app was asked for, and because the
-Android tree's comments are the densest in the repo: measured 2026-11-04
-there are **1,806 over-long blocks in 187 of 211 `.kt` files**, and most
-of them are KDoc that explains a real invariant in a paragraph — the
+The rule landed at two lines with **1,806 over-long blocks in 187 of 211
+`.kt` files** baselined, because converting them in the same change would
+have buried the rule itself. They are converted now: the one-line pass
+collapsed **2,265 blocks in 200 files**, including the 14-line
 `LastPositionStore` header on why the saved position is not the nav back
-stack is 14 lines and worth every one of them.
+stack. That header is now one sentence, and the rest of it is in the commit
+that introduced it — the trade §4 makes explicitly.
 
-Converting them is the job §4 describes, and it is **not** this change's
-job: it is 187 files and each block needs a decision (shorten, split, move
-into a `///` doc comment, or delete after establishing that nothing depends
-on it), which is 733-file-diff territory and exactly the trade §5 declined
-for the frontend. So the rule ships the way §2 and §5 shipped — with a
-counted ceiling — and this is a documented exception to §3's rule 5, same
-as those two.
-
-`src/apps/android_mobile/comment-lines-baseline.json` is the pin: one count
-per file, plus the `max` it was pinned at and a `total` for the report.
+`src/apps/android_mobile/comment-lines-baseline.json` is still the pin, but
+it is **empty**: `{"max": 1, "files": {}, "total": 0}`. The ratchet stays in
+the script so `--pin` cannot quietly grandfather new debt, and the gate CI
+runs is `--strict`, which ignores the pin and asks for zero. A finding is a
+finding.
 
 | | |
 |---|---|
@@ -832,25 +862,24 @@ a count-based ratchet is that swapping one over-long block for another in
 the same file keeps the count — §5 has the same hole, and it is the price
 of not shipping a 187-file rewrite.
 
-**The finish line is `--strict`**, which ignores the baseline and asks for
-zero. It is wired and tested today, so turning it on is a one-word change
-to the CI step once the pins are empty. The 406 three-line blocks are the
-first tranche: each one needs a line deleted, not a rewrite.
+**The gate CI runs is `--strict`**, which ignores the baseline and asks for
+zero. It is on in `.github/workflows/ci.yml` and `.husky/pre-commit` today.
 
 ### How a finding is fixed
 
-Shorten to two lines, in this order of preference:
+Shorten to one line, in this order of preference:
 
 1. **Keep the why, drop the rest.** Which operation this guards, which
    invariant it relies on. Everything else was the design document.
-2. **Split.** A blank line between two paragraphs makes two blocks, and
-   two legal blocks beat one illegal one. This is the fix for a KDoc that
-   genuinely needs four lines.
-3. **Move it.** The commit message, the PR body, the module README.
-4. **Delete it.** Only after establishing that nothing depends on it.
+2. **Move it.** The commit message, the PR body, the module README.
+3. **Delete it.** Only after establishing that nothing depends on it.
 
-Then re-pin the file down to its new count — `--pin` is what makes the
-ratchet fall, and a notice from the gate names the exact number.
+A blank line between two paragraphs is NOT a fix. Two legal blocks beat one
+illegal one on paper, but the ceiling counts a block, so splitting a
+paragraph into four one-line comments defeats the rule the same way cutting
+one comment in three did — `local/no-floating-comments` bans the desktop
+half of that trick, and here the honest answer is that the paragraph had one
+load-bearing sentence and it belongs in the code.
 
 There is no inline exemption and no suppression comment. A rule with an
 escape hatch is a rule nobody follows, which is why §4 deleted the Zig
@@ -860,8 +889,8 @@ baseline instead of grandfathering it forever.
 
 ```bash
 python3 scripts/lint-kt-comment-lines.py --selftest   # scanner + verdict, on fixtures
-python3 scripts/lint-kt-comment-lines.py              # the gate: check against the pin
-python3 scripts/lint-kt-comment-lines.py --strict     # the finish line: zero findings
+python3 scripts/lint-kt-comment-lines.py --strict     # the gate CI runs: zero findings
+python3 scripts/lint-kt-comment-lines.py              # check against the (empty) pin
 python3 scripts/lint-kt-comment-lines.py --pin        # re-pin after fixing debt
 ```
 

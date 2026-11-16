@@ -1,5 +1,4 @@
-// End-to-end functional test for the MCP stdio transport (plan
-// 2026-08-27-mcp-stdio, Task 5 / PR #365).
+// End-to-end functional test for the MCP stdio transport (plan 2026-08-27-mcp-stdio, Task 5 / PR #365).
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,9 +10,7 @@ const io = testing.io;
 
 const builtin = @import("builtin");
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// The three tools `mcp-hello-world` must advertise.
 const EXPECTED_TOOLS = [_][]const u8{ "print_hello", "print_name", "print_exit" };
@@ -21,13 +18,10 @@ const EXPECTED_TOOLS = [_][]const u8{ "print_hello", "print_name", "print_exit" 
 /// `_send_jsonrpc(..., timeout_s=5.0)`'s budget, in ms.
 const JSONRPC_TIMEOUT_MS: u32 = 5_000;
 
-/// Locate the `mcp-hello-world` binary, or skip. The Python wrapper turned
-/// `harness.mcp_hello_world_bin`'s raise into `pytest.skip`; the Zig idiom is
-/// `error.SkipZigTest`.
+/// Locate the `mcp-hello-world` binary, or skip.
 fn requireMcpBin() ![]u8 {
     if (builtin.os.tag == .windows) {
-        // Python: `if sys.platform == "win32": pytest.skip("mcp-hello-world
-        // shell wrapper requires POSIX sh")`.
+        // Python: `if sys.platform == "win32": pytest.skip("mcp-hello-world shell wrapper requires POSIX sh")`.
         return error.SkipZigTest;
     }
     return harness.mcpHelloWorldBin(io, gpa) catch |err| switch (err) {
@@ -36,21 +30,18 @@ fn requireMcpBin() ![]u8 {
     };
 }
 
-/// The canonical MCP stdio `tools/list` frame, plus the extra newline the
-/// Python wrote.
+/// The canonical MCP stdio `tools/list` frame, plus the extra newline the Python wrote.
 fn frameRpc(body: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
-    // LF separator is what the SDK accepts; CRLF works but is one extra
-    // byte we do not need.
+    // LF separator is what the SDK accepts; CRLF works but is one extra byte we do not need.
     try out.writer.print("Content-Length: {d}\n\n", .{body.len});
     try out.writer.writeAll(body);
     try out.writer.writeByte('\n');
     return out.toOwnedSlice();
 }
 
-/// Spawn `binary`, feed it ONE Content-Length-framed JSON-RPC body, read ONE
-/// response, terminate. Returns the PARSED JSON-RPC response.
+/// Spawn `binary`, feed it ONE Content-Length-framed JSON-RPC body, read ONE response, terminate.
 fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.Parsed(std.json.Value) {
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch); // LAST
@@ -61,24 +52,19 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
 
     const stdin_path = try std.fs.path.join(gpa, &.{ scratch, "rpc-stdin" });
     defer gpa.free(stdin_path);
-    // `defer`, not `errdefer`: the function RETURNS a value, so the
-    // success path is the common one and an `errdefer` would leak the
-    // path on every passing call.
+    // `defer`, not `errdefer`: the function RETURNS a value, so the success path is the common one and an `errdefer` would leak the path on every passing call.
     const stdout_path = try std.fs.path.join(gpa, &.{ scratch, "rpc-stdout" });
     defer gpa.free(stdout_path);
     const stderr_path = try std.fs.path.join(gpa, &.{ scratch, "rpc-stderr" });
     defer gpa.free(stderr_path);
 
-    // THE SPACER IS LOAD-BEARING, AND IT FIXES A HAZARD THAT IS INVISIBLE
-    // UNTIL IT BITES.
+    // THE SPACER IS LOAD-BEARING, AND IT FIXES A HAZARD THAT IS INVISIBLE UNTIL IT BITES.
     const spacer_path = try std.fs.path.join(gpa, &.{ scratch, "rpc-fd-spacer" });
     defer gpa.free(spacer_path);
     var spacer = try std.Io.Dir.cwd().createFile(io, spacer_path, .{});
     defer spacer.close(io);
 
-    // The frame is on disk BEFORE the spawn, so the child's first read
-    // returns immediately rather than racing the parent's write — the
-    // ordering guarantee `communicate(input=...)` gave for free.
+    // The frame is on disk BEFORE the spawn, so the child's first read returns immediately rather than racing the parent's write — the ordering guarantee …
     var in_file = try std.Io.Dir.cwd().createFile(io, stdin_path, .{ .read = true });
     defer in_file.close(io);
     try in_file.writePositionalAll(io, framed, 0);
@@ -94,9 +80,7 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
         .stdout = .{ .file = out_file },
         .stderr = .{ .file = err_file },
     });
-    // `Child.kill` ALREADY reaps, so there is deliberately no `wait`
-    // after it — `wait` opens with `assert(child.id != null)` and would
-    // panic on the second reap.
+    // `Child.kill` ALREADY reaps, so there is deliberately no `wait` after it — `wait` opens with `assert(child.id != null)` and would panic on the second reap.
     defer child.kill(io);
 
     var timed_out = std.atomic.Value(bool).init(false);
@@ -134,9 +118,7 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
     const stderr_bytes = try std.Io.Dir.cwd().readFileAlloc(io, stderr_path, gpa, .limited(1 << 18));
     defer gpa.free(stderr_bytes);
 
-    // The @modelcontextprotocol/sdk v1.x writes NEWLINE-DELIMITED JSON
-    // (`JSON.stringify(msg) + "\n"`), NOT Content-Length framed responses —
-    // see `src/apps/mcp_hello_world/node_modules/@modelcontextprotocol/sdk/
+    // The @modelcontextprotocol/sdk v1.x writes NEWLINE-DELIMITED JSON (`JSON.stringify(msg) + "\n"`), NOT Content-Length framed responses — see …
     var payload = stdout_bytes;
     if (std.mem.startsWith(u8, stdout_bytes, "Content-Length:")) {
         const sep = std.mem.indexOf(u8, stdout_bytes, "\n\n") orelse {
@@ -146,8 +128,7 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
         payload = stdout_bytes[sep + 2 ..];
     }
 
-    // `.alloc_always`: the parsed strings must not borrow the captured
-    // stdout buffer, which is freed at the end of this function.
+    // `.alloc_always`: the parsed strings must not borrow the captured stdout buffer, which is freed at the end of this function.
     return std.json.parseFromSlice(std.json.Value, gpa, payload, .{ .allocate = .alloc_always }) catch |err| {
         const quoted = harness.debugString(gpa, payload[0..@min(300, payload.len)]) catch return err;
         defer gpa.free(quoted);
@@ -159,8 +140,7 @@ fn sendJsonRpc(binary: []const u8, body: []const u8, timeout_ms: u32) !std.json.
     };
 }
 
-/// `GET /api/config/pabrik`, re-parsed into an OWNED `std.json.Parsed` the
-/// caller can MUTATE and re-serialize.
+/// `GET /api/config/pabrik`, re-parsed into an OWNED `std.json.Parsed` the caller can MUTATE and re-serialize.
 fn fetchConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -210,9 +190,7 @@ fn buildServers(a: std.mem.Allocator, specs: []const ServerSpec) !std.json.Value
 }
 
 fn strArray(a: std.mem.Allocator, vals: []const []const u8) !std.json.Value {
-    // `std.json.Array` is `array_list.Managed(Value)`: it CARRIES its
-    // allocator, so `append` takes only the item (the unmanaged
-    // `std.ArrayList` spelling takes the allocator per call).
+    // `std.json.Array` is `array_list.Managed(Value)`: it CARRIES its allocator, so `append` takes only the item (the unmanaged `std.ArrayList` spelling takes the …
     var arr: std.json.Array = try .initCapacity(a, vals.len);
     for (vals) |v| try arr.append(.{ .string = v });
     return .{ .array = arr };
@@ -234,9 +212,7 @@ fn putServers(h: *Harness, specs: []const ServerSpec) !void {
     try putConfig(h, &cfg);
 }
 
-/// The `mcp_servers` object of a GET response, or an error. Python: `servers
-/// = got.get("mcp_servers") or {}` then a named lookup. A missing block and a
-/// missing server both ended at the same assert, so both land here.
+/// The `mcp_servers` object of a GET response, or an error.
 fn serversOf(doc: *const harness.Json) !std.json.ObjectMap {
     return doc.object("mcp_servers") orelse {
         std.debug.print("stdio MCP servers missing from the GET response (no `mcp_servers` block)\n", .{});
@@ -284,9 +260,7 @@ fn argsEqual(entry: std.json.ObjectMap, want: []const []const u8) bool {
     return true;
 }
 
-// ============================================================================
 // Test 1: direct MCP stdio roundtrip
-// ============================================================================
 
 // mcp-hello-world responds to tools/list with 3 tools.
 test "mcp_hello_world_lists_tools" {
@@ -309,17 +283,13 @@ test "mcp_hello_world_lists_tools" {
             return error.TestUnexpectedResult;
         },
     };
-    // Python: `resp["result"].get("tools", [])` — a missing list is an
-    // empty list, which then fails the NAME check below with a
-    // readable message.
+    // Python: `resp["result"].get("tools", [])` — a missing list is an empty list, which then fails the NAME check below with a readable message.
     const tools: []const std.json.Value = switch (result_obj.get("tools") orelse std.json.Value{ .null = {} }) {
         .array => |a| a.items,
         else => &.{},
     };
 
-    // Python built a SET and compared for equality, so the count and
-    // every name must match — an extra tool fails just as a missing one
-    // does.
+    // Python built a SET and compared for equality, so the count and every name must match — an extra tool fails just as a missing one does.
     var seen: usize = 0;
     for (EXPECTED_TOOLS) |want| {
         var found = false;
@@ -366,9 +336,7 @@ test "mcp_hello_world_call_print_hello" {
             return error.TestUnexpectedResult;
         },
     };
-    // Python: `resp["result"].get("content", [])` then
-    // `assert content` — an empty list is the failure, reported with the
-    // whole response for context.
+    // Python: `resp["result"].get("content", [])` then `assert content` — an empty list is the failure, reported with the whole response for context.
     const content: []const std.json.Value = switch (result_obj.get("content") orelse std.json.Value{ .null = {} }) {
         .array => |a| a.items,
         else => &.{},
@@ -411,9 +379,7 @@ test "mcp_hello_world_call_print_name" {
             return error.TestUnexpectedResult;
         },
     };
-    // Python: `resp["result"].get("content", [])` then
-    // `assert content` — an empty list is the failure, reported with the
-    // whole response for context.
+    // Python: `resp["result"].get("content", [])` then `assert content` — an empty list is the failure, reported with the whole response for context.
     const content: []const std.json.Value = switch (result_obj.get("content") orelse std.json.Value{ .null = {} }) {
         .array => |a| a.items,
         else => &.{},
@@ -430,9 +396,7 @@ test "mcp_hello_world_call_print_name" {
         .string => |s| s,
         else => "",
     };
-    // Python indexed `resp["result"]["content"][0]["text"]` DIRECTLY, so a
-    // missing key raised rather than degrading to "" — `text` here is never
-    // empty for a well-formed reply and the prefix test catches that.
+    // Python indexed `resp["result"]["content"][0]["text"]` DIRECTLY, so a missing key raised rather than degrading to "" — `text` here is never empty for a …
     if (!std.mem.startsWith(u8, text, "i am ")) {
         std.debug.print("unexpected server identity: {s}\n", .{text});
         return error.TestUnexpectedResult;
@@ -443,9 +407,7 @@ test "mcp_hello_world_call_print_name" {
     }
 }
 
-// ============================================================================
 // Test 2: pabrik accepts stdio mcp_servers config
-// ============================================================================
 
 // PUT a PabrikConfig with stdio mcp_servers -> GET preserves the entry.
 test "pabrik_config_round_trips_stdio_mcp_servers" {
@@ -494,8 +456,6 @@ test "pabrik_config_round_trips_stdio_mcp_servers" {
 }
 
 // Two stdio MCP servers with different commands round-trip independently.
-// Proves the mcp_servers map is keyed by name (each entry is its own
-// child-spawn config) — not by a global single-child assumption.
 test "pabrik_config_round_trips_multiple_stdio_mcp_servers" {
     const binary = try requireMcpBin();
     defer gpa.free(binary);
@@ -546,9 +506,7 @@ test "pabrik_config_round_trips_multiple_stdio_mcp_servers" {
     }
 }
 
-// A config with both HTTP and stdio servers round-trips correctly. Proves the
-// discriminator (presence of `command` => stdio, presence of `url` => http)
-// is honored through the wire — neither branch collides with the other.
+// A config with both HTTP and stdio servers round-trips correctly.
 test "pabrik_config_mixes_http_and_stdio_mcp_servers" {
     const binary = try requireMcpBin();
     defer gpa.free(binary);
@@ -627,8 +585,7 @@ test "pabrik_config_mixes_http_and_stdio_mcp_servers" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = frameRpc;
     _ = sendJsonRpc;

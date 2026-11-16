@@ -1,5 +1,4 @@
-/** Regression specs for the right-click "Go to settings" work (task_1789493500744_2, PR #521
- * follow-ups). */
+/** Regression specs for the right-click "Go to settings" work (task_1789493500744_2, PR #521 follow-ups). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -68,9 +67,7 @@ describe('WorkspaceItem — agent click is expand-only (no settings redirect)', 
   })
 
   it('routine left-click toggles expansion AND emits click (RoutineView opens)', async () => {
-    // The routine item's main view IS its RoutineView, so a left-click must
-    // reach Sidebar's handleSelectItem — otherwise the row is dead and the
-    // page never changes when the user clicks the routine.
+    // The routine item's main view IS its RoutineView, so a left-click must reach Sidebar's handleSelectItem — otherwise the row is dead and the page never changes …
     wrapper = mountItem(makeItem('routine'))
     const button = wrapper.find('button.flex-1')
     expect(button.exists()).toBe(true)
@@ -133,8 +130,7 @@ describe('WorkspaceItem — agent click is expand-only (no settings redirect)', 
     await nextTick()
     // The shared "Open chat in new tab" entry still shows...
     expect(document.body.querySelector('[data-testid="open-new-tab-item"]')).toBeTruthy()
-    // ...but there is no settings entry for types without a
-    // dedicated settings surface.
+    // ...but there is no settings entry for types without a dedicated settings surface.
     expect(document.body.querySelector('[data-testid="go-to-settings-item"]')).toBeNull()
   })
 

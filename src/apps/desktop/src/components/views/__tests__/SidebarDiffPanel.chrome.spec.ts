@@ -4,8 +4,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
 import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
-/** The chrome redesign. These lock the NEW
- * behaviour the redesign introduced. */
+/** The chrome redesign. */
 const { getGitChangesMock, getGitFolderDiffsMock, getPrDiffMock, getPrStatusMock, getGitCommitsMock } =
   vi.hoisted(() => ({
     getGitChangesMock: vi.fn(),
@@ -81,8 +80,7 @@ describe('SidebarDiffPanel chrome — status letter chips', () => {
   })
 
   it('renders one letter per git status, never a colour emoji', async () => {
-    // Six emoji render at six different pixel sizes next to 12px paths and
-    // cannot be asserted on. AGENTS.md: "No Emoji as Icons".
+    // Six emoji render at six different pixel sizes next to 12px paths and cannot be asserted on.
     const { wrapper } = await mountPanel()
     const letterOf = (path: string) =>
       wrapper.get(`[data-testid="sidebar-diff-file-unstaged-${path}"] > span`).text()
@@ -94,28 +92,22 @@ describe('SidebarDiffPanel chrome — status letter chips', () => {
       wrapper.get('[data-testid="sidebar-diff-file-untracked-loose/untracked.ts"] > span').text(),
     ).toBe('?')
     // No status emoji anywhere in the panel — the letter chips replaced all six.
-    // Written as code points so the assertion is not itself a surrogate-pair
-    // character class (which oxlint rejects, rightly).
     const STATUS_EMOJI = /[\u{1F4DD}\u{2795}\u{1F5D1}\u{1F504}\u{1F4CB}\u{2753}]/u
     expect(wrapper.text()).not.toMatch(STATUS_EMOJI)
   })
 
   it('splits a path into a dim directory and a bright filename', async () => {
-    // The whole point of the redesign: across 40 rows the shared `src/a/b/` prefix becomes
-    // skippable and the name is what the eye lands on. Both halves stay in the DOM so `.text()`
-    // still carries the full path.
+    // The whole point of the redesign: across 40 rows the shared `src/a/b/` prefix becomes skippable and the name is what the eye lands on.
     const { wrapper } = await mountPanel()
     const row = wrapper.get('[data-testid="sidebar-diff-file-unstaged-src/a/b/modified.vue"]')
-    // The two halves of the path are the only coloured spans in the row;
-    // the status chip carries a background, not a colour.
+    // The two halves of the path are the only coloured spans in the row; the status chip carries a background, not a colour.
     const halves = row
       .findAll('span')
       .filter((s) => s.attributes('style')?.includes('color: var(--semantic'))
     expect(halves.map((s) => s.text())).toEqual(['src/a/b/', 'modified.vue'])
     expect(halves[0]!.attributes('style')).toBe('color: var(--semantic-text-dim);')
     expect(halves[1]!.attributes('style')).toBe('color: var(--semantic-text);')
-    // Both halves stay in the DOM, so the full path is still readable and
-    // assertable even though the visible emphasis is on the filename.
+    // Both halves stay in the DOM, so the full path is still readable and assertable even though the visible emphasis is on the filename.
     expect(row.text()).toContain('src/a/b/modified.vue')
     expect(row.attributes('title')).toBe('src/a/b/modified.vue')
   })
@@ -207,8 +199,7 @@ describe('SidebarDiffPanel chrome — the filter', () => {
     await wrapper.get('[data-testid="sidebar-file-filter"]').setValue('FILE3')
     await flushPromises()
 
-    // file3.vue only — one row, and its group header reports the narrowed
-    // count so the number on screen matches what is on screen.
+    // file3.vue only — one row, and its group header reports the narrowed count so the number on screen matches what is on screen.
     expect(wrapper.findAll('[data-testid^="sidebar-diff-file-unstaged-"]')).toHaveLength(1)
     expect(
       wrapper.find('[data-testid="sidebar-diff-file-unstaged-src/a/b/file3.vue"]').exists(),
@@ -222,9 +213,7 @@ describe('SidebarDiffPanel chrome — the filter', () => {
   })
 
   it('keeps the filter out of the URL — it is transient text, not a view switch', async () => {
-    // ?panel= / ?sidebar= / ?conflicts= own every piece of state that must
-    // survive a reload. A filter in the URL would make Back/Forward step
-    // through keystrokes.
+    // ?panel= / ?sidebar= / ?conflicts= own every piece of state that must survive a reload.
     const many = {
       ...BASE_CHANGES,
       modified_files: Array.from({ length: 9 }, (_, i) => ({
@@ -282,8 +271,7 @@ describe('SidebarDiffPanel chrome — the tab strip', () => {
   })
 
   it('uses one-word labels with the count in a pill, not "(43)" in the label', async () => {
-    // "Pull request (43)" is 148px; "PR" plus a pill is 46px. That is the
-    // whole reason five tabs now fit at the 200px minimum.
+    // "Pull request (43)" is 148px; "PR" plus a pill is 46px.
     const { wrapper } = await mountPanel({
       prUrl: 'https://github.com/acme/app/pull/42',
       prProvider: 'github',

@@ -210,8 +210,7 @@ describe('SkillDetail — deleting', () => {
     const wrapper = mount(SkillDetail, { props: { skillName: 'pdf' } })
     await flushPromises()
     store.setActiveWorkspace(WS_OTHER)
-    // The switch re-runs the load; let it settle before clicking, or the
-    // panel is mid-fetch and the delete button is not on screen.
+    // The switch re-runs the load; let it settle before clicking, or the panel is mid-fetch and the delete button is not on screen.
     await flushPromises()
     await deleteVia(wrapper)
 

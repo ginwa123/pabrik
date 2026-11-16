@@ -1,5 +1,4 @@
-// End-to-end functional test for `POST /api/llm/test` (the "Test" button on
-// the Add/Edit profile modal).
+// End-to-end functional test for `POST /api/llm/test` (the "Test" button on the Add/Edit profile modal).
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,13 +9,10 @@ const io = testing.io;
 
 const Io = std.Io;
 
-/// Cap on the recorded request head — a runaway client must not grow the
-/// accumulation without bound.
+/// Cap on the recorded request head — a runaway client must not grow the accumulation without bound.
 const MAX_HEAD_BYTES = 1 << 18;
 
-// ============================================================================
 // Stub upstream
-// ============================================================================
 
 /// One recorded upstream request. Owned by the Stub.
 const Recorded = struct {
@@ -39,17 +35,13 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `reqs`; the serve thread appends while the test reads.
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the latter,
-    /// and the replacement takes the `Io` handle for its contended path.
     mutex: Io.Mutex = .init,
     reqs: std.ArrayList(Recorded) = .empty,
-    /// REASONING-MODEL EMULATION. `0` (the default) answers every request
-    /// with `payload` — a plain canned stub.
+    /// REASONING-MODEL EMULATION.
     reasoning_spend: u32 = 0,
     reasoning_payload: []const u8 = "",
 
-    /// Bind and start serving on `stub`. An OUT-PARAMETER, and that is
-    /// load-bearing.
+    /// Bind and start serving on `stub`.
     fn start(stub: *Stub, status: u16, payload: []const u8) !void {
         stub.* = .{
             .io = io,
@@ -59,9 +51,7 @@ const Stub = struct {
             .server = undefined,
             .thread = undefined,
         };
-        // `Io.net` has no getsockname — `Server` exposes only the socket and
-        // the bound port is not readable back — so the port is picked the way
-        // `Harness.boot` picks one for the child and then bound.
+        // `Io.net` has no getsockname — `Server` exposes only the socket and the bound port is not readable back — so the port is picked the way `Harness.boot` picks one …
         stub.port = try harness.findFreePortRandom(gpa);
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(stub.port) };
         stub.server = try addr.listen(io, .{ .reuse_address = true });
@@ -69,9 +59,7 @@ const Stub = struct {
         stub.thread = try std.Thread.spawn(.{}, serve, .{stub});
     }
 
-    /// Start a stub that behaves like a REASONING model: it answers with
-    /// `payload` only when the request's output budget is larger than
-    /// `reasoning_spend`, and with `reasoning_payload` otherwise.
+    /// Start a stub that behaves like a REASONING model: it answers with `payload` only when the request's output budget is larger than `reasoning_spend`, and with …
     fn startReasoning(
         stub: *Stub,
         reasoning_spend: u32,
@@ -83,15 +71,13 @@ const Stub = struct {
         stub.reasoning_payload = reasoning_payload;
     }
 
-    /// The body to answer with. Plain `payload`, unless this is a reasoning
-    /// stub whose `reasoning_spend` the request's budget fails to cover.
+    /// The body to answer with.
     fn payloadFor(self: *Stub, body: []const u8) []const u8 {
         if (self.reasoning_spend == 0) return self.payload;
         if (requestedBudget(body)) |budget| {
             if (budget > @as(i64, self.reasoning_spend)) return self.payload;
         }
-        // No budget named at all counts as "not enough" — a provider that
-        // lets the model think unbounded is not what this stub emulates.
+        // No budget named at all counts as "not enough" — a provider that lets the model think unbounded is not what this stub emulates.
         return self.reasoning_payload;
     }
 
@@ -104,8 +90,7 @@ const Stub = struct {
             var c = conn;
             c.close(self.io);
         } else |_| {
-            // Listener already gone: `accept` returned an error and the
-            // serve loop has exited. Nothing to wake.
+            // Listener already gone: `accept` returned an error and the serve loop has exited.
         }
 
         self.thread.join();
@@ -114,9 +99,7 @@ const Stub = struct {
         self.reqs.deinit(gpa);
     }
 
-    /// Copy every recorded request out. Owned by the caller. Python read
-    /// `server.state.last_*` — the LAST request — so the tests take
-    /// `.items[len - 1]` from this snapshot.
+    /// Copy every recorded request out.
     fn snapshot(self: *Stub) !std.ArrayList(Recorded) {
         var out: std.ArrayList(Recorded) = .empty;
         errdefer {
@@ -137,9 +120,7 @@ const Stub = struct {
 
 fn serve(stub: *Stub) void {
     while (!stub.stop.load(.acquire)) {
-        // `defer` inside a loop body runs at the end of THAT iteration,
-        // so each accepted socket is closed before the next accept — the
-        // connection is what the upstream does per POST.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept — the connection is what the upstream …
         var stream = stub.server.accept(stub.io) catch break;
         defer stream.close(stub.io);
         if (stub.stop.load(.acquire)) break;
@@ -195,8 +176,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
         .body = try gpa.dupe(u8, body_acc.written()),
     });
 
-    // A reasoning stub picks its answer from the request's budget; a plain
-    // stub always sends `payload`.
+    // A reasoning stub picks its answer from the request's budget; a plain stub always sends `payload`.
     const payload = stub.payloadFor(body_acc.written());
 
     const response = try std.fmt.allocPrint(
@@ -217,8 +197,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     try sw.interface.flush();
 }
 
-/// The reason phrase Python's `BaseHTTPRequestHandler.send_response`
-/// would have used for the statuses this suite stubs.
+/// The reason phrase Python's `BaseHTTPRequestHandler.send_response` would have used for the statuses this suite stubs.
 fn reasonPhrase(status: u16) []const u8 {
     return switch (status) {
         200 => "OK",
@@ -265,9 +244,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-/// The output budget a request asked for: `max_output_tokens` (Responses
-/// API) or `max_tokens` (chat completions / Anthropic). Null when the
-/// request carries neither or the body is not JSON.
+/// The output budget a request asked for: `max_output_tokens` (Responses API) or `max_tokens` (chat completions / Anthropic).
 fn requestedBudget(body: []const u8) ?i64 {
     var parsed = std.json.parseFromSlice(std.json.Value, gpa, body, .{}) catch return null;
     defer parsed.deinit();
@@ -325,12 +302,9 @@ fn stubHead(stub: *Stub) ![]u8 {
     return gpa.dupe(u8, seen.items[seen.items.len - 1].head);
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// `POST /api/llm/test`; the endpoint always returns HTTP 200 (failure
-/// surfaces as `ok: false`). Python's `_post_test`.
+/// `POST /api/llm/test`; the endpoint always returns HTTP 200 (failure surfaces as `ok: false`).
 fn postTest(h: *Harness, body: []const u8) !harness.Response {
     return h.http(io, .POST, "/api/llm/test", .{
         .json_body = body,
@@ -339,8 +313,7 @@ fn postTest(h: *Harness, body: []const u8) !harness.Response {
     });
 }
 
-/// Python's `assert result.get("ok") is False` — a missing key is a
-/// failure, and `ok` must be exactly the JSON boolean false.
+/// Python's `assert result.get("ok") is False` — a missing key is a failure, and `ok` must be exactly the JSON boolean false.
 fn expectNotOk(doc: *const harness.Json, raw: []const u8) !void {
     if (doc.boolean("ok") != false) {
         std.debug.print("expected ok:false, got: {s}\n", .{raw});
@@ -366,8 +339,7 @@ fn expectReply(doc: *const harness.Json, want: []const u8) !void {
     }
 }
 
-/// Case-insensitive `in` over a haystack — Python's
-/// `"model" in result.get("error","").lower()`.
+/// Case-insensitive `in` over a haystack — Python's `"model" in result.get("error","").lower()`.
 fn containsIgnoreCase(haystack: []const u8, needle_lower: []const u8) bool {
     if (needle_lower.len > haystack.len) return false;
     var i: usize = 0;
@@ -406,9 +378,7 @@ const RESP_OK =
     \\{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}
 ;
 
-/// What a reasoning model returns when its hidden reasoning consumed the
-/// whole output budget: `status: "incomplete"`, no `message` item, and so no
-/// `output_text` for the probe to show.
+/// What a reasoning model returns when its hidden reasoning consumed the whole output budget: `status: "incomplete"`, no `message` item, and so no `output_text` …
 const CHATCMPL_TRUNCATED =
     \\{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":""},"finish_reason":"length"}]}
 ;
@@ -417,12 +387,9 @@ const RESP_REASONING_ONLY =
     \\{"id":"resp_6accc040156123a58d294be8e","object":"response","created_at":1791803456,"status":"incomplete","parallel_tool_calls":true,"temperature":1,"top_p":1,"max_output_tokens":16,"background":false,"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"rs_1","type":"reasoning","summary":[]}],"usage":{"input_tokens":11,"output_tokens":16,"total_tokens":27}}
 ;
 
-// ============================================================================
 // Test 1: openai success
-// ============================================================================
 
-// Stub answers a chat-completions payload; the probe returns
-// `{ok: true, reply: "ok"}` and the stub saw Bearer auth + prompt.
+// Stub answers a chat-completions payload; the probe returns `{ok: true, reply: "ok"}` and the stub saw Bearer auth + prompt.
 test "llm_test_openai_success_returns_reply" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -493,8 +460,7 @@ test "llm_test_openai_success_returns_reply" {
             return error.TestUnexpectedResult;
         }
     }
-    // Python searched `json.dumps(sent)`; searching the recorded bytes is
-    // a strict superset of that (the needle has nothing to escape).
+    // Python searched `json.dumps(sent)`; searching the recorded bytes is a strict superset of that (the needle has nothing to escape).
     const raw = try std.json.Stringify.valueAlloc(gpa, sent.value, .{});
     defer gpa.free(raw);
     if (std.mem.indexOf(u8, raw, "Reply with exactly: ok") == null) {
@@ -510,12 +476,9 @@ test "llm_test_openai_success_returns_reply" {
     }
 }
 
-// ============================================================================
 // Test 2: anthropic success
-// ============================================================================
 
-// Anthropic-style probe sends `x-api-key` (not Bearer) and parses the
-// `content[]` text block.
+// Anthropic-style probe sends `x-api-key` (not Bearer) and parses the `content[]` text block.
 test "llm_test_anthropic_success_uses_x_api_key" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -569,21 +532,16 @@ test "llm_test_anthropic_success_uses_x_api_key" {
             return error.TestUnexpectedResult;
         },
     };
-    // The Anthropic Messages API REQUIRES `max_tokens`; its value is the
-    // probe's reasoning-safe budget (asserted behaviourally by the
-    // reasoning-model tests below, not as a literal here).
+    // The Anthropic Messages API REQUIRES `max_tokens`; its value is the probe's reasoning-safe budget (asserted behaviourally by the reasoning-model tests below …
     if (max_tokens <= 0) {
         std.debug.print("max_tokens = {d}, expected a positive budget\n", .{max_tokens});
         return error.TestUnexpectedResult;
     }
 }
 
-// ============================================================================
 // Test 3: openai-response success
-// ============================================================================
 
-// Responses-style probe sends `input` and parses `output[]` message
-// items.
+// Responses-style probe sends `input` and parses `output[]` message items.
 test "llm_test_openai_response_success_parses_output_items" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -631,19 +589,14 @@ test "llm_test_openai_response_success_parses_output_items" {
     }
 }
 
-// ============================================================================
 // Test 9: a reasoning model answers — the budget must cover the thinking
-// ============================================================================
 
-// REGRESSION, the reported bug: the Edit-profile Test button said "LLM server
-// response did not contain a reply" for a profile that works in a real chat
-// turn.
+// REGRESSION, the reported bug: the Edit-profile Test button said "LLM server response did not contain a reply" for a profile that works in a real chat turn.
 test "llm_test_reasoning_model_still_replies_when_probe_allows_for_thinking" {
     try harness.requirePabrikBin(io, gpa);
 
     var stub: Stub = undefined;
-    // 800 tokens of thinking: comfortably more than the old 16-token probe,
-    // comfortably less than any sane reasoning-safe budget.
+    // 800 tokens of thinking: comfortably more than the old 16-token probe, comfortably less than any sane reasoning-safe budget.
     try stub.startReasoning(800, RESP_REASONING_ONLY, RESP_OK);
     defer stub.deinit();
 
@@ -693,19 +646,14 @@ test "llm_test_reasoning_model_still_replies_on_chat_completions_style" {
     try expectReply(&doc, "ok");
 }
 
-// ============================================================================
 // Test 10: a model that never gets to write text — say so, and try harder
-// ============================================================================
 
-// A model whose thinking always eats the budget (the stub is set to a spend
-// no probe budget can exceed) must not come back as the misleading "LLM
-// server response did not contain a reply" — that reads as "your key is
+// A model whose thinking always eats the budget (the stub is set to a spend no probe budget can exceed) must not come back as the misleading "LLM server response …
 test "llm_test_reasoning_only_model_retries_then_names_the_budget" {
     try harness.requirePabrikBin(io, gpa);
 
     var stub: Stub = undefined;
-    // No finite budget can cover this spend, so the FIRST body comes back
-    // every time — i.e. the model never produces text at all.
+    // No finite budget can cover this spend, so the FIRST body comes back every time — i.e. the model never produces text at all.
     try stub.startReasoning(std.math.maxInt(u32), RESP_REASONING_ONLY, RESP_OK);
     defer stub.deinit();
 
@@ -739,9 +687,7 @@ test "llm_test_reasoning_only_model_retries_then_names_the_budget" {
         return error.TestUnexpectedResult;
     }
 
-    // Behaviour 1 on the wire: exactly two probes, the second one with more
-    // room than the first. A single request would mean the probe never tried
-    // harder; an identical budget would mean the retry is theatre.
+    // Behaviour 1 on the wire: exactly two probes, the second one with more room than the first.
     var budgets = try stubBudgets(&stub);
     defer budgets.deinit(gpa);
     if (budgets.items.len != 2) {
@@ -757,9 +703,7 @@ test "llm_test_reasoning_only_model_retries_then_names_the_budget" {
     }
 }
 
-// ============================================================================
 // Test 4: validation failures (no stub needed)
-// ============================================================================
 
 test "llm_test_missing_model_returns_clear_error" {
     try harness.requirePabrikBin(io, gpa);
@@ -809,12 +753,9 @@ test "llm_test_bad_style_returns_clear_error" {
     }
 }
 
-// ============================================================================
 // Test 6: unreachable upstream fails fast
-// ============================================================================
 
 // Closed port (connection refused) returns `{ok: false}` quickly.
-// Port 1 is used because the kernel refuses it; never port 8081.
 test "llm_test_unreachable_returns_send_failure" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -826,9 +767,7 @@ test "llm_test_unreachable_returns_send_failure" {
     const body = try probeBody("m", "http://127.0.0.1:1/x", "sk-test-stub", "openai");
     defer gpa.free(body);
 
-    // `Io.Timestamp.now(io, .awake)` is the monotonic clock — the analogue of
-    // `time.monotonic()`. `.real` would let an NTP step backwards produce a
-    // negative elapsed and pass the bound for the wrong reason.
+    // `Io.Timestamp.now(io, .awake)` is the monotonic clock — the analogue of `time.monotonic()`.
     const started = Io.Timestamp.now(io, .awake).toMilliseconds();
 
     var r = try postTest(&h, body);
@@ -850,12 +789,9 @@ test "llm_test_unreachable_returns_send_failure" {
     }
 }
 
-// ============================================================================
 // Test 7: upstream 401 surfaces status in details
-// ============================================================================
 
-// A 401 from upstream (e.g. revoked key) returns `{ok: false}` with
-// `details` naming the status so the modal shows WHY.
+// A 401 from upstream (e.g. revoked key) returns `{ok: false}` with `details` naming the status so the modal shows WHY.
 test "llm_test_upstream_401_returns_status_in_details" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -886,13 +822,9 @@ test "llm_test_upstream_401_returns_status_in_details" {
     }
 }
 
-// ============================================================================
 // Test 8: probe sends x-opencode-session (all styles)
-// ============================================================================
 
-// Regression for the Edit-profile Test button 400
-// `{"type":"error","error":{"type":"MissingSessionID",...}}`: the
-// anthropic-style probe must carry `x-opencode-session` or Console Go rejects
+// Regression for the Edit-profile Test button 400 `{"type":"error","error":{"type":"MissingSessionID",...}}`: the anthropic-style probe must carry …
 test "llm_test_probe_sends_opencode_session_anthropic" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -919,8 +851,7 @@ test "llm_test_probe_sends_opencode_session_anthropic" {
 
     const head = try stubHead(&stub);
     defer gpa.free(head);
-    // Python: `assert state.last_headers.get("x-opencode-session")` — a
-    // TRUTHINESS check, so an absent header and an empty one fail alike.
+    // Python: `assert state.last_headers.get("x-opencode-session")` — a TRUTHINESS check, so an absent header and an empty one fail alike.
     const sess_hdr = headerValue(head, "x-opencode-session") orelse "";
     if (sess_hdr.len == 0) {
         std.debug.print("anthropic probe must send x-opencode-session, got: {s}\n", .{head});
@@ -928,8 +859,7 @@ test "llm_test_probe_sends_opencode_session_anthropic" {
     }
 }
 
-// Same header contract for the openai style — the gateway may require it
-// there too, and the extra header is ignored by direct providers.
+// Same header contract for the openai style — the gateway may require it there too, and the extra header is ignored by direct providers.
 test "llm_test_probe_sends_opencode_session_openai" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -963,8 +893,7 @@ test "llm_test_probe_sends_opencode_session_openai" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = MAX_HEAD_BYTES;
     _ = CHATCMPL_OK;

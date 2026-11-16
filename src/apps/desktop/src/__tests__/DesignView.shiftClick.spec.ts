@@ -1,6 +1,4 @@
-/** Behavioural tests for the canvas Shift+click multi-select toggle (Chunk 3 of the right-click
- * group menu plan). Before this chunk the canvas's @select on DesignElement hard-coded `additive:
- * false`, so Shift+click on canvas never toggled membership. */
+/** Behavioural tests for the canvas Shift+click multi-select toggle (Chunk 3 of the right-click group menu plan). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -83,7 +81,6 @@ describe('DesignView canvas Shift+click multi-select toggle', () => {
 
  
 
-  // Helper: mount DesignView with 3 elements and let initial load settle.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function mountWith(elements: any[]): Promise<any> {
     const store = useWorkspacesStore()
@@ -95,8 +92,6 @@ describe('DesignView canvas Shift+click multi-select toggle', () => {
     return wrapper
   }
 
-  // Helper: dispatch a pointerdown on a <DesignElement>'s root. jsdom 29 makes PointerEvent.button a
-  // readonly getter, so we use native dispatchEvent, and setPointerCapture is stubbed to a noop.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function dispatchSelect(wrapper: any, elementId: string, shiftKey: boolean): void {
     const target = wrapper.find(`[data-testid="design-element-${elementId}"]`)

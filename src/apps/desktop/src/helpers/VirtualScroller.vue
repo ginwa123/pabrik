@@ -8,37 +8,23 @@ import { createScrollLogger } from './scrollLogger'
 
 const props = withDefaults(
   defineProps<{
-    /** The full list of items to virtualize. The scroller only mounts the items currently visible
-     * in the viewport (plus a small buffer above and below), so passing thousands of items is fine
-     * — the DOM stays small. */
+    /** The full list of items to virtualize. */
     items: T[]
     /** Total number of items that exist on the server / in the source of truth, if known. */
     totalCount?: number
-    /** Number of extra items to render **on each side** (above AND below) the visible viewport. So
-     * `buffer=20` means 20 items above + 20 items below + the visible items themselves. */
+    /** Number of extra items to render **on each side** (above AND below) the visible viewport. */
     buffer?: number
-    /** Estimated height in pixels for an item whose real height hasn't been measured yet. The
-     * scroller uses this to size the top/bottom spacers before measurement completes, which affects
-     * the initial `scrollHeight` and therefore the initial scroll position. */
+    /** Estimated height in pixels for an item whose real height hasn't been measured yet. */
     defaultItemHeight?: number
-    /** Distance in pixels from the load edge at which the scroller emits `loadMore`. If
-     * `loadMoreAtTop` is `true` (paginating older items by prepending), this is measured from the
-     * top of the scrollable area; otherwise from the bottom. */
+    /** Distance in pixels from the load edge at which the scroller emits `loadMore`. */
     loadMoreThreshold?: number
-    /** Proportion of the container's visible height (`clientHeight`) that the effective threshold
-     * should track. Combined with `loadMoreThreshold` as `effective = max(loadMoreThreshold,
-     * containerHeight * loadMoreThresholdRatio)`. */
+    /** Proportion of the container's visible height (`clientHeight`) that the effective threshold should track. */
     loadMoreThresholdRatio?: number
-    /** If `true`, the scroller emits `loadMore` when the user scrolls within `loadMoreThreshold` of
-     * the **top** — use this when you're prepending older items (chat history, activity feeds,
-     * logs). */
+    /** If `true`, the scroller emits `loadMore` when the user scrolls within `loadMoreThreshold` of the **top** — use this when you're prepending older items (chat … */
     loadMoreAtTop?: boolean
-    /** Stable identity function for items (2026-08-26 stable-keys fix). Returns a string that
-     * uniquely identifies the item's CONTENT — e.g. a DB id — and survives position changes in the
-     * array. WHY: the height cache was keyed by ARRAY INDEX. */
+    /** Stable identity function for items (2026-08-26 stable-keys fix). */
     itemKey?: (item: T, index: number) => string
-    /** Hard cap, in pixels, on the blank region the user can scroll into BELOW the last rendered
-     * row. WHY: the sizer height is the height MODEL (Σ measured/estimated row heights). */
+    /** Hard cap, in pixels, on the blank region the user can scroll into BELOW the last rendered row. */
     maxTailGap?: number
     /** Debug chat id for VirtualScroller internal logging (2026-09-02). */
     debugChatId?: string
@@ -58,56 +44,43 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   loadMore: []
-  /** Fired when one of the scroller's internal guards prevented `loadMore` from being emitted —
-   * i.e. the user WAS within the load edge but the scroller still chose not to emit (because
-   * `isPreservingScroll`, `!hasMore`, `!isScrollable`, or `items.length === 0`). */
+  /** Fired when one of the scroller's internal guards prevented `loadMore` from being emitted — i.e. the user WAS within the load edge but the scroller still chose … */
   loadMoreSuppressed: [guard: string]
-  /** Fired on every scroll event. `target` is the actual DOM element that dispatched the event —
-   * guaranteed non-null by the browser for the lifetime of the event handler. */
+  /** Fired on every scroll event. */
   scroll: [
     scrollTop: number,
     direction: 'up' | 'down',
     target: HTMLElement,
     isProgrammatic: boolean,
   ]
-  /** Fired whenever the scroller's `isScrollable` computed value CHANGES (not on every
-   * re-evaluation — only when the boolean flips from one value to the other). */
+  /** Fired whenever the scroller's `isScrollable` computed value CHANGES (not on every re-evaluation — only when the boolean flips from one value to the other). */
   scrollabilityChange: [scrollable: boolean]
-  /** Fired whenever the scroller's content positioning values change — i.e. when `topSpacer`,
-   * `bottomSpacer`, or the total content height changes as a result of scrolling, measurement, or
-   * item-list updates. */
+  /** Fired whenever the scroller's content positioning values change — i.e. when `topSpacer`, `bottomSpacer`, or the total content height changes as a result of … */
   contentShift: [shift: { topSpacer: number; bottomSpacer: number; total: number }]
 }>()
 
-// ── Deep-dive logger (2026-09-02) ────────────────────────────────────────── When debugChatId is
-// provided, internal sizer/measure/scrollToBottom decisions are logged via the same scrollLogger
-// infra as ChatView, so a single `grep chat=task_...` shows both sides of the loop.
+// ── Deep-dive logger (2026-09-02) ──────────────────────────────────────────
 const vsLogger = computed(() => (props.debugChatId ? createScrollLogger(props.debugChatId) : null))
 
 const containerRef = ref<HTMLElement | null>(null)
-// The content div needs no template ref: the sizer is a pure function of the
-// height model (see sizerHeight), and per-child heights come from measureItems.
+// The content div needs no template ref: the sizer is a pure function of the height model (see sizerHeight), and per-child heights come from measureItems.
 const scrollTop = ref(0)
 const lastScrollTop = ref(0)
 const containerHeight = ref(0)
-// Heights keyed by STABLE ID (itemKey(item)), not array index — see the
-// itemKey prop JSDoc for the index-shift corruption this prevents.
+// Heights keyed by STABLE ID (itemKey(item)), not array index — see the itemKey prop JSDoc for the index-shift corruption this prevents.
 const itemHeights = ref<Map<string, number>>(new Map())
 const accumulatedHeights = ref<number[]>([0])
 const isPreservingScroll = ref(false)
 const forceRenderUpTo = ref(-1)
 
-/** Stable identity for the item at `index`. Falls back to the index
- * string when no `itemKey` prop is supplied (historical behavior). */
+/** Stable identity for the item at `index`. */
 const keyOf = (index: number): string => {
   const item = props.items[index]
   if (item === undefined) return `#${index}`
   return props.itemKey ? props.itemKey(item, index) : `#${index}`
 }
 
-// ── Programmatic-scroll tracking (2026-08-25 append-gap fix) ──────────────── The scroller writes
-// `containerRef.scrollTop` itself in two places: the anchor-compensation inside `measureItems()`
-// and the restoration in `endPreserve()`.
+// ── Programmatic-scroll tracking (2026-08-25 append-gap fix) ────────────────
 let pendingProgrammaticScrolls = 0
 let programmaticResetTimer: ReturnType<typeof setTimeout> | null = null
 const markProgrammaticScroll = (): void => {
@@ -126,47 +99,37 @@ const consumeProgrammaticScroll = (): boolean => {
 }
 
 // ── P1 perf: adaptive item-height estimation (task_1787551495337_9) ─────────
-// `props.defaultItemHeight` is a static guess.
 const heightEstimator = new AdaptiveItemHeightEstimator({
   seed: props.defaultItemHeight,
   maxSamples: 64,
 })
 
-// Highest index that has a real measured height (vestigial frontier, 2026-09-06: estimateHeight now
-// trusts the running median for ALL unmeasured items — the old index-gated fallback to the static
-// prop collapsed the tail to 64px/item and shrank the list.
+// Highest index that has a real measured height (vestigial frontier, 2026-09-06: estimateHeight now trusts the running median for ALL unmeasured items — the old …
 let maxMeasuredIndex = -1
 
-/** Estimated height for an item with no stored measurement. 2026-09-06 (task_1788648119245_5): uses
- * the adaptive running MEDIAN of measured heights instead of the static `defaultItemHeight` (64). */
+/** Estimated height for an item with no stored measurement. 2026-09-06 (task_1788648119245_5): uses the adaptive running MEDIAN of measured heights instead of the … */
 const ESTIMATE_MIN_PX = 32
 const ESTIMATE_MAX_PX = 1600
 const clampEstimate = (px: number): number =>
   Math.min(ESTIMATE_MAX_PX, Math.max(ESTIMATE_MIN_PX, px))
 
-/** How many observations the estimator must hold before its estimate is frozen (see
- * `estimateHeight`). */
+/** How many observations the estimator must hold before its estimate is frozen (see `estimateHeight`). */
 const ESTIMATOR_FREEZE_SAMPLES = 64
 
-/** Height for an item with no stored measurement — a PLACEHOLDER, and one that is deliberately not
- * allowed to move once the estimator has learned a realistic median (`heightEstimator.freeze()`
- * below). */
+/** Height for an item with no stored measurement — a PLACEHOLDER, and one that is deliberately not allowed to move once the estimator has learned a realistic … */
 const estimateHeight = (index: number): number => {
   const stored = itemHeights.value.get(keyOf(index))
   if (stored !== undefined) return stored
   return clampEstimate(heightEstimator.estimate())
 }
 
-/** Whether the container's content currently overflows its visible area (i.e. `scrollHeight >
- * clientHeight`). */
+/** Whether the container's content currently overflows its visible area (i.e. */
 const isScrollable = computed(() => {
   const totalContentHeight = accumulatedHeights.value[props.items.length] ?? 0
   return totalContentHeight > containerHeight.value
 })
 
-/** Effective distance (in px) from the load edge at which the scroller emits `loadMore`. Recomputed
- * whenever the container's height changes (via the `containerHeight` ref, which is updated in
- * `onScroll`). */
+/** Effective distance (in px) from the load edge at which the scroller emits `loadMore`. */
 const effectiveLoadMoreThreshold = computed(() =>
   computeLoadMoreThreshold(
     props.loadMoreThreshold,
@@ -175,8 +138,7 @@ const effectiveLoadMoreThreshold = computed(() =>
   ),
 )
 
-// Scrollability is pushed to the parent via the `scrollabilityChange` event (see its emit doc for
-// why an event beats a template-ref read).
+// Scrollability is pushed to the parent via the `scrollabilityChange` event (see its emit doc for why an event beats a template-ref read).
 let prevScrollable: boolean | null = null
 const emitScrollableIfChanged = () => {
   const scrollable = isScrollable.value
@@ -201,13 +163,9 @@ const updateAccumulatedHeights = () => {
 // ── Sizer height.
 const modelTotal = computed(() => accumulatedHeights.value[props.items.length] ?? 0)
 
-// ── Tail-gap cap (task_1790236655228_2) ───────────────────────────────────── "the gap is too
-// long" — the model can reserve thousands of px of empty sizer BELOW the real content (DevTools:
-// sizer 26796px vs a content box ending at ~24114px), and the browser lets the user scroll into it.
+// ── Tail-gap cap (task_1790236655228_2) ─────────────────────────────────────
 const tailContentBottom = ref(0)
-// Latched "the rendered window covers the tail" flag. The clamp is applied only while this is true,
-// so a user reading history can always scroll back down to newly appended rows (no cap → upstream
-// model space is intact).
+// Latched "the rendered window covers the tail" flag.
 const tailCapLatched = ref(false)
 let cachedSizerHeight = -1
 const sizerHeight = computed(() => {
@@ -257,15 +215,11 @@ const syncItemsLength = () => {
   if (newLen === prevItemsLen) return
   const oldLen = prevItemsLen
   prevItemsLen = newLen
-  // A collapse to 0 means the list was swapped (chat switch) — forget
-  // the previous chat's height profile so its median doesn't pollute
-  // the new chat's estimates.
+  // A collapse to 0 means the list was swapped (chat switch) — forget the previous chat's height profile so its median doesn't pollute the new chat's estimates.
   if (newLen === 0 && oldLen > 0) {
     heightEstimator.reset()
     maxMeasuredIndex = -1
-    // The measured tail bottom belongs to the OLD list: keeping it
-    // would cap the new chat's sizer at a position that means nothing
-    // here.
+    // The measured tail bottom belongs to the OLD list: keeping it would cap the new chat's sizer at a position that means nothing here.
     tailContentBottom.value = 0
     tailCapLatched.value = false
   }
@@ -311,8 +265,7 @@ const visibleRange = computed(() => {
   return { start, end, topSpacer, bottomSpacer }
 })
 
-// Tail-cap latch (see the sizerHeight comment). ON as soon as the rendered window reaches the last
-// item — that is exactly when `measureItems` can see the real content bottom and record it.
+// Tail-cap latch (see the sizerHeight comment).
 const applyTailCapLatch = (end: number) => {
   if (end >= props.items.length) tailCapLatched.value = true
   else if (end < props.items.length - props.buffer) tailCapLatched.value = false
@@ -329,9 +282,7 @@ const syncSizerHeightToDom = (): void => {
   sizer.style.height = px
 }
 
-/**  * Highest `scrollTop` the container can reach as its geometry stands NOW. Read after
- * `syncSizerHeightToDom` so it describes the model this pass built rather than the previous
- * render's (see `maxScrollTop` on the compensation helper). */
+/** Highest `scrollTop` the container can reach as its geometry stands NOW. */
 const reachableScrollTop = (): number => {
   const el = containerRef.value
   if (!el) return 0
@@ -345,8 +296,7 @@ const recordTailContentBottom = (
 ): void => {
   if (props.maxTailGap <= 0) return
   if (firstIndex < 0 || lastIndex < props.items.length - 1) {
-    // This pass did not see the tail, so whatever bottom we recorded earlier describes a DIFFERENT
-    // window — and, if the list has grown since, a different list.
+    // This pass did not see the tail, so whatever bottom we recorded earlier describes a DIFFERENT window — and, if the list has grown since, a different list.
     tailContentBottom.value = 0
     return
   }
@@ -367,17 +317,13 @@ const visibleItems = computed(() => {
   return result
 })
 
-/** Live count of items currently rendered in the DOM (i.e. the length of `visibleItems`). Exposed
- * so the parent can verify the buffer contract and log "rendered N items" diagnostics without
- * opening dev-tools. */
+/** Live count of items currently rendered in the DOM (i.e. the length of `visibleItems`). */
 const renderedCount = computed(() => {
   const { start, end } = visibleRange.value
   return Math.max(0, end - start)
 })
 
-/**  * The {start, end} range of items currently rendered. Exposed as a single object so the parent can
- * read both fields in one reactive read (avoiding the start-vs-end skew that would happen if they
- * were two separate computeds and a scroll fired between reads). */
+/** The {start, end} range of items currently rendered. */
 const effectiveRange = computed(() => {
   const { start, end } = visibleRange.value
   return { start, end }
@@ -391,8 +337,7 @@ const scrollInfo = computed(() => ({
   direction: scrollTop.value > lastScrollTop.value ? ('down' as const) : ('up' as const),
 }))
 
-// ── P2: contentShift emit (task_1787551495337_9) ───────────────────────────── Transform-based
-// positioning has no spacer DIVs whose style mutations a parent MutationObserver could watch.
+// ── P2: contentShift emit (task_1787551495337_9) ─────────────────────────────
 let prevShiftTop = -1
 let prevShiftBottom = -1
 let prevShiftTotal = -1
@@ -408,28 +353,19 @@ const emitContentShiftIfChanged = () => {
   emit('contentShift', { topSpacer, bottomSpacer, total })
 }
 
-// Hysteresis dead-band for `measureItems()` ABOVE the viewport. Only update a stored height for an
-// item strictly above the visible window when the new measurement differs by more than this many
-// pixels.
+// Hysteresis dead-band for `measureItems()` ABOVE the viewport.
 const HYSTERESIS_PX = 50
 
-// How close to the bottom counts as "at the bottom" when `measureItems` decides which target the
-// anchor compensation writes to (see `wasAtBottom` in that function).
+// How close to the bottom counts as "at the bottom" when `measureItems` decides which target the anchor compensation writes to (see `wasAtBottom` in that …
 const AT_BOTTOM_SLACK_PX = 10
 
-// Where the bottom sat as of the END of the previous pass (or the last `scrollToBottom`), or null
-// before anything has positioned the list. `measureItems` must judge "was the reader at the
-// bottom?" against THIS, not against a live read of `bottomScrollTop()`.
+// Where the bottom sat as of the END of the previous pass (or the last `scrollToBottom`), or null before anything has positioned the list.
 let settledBottom: number | null = null
 
-// True once a measure pass has admitted at least one REAL height over an estimate. Until then every
-// number the scroller publishes — `sizerHeight`, `modelTotal`, `bottomScrollTop()`, `scrollHeight -
-// clientHeight` — describes the ESTIMATE, not the content.
+// True once a measure pass has admitted at least one REAL height over an estimate.
 let hasMeasuredItems = false
 
-/** Whether this DOM reports geometry at all. jsdom answers 0 for EVERY element, so there a 0px item
- * cannot be told apart from an item that draws nothing — and storing those zeros would collapse the
- * whole model onto the estimate floor. Probed once, off-screen. */
+/** Whether this DOM reports geometry at all. jsdom answers 0 for EVERY element, so there a 0px item cannot be told apart from an item that draws nothing — and … */
 let layoutReportsGeometry: boolean | null = null
 const hasRealLayout = (): boolean => {
   if (typeof document === 'undefined') return false
@@ -449,31 +385,23 @@ const measureItems = () => {
   let changed = false
   // A 0px row is a MEASUREMENT only where the DOM really reports geometry (see `hasRealLayout`).
   const zeroIsMeasured = hasRealLayout()
-  // ── Scroll-anchor compensation (2026-08-23; v2 prefix-delta 2026-09-23) ── Writing
-  // heights/estimates for items ABOVE the viewport mutates the transform origin (topSpacer) without
-  // moving scrollTop — content under the viewport teleports.
+  // ── Scroll-anchor compensation (2026-08-23; v2 prefix-delta 2026-09-23) ──
   const anchorIndex = findStartIndex()
   const prevScrollTop = containerRef.value.scrollTop
-  // ── Was the reader at the bottom BEFORE this pass touched the model? ────── Read here, not at
-  // the compensation site: by then `updateAccumulatedHeights` has already resized the sizer, so
-  // `bottomScrollTop()` would answer with the POST-pass edge and the question would be circular.
+  // ── Was the reader at the bottom BEFORE this pass touched the model? ──────
   const wasAtBottom = prevScrollTop >= bottomScrollTop() - AT_BOTTOM_SLACK_PX
   const oldAnchorTop = accumulatedHeights.value[anchorIndex] ?? 0
   const pendingMeasurements: AnchorMeasurement[] = []
   const children = content.children
-  // ── P1 perf: batched height writes (task_1787551495337_9) ────────────── All measurements are
-  // collected into `pendingWrites` and applied to the reactive Map in ONE synchronous block.
+  // ── P1 perf: batched height writes (task_1787551495337_9) ──────────────
   const pendingWrites: Array<[string, number, number]> = []
-  // Tail-gap cap inputs (see recordTailContentBottom): the summed real height of the rows currently
-  // in the DOM, plus the first/last indices they were stamped with. Read in this same pass so the
-  // recorded real bottom can never describe a previous window.
+  // Tail-gap cap inputs (see recordTailContentBottom): the summed real height of the rows currently in the DOM, plus the first/last indices they were stamped with.
   let renderedChildrenSum = 0
   let firstRenderedIndex = -1
   let lastRenderedIndex = -1
   for (let i = 0; i < children.length; i++) {
     const el = children[i] as HTMLElement
-    // Read the index stamped by the renderer — the live computed range can already point at the
-    // next window while the DOM still shows the previous one (render is async).
+    // Read the index stamped by the renderer — the live computed range can already point at the next window while the DOM still shows the previous one (render is …
     const stamped = el.getAttribute?.('data-vs-index')
     const parsed =
       stamped !== null && stamped !== undefined && stamped !== '' ? Number(stamped) : NaN
@@ -485,22 +413,14 @@ const measureItems = () => {
     }
     const h = el.offsetHeight
     renderedChildrenSum += h > 0 ? quantizePx(h) : 0
-    // An item that draws NOTHING is measured 0px: the compact fold turns a turn's other groups into
-    // empty wrappers, and a placeholder for each inflated the model until the tail cap fought the
-    // re-stick every frame (the compact blink). Hence `zeroIsMeasured`.
+    // An item that draws NOTHING is measured 0px: the compact fold turns a turn's other groups into empty wrappers, and a placeholder for each inflated the model …
     if (h > 0 || zeroIsMeasured) {
-      // P1 perf: quantize to integer px. Fractional offsetHeights under
-      // sub-pixel layout re-quantize differently between our prefix sums
-      // and the browser's layout → ±1px spacer drift → micro-jitter.
+      // P1 perf: quantize to integer px.
       const heightPx = quantizePx(h)
-      // Stable-key lookup: the height belongs to the ITEM (via its
-      // itemKey), not the array slot — immune to index shifts from
-      // messageGroups regrouping (the sizer-corruption bug).
+      // Stable-key lookup: the height belongs to the ITEM (via its itemKey), not the array slot — immune to index shifts from messageGroups regrouping (the …
       const key = keyOf(realIndex)
       const prev = itemHeights.value.get(key)
-      // First measurement (prev === undefined) always writes. On subsequent measurements the
-      // dead-band is two-tier: - Strictly ABOVE the viewport start (realIndex < anchorIndex): keep
-      // the HYSTERESIS_PX dead-band.
+      // First measurement (prev === undefined) always writes.
       const aboveAnchor = realIndex < anchorIndex
       const admitted =
         prev === undefined ||
@@ -512,65 +432,46 @@ const measureItems = () => {
       }
     }
   }
-  // Record the measured tail bottom on BOTH paths — a no-op pass still carries a fresh window
-  // geometry (e.g. the user scrolled: same stored heights, different rows on screen), and the cap
-  // must follow the window, not only the height writes.
+  // Record the measured tail bottom on BOTH paths — a no-op pass still carries a fresh window geometry (e.g. the user scrolled: same stored heights, different rows …
   recordTailContentBottom(renderedChildrenSum, firstRenderedIndex, lastRenderedIndex)
   if (!changed) {
-    // Even a pass that wrote nothing establishes where the bottom is, and the
-    // NEXT pass has to judge against it (see `settledBottom`).
+    // Even a pass that wrote nothing establishes where the bottom is, and the NEXT pass has to judge against it (see `settledBottom`).
     settledBottom = bottomScrollTop()
     return
   }
   for (const [key, heightPx, realIndex] of pendingWrites) {
     itemHeights.value.set(key, heightPx)
-    // A real height is now in the model, so every published number describes
-    // the content rather than the estimate (see `hasMeasuredItems`).
+    // A real height is now in the model, so every published number describes the content rather than the estimate (see `hasMeasuredItems`).
     hasMeasuredItems = true
-    // Feed the adaptive estimator so future unmeasured items inherit a
-    // realistic median instead of the static prop guess. An empty item is NOT a
-    // sample: a transcript full of folded turns would drag the median to zero.
+    // Feed the adaptive estimator so future unmeasured items inherit a realistic median instead of the static prop guess.
     if (heightPx > 0) heightEstimator.observe(heightPx)
-    // Track the measurement frontier: the learned median is only
-    // trusted for items at or before this index (see estimateHeight).
+    // Track the measurement frontier: the learned median is only trusted for items at or before this index (see estimateHeight).
     if (realIndex > maxMeasuredIndex) maxMeasuredIndex = realIndex
   }
-  // Freeze the placeholder once the estimator's window is full — from here on `estimateHeight` may
-  // only change for a MEASURED row, so no scroll gesture can rescale the model above the reader
-  // (see `estimateHeight` for the measured jump this prevents).
+  // Freeze the placeholder once the estimator's window is full — from here on `estimateHeight` may only change for a MEASURED row, so no scroll gesture can rescale …
   if (!heightEstimator.isFrozen && heightEstimator.sampleCount >= ESTIMATOR_FREEZE_SAMPLES) {
     heightEstimator.freeze()
   }
   updateAccumulatedHeights()
-  // Prefixes moved: recompute the measured tail bottom against the fresh
-  // model so the cap describes where the content actually sits now.
+  // Prefixes moved: recompute the measured tail bottom against the fresh model so the cap describes where the content actually sits now.
   recordTailContentBottom(renderedChildrenSum, firstRenderedIndex, lastRenderedIndex)
-  // Post-pass prefix at the same anchor index: the delta vs
-  // `oldAnchorTop` is the compensation (v2 prefix-delta — covers
-  // measured writes AND estimator drift for unmeasured items above).
+  // Post-pass prefix at the same anchor index: the delta vs `oldAnchorTop` is the compensation (v2 prefix-delta — covers measured writes AND estimator drift for …
   const newAnchorTop = accumulatedHeights.value[anchorIndex] ?? 0
 
-  // NOTE (2026-08-25): a "tail-exact clamp" (force-write rendered tail heights + shrink the sizer
-  // to the real content bottom when the window shows the last item) was tried here and REMOVED.
+  // NOTE (2026-08-25): a "tail-exact clamp" (force-write rendered tail heights + shrink the sizer to the real content bottom when the window shows the last item) …
   syncSizerHeightToDom()
   const result = computeAnchorCompensation({
     anchorIndex,
     prevScrollTop,
     oldAnchorTop,
     newAnchorTop,
-    // Read the bottom edge AFTER the rebuild, so the target is the bottom as
-    // it is now. Passing it is the whole point: a bottom reader is re-targeted
-    // instead of compensated around an anchor they never chose.
+    // Read the bottom edge AFTER the rebuild, so the target is the bottom as it is now.
     atBottomTarget: wasAtBottom ? bottomScrollTop() : undefined,
     maxScrollTop: reachableScrollTop(),
   })
-  // ── The write gate is `shiftPx !== 0`, and that is deliberate but partial ── It drops the
-  // helper's OTHER return: `target: 'bottom'` carries the prefix delta it absorbed alongside, and
-  // on a streaming turn that delta is normally 0 (content grows AT/AFTER the anchor, so the prefix.
+  // ── The write gate is `shiftPx !==
   if (result.shiftPx !== 0 && !isPreservingScroll.value) {
-    // Mark BEFORE the write: assigning .scrollTop fires a native scroll event that onScroll must
-    // label as programmatic (see the counter comment above — without this, a downward compensation
-    // is misread as "user scrolled up" and disengages ChatView's auto-stick).
+    // Mark BEFORE the write: assigning .scrollTop fires a native scroll event that onScroll must label as programmatic (see the counter comment above — without this …
     if (import.meta.env.DEV && vsLogger.value) {
       try {
         vsLogger.value.info({
@@ -595,9 +496,7 @@ const measureItems = () => {
             shiftPx: result.shiftPx,
             target: result.target,
             wasAtBottom,
-            // True when the target exceeded the reachable range even after the sizer was brought up
-            // to date — the view could not be held exactly, and the NEXT pass will re-derive the
-            // reader's position from where this left them.
+            // True when the target exceeded the reachable range even after the sizer was brought up to date — the view could not be held exactly, and the NEXT pass will …
             clampedToMax: result.clampedToMax,
             reachableScrollTop: reachableScrollTop(),
             pendingMeasurements,
@@ -612,15 +511,11 @@ const measureItems = () => {
     scrollTop.value = result.newScrollTop
     lastScrollTop.value = result.newScrollTop
   }
-  // Re-read rather than reusing the target: the branch above may not have run
-  // (shiftPx 0, or a preserve window), and the tail cap can move the bottom
-  // independently of anything measured here.
+  // Re-read rather than reusing the target: the branch above may not have run (shiftPx 0, or a preserve window), and the tail cap can move the bottom independently …
   settledBottom = bottomScrollTop()
 }
 
-// ── Pre-paint measurement on rendered-range change ─────────────────────────── The debounced
-// measureItems (50ms) compensates at MEASUREMENT time, but the jump for a tall item happens at
-// RENDER time: when a new item enters the top buffer, Vue renders it in one commit.
+// ── Pre-paint measurement on rendered-range change ───────────────────────────
 let _inPrePaintMeasure = false
 let _prePaintTrailing: ReturnType<typeof setTimeout> | null = null
 let _prePaintScheduled = false
@@ -636,8 +531,7 @@ const schedulePrePaintMeasure = () => {
     } finally {
       _inPrePaintMeasure = false
     }
-    // Trailing sweep: if the compensation shifted the window again,
-    // one more pass settles it (debounced, off the critical path).
+    // Trailing sweep: if the compensation shifted the window again, one more pass settles it (debounced, off the critical path).
     if (_prePaintTrailing) clearTimeout(_prePaintTrailing)
     _prePaintTrailing = setTimeout(() => {
       if (!_inPrePaintMeasure && !isPreservingScroll.value) measureItems()
@@ -650,29 +544,23 @@ let measureDebounce: ReturnType<typeof setTimeout> | null = null
 
 const onScroll = (e: Event) => {
   const target = e.target as HTMLElement
-  // Timestamp for the idle content-size observer below: it stays quiet
-  // shortly after a scroll because the scroll path already measures.
+  // Timestamp for the idle content-size observer below: it stays quiet shortly after a scroll because the scroll path already measures.
   lastScrollEventAt = Date.now()
-  // Keep `containerHeight.value` in sync with the live DOM reading. The `ResizeObserver` only fires
-  // when the container's *size* changes — it does NOT fire for scroll-only events.
+  // Keep `containerHeight.value` in sync with the live DOM reading.
   containerHeight.value = target.clientHeight
   const st = target.scrollTop
   const dir = st > lastScrollTop.value ? 'down' : 'up'
   // NOTE (P1 perf review, task_1787551495337_9): this write stays SYNCHRONOUS.
   scrollTop.value = st
   lastScrollTop.value = st
-  // Consume the programmatic flag BEFORE the emit: a markProgrammatic bump (from measureItems'
-  // compensation write or endPreserve's restoration) belongs to exactly THIS event — the next one
-  // is a fresh gesture (or another marked write).
+  // Consume the programmatic flag BEFORE the emit: a markProgrammatic bump (from measureItems' compensation write or endPreserve's restoration) belongs to exactly …
   const isProgrammatic = consumeProgrammaticScroll()
   emit('scroll', st, dir as 'up' | 'down', target, isProgrammatic)
 
   if (loadMoreDebounce) clearTimeout(loadMoreDebounce)
   loadMoreDebounce = setTimeout(() => {
     if (isPreservingScroll.value) {
-      // Don't log here — the parent is mid-preserve, suppression is
-      // expected. The parent will log its own preserve-start/end
-      // events that bracket this window.
+      // Don't log here — the parent is mid-preserve, suppression is expected.
       return
     }
     const hasMore = props.totalCount === 0 || props.items.length < props.totalCount
@@ -680,9 +568,7 @@ const onScroll = (e: Event) => {
       emit('loadMoreSuppressed', 'no-more-items')
       return
     }
-    // Defensive guard: if the container isn't actually scrollable (scrollHeight ≤ clientHeight,
-    // i.e. content fits in viewport), `st < loadMoreThreshold` is trivially true because `st` is 0
-    // and there's nothing to scroll.
+    // Defensive guard: if the container isn't actually scrollable (scrollHeight ≤ clientHeight, i.e. content fits in viewport), `st < loadMoreThreshold` is trivially …
     const isScrollable = target.scrollHeight > target.clientHeight
     if (!isScrollable) {
       emit('loadMoreSuppressed', 'not-scrollable')
@@ -693,13 +579,10 @@ const onScroll = (e: Event) => {
       if (st < threshold && props.items.length > 0) {
         emit('loadMore')
       } else if (st < threshold && props.items.length === 0) {
-        // User is near the top but there are no items yet — nothing to "load more of". This is the
-        // "empty list, scrolled to top" case (rare; usually we wouldn't be at the top of an empty
-        // list, but guard it).
+        // User is near the top but there are no items yet — nothing to "load more of".
         emit('loadMoreSuppressed', 'no-items')
       }
-      // else: user is just not near the top yet — normal scrolling,
-      // not a suppression. Don't emit.
+      // else: user is just not near the top yet — normal scrolling, not a suppression.
     } else {
       const bottom = target.scrollHeight - st - target.clientHeight
       if (bottom < threshold && props.items.length > 0) {
@@ -711,30 +594,24 @@ const onScroll = (e: Event) => {
     }
   }, 200)
 
-  // Max-wait, NOT reset-per-event: the previous clearTimeout+reschedule pushed the deadline out
-  // another 50ms on EVERY scroll event, so the trailing measure never fired while the user kept
-  // scrolling.
+  // Max-wait, NOT reset-per-event: the previous clearTimeout+reschedule pushed the deadline out another 50ms on EVERY scroll event, so the trailing measure never …
   if (!measureDebounce) {
     measureDebounce = setTimeout(() => {
       measureDebounce = null
       measureItems()
     }, 50)
   }
-  // Re-measure pre-paint when the scroll moved the rendered window (same
-  // contract the old `effectiveRange` watcher provided; deduped against
-  // the onUpdated sync block below via `_prePaintScheduled`).
+  // Re-measure pre-paint when the scroll moved the rendered window (same contract the old `effectiveRange` watcher provided; deduped against the onUpdated sync …
   schedulePrePaintMeasure()
 }
 
-/** PHASE 1 — call BEFORE mutating items array.
- * Reads anchor (old item[0]) offsetTop while it is still in the DOM. */
+/** PHASE 1 — call BEFORE mutating items array. */
 const beginPreserve = (newItemsCount: number) => {
   if (!containerRef.value || newItemsCount <= 0) return
   isPreservingScroll.value = true
   _pendingNewItemsCount = newItemsCount
 
-  // NOTE (2026-08-26 stable-keys fix): the old index-shift remap (rebuilding the Map with every key
-  // +N) is GONE.
+  // NOTE (2026-08-26 stable-keys fix): the old index-shift remap (rebuilding the Map with every key +N) is GONE.
   if (newItemsCount > 0) {
     maxMeasuredIndex += newItemsCount
     updateAccumulatedHeights()
@@ -749,8 +626,7 @@ const beginPreserve = (newItemsCount: number) => {
   console.log('[beginPreserve] anchorEl found:', !!anchorEl, 'offsetTop:', _anchorOffsetTopBefore)
 }
 
-/** PHASE 2 — call AFTER items array has been mutated.
- * Expands render window, waits for layout, sets scrollTop once accurately. */
+/** PHASE 2 — call AFTER items array has been mutated. */
 const endPreserve = async () => {
   if (!containerRef.value || _pendingNewItemsCount <= 0) {
     isPreservingScroll.value = false
@@ -812,17 +688,13 @@ const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
   writeScrollTop(accumulatedHeights.value[index] ?? index * props.defaultItemHeight, behavior)
 }
 const scrollToTop = (behavior: ScrollBehavior = 'auto') => writeScrollTop(0, behavior)
-/** THE bottom, as a scrollTop — the single ruler for "is the reader at the end". Two different
- * notions of "the bottom" used to live in two files, and they disagreed by more than either one's
- * tolerance: - the DOM's notion: `scrollHeight - clientHeight`, which trusts the sizer. */
+/** THE bottom, as a scrollTop — the single ruler for "is the reader at the end". */
 const bottomScrollTop = (): number => {
   const el = containerRef.value
   if (!el) return 0
   const clientHeight = el.clientHeight
   const domEdge = Math.max(0, el.scrollHeight - clientHeight)
-  // Real-bottom override (blank-viewport fix) — kept, but now safe because sizerHeight is stable
-  // (modelTotal only, no visibleRange dependency). Previously the sizer clamp + this override
-  // together caused the loop; with sizer stable, this is a one-time read that doesn't feedback.
+  // Real-bottom override (blank-viewport fix) — kept, but now safe because sizerHeight is stable (modelTotal only, no visibleRange dependency).
   const range = visibleRange.value
   const content = el.querySelector('.virtual-scroller-content')
   const contentH = content ? (content as HTMLElement).offsetHeight : 0
@@ -838,14 +710,10 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
   const target = bottomScrollTop()
   containerRef.value.scrollTo({ top: target, behavior })
-  // An explicit jump to the bottom is the strongest possible statement that the reader is following
-  // the tail, and the next measure pass has to honour it (see `settledBottom`). This is the gesture
-  // behind the jump-to-bottom arrow, and it is the exact moment the reported bug used to be armed.
+  // An explicit jump to the bottom is the strongest possible statement that the reader is following the tail, and the next measure pass has to honour it (see …
   settledBottom = target
 }
-/** Put the container at an arbitrary scrollTop, clamped to the DOM max. ── Why this clears
- * `settledBottom` ───────────────────────────────────────── `settledBottom` is "where the bottom
- * sat when the stick LAST acted". */
+/** Put the container at an arbitrary scrollTop, clamped to the DOM max. ── Why this clears `settledBottom` ───────────────────────────────────────── … */
 const scrollToPosition = (position: number, behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
   const max = containerRef.value.scrollHeight - containerRef.value.clientHeight
@@ -856,8 +724,7 @@ const scrollToPosition = (position: number, behavior: ScrollBehavior = 'auto') =
 const scrollToItem = (index: number, behavior: ScrollBehavior = 'auto') =>
   scrollToIndex(index, behavior)
 
-/** Full recompute of the height model from the live DOM (2026-08-25 append-gap fix). */
-/** Transfer a stored height across an identity swap (2026-09-06). */
+// Full recompute of the height model from the live DOM (2026-08-25 append-gap fix).
 const rekeyHeight = (oldKey: string, newKey: string): boolean => {
   if (!oldKey || !newKey || oldKey === newKey) return false
   const h = itemHeights.value.get(oldKey)
@@ -872,8 +739,7 @@ const remeasure = () => {
 }
 
 let ro: ResizeObserver | null = null
-// ── Idle content-size observer ───────────────────────────────────────────── measureItems runs on
-// scroll, remeasure(), and rendered-range change.
+// ── Idle content-size observer ─────────────────────────────────────────────
 let contentRO: ResizeObserver | null = null
 let contentROTimer: ReturnType<typeof setTimeout> | null = null
 const measureTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -888,9 +754,7 @@ let lastContentH = -1
 let lastScrollEventAt = 0
 const CONTENT_RO_DEBOUNCE_MS = 150
 const CONTENT_RO_MIN_DELTA_PX = 2
-// ── Watch-free sync block ────────────────────────────────────────────────── The six reactive
-// edges above (scrollability emit, items-length rebuild, tail-cap latch, contentShift emit,
-// rendered-range measure) run here: onMounted for the initial pass, onUpdated with prev-value.
+// ── Watch-free sync block ──────────────────────────────────────────────────
 let prevRangeStart = -1
 let prevRangeEnd = -1
 onMounted(() => {
@@ -966,8 +830,7 @@ defineExpose({
   scrollToTop,
   scrollToBottom,
   bottomScrollTop,
-  /** Where the bottom sat as of the END of the last pass (or the last `scrollToBottom`), or null
-   * before anything has positioned the list. */
+  /** Where the bottom sat as of the END of the last pass (or the last `scrollToBottom`), or null before anything has positioned the list. */
   get settledBottom() {
     return settledBottom
   },

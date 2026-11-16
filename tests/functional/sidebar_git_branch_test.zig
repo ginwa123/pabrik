@@ -1,6 +1,4 @@
-// Sidebar git branch badge wire contract (kanban parity). Zig port of
-// `tests/functional/sidebar_git_branch_test.py` (same test names, same
-// order).
+// Sidebar git branch badge wire contract (kanban parity).
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,13 +8,10 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The branch the fixture repo is parked on. Deliberately a `worktree/...`
-/// name with a slash — that is the shape the kanban card sends as
-/// `?pr=<branch>`, so the fixture is realistic rather than a bare `main`.
+/// The branch the fixture repo is parked on.
 const BRANCH = "worktree/sidebar-badge-test";
 
 /// A scratch directory to hold fixture repos, mirroring pytest's `tmp_path`.
-/// Removed on the way out.
 const Scratch = struct {
     dir: std.Io.Dir,
     root: []u8,
@@ -26,21 +21,16 @@ const Scratch = struct {
         defer gpa.free(root);
 
         // A unique-ish name so two concurrent runs do not collide.
-        // `std.testing.tmpDir` cannot be used (see above), so derive
-        // the suffix from the monotonic clock.
         const stamp = std.Io.Timestamp.now(io, .awake).toMilliseconds();
         const name = try std.fmt.allocPrint(gpa, "zigtest-sidebar-branch-{x}", .{@as(u64, @bitCast(stamp))});
         defer gpa.free(name);
 
-        // A plain `defer`, not `errdefer`: on the SUCCESS path this function
-        // still owns `dir_path` (the caller gets the `real_path` dupe, not
-        // this buffer), so it must be freed unconditionally.
+        // A plain `defer`, not `errdefer`: on the SUCCESS path this function still owns `dir_path` (the caller gets the `real_path` dupe, not this buffer), so it must be …
         const dir_path = try std.fs.path.join(gpa, &.{ root, name });
         defer gpa.free(dir_path);
         try std.Io.Dir.cwd().createDirPath(io, dir_path);
 
-        // `realPath(dir, io, out_buffer)` — the path is the DIR's, not
-        // an argument, so resolve through a just-opened handle.
+        // `realPath(dir, io, out_buffer)` — the path is the DIR's, not an argument, so resolve through a just-opened handle.
         var buf: [std.fs.max_path_bytes]u8 = undefined;
         var opened = try std.Io.Dir.cwd().openDir(io, dir_path, .{});
         defer opened.close(io);
@@ -55,9 +45,7 @@ const Scratch = struct {
 
     fn deinit(self: *Scratch) void {
         self.dir.close(io);
-        // The dir was created by this struct at a path this struct
-        // owns, so removing it is bounded — no `isSafeTmp` gate needed
-        // (that gate exists for paths derived from ambient state).
+        // The dir was created by this struct at a path this struct owns, so removing it is bounded — no `isSafeTmp` gate needed (that gate exists for paths derived from …
         std.Io.Dir.cwd().deleteTree(io, self.root) catch {};
         gpa.free(self.root);
     }
@@ -79,8 +67,7 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Run `git` with the fixture identity baked in, in `cwd`, returning its
-/// trimmed stdout (`check=True` in the Python `_git`).
+/// Run `git` with the fixture identity baked in, in `cwd`, returning its trimmed stdout (`check=True` in the Python `_git`).
 fn gitOut(cwd: []const u8, args: []const []const u8) ![]u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -88,9 +75,7 @@ fn gitOut(cwd: []const u8, args: []const []const u8) ![]u8 {
         "git", "-C", cwd,
         "-c", "user.email=t@t",
         "-c", "user.name=t",
-        // A machine-wide `commit.gpgsign=true` would make every
-        // fixture commit fail for a reason that has nothing to do with
-        // the code under test.
+        // A machine-wide `commit.gpgsign=true` would make every fixture commit fail for a reason that has nothing to do with the code under test.
         "-c", "commit.gpgsign=false",
     });
     try argv.appendSlice(gpa, args);
@@ -110,8 +95,7 @@ fn gitOut(cwd: []const u8, args: []const []const u8) ![]u8 {
     return gpa.dupe(u8, std.mem.trim(u8, res.stdout, " \t\r\n"));
 }
 
-/// `git init --initial-branch=main --quiet <path>` — the Python fixture
-/// ran this as a bare `subprocess.run` before the `_git` helper existed.
+/// `git init --initial-branch=main --quiet <path>` — the Python fixture ran this as a bare `subprocess.run` before the `_git` helper existed.
 fn gitInit(path: []const u8) !void {
     var argv: [5][]const u8 = .{ "git", "init", "--initial-branch=main", "--quiet", path };
     const res = std.process.run(gpa, io, .{ .argv = &argv }) catch |err| {
@@ -128,9 +112,7 @@ fn gitInit(path: []const u8) !void {
     }
 }
 
-/// Build the `sidebar-branch-proj` fixture inside `s`: a real git repo
-/// on `worktree/sidebar-badge-test` (NOT the harness HOME — the Python
-/// fixture comment says so explicitly).
+/// Build the `sidebar-branch-proj` fixture inside `s`: a real git repo on `worktree/sidebar-badge-test` (NOT the harness HOME — the Python fixture comment says so …
 fn buildBranchRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"sidebar-branch-proj"});
     errdefer gpa.free(cwd);
@@ -158,8 +140,7 @@ fn buildBranchRepo(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// `POST /api/llm/session` with a caller-chosen id, then poll until the
-/// session is readable.
+/// `POST /api/llm/session` with a caller-chosen id, then poll until the session is readable.
 fn createSession(h: *Harness, session_id: []const u8, name: []const u8, cwd: []const u8) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .session_id = session_id,
@@ -204,9 +185,7 @@ fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `GET /api/llm/session?limit=50` → the row for `session_id`. Python's
-/// `_list_sessions` asserted the list shape, then both tests did `next(s for
-/// s in body["sessions"] if s["session_id"] == sid)`.
+/// `GET /api/llm/session?limit=50` → the row for `session_id`.
 fn sessionRow(h: *Harness, session_id: []const u8) !harness.Json {
     var r = try h.http(io, .GET, "/api/llm/session", .{
         .params = &.{.{ .name = "limit", .value = "50" }},
@@ -238,8 +217,7 @@ fn sessionRow(h: *Harness, session_id: []const u8) !harness.Json {
     return error.TestUnexpectedResult;
 }
 
-/// The string field `key` on the session-list row `session_id`, or an
-/// empty slice when the key is absent.
+/// The string field `key` on the session-list row `session_id`, or an empty slice when the key is absent.
 fn rowStr(row: harness.Json, session_id: []const u8, key: []const u8) []const u8 {
     const rows = row.array("sessions") orelse return "";
     for (rows.items) |r| {

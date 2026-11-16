@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** Global top loading bar (NProgress-style, zero deps). Visible while the loading store reports
- * route navigation or in-flight API activity. A 150ms show-delay suppresses flicker on fast
- * requests; hide is immediate with a 200ms fade. */
+/** Global top loading bar (NProgress-style, zero deps). */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useLoadingStore } from '../../stores/loading'
 
@@ -30,8 +28,7 @@ function syncBarVisibility(busy: boolean) {
   }
 }
 
-// The store is the visibility-setting path: subscribe to it (a subscription, not a watcher) and run
-// the same start/clear-timer body.
+// The store is the visibility-setting path: subscribe to it (a subscription, not a watcher) and run the same start/clear-timer body.
 let prevBusy: boolean | null = null
 const stopSubscribe = loading.$subscribe(() => {
   const busy = loading.isBarVisible

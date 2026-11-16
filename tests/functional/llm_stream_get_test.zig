@@ -1,5 +1,4 @@
-// Functional tests for the in-flight stream snapshot endpoint. Zig port of
-// `tests/functional/llm_stream_get_test.py` (same test names, same order).
+// Functional tests for the in-flight stream snapshot endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `POST /api/llm/session` → the new session's id. The Python original did
-/// this inline in each test; the body differs only in `name`, so one helper
-/// keeps the three tests focused on what they actually assert.
+/// `POST /api/llm/session` → the new session's id.
 fn createSession(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -38,8 +35,7 @@ fn streamPath(session_id: []const u8) ![]u8 {
 
 // ─── Test 1: idle session → inactive empty snapshot ────────────────────────
 
-// A session with no in-flight stream must return active=false and
-// empty content — this is what ChatView sees on every normal mount.
+// A session with no in-flight stream must return active=false and empty content — this is what ChatView sees on every normal mount.
 test "stream_get_idle_session_returns_inactive" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -60,9 +56,7 @@ test "stream_get_idle_session_returns_inactive" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python: `assert body["active"] is False`. `is False` is an identity
-    // check against the singleton, so a MISSING key or a truthy value both
-    // fail — which is what `orelse` + expectEqual reproduces here.
+    // Python: `assert body["active"] is False`.
     const active = doc.boolean("active") orelse {
         std.debug.print("stream snapshot has no boolean `active`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -78,9 +72,7 @@ test "stream_get_idle_session_returns_inactive" {
 
 // ─── Test 2: unknown session → still 200 inactive (in-memory only) ─────────
 
-// The registry is in-memory keyed by session_id — an unknown id is
-// simply not streaming. Must NOT 404 (the frontend treats any
-// non-active response as "nothing to resume").
+// The registry is in-memory keyed by session_id — an unknown id is simply not streaming.
 test "stream_get_unknown_session_returns_inactive" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -106,8 +98,7 @@ test "stream_get_unknown_session_returns_inactive" {
 
 // ─── Test 3: sibling routes unshadowed (route-order guard) ─────────────────
 
-// `/api/llm/session/:id/stream` was registered after /messages and
-// /queue_messages; the older routes must still resolve.
+// `/api/llm/session/:id/stream` was registered after /messages and /queue_messages; the older routes must still resolve.
 test "stream_route_does_not_shadow_sibling_routes" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -118,9 +109,7 @@ test "stream_route_does_not_shadow_sibling_routes" {
     const session_id = try createSession(&h, "stream-sib");
     defer gpa.free(session_id);
 
-    // `/messages?limit=10` — Python passed the query inline in the URL
-    // string. `.params` produces the identical bytes and is the harness
-    // -sanctioned spelling, so use it.
+    // `/messages?limit=10` — Python passed the query inline in the URL string.
     {
         const messages_path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
         defer gpa.free(messages_path);
@@ -165,9 +154,7 @@ test "stream_route_does_not_shadow_sibling_routes" {
         var doc = try r.json();
         defer doc.deinit();
 
-        // Python: `set(snap.keys()) >= {"active", "content"}` — a
-        // SUBSET check, so extra keys are fine and only the two named
-        // ones are required.
+        // Python: `set(snap.keys()) >= {"active", "content"}` — a SUBSET check, so extra keys are fine and only the two named ones are required.
         if (doc.get("active") == null or doc.get("content") == null) {
             std.debug.print(
                 "stream snapshot must carry both `active` and `content`, got: {s}\n",

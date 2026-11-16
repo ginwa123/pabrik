@@ -1,6 +1,4 @@
-// Functional wire tests for sub-agent peek fetches. Zig port of
-// `tests/functional/subagent_peek_test.py`. Task: task_1788551671819_5
-// (sub-agent peek always empty).
+// Functional wire tests for sub-agent peek fetches.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,8 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `POST /api/llm/session` with `name`, returning an OWNED session id. The
-/// caller frees the returned slice.
+/// `POST /api/llm/session` with `name`, returning an OWNED session id.
 fn createSession(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -31,8 +28,7 @@ fn createSession(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Python's `s.replace(needle, replacement, 1)` — replace only the FIRST
-/// occurrence, and return an owned slice.
+/// Python's `s.replace(needle, replacement, 1)` — replace only the FIRST occurrence, and return an owned slice.
 fn replaceFirstOwned(haystack: []const u8, needle: []const u8, replacement: []const u8) ![]u8 {
     const at = std.mem.indexOf(u8, haystack, needle) orelse
         return gpa.dupe(u8, haystack);
@@ -46,9 +42,7 @@ fn replaceFirstOwned(haystack: []const u8, needle: []const u8, replacement: []co
     return out.toOwnedSlice();
 }
 
-/// Deep-equality for two parsed JSON values. Python wrote
-/// `decoded["messages"] == plain["messages"]`, which is a structural
-/// comparison of arbitrarily nested lists/dicts.
+/// Deep-equality for two parsed JSON values.
 fn jsonValueEql(a: std.json.Value, b: std.json.Value) bool {
     if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
     return switch (a) {
@@ -77,9 +71,7 @@ fn jsonValueEql(a: std.json.Value, b: std.json.Value) bool {
     };
 }
 
-// The eye panel fetches `GET .../messages` for the child sid. A sid
-// with no rows (wrong id, pre-first-row live open) must be 200 empty,
-// not an error — the panel shows `No messages yet.` + live SSE.
+// The eye panel fetches `GET .../messages` for the child sid.
 test "peek_unknown_subagent_sid_returns_empty_200" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -102,9 +94,7 @@ test "peek_unknown_subagent_sid_returns_empty_200" {
     try testing.expectEqual(@as(usize, 0), messages.items.len);
 }
 
-// `%5F` (`_`) in the path must decode before router matching, so the
-// frontend's new `encodeURIComponent(sid)` fetch hits the same rows as the
-// raw fetch.
+// `%5F` (`_`) in the path must decode before router matching, so the frontend's new `encodeURIComponent(sid)` fetch hits the same rows as the raw fetch.
 test "peek_percent_encoded_sid_decodes_to_same_session" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -115,8 +105,7 @@ test "peek_percent_encoded_sid_decodes_to_same_session" {
     const session_id = try createSession(&h, "peek-probe");
     defer gpa.free(session_id);
 
-    // Generated ids are `sess_<ts>_<hex>` — the `_` is the whole point
-    // of this probe.
+    // Generated ids are `sess_<ts>_<hex>` — the `_` is the whole point of this probe.
     try testing.expect(std.mem.indexOf(u8, session_id, "_") != null);
 
     const plain_path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages?limit=10", .{session_id});
@@ -157,8 +146,7 @@ test "peek_percent_encoded_sid_decodes_to_same_session" {
     );
 }
 
-// `%2F` decodes to `/` BEFORE the router splits on `/`, so the path gains a
-// segment and matches no route → 404.
+// `%2F` decodes to `/` BEFORE the router splits on `/`, so the path gains a segment and matches no route → 404.
 test "peek_encoded_slash_does_not_match_session_route" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

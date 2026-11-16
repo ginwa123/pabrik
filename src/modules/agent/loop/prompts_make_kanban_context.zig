@@ -7,8 +7,7 @@ const sqlite = pabrikcore.sqlite;
 const MAX_SIBLING_ITEMS: u32 = 20;
 const MAX_TASKS_PER_ITEM: u32 = 5;
 
-/// Build a "## Kanban Status Tracking — MANDATORY" section that FORCES the
-/// agent to call `kanban_list` + `kanban_move_task` at start and complete.
+/// Build a "## Kanban Status Tracking — MANDATORY" section that FORCES the agent to call `kanban_list` + `kanban_move_task` at start and complete.
 pub fn makeKanbanContext(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -47,9 +46,7 @@ pub fn makeKanbanContext(
         \\
     );
 
-    // Render full column list (no cap, no per-task current column) so the
-    // agent can call `kanban_move_task` in 1 call without a prior
-    // `kanban_list`.
+    // Render full column list (no cap, no per-task current column) so the agent can call `kanban_move_task` in 1 call without a prior `kanban_list`.
     if (cols.len > 0) {
         try out.appendSlice(allocator, "\n**Columns on this board** (in flow order):\n");
         for (cols) |c| {
@@ -66,8 +63,7 @@ pub fn makeKanbanContext(
                 try out.appendSlice(allocator, " — ");
                 try out.appendSlice(allocator, trimmed_desc);
             }
-            // Migration 111 — which columns finish a task, i.e. which ones
-            // unblock the cards that depend on this one.
+            // Migration 111 — which columns finish a task, i.e. which ones unblock the cards that depend on this one.
             if (c.is_done) {
                 try out.appendSlice(allocator, " — **a card here has COMPLETED its work** (it unblocks the cards that depend on it)");
             }
@@ -151,9 +147,7 @@ fn getWorkspaceContext(
     );
     defer count_q.deinit();
     const count_row = (try count_q.next()) orelse {
-        // Defensive: COUNT(*) should always return a row. If not,
-        // synthesize an empty siblings list so the caller still
-        // gets a usable context.
+        // Defensive: COUNT(*) should always return a row.
         return WorkspaceContext{
             .workspace_id = workspace_id,
             .self_item_id = self_item_id,
@@ -197,8 +191,7 @@ fn getWorkspaceContext(
         const is_self_owned = std.mem.eql(u8, row.values[4], "1");
         row.deinit(allocator);
 
-        // 4. Enumerate tasks under this item (capped at
-        // MAX_TASKS_PER_ITEM). Same inlined-LIMIT pattern as above.
+        // 4.
         const tasks_sql = try std.fmt.allocPrint(allocator,
             \\SELECT t.id, t.name, t.task_type
             \\FROM workspace_item_tasks t
@@ -233,8 +226,7 @@ fn getWorkspaceContext(
             });
         }
 
-        // 4b. Truncation detection for tasks: see if there are
-        // more tasks than we loaded.
+        // 4b.
         var task_count_q = try db.query(
             allocator,
             "SELECT COUNT(*) FROM workspace_item_tasks t WHERE t.workspace_item_id = ?",
@@ -243,7 +235,6 @@ fn getWorkspaceContext(
         defer task_count_q.deinit();
         const task_count_row = (try task_count_q.next()) orelse {
             // Defensive — COUNT(*) should always return a row.
-            // Use the loaded count as the truth.
             try siblings.append(allocator, .{
                 .id = item_id_owned,
                 .item_type = item_type_owned,
@@ -290,9 +281,7 @@ fn getWorkspaceContext(
     };
 }
 
-/// Context for the "Workspace Context" dynamic prompt section. Returned by
-/// `getWorkspaceContext`; the tui layer's `BuildWorkspaceContext` consumes
-/// this struct and renders the markdown block.
+/// Context for the "Workspace Context" dynamic prompt section.
 const WorkspaceContext = struct {
     workspace_id: []u8,
     self_item_id: []u8, // task's own item id
@@ -334,8 +323,6 @@ const WorkspaceContext = struct {
     };
 
     /// Free all heap-allocated fields of this `WorkspaceContext`.
-    /// Callers MUST call `deinit` on a non-null value returned by
-    /// `getWorkspaceContext` exactly once.
     pub fn deinit(self: WorkspaceContext, allocator: std.mem.Allocator) void {
         allocator.free(self.workspace_id);
         allocator.free(self.self_item_id);
@@ -347,9 +334,7 @@ const WorkspaceContext = struct {
     }
 };
 
-/// List the columns of a kanban workspace item in `position` order. Returns
-/// an owned slice; the caller must release it with `freeColumns(allocator,
-/// slice)`.
+/// List the columns of a kanban workspace item in `position` order.
 fn listColumns(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -390,7 +375,6 @@ fn listColumns(
 }
 
 /// One kanban column row, fully duplicated into heap memory.
-/// Free with `freeColumns(allocator, slice)`.
 const KanbanColumn = struct {
     id: []u8,
     workspace_item_id: []u8,
@@ -414,8 +398,7 @@ fn freeColumns(allocator: std.mem.Allocator, cols: []KanbanColumn) void {
     allocator.free(cols);
 }
 
-/// Look up a tool by its `function.name` in the equipped-tool list. Returns
-/// true if the tool is equipped, false otherwise.
+/// Look up a tool by its `function.name` in the equipped-tool list.
 fn hasToolByName(tools: []const pabrikcore.tool_models.AgentTool, name: []const u8) bool {
     for (tools) |t| {
         if (std.mem.eql(u8, t.function.name, name)) return true;
@@ -489,9 +472,7 @@ fn insertColumnWithDescription(ctx: *TestCtx, col_id: []const u8, item_id: []con
     const alloc = testing.allocator;
     const pos_str = try std.fmt.allocPrint(alloc, "{d}", .{pos});
     defer alloc.free(pos_str);
-    // Backend.exec binds "" as NULL (empty-slice-as-NULL pitfall),
-    // which violates NOT NULL on description. Omit the column when empty
-    // so DEFAULT '' applies — mirrors production's INSERT without description.
+    // Backend.exec binds "" as NULL (empty-slice-as-NULL pitfall), which violates NOT NULL on description.
     if (desc.len == 0) {
         try ctx.db.exec(alloc,
             "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES (?, ?, ?, ?)",

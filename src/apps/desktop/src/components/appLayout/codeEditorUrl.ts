@@ -1,5 +1,4 @@
-/** Keep-append: the editor keys merge into the current URL so the workspace/project/chat context in
- * the path survives a reload. */
+/** Keep-append: the editor keys merge into the current URL so the workspace/project/chat context in the path survives a reload. */
 export function codeEditorQuery(
   query: Record<string, unknown>,
   path: string,
@@ -29,14 +28,12 @@ export function codeEditorQuery(
   }
   next.view = 'code-editor'
   next.file = path
-  // The directory the file was resolved against travels with it: that is what gives a relative
-  // `file` one absolute key in the strip, and a shared link the cwd the editor needs.
+  // The directory the file was resolved against travels with it: that is what gives a relative `file` one absolute key in the strip, and a shared link the cwd the …
   const inherited = cwd || (typeof query.cwd === 'string' ? query.cwd : '')
   if (inherited.length > 0) next.cwd = inherited
   // The mode is the tab's identity for a diff: it must never be inherited from the URL it replaced.
   if (diff) next.mode = 'diff'
-  // WHICH diff. A commit row's changes are that commit's and a PR row's are the request's — neither
-  // is the worktree's, so the source travels with the tab instead of being guessed from the cwd.
+  // WHICH diff.
   if (rev.length > 0) next.rev = rev
   if (pr.length > 0) next.pr = pr
   if (line !== null) {

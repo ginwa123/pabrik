@@ -1,18 +1,13 @@
-//! Data model for the `agent_memories` entity table. Cross-session,
-//! cross-workspace note store backing the `save_memory` and `load_memory`
-//! agent tools.
+//! Data model for the `agent_memories` entity table.
 
 const std = @import("std");
 
 pub const EntityId = []u8;
 
 id: EntityId,
-/// The note body. 1 KiB – 1 MiB (validated by the `save_memory` tool
-/// handler). Empty content is rejected on INSERT (matches the
-/// `error.InvalidContent` contract from `agent_memories.zig`).
+/// The note body. 1 KiB – 1 MiB (validated by the `save_memory` tool handler).
 content: []u8,
-/// `||`-delimited tags string. Empty slice is the canonical "no
-/// tags" sentinel.
+/// `||`-delimited tags string.
 tags: []u8 = &.{},
 created_at: []u8,
 updated_at: []u8,

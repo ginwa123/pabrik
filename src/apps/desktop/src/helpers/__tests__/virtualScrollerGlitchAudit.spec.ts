@@ -1,6 +1,4 @@
-/** Regression specs for the many-messages glitch audit (task_1788648119245_5: bounce / tall gap /
- * blank / shrink). Three independent failure mechanisms, one spec each: T1 — sizer must be
- * position-independent. */
+/** Regression specs for the many-messages glitch audit (task_1788648119245_5: bounce / tall gap /blank / shrink). */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -59,8 +57,7 @@ describe('VirtualScroller many-messages glitch audit', () => {
   afterEach(() => vi.useRealTimers())
 
   it('T1: settled sizer equals modelTotal at the bottom (no stale-window expand)', async () => {
-    // jsdom reports offsetHeight 0 (no layout), so the content div's template-ref measurement would
-    // stay 0 and the at-bottom expand path could never trigger in-test.
+    // jsdom reports offsetHeight 0 (no layout), so the content div's template-ref measurement would stay 0 and the at-bottom expand path could never trigger in-test.
     const protoDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
       configurable: true,
@@ -73,8 +70,7 @@ describe('VirtualScroller many-messages glitch audit', () => {
       const { wrapper, el } = mountScroller(60)
       await nextTick()
 
-      // First window measures at 1000px; the content div reports 43000
-      // (stale from here on — the div element is never replaced).
+      // First window measures at 1000px; the content div reports 43000 (stale from here on — the div element is never replaced).
       mockAllChildren(el, 1000)
       scroll(el, 0)
       vi.advanceTimersByTime(150)
@@ -90,7 +86,6 @@ describe('VirtualScroller many-messages glitch audit', () => {
       const model = modelTotalOf(wrapper)
       const sizer = sizerTotal(el)
       // Old code: sizer = topSpacer + stale 43000 ≈ 3x the model.
-      // Fixed code: sizer tracks the MODEL, independent of scrollTop.
       expect(Math.abs(sizer - model)).toBeLessThanOrEqual(50)
       wrapper.unmount()
     } finally {
@@ -99,9 +94,7 @@ describe('VirtualScroller many-messages glitch audit', () => {
   })
 
   it('T2: unmeasured tail is estimated at the learned median, not 64px', async () => {
-    // Real chat bubbles ~400px; only a few windows get measured. The
-    // sizer must converge near 100*400, not collapse to measured*400
-    // + unmeasured*64.
+    // Real chat bubbles ~400px; only a few windows get measured.
     const { wrapper, el } = mountScroller(100)
     await nextTick()
 
@@ -162,16 +155,13 @@ describe('VirtualScroller many-messages glitch audit', () => {
     vi.advanceTimersByTime(150)
     await nextTick()
 
-    // The transferred height survives: sizer still contains the 500px row
-    // (500 + 9*64 = 1076), not a collapsed 10*64 = 640.
+    // The transferred height survives: sizer still contains the 500px row (500 + 9*64 = 1076), not a collapsed 10*64 = 640.
     expect(sizerTotal(el)).toBe(500 + 9 * 64)
     wrapper.unmount()
   })
 
   it('T4: a settled measure pass writes scrollTop zero times (no redundant compensation)', async () => {
-    // Anchor compensation writes container.scrollTop directly; each write fires a native scroll
-    // event into ChatView's isAtBottom machine. A second measure pass with no DOM changes must find
-    // nothing to do (changed=false early return) and write zero times.
+    // Anchor compensation writes container.scrollTop directly; each write fires a native scroll event into ChatView's isAtBottom machine.
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 

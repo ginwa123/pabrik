@@ -1,6 +1,4 @@
-/** <KanbanTaskRow> — right-click "Run agent". Row mode is the third entry point for starting an
- * agent on an existing task (the card's context menu and the detail dialog's caret menu are the
- * other two). */
+/** <KanbanTaskRow> — right-click "Run agent". */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -9,8 +7,7 @@ import KanbanTaskRow from '../components/kanban/KanbanTaskRow.vue'
 import type { Task } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-// Typed rather than a bare literal: `task_type` is a union, and an
-// untyped object silently widens it to `string` (TS2322 on mount).
+// Typed rather than a bare literal: `task_type` is a union, and an untyped object silently widens it to `string` (TS2322 on mount).
 const TASK: Task = {
   id: 'task_row_1',
   name: 'Row task',
@@ -62,8 +59,7 @@ describe('KanbanTaskRow — Run agent', () => {
   })
 
   it('hides the row while a worker runs on the task', async () => {
-    // The backend answers 409 to a second start, so the row must not
-    // offer the action while a worker is in flight.
+    // The backend answers 409 to a second start, so the row must not offer the action while a worker is in flight.
     const wrapper = mountRow({ task_row_1: true })
     await nextTick()
     await wrapper.find('[data-task-row]').trigger('contextmenu', { clientX: 30, clientY: 40 })

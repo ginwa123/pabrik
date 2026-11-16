@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** WebSearchSection — the `web_search` provider list in Settings. Sits on the same tab as
- * McpServersSection: both answer "where does the agent reach outside this machine". */
+/** WebSearchSection — the `web_search` provider list in Settings. */
 import EmptyState from './EmptyState.vue'
 import SettingsSkeleton from './SettingsSkeleton.vue'
 import type { WebSearchProviderRow } from './webSearchProviders'

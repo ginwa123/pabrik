@@ -29,8 +29,7 @@ export function useDesignContextActions(deps: Deps) {
   } = deps
   const workspacesStore = useWorkspacesStore()
 
-  // Chunk 5: handlers for the 4 reorder + select-all + delete events emitted by the LayersPanel
-  // context menu (and the canvas's own DesignContextMenu).
+  // Chunk 5: handlers for the 4 reorder + select-all + delete events emitted by the LayersPanel context menu (and the canvas's own DesignContextMenu).
   function handleDesignSelectAll(): void {
     selectedIds.value = new Set(elements.value.map((e) => e.id))
   }
@@ -39,9 +38,7 @@ export function useDesignContextActions(deps: Deps) {
     if (!workspaceId.value || !effectiveItemId.value || !activePageId.value) return
     if (targetIds.length === 0) return
     if (!confirm(`Delete ${targetIds.length} element${targetIds.length === 1 ? '' : 's'}?`)) return
-    // Undo/redo plan (Chunk 5): capture the deleted elements + their
-    // HTML bodies BEFORE the deletion so undo can restore everything.
-    // The composable's captureDelete is async (fetches HTML bodies).
+    // Undo/redo plan (Chunk 5): capture the deleted elements + their HTML bodies BEFORE the deletion so undo can restore everything.
     const deletedElements = targetIds
       .map((id) => {
         const el = elements.value.find((e) => e.id === id)
@@ -58,8 +55,7 @@ export function useDesignContextActions(deps: Deps) {
         id,
       )
     }
-    // Drop any deleted ids from the local selection Set so the
-    // remaining selection (if any) stays intact.
+    // Drop any deleted ids from the local selection Set so the remaining selection (if any) stays intact.
     const deleted = new Set(targetIds)
     const next = new Set<string>()
     for (const id of selectedIds.value) {
@@ -68,9 +64,7 @@ export function useDesignContextActions(deps: Deps) {
     selectedIds.value = next
   }
 
-  // NEW (2026-08-06, design-move-to-page plan, Chunk 8): pass-through computed properties for the
-  // MoveToPageDialog. `pages` is already scoped to `effectiveItemId.value`; we just need the selected
-  // element's name (looked up from the local elements list).
+  // NEW (2026-08-06, design-move-to-page plan, Chunk 8): pass-through computed properties for the MoveToPageDialog.
   const pagesForMoveDialog = computed<DesignPage[]>(() => pages.value)
   const elementNameForMoveDialog = computed<string>(() => {
     const id = moveToPageDialogElementId.value
@@ -79,39 +73,29 @@ export function useDesignContextActions(deps: Deps) {
     return el?.name ?? id
   })
 
-  // NEW (Chunk 2 of the right-click group menu plan): when the layers panel emits `group` from the
-  // context menu, mirror the Cmd+G path: inject the targetIds into the local `selectedIds` ref so
-  // `useDesignHandlers.groupSelection()` (which reads from `selectedIds.value`) acts on them.
+  // NEW (Chunk 2 of the right-click group menu plan): when the layers panel emits `group` from the context menu, mirror the Cmd+G path: inject the targetIds into …
   const handleDesignGroupFromContextMenu = (targetIds: string[]): void => {
     if (targetIds.length < 2) return
     selectedIds.value = new Set(targetIds)
-    // Push the group entry — the parent group's id is determined by the backend; for the capture
-    // entry we record `beforeParentExisted: true` (parent row doesn't exist yet) and use a
-    // placeholder id that the composable's inverse will treat as "no-op".
+    // Push the group entry — the parent group's id is determined by the backend; for the capture entry we record `beforeParentExisted: true` (parent row doesn't …
     void history.captureGroup('__pending__', targetIds, true)
     void designHandlers.groupSelection()
   }
 
-  // Chunk 9 of grouped-layers plan: dissolve the single selected group/frame. Mirrors
-  // handleDesignGroupFromContextMenu but takes a single id (groups always dissolve one at a time).
-  // Cmd+Shift+G and the right-click menu both route here.
+  // Chunk 9 of grouped-layers plan: dissolve the single selected group/frame.
   const handleDesignUngroupFromContextMenu = (elementId: string): void => {
     if (!elementId) return
     void designHandlers.ungroupSelection(elementId)
   }
 
-  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
-  // parent group/frame to top-level. Distinct from Ungroup (which dissolves the selected group
-  // itself) — the parent group survives and any other children stay nested.
+  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current parent group/frame to top-level.
   const handleDesignLeaveGroupFromContextMenu = (elementId: string): void => {
     if (!elementId) return
     if (!workspaceId.value || !effectiveItemId.value || !activePageId.value) return
     void designHandlers.leaveGroup(elementId)
   }
 
-  // NEW (2026-08-06, design-move-to-page plan, Chunk 8): open the MoveToPageDialog with the
-  // right-clicked element. The dialog itself drives the API call — we just open it with the right
-  // element id and source page.
+  // NEW (2026-08-06, design-move-to-page plan, Chunk 8): open the MoveToPageDialog with the right-clicked element.
   const moveToPageDialogElementId = ref<string>('')
   const moveToPageDialogVisible = computed({
     get: () => moveToPageDialogElementId.value !== '',

@@ -1,6 +1,4 @@
-/** Tests for workspacesStore.stopAllAgentsInColumn — the store action that wraps
- * api.stopAllAgentsInColumn for the column "Stop all agents" flow (mirror of
- * workspacesStoreRunAllAgents.spec.ts). */
+/** Tests for workspacesStore.stopAllAgentsInColumn — the store action that wraps api.stopAllAgentsInColumn for the column "Stop all agents" flow (mirror of … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

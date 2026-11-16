@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/routine`. Returns
-//! `{routine}` for the routine bound to this workspace_item.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/routine`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,8 +6,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 
-/// Wire shape for the routine row in the GET response. Mirrors
-/// `src/models/workspace_routine.zig`.
+/// Wire shape for the routine row in the GET response.
 pub const RoutineRow = struct {
     id: []const u8,
     workspace_item_id: []const u8,
@@ -45,9 +43,7 @@ pub const RoutineGetOutput = struct {
     routine: RoutineRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -99,9 +95,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workspaceRoutinesGetHandler(
     ctx: gserverz.HttpContext,

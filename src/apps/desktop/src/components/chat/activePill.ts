@@ -3,9 +3,7 @@ export interface PillIndex {
   groupIndex: number
 }
 
-/** Whether a message group deserves a rail pill. Real user turns only: a background completion
- * groups as a tool row, and a compaction envelope is a system artifact — neither is a user turn to
- * jump to. */
+/** Whether a message group deserves a rail pill. */
 export function isPillGroup(role: string, isCompaction: boolean): boolean {
   return role === 'user' && !isCompaction
 }
@@ -21,9 +19,7 @@ export function estimateViewportEnd(
   return Math.max(start, end - buffer)
 }
 
-/** Returns the groupIndex of the last pill at or below the bound index (usually the estimated
- * viewport bottom — i.e. the latest user turn the user has seen), or null when no pill is at/above
- * the bound (the user hasn't scrolled to their first message yet). */
+/** Returns the groupIndex of the last pill at or below the bound index (usually the estimated viewport bottom — i.e. the latest user turn the user has seen), or … */
 export function pickActivePillIndex(
   pills: readonly PillIndex[],
   boundIndex: number,

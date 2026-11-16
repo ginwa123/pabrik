@@ -1,5 +1,4 @@
-/** Source-contract tests for the older-history PREFETCH work (task_1789505423062_0) — the "auto
- * fetch before the scroll reaches the top" fix. */
+/** Source-contract tests for the older-history PREFETCH work (task_1789505423062_0) — the "auto fetch before the scroll reaches the top" fix. */
 import { describe, it, expect } from 'vitest'
 import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
@@ -21,13 +20,10 @@ describe('older-history prefetch — trigger wiring', () => {
     const body = fnBody(source, 'const handleVirtualScroll = (', '// ─── Send Message')
     // The decision runs on user gestures…
     expect(body).toContain('evaluateOlderPrefetch()')
-    // …and a buffered page is committed as soon as the user is inside the
-    // scroller's own band, without waiting for the 200 ms @load-more backstop.
+    // …and a buffered page is committed as soon as the user is inside the scroller's own band, without waiting for the 200 ms @load-more backstop.
     expect(body).toContain("void maybeLoadOlder('edge')")
     expect(body).toContain('effectiveLoadMoreThreshold')
-    // Velocity sampling / arming must be skipped for programmatic writes (an
-    // anchor-compensation scrollTop write is not a gesture) and for the initial
-    // load, whose late unmarked scroll events armed a fetch on open.
+    // Velocity sampling / arming must be skipped for programmatic writes (an anchor-compensation scrollTop write is not a gesture) and for the initial load, whose …
     expect(body).toMatch(
       /if \(!isProgrammatic && !getIsInitialLoad\(\)\) \{[\s\S]*evaluateOlderPrefetch\(\)/,
     )
@@ -43,8 +39,7 @@ describe('older-history prefetch — trigger wiring', () => {
     expect(body).toContain('decidePrefetchOlder({')
     expect(body).toContain('armRadiusPx(container.clientHeight)')
     expect(body).toContain('armPrefetchOlder(')
-    // Terminal states must be handed to the pure decision function rather than
-    // re-implemented here.
+    // Terminal states must be handed to the pure decision function rather than re-implemented here.
     expect(body).toContain('hasMore: hasMoreMessages.value')
     expect(body).toContain('isPreservingScroll')
     expect(body).toContain('backoffActive')
@@ -54,9 +49,7 @@ describe('older-history prefetch — trigger wiring', () => {
     const source = await readChatViewSource()
     const body = fnBody(source, 'const loadChatHistory = async () => {', '// ─── Scroll')
     expect(body).toContain("resetOlderPrefetch('refresh')")
-    // Measured in the browser: at this point the initial-load scroll has not been applied yet, so
-    // `container.scrollTop` is still 0 and an eager evaluation would burn a scroll-back request on
-    // every open (and then drop it). The arm waits for the first real scroll event instead.
+    // Measured in the browser: at this point the initial-load scroll has not been applied yet, so `container.scrollTop` is still 0 and an eager evaluation would burn …
     expect(body).not.toContain('evaluateOlderPrefetch()')
   })
 })
@@ -106,9 +99,7 @@ describe('older-history prefetch — commit invariants', () => {
     expect(loadingFlag).toBeGreaterThan(-1)
     expect(committingFlag).toBeGreaterThan(-1)
     expect(firstAwait).toBeGreaterThan(-1)
-    // Order: claim the slot, set BOTH in-flight flags, and only THEN touch the
-    // network. A second caller (positional commit vs the 200 ms backstop) must
-    // observe the flags/already-empty slot, never a duplicate prepend.
+    // Order: claim the slot, set BOTH in-flight flags, and only THEN touch the network.
     expect(claim).toBeLessThan(firstAwait)
     expect(loadingFlag).toBeLessThan(firstAwait)
     expect(committingFlag).toBeLessThan(firstAwait)
@@ -127,8 +118,7 @@ describe('older-history prefetch — commit invariants', () => {
     expect(body).toContain('isLoadingMore.value')
     expect(body).toContain("guard: 'no-messages'")
     expect(body).toContain("guard: 'already-committing'")
-    // The manual button must NOT be swallowed by a fresh auto-stick: only the
-    // scroll trigger consults the gate.
+    // The manual button must NOT be swallowed by a fresh auto-stick: only the scroll trigger consults the gate.
     expect(body).toContain("if (trigger === 'edge' && isAutoStickActive(")
   })
 
@@ -186,8 +176,7 @@ describe('older-history prefetch — commit invariants', () => {
 describe('older-history prefetch — invalidation', () => {
   it('drops the buffer on session change, refresh, and unmount', async () => {
     const source = await readChatViewSource()
-    // Single session-change entry point (watch-zero: the two sessionId
-    // watchers merged into onSessionChanged) still drops the buffer.
+    // Single session-change entry point (watch-zero: the two sessionId watchers merged into onSessionChanged) still drops the buffer.
     const entryBody = fnBody(
       source,
       'const onSessionChanged = async (newId: string) => {',
@@ -203,9 +192,7 @@ describe('older-history prefetch — invalidation', () => {
   it('writes messageCursor exactly four times: reset, cached restore, initial page, commit', async () => {
     const source = await readChatViewSource()
     const writes = source.match(/messageCursor\.value = /g) ?? []
-    // 1. `= null` — reset before an initial load · 2. `= oldestCursor(cached)` — a cached mount arms
-    // scroll-back at the oldest row it painted · 3. `= data.next_cursor` — the initial page ·
-    // 4. `= page.nextCursor` — an older page commit.
+    // 1.
     expect(writes).toHaveLength(4)
     const resyncBody = fnBody(source, 'bus.onResync?.(() => {', '}) ?? null')
     expect(resyncBody).not.toMatch(/messageCursor\.value = /)
@@ -222,8 +209,7 @@ describe('older-history prefetch — invalidation', () => {
   it('routes the manual button through the shared guard chain (no slow path left)', async () => {
     const source = await readChatViewSource()
     expect(source).toContain(`@click="maybeLoadOlder('manual')"`)
-    // The old handler-based call is gone from the template (prose comments
-    // elsewhere mention the old name for history — that is fine).
+    // The old handler-based call is gone from the template (prose comments elsewhere mention the old name for history — that is fine).
     expect(source).not.toContain(`@click="loadChatHistory(true)"`)
     expect(source).not.toContain('loadChatHistory(true)\n  }')
   })

@@ -1,5 +1,4 @@
-/** Behavioural tests for KanbanColumn + VirtualScroller integration (kanban-virtual-scroll,
- * 2026-08-06). Why this exists. */
+/** Behavioural tests for KanbanColumn + VirtualScroller integration (kanban-virtual-scroll, 2026-08-06). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -36,9 +35,7 @@ const makeTasks = (count: number, columnId = COL_TODO): Task[] =>
       }) as Task,
   )
 
-/** Mount a KanbanColumn with a pre-populated workspaces store so `parentItem.columnPagination` is
- * non-null. Without this the `loadMoreTasksForColumn` no-ops at the store level (and so does the
- * @load-more handler — the action is the source of truth). */
+/** Mount a KanbanColumn with a pre-populated workspaces store so `parentItem.columnPagination` is non-null. */
 function mountColumnWithPagination(
   column: KanbanColumnType,
   tasks: Task[],
@@ -49,8 +46,7 @@ function mountColumnWithPagination(
   workspaceId = 'ws_1',
   itemId = 'item_1',
 ) {
-  // Build the store BEFORE mounting so the workspaces.value.find(...)
-  // chain in KanbanColumn can resolve `parentItem`.
+  // Build the store BEFORE mounting so the workspaces.value.find(...) chain in KanbanColumn can resolve `parentItem`.
   const store = useWorkspacesStore()
   store.workspaces = [
     {
@@ -92,9 +88,7 @@ describe('KanbanColumn — VirtualScroller integration', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
-    // Silence the real fetch call from `loadMoreTasksForColumn` → `api.getTasks`. Default mock
-    // returns `has_more: true` so the auto-fetch watcher (2026-08-06) keeps the column in the
-    // "still loading more" state — matches the manual-button visibility test scenarios.
+    // Silence the real fetch call from `loadMoreTasksForColumn` → `api.getTasks`.
     vi.spyOn(api, 'getTasks').mockResolvedValue({
       tasks: [],
       has_more: true,
@@ -116,17 +110,14 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     expect(scroller.exists()).toBe(true)
     // The scroller receives the same cardsInColumn we filtered.
     expect((scroller.props('items') as Task[]).length).toBe(5)
-    // defaultItemHeight is the pre-measurement estimate. We picked
-    // 100px (~96 card + 4 px pb-1 gap) so the first paint lines up
-    // with reality before the first measurement cycle (~150 ms).
+    // defaultItemHeight is the pre-measurement estimate.
     expect(scroller.props('defaultItemHeight')).toBe(100)
     // loadMoreAtTop defaults to false — kanban appends, not prepends.
     expect(scroller.props('loadMoreAtTop')).toBe(false)
   })
 
   it("passes only this column's tasks to the scroller (filters by column id)", () => {
-    // Mix tasks for two different columns. The scroller must only
-    // see tasks for the column it belongs to.
+    // Mix tasks for two different columns.
     const tasks = [...makeTasks(3, COL_TODO), ...makeTasks(2, 'col_other')]
     wrapper = mountColumnWithPagination(makeColumn(), tasks)
 
@@ -138,15 +129,11 @@ describe('KanbanColumn — VirtualScroller integration', () => {
 
   // ─── 2. Only a slice of cards is in the DOM ─────────────────────────────
   it('does NOT mount every card to the DOM when there are many', async () => {
-    // 50 tasks but the scroller only mounts the visible range. jsdom doesn't have a real layout, so
-    // the visible range may include more than the production default of ~10 — but it MUST be far
-    // less than 50.
+    // 50 tasks but the scroller only mounts the visible range. jsdom doesn't have a real layout, so the visible range may include more than the production default of …
     const tasks = makeTasks(50)
     wrapper = mountColumnWithPagination(makeColumn(), tasks)
     await nextTick()
-    // Allow the scroller's measurement setTimeout (50ms) to fire so
-    // the buffer is computed against measured heights, not the
-    // 96px default.
+    // Allow the scroller's measurement setTimeout (50ms) to fire so the buffer is computed against measured heights, not the 96px default.
     await new Promise((r) => setTimeout(r, 100))
     await nextTick()
 
@@ -163,20 +150,14 @@ describe('KanbanColumn — VirtualScroller integration', () => {
       cursor: 'cursor_abc',
     })
 
-    // Let the auto-fetch watcher's immediate run + its async fetch settle. `flushPromises` rather
-    // than a fixed tick count: the mount path primes the local task cache through Effect, which
-    // takes more microtask hops than the direct api call it replaced.
+    // Let the auto-fetch watcher's immediate run + its async fetch settle.
     await flushPromises()
 
-    // Spy on api.getTasks (set up in beforeEach) so we can verify the @load-more path forwards the
-    // columnId correctly. The auto-fetch watcher fires once during mount — we capture the LATEST
-    // call (the @load-more driven one).
+    // Spy on api.getTasks (set up in beforeEach) so we can verify the @load-more path forwards the columnId correctly.
     const getTasksSpy = vi.mocked(api.getTasks)
     const callsBefore = getTasksSpy.mock.calls.length
 
-    // Drive the scroller's @load-more emit directly. In production this fires when the user scrolls
-    // within loadMoreThreshold of the bottom; in jsdom we trigger it manually because there's no
-    // real scroll layout.
+    // Drive the scroller's @load-more emit directly.
     const scroller = wrapper.findComponent({ name: 'VirtualScroller' })
     scroller.vm.$emit('loadMore')
     await nextTick()
@@ -296,13 +277,9 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     expect(empty.text()).toContain('No tasks yet')
   })
 
-  // ─── 7. Auto-fetch when the viewport fits the page (2026-08-06 fix) ─── Bug: when the entire
-  // page fits in the viewport (e.g. a column with 10 cards on a tall screen), the VirtualScroller's
-  // container is NOT scrollable, so its scroll-driven @load-more never fires.
+  // ─── 7. Auto-fetch when the viewport fits the page (2026-08-06 fix) ───
   it('auto-fetches when hasMore=true and the page fits in the viewport', async () => {
-    // 9 cards (< PAGE_SIZE=10) so the watcher's `cardsInColumn.length < PAGE_SIZE` branch fires.
-    // hasMore=true so `moreTasksAvailable` is true. scrollerIsScrollable defaults to false (no
-    // @scrollability-change has fired yet). All three conditions for auto-fetch are met.
+    // 9 cards (< PAGE_SIZE=10) so the watcher's `cardsInColumn.length < PAGE_SIZE` branch fires. hasMore=true so `moreTasksAvailable` is true. scrollerIsScrollable …
     wrapper = mountColumnWithPagination(makeColumn(), makeTasks(9), {
       hasMore: true,
       cursor: 'cursor_p2',
@@ -311,17 +288,14 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     await nextTick()
 
     const getTasksSpy = vi.mocked(api.getTasks)
-    // Find the call that included our cursor — the auto-fetch should
-    // have fired with cursor='cursor_p2'.
+    // Find the call that included our cursor — the auto-fetch should have fired with cursor='cursor_p2'.
     const callsWithOurCursor = getTasksSpy.mock.calls.filter((call) => call[3] === 'cursor_p2')
     expect(callsWithOurCursor.length).toBeGreaterThan(0)
     expect(callsWithOurCursor[0]![6]).toBe(COL_TODO) // columnId
   })
 
   it('does NOT auto-fetch when the column is already scrollable (no overlap with VirtualScroller @load-more)', async () => {
-    // Mount FIRST. The watcher runs immediately — with 9 cards and
-    // scrollerIsScrollable=false, it fires once. We then flip
-    // scrollerIsScrollable to true and assert no additional fetches.
+    // Mount FIRST.
     wrapper = mountColumnWithPagination(makeColumn(), makeTasks(9), {
       hasMore: true,
       cursor: 'cursor_p2',
@@ -331,8 +305,7 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     const callsAfterMount = getTasksSpy.mock.calls.length
     expect(callsAfterMount).toBeGreaterThan(0) // initial auto-fetch fired
 
-    // Now flip scrollability to true. The watcher re-evaluates and
-    // should NOT fire again (scrollerIsScrollable=true → bail).
+    // Now flip scrollability to true.
     const scroller = wrapper.findComponent({ name: 'VirtualScroller' })
     scroller.vm.$emit('scrollabilityChange', true)
     await nextTick()
@@ -341,9 +314,7 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 
   it('does NOT auto-fetch when cardsInColumn.length >= PAGE_SIZE (page full)', async () => {
-    // 10 cards == PAGE_SIZE. The watcher's "viewport fits the page" condition is
-    // `cardsInColumn.length < PAGE_SIZE` — false here — so no auto-fetch. VirtualScroller's
-    // scroll-driven @load-more is the path that fires in that case.
+    // 10 cards == PAGE_SIZE.
     wrapper = mountColumnWithPagination(makeColumn(), makeTasks(10), {
       hasMore: true,
       cursor: 'cursor_p2',
@@ -363,9 +334,7 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     await nextTick()
 
     const getTasksSpy = vi.mocked(api.getTasks)
-    // The default cursor in the seeded pagination is null when hasMore=false — and the store action
-    // bails on null cursor before calling api.getTasks. We check that no api.getTasks call was made
-    // for this column at all.
+    // The default cursor in the seeded pagination is null when hasMore=false — and the store action bails on null cursor before calling api.getTasks.
     const callsForCol = getTasksSpy.mock.calls.filter((call) => call[6] === COL_TODO)
     expect(callsForCol.length).toBe(0)
   })
@@ -378,9 +347,7 @@ describe('KanbanColumn — VirtualScroller integration', () => {
     const cardsWrapper = wrapper.find(`[data-testid="kanban-column-${COL_TODO}-cards"]`)
     expect(cardsWrapper.exists()).toBe(true)
 
-    // Dispatch a real DragEvent so the handler's `event.dataTransfer` reads as a live object
-    // (vue-test-utils' `trigger` synthesises a generic Event, which makes `dataTransfer` undefined
-    // and the handler bails before calling preventDefault).
+    // Dispatch a real DragEvent so the handler's `event.dataTransfer` reads as a live object (vue-test-utils' `trigger` synthesises a generic Event, which makes …
     const el = cardsWrapper.element as HTMLElement
     const dragOver = new Event('dragover', { bubbles: true, cancelable: true }) as Event & {
       dataTransfer?: { types: string[]; dropEffect: string }
@@ -398,9 +365,7 @@ describe('KanbanColumn — VirtualScroller integration', () => {
   })
 })
 
-/** First-page skeleton. Before this, a column whose page-1 fetch was still in flight rendered its
- * "No tasks yet" empty state — a false statement about the user's data, since the column may well
- * have tasks. */
+/** First-page skeleton. */
 describe('KanbanColumn — first-page skeleton', () => {
   let wrapper: VueWrapper | null = null
 
@@ -434,9 +399,7 @@ describe('KanbanColumn — first-page skeleton', () => {
             path: '/tmp',
             kanban_columns: [makeColumn()],
             tasks: [],
-            // No columnPagination entry — the column has not been
-            // fetched yet, which is exactly the state the skeleton
-            // covers.
+            // No columnPagination entry — the column has not been fetched yet, which is exactly the state the skeleton covers.
           },
         ],
       },

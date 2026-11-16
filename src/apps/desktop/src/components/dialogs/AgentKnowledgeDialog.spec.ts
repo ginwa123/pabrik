@@ -5,8 +5,6 @@ import { nextTick } from 'vue'
 import AgentKnowledgeDialog from './AgentKnowledgeDialog.vue'
 
 // Stub the FilePickerDialog — same pattern as AddAgentDialog.spec.ts.
-// The real FilePickerDialog uses useRecentFoldersStore which requires
-// an active Pinia; stubbing it isolates this test from that.
 vi.mock('../FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -27,9 +25,7 @@ vi.mock('../FilePickerDialog.vue', () => ({
 }))
 
 function mountDialog(props: Record<string, unknown> = {}) {
-  // The dialog uses <Teleport to="body">, so we attach to document.body
-  // and search via document.querySelector. Same pattern as
-  // AddAgentDialog.spec.ts.
+  // The dialog uses <Teleport to="body">, so we attach to document.body and search via document.querySelector.
   document.body.innerHTML = ''
   return mount(AgentKnowledgeDialog, {
     attachTo: document.body,

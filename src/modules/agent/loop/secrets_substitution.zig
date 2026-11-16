@@ -1,24 +1,18 @@
-//! Workspace-secret placeholders: `{{SECRETS:NAME}}` in tool arguments, and
-//! the redaction that keeps a resolved value out of a tool's own output. The
-//! model writes `{{SECRETS:NAME}}` into any tool-call argument.
+//! Workspace-secret placeholders: `{{SECRETS:NAME}}` in tool arguments, and the redaction that keeps a resolved value out of a tool's own output.
 
 const std = @import("std");
 
-/// One placeholder that was resolved, so the caller can redact it back out of
-/// the tool's output.
+/// One placeholder that was resolved, so the caller can redact it back out of the tool's output.
 pub const ResolvedSecret = struct { name: []const u8, value: []const u8 };
 
 pub const SubstitutionResult = struct {
     /// Re-serialized arguments with every resolvable placeholder replaced.
-    /// Owned by the caller's allocator.
     substituted_args: []const u8,
     /// One entry per distinct name that resolved; empty when nothing matched.
-    /// Owned by the caller's allocator.
     resolved: []const ResolvedSecret,
 };
 
 /// Maps a name to its value, or null when the workspace has no such secret.
-/// Injected as a function pointer so this file needs no database.
 pub const Resolver = *const fn (ctx: ?*const anyopaque, name: []const u8) ?[]const u8;
 
 pub const SubstError = error{ UnknownSecretName, InvalidArguments, OutOfMemory };
@@ -27,8 +21,7 @@ const placeholder_prefix = "{{SECRETS:";
 const placeholder_suffix = "}}";
 const max_name_len = 64;
 
-/// Replace every resolvable `{{SECRETS:NAME}}` inside the JSON string leaves
-/// of `args_json` and re-serialize the result.
+/// Replace every resolvable `{{SECRETS:NAME}}` inside the JSON string leaves of `args_json` and re-serialize the result.
 pub fn substituteToolArguments(
     allocator: std.mem.Allocator,
     args_json: []const u8,
@@ -51,8 +44,7 @@ pub fn substituteToolArguments(
         resolved.deinit(allocator);
     }
 
-    // Replacement strings live in the parse arena: they only have to survive
-    // until Stringify has copied them into the caller's buffer.
+    // Replacement strings live in the parse arena: they only have to survive until Stringify has copied them into the caller's buffer.
     try substituteTree(parsed.arena.allocator(), allocator, &parsed.value, resolver, ctx, &resolved);
 
     out.* = .{
@@ -61,8 +53,7 @@ pub fn substituteToolArguments(
     };
 }
 
-/// Put every value resolved by `substituteToolArguments` back behind its
-/// placeholder before the tool's output is stored or streamed.
+/// Put every value resolved by `substituteToolArguments` back behind its placeholder before the tool's output is stored or streamed.
 pub fn redactOutput(
     allocator: std.mem.Allocator,
     output: []const u8,
@@ -96,17 +87,13 @@ pub fn redactOutput(
 
 /// What a placeholder whose name resolves to nothing becomes.
 pub const MissPolicy = enum {
-    /// Fail the whole substitution. A tool call that would run with a literal
-    /// placeholder is worse than one that names the secret it could not find.
+    /// Fail the whole substitution.
     fail,
-    /// Keep the placeholder as literal text. A saved config may reference a
-    /// secret that is added later, and refusing the document would hide every
-    /// other field in it.
+    /// Keep the placeholder as literal text.
     keep_literal,
 };
 
-/// Replace inside every string leaf. Numbers, bools and nulls are left alone:
-/// a placeholder can only ever be text.
+/// Replace inside every string leaf. Numbers, bools and nulls are left alone
 fn substituteTree(
     arena: std.mem.Allocator,
     alloc: std.mem.Allocator,
@@ -130,9 +117,7 @@ fn substituteTree(
     }
 }
 
-/// Replace placeholders in the CREDENTIAL positions of a config: the agents'
-/// `api_key`, and each MCP server's `headers` values and `env` entries. Other
-/// fields are untouched; an unresolved name stays literal.
+/// Replace placeholders in the CREDENTIAL positions of a config: the agents' `api_key`, and each MCP server's `headers` values and `env` entries.
 pub fn substituteConfigCredentials(
     allocator: std.mem.Allocator,
     config_json: []const u8,
@@ -145,8 +130,7 @@ pub fn substituteConfigCredentials(
 
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, config_json, .{}) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        // A document nobody can parse has no credential position to find, and
-        // the parse that consumes it refuses it anyway. Pass it through.
+        // A document nobody can parse has no credential position to find, and the parse that consumes it refuses it anyway.
         else => return allocator.dupe(u8, config_json),
     };
     defer parsed.deinit();
@@ -159,8 +143,7 @@ pub fn substituteConfigCredentials(
     return std.json.Stringify.valueAlloc(allocator, parsed.value, .{});
 }
 
-/// Walk the credential positions of a config object. `true` when at least one
-/// placeholder became a value.
+/// Walk the credential positions of a config object.
 fn substituteCredentialFields(
     arena: std.mem.Allocator,
     resolver: Resolver,
@@ -215,15 +198,12 @@ fn substituteCredentialLeaf(
     if (std.mem.indexOf(u8, text, placeholder_prefix) == null) return false;
 
     const substituted = try substituteInString(arena, arena, text, resolver, ctx, null, .keep_literal);
-    // `Stringify` reads these bytes before the arena dies, so an in-place
-    // replacement is enough.
+    // `Stringify` reads these bytes before the arena dies, so an in-place replacement is enough.
     value.* = .{ .string = substituted };
     return !std.mem.eql(u8, text, substituted);
 }
 
-/// Replace placeholders in the ROOT fields named by `field_names`: each may be
-/// a string, an array of strings, or an object of string values. Any other
-/// field is left alone.
+/// Replace placeholders in the ROOT fields named by `field_names`: each may be a string, an array of strings, or an object of string values.
 pub fn substituteRootCredentialFields(
     allocator: std.mem.Allocator,
     document: []const u8,
@@ -259,9 +239,7 @@ fn isNameChar(c: u8) bool {
         c == '_' or c == '-';
 }
 
-/// Match a syntactically valid placeholder at `start`. Matching is
-/// case-sensitive, and anything that is not a well-formed placeholder is left
-/// alone as literal text.
+/// Match a syntactically valid placeholder at `start`.
 fn matchPlaceholder(text: []const u8, start: usize) ?PlaceholderMatch {
     if (!std.mem.startsWith(u8, text[start..], placeholder_prefix)) return null;
 
@@ -276,9 +254,7 @@ fn matchPlaceholder(text: []const u8, start: usize) ?PlaceholderMatch {
     return .{ .name = name, .end = i + placeholder_suffix.len };
 }
 
-/// Build the substituted copy of one string leaf. Scanning walks left to right
-/// over the ORIGINAL text and never revisits what it wrote, so a value that
-/// itself contains a placeholder cannot recurse.
+/// Build the substituted copy of one string leaf.
 fn substituteInString(
     arena: std.mem.Allocator,
     alloc: std.mem.Allocator,
@@ -294,9 +270,7 @@ fn substituteInString(
     var i: usize = 0;
     while (i < text.len) {
         if (matchPlaceholder(text, i)) |matched| {
-            // A stored secret is never empty, so an empty answer is a miss:
-            // substituting it would send the request out with a blank
-            // credential and surface the problem as a third-party 401.
+            // A stored secret is never empty, so an empty answer is a miss
             if (resolver(ctx, matched.name)) |value| {
                 if (value.len > 0) {
                     try out_buf.appendSlice(arena, value);
@@ -320,8 +294,7 @@ fn substituteInString(
     return out_buf.items;
 }
 
-/// One entry per distinct name, so redaction does not re-walk the output for
-/// every repeat of the same placeholder.
+/// One entry per distinct name, so redaction does not re-walk the output for every repeat of the same placeholder.
 fn recordResolved(
     alloc: std.mem.Allocator,
     resolved: ?*std.ArrayList(ResolvedSecret),
@@ -343,9 +316,7 @@ const testing = std.testing;
 /// A table-driven stand-in for the store-backed resolver.
 const Entry = struct { name: []const u8, value: []const u8 };
 
-/// Carries the table through the erased `ctx` pointer. The pointer carries the
-/// slice rather than being widened into one: a pointer cast straight to a
-/// slice type has no length to give it.
+/// Carries the table through the erased `ctx` pointer.
 const SecretTable = struct { entries: []const Entry };
 
 fn tableResolver(ctx: ?*const anyopaque, name: []const u8) ?[]const u8 {
@@ -356,8 +327,7 @@ fn tableResolver(ctx: ?*const anyopaque, name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Free a result and every string in it: `name` and `value` are each their own
-/// allocation, not slices into one buffer.
+/// Free a result and every string in it: `name` and `value` are each their own allocation, not slices into one buffer.
 fn freeSubstitution(allocator: std.mem.Allocator, result: *const SubstitutionResult) void {
     for (result.resolved) |entry| {
         allocator.free(entry.name);
@@ -404,8 +374,7 @@ test "substituteToolArguments: a value with a quote, a newline and a NUL stays p
     });
     defer freeSubstitution(allocator, &result);
 
-    // Raw-byte replacement would have produced invalid JSON here; the
-    // serializer is what makes the escapes correct.
+    // Raw-byte replacement would have produced invalid JSON here; the serializer is what makes the escapes correct.
     const reparsed = try std.json.parseFromSlice(std.json.Value, allocator, result.substituted_args, .{});
     defer reparsed.deinit();
     try testing.expectEqualStrings("echo " ++ weird, reparsed.value.object.get("command").?.string);
@@ -480,15 +449,13 @@ test "substituteToolArguments: nested objects and arrays are walked" {
 
 test "substituteToolArguments: non-string leaves are left untouched" {
     const allocator = testing.allocator;
-    // A bare `{{SECRETS:N}}` cannot sit in a number position and still be
-    // valid JSON, so it never reaches the walker as a number leaf:
+    // A bare `{{SECRETS:N}}` cannot sit in a number position and still be valid JSON, so it never reaches the walker as a number leaf
     try testing.expectError(
         error.InvalidArguments,
         substitute(allocator, "{\"n\":{{SECRETS:N}}}", &.{.{ .name = "N", .value = "7" }}),
     );
 
-    // What the walker must therefore guarantee: numbers, bools and nulls
-    // survive untouched while a sibling string leaf is substituted.
+    // What the walker must therefore guarantee: numbers, bools and nulls survive untouched while a sibling string leaf is substituted.
     const result = try substitute(
         allocator,
         "{\"n\":-12,\"f\":2.5,\"big\":1e999,\"b\":true,\"z\":null,\"s\":\"{{SECRETS:GH}}\"}",
@@ -522,8 +489,7 @@ test "substituteToolArguments: arguments with no placeholder come back semantica
     const result = try substitute(allocator, args_json, &.{.{ .name = "GH", .value = "abc" }});
     defer freeSubstitution(allocator, &result);
 
-    // Compare against the input after the same round trip, so the assertion is
-    // about meaning rather than about formatting.
+    // Compare against the input after the same round trip, so the assertion is about meaning rather than about formatting.
     const reparsed_input = try std.json.parseFromSlice(std.json.Value, allocator, args_json, .{});
     defer reparsed_input.deinit();
     const canonical_input = try std.json.Stringify.valueAlloc(allocator, reparsed_input.value, .{});
@@ -645,8 +611,7 @@ test "substituteConfigCredentials: the api_key, MCP header values and env entrie
     try testing.expectEqualStrings("Bearer tok-live", server.get("headers").?.object.get("Authorization").?.string);
     try testing.expectEqualStrings("TOKEN=tok-live", server.get("env").?.array.items[0].string);
 
-    // Positive control for the "only credential positions" rule: the fields
-    // around the substituted ones are byte-identical to what was saved.
+    // Positive control for the "only credential positions" rule: the fields around the substituted ones are byte-identical to what was saved.
     try testing.expectEqualStrings("deepseek-v4", agent.get("model").?.string);
     try testing.expectEqualStrings("https://api.example.com", agent.get("base_url").?.string);
     try testing.expectEqualStrings("https://mcp.example.com", server.get("url").?.string);
@@ -694,8 +659,7 @@ test "substituteConfigCredentials: a name this workspace does not store stays li
     defer parsed.deinit();
     const obj = parsed.value.object;
     const agent = obj.get("profiles_models").?.object.get("deepseek").?.object;
-    // Kept, not blanked: the secret can be added later and the same saved
-    // document then starts resolving. A blank key would look like a typo.
+    // Kept, not blanked: the secret can be added later and the same saved document then starts resolving.
     try testing.expectEqualStrings(missing_ph, agent.get("api_key").?.string);
     // The sibling that DID resolve proves the miss did not abort the walk.
     try testing.expectEqualStrings("Bearer sk-live", obj.get("mcp_servers").?.object.get("files").?.object.get("headers").?.object.get("Authorization").?.string);
@@ -731,8 +695,7 @@ test "substituteConfigCredentials: a document with no placeholder is returned un
     try testing.expectEqualStrings(document, out);
 }
 
-/// Free the `resolved` list a caller passed into
-/// `substituteRootCredentialFields`: each name and value is its own allocation.
+/// Free the `resolved` list a caller passed into `substituteRootCredentialFields`: each name and value is its own allocation.
 fn freeResolvedList(allocator: std.mem.Allocator, list: *std.ArrayList(ResolvedSecret)) void {
     for (list.items) |entry| {
         allocator.free(entry.name);
@@ -765,8 +728,7 @@ test "substituteRootCredentialFields: an api_key placeholder becomes the stored 
     defer parsed.deinit();
     const obj = parsed.value.object;
     try testing.expectEqualStrings("sk-live-value", obj.get("api_key").?.string);
-    // Positive control: the fields around the credential are byte-identical to
-    // what was sent, so the probe still reaches the same endpoint.
+    // Positive control: the fields around the credential are byte-identical to what was sent, so the probe still reaches the same endpoint.
     try testing.expectEqualStrings("deepseek-v4", obj.get("model").?.string);
     try testing.expectEqualStrings("https://api.example.com", obj.get("base_url").?.string);
 
@@ -794,8 +756,7 @@ test "substituteRootCredentialFields: a field that is not named keeps its placeh
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, out, .{});
     defer parsed.deinit();
     try testing.expectEqualStrings("sk-live", parsed.value.object.get("api_key").?.string);
-    // A model named after the secret would be unusable, and a run does not
-    // substitute this field either.
+    // A model named after the secret would be unusable, and a run does not substitute this field either.
     try testing.expectEqualStrings(key_ph, parsed.value.object.get("model").?.string);
 }
 
@@ -851,8 +812,7 @@ test "substituteRootCredentialFields: MCP header values and env entries resolve,
     );
     try testing.expectEqualStrings("TOKEN=tok-live", obj.get("env").?.array.items[0].string);
     try testing.expectEqualStrings("MODE=prod", obj.get("env").?.array.items[1].string);
-    // `args` is not a credential position: a run leaves it alone, so a probe
-    // that resolved it would pass where the run fails.
+    // `args` is not a credential position: a run leaves it alone, so a probe that resolved it would pass where the run fails.
     try testing.expectEqualStrings(token_ph, obj.get("args").?.array.items[1].string);
     try testing.expectEqual(@as(usize, 1), resolved.items.len);
 }

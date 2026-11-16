@@ -58,24 +58,19 @@ import { normalizeToolContent } from './_shared/toolOutputParser'
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /**    * Tool-call args (XML from jsonArgsToXml, or JSON). Used as a fallback so a still-running tool
-   * (empty content) shows its target id, and as the primary source of the saved body (the result
-   * does not echo it). */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
-/**  * Body longer than this is clipped in the card. A memory can be up to 1 MiB; a chat card has no
- * business rendering all of it. The copy button still yields the full body. */
+/** Body longer than this is clipped in the card. */
 const MAX_DISPLAY_CHARS = 20000
 
 /** How much of the body the header's hover tooltip reveals. */
 const MAX_TOOLTIP_CHARS = 500
 
-// The body is rendered above as readable text — hide it from the Arguments
-// block so the expanded card doesn't repeat a 1 KiB–1 MiB blob as escaped
-// JSON (same trick `WriteFile.vue` uses for a written file).
+// The body is rendered above as readable text — hide it from the Arguments block so the expanded card doesn't repeat a 1 KiB–1 MiB blob as escaped JSON (same …
 const ARGS_EXCLUDE = ['content']
 
 // ---- Parsers ---------------------------------------------------------------
@@ -123,16 +118,13 @@ const errorMessage = computed(() => normalized.value.error ?? strOrNull(dataReco
 const memoryId = computed(() => {
   const id = strOrNull(dataRecord.value.id)
   if (id) return id
-  // In-progress fallback: the result envelope is still empty, so show the
-  // id the tool was called with (from the `parameters` prop).
+  // In-progress fallback: the result envelope is still empty, so show the id the tool was called with (from the `parameters` prop).
   return extractParam(props.parameters, 'id')
 })
 
 // Running: result envelope is still empty (no error, no id).
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content))
 
@@ -140,9 +132,7 @@ const createdAt = computed(() => strOrNull(dataRecord.value.created_at))
 
 const updatedAt = computed(() => strOrNull(dataRecord.value.updated_at))
 
-// ---- The saved body + tags ------------------------------------------------- Precedence: result
-// `data` first (a future backend may echo the stored row), then the tool-call args. `content` is
-// the memory body; it can be an empty string only for a rejected call, which never reaches success.
+// ---- The saved body + tags -------------------------------------------------
 const savedContent = computed((): string | null => {
   const fromData = strOrNull(dataRecord.value.content)
   if (fromData !== null) return fromData
@@ -156,8 +146,7 @@ const savedContent = computed((): string | null => {
   return extractParam(props.parameters, 'content')
 })
 
-/**  * Tags as individual chips. `splitTagsString` in `src/modules/agent/tools/memory.zig` accepts `||`,
- * `|`, `,` and space; mirror that order so the chips match what was stored. */
+/** Tags as individual chips. */
 const savedTags = computed((): string[] => {
   let raw: string | null = null
   const fromData = dataRecord.value.tags
@@ -178,19 +167,15 @@ const isSuccess = computed(() => errorMessage.value === null)
 
 const statusIndicator = computed(() => (isRunning.value ? '…' : isSuccess.value ? '✓' : '✗'))
 
-/** One-line form of the body for the header's hover tooltip: newlines
- *  collapsed so a multi-line note still fits one tooltip line. */
+/** One-line form of the body for the header's hover tooltip: newlines collapsed so a multi-line note still fits one tooltip line. */
 const contentOneLine = computed(() => (savedContent.value ?? '').replace(/\s+/g, ' ').trim())
 
-/**  * Chips shown in the header. The header is a single line, so a memory carrying a dozen tags would
- * otherwise blow the row out; the tail collapses into a `+N` chip. Nothing is lost — the hover
- * title and the Arguments block both carry the full list. */
+/** Chips shown in the header. */
 const HEADER_MAX_TAGS = 3
 const headerTags = computed(() => savedTags.value.slice(0, HEADER_MAX_TAGS))
 const hiddenTagCount = computed(() => Math.max(0, savedTags.value.length - HEADER_MAX_TAGS))
 
-/** Hover title: the full id, every tag, the body capped at MAX_TOOLTIP_CHARS, and the saved
- * timestamp. */
+/** Hover title: the full id, every tag, the body capped at MAX_TOOLTIP_CHARS, and the saved timestamp. */
 const headerTitle = computed(() => {
   if (!isSuccess.value) return errorMessage.value ?? ''
   const parts: string[] = []
@@ -203,7 +188,6 @@ const headerTitle = computed(() => {
 })
 
 // ---- Body rendering --------------------------------------------------------
-/** What the card actually renders — clipped for display only. */
 const displayContent = computed(() => clip(savedContent.value ?? '', MAX_DISPLAY_CHARS))
 
 /** Characters dropped by the display clip (0 when the body fits). */
@@ -230,9 +214,7 @@ const hasBody = computed(() => {
 
 // ---- Actions ---------------------------------------------------------------
 const toggle = () => {
-  // Always expandable on success (id + tags + the body) or error (1 row). On empty/missing
-  // envelopes (no id + no error) we still allow expansion so the user sees "what's in here" — but
-  // it's a no-op visually when there are no fields.
+  // Always expandable on success (id + tags + the body) or error (1 row).
   isExpanded.value = !isExpanded.value
 }
 
@@ -256,8 +238,7 @@ function clip(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s
 }
 
-/**  * UTF-8 byte length without allocating a copy of the (up to 1 MiB) body — `TextEncoder.encode`
- * would materialise the whole byte array just to read its length. */
+/** UTF-8 byte length without allocating a copy of the (up to 1 MiB) body — `TextEncoder.encode` would materialise the whole byte array just to read its length. */
 function utf8Len(s: string): number {
   let n = 0
   for (let i = 0; i < s.length; i++) {

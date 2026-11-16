@@ -1,6 +1,4 @@
 //! `pabrik headless group` — drive a multi-agent session with no server.
-//! The writes are the rows the loop reads and `next` asks the loop's own
-//! router, so the answer is the decision the next turn will take.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -39,8 +37,7 @@ pub fn runWithDb(
     }
 }
 
-/// The `delegate_agent` tool's own use case, so the CLI and the tool cannot
-/// drift. A refusal is an error here: stdout carries only a real delegation.
+/// The `delegate_agent` tool's own use case, so the CLI and the tool cannot drift.
 fn delegate(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8 {
     const outcome = try pabrikcore.delegate_agent.delegateToAgent(allocator, db, a.session_id, a.agent, a.message);
     if (!outcome.ok) {
@@ -50,9 +47,7 @@ fn delegate(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) !
     return outcome.json;
 }
 
-/// The roster the HTTP endpoints answer with. Every op but `next` runs the
-/// same useCase the matching `/api/llm/session/:id/group...` handler runs, so
-/// the CLI and the app cannot drift.
+/// The roster the HTTP endpoints answer with.
 fn roster(
     allocator: std.mem.Allocator,
     db: *database.Db,

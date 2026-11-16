@@ -1,6 +1,4 @@
-/** A programmatic scroll must move the rendered window in the same tick it moves `scrollTop`:
- * `visibleRange` derives from the scroller's own ref, which only the native event used to write.
- */
+/** A programmatic scroll must move the rendered window in the same tick it moves `scrollTop` */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

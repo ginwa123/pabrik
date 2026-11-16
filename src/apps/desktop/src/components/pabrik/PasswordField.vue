@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** One password input for the account form: label, masked field with a reveal
- * toggle, a hint line, and the field's own error line. */
+/** One password input for the account form: label, masked field with a reveal toggle, a hint line, and the field's own error line. */
 import { computed, ref } from 'vue'
 
 const model = defineModel<string>({ required: true })

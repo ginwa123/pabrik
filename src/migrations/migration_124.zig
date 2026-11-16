@@ -6,8 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// `DEFAULT ''` is the contract: the empty sentinel means "backend cascade", so
-/// every pre-existing row keeps the agent it already ran under.
+/// `DEFAULT ''` is the contract: the empty sentinel means "backend cascade", so every pre-existing row keeps the agent it already ran under.
 pub const Migration124AddRoutineSelectedProfileModel = struct {
     pub const version: u32 = 124;
     pub const name = "add_routine_selected_profile_model";

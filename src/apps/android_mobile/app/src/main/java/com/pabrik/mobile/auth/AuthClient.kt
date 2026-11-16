@@ -43,17 +43,7 @@ interface AuthTransport {
         headers: Map<String, String>,
     ): AuthHttpResponse
 
-    /**
-     * `PUT /api/llm/session/{id}` is how a per-session profile choice is
-     * persisted, and the backend has no `POST` alias for it.
-     *
-     * A default that throws rather than an abstract member: the app has a
-     * double-digit number of transport fakes in its tests, each written against
-     * a two-method interface, and only the one test that exercises the profile
-     * picker needs this verb. Abstracting it makes every one of them a
-     * `NotImplementedError` they never call, which is churn with no coverage
-     * behind it. A fake that a `put` does reach still fails loudly.
-     */
+    /** `PUT /api/llm/session/{id}` is how a per-session profile choice is persisted, and the backend has no `POST` alias for it. */
     fun put(
         path: String,
         body: String,
@@ -62,17 +52,7 @@ interface AuthTransport {
         "This transport does not implement PUT",
     )
 
-    /**
-     * `PATCH /api/workspaces/{ws}/items/{item}/tasks/{id}/move` is how a card
-     * lands in a chosen column, and the backend has no `POST` alias for it.
-     *
-     * The same default-that-throws shape as [put], and for the same reason: the
-     * interface is implemented by a dozen transport fakes in the tests, each
-     * written against the two-method shape, and one feature needing a third
-     * verb is not a reason to edit every fake. A fake a `patch` does reach
-     * still fails loudly, which is the behaviour that matters here — a transport
-     * that quietly answered 200 would report a move that never happened.
-     */
+    /** `PATCH /api/workspaces/{ws}/items/{item}/tasks/{id}/move` is how a card lands in a chosen column, and the backend has no `POST` alias for it. */
     fun patch(
         path: String,
         body: String,
@@ -82,32 +62,11 @@ interface AuthTransport {
     )
 }
 
-/**
- * The real transport, over a host that can change while this object lives.
- *
- * [baseUrlProvider] is called on **every request**, not once here. That is the
- * difference between this being a setting and this being a constant: a captured
- * `val` would mean the app could only ever be pointed at the host it was
- * constructed with, and the four ViewModels that build a transport each do so
- * during `MainActivity`'s first composition, so a change would need the whole
- * graph torn down. Reading per request means the change lands on the next call.
- *
- * The scheme guard moved with it, from `init` to [request]. It used to run
- * before anything was asked of the client, which was safe only because the host
- * was a build constant. Now a host is a person-typed setting, and a value this
- * build cannot open a socket to has to fail as a rejected request — the
- * `AuthResult.Unavailable` a person can read — rather than as an
- * `IllegalArgumentException` out of a constructor, which would be a launch crash
- * with no way to reach the screen that fixes it.
- */
+/** The real transport, over a host that can change while this object lives. */
 class HttpsAuthTransport(
     private val baseUrlProvider: () -> String,
 ) : AuthTransport {
-    // Deliberately no `String` overload. One would let
-    // `HttpsAuthTransport(AuthConfig.BASE_URL)` keep compiling and keep
-    // capturing, which is the whole bug this class was changed to remove — and
-    // it would do so with no warning, at every call site. A lambda is the only
-    // way in, so a caller that wants a fixed host writes `{ host }` and says so.
+    // Deliberately no `String` overload.
     private val exchange = HttpsHttpExchange(
         connectTimeoutMillis = NETWORK_TIMEOUT_MILLIS,
         readTimeoutMillis = NETWORK_TIMEOUT_MILLIS,
@@ -202,9 +161,7 @@ class AuthClient(
 
         return try {
             sessionStore.save(sessionCookie)
-            // The new cookie fingerprints to a different cache namespace, but
-            // clearing also drops the pre-login verdict, which is the one the
-            // web calls out specifically.
+            // The new cookie fingerprints to a different cache namespace, but clearing also drops the pre-login verdict, which is the one the web calls out specifically.
             meCache?.clear()
             AuthResult.Authenticated(user)
         } catch (_: Exception) {
@@ -213,14 +170,7 @@ class AuthClient(
         }
     }
 
-    /**
-     * Resolves the current session.
-     *
-     * A fresh (sub-TTL) cache entry answers without a network call at all.
-     * [forceRefresh] skips the cache, which is what the "Try again" button on
-     * the retry screen needs — the user pressed it precisely to re-check, so
-     * replaying a cached answer would make the button inert.
-     */
+    /** Resolves the current session. */
     fun restoreSession(forceRefresh: Boolean = false): AuthResult {
         val sessionCookie = try {
             sessionStore.read()
@@ -228,8 +178,7 @@ class AuthClient(
             return AuthResult.Unavailable(SESSION_ERROR_MESSAGE)
         }
 
-        // No cookie means nothing to attribute a cached identity to; `/me`
-        // would answer unauthenticated anyway.
+        // No cookie means nothing to attribute a cached identity to; `/me` would answer unauthenticated anyway.
         val fingerprint = sessionCookie?.let { AuthMeCacheCodec.fingerprint(it) }
 
         if (!forceRefresh && fingerprint != null) {
@@ -237,9 +186,7 @@ class AuthClient(
             if (cached != null && cached.isFresh(nowMillis(), AuthMeCacheCodec.TTL_MILLIS)) {
                 val fromCache = interpretMe(cached.body)
                 if (fromCache.isServableFromCache()) return fromCache
-                // A cached body we cannot make a decision from is a MISS, not an
-                // answer. Falling through here is what stops a corrupt entry from
-                // signing the user out.
+                // A cached body we cannot make a decision from is a MISS, not an answer.
             }
         }
 
@@ -263,8 +210,7 @@ class AuthClient(
             return AuthResult.Unavailable(SESSION_ERROR_MESSAGE)
         }
 
-        // Only 2xx is cached: Android's recovery path is a retry button, and a
-        // cached error status would make that button do nothing.
+        // Only 2xx is cached: Android's recovery path is a retry button, and a cached error status would make that button do nothing.
         if (fingerprint != null) {
             meCache?.write(fingerprint, response.body, nowMillis())
         }
@@ -272,11 +218,7 @@ class AuthClient(
         return interpretMe(response.body)
     }
 
-    /**
-     * The one place a `/me` body becomes an [AuthResult]. The cached and the
-     * network path both go through it, so a cached identity cannot be judged by
-     * different rules than a live one.
-     */
+    /** The one place a `/me` body becomes an [AuthResult]. */
     private fun interpretMe(body: String): AuthResult {
         val me = parseMe(body)
             ?: return AuthResult.Unavailable(SESSION_ERROR_MESSAGE)
@@ -286,8 +228,7 @@ class AuthClient(
         if (me.authenticated && me.user != null) {
             return AuthResult.Authenticated(me.user)
         }
-        // A 2xx body that still says "not signed in" — do not leave a cached
-        // copy of it behind, or the next launch re-reads the same verdict.
+        // A 2xx body that still says "not signed in" — do not leave a cached copy of it behind, or the next launch re-reads the same verdict.
         meCache?.clear()
         return clearSessionOrUnavailable()
     }
@@ -315,20 +256,9 @@ class AuthClient(
         return forgetSession()
     }
 
-    /**
-     * Drops the saved session without asking any server about it.
-     *
-     * [logout] posts first so the server can end its own side; this does not,
-     * and the difference is the whole reason it is a separate method rather than
-     * a flag. When the reader points the app at a different server, the cookie
-     * in hand was issued by the *old* one and means nothing to the new one —
-     * posting it would be sending one deployment's credential to another
-     * deployment, to a host the person just typed. So switching servers forgets
-     * locally and lets the next sign-in establish a new one.
-     */
+    /** Drops the saved session without asking any server about it. */
     fun forgetSession(): AuthResult {
-        // The cache first: once the cookie is gone there is no fingerprint, so
-        // the entry would otherwise be orphaned rather than erased.
+        // The cache first: once the cookie is gone there is no fingerprint, so the entry would otherwise be orphaned rather than erased.
         meCache?.clear()
         return try {
             sessionStore.clear()
@@ -345,11 +275,7 @@ class AuthClient(
         AuthResult.Unavailable(SESSION_ERROR_MESSAGE)
     }
 
-    /**
-     * True for the two answers worth replaying from cache: a resolved identity,
-     * or auth being off. Anything else — unparseable, or a body that says "not
-     * signed in" — must be re-checked against the network rather than acted on.
-     */
+    /** True for the two answers worth replaying from cache: a resolved identity, or auth being off. */
     private fun AuthResult.isServableFromCache(): Boolean =
         this is AuthResult.Authenticated || this is AuthResult.AuthDisabled
 

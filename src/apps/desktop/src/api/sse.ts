@@ -39,8 +39,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   if (opts.channels.gitPrState) tokens.push('git_pr_state')
   if (opts.channels.documents) tokens.push('documents')
 
-  // Empty subscriptions are meaningless; the backend would 400 anyway. Throw early with a
-  // developer-friendly message.
+  // Empty subscriptions are meaningless; the backend would 400 anyway.
   if (tokens.length === 0) {
     console.error(
       '[unifiedSSE] createUnifiedSseConnection: opts.channels is empty — no EventSource will be created',
@@ -55,9 +54,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
   return createSseClient({
     url: `${API_BASE}/events?channels=${tokens.join(',')}`,
     onConnected: opts.onConnected,
-    // Every named event type the backend can emit MUST be pre-registered — the browser's
-    // EventSource only dispatches each `event: <name>` to listeners registered for that exact name.
-    // See the SseClient JSDoc + the project memory browser-eventsource-named-events.md.
+    // Every named event type the backend can emit MUST be pre-registered — the browser's EventSource only dispatches each `event: <name>` to listeners registered for …
     additionalEventTypes: [
       'kanban_column',
       'kanban_task',
@@ -68,48 +65,36 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       'worker_created',
       'worker_updated',
       'worker_deleted',
-      // Throw-isolation / forward-compat: the backend emits these fallback/granular names (see
-      // on_event_sent.zig + on_event_sent_design.zig).
+      // Throw-isolation / forward-compat: the backend emits these fallback/granular names (see on_event_sent.zig + on_event_sent_design.zig).
       'worker_unknown',
       'session_created',
       'session_deleted',
       'session_updated', // task_1786507100896 — auto-rename on first user message + unattended toggle
       'session_unknown',
-      // Design-mode element events (see src/ai_workflow/tui/on_event_sent_design.zig). All granular
-      // single-element events share the `DesignElementEvent` payload; the `action` discriminator
-      // tells them apart.
+      // Design-mode element events (see src/ai_workflow/tui/on_event_sent_design.zig).
       'design_element_created',
       'design_element_updated',
       'design_element_deleted',
       'design_elements_geometry_batch_updated',
-      // Backend also emits `design_page_deleted` (routing key `design_page`) and `close`
-      // (server-shutdown frame).
+      // Backend also emits `design_page_deleted` (routing key `design_page`) and `close` (server-shutdown frame).
       'design_page_deleted',
       'close',
       // Background-process lifecycle (see background_process_events.zig).
-      // Without pre-registration the browser drops the event before
-      // onEvent ever fires — the list would never refresh.
       'background_process_created',
       'background_process_completed',
       // Auth rejection (`event: auth_error`, see unified_events_sse.zig `terminateSseStream`).
-      // Without pre-registration the browser drops it before onEvent ever fires and the client sits
-      // in 'connecting' until the stream closes — indistinguishable from a dead backend.
       'auth_error',
-      // Skill-eval lifecycle (see src/agentic_loop/skill_eval_events.zig). Three granular names
-      // share one payload; all route on the central `skill_evals` key.
+      // Skill-eval lifecycle (see src/agentic_loop/skill_eval_events.zig).
       'skill_evals_run_started',
       'skill_evals_run_finished',
       'skill_evals_result_applied',
-      // File stage/unstage (see src/agentic_loop/git_file_stage_events.zig). Two granular names
-      // share one payload; both route on the central `git_file_stage` key.
+      // File stage/unstage (see src/agentic_loop/git_file_stage_events.zig).
       'git_file_staged',
       'git_file_unstaged',
-      // Change-request state (see src/agentic_loop/git_pr_state_events.zig). Two granular names
-      // share one payload; both route on the central `git_pr_state` key.
+      // Change-request state (see src/agentic_loop/git_pr_state_events.zig).
       'git_pr_state_merged',
       'git_pr_state_closed',
-      // Document mutations (see src/agentic_loop/document_events.zig). Three granular names share
-      // one payload; all route on the central `documents` key.
+      // Document mutations (see src/agentic_loop/document_events.zig).
       'document_created',
       'document_updated',
       'document_deleted',
@@ -118,8 +103,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
     heartbeatData: 'ping',
     onEvent: (raw: string, eventType: string) => {
       if (eventType === 'connected') {
-        // Reset the buffer on (re)connect — leftover bytes from the
-        // previous connection would corrupt the next parse.
+        // Reset the buffer on (re)connect — leftover bytes from the previous connection would corrupt the next parse.
         defaultMessageBuf.value = ''
         return
       }
@@ -164,8 +148,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Document mutations (agent tool only — `document_markdown`). All three granular names
-      // share one `DocumentEvent` payload.
+      // Document mutations (agent tool only — `document_markdown`).
       if (
         eventType === 'document_created' ||
         eventType === 'document_updated' ||
@@ -192,9 +175,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Background-process lifecycle. Both granular names share the
-      // `BackgroundProcessEvent` payload — the consumer filters by
-      // `session_id` and re-fetches the list.
+      // Background-process lifecycle.
       if (
         eventType === 'background_process_created' ||
         eventType === 'background_process_completed'
@@ -209,9 +190,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Skill-eval lifecycle. All three granular names share the
-      // `SkillEvalEvent` payload — the consumer filters by `session_id`
-      // and re-fetches the eval list for the Evals tab.
+      // Skill-eval lifecycle.
       if (
         eventType === 'skill_evals_run_started' ||
         eventType === 'skill_evals_run_finished' ||
@@ -227,9 +206,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // LLM streaming chunks / full responses. The backend sets `event_type = "llm_chunk"` for
-      // content/reasoning/tool-call/final chunks (per `on_event_sent.zig` `sendStreamChunk*`) and
-      // `event_type = "llm_full"` for non-streaming full responses (`onEventSendLLMHistory`).
+      // LLM streaming chunks / full responses.
       if (eventType === 'llm_chunk' || eventType === 'llm_full') {
         if (!opts.channels.llm) return
         try {
@@ -241,9 +218,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Worker events. The backend sets `worker_created` | `worker_updated` | `worker_deleted`
-      // based on `OnEventInputWorkers.action` (see `on_event_sent.zig`), plus `worker_unknown` as a
-      // future-proofing fallback for new actions.
+      // Worker events.
       if (
         eventType === 'worker_created' ||
         eventType === 'worker_updated' ||
@@ -277,9 +252,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // File stage/unstage. Both granular names share the `GitFileStageEvent` payload — the
-      // consumer filters by `cwd` and moves ONE row between Staged / Changes / Untracked instead of
-      // re-fetching the whole git-status list.
+      // File stage/unstage.
       if (eventType === 'git_file_staged' || eventType === 'git_file_unstaged') {
         if (!opts.channels.gitFileStage) return
         try {
@@ -314,8 +287,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Server-shutdown frame (`event: close`, see sse_manager.zig). Explicitly ignored — the
-      // browser fires `error` + the client reconnects via its own backoff.
+      // Server-shutdown frame (`event: close`, see sse_manager.zig).
       if (eventType === 'close') {
         return
       }
@@ -333,9 +305,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // `design_page_deleted` shares the design channel (page-level delete; the consumer
-      // re-fetches). Registered so the browser doesn't drop it silently; forwarded best-effort like
-      // the element events above.
+      // `design_page_deleted` shares the design channel (page-level delete; the consumer re-fetches).
       if (eventType === 'design_page_deleted') {
         if (!opts.channels.design) return
         try {
@@ -347,8 +317,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Default `message` events: 3 distinct JSON shapes, differentiated by which consumer
-      // registered the channel.
+      // Default `message` events: 3 distinct JSON shapes, differentiated by which consumer registered the channel.
       try {
         const trimmed = raw.trim()
         if (!trimmed) return
@@ -357,9 +326,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         const jsonStart = defaultMessageBuf.value.indexOf('{')
         const jsonEnd = defaultMessageBuf.value.lastIndexOf('}')
         if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-          // Incomplete JSON object — wait for more bytes. If the buffer grows unbounded (e.g.
-          // server sends invalid JSON), a future fix could add a size guard; current callers trust
-          // the backend's wire format.
+          // Incomplete JSON object — wait for more bytes.
           return
         }
         const jsonStr = defaultMessageBuf.value.slice(jsonStart, jsonEnd + 1)
@@ -367,17 +334,13 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         try {
           parsed = JSON.parse(jsonStr)
         } catch {
-          // Invalid JSON; drop the leading bytes and keep accumulating. (Defensive — the backend's
-          // std.json.fmt should always emit valid JSON. But a buggy future emitter shouldn't crash
-          // the SSE.)
+          // Invalid JSON; drop the leading bytes and keep accumulating.
           defaultMessageBuf.value = defaultMessageBuf.value.slice(jsonStart + 1)
           return
         }
 
         const obj = parsed as Record<string, unknown>
-        // Order matters: check session BEFORE worker because both have `action`; the discriminator
-        // is `working_directory` (worker has it, session doesn't) plus `status` (session has it,
-        // worker doesn't). Either combination uniquely identifies.
+        // Order matters: check session BEFORE worker because both have `action`; the discriminator is `working_directory` (worker has it, session doesn't) plus `status` …
         try {
           if (
             opts.channels.sessions &&
@@ -408,8 +371,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
             }
           }
         } finally {
-          // ALWAYS advance past the consumed JSON object, regardless of whether a consumer matched
-          // or threw.
+          // ALWAYS advance past the consumed JSON object, regardless of whether a consumer matched or threw.
           defaultMessageBuf.value = defaultMessageBuf.value.slice(jsonEnd + 1)
         }
       } catch (e) {
@@ -417,9 +379,7 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
       }
     },
     onStateChange: (state, info) => {
-      // Match the convention of the 5 old factories: terminal-failure only. Transient errors are
-      // retried internally by the SseClient. See memory pabrik-sse-incomplete-chunked-encoding.md
-      // for why ChatView's isStreaming flag flips ONLY on 'failed'.
+      // Match the convention of the 5 old factories: terminal-failure only.
       if (state === 'failed') {
         try {
           opts.onError?.(info.lastError ?? new Event('error'))

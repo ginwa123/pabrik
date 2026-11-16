@@ -1,6 +1,4 @@
-//! One argument parser for every flag in `flags.zig`. A caller names a scope
-//! (and, for subcommands, a verb) and the struct to fill; the engine walks
-//! argv, matches words against the table and writes through `@field`.
+//! One argument parser for every flag in `flags.zig`.
 
 const std = @import("std");
 const flags = @import("flags.zig");
@@ -10,8 +8,7 @@ pub const FailureKind = enum {
     missing_value,
     /// The word was there but the value did not convert (port, number, mode).
     invalid_value,
-    /// A word this scope does not know. Only reachable when the scope is
-    /// strict; the top-level scope ignores unknown words by design.
+    /// A word this scope does not know.
     unknown_flag,
 };
 
@@ -19,8 +16,7 @@ pub const Failure = struct {
     kind: FailureKind,
     /// The flag word as the user typed it, dashes included.
     flag: []const u8 = "",
-    /// The target field the failure belongs to, so the caller can pick the
-    /// sentence: `port` and `static_dir` need different messages.
+    /// The target field the failure belongs to, so the caller can pick the sentence: `port` and `static_dir` need different messages.
     field: []const u8 = "",
     /// The offending text: the bad value, or the last value consumed.
     value: []const u8 = "",
@@ -44,9 +40,7 @@ const Cursor = struct {
 
 const ParseError = error{OutOfMemory};
 
-/// Parse `args` (WITHOUT argv[0]) into `out`, which is reset first. Returns
-/// the first failure, or null when everything matched. Bare words land in
-/// `positionals` when a caller collects them.
+/// Parse `args` (WITHOUT argv[0]) into `out`, which is reset first.
 pub fn parse(
     comptime T: type,
     comptime opts: Options,
@@ -83,8 +77,7 @@ pub fn parse(
     return null;
 }
 
-/// A flag's long name takes two dashes and an alias takes one, so `-port` is
-/// not `--port` — the same acceptance set the hand-written parsers had.
+/// A flag's long name takes two dashes and an alias takes one, so `-port` is not `--port` — the same acceptance set the hand-written parsers had.
 fn matches(comptime row: flags.Flag, arg: []const u8) bool {
     if (std.mem.startsWith(u8, arg, "--")) return std.mem.eql(u8, arg[2..], row.long);
     if (arg.len > 1 and arg[0] == '-') {

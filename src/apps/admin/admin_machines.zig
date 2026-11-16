@@ -1,6 +1,4 @@
-//! The machines section: what this console knows about a workspace's machine and
-//! the one thing it can do about it. The manager is another process
-//! (`pabrik-vmd`); without its socket the section says why and offers nothing.
+//! The machines section: what this console knows about a workspace's machine and the one thing it can do about it.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -11,24 +9,21 @@ const admin_store = @import("admin_store.zig");
 const runtime = @import("runtime.zig");
 const vmd = @import("vmd_manager");
 
-/// Where the manager listens. The host program installs it once, or leaves it
-/// null and the section explains itself.
+/// Where the manager listens.
 var socket_path: ?[]const u8 = null;
 
 pub fn installSocket(path: ?[]const u8) void {
     socket_path = path;
 }
 
-/// Why this console cannot reach a manager, in the words the page shows. It
-/// names the socket it tried: "which one?" is the operator's next question.
+/// Why this console cannot reach a manager, in the words the page shows.
 fn refusal(allocator: std.mem.Allocator) ![]const u8 {
     if (!vmd.supported) return "this console was built for another platform; the manager is Linux-only";
     const path = socket_path orelse return "no manager socket was given (--vmd-socket, or PABRIK_VMD_SOCKET)";
     return std.fmt.allocPrint(allocator, "no pabrik-vmd answers on {s} (pass --vmd-socket to point the console at it)", .{path});
 }
 
-/// One workspace's machine, as the panel draws it and as the resize dialog
-/// reads it off the row's `data-*` attributes.
+/// One workspace's machine, as the panel draws it and as the resize dialog reads it off the row's `data-*` attributes.
 pub const Machine = struct {
     workspace_id: []const u8,
     workspace_name: []const u8,
@@ -40,8 +35,7 @@ pub const Machine = struct {
     last_error: []const u8 = "",
 };
 
-/// What the manager answered, once. Both the JSON endpoint and the rendered
-/// page read this, so they can never disagree about what exists.
+/// What the manager answered, once.
 pub const Snapshot = struct {
     /// False means "do not offer a resize": the page reads this first.
     manager: bool = false,
@@ -50,9 +44,7 @@ pub const Snapshot = struct {
     machines: []const Machine = &.{},
 };
 
-/// Every workspace, with the state its machine is in. Without a manager the
-/// list is empty and `reason` says why, so nothing draws a machine it cannot
-/// see. The strings are owned by `allocator`.
+/// Every workspace, with the state its machine is in.
 pub fn snapshot(allocator: std.mem.Allocator, db: *database.Db) !Snapshot {
     if (comptime !vmd.supported) {
         return .{ .manager = false, .reason = "this console was built for another platform; the manager is Linux-only" };
@@ -139,9 +131,7 @@ const ResizeResponse = struct {
     last_error: []const u8 = "",
 };
 
-/// A client that has answered `ping`, or null. A socket nobody listens on is
-/// not an error here: it is the difference between "no machines" and "the
-/// manager is down", and the page says which.
+/// A client that has answered `ping`, or null.
 fn liveClient(allocator: std.mem.Allocator) ?vmd.Client {
     const path = socket_path orelse return null;
     var client = vmd.Client.init(allocator, path);
@@ -150,9 +140,7 @@ fn liveClient(allocator: std.mem.Allocator) ?vmd.Client {
     return client;
 }
 
-/// `GET /api/admin/vms` — every workspace, each with the state its machine is
-/// in. Without a manager the list is empty and `manager_reason` says why, so the
-/// page never draws a machine it cannot see.
+/// `GET /api/admin/vms` — every workspace, each with the state its machine is in.
 pub fn listHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -186,8 +174,7 @@ pub fn listHandler(
     });
 }
 
-/// `POST /api/admin/vms/:workspace/resize` — stop that machine, apply the size,
-/// start it again. The guest comes back; the processes inside it do not.
+/// `POST /api/admin/vms/:workspace/resize` — stop that machine, apply the size, start it again.
 pub fn resizeHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,

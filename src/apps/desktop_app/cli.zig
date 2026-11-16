@@ -1,32 +1,23 @@
-// src/apps/desktop_app/cli.zig Command-line parser for pabrik-desktop. Parses
-// --port, --pabrik-path, --pabrik-url, --window-size, --title, --user-agent,
-// --icon, --smoke-test, --help / -h.
+// src/apps/desktop_app/cli.zig Command-line parser for pabrik-desktop.
 
 const std = @import("std");
 
 pub const Config = struct {
     /// Port to bind pabrik on. 0 = auto-pick a free port.
-    /// Ignored when `pabrik_url` is set (connect mode).
     port: u16 = 0,
     /// Optional explicit path to the pabrik binary.
-    /// Ignored when `pabrik_url` is set (connect mode).
     pabrik_path: ?[]const u8 = null,
-    /// If set, skip the spawn/healthcheck/asset-extraction path entirely and
-    /// just point the webview at this URL.
+    /// If set, skip the spawn/healthcheck/asset-extraction path entirely and just point the webview at this URL.
     pabrik_url: ?[]const u8 = null,
     choose_server: bool = false,
-    /// Decoupled-service mode (added in 2026-07): when no `pabrik` daemon
-    /// is running, refuse to auto-spawn one and surface an actionable
-    /// error instead. Default: false (auto-spawn is the default).
+    /// Decoupled-service mode (added in 2026-07): when no `pabrik` daemon is running, refuse to auto-spawn one and surface an actionable error instead.
     no_auto_start: bool = false,
-    /// Override the port used by the probe / auto-spawn fallback.
-    /// 0 = use the state file's port, or 8081 if no state file.
+    /// Override the port used by the probe / auto-spawn fallback. 0 = use the state file's port, or 8081 if no state file.
     attach_port: u16 = 0,
     /// Window dimensions.
     window_width: u32 = 1280,
     window_height: u32 = 800,
-    /// Window title. The default value is a string literal — do NOT free it.
-    /// Heap-allocated titles (set via `--title`) MUST be freed by deinit().
+    /// Window title.
     title: []const u8 = "Pabrik",
     /// Optional User-Agent override.
     user_agent: ?[]const u8 = null,
@@ -34,23 +25,17 @@ pub const Config = struct {
     icon_path: ?[]const u8 = null,
     /// If true, the app runs in CI-friendly mode: open, wait briefly, exit.
     smoke_test: bool = false,
-    /// If true, enable the webview's DevTools (right-click → Inspect
-    /// Element → DevTools panel). Off by default; enable for dev
-    /// workflow.
+    /// If true, enable the webview's DevTools (right-click → Inspect Element → DevTools panel).
     enable_devtools: bool = false,
-    /// Linux-only today (no-op on macOS/Windows): when true, force
-    /// `GDK_BACKEND=x11` before gtk_init.
+    /// Linux-only today (no-op on macOS/Windows): when true, force `GDK_BACKEND=x11` before gtk_init.
     force_x11: bool = false,
-    /// Browser-tab mode: open the resolved URL in the OS default
-    /// browser (new tab) instead of a native webview window, then
-    /// exit. Same attach/auto-spawn flow, no webview involved.
+    /// Browser-tab mode: open the resolved URL in the OS default browser (new tab) instead of a native webview window, then exit.
     browser: bool = false,
 
     pub fn deinit(self: *const Config, allocator: std.mem.Allocator) void {
         if (self.pabrik_path) |p| allocator.free(p);
         if (self.pabrik_url) |u| allocator.free(u);
-        // title: free only if heap-allocated (i.e. user set --title with a
-        // value different from the default literal).
+        // title: free only if heap-allocated (i.e. user set --title with a value different from the default literal).
         if (!std.mem.eql(u8, self.title, "Pabrik")) allocator.free(self.title);
         if (self.user_agent) |ua| allocator.free(ua);
         if (self.icon_path) |ip| allocator.free(ip);
@@ -63,8 +48,7 @@ pub const CliError = error{
     InvalidSize,
     MissingValue,
     UnknownArg,
-    /// allocator.dupe() failure — Zig 0.16 requires this in the error set
-    /// since `try` propagates OutOfMemory as a distinct error.
+    /// allocator.dupe() failure — Zig 0.16 requires this in the error set since `try` propagates OutOfMemory as a distinct error.
     OutOfMemory,
 };
 
@@ -139,9 +123,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) CliError!Co
         } else if (std.mem.eql(u8, arg, "--title")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
-            // Free the previous title if it was heap-allocated (i.e. user
-            // passed --title twice with a non-default value). If the previous
-            // value was the literal "Pabrik", skip the free.
+            // Free the previous title if it was heap-allocated (i.e. user passed --title twice with a non-default value).
             if (!std.mem.eql(u8, cfg.title, "Pabrik")) allocator.free(cfg.title);
             cfg.title = try allocator.dupe(u8, args[i]);
         } else if (std.mem.eql(u8, arg, "--user-agent")) {
@@ -165,9 +147,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) CliError!Co
         } else if (std.mem.eql(u8, arg, "--devtools")) {
             cfg.enable_devtools = true;
         } else if (std.mem.eql(u8, arg, "--x11")) {
-            // Linux-only flag (no-op on macOS/Windows). Forces the GDK
-            // windowing backend to X11 so GDK/XWayland backs the WebKit web
-            // view instead of GDK/Wayland.
+            // Linux-only flag (no-op on macOS/Windows).
             cfg.force_x11 = true;
         } else if (std.mem.eql(u8, arg, "--browser")) {
             cfg.browser = true;
@@ -183,8 +163,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) CliError!Co
     return cfg;
 }
 
-// ===== Tests merged from cli_test.zig (2026-09-29 flatten) ===== Tests for
-// the CLI parser.
+// ===== Tests merged from cli_test.zig (2026-09-29 flatten) =====
 
 const testing = std.testing;
 
@@ -232,8 +211,6 @@ test "parseArgs: --pabrik-url switches to connect mode" {
     try testing.expect(cfg.pabrik_url != null);
     try testing.expectEqualStrings("http://127.0.0.1:8081", cfg.pabrik_url.?);
     // --port and --pabrik-path are ignored in connect mode but still parseable.
-    // We just verify they default to null/0 here (the caller is responsible
-    // for honoring cfg.pabrik_url and ignoring the other fields).
     try testing.expectEqual(@as(u16, 0), cfg.port);
     try testing.expect(cfg.pabrik_path == null);
 }

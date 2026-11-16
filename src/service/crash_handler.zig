@@ -1,16 +1,11 @@
-// src/service/crash_handler.zig Crash signal/exception handler — the missing
-// sibling to root.zig's `panicHandler`.
+// src/service/crash_handler.zig Crash signal/exception handler — the missing sibling to root.zig's `panicHandler`.
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-// =============================================================================
 // Module-level panic log path
-// =============================================================================
 
-/// Path to the panic log file. Set by `setCrashLogPath(path)` BEFORE
-/// `installCrashHandlers()` is called. Mirrors `root.zig::panic_log_path`
-/// but kept separate to avoid a circular import.
+/// Path to the panic log file.
 var crash_log_path: ?[]const u8 = null;
 
 pub fn setCrashLogPath(path: []const u8) void {
@@ -21,18 +16,14 @@ pub fn getCrashLogPath() ?[]const u8 {
     return crash_log_path;
 }
 
-/// The process `Io` the report needs to ask the self-debug-info reader for a
-/// module's load bias. Set by `setCrashIo(io)` next to `setCrashLogPath`;
-/// null means the report falls back to absolute addresses only.
+/// The process `Io` the report needs to ask the self-debug-info reader for a module's load bias.
 var crash_io: ?std.Io = null;
 
 pub fn setCrashIo(io: std.Io) void {
     crash_io = io;
 }
 
-// =============================================================================
 // Public entry point
-// =============================================================================
 
 /// Install crash signal/exception handlers.
 pub fn installCrashHandlers() void {
@@ -43,18 +34,12 @@ pub fn installCrashHandlers() void {
     }
 }
 
-// =============================================================================
 // Shared helpers (pure, testable outside signal context)
-// =============================================================================
 
-/// Human-readable one-liner for each crash signal — the "why did my
-/// process die" line. Shown directly under the `=== CRASH ===` header so
-/// the most likely cause is visible without decoding anything else.
+/// Human-readable one-liner for each crash signal — the "why did my process die" line.
 pub fn signalDescription(sig: std.c.SIG) []const u8 {
     if (sig == std.c.SIG.SEGV) return "invalid memory reference (null deref, use-after-free, bad pointer, stack overflow)";
-    // SIGBUS is POSIX-only — std.c.SIG has no BUS member on Windows,
-    // so the reference must live behind a comptime gate (untaken
-    // branches of `if (comptime ...)` are never analyzed).
+    // SIGBUS is POSIX-only — std.c.SIG has no BUS member on Windows, so the reference must live behind a comptime gate (untaken branches of `if (comptime ...)` are …
     if (comptime builtin.os.tag != .windows) {
         if (sig == std.c.SIG.BUS) return "bus error (misaligned access, truncated mmap'd file, hardware fault)";
     }
@@ -64,12 +49,9 @@ pub fn signalDescription(sig: std.c.SIG) []const u8 {
     return "unknown crash signal";
 }
 
-/// Decode `si_code` (the kernel's sub-reason) for the given signal into a
-/// human-readable string.
+/// Decode `si_code` (the kernel's sub-reason) for the given signal into a human-readable string.
 pub fn siCodeMeaning(sig: std.c.SIG, code: i32) []const u8 {
-    // Non-positive codes are sender identities (SI_USER=0, SI_QUEUE=-1,
-    // SI_TIMER=-2, SI_MESGQ=-3, SI_ASYNCIO=-4, SI_SIGIO=-5, SI_TKILL=-6), not
-    // hardware sub-reasons — typical when the signal was sent via
+    // Non-positive codes are sender identities (SI_USER=0, SI_QUEUE=-1, SI_TIMER=-2, SI_MESGQ=-3, SI_ASYNCIO=-4, SI_SIGIO=-5, SI_TKILL=-6), not hardware sub-reasons …
     if (code <= 0) {
         if (sig == std.c.SIG.ABRT) return "sender code (abort() / raise() — no fault address by design)";
         return "sender code (sent via kill()/raise() — no hardware fault; the address above is the sender, not a fault address)";
@@ -120,14 +102,11 @@ pub fn siCodeMeaning(sig: std.c.SIG, code: i32) []const u8 {
             else => "unknown FPE code",
         };
     }
-    // SIGABRT and friends: si_code is typically SI_USER/SI_TKILL (the
-    // sender's identity), not a crash sub-reason — just label it.
+    // SIGABRT and friends: si_code is typically SI_USER/SI_TKILL (the sender's identity), not a crash sub-reason — just label it.
     return "sender code (not a crash sub-reason)";
 }
 
-/// Classify a fault address into the bucket that matters for debugging:
-/// NULL, near-NULL (null struct-field access), low (null-derived), or a
-/// wild/unmapped pointer. Pure function — unit-testable.
+/// Classify a fault address into the bucket that matters for debugging
 pub fn classifyFaultAddr(addr: usize) []const u8 {
     if (addr == 0) return "NULL dereference";
     if (addr < 0x1000) return "near-NULL (null pointer + small offset — likely a null struct-field access)";
@@ -136,8 +115,6 @@ pub fn classifyFaultAddr(addr: usize) []const u8 {
 }
 
 /// Extract the faulting address from a POSIX `siginfo_t` in a portable way.
-/// Linux fills `fields.sigfault.addr`; Darwin/libc exposes a top-level
-/// `si_addr`; other libcs vary.
 pub fn faultAddrFromSiginfo(info: *const std.posix.siginfo_t) usize {
     const Info = @TypeOf(info.*);
     // Darwin/libc shape: top-level si_addr.
@@ -177,8 +154,7 @@ pub fn siCodeFromSiginfo(info: *const std.posix.siginfo_t) i32 {
     return 0;
 }
 
-/// Symbolicate a captured stack trace into `function (file:line)` form using
-/// the binary's own debug info. Returns an owned slice on success.
+/// Symbolicate a captured stack trace into `function (file:line)` form using the binary's own debug info.
 pub fn symbolicateStack(
     allocator: std.mem.Allocator,
     stack: *const std.debug.StackTrace,
@@ -189,24 +165,19 @@ pub fn symbolicateStack(
     std.debug.writeStackTrace(stack, term) catch return null;
     const out = aw.writer.buffered();
     if (out.len == 0) return null;
-    // writeStackTrace prints a "Cannot print stack trace: ..." notice instead
-    // of frames when debug info is unavailable — treat that as "no
-    // symbolication" so the caller prints the fallback line instead of a
+    // writeStackTrace prints a "Cannot print stack trace: ..." notice instead of frames when debug info is unavailable — treat that as "no symbolication" so the …
     if (std.mem.indexOf(u8, out, "Cannot print stack trace") != null) return null;
     if (std.mem.indexOf(u8, out, "(empty stack trace)") != null) return null;
     return allocator.dupe(u8, out) catch null;
 }
 
-/// Zig 0.16's `debug/SelfInfo/Windows.zig:67` reads a `base_address` field its
-/// own `Module` does not declare, so `getModuleSlide` does not compile for PE.
+/// Zig 0.16's `debug/SelfInfo/Windows.zig:67` reads a `base_address` field its own `Module` does not declare, so `getModuleSlide` does not compile for PE.
 const has_self_info_slide = switch (builtin.os.tag) {
     .windows => false,
     else => @TypeOf(std.debug.SelfInfo) != void,
 };
 
 /// The load bias (slide) of `address`'s image, or null when unavailable.
-/// Frames are runtime addresses; without the bias an ASLR'd PIE report is
-/// unresolvable, which is why release crashes used to be untraceable.
 pub fn moduleSlide(address: usize) ?usize {
     if (comptime !has_self_info_slide) return null else {
         const io = crash_io orelse return null;
@@ -224,8 +195,7 @@ pub fn resolveHint() []const u8 {
     };
 }
 
-/// One line per frame: the runtime address and the `vm` address a symbols
-/// binary resolves. Best-effort — empty on OOM, never a trap.
+/// One line per frame: the runtime address and the `vm` address a symbols binary resolves.
 pub fn formatSlideAddrs(
     allocator: std.mem.Allocator,
     addrs: []const usize,
@@ -257,9 +227,7 @@ pub fn loadBaseNote(allocator: std.mem.Allocator, slide: ?usize) []const u8 {
     ) catch "";
 }
 
-/// Format raw return addresses, one `0x…` per line — the addr2line
-/// fallback. Always succeeds on a best-effort basis (empty string on
-/// OOM). The caller prints the `addr2line -e <exe>` hint above it.
+/// Format raw return addresses, one `0x…` per line — the addr2line fallback.
 pub fn formatRawAddrs(
     allocator: std.mem.Allocator,
     addrs: []const usize,
@@ -270,8 +238,7 @@ pub fn formatRawAddrs(
         const s = std.fmt.bufPrint(&line, "  0x{x:0>16}\n", .{ra}) catch continue;
         buf.appendSlice(allocator, s) catch break;
     }
-    // Ownership transfer: toOwnedSlice shrinks the buffer to the exact length
-    // so the caller can free it with a plain allocator.free.
+    // Ownership transfer: toOwnedSlice shrinks the buffer to the exact length so the caller can free it with a plain allocator.free.
     const owned = buf.toOwnedSlice(allocator) catch {
         buf.deinit(allocator);
         return "";
@@ -279,12 +246,9 @@ pub fn formatRawAddrs(
     return owned;
 }
 
-// =============================================================================
 // Stack capture — every entry point must go through here
-// =============================================================================
 
-/// How to capture the stack for a crash report. `context` is the *crashing*
-/// `CpuContextPtr` supplied by the OS.
+/// How to capture the stack for a crash report.
 pub const StackCapture = struct {
     context: ?std.debug.CpuContextPtr = null,
 
@@ -298,8 +262,7 @@ pub fn captureCrashStack(capture: StackCapture, addr_buf: []usize) std.debug.Sta
     return std.debug.captureCurrentStackTrace(capture.options(), addr_buf);
 }
 
-/// POSIX: build a `CpuContextPtr` from the `ucontext` the kernel handed the
-/// signal handler.
+/// POSIX: build a `CpuContextPtr` from the `ucontext` the kernel handed the signal handler.
 pub fn posixCpuContext(ucontext: ?*anyopaque, out: *std.debug.cpu_context.Native) ?std.debug.CpuContextPtr {
     const ctx = ucontext orelse return null;
     const native = std.debug.cpu_context.fromPosixSignalContext(ctx) orelse return null;
@@ -307,9 +270,7 @@ pub fn posixCpuContext(ucontext: ?*anyopaque, out: *std.debug.cpu_context.Native
     return out;
 }
 
-// =============================================================================
 // POSIX (Linux + macOS)
-// =============================================================================
 
 fn installCrashHandlersPosix() void {
     // The set of crash signals we want to log. Order doesn't matter.
@@ -322,30 +283,24 @@ fn installCrashHandlersPosix() void {
     };
 
     for (signals) |sig| {
-        // SA_SIGINFO: deliver siginfo_t + ucontext so the handler can log the
-        // fault address and si_code — the two fields that answer "WHY did it
-        // crash", not just "WHERE".
+        // SA_SIGINFO: deliver siginfo_t + ucontext so the handler can log the fault address and si_code — the two fields that answer "WHY did it crash", not just "WHERE".
         var sa: std.c.Sigaction = .{
             .handler = .{ .sigaction = handleCrashSignalSiginfo },
             .mask = std.mem.zeroes(std.c.sigset_t),
             .flags = std.c.SA.SIGINFO | std.c.SA.RESTART,
         };
         // std.posix.sigaction returns void in Zig 0.16 — do NOT wrap in try.
-        // The 2nd arg is `?*const Sigaction`; we have a mutable pointer.
         std.posix.sigaction(sig, &sa, null);
     }
 }
 
-/// POSIX crash handler (SA_SIGINFO 3-arg form). Runs in signal context — only
-/// async-signal-safe (or best-effort) operations allowed.
+/// POSIX crash handler (SA_SIGINFO 3-arg form).
 fn handleCrashSignalSiginfo(
     sig: std.c.SIG,
     info: *const std.posix.siginfo_t,
     ucontext: ?*anyopaque,
 ) callconv(.c) void {
-    // The ucontext is the register state at the instant of the fault. It
-    // is the ONLY way to make frame 0 of the report the faulting
-    // instruction rather than this handler — see StackCapture.
+    // The ucontext is the register state at the instant of the fault.
     var native_ctx: std.debug.cpu_context.Native = undefined;
     const crashing_ctx = posixCpuContext(ucontext, &native_ctx);
     // STEP 1 — restore the OS default handler BEFORE logging.
@@ -356,8 +311,7 @@ fn handleCrashSignalSiginfo(
     };
     std.posix.sigaction(sig, &sa, null);
 
-    // STEP 2 — build the report. Uses page_allocator (best-effort — OOM
-    // is silently dropped, each section degrades independently).
+    // STEP 2 — build the report.
     const alloc = std.heap.page_allocator;
     const signal_name = @tagName(sig);
     const desc = signalDescription(sig);
@@ -374,9 +328,7 @@ fn handleCrashSignalSiginfo(
     , .{ signal_name, @intFromEnum(sig), desc }) catch "=== CRASH: received signal (name unavailable) ===\n";
     defer alloc.free(header);
 
-    // Fault line: address + classification + si_code meaning. For SIGABRT
-    // there is no fault address — say so explicitly instead of printing a
-    // meaningless reinterpreted-union value.
+    // Fault line: address + classification + si_code meaning.
     const fault_line = if (has_fault_addr)
         std.fmt.allocPrint(
             alloc,
@@ -394,31 +346,20 @@ fn handleCrashSignalSiginfo(
     // STEP 3 — write the report (crash log file first, then stderr).
     emitCrashReport(alloc, header, fault_line, .{ .context = crashing_ctx });
 
-    // STEP 5 — re-raise so the OS default action runs (terminate + core
-    // dump). std.c.raise returns c_int (0 on success, -1 on failure).
+    // STEP 5 — re-raise so the OS default action runs (terminate + core dump). std.c.raise returns c_int (0 on success, -1 on failure).
     _ = std.c.raise(sig);
-    // Either the signal is queued and will be delivered via SIG_DFL on
-    // handler return (the normal path — produces a core dump), or raise()
-    // itself failed; in that case fall through to _Exit which is
+    // Either the signal is queued and will be delivered via SIG_DFL on handler return (the normal path — produces a core dump), or raise() itself failed; in that …
     std.c._Exit(128 + @as(c_int, @intCast(@intFromEnum(sig))));
 }
 
-// =============================================================================
 // Windows
-// =============================================================================
 
-/// Bind the Win32 SetUnhandledExceptionFilter API. The filter callback
-/// receives a pointer to `EXCEPTION_POINTERS` (exception record +
-/// context) for the crash.
+/// Bind the Win32 SetUnhandledExceptionFilter API.
 const win32_apis = if (builtin.os.tag == .windows) struct {
-    /// EXCEPTION_EXECUTE_HANDLER is the value the UEF returns to tell
-    /// the kernel "I've handled it; unwind and terminate". NOT exposed
-    /// by `std.os.windows` in Zig 0.16 — declared here per WinNT.h.
+    /// EXCEPTION_EXECUTE_HANDLER is the value the UEF returns to tell the kernel "I've handled it; unwind and terminate".
     pub const EXCEPTION_EXECUTE_HANDLER: c_long = 1;
 
     /// Function pointer type for SetUnhandledExceptionFilter's callback.
-    /// Returns LONG (c_long); WINAPI = __stdcall on x86 = callconv(.winapi)
-    /// in Zig 0.16.
     pub const UnhandledExceptionFilterFn = *const fn (
         exception_info: *std.os.windows.EXCEPTION_POINTERS,
     ) callconv(.winapi) c_long;
@@ -437,9 +378,7 @@ pub fn windowsExceptionDescription(code: u32) []const u8 {
     return switch (code) {
         0xC0000005 => "EXCEPTION_ACCESS_VIOLATION (invalid memory reference — SIGSEGV equivalent)",
         0xC000001D => "EXCEPTION_ILLEGAL_INSTRUCTION (SIGILL equivalent)",
-        // std's vectored handler intercepts this one, so the UEF never
-        // sees it — but the description is still needed for the report
-        // the vectored handler routes through handleSegfaultReport.
+        // std's vectored handler intercepts this one, so the UEF never sees it — but the description is still needed for the report the vectored handler routes through …
         0x80000002 => "EXCEPTION_DATATYPE_MISALIGNMENT (unaligned memory access)",
         0xC0000094 => "EXCEPTION_INT_DIVIDE_BY_ZERO (SIGFPE equivalent)",
         0xC00000FD => "EXCEPTION_STACK_OVERFLOW (exhausted stack — check for unbounded recursion)",
@@ -456,8 +395,7 @@ pub fn windowsExceptionDescription(code: u32) []const u8 {
     };
 }
 
-/// Windows unhandled exception filter. Runs in exception-dispatch context —
-/// equivalent to a signal handler for crash purposes.
+/// Windows unhandled exception filter.
 fn handleWindowsException(exception_info: *std.os.windows.EXCEPTION_POINTERS) callconv(.winapi) c_long {
     const alloc = std.heap.page_allocator;
     const rec = exception_info.ExceptionRecord;
@@ -472,8 +410,7 @@ fn handleWindowsException(exception_info: *std.os.windows.EXCEPTION_POINTERS) ca
     , .{ code, addr, windowsExceptionDescription(code), @tagName(builtin.mode), @tagName(builtin.cpu.arch), @tagName(builtin.os.tag) }) catch "=== CRASH: Windows exception (details unavailable) ===\n";
     defer alloc.free(header);
 
-    // For ACCESS_VIOLATION the record carries 2 info words:
-    //   [0] = 0 read / 1 write / 8 DEP violation, [1] = fault address.
+    // For ACCESS_VIOLATION the record carries 2 info words
     var access_line: []const u8 = "";
     if (code == 0xC0000005 and rec.NumberParameters >= 2) {
         const rw = rec.ExceptionInformation[0];
@@ -500,13 +437,9 @@ fn handleWindowsException(exception_info: *std.os.windows.EXCEPTION_POINTERS) ca
     return win32_apis.EXCEPTION_EXECUTE_HANDLER;
 }
 
-// =============================================================================
 // std.debug.handleSegfault override — the seam that actually fires on Windows
-// =============================================================================
 
-/// Zig's `std.debug` routes every hardware fault through
-/// `root.debug.handleSegfault` if the root source file declares it
-/// (`std/debug.zig:1633`, overridable precisely so a program can install its
+/// Zig's `std.debug` routes every hardware fault through `root.debug.handleSegfault` if the root source file declares it (`std/debug.zig:1633`, overridable …
 pub fn handleSegfaultReport(
     addr: ?usize,
     name: []const u8,
@@ -532,14 +465,11 @@ pub fn handleSegfaultReport(
 
     emitCrashReport(alloc, header, detail, .{ .context = context });
 
-    // Match std's own contract: the faulting instruction is not safe to
-    // re-execute (the memory may have been mapped since), so terminate
-    // rather than return. abort() also produces the core dump on POSIX.
+    // Match std's own contract: the faulting instruction is not safe to re-execute (the memory may have been mapped since), so terminate rather than return. abort() …
     std.process.abort();
 }
 
-/// Turn std's short fault name into the "why did this happen" sentence the
-/// report leads with.
+/// Turn std's short fault name into the "why did this happen" sentence the report leads with.
 fn segfaultWhy(name: []const u8) []const u8 {
     if (std.mem.eql(u8, name, "Segmentation fault")) return "invalid memory reference (null deref, use-after-free, bad pointer, wild/unmapped access)";
     if (std.mem.eql(u8, name, "Illegal instruction")) return "illegal instruction (corrupt code, bad JIT emit, wrong-arch binary)";
@@ -550,8 +480,7 @@ fn segfaultWhy(name: []const u8) []const u8 {
     return "unrecoverable hardware fault";
 }
 
-/// Capture the stack, symbolicate it, and write `header` + `detail` + both
-/// stack sections to the crash log and mirror them to stderr.
+/// Capture the stack, symbolicate it, and write `header` + `detail` + both stack sections to the crash log and mirror them to stderr.
 fn emitCrashReport(
     allocator: std.mem.Allocator,
     header: []const u8,
@@ -620,18 +549,14 @@ pub const root_debug = struct {
 
 // ===== Tests merged from crash_handler_test.zig (2026-09-29 flatten) =====
 
-// Tests for src/service/crash_handler.zig (crash signal/exception handler). A
-// real crash handler can't be exercised in-process — SIGSEGV / SIGBUS /
-// SIGABRT / SIGILL / SIGFPE / ACCESS_VIOLATION all terminate the process.
+// Tests for src/service/crash_handler.zig (crash signal/exception handler).
 
 const testing = std.testing;
 
 // ─── Contract 0: installCrashHandlers is callable cross-platform ───────
 
 test "installCrashHandlers is callable cross-platform" {
-    // Taking the address forces the comptime `switch (builtin.os.tag)`
-    // to materialise a real body on every platform. If any branch
-    // throws `@compileError`, this fails to compile.
+    // Taking the address forces the comptime `switch (builtin.os.tag)` to materialise a real body on every platform.
     const function_pointer = &installCrashHandlers;
     _ = function_pointer;
     try testing.expect(true);
@@ -640,8 +565,7 @@ test "installCrashHandlers is callable cross-platform" {
 // ─── Contract 8: installCrashHandlers is idempotent ────────────────────
 
 test "installCrashHandlers is safe to call twice" {
-    // The function should be a no-op on the second call (or at minimum not
-    // crash).
+    // The function should be a no-op on the second call (or at minimum not crash).
     installCrashHandlers();
     installCrashHandlers();
     try testing.expect(true);
@@ -651,16 +575,14 @@ test "installCrashHandlers is safe to call twice" {
 
 test "StackCapture.options forwards the crashing context to the unwinder" {
     var native: std.debug.cpu_context.Native = undefined;
-    // Any well-defined register snapshot is a valid context to forward;
-    // what is under test is that the option is not silently dropped.
+    // Any well-defined register snapshot is a valid context to forward; what is under test is that the option is not silently dropped.
     const ctx: std.debug.CpuContextPtr = &native;
     const opts = (StackCapture{ .context = ctx }).options();
     try testing.expectEqual(@intFromPtr(ctx), @intFromPtr(opts.context.?));
 }
 
 test "StackCapture.options always allows unsafe unwind" {
-    // Inside a fatal fault, a "safe-only" unwind policy trades a partial
-    // report for none at all. It must never be selectable.
+    // Inside a fatal fault, a "safe-only" unwind policy trades a partial report for none at all.
     var native: std.debug.cpu_context.Native = undefined;
     const with_ctx = (StackCapture{ .context = &native }).options();
     const without_ctx = (StackCapture{}).options();
@@ -669,9 +591,7 @@ test "StackCapture.options always allows unsafe unwind" {
 }
 
 test "StackCapture with a null context still captures a trace rather than failing" {
-    // ReleaseFast has no vectored segfault handler, so the UEF path is the
-    // only net and may have no usable context. It must degrade to a
-    // context-less capture, not to a crash inside the crash handler.
+    // ReleaseFast has no vectored segfault handler, so the UEF path is the only net and may have no usable context.
     var addr_buf: [8]usize = undefined;
     const stack = captureCrashStack(.{}, &addr_buf);
     try testing.expect(stack.return_addresses.len <= addr_buf.len);
@@ -685,28 +605,23 @@ test "posixCpuContext returns null for a null ucontext instead of faulting" {
 // ─── root.debug.handleSegfault: the Windows ordering contract ─────────
 
 test "root_debug exposes the handleSegfault seam std requires" {
-    // std/debug.zig dispatches on `@hasDecl(root.debug, "handleSegfault")`
-    // and calls it as `fn (?usize, []const u8, ?CpuContextPtr) noreturn`.
+    // std/debug.zig dispatches on `@hasDecl(root.debug, "handleSegfault")` and calls it as `fn (?usize, []const u8, ?CpuContextPtr) noreturn`.
     const f: *const fn (?usize, []const u8, ?std.debug.CpuContextPtr) noreturn = &root_debug.handleSegfault;
     _ = f;
     try testing.expect(true);
 }
 
 test "windowsExceptionDescription names every code std's vectored handler swallows" {
-    // std/debug.zig `handleSegfaultWindows` intercepts exactly these four and
-    // aborts without consulting us.
+    // std/debug.zig `handleSegfaultWindows` intercepts exactly these four and aborts without consulting us.
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0xC0000005), "ACCESS_VIOLATION") != null);
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0xC000001D), "ILLEGAL_INSTRUCTION") != null);
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0xC00000FD), "STACK_OVERFLOW") != null);
-    // DATATYPE_MISALIGNMENT is intercepted by std but absent from the
-    // switch — pin it so the gap is a test failure, not a silent shrug.
+    // DATATYPE_MISALIGNMENT is intercepted by std but absent from the switch — pin it so the gap is a test failure, not a silent shrug.
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0x80000002), "MISALIGNMENT") != null);
 }
 
 test "windowsExceptionDescription names the codes only the UEF can catch" {
-    // These are NOT in std's vectored handler, so `handleWindowsException`
-    // is the only thing standing between them and a silent death. They
-    // must stay described.
+    // These are NOT in std's vectored handler, so `handleWindowsException` is the only thing standing between them and a silent death.
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0xC0000374), "HEAP_CORRUPTION") != null);
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0xC0000409), "FAIL_FAST") != null);
     try testing.expect(std.mem.indexOf(u8, windowsExceptionDescription(0xC000008C), "ARRAY_BOUNDS") != null);
@@ -743,9 +658,7 @@ test "siCodeMeaning decodes hardware sub-reasons" {
 }
 
 test "siCodeMeaning treats non-positive codes as sender codes" {
-    // kill()/raise()/abort()-delivered signals carry a sender identity
-    // (SI_TKILL=-6, SI_USER=0), not a hardware sub-reason. The decoder
-    // must say so instead of "unknown SEGV code".
+    // kill()/raise()/abort()-delivered signals carry a sender identity (SI_TKILL=-6, SI_USER=0), not a hardware sub-reason.
     const SEGV = std.c.SIG.SEGV;
     try testing.expect(std.mem.indexOf(u8, siCodeMeaning(SEGV, -6), "sender") != null);
     try testing.expect(std.mem.indexOf(u8, siCodeMeaning(SEGV, 0), "sender") != null);
@@ -764,9 +677,7 @@ test "classifyFaultAddr buckets fault addresses" {
 // ─── faultAddrFromSiginfo / siCodeFromSiginfo: siginfo extraction ─────
 
 test "faultAddrFromSiginfo and siCodeFromSiginfo extract siginfo fields" {
-    // One body, every host: both helpers are comptime reflection over this
-    // host's `siginfo_t`. Linux reads `fields.sigfault.addr`; the BSD/Darwin
-    // libc struct names it `addr`, which neither helper probes.
+    // One body, every host: both helpers are comptime reflection over this host's `siginfo_t`.
     switch (builtin.os.tag) {
         .linux => {
             var info = std.mem.zeroes(std.posix.siginfo_t);
@@ -789,21 +700,17 @@ test "faultAddrFromSiginfo and siCodeFromSiginfo extract siginfo fields" {
             try testing.expectEqual(@as(i32, 11), siCodeFromSiginfo(&info));
         },
         .netbsd => {
-            // A bare union of `pad` and `_ksiginfo`: neither helper finds a
-            // field it looks for, so both answer 0 rather than faulting.
+            // A bare union of `pad` and `_ksiginfo`: neither helper finds a field it looks for, so both answer 0 rather than faulting.
             var info = std.mem.zeroes(std.posix.siginfo_t);
             try testing.expectEqual(@as(usize, 0), faultAddrFromSiginfo(&info));
             try testing.expectEqual(@as(i32, 0), siCodeFromSiginfo(&info));
         },
         .windows => {
-            // `std.c.siginfo_t` is `void` on Windows, so there is no shape
-            // for the reflection to read — which is why the Windows handler
-            // reports `EXCEPTION_*` codes instead (windowsExceptionDescription).
+            // `std.c.siginfo_t` is `void` on Windows, so there is no shape for the reflection to read — which is why the Windows handler reports `EXCEPTION_*` codes instead …
             try testing.expect(std.posix.siginfo_t == void);
         },
         else => {
-            // An un-named host FAILS here rather than passing with nothing
-            // read: add its siginfo_t expectation to this table.
+            // An un-named host FAILS here rather than passing with nothing read: add its siginfo_t expectation to this table.
             std.debug.print("\n!! siginfo_t host not in the test's table !!\n", .{});
             try testing.expect(false);
         },
@@ -826,8 +733,6 @@ test "formatRawAddrs of empty trace is empty" {
 }
 
 // ─── formatSlideAddrs: the address a symbols binary can resolve ───────
-// A frame is a RUNTIME address; ASLR moves it every launch, so an absolute
-// frame resolves to nothing unless the report also prints the load bias.
 
 test "formatSlideAddrs reports the vm address with the load bias removed" {
     const slide: usize = 0x100000000;
@@ -850,7 +755,6 @@ test "formatSlideAddrs of empty trace is empty" {
 
 test "formatSlideAddrs subtracts a bias larger than the address without trapping" {
     // A frame below the reported bias means the bias came from another image.
-    // The line must still render: a trap here loses the whole report.
     const addrs = [_]usize{0x10};
     const out = formatSlideAddrs(testing.allocator, &addrs, 0x20);
     defer testing.allocator.free(out);
@@ -876,9 +780,7 @@ test "resolveHint tells the reader which column to feed" {
 }
 
 test "resolveHint never names a tool from another platform family" {
-    // Compared per family, not against a copy of the table: a duplicated
-    // tool name is how the first version of this test passed on Linux and
-    // macOS and failed on Windows, where the tool is `llvm-addr2line`.
+    // Compared per family, not against a copy of the table: a duplicated tool name is how the first version of this test passed on Linux and macOS and failed on …
     const hint = resolveHint();
     switch (builtin.os.tag) {
         .macos, .ios, .tvos, .watchos => {
@@ -890,14 +792,12 @@ test "resolveHint never names a tool from another platform family" {
 }
 
 test "moduleSlide is null until the process hands the handler its Io" {
-    // No `setCrashIo` in a test process: the report must degrade to absolute
-    // addresses instead of dereferencing a missing Io.
+    // No `setCrashIo` in a test process: the report must degrade to absolute addresses instead of dereferencing a missing Io.
     try testing.expect(moduleSlide(0x1000) == null);
 }
 
 test "moduleSlide is null on a target with no self-info slide" {
-    // PE has none in Zig 0.16, so a Windows report keeps absolute addresses
-    // rather than failing to compile. Plain `return` counts as a pass.
+    // PE has none in Zig 0.16, so a Windows report keeps absolute addresses rather than failing to compile.
     if (comptime has_self_info_slide) return;
     try testing.expect(moduleSlide(0x1000) == null);
 }
@@ -905,12 +805,9 @@ test "moduleSlide is null on a target with no self-info slide" {
 // ─── symbolicateStack: DWARF symbolication ────────────────────────────
 
 test "symbolicateStack returns null for an empty trace" {
-    // writeStackTrace prints "(empty stack trace)" for zero frames —
-    // the helper treats that as "no symbolication", not a section.
+    // writeStackTrace prints "(empty stack trace)" for zero frames — the helper treats that as "no symbolication", not a section.
     const empty: std.debug.StackTrace = .{ .return_addresses = &.{}, .skipped = .none };
     try testing.expect(symbolicateStack(testing.allocator, &empty) == null);
 }
 
 // ─── Behavioural coverage (out-of-process) ────────────────────────────
-// scripts/crash_handler_smoke.sh It compiles a tiny `crash_trigger.zig`
-// helper into a standalone binary, invokes it (which dereferences a bad

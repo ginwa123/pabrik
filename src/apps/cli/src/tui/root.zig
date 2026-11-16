@@ -24,8 +24,7 @@ pub const Input = widgets.Input;
 pub const Spinner = widgets.Spinner;
 pub const StatusBar = widgets.StatusBar;
 
-/// The chat application model (used by `pabrik-tui`; reusable by other
-/// frontends).
+/// The chat application model (used by `pabrik-tui`; reusable by other frontends).
 pub const app = @import("app.zig");
 pub const transport = @import("transport.zig");
 pub const sse = @import("sse.zig");
@@ -45,7 +44,5 @@ test {
     _ = @import("think.zig");
     _ = @import("tool_envelope.zig");
     _ = @import("render_msg.zig");
-    // TDD regression rounds (written before the fixes they pin) are merged
-    // into the files they exercise: the round-2 cases are now inline at the
-    // bottom of transport.zig, sse.zig and app.zig — all three of which are
+    // TDD regression rounds (written before the fixes they pin) are merged into the files they exercise: the round-2 cases are now inline at the bottom of …
 }

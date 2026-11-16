@@ -1,5 +1,4 @@
-//! `GET /api/local-memories?cwd=...` — list `.md` memory files in
-//! `<cwd>/.pabrik/memories/`.
+//! `GET /api/local-memories?cwd=...` — list `.md` memory files in `<cwd>/.pabrik/memories/`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,12 +7,9 @@ const memories_mod = pabrikcore.memories;
 const list_memory_mod = pabrikcore.list_memory_tool;
 const http_response = @import("http_response.zig");
 
-/// Domain-level error set for `useCase`. The only failure mode is
-/// "could not resolve the local memories directory" — both the query
-/// `cwd` and the io fallback returned null/empty.
+/// Domain-level error set for `useCase`.
 pub const LocalMemoriesListError = error{
-    /// Neither the per-request `cwd` query nor the io fallback
-    /// yielded a usable local-memories directory.
+    /// Neither the per-request `cwd` query nor the io fallback yielded a usable local-memories directory.
     NoCwdAvailable,
     /// `list_memory_mod.toJson` returned `error.OutOfMemory`. Maps to 500.
     OutOfMemory,
@@ -21,21 +17,16 @@ pub const LocalMemoriesListError = error{
 
 /// Inputs to the list use-case.
 pub const LocalMemoriesListInput = struct {
-    /// The `?cwd=` query value (may be null/empty — the use-case
-    /// will fall back to the io CWD in that case).
+    /// The `?cwd=` query value (may be null/empty — the use-case will fall back to the io CWD in that case).
     cwd: []const u8,
 };
 
-/// Output of the list use-case: the heap-owned JSON body to return to the
-/// caller. Borrowed `dir_path` is freed by the use-case's internal defer; the
-/// JSON body lives until the per-request arena reaps at request end.
+/// Output of the list use-case: the heap-owned JSON body to return to the caller.
 pub const LocalMemoriesListOutput = struct {
     json_body: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Resolve the local memories dir and produce the list JSON. Steps: 1.
 fn useCase(
@@ -60,9 +51,7 @@ fn useCase(
     return .{ .json_body = json_body };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn localMemoriesListHandler(
     ctx: gserverz.HttpContext,

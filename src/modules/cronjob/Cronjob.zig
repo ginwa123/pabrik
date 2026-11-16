@@ -1,7 +1,6 @@
 const std = @import("std");
 const process_checker = @import("ProcessChecker.zig");
-// `databases` is the self-contained sqlite3 package — propagated to
-// this module via mod.addImport("databases", ...) in build.zig.
+// `databases` is the self-contained sqlite3 package — propagated to this module via mod.addImport("databases", ...) in build.zig.
 const sqlite = @import("databases").sqlite;
 const database = @import("databases").database;
 
@@ -105,8 +104,7 @@ fn checkAndUpdateProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []
         const session_id = row.values[0];
         const pid_str = row.values[1];
         const command = row.values[2];
-        // row.values[3] is log_path - not needed for status check
-        // row.values[4] is started_at - not needed for status check
+        // row.values[3] is log_path - not needed for status check row.values[4] is started_at - not needed for status check
         const current_status = row.values[5];
         
         // Parse PID
@@ -237,9 +235,7 @@ pub fn cleanupOldProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []
     try db.init(io, db_path_z);
     defer db.deinit();
 
-    // `std.time.timestamp` was removed in Zig 0.16. Use the Io runtime
-    // (we have `io: std.Io` in this function's signature) for the
-    // portable replacement.
+    // `std.time.timestamp` was removed in Zig 0.16.
     const now = std.Io.Clock.now(.real, io).toSeconds();
     const cutoff_time = now - older_than_seconds;
     const cutoff_str = try std.fmt.allocPrint(allocator, "{d}", .{cutoff_time});
@@ -249,7 +245,6 @@ pub fn cleanupOldProcesses(allocator: std.mem.Allocator, io: std.Io, db_path: []
     
     try db.exec(allocator, delete_sql, &[_][]const u8{cutoff_str});
     
-    // Note: SQLite doesn't return affected rows count easily without additional query
-    // For now, we return 0 and the caller can query if needed
+    // Note: SQLite doesn't return affected rows count easily without additional query For now, we return 0 and the caller can query if needed
     return 0;
 }

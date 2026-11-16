@@ -13,9 +13,7 @@ pub const Migration070AddAgentMemories = struct {
     pub const name = "add_agent_memories";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // 1. Source table. `tags` is the canonical "no tags" sentinel
-        //    ('') — matches `description` / `tags` / `image_urls`
-        //    conventions from Migrations 062 / 067 / 069.
+        // 1.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agent_memories (
             \\    id TEXT PRIMARY KEY,
@@ -32,8 +30,7 @@ pub const Migration070AddAgentMemories = struct {
                 "ON agent_memories(updated_at DESC)",
             &[_][]const u8{});
 
-        // 3. The search index. Postgres keeps it in a GIN over `tsvector`,
-        //    sqlite in an FTS5 virtual table.
+        // 3.
         if (dialect.is_postgres) {
             const fts_index = try std.fmt.allocPrint(allocator,
                 "CREATE INDEX IF NOT EXISTS idx_agent_memories_fts ON agent_memories USING gin ({s})",
@@ -74,9 +71,7 @@ pub const Migration070AddAgentMemories = struct {
             \\END
         , &[_][]const u8{});
 
-        // 5. Backfill. On a fresh DB this is a no-op (zero rows). On an
-        //    existing DB that somehow has rows without FTS5 coverage
-        //    (shouldn't happen, but defensive), this catches them up.
+        // 5.
         try db.exec(allocator,
             \\INSERT INTO agent_memories_fts(rowid, content, tags)
             \\SELECT rowid, content, tags FROM agent_memories

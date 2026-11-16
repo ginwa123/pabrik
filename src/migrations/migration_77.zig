@@ -13,8 +13,7 @@ pub const Migration077AddUsersAndRbacSchema = struct {
     pub const name = "add_users_and_rbac_schema";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // tx (db.begin/tx.exec/tx.commit) — atomic; see "Why the tx" in the
-        // docstring above.
+        // tx (db.begin/tx.exec/tx.commit) — atomic; see "Why the tx" in the docstring above.
         var tx = try db.begin();
         defer tx.commitOrRollback() catch {};
         errdefer tx.rollback() catch {};
@@ -104,9 +103,7 @@ pub const Migration077AddUsersAndRbacSchema = struct {
             "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
             &[_][]const u8{});
 
-        // 7. Default user_system — the conflict clause makes it idempotent.
-        //    See the spec §3.6 for the full reasoning (password_hash
-        //    sentinel, is_active=0, system@local reserved per RFC 6762).
+        // 7.
         try tx.exec(allocator,
             dialect.insert_ignore_prefix ++
                 " INTO users (id, email, name, password_hash, role, is_active) " ++
@@ -114,8 +111,7 @@ pub const Migration077AddUsersAndRbacSchema = struct {
                 dialect.conflict_ignore,
             &[_][]const u8{});
 
-        // 8. Backfill — convert every legacy row (workspaces, sessions) WHERE
-        // user_id IS NULL to user_id='user_system'.
+        // 8.
         try tx.exec(allocator,
             "UPDATE workspaces SET user_id = 'user_system' WHERE user_id IS NULL",
             &[_][]const u8{});
@@ -126,9 +122,7 @@ pub const Migration077AddUsersAndRbacSchema = struct {
         // Commit the transaction. After this, the new schema is durable.
         try tx.commit();
 
-        // Refresh query-planner stats so the new indexes are picked on
-        // pre-existing databases (mirrors the ANALYZE-after-CREATE-INDEX
-        // pattern used by Migrations 041/042/043/048/049/050/051/052/070/072).
+        // Refresh query-planner stats so the new indexes are picked on pre-existing databases (mirrors the ANALYZE-after-CREATE-INDEX pattern used by Migrations …
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

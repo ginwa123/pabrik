@@ -14,7 +14,6 @@ pub const Migration100AddWorkspaceMembers = struct {
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // One tx: the table, its index and the backfill must land together.
-        // Same shape as Migration 077.
         var tx = try db.begin();
         defer tx.commitOrRollback() catch {};
         errdefer tx.rollback() catch {};
@@ -30,9 +29,7 @@ pub const Migration100AddWorkspaceMembers = struct {
             \\)
         , &[_][]const u8{});
 
-        // The PK already covers workspace_id -> members (the direction the
-        // visibility EXISTS subquery walks). This covers the other direction:
-        // "which workspaces is this user in".
+        // The PK already covers workspace_id -> members (the direction the visibility EXISTS subquery walks).
         try tx.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id, workspace_id)", &[_][]const u8{});
 
         // Backfill.
@@ -47,8 +44,7 @@ pub const Migration100AddWorkspaceMembers = struct {
 
         try tx.commit();
 
-        // Refresh planner stats so the new index is picked up on pre-existing
-        // databases (mirrors Migrations 041-052 / 070 / 072 / 077).
+        // Refresh planner stats so the new index is picked up on pre-existing databases (mirrors Migrations 041-052 / 070 / 072 / 077).
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

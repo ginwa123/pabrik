@@ -40,9 +40,7 @@ const props = withDefaults(
     isAgentRunning?: boolean
     /** Shown in the menu's title bar so the user can confirm the target. */
     taskName?: string
-    /**      * The board's columns, already ordered. Empty (or a single entry) hides the "Move to column"
-     * row entirely — a submenu with one dead item is worse than no submenu. The sidebar-row host
-     * and legacy/unloaded boards pass nothing. */
+    /** The board's columns, already ordered. */
     columns?: KanbanColumn[]
     /** Id of the column this task currently lives in; marked in the submenu. */
     currentColumnId?: string | null
@@ -64,15 +62,12 @@ const emit = defineEmits<{
   openChat: []
   openDetails: []
   stop: []
-  // Start an agent on this task's existing session (no new user message queued). Hidden while a
-  // worker is already running — the backend's 409 is the source of truth, but offering a row that
-  // can only fail is worse than not offering it.
+  // Start an agent on this task's existing session (no new user message queued).
   runAgent: []
   moveToColumn: [columnId: string]
 }>()
 
-// ─── Submenu ──────────────────────────────────────────────────────────── Hovering (or arrowing
-// onto) the "Move to column" row opens this panel.
+// ─── Submenu ────────────────────────────────────────────────────────────
 const subOpen = ref(false)
 const subPos = ref({ left: 0, top: 0 })
 const subRef = ref<HTMLElement | null>(null)
@@ -90,8 +85,7 @@ const openSub = async () => {
   const a = anchor.getBoundingClientRect()
   const w = panel.offsetWidth
   const h = panel.offsetHeight
-  // Flip to the left of the parent menu when the panel would run past
-  // the viewport's right edge; clamp vertically for long boards.
+  // Flip to the left of the parent menu when the panel would run past the viewport's right edge; clamp vertically for long boards.
   let left = a.right - 4
   if (left + w > window.innerWidth - 8) left = Math.max(8, a.left - w + 4)
   let top = a.top - 4
@@ -103,9 +97,7 @@ const closeSub = () => {
   subOpen.value = false
 }
 
-// ─── Keyboard navigation ──────────────────────────────────────────────── The menu is not
-// mouse-only: the card root handles the ContextMenu / F10 keys and opens this menu, so the menu has
-// to be arrow-navigable too. `focusIdx` indexes the flat list of enabled rows.
+// ─── Keyboard navigation ────────────────────────────────────────────────
 const focusIdx = ref(-1)
 const rootRef = ref<HTMLElement | null>(null)
 
@@ -116,8 +108,7 @@ const navRows = (): HTMLElement[] =>
 const moveFocus = (delta: number) => {
   const rows = navRows()
   if (rows.length === 0) return
-  // Start from the row the user is actually on, not a stale index — the
-  // list changes shape when "Stop agent" appears or disappears.
+  // Start from the row the user is actually on, not a stale index — the list changes shape when "Stop agent" appears or disappears.
   const at = rows.indexOf(document.activeElement as HTMLElement)
   const from = at >= 0 ? at : focusIdx.value
   const next = (from + delta + rows.length) % rows.length
@@ -144,9 +135,7 @@ const onKeydown = (event: KeyboardEvent) => {
       moveRowRef.value?.focus()
     }
   } else if (event.key === 'Escape') {
-    // Two-stage: the submenu closes first, then the whole menu. The
-    // host owns the outer dismiss (useContextMenu's window listener),
-    // so we only stop propagation when we actually consumed the key.
+    // Two-stage: the submenu closes first, then the whole menu.
     if (subOpen.value) {
       event.preventDefault()
       event.stopPropagation()
@@ -169,15 +158,12 @@ const onSubKeydown = (event: KeyboardEvent) => {
 }
 
 const pickColumn = (columnId: string, isCurrent: boolean) => {
-  // Picking the current column is a no-op: emitting would POST a move
-  // that renumbers siblings for no visible change.
+  // Picking the current column is a no-op: emitting would POST a move that renumbers siblings for no visible change.
   if (isCurrent) return
   emit('moveToColumn', columnId)
 }
 
-// Hovering a row focuses it. Without this, the arrow keys always start
-// from the top of the menu, so a user who hovers down the list and then
-// presses ArrowDown gets thrown back to "Pin task".
+// Hovering a row focuses it.
 const focusRow = (event: MouseEvent) => {
   ;(event.currentTarget as HTMLElement | null)?.focus()
 }

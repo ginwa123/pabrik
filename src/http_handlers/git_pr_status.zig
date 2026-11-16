@@ -12,15 +12,13 @@ const runtime_mode = @import("../runtime_mode.zig");
 const git_timeout_ms: u32 = 20_000;
 const git_output_bytes: usize = 256 * 1024;
 
-/// Which git may answer about `path`, decided by the process's own database in
-/// `--saas` and by nothing at all in local mode.
+/// Which git may answer about `path`, decided by the process's own database in `--saas` and by nothing at all in local mode.
 fn routeForPath(allocator: std.mem.Allocator, path: []const u8) workspace_fs.Route {
     const di = pabrik_core.getSingleton() catch null;
     return workspace_fs.routeForPath(allocator, if (di) |d| d.db else null, path);
 }
 
-/// Is `path` a work tree? In `--saas` the question goes to the workspace's VM,
-/// and a VM that cannot answer says no — never "let the host's git look".
+/// Is `path` a work tree?
 fn isGitRepository(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -41,8 +39,7 @@ fn isGitRepository(
     return check.term.exited == 0;
 }
 
-/// Whether `path` is a work tree the forge may be asked about. Public so the
-/// conversation endpoint shares this endpoint's gate.
+/// Whether `path` is a work tree the forge may be asked about.
 pub fn isWorkTree(allocator: std.mem.Allocator, io: std.Io, path: []const u8) bool {
     var route = routeForPath(allocator, path);
     defer route.deinit();
@@ -80,9 +77,7 @@ fn dupeTrimmed(allocator: std.mem.Allocator, raw: []const u8) ?[]u8 {
     return allocator.dupe(u8, url) catch null;
 }
 
-/// Fields requested from `gh pr view --json`. The list itself now lives
-/// in `pr_cli` so the argv builder and its parser cannot drift; re-exported
-/// here because the inline tests below and the CLI docs name this symbol.
+/// Fields requested from `gh pr view --json`.
 pub const GH_JSON_FIELDS = pr_cli.GH_JSON_FIELDS;
 
 const PrStatusError = error{ NotARepository, CliMissing, NoAssociatedPr, FetchFailed };
@@ -97,9 +92,7 @@ const GhPrView = struct {
     mergeStateStatus: []const u8 = "",
     headRefName: []const u8 = "",
     baseRefName: []const u8 = "",
-    /// The commit the head branch points at. This is the `--match-head-commit`
-    /// guard's input; without it a merge could land on a commit the user
-    /// never saw.
+    /// The commit the head branch points at.
     headRefOid: []const u8 = "",
     createdAt: []const u8 = "",
     updatedAt: []const u8 = "",
@@ -111,15 +104,13 @@ const GhPrView = struct {
     additions: i64 = 0,
     deletions: i64 = 0,
     changedFiles: i64 = 0,
-    /// APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge
-    /// has no verdict to give.
+    /// APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge has no verdict to give.
     reviewDecision: []const u8 = "",
     /// The CI rollup, one entry per check. Counted into the summary below.
     statusCheckRollup: []const GhRollupEntry = &.{},
 };
 
-/// One entry of `statusCheckRollup`. GitHub mixes two shapes in it: a check
-/// run (conclusion) and a commit status (state), so both are read.
+/// One entry of `statusCheckRollup`.
 const GhRollupEntry = struct {
     name: []const u8 = "",
     status: []const u8 = "",
@@ -127,8 +118,7 @@ const GhRollupEntry = struct {
     state: []const u8 = "",
 };
 
-/// The bucket a rollup entry falls into, using the same vocabulary as the
-/// checks endpoint: pass | fail | pending | skipping | cancel.
+/// The bucket a rollup entry falls into, using the same vocabulary as the checks endpoint: pass | fail | pending | skipping | cancel.
 pub fn rollupBucket(entry: GhRollupEntry) []const u8 {
     const conclusion = entry.conclusion;
     if (conclusion.len > 0) {
@@ -157,14 +147,12 @@ pub fn rollupBucket(entry: GhRollupEntry) []const u8 {
     return "skipping";
 }
 
-/// Normalize a forge state to the lowercase status the CLI prints. GitHub
-/// says OPEN/CLOSED/MERGED; GitLab says `opened`/`closed`/ `merged`/`locked`.
+/// Normalize a forge state to the lowercase status the CLI prints.
 pub fn normalizeStatus(state: []const u8) []const u8 {
     if (std.ascii.eqlIgnoreCase(state, "OPEN") or std.ascii.eqlIgnoreCase(state, "OPENED")) return "open";
     if (std.ascii.eqlIgnoreCase(state, "CLOSED")) return "closed";
     if (std.ascii.eqlIgnoreCase(state, "MERGED")) return "merged";
-    // GitLab's `locked` is an MR nobody may act on until it is unlocked;
-    // it is not open, so do not let it read as one.
+    // GitLab's `locked` is an MR nobody may act on until it is unlocked; it is not open, so do not let it read as one.
     if (std.ascii.eqlIgnoreCase(state, "LOCKED")) return "locked";
     return state;
 }
@@ -181,13 +169,10 @@ pub fn setFetchDetailFmt(
     setFetchDetail(allocator, slot, msg);
 }
 
-/// Max bytes of `gh` stderr (or context) surfaced in the HTTP 502 `error`
-/// field.
+/// Max bytes of `gh` stderr (or context) surfaced in the HTTP 502 `error` field.
 const MAX_FETCH_DETAIL: usize = 500;
 
-/// Store a trimmed + capped copy of `msg` into `slot` (best-effort; leaves
-/// `slot` null on empty input or alloc failure so callers can fall back to
-/// the generic hint).
+/// Store a trimmed + capped copy of `msg` into `slot` (best-effort; leaves `slot` null on empty input or alloc failure so callers can fall back to the generic …
 pub fn setFetchDetail(allocator: std.mem.Allocator, slot: *?[]u8, msg: []const u8) void {
     const trimmed = std.mem.trim(u8, msg, " \n\r\t");
     if (trimmed.len == 0) return;
@@ -195,9 +180,7 @@ pub fn setFetchDetail(allocator: std.mem.Allocator, slot: *?[]u8, msg: []const u
     slot.* = allocator.dupe(u8, trimmed[0..take]) catch null;
 }
 
-/// The forge CLIs to spawn. Injectable through `useCaseWithPrograms` so
-/// the test suite can point them at fixture scripts instead of requiring
-/// real, authenticated GitHub/GitLab CLIs on PATH.
+/// The forge CLIs to spawn.
 pub const Programs = struct {
     gh: []const u8 = "gh",
     glab: []const u8 = "glab",
@@ -211,8 +194,7 @@ pub const Programs = struct {
     }
 };
 
-/// Back-compat alias for the old single-program constant. Kept because
-/// the inline tests and the CLI docs name it.
+/// Back-compat alias for the old single-program constant.
 pub const GH_PROGRAM: []const u8 = "gh";
 
 /// The `glab` binary. Same seam as `GH_PROGRAM`, GitLab side.
@@ -221,14 +203,10 @@ pub const GLAB_PROGRAM: []const u8 = "glab";
 /// Wall-clock budget for one PR/MR view invocation.
 pub const GH_TIMEOUT_MS: u32 = 20_000;
 
-/// Per-stream capture cap. A `pr view` payload is a few hundred bytes
-/// without the CI rollup, and a few kilobytes with it; anything past this
-/// is an error message we truncate anyway.
+/// Per-stream capture cap.
 const GH_MAX_OUTPUT_BYTES: usize = 256 * 1024;
 
 /// Run `gh pr view` in `path` and return the raw stdout JSON (owned).
-/// `pr_arg` is "" for "current branch's PR", otherwise a number, URL, or
-/// branch name passed straight through to `gh`.
 fn runView(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -239,16 +217,13 @@ fn runView(
     timeout_ms: u32,
     fetch_detail: *?[]u8,
 ) ![]u8 {
-    // `<gh> pr view [<pr>] --json <fields>` for GitHub, `<glab> mr view
-    // [<mr>] --output json` for GitLab.
+    // `<gh> pr view [<pr>] --json <fields>` for GitHub, `<glab> mr view [<mr>] --output json` for GitLab.
     var argv_buf: [pr_cli.view_argv_max][]const u8 = undefined;
     const argv = pr_cli.viewArgv(&argv_buf, provider, prog, pr_arg) orelse return error.CliMissing;
     return runForgeView(allocator, io, provider, path, argv, timeout_ms, fetch_detail);
 }
 
-/// Spawn one forge read and return its stdout. `argv` is the caller's, so
-/// every forge read shares one timeout, one capture cap and one stderr
-/// policy.
+/// Spawn one forge read and return its stdout.
 pub fn runForgeView(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -264,9 +239,7 @@ pub fn runForgeView(
         .max_output_bytes = GH_MAX_OUTPUT_BYTES,
         .timeout_ms = timeout_ms,
     }) catch |err| switch (err) {
-        // The CLI not being on PATH is the overwhelmingly common spawn
-        // failure (the repo gate above already proved `path` is a git
-        // repo, so a FileNotFound here is the binary, not the directory).
+        // The CLI not being on PATH is the overwhelmingly common spawn failure (the repo gate above already proved `path` is a git repo, so a FileNotFound here is the …
         error.FileNotFound => return error.CliMissing,
         error.AccessDenied, error.PermissionDenied, error.InvalidExe => return error.CliMissing,
         else => {
@@ -288,9 +261,7 @@ pub fn runForgeView(
             if (code != 0) {
                 const stderr_trimmed = std.mem.trim(u8, res.stderr, " \n\r");
                 const is_no_pr = isNotFoundStderr(stderr_trimmed, provider);
-                // Surface the real CLI stderr (auth failures, bad numbers,
-                // rate limits) instead of a generic hint. `is_no_pr` stays a
-                // 404; everything else becomes a 502 carrying this detail.
+                // Surface the real CLI stderr (auth failures, bad numbers, rate limits) instead of a generic hint.
                 if (!is_no_pr) {
                     if (stderr_trimmed.len > 0) {
                         setFetchDetail(allocator, fetch_detail, stderr_trimmed);
@@ -313,8 +284,7 @@ pub fn runForgeView(
     return allocator.dupe(u8, res.stdout);
 }
 
-/// Whether a non-zero-exit stderr means "that PR/MR does not exist" (404)
-/// rather than "the lookup blew up" (502).
+/// Whether a non-zero-exit stderr means "that PR/MR does not exist" (404) rather than "the lookup blew up" (502).
 fn isNotFoundStderr(stderr: []const u8, provider: pr_provider.PrProvider) bool {
     if (std.mem.indexOf(u8, stderr, "404") != null) return true;
     if (std.ascii.indexOfIgnoreCase(stderr, "not found") != null) return true;
@@ -330,9 +300,7 @@ fn isNotFoundStderr(stderr: []const u8, provider: pr_provider.PrProvider) bool {
     };
 }
 
-/// `runView` bound to GitHub. Kept so the ~12 behavioural tests that
-/// already exercise the `gh` path (deadlock, timeout, signal, fd leak)
-/// keep testing that exact code unchanged.
+/// `runView` bound to GitHub.
 fn runGhPrView(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -382,9 +350,7 @@ fn useCaseWith(
     return useCaseWithPrograms(allocator, io, .{ .gh = prog, .glab = prog }, path, pr_arg, provider_override, fetch_detail);
 }
 
-/// `useCase` with both forge binaries injectable so the inline tests can
-/// drive the whole path against fixture scripts instead of real,
-/// authenticated GitHub/GitLab CLIs.
+/// `useCase` with both forge binaries injectable so the inline tests can drive the whole path against fixture scripts instead of real, authenticated GitHub/GitLab …
 pub fn useCaseWithPrograms(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -394,16 +360,12 @@ pub fn useCaseWithPrograms(
     provider_override: ?[]const u8,
     fetch_detail: *?[]u8,
 ) !http_response.GitPrStatusResponse {
-    // 1) Must be a git repo. Under `--saas` only the workspace's VM may say
-    // so: a path no workspace owns, or a VM that is not answering, is not a
-    // repository rather than an invitation to the host's git.
+    // 1) Must be a git repo.
     var route = routeForPath(allocator, path);
     defer route.deinit();
     if (!isGitRepository(allocator, io, &route, path)) return error.NotARepository;
 
-    // 2) Resolve which forge to ask. Precedence, most explicit first:
-    // explicit `provider` param > a URL-shaped `pr` arg > the repository's
-    // own `origin` remote.
+    // 2) Resolve which forge to ask. Precedence, most explicit first
     const provider = resolveProviderVia(allocator, io, &route, path, pr_arg, provider_override) catch |err| {
         switch (err) {
             error.UnknownProvider => setFetchDetail(allocator, fetch_detail, "unknown provider (expected github, gitlab, or generic)"),
@@ -421,9 +383,7 @@ pub fn useCaseWithPrograms(
 
     const cli = pr_cli.cliFor(provider).?;
     const trimmed = std.mem.trim(u8, raw, " \n\r");
-    // parseFromSliceLeaky BORROWS string slices from `raw` (no dupes), so
-    // every string must be duped into the request arena before `raw` is freed
-    // — otherwise the handler serializes freed memory (0xAA garbage in debug
+    // parseFromSliceLeaky BORROWS string slices from `raw` (no dupes), so every string must be duped into the request arena before `raw` is freed — otherwise the …
     return switch (provider) {
         .github => try buildResponse(allocator, provider, trimmed, raw.len, cli, fetch_detail),
         .gitlab => try buildGlabResponse(allocator, provider, trimmed, raw.len, cli, fetch_detail),
@@ -431,8 +391,7 @@ pub fn useCaseWithPrograms(
     };
 }
 
-/// Which forge to ask, or the reason we cannot ask one. Resolves its own
-/// route, so the callers that only want the provider are unchanged.
+/// Which forge to ask, or the reason we cannot ask one.
 pub fn resolveProvider(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -457,9 +416,7 @@ pub fn resolveProviderVia(
     if (provider_override) |o| {
         if (o.len > 0) {
             const p = pr_provider.PrProvider.fromString(o) orelse return error.UnknownProvider;
-            // `generic` is a real provider for DIFFING (pure local refs,
-            // see git_pr_diff.zig) but it has no forge CLI to ask for
-            // status, so a status request naming it is unanswerable.
+            // `generic` is a real provider for DIFFING (pure local refs, see git_pr_diff.zig) but it has no forge CLI to ask for status, so a status request naming it is …
             if (!pr_cli.hasCli(p)) return error.UnsupportedProvider;
             return p;
         }
@@ -473,13 +430,11 @@ pub fn resolveProviderVia(
         }
     }
     if (detectProviderFromOrigin(allocator, io, route, path)) |p| return p;
-    // No forge we can name: default to GitHub, which is what this
-    // endpoint did before GitLab support existed.
+    // No forge we can name: default to GitHub, which is what this endpoint did before GitLab support existed.
     return .github;
 }
 
-/// `git -C <path> remote get-url origin` → provider, or null when there
-/// is no origin, no remote, or git cannot be asked.
+/// `git -C <path> remote get-url origin` → provider, or null when there is no origin, no remote, or git cannot be asked.
 fn detectProviderFromOrigin(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -493,8 +448,7 @@ fn detectProviderFromOrigin(
     return p;
 }
 
-/// Best-effort provider, used ONLY to choose the wording of an error message
-/// ("no merge request found" vs "no pull request found").
+/// Best-effort provider, used ONLY to choose the wording of an error message ("no merge request found" vs "no pull request found").
 fn handlerProvider(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -559,9 +513,7 @@ fn buildResponse(
     };
 }
 
-/// Count a CI rollup into the summary the panel reads. The buckets are the
-/// checks endpoint's vocabulary, so one chip means the same thing in both
-/// places.
+/// Count a CI rollup into the summary the panel reads.
 fn countRollup(entries: []const GhRollupEntry) http_response.GitPrChecksSummary {
     var summary: http_response.GitPrChecksSummary = .{};
     for (entries) |entry| {
@@ -582,9 +534,7 @@ fn countRollup(entries: []const GhRollupEntry) http_response.GitPrChecksSummary 
     return summary;
 }
 
-/// Build the wire response from `glab mr view --output json` stdout. ## Why
-/// this parser is alias-tolerant while the `gh` one is not `gh pr view
-/// --json` takes an explicit field list, so its output shape is pinned by the
+/// Build the wire response from `glab mr view --output json` stdout.
 const GlabMrView = struct {
     iid: i64 = 0,
     id: i64 = 0,
@@ -594,8 +544,7 @@ const GlabMrView = struct {
     state: []const u8 = "",
     source_branch: []const u8 = "",
     target_branch: []const u8 = "",
-    /// The head commit. GitLab calls it `sha` (not `headRefOid`); it is
-    /// what `glab mr merge --sha` guards on.
+    /// The head commit.
     sha: []const u8 = "",
     detailed_merge_status: []const u8 = "",
     merge_status: []const u8 = "",
@@ -618,9 +567,7 @@ fn buildGlabResponse(
     cli: pr_cli.Cli,
     fetch_detail: *?[]u8,
 ) !http_response.GitPrStatusResponse {
-    // `parseFromSlice`, deliberately NOT the Leaky variant used by
-    // `buildResponse`: GlabMrView holds `std.json.Value` counters, and a
-    // Value duplicates its string/object into a parser-owned arena.
+    // `parseFromSlice`, deliberately NOT the Leaky variant used by `buildResponse`: GlabMrView holds `std.json.Value` counters, and a Value duplicates its …
     var parsed = std.json.parseFromSlice(GlabMrView, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, fetch_detail, cli, raw_len);
         return error.FetchFailed;
@@ -629,9 +576,7 @@ fn buildGlabResponse(
     const mr = parsed.value;
 
     const url = firstNonEmpty(&.{ mr.web_url, mr.url });
-    // GitLab's merge_status vocabulary (can_be_merged / cannot_be_merged) and
-    // detailed_merge_status vocabulary (mergeable / conflicted) are different
-    // axes; `detailed_merge_status` is the closer analogue of `gh`'s
+    // GitLab's merge_status vocabulary (can_be_merged / cannot_be_merged) and detailed_merge_status vocabulary (mergeable / conflicted) are different axes …
     const detailed = mr.detailed_merge_status;
     const merge_status = mr.merge_status;
     return http_response.GitPrStatusResponse{
@@ -657,9 +602,7 @@ fn buildGlabResponse(
     };
 }
 
-/// The first non-empty candidate, or "" — the alias-chain reader used
-/// for fields glab has renamed between releases. Returns a slice
-/// borrowing from one of `candidates`.
+/// The first non-empty candidate, or "" — the alias-chain reader used for fields glab has renamed between releases.
 pub fn firstNonEmpty(candidates: []const []const u8) []const u8 {
     for (candidates) |c| if (c.len > 0) return c;
     return "";
@@ -675,9 +618,7 @@ fn jsonInt(v: std.json.Value) ?i64 {
     };
 }
 
-/// The display name for a glab `author`, which is an object with
-/// `username`/`name` — but which some glab versions render as a bare
-/// string. Returns "" rather than guessing.
+/// The display name for a glab `author`, which is an object with `username`/`name` — but which some glab versions render as a bare string.
 pub fn glabAuthorName(v: std.json.Value) []const u8 {
     return switch (v) {
         .string => |s| s,
@@ -694,18 +635,14 @@ pub fn glabAuthorName(v: std.json.Value) []const u8 {
     };
 }
 
-/// "invalid JSON from <prog> <noun> view (N bytes stdout)" — names the
-/// CLI that actually produced it, because the overwhelmingly common
-/// cause is a version whose JSON flag we did not pass.
+/// "invalid JSON from <prog> <noun> view (N bytes stdout)" — names the CLI that actually produced it, because the overwhelmingly common cause is a version whose …
 fn setParseDetail(allocator: std.mem.Allocator, fetch_detail: *?[]u8, cli: pr_cli.Cli, raw_len: usize) void {
     var buf: [256]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "invalid JSON from {s} {s} view ({d} bytes stdout)", .{ cli.program, cli.noun, raw_len }) catch "invalid JSON from the forge CLI";
     setFetchDetail(allocator, fetch_detail, msg);
 }
 
-/// GET
-/// /api/git/pr/status?path=<repo>[&pr=<number|url|branch>][&provider=github]
-/// Returns the PR's open/merged/closed status via `gh pr view`.
+/// GET /api/git/pr/status?path=<repo>[&pr=<number|url|branch>][&provider=github] Returns the PR's open/merged/closed status via `gh pr view`.
 pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -731,9 +668,7 @@ pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, "not a git repository") });
         },
         error.CliMissing => {
-            // Name the CLI the caller actually needs. The use case picks
-            // the forge from the provider/URL/remote, so a GitLab repo
-            // with no glab installed must not be told to install gh.
+            // Name the CLI the caller actually needs.
             const cli = handlerCli(allocator, io, path_param, pr_param, provider_param);
             const msg = try std.fmt.allocPrint(allocator, "{s} CLI not found on PATH (install {s} for {s} status)", .{ cli.program, cli.program, cli.forge });
             return res.jsonResponse(.{ .status_code = 422, .data = try http_response.makeGitStatusErrorResponse(allocator, msg) });
@@ -747,8 +682,7 @@ pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
             }) });
         },
         error.FetchFailed => {
-            // Surface the real CLI stderr (auth, bad number, rate limit) so
-            // DevTools shows WHY it failed instead of the generic hint.
+            // Surface the real CLI stderr (auth, bad number, rate limit) so DevTools shows WHY it failed instead of the generic hint.
             const cli = handlerCli(allocator, io, path_param, pr_param, provider_param);
             const msg = if (fetch_detail) |d|
                 try std.fmt.allocPrint(allocator, "failed to fetch {s} status: {s}", .{ cli.label, d })
@@ -765,8 +699,7 @@ pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
 const testing = std.testing;
 
 test "the CI rollup counts failures, passes and pending checks" {
-    // The header chip and the merge box read this count, so the buckets have
-    // to mean the same thing here as they do in the checks endpoint.
+    // The header chip and the merge box read this count, so the buckets have to mean the same thing here as they do in the checks endpoint.
     const entries = [_]GhRollupEntry{
         .{ .name = "backend", .status = "COMPLETED", .conclusion = "FAILURE" },
         .{ .name = "lint", .status = "COMPLETED", .conclusion = "SUCCESS" },
@@ -789,9 +722,7 @@ test "normalizeStatus maps OPEN/CLOSED/MERGED" {
 }
 
 test "GhPrView parses open-PR payload with null mergedAt/closedAt" {
-    // `gh pr view --json ...` emits `"mergedAt":null,"closedAt":null` for
-    // OPEN PRs. Parsing that into non-optional `[]const u8` fails, which
-    // surfaced as HTTP 502 for every open PR (PR #584).
+    // `gh pr view --json ...` emits `"mergedAt":null,"closedAt":null` for OPEN PRs.
     const allocator = testing.allocator;
     const raw =
         \\{"number":584,"title":"SyncEngine Phase 2","url":"https://github.com/acme/app/pull/584","state":"OPEN","mergeable":"MERGEABLE","mergeStateStatus":"UNSTABLE","headRefName":"worktree/sync-engine-phase2-cached-delta","baseRefName":"main","createdAt":"2026-09-21T08:51:37Z","updatedAt":"2026-09-21T08:51:37Z","mergedAt":null,"closedAt":null,"author":{"login":"ginwa123"},"additions":286,"deletions":103,"changedFiles":4}
@@ -804,15 +735,12 @@ test "GhPrView parses open-PR payload with null mergedAt/closedAt" {
     try testing.expectEqualStrings("open", normalizeStatus(parsed.state));
 }
 
-// ============================================================================
 // Behavioural test suite for the `gh pr view` child-process path.
 
 const open_descriptors = @import("helpers").open_descriptors;
 const hf = @import("helpers").host_fixture;
 
-/// A throwaway directory under `.zig-cache/tmp` plus fixture programs,
-/// written by `host_fixture` so the spawn -> capture -> parse path under
-/// test runs on every host instead of being skipped on Windows.
+/// A throwaway directory under `.zig-cache/tmp` plus fixture programs, written by `host_fixture` so the spawn -> capture -> parse path under test runs on every …
 const Fixture = struct {
     inner: hf.Fixture,
     allocator: std.mem.Allocator,
@@ -841,9 +769,7 @@ const Fixture = struct {
     }
 };
 
-/// A realistic `glab mr view --output json` payload for an OPEN MR: GitLab's
-/// own field names (`iid`, `web_url`, `source_branch`,
-/// `detailed_merge_status`) and its `opened` state, plus `changes_count` as
+/// A realistic `glab mr view --output json` payload for an OPEN MR: GitLab's own field names (`iid`, `web_url`, `source_branch`, `detailed_merge_status`) and its …
 const OPEN_MR_JSON =
     \\{"id":11463,"iid":7,"title":"Add GitLab support","description":"body","state":"opened","created_at":"2026-09-28T10:00:00.000Z","updated_at":"2026-09-29T11:30:00.000Z","merged_at":null,"closed_at":null,"author":{"id":42,"name":"Ginwa","username":"ginwa123","state":"active"},"source_branch":"worktree/gitlab-support","target_branch":"main","web_url":"https://gitlab.com/acme/sub/app/-/merge_requests/7","merge_status":"can_be_merged","detailed_merge_status":"mergeable","changes_count":"4"}
 ;
@@ -864,8 +790,7 @@ fn haveGit() bool {
     return true;
 }
 
-/// A real (empty) git repo inside the fixture, so the
-/// `git rev-parse --git-dir` gate in `useCaseWith` passes.
+/// A real (empty) git repo inside the fixture, so the `git rev-parse --git-dir` gate in `useCaseWith` passes.
 fn makeGitRepo(fx: *Fixture) ![]u8 {
     // Fixture git must not run under hook-exported GIT_DIR/GIT_WORK_TREE.
     try @import("helpers").git_env_guard.requireCleanGitEnv();
@@ -899,9 +824,7 @@ pub fn removeNonRepoDir(allocator: std.mem.Allocator, path: []const u8) void {
     allocator.free(path);
 }
 
-/// True when the ambient environment already makes git claim every path is a
-/// repository — see the KNOWN LIMITATION note on the probe in `useCaseWith`.
-/// git exports `GIT_DIR` / `GIT_WORK_TREE` to the hooks it runs, so under
+/// True when the ambient environment already makes git claim every path is a repository — see the KNOWN LIMITATION note on the probe in `useCaseWith`. git exports …
 pub fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8) bool {
     const check = std.process.run(allocator, std.testing.io, .{
         .argv = &.{ "git", "-C", empty_dir, "rev-parse", "--git-dir" },
@@ -913,9 +836,7 @@ pub fn gitProbeIsEnvHijacked(allocator: std.mem.Allocator, empty_dir: []const u8
     return check.term.exited == 0;
 }
 
-/// `useCaseWith` dupes every string of the response into the caller's
-/// allocator (the request arena in production). Tests pass
-/// `testing.allocator`, so they have to give the copies back.
+/// `useCaseWith` dupes every string of the response into the caller's allocator (the request arena in production).
 fn freeResponse(a: std.mem.Allocator, res: http_response.GitPrStatusResponse) void {
     inline for (.{
         res.provider,  res.pr_url,    res.title,       res.state,
@@ -981,12 +902,10 @@ test "runGhPrView passes a pr number / URL / branch through verbatim" {
         defer if (detail) |d| a.free(d);
         const out = try runGhPrView(a, testing.io, gh, fx.root(), pr_arg, 10_000, &detail);
         defer a.free(out);
-        // The fixture records the argv it was handed, so read the record
-        // back rather than the (empty) stdout.
+        // The fixture records the argv it was handed, so read the record back rather than the (empty) stdout.
         const recorded = try std.Io.Dir.cwd().readFileAlloc(testing.io, argv_file, a, .limited(64 * 1024));
         defer a.free(recorded);
-        // The pr argument is passed through verbatim, in position, after
-        // `pr view` — not quoted, rewritten or dropped.
+        // The pr argument is passed through verbatim, in position, after `pr view` — not quoted, rewritten or dropped.
         try testing.expect(hf.recordedArgvContainsSequence(recorded, &.{ "pr", "view", pr_arg }));
     }
 }
@@ -1069,8 +988,7 @@ test "runGhPrView: >64 KiB of gh stderr does NOT deadlock (crash-class regressio
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    // 1024 x 1 KiB of stderr: far past one pipe buffer, so the drain has
-    // to keep reading while the child keeps writing or it deadlocks.
+    // 1024 x 1 KiB of stderr: far past one pipe buffer, so the drain has to keep reading while the child keeps writing or it deadlocks.
     const gh = try fx.writeProgram("gh", .{
         .stderr = "E" ** 1024,
         .repeat_stderr = 1024,
@@ -1080,9 +998,7 @@ test "runGhPrView: >64 KiB of gh stderr does NOT deadlock (crash-class regressio
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    // 20s deadline: generous enough to be reliable on a loaded CI box,
-    // and the process is killed either way, so this can never hang the
-    // suite the way the pre-fix code hung the worker thread.
+    // 20s deadline: generous enough to be reliable on a loaded CI box, and the process is killed either way, so this can never hang the suite the way the pre-fix …
     try testing.expectError(
         error.FetchFailed,
         runGhPrView(a, testing.io, gh, fx.root(), "", 20_000, &detail),
@@ -1118,9 +1034,7 @@ test "runGhPrView: a gh killed by a signal is reported, not a success" {
     defer if (detail) |d| a.free(d);
     try testing.expectError(error.FetchFailed, runGhPrView(a, testing.io, gh, fx.root(), "", 10_000, &detail));
     try testing.expect(detail != null);
-    // POSIX reports the signal that killed the child; Windows has no signal
-    // to send, so the fixture exits with a code instead and the detail names
-    // that. Either way it must NOT read as a clean success.
+    // POSIX reports the signal that killed the child; Windows has no signal to send, so the fixture exits with a code instead and the detail names that.
     try testing.expect(std.mem.indexOf(u8, detail.?, "signal") != null or
         std.mem.indexOf(u8, detail.?, "exited with code") != null);
 }
@@ -1184,9 +1098,7 @@ fn concurrentGhWorker(ctx: *ConcurrentGhCtx) void {
 }
 
 test "runGhPrView: 8 concurrent callers never trip the double-close abort" {
-    // The reported crash was a `closeFd` EBADF inside `childCleanupPosix` on
-    // a worker-pool thread, so it only ever showed up under concurrency.
-    // Descriptors on POSIX, handles on Windows: one count per host here.
+    // The reported crash was a `closeFd` EBADF inside `childCleanupPosix` on a worker-pool thread, so it only ever showed up under concurrency.
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -1262,9 +1174,7 @@ test "useCase: a non-git path never spawns gh (repo-gate regression)" {
         return error.SkipZigTest;
     }
 
-    // A `gh` that succeeds AND drops a sentinel: if the repo gate ever fails
-    // to short-circuit, the sentinel appears and this test fails with a
-    // message that names the actual problem.
+    // A `gh` that succeeds AND drops a sentinel: if the repo gate ever fails to short-circuit, the sentinel appears and this test fails with a message that names the …
     const sentinel = try std.fmt.allocPrint(a, "{s}/gh-was-run", .{fx.root()});
     defer a.free(sentinel);
     const gh = try fx.writeProgram("gh", .{
@@ -1275,8 +1185,7 @@ test "useCase: a non-git path never spawns gh (repo-gate regression)" {
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| a.free(d);
-    // A success here means the gate let it through; free the response
-    // so the test allocator stays honest either way.
+    // A success here means the gate let it through; free the response so the test allocator stays honest either way.
     if (useCaseWith(a, testing.io, gh, not_repo, "", null, &detail)) |res| {
         freeResponse(a, res);
     } else |_| {}
@@ -1319,9 +1228,7 @@ test "useCase: an unknown provider string is rejected" {
 }
 
 test "useCase: the generic provider is rejected — it has no forge CLI" {
-    // `generic` is a legitimate provider for DIFFING (pure local refs,
-    // git_pr_diff.zig) but there is no CLI to ask for status, so the request
-    // is unanswerable and must say so rather than silently falling back to
+    // `generic` is a legitimate provider for DIFFING (pure local refs, git_pr_diff.zig) but there is no CLI to ask for status, so the request is unanswerable and …
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1340,8 +1247,7 @@ test "useCase: the generic provider is rejected — it has no forge CLI" {
 }
 
 test "useCase: a GitLab MR URL routes to the glab path, not gh" {
-    // The regression this pins: before GitLab support, a GitLab MR URL
-    // was rejected with "not a GitHub URL". Now it must spawn `glab`.
+    // The regression this pins: before GitLab support, a GitLab MR URL was rejected with "not a GitHub URL".
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1374,8 +1280,7 @@ test "useCase: a GitLab MR URL routes to the glab path, not gh" {
 }
 
 test "useCase: the origin remote decides the forge when no provider is given" {
-    // This is the badge/refresh path: the frontend calls pr/status with
-    // no provider for a GitLab repo, so the remote is the only signal.
+    // This is the badge/refresh path: the frontend calls pr/status with no provider for a GitLab repo, so the remote is the only signal.
     if (!haveGit()) return error.SkipZigTest;
     const a = testing.allocator;
     var fx = try Fixture.init(a);
@@ -1408,8 +1313,7 @@ test "useCase: a GitHub repo with a gh origin still routes to gh" {
     defer set.deinit(a);
     if (set.term.exited != 0) return error.SkipZigTest;
 
-    // `gh` is the only working fixture here; a glab route would fail to
-    // spawn and the test would not get to assert the provider.
+    // `gh` is the only working fixture here; a glab route would fail to spawn and the test would not get to assert the provider.
     const gh = try fx.writeProgram("gh", .{ .stdout = OPEN_PR_JSON });
     defer a.free(gh);
 
@@ -1518,9 +1422,7 @@ test "useCase: a missing gh binary surfaces as CliMissing" {
 // ───────────────────────── GitLab (glab) path ─────────────────────────
 
 test "normalizeStatus maps GitLab's opened/merged/locked states" {
-    // `opened` is the load-bearing one: without it every open GitLab MR
-    // reports status "opened", which the frontend's `status === 'open'`
-    // check misses, so the badge shows nothing at all.
+    // `opened` is the load-bearing one: without it every open GitLab MR reports status "opened", which the frontend's `status === 'open'` check misses, so the badge …
     try testing.expectEqualStrings("open", normalizeStatus("opened"));
     try testing.expectEqualStrings("open", normalizeStatus("OPENED"));
     try testing.expectEqualStrings("merged", normalizeStatus("merged"));
@@ -1566,7 +1468,6 @@ test "GlabMrView maps a real glab payload onto GitPrStatusResponse" {
 
 test "buildGlabResponse survives the glab field renames" {
     // A glab upgrade must not 502 the endpoint for every GitLab user.
-    // This payload uses the ALTERNATE names an older/newer glab emits.
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();
@@ -1603,8 +1504,7 @@ test "buildGlabResponse reports unparseable stdout naming glab" {
 }
 
 test "isNotFoundStderr separates a missing MR from an auth failure" {
-    // A missing MR is a 404; an auth failure must stay a 502 so the
-    // user learns to log in instead of being told the MR is missing.
+    // A missing MR is a 404; an auth failure must stay a 502 so the user learns to log in instead of being told the MR is missing.
     for ([_][]const u8{
         "no merge requests found",
         "no merge request found for branch",
@@ -1650,9 +1550,7 @@ test "useCaseWithPrograms: --saas refuses a real repository rather than asking t
     defer runtime_mode.setCurrent(.local);
     if (!runtime_mode.vm_backend_available) return;
 
-    // The repository is right here on the host. With a workspace configured
-    // and no VM answering, the endpoint says "not a git repository" instead
-    // of letting the host's git look at a tenant's tree.
+    // The repository is right here on the host.
     try testing.expectError(
         error.NotARepository,
         useCaseWithPrograms(allocator, std.testing.io, .{}, repo, "", null, &detail),

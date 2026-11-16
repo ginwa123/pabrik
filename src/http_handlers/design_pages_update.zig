@@ -1,6 +1,4 @@
-//! `PATCH
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
-//! Update an existing design page by id.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,20 +6,15 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const design_model = @import("../modules/agent/loop/design_model.zig");
 
-/// HTTP request body for page-update. `width` + `height` are
-/// required; `name` is optional (null = leave unchanged; "" =
-/// rejected with 400 by the use-case).
+/// HTTP request body for page-update.
 const UpdatePageBody = struct {
     width: i64,
     height: i64,
-    // NEW (2026-08-06 — design page rename menu). Optional page name. JSON
-    // `null`/absent maps to Zig `null` → name preserved.
+    // NEW (2026-08-06 — design page rename menu).
     name: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each variant to an
-/// HTTP status code + message via two exhaustive switches (one for status,
-/// one for the user-facing message).
+/// Domain-level error set for `useCase`.
 pub const DesignPageUpdateError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
@@ -29,11 +22,9 @@ pub const DesignPageUpdateError = error{
     WidthOutOfRange,
     /// Body `height` field was < 240 or > 4096.
     HeightOutOfRange,
-    /// Body `name` field was `""` (empty string). Matches the
-    /// `setDesignPage` guard — a page must have a non-empty name.
+    /// Body `name` field was `""` (empty string).
     BadPageName,
-    /// `design_model.updateDesignPage` returned `PageNotFound`
-    /// (no row with that `page_id`).
+    /// `design_model.updateDesignPage` returned `PageNotFound` (no row with that `page_id`).
     PageNotFound,
     /// `updateDesignPage` failed for some other DB reason.
     DbError,
@@ -41,9 +32,7 @@ pub const DesignPageUpdateError = error{
     OutOfMemory,
 };
 
-/// Inputs to the update-page use-case. The handler maps the parsed
-/// HTTP body + path param into this struct; the use-case is then
-/// transport-agnostic.
+/// Inputs to the update-page use-case.
 pub const UpdatePageInput = struct {
     page_id: []const u8,
     width: i64,
@@ -57,9 +46,7 @@ pub const UpdatePageOutput = struct {
     page: design_model.DesignPage,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Update an existing design page. Steps: 1. Validate `page_id` non-empty. 2.
 fn useCase(
@@ -86,13 +73,9 @@ fn useCase(
     return .{ .page = page };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn designPagesUpdateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -158,9 +141,7 @@ pub fn designPagesUpdateHandler(
         });
     };
 
-    // Free the useCase's heap-owned page slices. On the per-request
-    // arena this is a no-op (the arena reaps at request end) but the
-    // explicit frees are defensive + document ownership.
+    // Free the useCase's heap-owned page slices.
     defer {
         allocator.free(output.page.id);
         allocator.free(output.page.workspace_item_id);
@@ -169,8 +150,7 @@ pub fn designPagesUpdateHandler(
         allocator.free(output.page.updated_at);
     }
 
-    // 4. Build the success response (200 OK — PATCH is an update,
-    //    not a creation).
+    // 4.
     return res.jsonResponse(.{
         .status_code = 200,
         .data = try std.json.Stringify.valueAlloc(

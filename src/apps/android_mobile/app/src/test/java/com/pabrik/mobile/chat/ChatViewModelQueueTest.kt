@@ -20,24 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The queue at the ViewModel level: the read that bootstraps it, the two frames
- * that keep it live, and the one that repairs it.
- *
- * The queue is the only part of a chat this screen cannot derive from its own
- * transcript, because a queued turn has no row until the worker drains it. So
- * the interesting failures are all "the list disagrees with the server": too
- * few, too many, or right in number and wrong in content — and a header that
- * says "2 queued" over a list of one is the same defect as a panel that lists a
- * turn the agent already answered.
- */
-/**
- * The `GET .../queue_messages` body for a given set of waiting turns.
- *
- * Top-level rather than a member of the test class: [FakeTransport] is a
- * nested class and cannot reach the outer class's members, and the default
- * argument on its constructor wants a real body.
- */
+// The queue at the ViewModel level: the read that bootstraps it, the two frames that keep it live, and the one that repairs it.
 private fun queuePage(vararg rows: Pair<String, String>): String {
     val encoded = rows.joinToString(",") { (id, text) -> """{"id":"$id","message":"$text"}""" }
     return """{"messages":[$encoded],"count":${rows.size}}"""
@@ -76,12 +59,7 @@ class ChatViewModelQueueTest {
         override fun clear() { value = null }
     }
 
-    /**
-     * The queue answer is a per-path field rather than a fixed body, because
-     * every test here is about a *different* server state and a fake that
-     * returns the same bytes for `/messages` and `/queue_messages` cannot
-     * express that.
-     */
+    /** The queue answer is a per-path field rather than a fixed body, because every test here is about a *different* server state and a fake that returns the same … */
     private class FakeTransport(
         var queueBody: String = queuePage(),
         var queueStatus: Int = 200,
@@ -150,9 +128,7 @@ class ChatViewModelQueueTest {
 
     @Test
     fun aTurnQueuedWhileTheAppWasClosedIsStillThere() = queueTest { schedulers ->
-        // The case the read exists for: no `queue_queued` frame was ever
-        // delivered to this process, so without the read the panel is empty and
-        // a message the reader sent from another device looks lost.
+        // The case the read exists for: no `queue_queued` frame was ever delivered to this process, so without the read the panel is empty and a message the reader sent …
         val transport = FakeTransport(queueBody = queuePage("q1" to "queued from the desktop"))
         val model = model(schedulers.ioDispatcher, transport)
 
@@ -179,8 +155,7 @@ class ChatViewModelQueueTest {
             ),
         )
 
-        // Now the read fails. Replacing the mirror with an empty list here
-        // would delete a message the reader watched leave the app.
+        // Now the read fails.
         transport.queueStatus = 500
         model.refreshQueuedMessages()
         schedulers.drain()
@@ -197,8 +172,7 @@ class ChatViewModelQueueTest {
         model.openSession("sess_1")
         schedulers.drain()
 
-        // A drain while the socket was down: the frame went to nobody, so the
-        // mirror still lists a turn the server has already answered.
+        // A drain while the socket was down: the frame went to nobody, so the mirror still lists a turn the server has already answered.
         transport.queueBody = queuePage()
         model.refreshQueuedMessages()
         schedulers.drain()
@@ -216,9 +190,7 @@ class ChatViewModelQueueTest {
         schedulers.drain()
         val afterOpen = queueRequestCount(transport)
 
-        // First connect, then a reconnect. A reconnect means frames were missed
-        // with no way to ask for them, and the queue list is built out of
-        // exactly those frames.
+        // First connect, then a reconnect.
         stream.state(ChatStreamState.Live)
         schedulers.drain()
         stream.state(ChatStreamState.Reconnecting)
@@ -252,10 +224,7 @@ class ChatViewModelQueueTest {
 
     @Test
     fun theSameFrameTwiceAppendsOnce() = queueTest { schedulers ->
-        // The backend emits on the per-session key *and* on the central `queue`
-        // broadcast (`insert_queue_message.zig`), so the identical frame really
-        // does arrive twice. A blind append would show every queued turn twice,
-        // and the header with it.
+        // The backend emits on the per-session key *and* on the central `queue` broadcast (`insert_queue_message.zig`), so the identical frame really does arrive twice.
         val stream = FakeSseBus()
         val model = model(schedulers.ioDispatcher, FakeTransport(), stream)
 
@@ -303,10 +272,7 @@ class ChatViewModelQueueTest {
 
     @Test
     fun anotherChatsQueueFrameIsIgnored() = queueTest { schedulers ->
-        // The stream is subscribed to the central `queue` channel, so it
-        // carries every account's queueing. Applying one for a chat the reader
-        // is not in would show another conversation's message in this
-        // transcript's panel.
+        // The stream is subscribed to the central `queue` channel, so it carries every account's queueing.
         val stream = FakeSseBus()
         val model = model(schedulers.ioDispatcher, FakeTransport(), stream)
 
@@ -328,12 +294,7 @@ class ChatViewModelQueueTest {
 
     @Test
     fun aSendWhileAWorkerIsLiveIsTheSameWireBody() = queueTest { schedulers ->
-        // There is no "queue" endpoint and no `mode` field. `POST /llm/session`
-        // with a `queue_message` is the whole contract, and the server decides
-        // what it means: a live worker takes the message into
-        // `session_queue_messages` (`workflow.zig:688`), an idle one starts
-        // immediately. A second endpoint for the same action would be a second
-        // wire shape to keep in step with the first.
+        // There is no "queue" endpoint and no `mode` field.
         val transport = FakeTransport()
         val model = model(schedulers.ioDispatcher, transport)
 

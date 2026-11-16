@@ -6,16 +6,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Which turns get a reasoning fold, and under what key.
- *
- * These are the two decisions the composed tree makes per assistant row, and
- * both are the kind that no screenshot review catches: a fold that never draws
- * looks identical to a turn that had no reasoning, and a key collision looks
- * like a tool card that opens when you did not tap it. Pulled out as plain
- * functions so `./gradlew test` pins them without an emulator, which is the
- * same bargain `MessageChrome` makes.
- */
+/** Which turns get a reasoning fold, and under what key. */
 class ReasoningBlockTest {
 
     private fun assistant(
@@ -41,12 +32,7 @@ class ReasoningBlockTest {
         assertFalse(showsReasoning(assistant(reasoning = "")))
     }
 
-    /**
-     * `isNotBlank`, not `isNotEmpty`, because the stream delivers a reasoning
-     * chunk as a delta: between the turn being created and its first real
-     * delta the field is present and empty, and a fold that appears for one
-     * frame and then vanishes is worse than never appearing.
-     */
+    /** `isNotBlank`, not `isNotEmpty`, because the stream delivers a reasoning chunk as a delta: between the turn being created and its first real delta the field is … */
     @Test
     fun `a whitespace-only reasoning draws nothing`() {
         assertFalse(showsReasoning(assistant(reasoning = "   \n\t ")))
@@ -76,11 +62,7 @@ class ReasoningBlockTest {
         assertNotEquals(reasoningKey("m1"), reasoningKey("m2"))
     }
 
-    /**
-     * The default the whole feature is specified around: folded. `ToolExpansion`
-     * with no `defaultsToOpen` is what produces it, and it is asserted here
-     * through the real key function so the two cannot drift apart silently.
-     */
+    /** The default the whole feature is specified around: folded. */
     @Test
     fun `a reasoning fold is collapsed until the reader opens it`() {
         val expansion = ToolExpansion()
@@ -92,11 +74,7 @@ class ReasoningBlockTest {
         assertTrue(expansion.isExpanded(reasoningKey("m1")))
     }
 
-    /**
-     * The header says what the web's `<summary>` says. The two clients are
-     * kept word-for-word in step on purpose, so this is a contract rather than
-     * a preference.
-     */
+    /** The header says what the web's `<summary>` says. */
     @Test
     fun `the folded header reads Thought`() {
         assertEquals("Thought", REASONING_LABEL)

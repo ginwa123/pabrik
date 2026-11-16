@@ -36,9 +36,7 @@ import { useSidebarDiffRowOpen } from './useSidebarDiffRowOpen'
 
 const props = defineProps<{
   cwd: string
-  /** Branch from the bottom status bar (single source of truth, drilled via ChatRightSidebar from
-   * ChatView's `sidebarBranch`). `undefined` while the status bar is still loading — the panel
-   * falls back to its own fetched branch. */
+  /** Branch from the bottom status bar (single source of truth, drilled via ChatRightSidebar from ChatView's `sidebarBranch`). */
   branch?: string
   /** Attached PR URL (set_pull_request tool). Non-empty switches the panel to PR mode. */
   prUrl?: string
@@ -50,12 +48,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refresh: []
-  /**    * File-row click: host swaps the center column to the full diff. `lines` travel by reference (no
-   * copy). `error` set when the worktree fetch failed (PR mode parses inline — always clean). */
+  /** File-row click: host swaps the center column to the full diff. */
   'show-diff': [selection: DiffSelection]
-  /**    * Full ordered list after a list load (PR: parsed chunks; worktree: parallel per-file fetch).
-   * ChatView stacks every file in the center column; per-click `show-diff` stays instant and
-   * unchanged. */
+  /** Full ordered list after a list load (PR: parsed chunks; worktree: parallel per-file fetch). */
   'show-diff-list': [files: DiffSelection[]]
 }>()
 
@@ -71,20 +66,14 @@ let prPollTimer: number | undefined
 let unsubscribeFileStage: (() => void) | null = null
 
 // Displayed branch: the bottom status bar wins when it has a value.
-// The panel keeps its own fetch as fallback (direct mounts, tests,
-// status bar still loading).
 const displayBranch = computed(() => props.branch ?? internalBranch.value)
-// Every view switch lands in the URL (?panel=files|pr|commits|checks|evals) so refresh,
-// Back/Forward, and shared links restore the same panel. The commits tab is valid with or without
-// an attached PR; ?panel=pr without a prUrl still falls back to files (pre-commits behavior).
+// Every view switch lands in the URL (?panel=files|pr|commits|checks|evals) so refresh, Back/Forward, and shared links restore the same panel.
 const initialTab = (): PanelTab => {
   let param: PanelTab | null = null
   try {
     param = readTabParam(route)
   } catch {
-    // This catch exists ONLY for "mounted without a router" — hosts like ChatRightSidebar mount
-    // this panel standalone (ChatRightSidebar.spec.ts), and `useRoute()` injects nothing there, so
-    // `route.query` throws on a null deref.
+    // This catch exists ONLY for "mounted without a router" — hosts like ChatRightSidebar mount this panel standalone (ChatRightSidebar.spec.ts), and `useRoute()` …
     console.warn('[SidebarDiffPanel] mounted without a router; defaulting ?panel to files')
     param = null
   }
@@ -99,8 +88,7 @@ const showCommits = computed(() => activeTab.value === 'commits')
 const showConversation = computed(() => activeTab.value === 'conversation')
 const showChecks = computed(() => activeTab.value === 'checks')
 const showEvals = computed(() => activeTab.value === 'evals')
-// PrChecksPanel loads itself, so the sidebar's ↻ asks it directly rather
-// than going through loadTab (which has nothing to fetch for this tab).
+// PrChecksPanel loads itself, so the sidebar's ↻ asks it directly rather than going through loadTab (which has nothing to fetch for this tab).
 const checksRef = ref<InstanceType<typeof PrChecksPanel> | null>(null)
 const conversationRef = ref<InstanceType<typeof ConversationPanel> | null>(null)
 /** How many entries the forge's thread holds, once it has been read. */
@@ -108,20 +96,15 @@ const conversationCount = ref(0)
 const showPr = computed(() => isPrMode.value && activeTab.value === 'pr')
 const loadedTabs = ref(new Set<string>())
 
-// Provider-aware vocabulary: "pull request"/"PR"/"GitHub" on GitHub,
-// "merge request"/"MR"/"GitLab" on GitLab.
+// Provider-aware vocabulary: "pull request"/"PR"/"GitHub" on GitHub, "merge request"/"MR"/"GitLab" on GitLab.
 const forge = computed(() => forgeWording(props.prProvider))
-// Restored from ?conflicts=1 on mount, so a reload or a shared link comes
-// back showing only the conflicts. Guarded like readTabParam: hosts like
-// ChatRightSidebar mount this panel without a router.
+// Restored from ?conflicts=1 on mount, so a reload or a shared link comes back showing only the conflicts.
 const conflictsOnly = ref(
   (() => {
     try {
       return readConflictsParam(route)
     } catch {
-      // Same guard and same reason as initialTab: no router means `route.query` throws, nothing was
-      // fetched, and there is no URL to keep in sync. `false` = show the full PR file list, this
-      // panel's pre-router default — logged rather than swallowed for the same reason.
+      // Same guard and same reason as initialTab: no router means `route.query` throws, nothing was fetched, and there is no URL to keep in sync.
       console.warn('[SidebarDiffPanel] mounted without a router; defaulting ?conflicts to off')
       return false
     }
@@ -133,9 +116,7 @@ const setConflictsOnly = (on: boolean) => {
   syncConflictsParam(router, route, on)
 }
 
-// Extract the server's `{"error": "..."}` message from an ApiError (apiFetch throws ApiError with
-// the raw body). Falls back to the generic Error message when the body isn't JSON — so callers
-// always show WHY the backend failed instead of a canned string.
+// Extract the server's `{"error": "..."}` message from an ApiError (apiFetch throws ApiError with the raw body).
 const serverErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof ApiError && err.body) {
     try {
@@ -218,9 +199,7 @@ const {
   commitStaged,
 } = git
 
-// Right-click "Open file in new tab" for a file row. Position state +
-// dismiss wiring live in useContextMenu; the row payload (file path)
-// lives here so the menu emit can target it (ChatsList pattern).
+// Right-click "Open file in new tab" for a file row.
 const { menuPos, openAt, close: closeContextMenu } = useContextMenu()
 const contextMenuPath = ref<string | null>(null)
 
@@ -230,8 +209,7 @@ const codeEditorQuery = (path: string): Record<string, string> => ({
 })
 
 const openFileInNewTab = (path: string) => {
-  // New tabs boot cold, so they resolve the cwd from the workspace
-  // path context — keep the current path instead of dropping to /app.
+  // New tabs boot cold, so they resolve the cwd from the workspace path context — keep the current path instead of dropping to /app.
   openInNewTab(router, { path: route.path, query: codeEditorQuery(path) })
 }
 
@@ -248,13 +226,10 @@ const openMenuFileInBackground = () => {
   openFileInNewTab(path)
 }
 
-// ── The before/after, in the panel ──────────────────────────────────────── The list said WHICH file
-// changed and never WHAT changed: the −/+ lines lived in the centre column, across the chat. The
-// panel holds the request's whole diff, so the file you click shows its own change under its row.
+// ── The before/after, in the panel ────────────────────────────────────────
 const previewPath = ref<string | null>(null)
 
-/** One preview at a time: a second file replaces the first, so the list never grows a column of
- * them. Clicking the same file again puts it away. */
+/** One preview at a time: a second file replaces the first, so the list never grows a column of them. */
 const togglePreview = (path: string) => {
   previewPath.value = previewPath.value === path ? null : path
 }
@@ -277,8 +252,7 @@ const onFileRowAuxClick = (event: MouseEvent, path: string) => {
   openFileInNewTab(path)
 }
 
-// Short label for the header: "#42" from /pull/42 or /merge_requests/42,
-// else the URL host. Pure display helper (no network).
+// Short label for the header: "#42" from /pull/42 or /merge_requests/42, else the URL host.
 const prLabel = computed(() => {
   const url = props.prUrl ?? ''
   const m = url.match(/\/(?:pull|merge_requests)\/(\d+)/)
@@ -293,17 +267,13 @@ const prLabel = computed(() => {
 const fileFilter = ref('')
 
 const onRefreshClick = () => {
-  // Tell ChatView to re-sync the worktree binding first (it may have changed since mount); then
-  // reload this panel. ChatView also calls back into loadGitStatus via the exposed refresh() when
-  // the binding changed, so a stale-cwd click self-heals instead of re-showing the old branch.
+  // Tell ChatView to re-sync the worktree binding first (it may have changed since mount); then reload this panel.
   forgetGitProbe(props.cwd)
   emit('refresh')
   void refreshCurrentTab()
 }
 
 // Per-tab lazy load: each side fetches once until cwd/prUrl changes.
-// The commits tab needs no panel-level fetch — GitCommits.vue loads
-// (and paginates) itself when it mounts, and so does PrChecksPanel.vue.
 const loadTab = async (tab: PanelTab, force = false) => {
   if (!force && loadedTabs.value.has(tab)) return
   if (tab === 'pr') await Promise.all([loadPrDiff(), loadPrStatus()])
@@ -311,9 +281,7 @@ const loadTab = async (tab: PanelTab, force = false) => {
   loadedTabs.value.add(tab)
 }
 
-// Current-tab reload for the sidebar ↻ path (ChatRightSidebar.refresh
-// delegates here). Unlike loadGitStatus-only refresh, this also
-// re-syncs PR merge state when the PR tab is visible.
+// Current-tab reload for the sidebar ↻ path (ChatRightSidebar.refresh delegates here).
 const refreshCurrentTab = async () => {
   if (showPr.value) await loadTab('pr', true)
   else if (showConversation.value) conversationRef.value?.reload()
@@ -334,21 +302,17 @@ const setActiveTab = (tab: PanelTab) => {
 }
 
 // PR-binding sync: tab/conflict state follows the [cwd, prUrl] binding.
-// Prev-value guard on update — same body the watcher ran (no immediate
-// run; mount is covered by the onMounted loadTab below).
 function syncPrBinding(url: string | undefined, prevUrl: string | undefined) {
   const had = (prevUrl ?? '').trim().length > 0
   const has = (url ?? '').trim().length > 0
   if (had !== has) {
     if (has) activeTab.value = readTabParam(route) ?? 'pr'
     else if (activeTab.value === 'pr') {
-      // Leaving PR mode drops back to files and clears the param;
-      // a commits tab survives (it needs no PR).
+      // Leaving PR mode drops back to files and clears the param; a commits tab survives (it needs no PR).
       activeTab.value = 'files'
       syncTabParam(router, route, null)
     }
-    // The conflicts-only filter is a PR-tab view, so it must not outlive
-    // the PR it filtered — clear it and its query param with the binding.
+    // The conflicts-only filter is a PR-tab view, so it must not outlive the PR it filtered — clear it and its query param with the binding.
     conflictsOnly.value = false
     syncConflictsParam(router, route, false)
     resetConflicts()
@@ -370,24 +334,18 @@ onUpdated(() => {
 
 onMounted(() => {
   void loadTab(activeTab.value, true)
-  // Poll merge state while the PR tab is visible so a GitHub merge
-  // flips the badge without a manual refresh. Status-only (cheap
-  // `gh pr view`); the heavier diff refetches on explicit refresh.
+  // Poll merge state while the PR tab is visible so a GitHub merge flips the badge without a manual refresh.
   prPollTimer = window.setInterval(() => {
     if (showPr.value) void loadPrStatus()
   }, 30000)
-  // The backend pushes `git_file_staged` / `git_file_unstaged` after every `git add` / `git restore
-  // --staged`, so a +/− click moves ONE row instead of re-fetching the whole git-status list. A
-  // listener that throws must not take down the SSE client, so the callback is defensive.
+  // The backend pushes `git_file_staged` / `git_file_unstaged` after every `git add` / `git restore --staged`, so a +/− click moves ONE row instead of re-fetching …
   try {
     const bus = useSseBus()
     unsubscribeFileStage = bus.on('gitFileStage', (event: GitFileStageEvent) => {
       applyFileStageEvent(event)
     })
   } catch {
-    // No bus installed (tests, or a host that never installed it). The panel
-    // still works — `stageFile` / `unstageFile` apply the same local move
-    // directly, so the row never sits in the wrong list.
+    // No bus installed (tests, or a host that never installed it).
   }
 })
 

@@ -1,7 +1,6 @@
 import { Effect, Either } from 'effect'
 
-/** The chat's file attachments: the shape the backend accepts on the wire, the accept policy, and
- * the codec. Base64 has no quotes or backslashes, so the array is safe to embed in a JSON string. */
+/** The chat's file attachments: the shape the backend accepts on the wire, the accept policy, and the codec. */
 export interface FileAttachment {
   name: string
   mime: string
@@ -201,14 +200,12 @@ export function isRichBinaryFile(file: File): boolean {
   return ext !== '' && RICH_BINARY_EXTENSIONS.has(ext)
 }
 
-/** True when the file is a document the chat can attach (a PDF, a text document, or a rich
- * binary document). */
+/** True when the file is a document the chat can attach (a PDF, a text document, or a rich binary document). */
 export function isDocumentFile(file: File): boolean {
   return isPdfFile(file) || isTextualFile(file) || isRichBinaryFile(file)
 }
 
-/** True when the wire style can carry this file. Only the Responses API takes a rich binary
- * document; every style takes a PDF, and a text document is sent as text everywhere. */
+/** True when the wire style can carry this file. */
 export function styleCarriesFile(urlStyle: string | undefined | null, file: File): boolean {
   if (isTextualFile(file)) return true
   if (isPdfFile(file)) return true
@@ -241,8 +238,7 @@ export function encodeFileAttachmentsWire(files: readonly FileAttachment[]): str
   return JSON.stringify(files.map((f) => ({ name: f.name, mime: f.mime, b64: f.b64 })))
 }
 
-/** Parse the metadata the read path emits. `Effect.try` moves a throw into the error channel and
- * `Effect.either` turns it into a VALUE, so `runSync` here cannot throw. */
+/** Parse the metadata the read path emits. */
 export function parseFileAttachmentsMeta(raw?: string | null): AttachedFileMeta[] {
   if (!raw) return []
   const outcome = Effect.runSync(

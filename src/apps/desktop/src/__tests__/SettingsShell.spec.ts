@@ -8,9 +8,7 @@ import SettingsShell from '../components/settings/SettingsShell.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/** SettingsShell — the one chrome for user + workspace settings. User scope (`/app/settings`) is
- * Pabrik-only: the old Skills/Memories sidebar entries showed the ACTIVE workspace's rows without
- * saying so, so they moved to workspace scope, bound to the route workspace. */
+/** SettingsShell — the one chrome for user + workspace settings. */
 const WS_1 = { id: 'ws_1', name: 'Acme', icon: '', items: [], expanded: false }
 const WS_2 = { id: 'ws_2', name: 'Beta', icon: '', items: [], expanded: false }
 
@@ -55,8 +53,6 @@ describe('SettingsShell', () => {
 
   it('user scope shows General, Appearance and Security — nothing that is really per-workspace', async () => {
     // Decision D4: General is the only CONFIG that still applies everywhere.
-    // Security joins it because an account's password is not a workspace value.
-    // Appearance joins them because a theme is a browser preference, not a workspace value.
     const router = await makeRouter('/app/settings')
     wrapper = mountShell(router, { scope: 'user', workspaceId: '' })
     await flushPromises()
@@ -103,9 +99,7 @@ describe('SettingsShell', () => {
     ]) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
-    // The workspace comes from the URL, so nav items carry no per-item workspace
-    // suffix — and no name box: the URL is the context, the Overview section
-    // shows name + ID.
+    // The workspace comes from the URL, so nav items carry no per-item workspace suffix — and no name box: the URL is the context, the Overview section shows name + …
     expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).not.toContain('Acme')
     for (const id of [
       'overview',
@@ -122,24 +116,18 @@ describe('SettingsShell', () => {
       expect(wrapper.find(`[data-testid="settings-nav-${id}-workspace"]`).exists()).toBe(false)
     }
 
-    // The eight items are grouped: the config sections that moved here sit
-    // under their own heading, which is what keeps "which of these edits one
-    // workspace?" answerable at a glance.
+    // The eight items are grouped: the config sections that moved here sit under their own heading, which is what keeps "which of these edits one workspace?" …
     expect(wrapper.find('[data-testid="settings-nav-group-Agent"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-nav-group-Agent"]').text()).toContain('Agent')
-    // No heading is rendered for the first group: the scope label above the
-    // nav already says "Workspace — this workspace only".
+    // No heading is rendered for the first group: the scope label above the nav already says "Workspace — this workspace only".
     expect(wrapper.find('[data-testid="settings-nav-group-Workspace"]').exists()).toBe(false)
-    // No picker, no name box: the workspace is the URL
-    // (`/app/:workspaceId/settings`), so there is nothing to pick or label.
-    // Switching workspaces is the sidebar's job, not settings'.
+    // No picker, no name box: the workspace is the URL (`/app/:workspaceId/settings`), so there is nothing to pick or label.
     expect(wrapper.find('[data-testid="settings-workspace-picker"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="settings-workspace-name"]').exists()).toBe(false)
   })
 
   it('lists the workspace sections in order, under their group headings', async () => {
-    // This used to be asserted against the editor's own tab strip, which is gone: the shell owns
-    // navigation now, so the ORDER lives here.
+    // This used to be asserted against the editor's own tab strip, which is gone: the shell owns navigation now, so the ORDER lives here.
     const router = await makeRouter('/app/ws_1/settings')
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
@@ -187,15 +175,12 @@ describe('SettingsShell', () => {
 
     await wrapper.find('[data-testid="settings-scope-workspace"]').trigger('click')
     await flushPromises()
-    // Nothing names a workspace here (no URL id, nothing active), so the tab
-    // falls back to the first listed row — the last resort, not the rule.
+    // Nothing names a workspace here (no URL id, nothing active), so the tab falls back to the first listed row — the last resort, not the rule.
     expect(push).toHaveBeenCalledWith({ path: '/app/ws_1/settings' })
   })
 
   it('the Workspace tab opens the workspace in scope, not the first listed row', async () => {
-    // Regression: the tab used to navigate to `workspaceOptions[0]` unconditionally, and the list
-    // API sorts by `position DESC, created_at DESC` — so it left the user's workspace for whenever
-    // they had last moved to the top.
+    // Regression: the tab used to navigate to `workspaceOptions[0]` unconditionally, and the list API sorts by `position DESC, created_at DESC` — so it left the …
     const router = await makeRouter('/app/settings')
     const push = vi.spyOn(router, 'push')
     useWorkspacesStore().activeWorkspaceId = 'ws_2'
@@ -213,8 +198,7 @@ describe('SettingsShell', () => {
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
 
-    // The URL is the workspace context — there is nothing to pick and no
-    // name box to render. The Overview section already shows name + ID.
+    // The URL is the workspace context — there is nothing to pick and no name box to render.
     expect(wrapper.find('[data-testid="settings-workspace-picker"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="settings-workspace-name"]').exists()).toBe(false)
   })

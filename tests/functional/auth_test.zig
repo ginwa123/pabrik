@@ -1,5 +1,4 @@
-// Functional tests for opt-in `--auth` mode. Zig port of
-// `tests/functional/auth_test.py` (same test names).
+// Functional tests for opt-in `--auth` mode.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,8 +9,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
-/// `Harness.http` asserts on `expect` by default, which is the wrong tool
-/// where the STATUS ITSELF is the assertion under test.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -36,8 +33,7 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
-/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
+/// Run `pabrik create-admin` against the harness HOME.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8) !void {
     var r = try harness.runPabrikCommand(io, gpa, home, &.{
         "create-admin", "--email", email, "--password", password,
@@ -60,9 +56,7 @@ test "open_by_default" {
     var r = try h.http(io, .GET, "/api/workspaces", .{});
     defer r.deinit();
 
-    // Python asserted `isinstance(r.json(), (list, dict))` — the wire
-    // shape is "some JSON value"; the contract under test is that the
-    // route is NOT gated without the flag.
+    // Python asserted `isinstance(r.json(), (list, dict))` — the wire shape is "some JSON value"; the contract under test is that the route is NOT gated without the …
     var doc = try r.json();
     defer doc.deinit();
     switch (doc.value().*) {
@@ -147,8 +141,7 @@ test "login_flow" {
     try testing.expect(std.mem.indexOf(u8, set_cookie, "pabrik_session=") != null);
     try testing.expect(std.mem.indexOf(u8, set_cookie, "HttpOnly") != null);
 
-    // 2. Extract the raw token for the subsequent requests. The token is the
-    // SEGMENT between `pabrik_session=` and the next `;`.
+    // 2.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -225,8 +218,7 @@ test "create_admin_refuses_second_without_force" {
 test "login_refresh_serves_spa_shell" {
     try harness.requirePabrikBin(io, gpa);
 
-    // The Python test used pytest's `tmp_path`; the Zig analogue is a
-    // scratch dir under the OS temp, removed on the way out.
+    // The Python test used pytest's `tmp_path`; the Zig analogue is a scratch dir under the OS temp, removed on the way out.
     var scratch: std.testing.TmpDir = std.testing.tmpDir(.{});
     defer scratch.cleanup();
 

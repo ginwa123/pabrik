@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/move-to-page`.
-//! Cross-page element relocate.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/move-to-page`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,48 +9,35 @@ const gserverz = pabrikcore.gserverz;
 const design_model = @import("../modules/agent/loop/design_model.zig");
 const http_response = @import("http_response.zig");
 
-// =====================================================================
 // Wire types
-// =====================================================================
 
-/// Request body. `new_page_id` is required; `apply_to_children` defaults
-/// to `true`.
+/// Request body.
 const MoveToPageBody = struct {
     new_page_id: []const u8 = "",
     apply_to_children: ?bool = null,
 };
 
-// =====================================================================
 // Domain-level error set
-// =====================================================================
 
 pub const DesignElementsMoveToPageError = error{
     /// `:element_id` path param is empty.
-    /// Maps to 400.
     BadElementId,
     /// `new_page_id` is empty in the body.
-    /// Maps to 400.
     BadNewPageId,
     /// `source_page_id` and `new_page_id` are equal — no-op.
-    /// Maps to 400.
     SamePage,
-    /// The element doesn't exist on the source page (or `page_id`
-    /// itself doesn't resolve). Maps to 404.
+    /// The element doesn't exist on the source page (or `page_id` itself doesn't resolve).
     ElementNotFound,
     /// The `new_page_id` doesn't match any row in `design_pages`.
-    /// Maps to 404.
     PageNotFound,
     /// The target page exists but lives on a different design item.
-    /// Maps to 400.
     CrossDesign,
     /// Generic DB failure. Maps to 500.
     DbError,
     OutOfMemory,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub const UseCaseInput = struct {
     source_page_id: []const u8,
@@ -86,9 +71,7 @@ pub fn useCase(
     return .{ .updated = updated };
 }
 
-// =====================================================================
 // HTTP handler
-// =====================================================================
 
 pub fn designElementsMoveToPageHandler(
     ctx: gserverz.HttpContext,
@@ -178,9 +161,7 @@ pub fn designElementsMoveToPageHandler(
         });
     };
 
-    // 5. Build the success response (200 OK). Map each updated row
-    //    through `makeDesignElementResponse` so the wire shape matches
-    //    the rest of the design API (`type`, not `elem_type`).
+    // 5.
     defer design_model.freeElements(allocator, output.updated);
 
     const mapped = try allocator.alloc(http_response.DesignElementResponse, output.updated.len);
@@ -200,8 +181,7 @@ pub fn designElementsMoveToPageHandler(
     });
 }
 
-/// Mirrors `design_elements_move_batch.zig::makeErrorJson`. Local
-/// definition keeps the handler readable.
+/// Mirrors `design_elements_move_batch.zig::makeErrorJson`.
 fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     return try std.json.Stringify.valueAlloc(
         allocator,
@@ -210,15 +190,11 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     );
 }
 
-// ─── Behavioural tests for the move-to-page use-case (Chunk 2) ─── Inline
-// tests per the project rule (see AGENTS.md /
-// `pabrik-agentic-loop-inline-tests-required.md`).
+// ─── Behavioural tests for the move-to-page use-case (Chunk 2) ───
 
 const testing_handler = std.testing;
 
-/// Insert one design element with x/y/width/height and an optional
-/// parent_id. Mirrors `insertHandlerMoveBatchElement` from the
-/// move-batch handler.
+/// Insert one design element with x/y/width/height and an optional parent_id.
 fn insertHandlerMoveToPageElement(
     alloc: std.mem.Allocator,
     db: *database.Db,

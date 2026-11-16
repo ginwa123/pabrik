@@ -13,9 +13,7 @@ pub const KanbanColumnAction = enum {
     reordered,
 };
 
-/// JSON payload for a `kanban_column` SSE event. Field names match the
-/// frontend's `KanbanColumnEvent` interface (camelCase for the action,
-/// snake_case for the ids — see `src/apps/desktop/src/api/index.ts`).
+/// JSON payload for a `kanban_column` SSE event.
 pub const KanbanColumnEventPayload = struct {
     /// "created" | "updated" | "deleted" | "reordered"
     action: []const u8,
@@ -30,8 +28,7 @@ pub const KanbanColumnEventPayload = struct {
     new_position: ?i64 = null,
 };
 
-/// Emit a `kanban_column` SSE event. Called from every kanban column HTTP
-/// handler on success.
+/// Emit a `kanban_column` SSE event.
 pub fn onEventSendKanbanColumn(
     allocator: std.mem.Allocator,
     payload: KanbanColumnEventPayload,
@@ -50,9 +47,7 @@ pub fn onEventSendKanbanColumn(
         .event_type = "kanban_column",
     };
 
-    // event_bus.emit returns void and silently no-ops when no
-    // subscriber is registered — so tests that don't stand up an SSE
-    // server still pass.
+    // event_bus.emit returns void and silently no-ops when no subscriber is registered — so tests that don't stand up an SSE server still pass.
     const di = pabrikcore.getSingleton() catch return;
     di.event_bus.emit(SseEvent, "kanban_column", event);
 }
@@ -62,14 +57,11 @@ pub const KanbanTaskAction = enum {
     assigned,
     moved,
     unassigned,
-    /// Human interaction stamp — fired by the new `PUT
-    /// /api/.../tasks/:id/touched` endpoint and by every existing
-    /// task-mutating handler (`task_update`, `task_create`, `tasks_move`,
+    /// Human interaction stamp — fired by the new `PUT /api/.../tasks/:id/touched` endpoint and by every existing task-mutating handler (`task_update`, `task_create` …
     human_touched,
 };
 
-/// JSON payload for a `kanban_task` SSE event. Field names match
-/// the frontend's `KanbanTaskEvent` interface.
+/// JSON payload for a `kanban_task` SSE event.
 pub const KanbanTaskEventPayload = struct {
     /// "assigned" | "moved" | "unassigned" | "human_touched"
     action: []const u8,
@@ -84,9 +76,7 @@ pub const KanbanTaskEventPayload = struct {
     needs_human_review: ?bool = null,
 };
 
-/// Emit a `kanban_task` SSE event. Called from `tasks_move.zig` on
-/// every successful move and from `task_create.zig` when the new
-/// task is auto-assigned to a kanban column.
+/// Emit a `kanban_task` SSE event.
 pub fn onEventSendKanbanTask(
     allocator: std.mem.Allocator,
     payload: KanbanTaskEventPayload,

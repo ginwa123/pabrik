@@ -1,6 +1,4 @@
-//! Per-session resolution of the `skill_evals` block. Why this exists: under
-//! `--auth` every user owns a `users.config_json` row, and both config
-//! handlers read and write that row and nothing else.
+//! Per-session resolution of the `skill_evals` block.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,9 +7,7 @@ const config_mod = @import("../../config/Config.zig");
 const session_llm_config = @import("session_llm_config.zig");
 const workspace_settings_store = @import("workspace_settings_store.zig");
 
-/// The `skill_evals` block in force for `session_id`, or null when
-/// `ctx.config.skill_evals` is already authoritative and should be read
-/// directly.
+/// The `skill_evals` block in force for `session_id`, or null when `ctx.config.skill_evals` is already authoritative and should be read directly.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -39,8 +35,7 @@ fn resolveForSessionWorkspace(
     return resolveFromWorkspaceRow(allocator, db, owner, workspace_id);
 }
 
-/// The block stored in `(owner, workspace_id)`'s row, or null when that row
-/// carries none.
+/// The block stored in `(owner, workspace_id)`'s row, or null when that row carries none.
 pub fn resolveFromWorkspaceRow(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -64,8 +59,7 @@ pub fn skillEvalsFrom(allocator: std.mem.Allocator, content: []const u8) ?config
     return cfg.skill_evals;
 }
 
-/// The block stored for one user. Only a session with no workspace still
-/// resolves here — everywhere else the workspace row is the source.
+/// The block stored for one user.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -128,8 +122,7 @@ test "resolveForOwner returns the block the user saved (the auth-mode trap)" {
 }
 
 test "resolveForOwner returns null for a user who never saved settings" {
-    // The fallback must be the singleton, not "off": an absent row is not a
-    // request to disable the feature.
+    // The fallback must be the singleton, not "off": an absent row is not a request to disable the feature.
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
@@ -163,9 +156,7 @@ test "unrelated keys and nested objects do not break the parse" {
 }
 
 test "resolve degrades to the singleton when no singleton is installed" {
-    // File mode and unit-test dispatch both land here: without a live
-    // singleton the caller must keep reading `ctx.config` rather than
-    // silently switching the feature off.
+    // File mode and unit-test dispatch both land here: without a live singleton the caller must keep reading `ctx.config` rather than silently switching the feature …
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();

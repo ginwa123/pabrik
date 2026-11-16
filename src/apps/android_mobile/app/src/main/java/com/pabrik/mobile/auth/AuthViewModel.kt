@@ -23,42 +23,18 @@ enum class SessionPhase {
 data class AuthUiState(
     val phase: SessionPhase = SessionPhase.Restoring,
     val isAuthenticating: Boolean = false,
-    /**
-     * A sign-out is in flight. Kept apart from [isAuthenticating] so the
-     * sidebar can say "Logging out…" and refuse a second press, and so a slow
-     * sign-out is never mistaken for a slow sign-in.
-     */
+    /** A sign-out is in flight. */
     val isLoggingOut: Boolean = false,
     val errorMessage: String? = null,
-    /**
-     * The signed-in account, or null when auth is off / no one is signed in.
-     * The sidebar cache is namespaced by this: `logout()` leaves the
-     * cached rows on disk, so without it the next account would inherit them.
-     */
+    /** The signed-in account, or null when auth is off / no one is signed in. */
     val userId: String? = null,
-    /**
-     * False when the server runs without `--auth`. That is a genuinely different
-     * state from "signed in with a blank id", and only this one can say whether
-     * there is a session worth ending — which is what decides if the sidebar
-     * offers "Log out" at all.
-     */
+    /** False when the server runs without `--auth`. */
     val isAuthEnabled: Boolean = false,
     /** Shown beside the sign-out action so the user knows who they are ending. */
     val userEmail: String? = null,
 )
 
-/**
- * The one [AuthResult] -> [AuthUiState] rule.
- *
- * Restore, sign-in and sign-out each produce results from the same sealed type,
- * and they used to be mapped in three places with three slightly different
- * `when`s. A divergence there is invisible in review and expensive in the field:
- * a sign-out that kept the email would paint the next account's name. One
- * function, called by all three, cannot drift.
- *
- * Top level and free of Android so the mapping is a plain JVM test rather than
- * an instrumented one.
- */
+/** The one [AuthResult] -> [AuthUiState] rule. */
 internal fun authUiStateFor(result: AuthResult): AuthUiState = when (result) {
     is AuthResult.Authenticated -> AuthUiState(
         phase = SessionPhase.Authenticated,
@@ -67,8 +43,7 @@ internal fun authUiStateFor(result: AuthResult): AuthUiState = when (result) {
         userEmail = result.user.email,
     )
 
-    // Authenticated, but nobody to be: the server is running open. No account
-    // to attribute a cache to and nothing for a sign-out to end.
+    // Authenticated, but nobody to be: the server is running open.
     AuthResult.AuthDisabled -> AuthUiState(phase = SessionPhase.Authenticated)
 
     AuthResult.NoSession -> AuthUiState(phase = SessionPhase.NeedsLogin)
@@ -84,12 +59,7 @@ internal fun authUiStateFor(result: AuthResult): AuthUiState = when (result) {
     )
 }
 
-/**
- * The sign-out path's own mapping: the session is being ended, so every outcome
- * lands on the login screen. [AuthResult.Unavailable] here is "the device could
- * not drop its own cookie" — still a failure to sign out, and still something the
- * user has to be told rather than left to discover on the next launch.
- */
+/** The sign-out path's own mapping: the session is being ended, so every outcome lands on the login screen. */
 internal fun signedOutUiStateFor(result: AuthResult): AuthUiState = when (result) {
     is AuthResult.Unavailable -> AuthUiState(
         phase = SessionPhase.NeedsLogin,
@@ -102,8 +72,7 @@ internal fun signedOutUiStateFor(result: AuthResult): AuthUiState = when (result
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AuthClient(
         sessionStore = SessionCookieStore(application),
-        // Recording wraps the real transport so the inspector shows the same
-        // bytes the auth flow sent, including a rejected sign-in.
+        // Recording wraps the real transport so the inspector shows the same bytes the auth flow sent, including a rejected sign-in.
         httpTransport = RecordingAuthTransport(HttpsAuthTransport { AuthConfig.BASE_URL }),
         meCache = RoomAuthMeCache(application),
     )
@@ -134,10 +103,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 client.login(email = email, password = password)
             }
             _uiState.value = when (result) {
-                // Sign-in is the one result that is not the same failure as the
-                // same failure during a restore: a dropped connection here must
-                // offer the form again, not a "Try again" that re-checks the
-                // session the user does not have.
+                // Sign-in is the one result that is not the same failure as the same failure during a restore: a dropped connection here must offer the form again, not a "Try …
                 is AuthResult.Unavailable -> AuthUiState(
                     phase = SessionPhase.NeedsLogin,
                     errorMessage = result.message,
@@ -153,23 +119,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * The reader pointed the app at a different server.
-     *
-     * The one thing that must happen here is that the app stops presenting the
-     * old server's identity. A session cookie is a bearer credential issued by
-     * one deployment: the new one has never seen it, and the account-scoped
-     * caches are that deployment's rows under a namespace derived from it. So
-     * the cookie and the `/me` cache go, the phase lands on [SessionPhase.NeedsLogin]
-     * without a restore — asking the new server about a cookie it did not issue
-     * can only produce a 401, which would read as "wrong password" rather than
-     * as "different server" — and the sign-in form is what the reader sees
-     * next, which is the thing they asked for by changing the server.
-     *
-     * The in-flight restore is cancelled first. Left running it would land its
-     * verdict *after* this one and put the app back on the old server's answer,
-     * which is the failure mode where the change appears to have not taken.
-     */
+    /** The reader pointed the app at a different server. */
     fun onServerChanged() {
         restoreJob?.cancel()
         if (_uiState.value.isLoggingOut) return
@@ -177,9 +127,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { client.forgetSession() }
-            // A device that could not drop its own cookie has to say so, rather
-            // than showing a login form that will silently be signed straight
-            // back in by the cookie still on disk.
+            // A device that could not drop its own cookie has to say so, rather than showing a login form that will silently be signed straight back in by the cookie still …
             _uiState.value = when (result) {
                 is AuthResult.Unavailable -> signedOutUiStateFor(result)
                 else -> AuthUiState(phase = SessionPhase.NeedsLogin)
@@ -187,18 +135,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Sign-out.
-     *
-     * One method for both entry points — the sidebar's "Log out" and the
-     * retry screen's "Sign in" — because they end the same session and a second
-     * name for it is a second thing that can drift.
-     *
-     * Re-entrancy guarded: the disabled sidebar button is the visible half of
-     * this, and the ViewModel is the half that still holds when the composition
-     * is gone. `isLoggingOut` is cleared by the state replacement below, so a
-     * finished sign-out does not need its own reset path.
-     */
+    /** Sign-out. */
     fun logout() {
         if (_uiState.value.isLoggingOut) return
         _uiState.update { it.copy(isLoggingOut = true) }

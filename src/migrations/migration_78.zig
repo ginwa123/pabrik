@@ -13,8 +13,7 @@ pub const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = struct {
     pub const name = "add_agents_and_agent_knowledge_and_agent_tools";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // 1. `agents` — 1-1 with `workspace_items` (UNIQUE
-        // workspace_item_id).
+        // 1.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agents (
             \\    id TEXT PRIMARY KEY,
@@ -29,8 +28,7 @@ pub const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = struct {
             "CREATE INDEX IF NOT EXISTS idx_agents_workspace_item_id ON agents(workspace_item_id)",
             &[_][]const u8{});
 
-        // 2. `agent_knowledge` — N-1 with `agents`. Position-ordered for
-        // drag-reorder UI.
+        // 2.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS agent_knowledge (
             \\    id TEXT PRIMARY KEY,
@@ -46,8 +44,7 @@ pub const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = struct {
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_agent_knowledge_agent_id ON agent_knowledge(agent_id)",
             &[_][]const u8{});
-        // Composite index for the position DESC ordering used by the
-        // `agentKnowledgeListHandler` SELECT.
+        // Composite index for the position DESC ordering used by the `agentKnowledgeListHandler` SELECT.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_agent_knowledge_agent_id_position ON agent_knowledge(agent_id, position DESC)",
             &[_][]const u8{});
@@ -66,8 +63,7 @@ pub const Migration076AddAgentsAndAgentKnowledgeAndAgentTools = struct {
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_agent_tools_agent_id ON agent_tools(agent_id)",
             &[_][]const u8{});
-        // Named UNIQUE index — checked by name in the migration test,
-        // and the handler maps UNIQUE violations to HTTP 409.
+        // Named UNIQUE index — checked by name in the migration test, and the handler maps UNIQUE violations to HTTP 409.
         try db.exec(allocator,
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_tools_agent_tool ON agent_tools(agent_id, tool_name)",
             &[_][]const u8{});

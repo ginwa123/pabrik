@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** The autosave indicator. Settings save themselves, so this strip has no controls — its whole job
- * is telling the user whether the last change reached the server. */
+/** The autosave indicator. */
 import { computed } from 'vue'
 
 const props = defineProps<{ state: 'idle' | 'saving' | 'saved' | 'error'; message: string }>()

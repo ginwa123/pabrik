@@ -1,6 +1,4 @@
-// Workspace-secrets store. The behavior under test is what the reveal map may contain at any moment:
-// one plaintext, for the row the user asked about, and only until the user hides it, switches
-// workspace or deletes the row.
+// Workspace-secrets store. The behavior under test is what the reveal map may contain at any moment
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

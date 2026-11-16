@@ -1,5 +1,4 @@
-/** Tests for the **persistence contract** of the agent-error card. The bug we're guarding against:
- * ChatView used to hold `agentError = ref<...>(null)` as a local component ref. */
+/** Tests for the **persistence contract** of the agent-error card. The bug we're guarding against */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp, type Ref, ref } from 'vue'
@@ -17,9 +16,7 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 
-// jsdom 29 dropped `Element.prototype.scrollTo`; the VirtualScroller calls
-// `containerRef.value.scrollTo({top, behavior})` on every render and would log
-// "containerRef.value.scrollTo is not a function" without the polyfill.
+// jsdom 29 dropped `Element.prototype.scrollTo`; the VirtualScroller calls `containerRef.value.scrollTo({top, behavior})` on every render and would log …
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -31,9 +28,7 @@ if (
   }
 }
 
-// ─── shared SSE stub ─────────────────────────────────────────────────────── Inert SseClient that
-// satisfies the bus's interface (close / reconnect / getState / onStateChange) without opening a
-// real EventSource.
+// ─── shared SSE stub ───────────────────────────────────────────────────────
 function makeStubClient(initial: SseState): SseClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
@@ -48,9 +43,7 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ─── default mocks ───────────────────────────────────────────────────────── Wire up the api.*
-// calls ChatView makes in onMounted (getChatHistory, getQueuedMessages, getSession, getGitStatus,
-// getPabrikConfig).
+// ─── default mocks ─────────────────────────────────────────────────────────
 function installChatViewMocks() {
   const history = {
     messages: [],
@@ -61,8 +54,7 @@ function installChatViewMocks() {
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the mount stalled on a 404 and never reached connectSse().
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the mount stalled on a 404 and never reached connectSse().
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [], count: 0 } as any)
@@ -82,9 +74,7 @@ function installChatViewMocks() {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} } as any)
 }
 
-// ─── mount helper ────────────────────────────────────────────────────────── Mounts ChatView with
-// `:chat-id="<chatId>"` and waits for the SSE bus listener to register (`isStreaming === true` is
-// flipped at the end of `connectSse()` — ChatView.vue:2322.
+// ─── mount helper ──────────────────────────────────────────────────────────
 async function mountChatView(chatId: string, processingState: Ref<Record<string, boolean>>) {
   const wrapper = mount(ChatView, {
     props: { chatId, chatName: 'Test Chat' },
@@ -109,9 +99,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
   let processingState: Ref<Record<string, boolean>> | null = null
 
   beforeEach(() => {
-    // jsdom 29 in this project's Vitest does not provide localStorage;
-    // navigation.ts reads it at store init so we stub a minimal in-memory
-    // implementation. Same pattern as chatViewWorktree.spec.ts:194-206.
+    // jsdom 29 in this project's Vitest does not provide localStorage; navigation.ts reads it at store init so we stub a minimal in-memory implementation.
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       Object.defineProperty(globalThis, 'localStorage', {
         value: makeLocalStorageStub(),
@@ -122,13 +110,10 @@ describe('ChatView agent-error card — persistence across remounts', () => {
       localStorage.clear()
     }
 
-    // ChatView reads useNavigationStore() in setup(); Pinia must be
-    // active for any useXxxStore() call.
+    // ChatView reads useNavigationStore() in setup(); Pinia must be active for any useXxxStore() call.
     setActivePinia(createPinia())
 
-    // Install the bus BEFORE mounting so ChatView's `useSseBus()` in `connectSse()` finds an
-    // installed bus. Replace the global client so we never touch jsdom's EventSource — the stub
-    // satisfies the SseClient interface. We drive `llm` events via `__dispatchSseBus`.
+    // Install the bus BEFORE mounting so ChatView's `useSseBus()` in `connectSse()` finds an installed bus.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -146,9 +131,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     vi.restoreAllMocks()
   })
 
-  // ─────────────────────────────────────────────────────────────────────────
   // A — persistence across remount (the bug being fixed)
-  // ─────────────────────────────────────────────────────────────────────────
   it('A: error card persists across ChatView remount for the same session', async () => {
     installChatViewMocks()
 
@@ -169,29 +152,21 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     // Card must render after the first mount.
     expect(wrapper!.find('[data-testid="agent-error-card"]').exists()).toBe(true)
 
-    // Remount: unmount the old ChatView (AppLayout's `:key="activeChatId"`
-    // forces this on every sidebar click) and mount a fresh ChatView
-    // for the SAME chatId. Fire NO new SSE events.
+    // Remount: unmount the old ChatView (AppLayout's `:key="activeChatId"` forces this on every sidebar click) and mount a fresh ChatView for the SAME chatId.
     wrapper.unmount()
     wrapper = await mountChatView('chat-s1', processingState!)
     await flushPromises()
     await nextTick()
 
-    // The card must STILL be there — the Pinia store outlives the component, so the error
-    // diagnostic survives the remount. Pre-fix this assertion failed because the local `agentError`
-    // ref was GC'd between mounts.
+    // The card must STILL be there — the Pinia store outlives the component, so the error diagnostic survives the remount.
     const card = wrapper.find('[data-testid="agent-error-card"]')
     expect(card.exists()).toBe(true)
-    // The headline / detail parsed from the original content must
-    // match — confirms the store's `setError(sessionId, content, id)`
-    // round-trips the content verbatim into the second mount.
+    // The headline / detail parsed from the original content must match — confirms the store's `setError(sessionId, content, id)` round-trips the content verbatim …
     expect(card.text()).toContain('StreamInterrupted')
     expect(card.text()).toContain('connection reset')
   })
 
-  // ─────────────────────────────────────────────────────────────────────────
   // B — auto-clear on recovery persists across remount
-  // ─────────────────────────────────────────────────────────────────────────
   it('B: a non-error full event clears the card, and the clear survives a remount', async () => {
     installChatViewMocks()
 
@@ -210,9 +185,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(true)
 
-    // Recovery fires (non-error renderable full) → card disappears. Mirrors the
-    // ChatView.vue:2155-2163 branch: any `full` event with `finish_reason` + at least one
-    // renderable field triggers `agentErrorStore.clearForSession(sid)`.
+    // Recovery fires (non-error renderable full) → card disappears.
     __dispatchSseBus('llm', {
       session_id: 's1',
       type: 'full',
@@ -227,8 +200,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(false)
 
-    // Remount — the recovery clear must persist too. A fresh ChatView
-    // for chat-s1 must NOT show a stale error card.
+    // Remount — the recovery clear must persist too.
     wrapper.unmount()
     wrapper = await mountChatView('chat-s1', processingState!)
     await flushPromises()
@@ -236,9 +208,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(false)
   })
 
-  // ─────────────────────────────────────────────────────────────────────────
   // D — auto-clear on chunk_final run-end marker (2026-09-10 option 1)
-  // ─────────────────────────────────────────────────────────────────────────
   it('D: a non-error chunk_final event clears the card, and the clear survives a remount', async () => {
     installChatViewMocks()
 
@@ -257,8 +227,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(true)
 
-    // Run-end marker fires (non-error chunk_final, no finish_reason, no renderable payload
-    // required) → card disappears.
+    // Run-end marker fires (non-error chunk_final, no finish_reason, no renderable payload required) → card disappears.
     __dispatchSseBus('llm', {
       session_id: 's1',
       type: 'chunk_final',
@@ -278,23 +247,17 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     expect(wrapper.find('[data-testid="agent-error-card"]').exists()).toBe(false)
   })
 
-  // ─────────────────────────────────────────────────────────────────────────
   // C — key isolation (two ChatViews simultaneously)
-  // ─────────────────────────────────────────────────────────────────────────
   it('C: errors are isolated per session_id across simultaneous ChatViews', async () => {
     installChatViewMocks()
 
-    // Mount TWO ChatViews in parallel. Each owns its own `processingState` map (separate `ref`
-    // instances). The Pinia store is the shared state — both mounts read from / write to the same
-    // `useAgentErrorStore()` instance keyed by session_id.
+    // Mount TWO ChatViews in parallel.
     const ps1 = ref<Record<string, boolean>>({})
     const ps2 = ref<Record<string, boolean>>({})
 
     const wrapperS1 = await mountChatView('chat-s1', ps1)
     const wrapperS2 = await mountChatView('chat-s2', ps2)
-    // Use the FIRST wrapper as the `wrapper` slot so the afterEach
-    // unmount cleans up; explicitly unmount the second one in a
-    // finally block below to avoid leaving it mounted.
+    // Use the FIRST wrapper as the `wrapper` slot so the afterEach unmount cleans up; explicitly unmount the second one in a finally block below to avoid leaving it …
     wrapper = wrapperS1
 
     // Fire an error for s1 ONLY.
@@ -313,8 +276,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     expect(wrapperS1.find('[data-testid="agent-error-card"]').exists()).toBe(true)
     expect(wrapperS2.find('[data-testid="agent-error-card"]').exists()).toBe(false)
 
-    // Fire a DIFFERENT error for s2 (different content so we can
-    // assert each wrapper shows its OWN error and not the other's).
+    // Fire a DIFFERENT error for s2 (different content so we can assert each wrapper shows its OWN error and not the other's).
     __dispatchSseBus('llm', {
       session_id: 's2',
       type: 'full',
@@ -326,9 +288,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     await flushPromises()
     await nextTick()
 
-    // Both wrappers now show their own errors independently — the
-    // store key isolation guarantee. s1's card text is the s1
-    // content; s2's card text is the s2 content. No cross-talk.
+    // Both wrappers now show their own errors independently — the store key isolation guarantee. s1's card text is the s1 content; s2's card text is the s2 content.
     const cardS1 = wrapperS1.find('[data-testid="agent-error-card"]')
     const cardS2 = wrapperS2.find('[data-testid="agent-error-card"]')
     expect(cardS1.exists()).toBe(true)
@@ -338,8 +298,7 @@ describe('ChatView agent-error card — persistence across remounts', () => {
     expect(cardS2.text()).toContain('OverloadedError')
     expect(cardS2.text()).not.toContain('StreamInterrupted')
 
-    // Cleanup the second wrapper explicitly so the afterEach doesn't
-    // leak it (afterEach only knows about the `wrapper` slot).
+    // Cleanup the second wrapper explicitly so the afterEach doesn't leak it (afterEach only knows about the `wrapper` slot).
     wrapperS2.unmount()
   })
 })

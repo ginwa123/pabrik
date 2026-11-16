@@ -8,9 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 059 — Add a `created_iso` column to `llm_history` (populated by
-/// application code — NOT SQLite triggers). ## Why this exists
-/// `llm_history.created_at` is a TEXT column storing **Unix microseconds**
+/// Migration 059 — Add a `created_iso` column to `llm_history` (populated by application code — NOT SQLite triggers).
 pub const Migration059AddCreatedIso = struct {
     pub const version: u32 = 59;
     pub const name = "add_llm_history_created_iso";

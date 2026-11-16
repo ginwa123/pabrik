@@ -1,6 +1,4 @@
-// Functional e2e for background_process SSE push. Zig port of
-// `tests/functional/background_process_sse_test.py` (same test names, same
-// order).
+// Functional e2e for background_process SSE push.
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,7 +11,6 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// How long the stream may take to deliver the `connected` handshake.
-/// Python `_drain_until(..., timeout_s=3.0)`.
 const handshake_timeout_ms: i64 = 3_000;
 
 /// Transfer buffer for the response body reader.
@@ -36,20 +33,16 @@ const SseEvent = struct {
     }
 };
 
-/// An open SSE connection plus the state the reader thread fills in. The test
-/// thread owns the pointer; the reader thread writes into it. `stop` / `done`
-/// are the cross-thread handshake — see `readEvents`.
+/// An open SSE connection plus the state the reader thread fills in.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its
-    /// address outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *std.Io.Reader = undefined,
     status: u16 = 0,
-    /// Duplicated from the response head (which `resp.reader()`
-    /// invalidates).
+    /// Duplicated from the response head (which `resp.reader()` invalidates).
     content_type: []u8 = "",
     /// Set by the test thread to release the reader.
     stop: std.atomic.Value(bool) = .init(false),
@@ -73,14 +66,12 @@ const SseStream = struct {
     }
 };
 
-/// Open `GET /api/events?channels=<channels>` and capture the response
-/// head. Caller owns the returned pointer and must `deinit` it.
+/// Open `GET /api/events?channels=<channels>` and capture the response head.
 fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -89,9 +80,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     s.req = s.client.request(.GET, try std.Uri.parse(url), .{
         .redirect_behavior = .unhandled,
         .extra_headers = &.{
-            // What the browser's `EventSource` sends; the handler keys
-            // off the query string, not this, but sending it keeps the
-            // request identical to the one under test.
+            // What the browser's `EventSource` sends; the handler keys off the query string, not this, but sending it keeps the request identical to the one under test.
             .{ .name = "Accept", .value = "text/event-stream" },
         },
     }) catch |err| {
@@ -107,8 +96,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     var resp = try s.req.receiveHead(&.{});
     s.status = @intFromEnum(resp.head.status);
 
-    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`,
-    // so touching `head` afterwards is a use-after-free.
+    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so touching `head` afterwards is a use-after-free.
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -123,8 +111,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
-/// occurs. Runs on its own thread.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -140,12 +127,9 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // One LINE, not the whole stream: this is what makes the read
-        // incremental. `error.EndOfStream` is a clean server close.
+        // One LINE, not the whole stream: this is what makes the read incremental.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
-            // `takeDelimiter` has a NARROWER error set than the
-            // delimiter-splitting variants: clean EOF is `null`, not
-            // `error.EndOfStream`.
+            // `takeDelimiter` has a NARROWER error set than the delimiter-splitting variants: clean EOF is `null`, not `error.EndOfStream`.
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
                 error.StreamTooLong => "line exceeded the transfer buffer",
@@ -170,9 +154,7 @@ fn readEvents(s: *SseStream) void {
         if (line.len == 0) {
             // Blank line → dispatch whatever we accumulated.
             if (current_name) |name| {
-                // `std.mem.join` allocates an owned buffer but types it
-                // `[]const u8`; the constCast is sound because the buffer is
-                // ours to hand to `gpa.free` (and nothing mutates it).
+                // `std.mem.join` allocates an owned buffer but types it `[]const u8`; the constCast is sound because the buffer is ours to hand to `gpa.free` (and nothing …
                 const joined = std.mem.join(gpa, "\n", data_lines.items) catch "";
                 const data: []u8 = @constCast(joined);
                 s.mutex.lockUncancelable(io);
@@ -202,21 +184,17 @@ fn readEvents(s: *SseStream) void {
                 continue;
             };
         }
-        // `:` comment lines and unknown fields are ignored, matching
-        // both the browser EventSource parser and the Python reader.
+        // `:` comment lines and unknown fields are ignored, matching both the browser EventSource parser and the Python reader.
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side. Without
-/// this the reader thread parks in `readv` forever on an SSE stream that
-/// never ends.
+/// Release a blocked `readEvents` by shutting the socket's read side.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Wait until an event named `want` is in `s.events`, or the deadline
-/// passes. Returns true iff the event was seen.
+/// Wait until an event named `want` is in `s.events`, or the deadline passes.
 fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -246,9 +224,7 @@ fn seenNames(s: *SseStream) []u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     for (s.events.items) |e| out.writer.print("{s} ", .{e.name}) catch break;
-    // `toOwnedSlice` can only fail with OutOfMemory, and a
-    // best-effort DIAGNOSTIC string is the wrong place to propagate
-    // one — the caller is already on the failure path.
+    // `toOwnedSlice` can only fail with OutOfMemory, and a best-effort DIAGNOSTIC string is the wrong place to propagate one — the caller is already on the failure …
     return out.toOwnedSlice() catch |err| {
         out.deinit();
         std.debug.print("could not render the seen-events list: {s}\n", .{@errorName(err)});
@@ -304,9 +280,7 @@ test "background_process_list_still_serves_initial_fetch" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // A real session id, not a made-up shape: the list handler is keyed
-    // on the sessions table and answers `{ processes: [], count: 0 }`
-    // for a session that exists with no background rows.
+    // A real session id, not a made-up shape: the list handler is keyed on the sessions table and answers `{ processes: [], count: 0 }` for a session that exists …
     const session_id = "sess_bg_sse_001";
 
     {
@@ -326,8 +300,7 @@ test "background_process_list_still_serves_initial_fetch" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // `assert body["processes"] == []` — an ABSENT key must fail, so
-    // `orelse` rather than a defaulted empty array.
+    // `assert body["processes"] == []` — an ABSENT key must fail, so `orelse` rather than a defaulted empty array.
     const processes = doc.array("processes") orelse {
         std.debug.print("background_processes body has no `processes` array: {s}\n", .{r.body});
         return error.TestUnexpectedResult;

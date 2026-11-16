@@ -5,9 +5,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Step 3 of 3 for `session_plan`: drop the legacy table. Staged, not
-/// registered — it ships a release after the read switch, and refuses to drop
-/// while any legacy plan is missing from its session.
+/// Step 3 of 3 for `session_plan`: drop the legacy table.
 pub const Migration134ContractSessionPlan = struct {
     pub const version: u32 = 134;
     pub const name = "contract_session_plan";

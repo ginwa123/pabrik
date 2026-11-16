@@ -1,12 +1,9 @@
-/** Tests for AddKanbanDialog — the modal that creates a new project kanban board. The user enters a
- * name + picks a folder (the cwd for the kanban's tasks); the backend seeds the default columns. */
+/** Tests for AddKanbanDialog — the modal that creates a new project kanban board. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddKanbanDialog from '../components/dialogs/AddKanbanDialog.vue'
 
-// Stub the FilePickerDialog — we only care that the parent wires up the
-// picker's events. Real picker behavior is tested in FilePickerDialog.spec.ts.
-//   - title prop (displayed in stub header)
+// Stub the FilePickerDialog — we only care that the parent wires up the picker's events.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -37,8 +34,7 @@ function clickInDom(selector: string) {
 }
 
 function mountDialog(initialShow = true) {
-  // Wipe the body before each mount — see the rationale in
-  // AddItemDialog.spec.ts (Teleport to body + jsdom div accumulation).
+  // Wipe the body before each mount — see the rationale in AddItemDialog.spec.ts (Teleport to body + jsdom div accumulation).
   document.body.innerHTML = ''
   return mount(AddKanbanDialog, {
     attachTo: document.body,
@@ -101,9 +97,7 @@ describe('AddKanbanDialog', () => {
     expect(btn?.disabled).toBe(true)
   })
 
-  // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ───────── The dialog now shows
-  // an inline error below the name input after the user has interacted with an empty/whitespace
-  // field, so the disabled Add button has a visible explanation.
+  // ─── Visible "Name is required" error UX (mirrors AddItemDialog) ─────────
   it('whitespace-only name shows visible "Name is required" error', async () => {
     wrapper = mountDialog(true)
     await flushPromises()
@@ -152,15 +146,12 @@ describe('AddKanbanDialog', () => {
     nameInput.value = 'Sprint 12'
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-    // No folder picked → button is STILL enabled (path is optional since 2026-08-06 — the backend
-    // stores NULL when the path is empty; the kanban is cwd-less until the user backfills via the
-    // "Set project root" banner in KanbanView).
+    // No folder picked → button is STILL enabled (path is optional since 2026-08-06 — the backend stores NULL when the path is empty; the kanban is cwd-less until …
     const btn = findInDom<HTMLButtonElement>('[data-testid="add-kanban-submit"]')
     expect(btn?.disabled).toBe(false)
   })
 
-  // ─── Optional path (2026-08-06) ──────────────────────────────────── Since the "make cwd session
-  // as optional" task, the user can submit the dialog with a valid name AND no folder picked.
+  // ─── Optional path (2026-08-06) ────────────────────────────────────
   it('emits create(name, "") when Add is clicked without picking a folder (cwd-less kanban)', async () => {
     wrapper = mountDialog(true)
     await flushPromises()
@@ -197,8 +188,7 @@ describe('AddKanbanDialog', () => {
     nameInput.value = 'Sprint 12'
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-    // Open the picker (stubbed) and pick /home. The picker's @select
-    // bubbles up through the parent and sets selectedPath.
+    // Open the picker (stubbed) and pick /home.
     clickInDom('[data-testid="add-kanban-choose-folder"]')
     await flushPromises()
     clickInDom('[data-testid="file-picker-select-home"]')

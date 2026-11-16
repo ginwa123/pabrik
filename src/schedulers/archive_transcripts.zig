@@ -1,6 +1,4 @@
-//! Moves the whole transcript of a session whose newest message is older than
-//! 90 days into a sibling `archive.db`, so `agent.db` keeps only the chats
-//! people still open.
+//! Moves the whole transcript of a session whose newest message is older than 90 days into a sibling `archive.db`, so `agent.db` keeps only the chats people still …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -12,9 +10,7 @@ const testing = std.testing;
 
 pub const retention_days: i64 = 90;
 
-/// Sessions moved per tick. Every one of them is copied and deleted inside the
-/// tick's single transaction, so this is about how long the write lock is held,
-/// not about how much can be archived.
+/// Sessions moved per tick.
 pub const sessions_per_tick: usize = 8;
 
 pub const archive_file_name = "archive.db";
@@ -26,8 +22,7 @@ pub const ArchiveInput = struct {
     db: *database.Db,
     logger: ?*loggermod.Logger,
     now_unix: i64,
-    /// The sibling file to archive into. Empty on a build with no sqlite file to
-    /// sit beside (postgres), where there is nothing to archive.
+    /// The sibling file to archive into.
     archive_path: []const u8,
     retention_days: i64 = retention_days,
     sessions_per_tick: usize = sessions_per_tick,
@@ -39,8 +34,7 @@ pub const ArchiveResult = struct {
     released_pages: i64 = 0,
 };
 
-/// Where the archive for `db_path` lives: beside it, so a backup or a move takes
-/// both files.
+/// Where the archive for `db_path` lives: beside it, so a backup or a move takes both files.
 pub fn archivePathNear(allocator: std.mem.Allocator, db_path: []const u8) ![]u8 {
     if (db_path.len == 0) return allocator.alloc(u8, 0);
     const dir = std.fs.path.dirname(db_path) orelse ".";
@@ -48,8 +42,7 @@ pub fn archivePathNear(allocator: std.mem.Allocator, db_path: []const u8) ![]u8 
 }
 
 pub fn archiveTranscripts(input: ArchiveInput) anyerror!ArchiveResult {
-    // Comptime split, so a postgres build never has to typecheck the sqlite
-    // statements below.
+    // Comptime split, so a postgres build never has to typecheck the sqlite statements below.
     if (comptime dialect.is_postgres) return .{};
     return archiveTranscriptsSqlite(input);
 }
@@ -62,17 +55,14 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
     const db = input.db;
 
     try db.exec(allocator, "ATTACH DATABASE ? AS archive", &.{input.archive_path});
-    // Registered before the transaction's rollback defer so it runs after it:
-    // `db.exec` under the transaction's mutex would deadlock. A failed detach
-    // leaks the alias, so it is reported rather than swallowed.
+    // Registered before the transaction's rollback defer so it runs after it
     defer if (db.exec(allocator, "DETACH DATABASE archive", &.{})) |_| {} else |err| {
         if (input.logger) |log| {
             log.errFmt("[archive_transcripts] detach failed: {s}\n", .{@errorName(err)});
         }
     };
 
-    // One transaction for the whole tick: `db.query` is served by a pooled READ
-    // connection, which cannot see an alias attached on the write connection.
+    // One transaction for the whole tick: `db.query` is served by a pooled READ connection, which cannot see an alias attached on the write connection.
     var tx = try db.begin();
     errdefer tx.rollback() catch {};
 
@@ -84,9 +74,7 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
     const limit_str = try std.fmt.allocPrint(allocator, "{d}", .{input.sessions_per_tick});
     defer allocator.free(limit_str);
 
-    // A session qualifies only when its NEWEST message is past the window, so a
-    // reopened chat stays whole. Live turns, unanswered questions and queued
-    // messages are excluded.
+    // A session qualifies only when its NEWEST message is past the window, so a reopened chat stays whole.
     const candidates_sql =
         \\SELECT session_id FROM llm_history
         \\WHERE COALESCE(session_id, '') <> '' AND COALESCE(created_iso, '') <> ''
@@ -134,9 +122,7 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
     return result;
 }
 
-/// Copy every row of one session, prove the copy, and only then delete the
-/// original. All of it inside the caller's transaction, so a replay after a
-/// crash finds the session already moved and has nothing to do.
+/// Copy every row of one session, prove the copy, and only then delete the original.
 fn archiveOne(
     conn: database.DbOrTx,
     allocator: std.mem.Allocator,
@@ -165,9 +151,7 @@ fn archiveOne(
     return @intCast(copied);
 }
 
-/// Copied from this database's own DDL — same columns as the arriving rows,
-/// and no FTS shadow table, which is why a search of `agent.db` cannot return
-/// an archived message.
+/// Copied from this database's own DDL — same columns as the arriving rows, and no FTS shadow table, which is why a search of `agent.db` cannot return an archived …
 fn ensureArchiveTable(conn: database.DbOrTx, allocator: std.mem.Allocator) !void {
     const existing = try count(
         conn,
@@ -256,7 +240,6 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
-// The archive is a second FILE, so every test here runs on a real one.
 
 const FilePair = struct {
     threaded: std.Io.Threaded,
@@ -350,8 +333,7 @@ const FilePair = struct {
         return count(.{ .db = &self.db }, self.allocator, scoped, bind);
     }
 
-    /// Re-open the archive on its own to prove the rows are IN that file, not
-    /// merely attached to this connection.
+    /// Re-open the archive on its own to prove the rows are IN that file, not merely attached to this connection.
     fn rowsInArchiveFile(self: *FilePair, session_id: []const u8) !i64 {
         self.db.exec(self.allocator, "DETACH DATABASE archive", &.{}) catch {};
         const path = try self.allocator.dupeZ(u8, self.archive_path);

@@ -1,5 +1,4 @@
-/** Pure scrollbar math for ChatScrollSlider — no DOM reads, unit-testable. */
-/** Minimum thumb height as % of track so long chats stay grabbable. */
+// Pure scrollbar math for ChatScrollSlider — no DOM reads, unit-testable.
 export const MIN_THUMB_PCT = 8
 
 export interface ThumbGeometry {
@@ -12,9 +11,7 @@ export interface ThumbGeometry {
   ratio: number
 }
 
-/** Standard scrollbar geometry:
- *   thumbH% = clamp(clientH / scrollH * 100, MIN_THUMB_PCT, 100)
- *   thumbTop% = scrollTop / (scrollH - clientH) * (100 - thumbH%) */
+/** Standard scrollbar geometry */
 export function computeThumbGeometry(
   scrollTop: number,
   scrollHeight: number,

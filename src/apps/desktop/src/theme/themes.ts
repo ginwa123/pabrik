@@ -1,19 +1,15 @@
-/** The app's theme registry — the ONE list of themes. Adding a theme is two edits: an entry here and
- * a `:root[data-theme='<id>']` block in `style.css` holding its colour tokens. The settings UI, the
- * boot code and the token-coverage spec all read this list, so nothing else has to learn the name. */
+/** The app's theme registry — the ONE list of themes. */
 export type ThemeScheme = 'dark' | 'light'
 
 interface ThemeDefinitionShape {
   readonly id: string
   readonly label: string
   readonly description: string
-  /** Base colour scheme the theme paints. Drives native controls and the surfaces coloured in JS
-   * (xterm, mermaid, monaco) that cannot read a CSS variable. */
+  /** Base colour scheme the theme paints. */
   readonly scheme: ThemeScheme
   /** `true` for the theme whose tokens are the base `:root` block in style.css. */
   readonly isDefault: boolean
-  /** Tile preview in Settings. Literal colours, not tokens: the tile draws a theme that may not be
-   * the applied one, so it cannot read the live cascade. */
+  /** Tile preview in Settings. */
   readonly swatch: {
     readonly bg: string
     readonly card: string
@@ -113,8 +109,7 @@ export const findTheme = (id: ThemeName): ThemeDefinition | undefined =>
 /** A theme's base scheme, defaulting to dark for an id the registry does not know. */
 export const schemeOf = (id: string): ThemeScheme => (findTheme(id as ThemeName)?.scheme ?? 'dark')
 
-/** The stored theme, or the default when nothing valid is stored. `storage` is injected so a test
- * can hand in a fake instead of a global. */
+/** The stored theme, or the default when nothing valid is stored. */
 export function readStoredTheme(storage: Pick<Storage, 'getItem'> | null): ThemeName {
   const stored = storage?.getItem(THEME_STORAGE_KEY)
   return isThemeName(stored) ? stored : DEFAULT_THEME

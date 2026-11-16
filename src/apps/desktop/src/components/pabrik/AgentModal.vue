@@ -10,8 +10,7 @@ const props = defineProps<{
   modelValue: AgentModalValue
   errors?: { name?: string; model?: string; base_url?: string; api_key?: string }
   mode: 'add' | 'edit'
-  /** The workspace whose secrets the Test probe resolves against. Absent in
-   * user scope, where a placeholder cannot be resolved. */
+  /** The workspace whose secrets the Test probe resolves against. */
   workspaceId?: string
 }>()
 

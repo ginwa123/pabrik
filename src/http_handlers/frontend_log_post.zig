@@ -24,8 +24,7 @@ const FrontendLogBody = struct {
     };
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a distinct HTTP
-/// status code.
+/// Domain-level error set for `useCase`.
 pub const FrontendLogPostError = error{
     /// `getSingleton()` failed — server not initialised. Maps to 500.
     ServerNotInitialized,
@@ -47,9 +46,7 @@ pub const FrontendLogPostError = error{
     PersistFailed,
 };
 
-// =====================================================================
 // Whitelists
-// =====================================================================
 
 /// Valid `level` values. Anything else → 400.
 const VALID_LEVELS = [_][]const u8{ "error", "warn", "info", "debug" };
@@ -62,9 +59,7 @@ const VALID_KINDS = [_][]const u8{
     "console_warn",
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -74,8 +69,7 @@ fn useCase(
     return useCaseAt(allocator, db, body, microsecondsNow());
 }
 
-/// `useCase` with the clock injected, so the 1-second dedup window is
-/// something a test sets rather than something it races.
+/// `useCase` with the clock injected, so the 1-second dedup window is something a test sets rather than something it races.
 fn useCaseAt(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -88,18 +82,14 @@ fn useCaseAt(
     if (!isValidKind(body.kind)) return error.InvalidKind;
     if (body.message.len == 0) return error.MissingMessage;
 
-    // Capped BEFORE the dedup key is read, because the stored message IS the
-    // key: two 40 KB events that differ only past byte 8192 are one event here.
+    // Capped BEFORE the dedup key is read, because the stored message IS the key: two 40 KB events that differ only past byte 8192 are one event here.
     const capped = capMessage(body.message);
 
-    // Row id = "log_<microseconds>". Allocates from the per-request
-    // arena (the caller's `allocator`); freed at scope exit. On OOM,
-    // surface 500 — the caller has no fallback id source.
+    // Row id = "log_<microseconds>".
     const id = idForRow(allocator) catch return error.IdAllocationFailed;
     defer allocator.free(id);
 
-    // `db.exec` only binds text — integer values must be formatted as decimal
-    // strings before binding.
+    // `db.exec` only binds text — integer values must be formatted as decimal strings before binding.
     const now_us_str = std.fmt.allocPrint(allocator, "{d}", .{now_us}) catch return error.IdAllocationFailed;
     defer allocator.free(now_us_str);
     const dedup_cutoff_str = std.fmt.allocPrint(allocator, "{d}", .{now_us - 1_000_000}) catch return error.IdAllocationFailed;
@@ -107,9 +97,7 @@ fn useCaseAt(
     const line_str = std.fmt.allocPrint(allocator, "{d}", .{body.line orelse 0}) catch return error.IdAllocationFailed;
     defer allocator.free(line_str);
 
-    // Dedup check: same kind + message + stack within the last 1 second. The
-    // `COALESCE(stack,'') = COALESCE(?,'')` form treats NULL and "" as equivalent
-    // dedup keys (matches the design doc contract).
+    // Dedup check: same kind + message + stack within the last 1 second.
     const dedup_sql =
         \\SELECT id FROM logs
         \\WHERE kind = ?
@@ -135,8 +123,7 @@ fn useCaseAt(
         return error.DedupQueryFailed;
     }) |dedup_row| {
         defer dedup_row.deinit(allocator);
-        // Existing row matches the dedup key. Increment its count
-        // and return — no second row is created.
+        // Existing row matches the dedup key.
         db.exec(
             allocator,
             "UPDATE logs SET count = count + 1 WHERE id = ?",
@@ -152,9 +139,7 @@ fn useCaseAt(
         \\  stack, source, line, route_path, session_id, count
         \\) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     ;
-    // For nullable TEXT columns (stack/source/route_path/session_id),
-    // `db.exec` binds empty slice as NULL (project memory
-    // `sqlite-backend-empty-slice-binds-as-null`).
+    // For nullable TEXT columns (stack/source/route_path/session_id), `db.exec` binds empty slice as NULL (project memory `sqlite-backend-empty-slice-binds-as-null`).
     db.exec(
         allocator,
         insert_sql,
@@ -174,9 +159,7 @@ fn useCaseAt(
     ) catch return error.PersistFailed;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn frontendLogPostHandler(
     ctx: gserverz.HttpContext,
@@ -199,8 +182,7 @@ pub fn frontendLogPostHandler(
         });
     }
 
-    // Per-request arena owns the parsed value (Leaky variant — see
-    // `memories_create.zig:181` for the precedent).
+    // Per-request arena owns the parsed value (Leaky variant — see `memories_create.zig:181` for the precedent).
     const parsed = std.json.parseFromSliceLeaky(FrontendLogBody, allocator, req.body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -209,9 +191,7 @@ pub fn frontendLogPostHandler(
     };
 
     if (parsed.events.len == 0) {
-        // Frontend client always sends a non-empty batch (it's wrapping its
-        // in-memory queue), so an empty `events` array is user-error or
-        // caller misconfiguration — surface as 400 with a clear message.
+        // Frontend client always sends a non-empty batch (it's wrapping its in-memory queue), so an empty `events` array is user-error or caller misconfiguration — …
         return res.jsonResponse(.{
             .status_code = 400,
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "missing required field: events" }),
@@ -235,9 +215,7 @@ pub fn frontendLogPostHandler(
         const message: []const u8 = switch (err) {
             error.ServerNotInitialized => "Server not initialized",
             error.IdAllocationFailed => "Failed to generate log id",
-            // Validation messages use a canonical shape the frontend
-            // parses: "missing required field: X" for an absent field,
-            // "X must be one of ..." for present-but-wrong.
+            // Validation messages use a canonical shape the frontend parses: "missing required field: X" for an absent field, "X must be one of ..." for present-but-wrong.
             error.MissingLevel => "missing required field: level",
             error.InvalidLevel => "level must be one of error, warn, info, debug",
             error.MissingKind => "missing required field: kind",
@@ -246,9 +224,7 @@ pub fn frontendLogPostHandler(
             error.DedupQueryFailed => "Failed to dedup log",
             error.PersistFailed => "Failed to persist log",
         };
-        // Use `std.log.warn` (NOT `std.log.err`) so this handler's error-path
-        // doesn't trigger `log_err_count > 0` in `zig build test`. User-input
-        // errors are warnings, not programmer errors.
+        // Use `std.log.warn` (NOT `std.log.err`) so this handler's error-path doesn't trigger `log_err_count > 0` in `zig build test`.
         std.log.warn("frontend_log_post: {s}", .{message});
         return res.jsonResponse(.{
             .status_code = status,
@@ -261,19 +237,14 @@ pub fn frontendLogPostHandler(
     return gserverz.HttpResponse.init(204, "No Content", allocator).withBody("");
 }
 
-// =====================================================================
 // Helpers
-// =====================================================================
 
-/// The bytes of `message` one `logs` row keeps. The live database averaged
-/// 10,832 bytes per row and peaked at 1,009,888 — one serialized error object
-/// or one component stack — and nothing reads past the first screen of it.
+/// The bytes of `message` one `logs` row keeps.
 pub const message_byte_cap: usize = 8 * 1024;
 
 pub const CappedMessage = struct { text: []const u8, truncated: bool };
 
-/// `message` cut to `message_byte_cap` bytes without splitting a UTF-8
-/// character, plus whether anything was cut.
+/// `message` cut to `message_byte_cap` bytes without splitting a UTF-8 character, plus whether anything was cut.
 pub fn capMessage(message: []const u8) CappedMessage {
     if (message.len <= message_byte_cap) return .{ .text = message, .truncated = false };
     var end = message_byte_cap;
@@ -297,36 +268,27 @@ fn isValidKind(kind: []const u8) bool {
     return false;
 }
 
-/// Generate the canonical `log_<microseconds>` id for a new row. On OOM,
-/// propagates the alloc error to the caller (the useCase catches it as
-/// `error.IdAllocationFailed` and the handler returns 500).
+/// Generate the canonical `log_<microseconds>` id for a new row.
 fn idForRow(allocator: std.mem.Allocator) ![]u8 {
     const us = microsecondsNow();
     return std.fmt.allocPrint(allocator, "log_{d}", .{us});
 }
 
-/// Current Unix time in microseconds. `std.time.microTimestamp()` was REMOVED
-/// in Zig 0.16.
+/// Current Unix time in microseconds.
 fn microsecondsNow() i64 {
     const ns = @import("helpers").unixTimestampNanos();
     const us: i64 = @intCast(@divTrunc(ns, std.time.ns_per_us));
     return if (us < 0) 0 else us;
 }
 
-// ===== Tests merged from frontend_log_post_test.zig (2026-09-11 flatten)
-// ===== Behavioural SQL dedup tests (Task 2.3) for `frontend_log_post` (POST
-// /api/logs, Chunk 2 of
+// ===== Tests merged from frontend_log_post_test.zig (2026-09-11 flatten) ===== Behavioural SQL dedup tests (Task 2.3) for `frontend_log_post` (POST /api/logs …
 
 const testing = std.testing;
 
-// =============================================================================
-// Behavioural SQL dedup tests (Task 2.3) These exercise the SAME SQL the
-// use-case runs against an in-memory SQLite DB with the logs table loaded.
+// Behavioural SQL dedup tests (Task 2.3) These exercise the SAME SQL the use-case runs against an in-memory SQLite DB with the logs table loaded.
 
 
 /// Open a fresh in-memory sqlite DB with the `logs` table loaded.
-/// Mirrors the `setupDb063` helper in `migration.zig` and the
-/// `loop/Scheduler.zig` pattern.
 fn setupDbWithLogs() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -342,8 +304,7 @@ fn setupDbWithLogs() !struct {
 
     try pabrikcore.migrations_mod.migration.Migration064AddFrontendLogs.up(&db, alloc);
     try pabrikcore.migrations_mod.migration.Migration130AddLogMessageTruncated.up(&db, alloc);
-    // Production DBs also run Migration 075, which renames `logs.created_at`
-    // → `logs.created_at_nano`.
+    // Production DBs also run Migration 075, which renames `logs.created_at` → `logs.created_at_nano`.
     try db.exec(alloc, "ALTER TABLE logs RENAME COLUMN created_at TO created_at_nano", &.{});
     try db.exec(alloc, "DROP INDEX IF EXISTS idx_logs_created_at", &.{});
     try db.exec(
@@ -361,9 +322,7 @@ test "dedup SQL: same kind+message+stack within 1s increments count" {
     defer s.db.deinit();
 
     const now_us: i64 = 1_784_226_123_456_789;
-    // The `db.exec` / `db.query` helpers only bind TEXT — microsecond values
-    // are formatted as decimal strings (the project convention; SQLite
-    // coerces the numeric-looking text to INTEGER under INTEGER affinity,
+    // The `db.exec` / `db.query` helpers only bind TEXT — microsecond values are formatted as decimal strings (the project convention; SQLite coerces the …
     const now_us_str = try std.fmt.allocPrint(alloc, "{d}", .{now_us});
     defer alloc.free(now_us_str);
     const dedup_cutoff_str = try std.fmt.allocPrint(alloc, "{d}", .{now_us - 1_000_000});
@@ -438,8 +397,7 @@ test "dedup SQL: different stack within 1s does NOT match (insert second row)" {
         // dedup should NOT match — bug!
         return error.UnexpectedDedupMatch;
     }
-    // Verify the row count is still 1 (would become 2 if a new INSERT
-    // landed; the handler does the INSERT after no-match).
+    // Verify the row count is still 1 (would become 2 if a new INSERT landed; the handler does the INSERT after no-match).
     var count_rows = try s.db.query(alloc, "SELECT COUNT(*) FROM logs", &.{});
     defer count_rows.deinit();
     const count_row = (try count_rows.next()) orelse return error.RowMissing;
@@ -460,8 +418,7 @@ test "dedup SQL: same key but >1s apart does NOT match (no dedup across window)"
     const t2: i64 = t1 + 1_500_000;
     const t2_str = try std.fmt.allocPrint(alloc, "{d}", .{t2});
     defer alloc.free(t2_str);
-    // Dedup cutoff at t2 = t1 + 0.5s, which is BEFORE t1, so the t1
-    // row is excluded from the dedup query.
+    // Dedup cutoff at t2 = t1 + 0.5s, which is BEFORE t1, so the t1 row is excluded from the dedup query.
     const dedup_cutoff_str = try std.fmt.allocPrint(alloc, "{d}", .{t2 - 1_000_000});
     defer alloc.free(dedup_cutoff_str);
 
@@ -472,8 +429,7 @@ test "dedup SQL: same key but >1s apart does NOT match (no dedup across window)"
         &.{ "log_t1", t1_str, "error", "console_error", "boom", "stack-A" },
     );
 
-    // Dedup at t2 with same key — t1 is BEFORE cut-off → no match →
-    // handler would INSERT a new row.
+    // Dedup at t2 with same key — t1 is BEFORE cut-off → no match → handler would INSERT a new row.
     var rows = try s.db.query(
         alloc,
         "SELECT id FROM logs WHERE kind = ? AND message = ? AND COALESCE(stack,'') = COALESCE(?,'') AND created_at_nano >= ? LIMIT 1",
@@ -517,8 +473,7 @@ test "capMessage cuts a message one byte over the cap to the cap, and says so" {
 }
 
 test "capMessage never leaves half a multi-byte character at the cut" {
-    // '€' is three bytes (E2 82 AC); placing it so byte 8192 is its SECOND
-    // byte is the case a naive `message[0..8192]` gets wrong.
+    // '€' is three bytes (E2 82 AC); placing it so byte 8192 is its SECOND byte is the case a naive `message[0..8192]` gets wrong.
     const message = try testing.allocator.alloc(u8, message_byte_cap + 8);
     defer testing.allocator.free(message);
     @memset(message, 'a');

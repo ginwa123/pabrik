@@ -1,5 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/group`.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/group`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,17 +7,14 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const design_model = @import("../modules/agent/loop/design_model.zig");
 
-/// HTTP request body for the group-elements endpoint. `child_ids` must
-/// contain at least 2 element ids (a single-element group is not meaningful).
+/// HTTP request body for the group-elements endpoint.
 const GroupElementsBody = struct {
     child_ids: []const []const u8 = &.{},
     name: ?[]const u8 = null,
     type: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches (one for status, one for the user-facing message).
+/// Domain-level error set for `useCase`.
 pub const DesignElementsGroupError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
@@ -30,23 +26,19 @@ pub const DesignElementsGroupError = error{
     InvalidType,
     /// `design_model.groupElements` returned `PageNotFound`.
     PageNotFound,
-    /// `design_model.groupElements` returned `BadChildId` (a child
-    /// id didn't resolve to a row).
+    /// `design_model.groupElements` returned `BadChildId` (a child id didn't resolve to a row).
     BadChildId,
     /// `design_model.groupElements` returned `ItemPathMissing`.
     ItemPathMissing,
-    /// `design_model.groupElements` returned
-    /// `ChildAcrossDifferentPages`.
+    /// `design_model.groupElements` returned `ChildAcrossDifferentPages`.
     ChildAcrossDifferentPages,
     /// `design_model.groupElements` returned `ChildAlreadyParented`.
     ChildAlreadyParented,
-    /// `design_model.groupElements` returned `FileWriteFailed`
-    /// (atomic-write of the group HTML failed).
+    /// `design_model.groupElements` returned `FileWriteFailed` (atomic-write of the group HTML failed).
     FileWriteFailed,
     /// `groupElements` failed for some other DB reason.
     DbError,
-    /// Insert succeeded but the new element wasn't visible in the
-    /// subsequent `getElement` (consistency violation).
+    /// Insert succeeded but the new element wasn't visible in the subsequent `getElement` (consistency violation).
     ParentNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
@@ -65,14 +57,11 @@ pub const GroupElementsInput = struct {
 pub const GroupElementsOutput = struct {
     /// The newly-created parent element.
     parent: design_model.DesignElement,
-    /// The re-fetched children (post-reparent). Heap-owned by the
-    /// use-case — `freeElement(allocator, ...)` per child on cleanup.
+    /// The re-fetched children (post-reparent).
     children: []design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Group 2+ elements into a new parent.
 pub fn useCase(
@@ -86,8 +75,7 @@ pub fn useCase(
     // Figma convention: a single-element group is not meaningful.
     if (input.child_ids.len < 2) return error.TooFewChildren;
 
-    // Delegate to the model. The model owns the transaction + on-disk
-    // HTML + SSE emit; we just translate the error set.
+    // Delegate to the model.
     const new_id = design_model.groupElements(allocator, db, .{
         .page_id = input.page_id,
         .child_ids = input.child_ids,
@@ -104,9 +92,7 @@ pub fn useCase(
     };
     defer allocator.free(new_id);
 
-    // Re-fetch the new parent + each reparented child for the
-    // response. Free-then-build (errdefer) pattern: if any
-    // `getElement` fails, free the parts we already have.
+    // Re-fetch the new parent + each reparented child for the response.
     const parent = design_model.getElement(allocator, db, new_id) catch return error.ParentNotVisible;
     errdefer design_model.freeElement(allocator, parent);
 
@@ -127,13 +113,9 @@ pub fn useCase(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn designElementsGroupHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -183,8 +165,7 @@ pub fn designElementsGroupHandler(
     const name = parsed.name orelse "Group";
     const type_str = parsed.type orelse "group";
 
-    // 4. Translate the wire `type` string to the ElementType enum.
-    //    `std.meta.stringToEnum` returns `?T` — null on no match.
+    // 4.
     const elem_type = std.meta.stringToEnum(design_model.ElementType, type_str) orelse {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -193,8 +174,7 @@ pub fn designElementsGroupHandler(
             }),
         });
     };
-    // Reject .rectangle / .ellipse / .text / .image — the `/group`
-    // endpoint is specifically for parent containers.
+    // Reject .rectangle / .ellipse / .text / .image — the `/group` endpoint is specifically for parent containers.
     if (elem_type != .group and elem_type != .frame) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -255,8 +235,7 @@ pub fn designElementsGroupHandler(
         allocator.free(output.children);
     }
 
-    // 6. Build the success response (201 Created) with
-    //    `{parent, children}` envelope.
+    // 6.
     const Response = struct {
         parent: http_response.DesignElementResponse,
         children: []const http_response.DesignElementResponse,
@@ -278,9 +257,7 @@ pub fn designElementsGroupHandler(
     });
 }
 
-// ===== Tests merged from design_elements_group_test.zig (2026-09-11 flatten)
-// ===== Behavioural unit tests for the `POST .../elements/group` HTTP handler
-// (2026-07-28-grouped-layers Chunk 3).
+// ===== Tests merged from design_elements_group_test.zig (2026-09-11 flatten) ===== Behavioural unit tests for the `POST .../elements/group` HTTP handler …
 
 const testing = std.testing;
 const design_elements_group = @This();
@@ -289,9 +266,7 @@ const database = pabrikcore.database;
 
 // ─── Test fixtures (mirrors `design_model_group_test.zig`) ─────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimum tables needed for
-/// the design SQL, plus a workspace_item with a tmpdir-backed path so
-/// `design_model.groupElements` can write the new group's HTML file.
+/// Open a fresh in-memory sqlite DB with the minimum tables needed for the design SQL, plus a workspace_item with a tmpdir-backed path so …
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -380,7 +355,6 @@ fn setupDbAndItem() !TestCtx {
 }
 
 /// Insert one design element with explicit (x, y, width, height).
-/// Returns the generated id (heap-owned; caller frees).
 fn insertChild(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -417,8 +391,7 @@ fn insertChild(
 // ─── useCase validation: child_ids.length >= 2 ────────────────────────────
 
 test "useCase rejects empty child_ids with TooFewChildren" {
-    // The validation runs BEFORE any DB access, so we pass `undefined` for
-    // the db pointer.
+    // The validation runs BEFORE any DB access, so we pass `undefined` for the db pointer.
     const result = design_elements_group.useCase(testing.allocator, undefined, .{
         .page_id = "page_test",
         .workspace_id = "ws_test",
@@ -530,8 +503,7 @@ test "useCase returns BadChildId when a child_id does not exist" {
     const child_a = try insertChild(alloc, &ctx.db, page_id, "elem_a", 0, 0, 100, 50);
     defer alloc.free(child_a);
 
-    // elem_b does not exist; the model's SELECT returns 1 row but
-    // input.child_ids.len == 2, triggering BadChildId.
+    // elem_b does not exist; the model's SELECT returns 1 row but input.child_ids.len == 2, triggering BadChildId.
     const result = design_elements_group.useCase(alloc, &ctx.db, .{
         .page_id = page_id,
         .workspace_id = "ws_test",
@@ -579,8 +551,7 @@ test "useCase returns ChildAlreadyParented when children already have a parent" 
         alloc.free(output.children);
     }
 
-    // Second call with the same children: model rejects because
-    // both children already have a parent_id != NULL.
+    // Second call with the same children: model rejects because both children already have a parent_id != NULL.
     const result = design_elements_group.useCase(alloc, &ctx.db, .{
         .page_id = page_id,
         .workspace_id = "ws_test",

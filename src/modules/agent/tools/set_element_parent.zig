@@ -1,5 +1,4 @@
-//! LLM tool: `set_element_parent` — re-parents an existing design element to
-//! a new `group`/`frame` parent, or back to top-level via `null`.
+//! LLM tool: `set_element_parent` — re-parents an existing design element to a new `group`/`frame` parent, or back to top-level via `null`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -12,15 +11,11 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `set_element_parent` tool. Both fields are required.
-/// Pass `null` for `new_parent_id` to move the element back to top-level (the
-/// inverse of nesting).
+/// Input structure for `set_element_parent` tool.
 pub const SetElementParentInput = struct {
     /// The element id to re-parent. Must exist on the active page.
     element_id: []const u8 = "",
-    /// The new parent's element id. Must reference a `group` or
-    /// `frame` on the SAME page as `element_id`. Pass `null` to move
-    /// the element to top-level (parent_id cleared).
+    /// The new parent's element id.
     new_parent_id: ?[]const u8 = null,
 };
 
@@ -65,9 +60,7 @@ pub const set_element_parent_tool = AgentTool{
     },
 };
 
-/// Generate an error JSON object (replaces the old per-tool XML escape +
-/// error envelope helpers).
-/// Generate an error JSON object `{"error":...}` for the tool dispatcher.
+/// Generate an error JSON object (replaces the old per-tool XML escape + error envelope helpers).
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -81,7 +74,6 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
 }
 
 /// Validate `element_id` is non-empty and has the right `elem_` prefix.
-/// Returns null when shape is correct, or an error JSON object on mismatch.
 fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) !?[]u8 {
     if (element_id.len == 0) {
         return try errorJSON(allocator, "element_id is required (find it in the `id` field of an element object in a previous set_design_page response)");
@@ -113,9 +105,7 @@ pub fn executeSetElementParentToString(
     // 0. Input validation (shape only — DB validation runs after).
     if (try validateElementIdShape(allocator, input.element_id)) |e| return e;
 
-    // 1. Delegate to design_model.setElementParent. The model layer
-    //    handles parent existence, type check, cycle detection, and
-    //    the actual UPDATE.
+    // 1.
     design_model.setElementParent(allocator, db, input.element_id, input.new_parent_id) catch |err| {
         return switch (err) {
             error.ElementNotFound => try errorJSON(allocator, "element_id does not reference any design element — call set_design_page first"),
@@ -127,16 +117,13 @@ pub fn executeSetElementParentToString(
         };
     };
 
-    // 2. Re-fetch the element so the LLM gets the canonical state
-    //    (with the new parent_id reflected).
+    // 2.
     const elem = design_model.getElement(allocator, db, input.element_id) catch |err| {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: getElement failed: {s}", .{@errorName(err)}));
     };
     defer design_model.freeElement(allocator, elem);
 
-    // 3. Render the response JSON, re-using the element renderer from
-    //    add_design_element.zig (parsed back into a value so the response
-    //    is built via serialization, never string-concat).
+    // 3.
     const elem_json = try pabrikcore.add_design_element.elementToJSON(allocator, elem);
     defer allocator.free(elem_json);
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, elem_json, .{});
@@ -147,9 +134,7 @@ pub fn executeSetElementParentToString(
 const testing = std.testing;
 
 
-/// Open a fresh in-memory sqlite DB with the v6 design schema. Same
-/// shape as the other test files (`setupDbAndItem`) — copied locally
-/// for self-containment.
+/// Open a fresh in-memory sqlite DB with the v6 design schema.
 fn setupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -299,7 +284,6 @@ test "executeSetElementParentToString moves element into existing group" {
     });
     defer alloc.free(json);
     // Tool response shape: `{"element":{...,"parent_id":"elem_..."}}`.
-    // It must NOT contain an `error` key on the happy path.
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json, .{});
     defer parsed.deinit();
     try testing.expect(parsed.value == .object);
@@ -471,8 +455,7 @@ test "executeSetElementParentToString with null moves element to top-level" {
     });
     defer alloc.free(group_id);
 
-    // Create a child with parent_id = group_id via direct SQL
-    // (addElement always sets parent_id = NULL).
+    // Create a child with parent_id = group_id via direct SQL (addElement always sets parent_id = NULL).
     try ctx.db.exec(alloc,
         \\INSERT INTO design_page_elements
         \\   (id, page_id, name, file_path, x, y, width, height, z_index, position,
@@ -503,7 +486,6 @@ test "executeSetElementParentToString with null moves element to top-level" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -539,9 +521,7 @@ pub fn execSetElementParent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecR
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

@@ -1,6 +1,4 @@
-/**  * The mark column of a chat row is 16px wide and holds ONE mark, so the branch glyph stays alone
- * in it and a merge conflict rides the trailing group's status-mark slot, where the tooltip names
- * it. Contract: CONFLICTING marks the row and says so; MERGEABLE leaves the row clean. */
+/** The mark column of a chat row is 16px wide and holds ONE mark, so the branch glyph stays alone in it and a merge conflict rides the trailing group's … */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'

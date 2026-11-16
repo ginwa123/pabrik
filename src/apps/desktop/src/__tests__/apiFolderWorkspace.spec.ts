@@ -1,6 +1,4 @@
-/** The folder API must NAME the workspace it means: under `--saas` the server
- *  lists a workspace's VM, so a request that does not say which one is
- *  refused. The app shows one workspace at a time — the current one. */
+/** The folder API must NAME the workspace it means: under `--saas` the server lists a workspace's VM, so a request that does not say which one is refused. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 

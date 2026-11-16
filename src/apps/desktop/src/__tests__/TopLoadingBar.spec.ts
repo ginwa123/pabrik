@@ -23,8 +23,7 @@ describe('TopLoadingBar', () => {
     wrapper = mount(TopLoadingBar, {
       global: { plugins: [createPinia()] },
     })
-    // The component's own pinia instance is separate from the test's;
-    // drive visibility through the mounted instance's store instead.
+    // The component's own pinia instance is separate from the test's; drive visibility through the mounted instance's store instead.
     return wrapper
   }
 

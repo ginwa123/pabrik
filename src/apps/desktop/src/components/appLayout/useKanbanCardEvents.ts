@@ -21,8 +21,7 @@ export function useKanbanCardEvents(deps: KanbanCardDeps) {
   const activeWorkspaceItem = deps.activeWorkspaceItem
   const activeWorkspace = deps.activeWorkspace
 
-// "Rename column" emitted from the inline rename input inside <KanbanColumn>. The column lets the
-// user type a new name directly (no modal) and emits this on blur / Enter. Direct store call.
+// "Rename column" emitted from the inline rename input inside <KanbanColumn>.
 const handleKanbanRenameColumn = (payload: { columnId: string; name: string }) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
@@ -32,9 +31,7 @@ const handleKanbanRenameColumn = (payload: { columnId: string; name: string }) =
   })
 }
 
-// "Delete column" emitted from the column's quick-delete path (the ⋮ menu's "Delete" goes through
-// the editor flow above, but the column may also expose a faster path in a future iteration).
-// Direct store call.
+// "Delete column" emitted from the column's quick-delete path (the ⋮ menu's "Delete" goes through the editor flow above, but the column may also expose a faster …
 const handleKanbanDeleteColumn = (columnId: string) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
@@ -56,15 +53,11 @@ const handleKanbanReorderColumn = (payload: { columnId: string; targetColumnId: 
 }
 
 // Task-level events (select-task, delete-task, rename-task, pin-task) re-emitted by <KanbanColumn>.
-// These all live in Sidebar (because they need access to chatsListRef and the modal state for
-// rename), so we forward them via the exposed methods.
 const handleKanbanSelectTask = (taskId: string) => {
   sidebarRef.value?.selectTask(taskId)
 }
 
-// Right-click "Open in new tab" on a kanban card. Builds the task
-// chat URL from the card's explicit ids and opens a real browser
-// tab — no store mutation, the board stays put.
+// Right-click "Open in new tab" on a kanban card.
 const handleKanbanOpenTaskInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -83,9 +76,7 @@ const handleKanbanOpenTaskInBackground = (payload: {
   )
 }
 
-// Right-click "Open details in new tab" on a kanban card. Builds the BOARD url (no /chat/ suffix) +
-// ?detail=<taskId> so the new tab loads the kanban with the inline detail panel pre-opened.
-// Preserves sorts/pageId breadcrumb via currentQuery.
+// Right-click "Open details in new tab" on a kanban card.
 const handleKanbanOpenTaskDetailInBackground = (payload: {
   workspaceId: string
   itemId: string
@@ -114,8 +105,7 @@ const handleKanbanOpenTaskDetailInBackground = (payload: {
     parseItemIdWithChat((route.query.itemId as string) ?? '').itemId ||
     activeWorkspaceItem?.value?.id ||
     ''
-  // Strip any existing /chat/ suffix — the detail tab is the
-  // board, not the chat.
+  // Strip any existing /chat/ suffix — the detail tab is the board, not the chat.
   const bare = bareItemId.split('/chat/')[0] ?? bareItemId
   const sub: Record<string, string> = { detail: payload.taskId }
   const sorts = route.query.sorts

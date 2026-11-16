@@ -138,13 +138,11 @@ pub const Logger = struct {
         const dir_path = std.fs.path.dirname(path) orelse ".";
         try std.Io.Dir.cwd().createDirPath(self.io, dir_path);
 
-        // Open or create the log file. `.truncate = false` preserves any
-        // existing content; the new file's position is 0 (kernel default).
+        // Open or create the log file.
         const file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .truncate = false });
         errdefer file.close(self.io);
 
-        // Record the current end-of-file offset; this is where the next write
-        // will land (via writePositionalAll in writeEntry).
+        // Record the current end-of-file offset; this is where the next write will land (via writePositionalAll in writeEntry).
         const file_size: u64 = stat: {
             const s = std.Io.Dir.cwd().statFile(self.io, path, .{}) catch break :stat 0;
             break :stat s.size;
@@ -311,8 +309,7 @@ pub const Logger = struct {
 
             // Write to file
             if (self.log_file) |log_file| {
-                // Use writePositionalAll (pwrite) at the tracked end-of-file
-                // offset.
+                // Use writePositionalAll (pwrite) at the tracked end-of-file offset.
                 try std.Io.File.writePositionalAll(log_file, self.io, output, self.current_file_size);
                 self.current_file_size += output.len;
             }

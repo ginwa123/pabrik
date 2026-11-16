@@ -1,6 +1,4 @@
-//! The preview tunnel: the one RPC the server asks the daemon for, and the
-//! guest op behind it. The ports a workspace may be reached on are the daemon's
-//! to decide, never a caller's to name.
+//! The preview tunnel: the one RPC the server asks the daemon for, and the guest op behind it.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -36,9 +34,7 @@ pub const Reply = struct {
     }
 };
 
-/// True for a frame this module owns: `type` has to be the FIRST field and its
-/// value exactly this module's, so a frame that merely mentions the type in a
-/// path, an argv or a body is still the other decoder's.
+/// True for a frame this module owns: `type` has to be the FIRST field and its value exactly this module's, so a frame that merely mentions the type in a path, an …
 pub fn isProxyFrame(body: []const u8) bool {
     var rest = std.mem.trimStart(u8, body, " \t\r\n");
     if (rest.len == 0 or rest[0] != '{') return false;
@@ -87,8 +83,7 @@ fn loadDeclaredPorts(allocator: std.mem.Allocator, dir: []const u8) ![]u16 {
 
 // ─── the codec ──────────────────────────────────────────────────────────
 
-/// A request the caller frames. `workspace_id` is validated before it is
-/// spliced into JSON, so no escaping is needed here.
+/// A request the caller frames.
 pub fn encodeRequest(allocator: std.mem.Allocator, id: i64, workspace_id: []const u8, port: u16, data: []const u8) ![]u8 {
     const encoded = try allocator.alloc(u8, std.base64.standard.Encoder.calcSize(data.len));
     defer allocator.free(encoded);
@@ -155,8 +150,7 @@ pub fn decodeRequest(allocator: std.mem.Allocator, body: []const u8) !Decoded {
         else => return error.BadRequest,
     };
     const workspace_id = jsonString(object, "workspace_id") orelse return error.BadRequest;
-    // The id is a path component and a directory name downstream, so this is
-    // the same rule every other action gets: no separator, no dot-dot.
+    // The id is a path component and a directory name downstream, so this is the same rule every other action gets: no separator, no dot-dot.
     if (!policy.workspaceIdValid(workspace_id)) return error.BadRequest;
     const port_int = jsonInt(object, "port") orelse return error.BadRequest;
     if (port_int <= 0 or port_int > 65535) return error.BadRequest;
@@ -165,8 +159,7 @@ pub fn decodeRequest(allocator: std.mem.Allocator, body: []const u8) !Decoded {
     if (data > max_request_bytes) return error.BadRequest;
     const buffer = try aa.alloc(u8, data);
     std.base64.standard.Decoder.decode(buffer, data_b64) catch return error.BadRequest;
-    // The arena moves into the result, so the value's slices outlive the
-    // frame that carried them: the caller owns them until `deinit`.
+    // The arena moves into the result, so the value's slices outlive the frame that carried them: the caller owns them until `deinit`.
     return .{
         .arena = arena,
         .value = .{
@@ -260,8 +253,7 @@ fn guestExchange(
 
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
-    // The guest's own frame ceiling, not the daemon's: nothing it sends can be
-    // larger, so a bigger stack buffer would only invite a scaled-up forgery.
+    // The guest's own frame ceiling, not the daemon's: nothing it sends can be larger, so a bigger stack buffer would only invite a scaled-up forgery.
     var payload: [vm_client.max_frame]u8 = undefined;
     var truncated = false;
     while (true) {

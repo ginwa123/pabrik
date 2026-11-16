@@ -1,5 +1,4 @@
-// Functional contract: session metadata must NOT require the messages
-// endpoint.
+// Functional contract: session metadata must NOT require the messages endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -112,9 +111,7 @@ test "session_detail_works_with_zero_messages" {
 // Reproduce the screenshot: limit=1 returns ~200 kB, detail stays ~1 kB.
 test "old_limit1_path_carries_message_weight_detail_does_not" {
     try harness.requirePabrikBin(io, gpa);
-    // The ballast POST below names `selected_profile_model: "stub"`: boot the
-    // stub profile so the turn is accepted and the user row is stored (the
-    // dispatch itself fails against the dead endpoint, which is fine — only
+    // The ballast POST below names `selected_profile_model: "stub"`: boot the stub profile so the turn is accepted and the user row is stored (the dispatch itself …
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -122,8 +119,7 @@ test "old_limit1_path_carries_message_weight_detail_does_not" {
 
     try putSession(&h, "{\"name\":\"heavy-oldest-message\"}");
 
-    // Seed the ballast through the product's own write path: a 200 kB user
-    // message becomes the session's oldest row (see file header).
+    // Seed the ballast through the product's own write path: a 200 kB user message becomes the session's oldest row (see file header).
     {
         const ballast = try gpa.alloc(u8, 200_000);
         defer gpa.free(ballast);
@@ -142,8 +138,7 @@ test "old_limit1_path_carries_message_weight_detail_does_not" {
         defer r.deinit();
     }
 
-    // Wait for the user row to land; fail loudly if it never does so a
-    // vacuous pass is impossible.
+    // Wait for the user row to land; fail loudly if it never does so a vacuous pass is impossible.
     {
         const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + 15_000;
         while (true) {

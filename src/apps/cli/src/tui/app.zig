@@ -6,8 +6,7 @@ const custom_http_client = @import("kabelweb").client;
 const transport = @import("transport.zig");
 const render_msg = @import("render_msg.zig");
 
-/// Case-insensitive ASCII equality. Avoids a std lib function that may
-/// or may not be available depending on Zig patch version.
+/// Case-insensitive ASCII equality.
 fn asciiEqIgnoreCase(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     for (a, b) |x, y| {
@@ -39,15 +38,11 @@ pub const App = struct {
 
     session_id: ?[]u8 = null,
     is_streaming: bool = false,
-    /// IDs of messages already rendered from a prior poll. Used to dedupe
-    /// re-polls — the server returns the LAST N messages on every poll, so we
-    /// must NOT re-render rows we've already shown.
+    /// IDs of messages already rendered from a prior poll.
     seen_ids: std.StringHashMapUnmanaged(void) = .empty,
     /// Milliseconds accumulated since the last poll.
     since_poll_ms: u64 = 0,
-    /// Last rendered viewport height (in rows). Recorded at the end
-    /// of `App.view` so the scroll bindings (PgUp/PgDn) can step by
-    /// `(height - 2)` — the "one screen minus context" convention.
+    /// Last rendered viewport height (in rows).
     last_height: u16 = 0,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, cfg: Config) !App {
@@ -76,8 +71,6 @@ pub const App = struct {
         self.input.deinit();
         if (self.session_id) |sid| self.allocator.free(sid);
         // Free each duped key before the hashmap's buckets are freed.
-        // Hashmap's `deinit` does NOT free keys (see std/hash_map.zig
-        // "Key memory is managed by the caller").
         var it = self.seen_ids.iterator();
         while (it.next()) |entry| {
             self.allocator.free(@constCast(entry.key_ptr.*));
@@ -86,9 +79,7 @@ pub const App = struct {
         self.http_client.deinit();
     }
 
-    /// Free a Cmd payload previously returned by `update`. The executor must
-    /// call this after consuming the command (mirrors Bubble Tea's ownership:
-    /// the model allocates, the runtime frees).
+    /// Free a Cmd payload previously returned by `update`.
     pub fn freeCmd(self: *App, cmd: tui.Cmd) void {
         switch (cmd) {
             .send_msg => |payload| self.allocator.free(payload),
@@ -111,9 +102,7 @@ pub const App = struct {
     }
 
     fn handleKey(self: *App, k: tui.Key) !tui.Cmd {
-        // Scroll keys are intercepted BEFORE the input widget sees them,
-        // otherwise arrow / page keys would route to input-history nav
-        // (Up/Down) or be dropped (PageUp/PageDown/wheel).
+        // Scroll keys are intercepted BEFORE the input widget sees them, otherwise arrow / page keys would route to input-history nav (Up/Down) or be dropped …
         switch (k) {
             .ctrl_c, .ctrl_d => return .none, // Program handles quit itself
             .page_up => {
@@ -163,8 +152,7 @@ pub const App = struct {
         return .none;
     }
 
-    /// Called by the command executor after POST /api/llm/session
-    /// succeeds; records/creates the session id.
+    /// Called by the command executor after POST /api/llm/session succeeds; records/creates the session id.
     pub fn onSendOk(self: *App, session_id: []const u8) !void {
         if (self.session_id == null) {
             self.session_id = try self.allocator.dupe(u8, session_id);
@@ -173,16 +161,13 @@ pub const App = struct {
         }
     }
 
-    /// Called by the command executor after GET .../messages succeeds. `body`
-    /// is the raw JSON response; we render each new message via
-    /// `renderMessage` and append the styled `[]Line`s to the viewport.
+    /// Called by the command executor after GET .../messages succeeds.
     pub fn onMessages(self: *App, body: []const u8) !void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         const tmp_allocator = arena.allocator();
         const parsed = std.json.parseFromSlice(std.json.Value, tmp_allocator, body, .{}) catch {
-            // Malformed body — keep streaming and let the next poll try
-            // again. Never let a bad JSON snapshot wedge the spinner.
+            // Malformed body — keep streaming and let the next poll try again.
             return;
         };
         defer parsed.deinit();
@@ -192,9 +177,7 @@ pub const App = struct {
         const arr = root.array;
         const last_idx: usize = arr.items.len -| 1;
 
-        // Whether an assistant row first seen in THIS poll finished. Set
-        // while rendering below, applied after the loop so the decision can
-        // never cut the render of the rows that arrived together with it.
+        // Whether an assistant row first seen in THIS poll finished.
         var turn_finished = false;
 
         // Render every message we haven't seen yet.
@@ -203,9 +186,7 @@ pub const App = struct {
             const obj = item.object;
 
             const id = if (obj.get("id")) |c| (if (c == .string) c.string else "") else "";
-            // Backend always returns an id for stored rows; for legacy /
-            // synthetic messages without id we still render (no dedupe) so we
-            // don't drop them silently.
+            // Backend always returns an id for stored rows; for legacy /synthetic messages without id we still render (no dedupe) so we don't drop them silently.
             if (id.len > 0) {
                 const gop = try self.seen_ids.getOrPut(self.allocator, id);
                 if (gop.found_existing) continue;
@@ -219,9 +200,7 @@ pub const App = struct {
             const tool_name = if (obj.get("tool_name")) |c| (if (c == .string) c.string else "") else "";
             const reasoning_content = if (obj.get("reasoning_content")) |c| (if (c == .string) c.string else "") else "";
 
-            // Only rows new in this poll can end the turn (see above): the
-            // agent emits tool calls, so the last DB row of a finished turn
-            // is usually the tool result, not the assistant's final reply.
+            // Only rows new in this poll can end the turn (see above): the agent emits tool calls, so the last DB row of a finished turn is usually the tool result, not the …
             if (asciiEqIgnoreCase(role, "assistant")) {
                 if (obj.get("finish_reason")) |fr_val| {
                     if (fr_val == .string and std.mem.eql(u8, fr_val.string, "stop")) turn_finished = true;
@@ -230,8 +209,7 @@ pub const App = struct {
                 }
             }
 
-            // Skip messages with no renderable content AND no role (defensive
-            // — a row like {"id":"x"} shouldn't render as a blank line).
+            // Skip messages with no renderable content AND no role (defensive — a row like {"id":"x"} shouldn't render as a blank line).
             if (role.len == 0 and content.len == 0) continue;
 
             const msg_view = render_msg.MessageView{
@@ -284,17 +262,13 @@ pub const App = struct {
         const st_off = @as(usize, height - 1) * width;
         @memcpy(out.cells[st_off..][0..st_frame.cells.len], st_frame.cells);
 
-        // Record the height so scroll bindings can step by
-        // (height - 2). Without this, last_height stays 0 and
-        // PgUp/PgDn no-op.
+        // Record the height so scroll bindings can step by (height - 2).
         self.last_height = height;
         return out;
     }
 };
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -369,8 +343,7 @@ test "App: onMessages ignores already-seen messages" {
 }
 
 test "App: onMessages flips is_streaming=false when assistant finish_reason=stop appears mid-array" {
-    // Round-3 regression: agent emits tool calls, so the LAST DB row is a
-    // tool result, not the assistant's final response.
+    // Round-3 regression: agent emits tool calls, so the LAST DB row is a tool result, not the assistant's final response.
     var app = try testApp();
     defer app.deinit();
     app.is_streaming = true;
@@ -388,8 +361,6 @@ test "App: onMessages flips is_streaming=false when assistant finish_reason=stop
 
 test "App: a previous turn's finish_reason=stop does not end the next turn" {
     // User-reported (2026-09-13): "next prompt response not showup in tui".
-    // The poll returns the session's last 100 messages, so it contains the
-    // PREVIOUS turn's completed reply.
     var app = try testApp();
     defer app.deinit();
 
@@ -403,8 +374,7 @@ test "App: a previous turn's finish_reason=stop does not end the next turn" {
     );
     try testing.expect(!app.is_streaming);
 
-    // Turn 2: the same array plus the newly queued user row. Nothing in here
-    // is new except the user row, so the turn must keep going.
+    // Turn 2: the same array plus the newly queued user row.
     app.is_streaming = true;
     try app.onMessages(
         \\{"messages":[
@@ -428,8 +398,7 @@ test "App: a previous turn's finish_reason=stop does not end the next turn" {
 }
 
 test "App: turn 2 renders when the first poll of the turn predates the user row" {
-    // The queued user row is inserted by the backend worker, so the first
-    // poll after Enter can return the previous snapshot unchanged.
+    // The queued user row is inserted by the backend worker, so the first poll after Enter can return the previous snapshot unchanged.
     var app = try testApp();
     defer app.deinit();
     const turn1 =
@@ -455,8 +424,7 @@ test "App: turn 2 renders when the first poll of the turn predates the user row"
 }
 
 test "App: legacy rows without finish_reason only end the turn when they are new" {
-    // Same shape, but no `finish_reason` field at all: the fallback
-    // ("the last row is an assistant row") must also be scoped to new rows.
+    // Same shape, but no `finish_reason` field at all: the fallback ("the last row is an assistant row") must also be scoped to new rows.
     var app = try testApp();
     defer app.deinit();
     const legacy_turn1 =
@@ -485,8 +453,7 @@ test "App: status bar shows the session id once, and only in the right slot" {
 
     try app.onSendOk("session-1789312894544");
     try testing.expectEqualStrings("pabrik-tui", app.status.left[0..app.status.left_len]);
-    // Was stuck at "new session"; the left slot used to render
-    // "session session-1789..." because the id already contains "session-".
+    // Was stuck at "new session"; the left slot used to render "session session-1789..." because the id already contains "session-".
     try testing.expectEqualStrings("session-1789312894544", app.status.right[0..app.status.right_len]);
 }
 
@@ -582,8 +549,7 @@ test "App: onMessages renders user prompt as > bold green" {
     try testing.expectEqual(@as(?tui.Color, .green), last.style.fg);
 }
 
-// User-reported regression test — the body shape from the screenshot in the
-// design spec.
+// User-reported regression test — the body shape from the screenshot in the design spec.
 test "App: handleKey + Enter does NOT immediately echo user message" {
     var app = try testApp();
     defer app.deinit();
@@ -592,9 +558,7 @@ test "App: handleKey + Enter does NOT immediately echo user message" {
     _ = try app.update(.{ .key = .{ .rune = 'i' } });
     const cmd = try app.update(.{ .key = .enter });
     app.freeCmd(cmd);
-    // Welcome line only — the user message will arrive via SSE/poll,
-    // not via an immediate local echo. Otherwise we'd render `> hai`
-    // twice (once here, once when the server's row is polled).
+    // Welcome line only — the user message will arrive via SSE/poll, not via an immediate local echo.
     try testing.expectEqual(@as(usize, 1), app.viewport.lines.items.len);
 }
 
@@ -717,12 +681,8 @@ test "App: init dupes cwd from Config" {
 }
 
 // ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) =====
-// Section 3 of tdd_round2_test.zig: the `app.onMessages` regression tests
-// (role-detection robustness).
 
-// ============================================================================
 // 3. app.onMessages — role heuristic robustness
-// ============================================================================
 
 fn testAppForOnMessages() !App {
     return App.init(testing.allocator, undefined, .{ .server = "http://test" });

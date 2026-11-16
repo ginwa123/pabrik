@@ -5,9 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import UpdatePlan from '../UpdatePlan.vue'
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
 
-// ────────────────────────────────────────────────────────────────────────
 // Helpers
-// ────────────────────────────────────────────────────────────────────────
 const makeEnvelope = (data: unknown, success = true, error: string | null = null): string =>
   JSON.stringify({
     tool: 'update_plan',
@@ -26,9 +24,7 @@ const makeEnvelope = (data: unknown, success = true, error: string | null = null
 const makeSuccessContent = (opts: {
   sessionId?: string
   updatedAt?: string
-  /**    * The markdown body — carried in the `plan` key. Default: undefined (no plan key), so tests that
-   * don't care about the body just see session_id + updated_at metadata. Pass a value to render the
-   * checklist section. */
+  /** The markdown body — carried in the `plan` key. */
   body?: string
 } = {}) => {
   const sessionId = opts.sessionId ?? 's_1787073929852_8'
@@ -45,9 +41,7 @@ const makeErrorContent = (msg = 'session_id mismatch') => makeEnvelope(null, fal
 
 const makeEmptyContent = () => makeEnvelope({})
 
-/**  * Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes
- * through. Mirrors the backend's `wrapToolOutput`. Accepts a data object (or a full envelope
- * string, passed through unchanged). */
+/** Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes through. */
 const wrapInToolEnvelope = (inner: string): string => {
   if (inner.trim().startsWith('{')) {
     try {
@@ -287,9 +281,7 @@ describe('UpdatePlan.vue — inner envelope extraction', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────── Description rendering
-// (content from the <plan><![CDATA[...]]></plan> block in the response envelope — mirrors
-// get_plan's wire shape).
+// ──────────────────────────────────────────────────────────────────────── Description rendering (content from the <plan><![CDATA[...]]></plan> block in the …
 describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
   it('renders the plan body as a checklist inside the expanded body', async () => {
     const body = '- [x] step 1 done\n- [ ] step 2 todo\n- [ ] step 3 todo'
@@ -315,9 +307,7 @@ describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
       attachTo: document.body,
     })
 
-    // JSON `plan` carries the body verbatim (no CDATA wrapper newline),
-    // so line 0 is "- [x] step 1" (checked -> ☑) and line 1 is
-    // "- [ ] step 2" (unchecked -> ☐).
+    // JSON `plan` carries the body verbatim (no CDATA wrapper newline), so line 0 is "- [x] step 1" (checked -> ☑) and line 1 is "- [ ] step 2" (unchecked -> ☐).
     const checkedLine = wrapper.find('[data-testid="update-plan-line-0"]')
     const uncheckedLine = wrapper.find('[data-testid="update-plan-line-1"]')
     expect(checkedLine.exists()).toBe(true)
@@ -418,9 +408,7 @@ describe('UpdatePlan.vue — plan body from <plan> CDATA', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────── Regression: real
-// ChatView dispatcher path ────────────────────────────────────────────────────────────────────────
-// Pins the wire contract that the BACKEND `executeUpdatePlan` enforces: the response envelope.
+// ──────────────────────────────────────────────────────────────────────── Regression: real ChatView dispatcher path …
 const wrapAsFullToolEnvelope = (
   inner: string,
   parametersJson: string,
@@ -458,16 +446,13 @@ describe('UpdatePlan.vue — full <tool> envelope from the dispatcher', () => {
       makeSuccessContent({ body }),
       JSON.stringify({ content: body }),
     )
-    // Sanity-check the unwrap path (ChatView uses it for OTHER
-    // components; here we only care that the envelope parses).
+    // Sanity-check the unwrap path (ChatView uses it for OTHER components; here we only care that the envelope parses).
     const unwrapped = tryUnwrapToolOutput(fullEnvelope)
     expect(unwrapped).not.toBeNull()
 
     const wrapper = mount(UpdatePlan, {
       props: {
-        // ChatView passes the raw <tool> envelope as message.content
-        // — the component extracts the plan body from <plan><![CDATA[...]]></plan>
-        // inside the inner <update_plan>, NOT from <parameters>.
+        // ChatView passes the raw <tool> envelope as message.content — the component extracts the plan body from <plan><![CDATA[...]]></plan> inside the inner …
         message: { content: fullEnvelope },
       },
       attachTo: document.body,
@@ -482,8 +467,7 @@ describe('UpdatePlan.vue — full <tool> envelope from the dispatcher', () => {
   })
 
   it('does NOT silently fall back to <parameters> if the <plan> block is missing', async () => {
-    // Construct an envelope where <parameters> carries the agent's input but the response
-    // envelope's <data> has NO <plan> block (legacy backend, or a backend bug).
+    // Construct an envelope where <parameters> carries the agent's input but the response envelope's <data> has NO <plan> block (legacy backend, or a backend bug).
     const body = '- [x] step 1'
     const fullEnvelope = wrapAsFullToolEnvelope(
       makeSuccessContent(), // no body → no <plan> block

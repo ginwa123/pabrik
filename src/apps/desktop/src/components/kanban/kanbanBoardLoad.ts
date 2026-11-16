@@ -1,5 +1,4 @@
-/** The board's load path: URL sorts + per-column pagination plan + the parallel per-column fetch.
- * Extracted from KanbanView.vue so the component keeps only the guard around it. */
+/** The board's load path: URL sorts + per-column pagination plan + the parallel per-column fetch. */
 import { nextTick } from 'vue'
 import type { Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
@@ -36,22 +35,17 @@ export const loadBoardData = async ({
     (e) => !(e.sortBy === 'position' && e.direction === 'asc'),
   )
 
-  // Step 1b: mirror the URL's `?layout=` into the local ref so a deep link wins over the stored
-  // preference. The ref is initialised from the URL at setup time, but this re-runs on item
-  // navigation, where the query carries over to a different board.
+  // Step 1b: mirror the URL's `?layout=` into the local ref so a deep link wins over the stored preference.
   if (urlLayout && urlLayout !== layout.value) layout.value = urlLayout
 
-  // Step 2: mirror URL sorts into columnSorts (drives the watcher's URL write — no-op since the URL
-  // already matches, no fetch). Also fires the column's local setSortMode on the next tick so the
-  // UI's "active sort" highlight matches.
+  // Step 2: mirror URL sorts into columnSorts (drives the watcher's URL write — no-op since the URL already matches, no fetch).
   if (urlEntries.length > 0) {
     const next: Record<string, SortEntry> = {}
     for (const entry of urlEntries) {
       next[entry.columnId] = entry
     }
     columnSorts.value = next
-    // The old columnSorts watcher mirrored this assignment back to the
-    // URL; call it explicitly (no-op — the URL already matches).
+    // The old columnSorts watcher mirrored this assignment back to the URL; call it explicitly (no-op — the URL already matches).
     writeSortsToUrl()
     void nextTick(() => {
       for (const entry of urlEntries) {
@@ -64,9 +58,7 @@ export const loadBoardData = async ({
     })
   }
 
-  // Step 3: load columns (always — even if the URL has only
-  // default entries, we still need the column list to render
-  // the board).
+  // Step 3: load columns (always — even if the URL has only default entries, we still need the column list to render the board).
   await store.fetchKanbanColumns(wsId, itemId)
 
   // Step 4: figure out the fetch plan.
@@ -83,14 +75,11 @@ export const loadBoardData = async ({
     direction?: 'asc' | 'desc'
   }>
 
-  // Build a set of columns mentioned in the URL (default or non-default). Used by the "fetch other
-  // columns with default sort" path to skip columns that already have an explicit URL entry (their
-  // fetch carries the URL sort instead).
+  // Build a set of columns mentioned in the URL (default or non-default).
   const urlEntryColumnIds = new Set(urlEntries.map((e) => e.columnId))
 
   if (nonDefaultUrlEntries.length > 0) {
-    // URL has non-default sort entries (e.g. ?sorts=col_a:name:asc). 1. Fetch the URL-mentioned
-    // columns with their URL sort. 2.
+    // URL has non-default sort entries (e.g. ?sorts=col_a:name:asc). 1.
     const urlSortFetches = nonDefaultUrlEntries.map((e) => {
       const apiSortBy =
         e.sortBy === 'position' ? undefined : (e.sortBy as 'created_at' | 'updated_at' | 'name')
@@ -101,13 +90,10 @@ export const loadBoardData = async ({
       .map((col) => ({ columnId: col.id }))
     fetchPlan = [...urlSortFetches, ...defaultFetches]
   } else if (needFetch.length === 0) {
-    // No non-default URL entries AND no unpaginated columns → nothing to do. Single endpoint
-    // (fetchKanbanColumns) is already fired above; no per-column fetch needed.
+    // No non-default URL entries AND no unpaginated columns → nothing to do.
     return
   } else {
-    // No non-default URL entries AND unpaginated columns exist → fetch all unpaginated columns with
-    // default sort. This is the "first-time visit" path (no URL sort history) AND the "URL has only
-    // default entries" path (those columns re-fetch with default sort on mount).
+    // No non-default URL entries AND unpaginated columns exist → fetch all unpaginated columns with default sort.
     fetchPlan = needFetch.map((col) => ({ columnId: col.id }))
   }
 

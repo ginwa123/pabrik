@@ -24,7 +24,6 @@ export function useChatReviewComments({ centerFiles, initial, persist }: ChatRev
   }
 
   // Legacy compat: the old mini-chat emitted raw markdown for the LLM.
-  // Now it only persists — never calls api.sendChatMessage.
   function onChatSidebarSubmitReview(message: string) {
     appendSavedReviewComment({ filePath: '', message, formatted: message, savedAt: Date.now() })
   }

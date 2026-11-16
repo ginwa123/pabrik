@@ -1,6 +1,4 @@
-//! LLM tool: `preview_design_page` — render a design page as an SVG preview
-//! so the agent can SEE it. Takes `page_id` (required) and an optional
-//! `scale` (default 1.0, max 4.0).
+//! LLM tool: `preview_design_page` — render a design page as an SVG preview so the agent can SEE it.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -13,13 +11,10 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Hex alphabet for the random suffix of the preview id (kept local —
-/// tool files are self-contained per project convention).
+/// Hex alphabet for the random suffix of the preview id (kept local — tool files are self-contained per project convention).
 const HEX_DIGITS = "0123456789abcdef";
 
-/// Maximum scale the agent can request. Caps the SVG's pixel dimensions
-/// so a malicious or well-meaning LLM can't request a 1000x page scaled to
-/// 100,000 px and OOM the side panel renderer.
+/// Maximum scale the agent can request.
 pub const MAX_SCALE: f64 = 4.0;
 
 /// Input structure for `preview_design_page` tool.
@@ -27,7 +22,6 @@ pub const PreviewDesignPageInput = struct {
     /// The design page to render. Required.
     page_id: []const u8 = "",
     /// Scale factor applied to the SVG viewBox AND every element coordinate.
-    /// Default 1.0 (1:1 with the design viewport). Max 4.0.
     scale: f64 = 1.0,
 };
 
@@ -100,8 +94,6 @@ fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
 }
 
 /// Generate a unique preview id of the form `pv_<unix_ms>_<6 hex>`.
-/// Self-contained copy of the id scheme the deleted `show_preview` tool
-/// used, so this tool no longer depends on it. Caller owns the slice.
 fn generatePreviewId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     const ts = std.Io.Clock.now(.real, io);
     const unix_ms = ts.toMilliseconds();
@@ -116,8 +108,6 @@ fn generatePreviewId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
 }
 
 /// Build the success JSON object `{"status":"shown",...}`.
-/// Self-contained copy of the envelope the deleted `show_preview` tool
-/// used (keys mirror the old `<show_preview>` tags 1:1). Caller owns the slice.
 fn successJSON(
     allocator: std.mem.Allocator,
     preview_id: []const u8,
@@ -138,8 +128,7 @@ fn successJSON(
 
 // ─── Build SVG ───────────────────────────────────────────────────────────
 
-/// Render the page's elements as a self-contained SVG document. `scale` is
-/// applied to the viewBox AND every coordinate.
+/// Render the page's elements as a self-contained SVG document.
 fn buildSvg(
     allocator: std.mem.Allocator,
     page: design_model.DesignPage,
@@ -174,7 +163,6 @@ fn buildSvg(
     try svg.appendSlice(allocator, "\" fill=\"#ffffff\" />");
 
     // Find top-level elements (parent_id empty) and render in z_index/position order.
-    // Each top-level may recursively render its children inside its <g>.
     for (elements) |e| {
         if (e.parent_id.len > 0) continue; // belongs to a parent — skip at top level
         try renderElement(allocator, &svg, e, elements, scale, 0);
@@ -192,8 +180,7 @@ fn renderElement(
     scale: f64,
     depth: usize,
 ) !void {
-    // Guard against pathological nesting (shouldn't happen — cycle preflight
-    //     rejects cycles — but defensive).
+    // Guard against pathological nesting (shouldn't happen — cycle preflight rejects cycles — but defensive).
     if (depth > 32) return;
 
     // Convert design coords to scaled SVG coords
@@ -304,8 +291,7 @@ fn renderElement(
         if (e.opacity != 1.0) try appendOpacity(svg, allocator, e.opacity);
         try svg.appendSlice(allocator, " />");
     } else {
-        // Unknown type — render as a labeled outlined rectangle so the agent
-        // sees SOMETHING instead of nothing. Avoids silent drops.
+        // Unknown type — render as a labeled outlined rectangle so the agent sees SOMETHING instead of nothing.
         try svg.appendSlice(allocator, "<rect");
         try appendBoundsAttrs(svg, allocator, x, y, w, h);
         try svg.appendSlice(allocator, " fill=\"#eeeeee\" stroke=\"#999999\"");
@@ -382,8 +368,7 @@ fn appendRotation(
     rotation: f64,
     scale: f64,
 ) !void {
-    // SVG rotation: rotate(angle, cx, cy), where (cx, cy) is the bbox
-    // center in the parent coord space.
+    // SVG rotation: rotate(angle, cx, cy), where (cx, cy) is the bbox center in the parent coord space.
     const center_x = @as(i64, @intFromFloat(@as(f64, @floatFromInt(cx)) * scale));
     const center_y = @as(i64, @intFromFloat(@as(f64, @floatFromInt(cy)) * scale)) +
         @divTrunc(@as(i64, @intFromFloat(@as(f64, @floatFromInt(h)) * scale)), 2);
@@ -408,8 +393,7 @@ pub fn executePreviewDesignPageToString(
     input: PreviewDesignPageInput,
     out_preview_id: *[]u8,
 ) ![]u8 {
-    // Generate the preview id first (always allocated, even on error,
-    // so the caller can correlate).
+    // Generate the preview id first (always allocated, even on error, so the caller can correlate).
     const preview_id = try generatePreviewId(allocator, io);
     out_preview_id.* = preview_id;
 
@@ -445,14 +429,11 @@ pub fn executePreviewDesignPageToString(
     const svg_content = try buildSvg(allocator, bundle.page, bundle.elements, input.scale);
     defer allocator.free(svg_content);
 
-    // Sanitize the SVG HTML content (defensive — invalid UTF-8 would break
-    // the iframe's parser). The preview's content_type is "html" so the
-    // sandboxed iframe renders it directly.
+    // Sanitize the SVG HTML content (defensive — invalid UTF-8 would break the iframe's parser).
     const sanitized = try @import("helpers").sanitize.sanitizeUtf8(allocator, svg_content);
     defer allocator.free(sanitized);
 
-    // Return the preview metadata as JSON (keys mirror the old
-    // `<show_preview>` tags 1:1).
+    // Return the preview metadata as JSON (keys mirror the old `<show_preview>` tags 1:1).
     return try successJSON(
         allocator,
         preview_id,
@@ -461,9 +442,7 @@ pub fn executePreviewDesignPageToString(
     );
 }
 
-// ===== Tests merged from preview_design_page_test.zig (2026-09-29 flatten)
-// ===== NOT REGISTERED: no registrar imports this file, so these tests are
-// not discovered by `zig build test`.
+// ===== Tests merged from preview_design_page_test.zig (2026-09-29 flatten) ===== NOT REGISTERED: no registrar imports this file, so these tests are not …
 
 const testing = std.testing;
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -613,7 +592,6 @@ fn insertElementRaw(
 }
 
 // Exec adapter — merged from `preview_design_page.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -636,8 +614,7 @@ pub fn execPreviewDesignPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     };
     defer parsed.deinit();
 
-    // The preview id is always allocated, even on validation failure, so
-    // the caller can log the failed attempt with the correlation id.
+    // The preview id is always allocated, even on validation failure, so the caller can log the failed attempt with the correlation id.
     var preview_id: []u8 = undefined;
 
     const inner = executePreviewDesignPageToString(
@@ -655,9 +632,7 @@ pub fn execPreviewDesignPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     defer ctx.allocator.free(inner);
     defer ctx.allocator.free(preview_id);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

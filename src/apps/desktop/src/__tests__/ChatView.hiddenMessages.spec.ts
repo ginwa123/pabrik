@@ -1,5 +1,4 @@
-/** Regression tests for the 2026-08-23 "hidden messages" fix. Background: several classes of
- * legitimately-saved messages were invisible in the chatview: F1. */
+/** Regression tests for the 2026-08-23 "hidden messages" fix. */
 import { describe, it, expect } from 'vitest'
 import { stripThinkingTags } from '../helpers/stripTags'
 import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
@@ -58,8 +57,7 @@ describe('F2 — user group renders ALL messages (source contract)', () => {
 
   it('hasBubbleContent checks every user message, not just [0]', async () => {
     const source = await readPresentationSource()
-    // The user branch of hasBubbleContent must use .some(...) over all
-    // messages (the old code read group.messages[0] directly).
+    // The user branch of hasBubbleContent must use .some(...) over all messages (the old code read group.messages[0] directly).
     const userBranch = source.match(/if \(group\.role === 'user'\) \{[\s\S]*?\n  \}/)
     expect(userBranch).not.toBeNull()
     expect(userBranch![0]).toContain('group.messages.some(')
@@ -68,12 +66,10 @@ describe('F2 — user group renders ALL messages (source contract)', () => {
 })
 
 describe('F3 — NO optimistic user message push (source contract)', () => {
-  // 2026-08-23 auto-collapse fix — the optimistic local push that lived in handleFileInputSubmit
-  // was removed.
+  // 2026-08-23 auto-collapse fix — the optimistic local push that lived in handleFileInputSubmit was removed.
   it('does NOT push a local optimistic user bubble in handleFileInputSubmit', async () => {
     const source = await readChatViewSource()
-    // The optimistic push has been removed; the send-error path now
-    // just surfaces a single assistant error bubble.
+    // The optimistic push has been removed; the send-error path now just surfaces a single assistant error bubble.
     expect(source).not.toMatch(/id: `optimistic-user-\$\{Date\.now\(\)\}`/)
     expect(source).not.toMatch(
       /role: 'user',\s*\n\s*content: userMessage,\s*\n\s*timestamp: new Date\(\),\s*\n\s*image_urls: imageUrls\.length > 0 \? imageUrls : undefined/,
@@ -82,15 +78,13 @@ describe('F3 — NO optimistic user message push (source contract)', () => {
 
   it('does NOT dedupe the SSE echo against a synthetic optimistic id', async () => {
     const source = await readChatViewSource()
-    // The full-handler no longer searches for `optimistic-user-*`
-    // placeholders to splice out; user echoes arrive fresh.
+    // The full-handler no longer searches for `optimistic-user-*` placeholders to splice out; user echoes arrive fresh.
     expect(source).not.toMatch(/m\.id\.startsWith\('optimistic-user-'\)/)
   })
 
   it('handleFileInputSubmit only fires api.sendChatMessage + error fallback', async () => {
     const source = await readChatViewSource()
-    // The send-error branch now appends a single error assistant bubble
-    // instead of rolling back a local placeholder that no longer exists.
+    // The send-error branch now appends a single error assistant bubble instead of rolling back a local placeholder that no longer exists.
     expect(source).toMatch(/await api\.sendChatMessage\(/)
     expect(source).toMatch(
       /Sorry, I encountered an error sending your message\. Please try again\./,
@@ -111,8 +105,7 @@ describe('B4(frontend) — reasoning_content rendering (source contract)', () =>
 
   it('accepts full events with empty content but renderable fields', async () => {
     const source = await readChatViewSource()
-    // The old gate `event.finish_reason && event.content` silently
-    // dropped tool-result / image-only / reasoning-only events.
+    // The old gate `event.finish_reason && event.content` silently dropped tool-result / image-only / reasoning-only events.
     expect(source).toMatch(/hasRenderableFullPayload/)
     expect(source).not.toMatch(/event\.type === 'full' && event\.finish_reason && event\.content\)/)
   })
@@ -123,9 +116,7 @@ describe('B4(frontend) — reasoning_content rendering (source contract)', () =>
     expect(source).toMatch(/Thought/)
   })
 
-  // task_1790090788150_2: the Thought block must read FIRST, above the
-  // assistant's answer — reasoning is the context the reply follows
-  // from, not a footnote under it.
+  // task_1790090788150_2: the Thought block must read FIRST, above the assistant's answer — reasoning is the context the reply follows from, not a footnote under …
   it('renders the Thought block ABOVE the assistant message text', async () => {
     const source = await readChatViewSource()
     const thoughtIdx = source.indexOf('class="assistant-reasoning"')
@@ -137,8 +128,7 @@ describe('B4(frontend) — reasoning_content rendering (source contract)', () =>
 
   it('accumulates reasoning chunks onto the streaming message', async () => {
     const source = await readChatViewSource()
-    // `=\s*` — prettier wraps the assignment after `=`, so the accumulate
-    // statement spans two lines (the old one-line regex went red on main).
+    // `=\s*` — prettier wraps the assignment after `=`, so the accumulate statement spans two lines (the old one-line regex went red on main).
     expect(source).toMatch(
       /existingMsg\.reasoning_content =\s*\(existingMsg\.reasoning_content \|\| ''\) \+ event\.reasoning_content/,
     )
@@ -152,21 +142,17 @@ describe('stripThinkingTags — filter interplay (unit)', () => {
   })
 
   it('returns empty for <think>-wrapped content when a sibling tag exists', () => {
-    // With a <plain> sibling, the think block is stripped and the
-    // plain wrapper unwrapped — leaving the inner text.
+    // With a <plain> sibling, the think block is stripped and the plain wrapper unwrapped — leaving the inner text.
     expect(stripThinkingTags('<think>secret</think><plain>hello</plain>')).toBe('hello')
   })
 
   it('keeps lone <think> content intact (rendered as thinking bubble)', () => {
-    // Lone <think> is returned unchanged by design — renderResponse
-    // detects it via isThinkingTags and renders the collapsed variant.
+    // Lone <think> is returned unchanged by design — renderResponse detects it via isThinkingTags and renders the collapsed variant.
     expect(stripThinkingTags('<think>reasoning only</think>')).toBe('<think>reasoning only</think>')
   })
 })
 
-// -------------------------------------------------------------------------
 // Wrapper-tag rendering — <html> and <mermaid>
-// -------------------------------------------------------------------------
 describe('Rich-block support — ChatView render branch (source contract)', () => {
   it('imports the rich-block helpers from @/helpers', async () => {
     const source = await readChatViewSource()
@@ -176,9 +162,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
 
   it('branches the assistant template on hasRichBlocks before the v-html path', async () => {
     const source = await readChatViewSource()
-    // The template must check hasRichBlocks(msg.content) and render the
-    // iframe/diagram branches INSTEAD of the legacy v-html span for that
-    // message.
+    // The template must check hasRichBlocks(msg.content) and render the iframe/diagram branches INSTEAD of the legacy v-html span for that message.
     expect(source).toMatch(/v-if="msg\.role === 'assistant' && hasRichBlocks\(msg\.content\)"/)
     // The legacy renderResponse call site survives (v-else path).
     const presentation = await readPresentationSource()
@@ -187,9 +171,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
 
   it('renders html blocks in a sandboxed iframe that can submit a form but never reach the app origin', async () => {
     const source = await readChatViewSource()
-    // `allow-forms` is the interactive contract: without it a <form> submit never fires its
-    // event (measured in Chromium). `allow-same-origin` must stay out of the attribute — the
-    // null origin is the security boundary, so inner scripts cannot touch the parent DOM.
+    // `allow-forms` is the interactive contract: without it a <form> submit never fires its event (measured in Chromium).
     expect(source).toMatch(/sandbox="allow-scripts allow-forms"/)
     expect(source).toMatch(/:srcdoc=/)
     expect(source).not.toMatch(/sandbox="[^"]*allow-same-origin/)
@@ -206,8 +188,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
     expect(source).toMatch(
       /v-else-if="seg\.kind === 'mermaid' && seg\.payload"\s*\n\s*:source="seg\.payload"/,
     )
-    // The mermaid source is text handed to the diagram component — it must
-    // not reach the DOM through the markdown `v-html` branch.
+    // The mermaid source is text handed to the diagram component — it must not reach the DOM through the markdown `v-html` branch.
     expect(source).toMatch(/v-if="seg\.kind === 'markdown' && seg\.payload"/)
   })
 
@@ -222,9 +203,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
     expect(source).toMatch(/\.chat-html-frame \{/)
   })
 
-  // 2026-09-13 (task_1789312493325_7 "html render"): PR #309 shipped the iframe with a WHITE
-  // background and no height management, so an LLM that answered in HTML mode (the
-  // response-formatting prompt offers it) put a bright slab with its own scrollbar inside the dark.
+  // 2026-09-13 (task_1789312493325_7 "html render"): PR #309 shipped the iframe with a WHITE background and no height management, so an LLM that answered in HTML …
   it('paints the frame with the app theme instead of a hardcoded white', async () => {
     const source = await readChatViewSource()
     expect(source).toMatch(/\.chat-html-frame \{[\s\S]*?background: var\(--semantic-card-bg/)
@@ -245,9 +224,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
     expect(frame).toMatch(/findSenderFrame\(document, event, 'iframe\.chat-html-frame'\)/)
   })
 
-  // 2026-09-13 follow-up (same task): the model authors this HTML blind — real payload
-  // 1789313976387498377 shipped GitHub's light `background:#f6f8fa` inline on every <pre>, which
-  // beat the shell stylesheet and left theme ink on a light chip (1.57:1 contrast).
+  // 2026-09-13 follow-up (same task): the model authors this HTML blind — real payload 1789313976387498377 shipped GitHub's light `background:#f6f8fa` inline on …
   it('forces the text surfaces so payload-authored light colours cannot win', async () => {
     const source = await readHtmlFrameSource()
     // `!important` is the point: an inline style loses to it.
@@ -260,9 +237,7 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
     expect(source).toMatch(/readCssVar\('--color-aqua'/)
   })
 
-  // 2026-09-20 no-inner-scrollbar: HTML frames grow to their FULL content
-  // height (no 2000px cap) with scrolling="no" + overflow hidden, so the
-  // outer chat scroller owns scrolling and no gray inner scrollbar appears.
+  // 2026-09-20 no-inner-scrollbar: HTML frames grow to their FULL content height (no 2000px cap) with scrolling="no" + overflow hidden, so the outer chat scroller …
   it('grows html frames to full height with no inner scrollbar', async () => {
     const source = await readChatViewSource()
     expect(source).toMatch(/scrolling="no"/)

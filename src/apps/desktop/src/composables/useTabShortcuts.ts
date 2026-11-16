@@ -1,6 +1,4 @@
-/** Keyboard shortcuts for the tab strip. Shortcut namespace: browsers own `Ctrl/Cmd+T`,
- * `Ctrl/Cmd+W`, `Ctrl/Cmd+1..9`, and Chromium also swallows `Ctrl+Tab`, so those can never be the
- * documented map for a page. */
+/** Keyboard shortcuts for the tab strip. */
 export type TabCommand = 'new' | 'close' | 'reopen' | 'next' | 'previous' | `select:${number}`
 
 export interface TabShortcutHandlers {
@@ -65,8 +63,7 @@ export function resolveTabShortcut(event: {
   return null
 }
 
-/** A modal owns the keyboard while it is open — never steal its keys.
- * (`EventTarget` from a window-level dispatch has no `closest`.) */
+/** A modal owns the keyboard while it is open — never steal its keys. */
 export function isTabShortcutBlocked(target: EventTarget | null | undefined): boolean {
   const element = target as (HTMLElement & { closest?: (selector: string) => Element | null }) | null
   if (!element || typeof element.closest !== 'function') return false
@@ -108,9 +105,7 @@ export function applyTabCommand(
   return false
 }
 
-/**
- * Register the listener. Returns the teardown — call it from `onUnmounted`.
- */
+/** Register the listener. */
 export function useTabShortcuts(options: TabShortcutOptions): () => void {
   const target =
     options.target ??

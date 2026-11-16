@@ -1,8 +1,6 @@
 import { ApiError, apiFetch } from './client'
 
-// ─── Agent-Kanbans Mirror (Migration 081) ─────────────────────────────── Mirrors the Agent Mode
-// block above onto kanban boards. The config row (`agent_kanbans`) is OPT-IN — `getAgentKanban`
-// resolves to `null` (silently, no error toast) when the board has no config yet.
+// ─── Agent-Kanbans Mirror (Migration 081) ───────────────────────────────
 export interface AgentKanban {
   id: string
   workspace_item_id: string
@@ -41,9 +39,7 @@ export interface AgentKanbanToolRow {
   created_at: string
 }
 
-/**  * Get the agent-kanbans config + children for a kanban workspace_item. Returns null (silent) on 404
- * "not configured" — an unconfigured board is an expected state, not an error worth surfacing. GET
- * /api/workspaces/:workspaceId/items/:itemId/agent_kanban */
+/** Get the agent-kanbans config + children for a kanban workspace_item. */
 export async function getAgentKanban(
   workspaceId: string,
   itemId: string,
@@ -66,8 +62,7 @@ export async function getAgentKanban(
   }
 }
 
-/** Update the agent-kanbans config's description.
- * PATCH /api/workspaces/:workspaceId/items/:itemId/agent_kanban */
+/** Update the agent-kanbans config's description. */
 export async function updateAgentKanban(
   workspaceId: string,
   itemId: string,
@@ -79,8 +74,7 @@ export async function updateAgentKanban(
   )
 }
 
-/** Add a knowledge entry to a board's config — file path XOR inline text.
- * POST /api/agent-kanbans/:kanbanId/knowledge */
+/** Add a knowledge entry to a board's config — file path XOR inline text. */
 export async function addAgentKanbanKnowledge(
   kanbanId: string,
   filePath: string,
@@ -123,8 +117,7 @@ export async function reorderAgentKanbanKnowledge(
   })
 }
 
-/**  * Add a named system-prompt block to a board's config. `content` required; `title` optional. POST
- * /api/agent-kanbans/:kanbanId/system_prompt */
+/** Add a named system-prompt block to a board's config. */
 export async function addAgentKanbanSystemPrompt(
   kanbanId: string,
   title: string,
@@ -166,14 +159,12 @@ export async function reorderAgentKanbanSystemPrompts(
   })
 }
 
-/**  * Get the enabled tool names for a board's config. Empty array = no tools configured for this
- * board. GET /api/agent-kanbans/:kanbanId/tools */
+/** Get the enabled tool names for a board's config. */
 export async function getAgentKanbanTools(kanbanId: string): Promise<{ tools: string[] }> {
   return await apiFetch<{ tools: string[] }>(`/agent-kanbans/${kanbanId}/tools`)
 }
 
-/**  * Enable a tool for the board. Backend validates against the registry (400 if unknown) and returns
- * 409 on duplicate. POST /api/agent-kanbans/:kanbanId/tools */
+/** Enable a tool for the board. */
 export async function enableAgentKanbanTool(
   kanbanId: string,
   toolName: string,
@@ -184,8 +175,7 @@ export async function enableAgentKanbanTool(
   })
 }
 
-/** Disable a tool for the board (deletes the row).
- * DELETE /api/agent-kanbans/:kanbanId/tools/:toolName */
+/** Disable a tool for the board (deletes the row). */
 export async function disableAgentKanbanTool(
   kanbanId: string,
   toolName: string,

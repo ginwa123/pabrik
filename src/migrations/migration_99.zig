@@ -40,8 +40,7 @@ pub const Migration099RenameListSkillsTool = struct {
     }
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Three allowlist tables, one per item type — agents and routines are
-        // separate tables even though both are read the same way.
+        // Three allowlist tables, one per item type — agents and routines are separate tables even though both are read the same way.
         try renameIn(allocator, db, "agent_tools", "agent_id");
         try renameIn(allocator, db, "agent_kanban_tools", "kanban_id");
         try renameIn(allocator, db, "agent_routine_tools", "routine_id");
@@ -49,8 +48,6 @@ pub const Migration099RenameListSkillsTool = struct {
         if (!try tableExists(allocator, db, "users")) return;
 
         // Quoted JSON token only — `"list_skills"` → `"search_skills"`.
-        // `LIKE '%"list_skills"%'` keeps the WHERE off rows that do not
-        // mention the tool at all.
         try db.exec(allocator,
             \\UPDATE users SET config_json = REPLACE(config_json, '"list_skills"', '"search_skills"')
             \\WHERE config_json LIKE '%"list_skills"%'

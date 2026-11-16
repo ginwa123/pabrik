@@ -1,5 +1,4 @@
-// Functional tests for workspace items full CRUD. Zig port of
-// `tests/functional/workspace_items_test.py` (same test names, same order).
+// Functional tests for workspace items full CRUD.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,13 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers — wire
-// ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
-/// `Response` body it was parsed from, so a helper may not RETURN one.
-/// Helpers below return owned bytes and each test parses locally.
+/// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -91,9 +86,7 @@ fn getItem(h: *Harness, workspace_id: []const u8, item_id: []const u8) ![]u8 {
     return gpa.dupe(u8, r.body);
 }
 
-/// `GET /api/workspaces/<ws>/items` → the whole body, owned. The Python
-/// accepted EITHER `{items: [...]}` or a bare list and raised on anything
-/// else; `itemArray` below preserves that.
+/// `GET /api/workspaces/<ws>/items` → the whole body, owned.
 fn listItems(h: *Harness, workspace_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items", .{workspace_id});
     defer gpa.free(path);
@@ -129,8 +122,7 @@ fn itemArray(raw: []const u8) !std.json.Array {
     };
 }
 
-/// Python `i.get("is_default") == 1` — an integer, a bool or the decimal
-/// string. Anything else (including null) is False.
+/// Python `i.get("is_default") == 1` — an integer, a bool or the decimal string.
 fn isDefaultFlag(v: ?std.json.Value) bool {
     const c = v orelse return false;
     return switch (c) {
@@ -212,9 +204,7 @@ fn pathExists(path: []const u8) bool {
     return true;
 }
 
-/// Python `list(design_root.rglob("*.html"))` — how many `.html` files live
-/// anywhere under `root`. `Dir.Walker` order is undefined, but the test only
-/// counts, so the difference from `rglob`'s sorted order is unobservable.
+/// Python `list(design_root.rglob("*.html"))` — how many `.html` files live anywhere under `root`.
 fn countHtmlFiles(root: []const u8) !usize {
     var dir = std.Io.Dir.cwd().openDir(io, root, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => return 0,
@@ -233,18 +223,14 @@ fn countHtmlFiles(root: []const u8) !usize {
     return n;
 }
 
-/// A per-test on-disk directory OUTSIDE the harness tempdir. Python's
-/// `item_workspace_path` fixture returned pytest's `tmp_path / "item"` — a
-/// SIBLING of the harness tempdir, never a child of it.
+/// A per-test on-disk directory OUTSIDE the harness tempdir.
 const Scratch = struct {
     /// The scratch root. Deleted by `deinit`.
     root: []u8,
     /// `<root>/item` — the path design items point at.
     dir: []u8,
 
-    /// ORDER MATTERS: cleanup runs FIRST (it reads `root`), then the two
-    /// frees. Getting this backwards reads freed memory inside the
-    /// safety gate, which prints a refusal and leaks the fixture.
+    /// ORDER MATTERS: cleanup runs FIRST (it reads `root`), then the two frees.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -262,13 +248,9 @@ fn makeItemDir() !Scratch {
     return .{ .root = root, .dir = dir };
 }
 
-// ============================================================================
 // Test 1: GET /api/workspaces/:id round-trips the created fields
-// ============================================================================
 
-// POST then GET-by-id; assert name, id, and timestamps round-trip. The
-// handler returns `{"id":..., "name":..., "created_at":...,
-// "updated_at":...}`.
+// POST then GET-by-id; assert name, id, and timestamps round-trip.
 test "get_workspace_by_id_returns_full_record" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -284,8 +266,7 @@ test "get_workspace_by_id_returns_full_record" {
     var r = try h.http(io, .GET, path, .{ .expect = &.{200} });
     defer r.deinit();
 
-    // The body must contain real workspace data, not 0xAA bytes (the
-    // classic symptom of a use-after-free on the row's arena).
+    // The body must contain real workspace data, not 0xAA bytes (the classic symptom of a use-after-free on the row's arena).
     if (std.mem.indexOfScalar(u8, r.body, 0xAA) != null) {
         const shown = try harness.debugString(gpa, r.body);
         defer gpa.free(shown);
@@ -329,13 +310,9 @@ test "get_workspace_by_id_returns_full_record" {
     }
 }
 
-// ============================================================================
 // Test 2: GET /api/workspaces/:id returns 404 with consistent body shape
-// ============================================================================
 
-// GET ws_nope returns 404 with body `{"error": "..."}`.
-//
-// workspace_get.zig:104-108 sends `{"error":"Workspace not found"}`.
+// GET ws_nope returns 404 with body `{"error": "..."}`. workspace_get.zig:104-108 sends `{"error":"Workspace not found"}`.
 test "get_workspace_by_id_404_for_nonexistent" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -361,13 +338,9 @@ test "get_workspace_by_id_404_for_nonexistent" {
     }
 }
 
-// ============================================================================
 // Test 3: GET item-by-id returns the right item_type + path for each
-// ============================================================================
 
-// Create chat + kanban + design; GET each by id; verify item_type. The wire
-// shape is `WorkspaceItemGetResponse` — fields are all nullable except `id,
-// workspace_id, item_type`.
+// Create chat + kanban + design; GET each by id; verify item_type.
 test "get_item_by_id_returns_mixed_item_types" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -421,9 +394,7 @@ test "get_item_by_id_returns_mixed_item_types" {
             std.debug.print("workspace_id mismatch: got '{s}', want '{s}'\n", .{ got_ws, ws_id });
             return error.TestUnexpectedResult;
         }
-        // The path round-trips (the create handler persists it for all
-        // three types — chat/kanban typically ignore it client-side but
-        // the column accepts it).
+        // The path round-trips (the create handler persists it for all three types — chat/kanban typically ignore it client-side but the column accepts it).
         const got_path = doc.str("path") orelse {
             std.debug.print(
                 "path round-trip mismatch for {s}: expected '{s}', got <absent>\n",
@@ -441,13 +412,9 @@ test "get_item_by_id_returns_mixed_item_types" {
     }
 }
 
-// ============================================================================
 // Test 4: GET item-by-id 404 for nonexistent
-// ============================================================================
 
-// GET item_nope returns 404 with `{"error": "..."}`.
-// workspace_items_get.zig:64-77 maps `WorkspaceItemNotFound` -> 404 with
-// message "Workspace item not found".
+// GET item_nope returns 404 with `{"error": "..."}`. workspace_items_get.zig:64-77 maps `WorkspaceItemNotFound` -> 404 with message "Workspace item not found".
 test "get_item_by_id_404_for_nonexistent" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -478,9 +445,7 @@ test "get_item_by_id_404_for_nonexistent" {
     }
 }
 
-// ============================================================================
 // Test 5: PUT item renames it; name round-trips through GET
-// ============================================================================
 
 // PUT {name: "new"} -> GET returns the new name; DB column updated.
 test "update_item_name_round_trips" {
@@ -521,8 +486,7 @@ test "update_item_name_round_trips" {
             std.debug.print("PUT response id '{s}' != created id '{s}'\n", .{ got_id, item_id });
             return error.TestUnexpectedResult;
         }
-        // The PUT response does NOT echo the new `name` value — the
-        // handler always returns `name: null`.
+        // The PUT response does NOT echo the new `name` value — the handler always returns `name: null`.
         const name_cell = doc.get("name") orelse return error.TestUnexpectedResult;
         if (name_cell != .null) {
             std.debug.print(
@@ -583,13 +547,9 @@ test "update_item_name_round_trips" {
     }
 }
 
-// ============================================================================
 // Test 6: PUT with empty name returns 400
-// ============================================================================
 
-// PUT {name: ""} -> 400. workspace_items_update.zig:99-132 documents the
-// strict contract: if the `name` key is PRESENT but the value is null/empty,
-// reject with `name must be a non-empty string when present`.
+// PUT {name: ""} -> 400. workspace_items_update.zig:99-132 documents the strict contract: if the `name` key is PRESENT but the value is null/empty, reject with …
 test "update_item_name_rejects_empty" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -648,13 +608,9 @@ test "update_item_name_rejects_empty" {
     }
 }
 
-// ============================================================================
 // Test 7: PUT with empty body returns 400
-// ============================================================================
 
-// PUT {} -> 400. workspace_items_update.zig:156-161 enforces "at least one of
-// item_type, name, or path is required". A bare PUT that sends nothing is a
-// no-op that must NOT silently succeed.
+// PUT {} -> 400. workspace_items_update.zig:156-161 enforces "at least one of item_type, name, or path is required".
 test "update_item_rejects_empty_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -702,9 +658,7 @@ test "update_item_rejects_empty_body" {
     }
 }
 
-// ============================================================================
 // Test 8: PUT 404 for nonexistent item
-// ============================================================================
 
 // PUT /items/item_nope -> 404 (the item-existence pre-check fires).
 test "update_item_404_for_nonexistent" {
@@ -740,13 +694,9 @@ test "update_item_404_for_nonexistent" {
     }
 }
 
-// ============================================================================
 // Test 9: DELETE removes the item from the list + GET returns 404
-// ============================================================================
 
-// DELETE -> /items no longer contains it; GET-by-id is now 404. The handler
-// returns `{id, success: true}` (the `WorkspaceItemResponse` shape from
-// http_response.zig:6).
+// DELETE -> /items no longer contains it; GET-by-id is now 404.
 test "delete_item_removes_from_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -817,17 +767,14 @@ test "delete_item_removes_from_list" {
         }
     }
 
-    // GET-by-id is now 404 (proves the DB row is gone, not just hidden
-    // from the list).
+    // GET-by-id is now 404 (proves the DB row is gone, not just hidden from the list).
     {
         var r = try h.http(io, .GET, path, .{ .expect = &.{404} });
         defer r.deinit();
     }
 }
 
-// ============================================================================
 // Test 9b: DELETE a kanban item whose task sits in a column
-// ============================================================================
 
 /// `POST .../items/<kanban_id>/kanban/columns` → the new column's id. Owned.
 fn createKanbanColumn(
@@ -936,9 +883,7 @@ fn kanbanTaskCount(
     };
 }
 
-// A project delete used to fail once its board had a card in a column: the
-// placement FK was ON DELETE SET NULL against a NOT NULL column, so the whole
-// DELETE rolled back — and one that did land orphaned the board's tasks.
+// A project delete used to fail once its board had a card in a column: the placement FK was ON DELETE SET NULL against a NOT NULL column, so the whole DELETE …
 test "delete_kanban_item_with_a_task_in_a_column_removes_its_tasks" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -992,9 +937,7 @@ test "delete_kanban_item_with_a_task_in_a_column_removes_its_tasks" {
     }
 }
 
-// ============================================================================
 // Test 10: DELETE 404 for nonexistent
-// ============================================================================
 
 // DELETE /items/item_nope -> 404 with body shape.
 test "delete_item_404_for_nonexistent" {
@@ -1027,13 +970,9 @@ test "delete_item_404_for_nonexistent" {
     }
 }
 
-// ============================================================================
 // Test 11: POST /reorder changes item display order
-// ============================================================================
 
-// Create 7 items of mixed types; POST reorder with a permuted list; assert
-// the list endpoint returns them in the new order.
-// workspace_items_reorder.zig:124-127 documents the position formula:
+// Create 7 items of mixed types; POST reorder with a permuted list; assert the list endpoint returns them in the new order. workspace_items_reorder.zig:124-127 …
 test "reorder_items_changes_display_order" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1066,9 +1005,7 @@ test "reorder_items_changes_display_order" {
         defer doc.deinit();
         const arr = try itemArray(initial_raw);
 
-        // The workspace also carries its DEFAULT project (Migration 094),
-        // which this test did not create. Exclude it by flag so the
-        // comparison is about the seven items under test.
+        // The workspace also carries its DEFAULT project (Migration 094), which this test did not create.
         var default_items: usize = 0;
         for (arr.items) |it| {
             if (it != .object) continue;
@@ -1141,8 +1078,7 @@ test "reorder_items_changes_display_order" {
         }
     }
 
-    // The list endpoint returns items in `position DESC` order, so
-    // ordered_ids[0] is at the top.
+    // The list endpoint returns items in `position DESC` order, so ordered_ids[0] is at the top.
     {
         const raw = try listItems(&h, ws_id);
         defer gpa.free(raw);
@@ -1177,13 +1113,9 @@ test "reorder_items_changes_display_order" {
     }
 }
 
-// ============================================================================
 // Test 12: DELETE design item cascade-removes on-disk .pabrik/design/
-// ============================================================================
 
-// Design item with 3 pages x 2 elements -> DELETE item ->
-// `<path>/.pabrik/design/` directory is gone.
-// workspace_items_delete.zig:77-97 documents the on-disk cleanup: for design
+// Design item with 3 pages x 2 elements -> DELETE item -> `<path>/.pabrik/design/` directory is gone. workspace_items_delete.zig:77-97 documents the on-disk …
 test "delete_design_item_cascade_removes_html_files" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1278,12 +1210,9 @@ test "delete_design_item_cascade_removes_html_files" {
     }
 }
 
-// ============================================================================
 // Test 13: DELETE chat item doesn't touch sibling items
-// ============================================================================
 
-// 5 items of mixed types; DELETE chat item #3; the other 4 are untouched (no
-// FK cascade surprise, no orphan rows that the API forgets about).
+// 5 items of mixed types; DELETE chat item #3; the other 4 are untouched (no FK cascade surprise, no orphan rows that the API forgets about).
 test "delete_chat_item_does_not_touch_other_items" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1380,9 +1309,7 @@ fn listContains(raw: []const u8, id: []const u8) bool {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = parseJson;
     _ = createWorkspace;
     _ = createItem;

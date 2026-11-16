@@ -1,6 +1,4 @@
-//! 16-color ANSI palette. Maps each named color to its SGR foreground code
-//! (30–37 for normal, 90–97 for bright). Background codes are foreground +
-//! 10.
+//! 16-color ANSI palette.
 
 pub const Color = enum(u8) {
     black,
@@ -32,9 +30,7 @@ pub const Color = enum(u8) {
     }
 };
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const std = @import("std");
 const testing = std.testing;

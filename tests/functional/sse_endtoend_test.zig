@@ -1,5 +1,4 @@
-// Functional tests for SSE end-to-end. Zig port of
-// `tests/functional/sse_endtoend_test.py` (same test names, same order).
+// Functional tests for SSE end-to-end.
 
 const std = @import("std");
 const testing = std.testing;
@@ -14,15 +13,12 @@ const io = testing.io;
 /// Transfer buffer for the response body reader.
 const transfer_buffer_len = 8 * 1024;
 
-/// Monotonic milliseconds (`.awake` is monotonic, not wall clock — an
-/// NTP step must not stretch or shrink a deadline).
+/// Monotonic milliseconds (`.awake` is monotonic, not wall clock — an NTP step must not stretch or shrink a deadline).
 fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
 /// One parsed SSE frame: the `event:` name plus the joined `data:` lines.
-/// Python also ran `json.loads` over the payload and put the resulting object
-/// on the queue.
 const SseEvent = struct {
     name: []u8,
     data: []u8,
@@ -34,20 +30,16 @@ const SseEvent = struct {
     }
 };
 
-/// An open SSE connection plus the state the reader thread fills in. The test
-/// thread owns the pointer; the reader thread writes into it. `stop` / `done`
-/// are the cross-thread handshake.
+/// An open SSE connection plus the state the reader thread fills in.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its
-    /// address outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *Io.Reader = undefined,
     status: u16 = 0,
-    /// Duplicated from the response head (which `resp.reader()`
-    /// invalidates).
+    /// Duplicated from the response head (which `resp.reader()` invalidates).
     content_type: []u8 = "",
     /// Set by the test thread to release the reader.
     stop: std.atomic.Value(bool) = .init(false),
@@ -71,14 +63,12 @@ const SseStream = struct {
     }
 };
 
-/// Open `GET /api/events?channels=<channels>` and capture the response
-/// head. The caller owns the returned pointer and must `deinit` it.
+/// Open `GET /api/events?channels=<channels>` and capture the response head.
 fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -87,9 +77,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     s.req = s.client.request(.GET, try std.Uri.parse(url), .{
         .redirect_behavior = .unhandled,
         .extra_headers = &.{
-            // What the browser's `EventSource` sends. The handler keys
-            // off the query string, but sending it keeps the request
-            // byte-identical to the one under test.
+            // What the browser's `EventSource` sends.
             .{ .name = "Accept", .value = "text/event-stream" },
         },
     }) catch |err| {
@@ -105,8 +93,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     var resp = try s.req.receiveHead(&.{});
     s.status = @intFromEnum(resp.head.status);
 
-    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`,
-    // so touching `head` afterwards is a use-after-free.
+    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so touching `head` afterwards is a use-after-free.
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -121,8 +108,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
-/// occurs. Runs on its own thread.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -138,12 +124,9 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // One LINE, not the whole stream: this is what makes the read
-        // incremental. `takeDelimiter` — NEVER `takeDelimiterExclusive`.
+        // One LINE, not the whole stream: this is what makes the read incremental.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
-            // `takeDelimiter` has a NARROWER error set than the
-            // delimiter-splitting variants: clean EOF is `null`, not
-            // `error.EndOfStream`.
+            // `takeDelimiter` has a NARROWER error set than the delimiter-splitting variants: clean EOF is `null`, not `error.EndOfStream`.
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
                 error.StreamTooLong => "line exceeded the transfer buffer",
@@ -168,9 +151,7 @@ fn readEvents(s: *SseStream) void {
         if (line.len == 0) {
             // Blank line → dispatch whatever we accumulated.
             if (current_name) |name| {
-                // `std.mem.join` allocates an owned buffer but types it
-                // `[]const u8`; the constCast is sound because the buffer is
-                // ours to hand to `gpa.free` (and nothing mutates it).
+                // `std.mem.join` allocates an owned buffer but types it `[]const u8`; the constCast is sound because the buffer is ours to hand to `gpa.free` (and nothing …
                 const joined = std.mem.join(gpa, "\n", data_lines.items) catch "";
                 const data: []u8 = @constCast(joined);
                 s.mutex.lockUncancelable(io);
@@ -200,21 +181,17 @@ fn readEvents(s: *SseStream) void {
                 continue;
             };
         }
-        // `:` comment lines and unknown fields are ignored, matching
-        // both the browser EventSource parser and the Python reader.
+        // `:` comment lines and unknown fields are ignored, matching both the browser EventSource parser and the Python reader.
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side. Without
-/// this the reader thread parks in `readv` forever on an SSE stream that
-/// never ends.
+/// Release a blocked `readEvents` by shutting the socket's read side.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Pop events off the queue until one is named `want`, the stream ends, or
-/// the deadline passes. Returns true iff a MATCHING event was seen.
+/// Pop events off the queue until one is named `want`, the stream ends, or the deadline passes.
 fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -222,8 +199,7 @@ fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
         if (s.events.items.len > 0) {
             var e = s.events.orderedRemove(0);
             s.mutex.unlock(io);
-            // Scoped so the block's `defer` frees this event before the
-            // next iteration takes the lock again.
+            // Scoped so the block's `defer` frees this event before the next iteration takes the lock again.
             {
                 defer e.deinit();
                 if (std.mem.eql(u8, e.name, want)) return true;
@@ -241,9 +217,7 @@ fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     }
 }
 
-/// Discard up to `max_n` queued events, waiting at most `wait_ms` for EACH
-/// one and breaking out of the loop on the first miss. Python: `for _ in
-/// range(5): try events_q.get(timeout=0.3) except queue.Empty: break`.
+/// Discard up to `max_n` queued events, waiting at most `wait_ms` for EACH one and breaking out of the loop on the first miss.
 fn discardQueued(s: *SseStream, max_n: usize, wait_ms: i64) usize {
     var dropped: usize = 0;
     while (dropped < max_n) {
@@ -277,9 +251,7 @@ fn seenNames(s: *SseStream) []u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     for (s.events.items) |e| out.writer.print("{s} ", .{e.name}) catch break;
-    // `toOwnedSlice` can only fail with OutOfMemory, and a
-    // best-effort DIAGNOSTIC string is the wrong place to propagate
-    // one — the caller is already on the failure path.
+    // `toOwnedSlice` can only fail with OutOfMemory, and a best-effort DIAGNOSTIC string is the wrong place to propagate one — the caller is already on the failure …
     return out.toOwnedSlice() catch |err| {
         out.deinit();
         std.debug.print("could not render the seen-events list: {s}\n", .{@errorName(err)});
@@ -341,13 +313,9 @@ fn createKanban(h: *Harness, ws_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-// ============================================================================
 // Test 1: /api/events returns 200 with text/event-stream
-// ============================================================================
 
 // `GET /api/events?channels=workers` returns 200 with the SSE content type.
-// No reader thread here: only the HEAD is needed, and the Python used a `with
-// urlopen(...)` block that never read the body.
 test "sse_handshake_returns_200" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -365,9 +333,7 @@ test "sse_handshake_returns_200" {
     }
 }
 
-// ============================================================================
 // Test 2: connected event fires on subscribe
-// ============================================================================
 
 // Opening /api/events emits a `connected` event.
 test "sse_connected_event_fires_on_subscribe" {
@@ -383,9 +349,7 @@ test "sse_connected_event_fires_on_subscribe" {
     defer reader.join();
 
     const got = drainMatching(s, "connected", 3_000);
-    // Release BEFORE asserting: the `defer reader.join()` above blocks
-    // on a socket read that never returns on its own, so a failing
-    // assertion here would hang the suite instead of failing it.
+    // Release BEFORE asserting: the `defer reader.join()` above blocks on a socket read that never returns on its own, so a failing assertion here would hang the …
     releaseReader(s);
 
     if (!got) {
@@ -402,12 +366,9 @@ test "sse_connected_event_fires_on_subscribe" {
     }
 }
 
-// ============================================================================
 // Test 3: kanban create emits a kanban_column event
-// ============================================================================
 
-// Open SSE on the kanban channel; POST a kanban; assert a
-// `kanban_column` event arrives.
+// Open SSE on the kanban channel; POST a kanban; assert a `kanban_column` event arrives.
 test "kanban_create_emits_sse_event" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -440,9 +401,7 @@ test "kanban_create_emits_sse_event" {
     }
 }
 
-// ============================================================================
 // Test 4: kanban column add emits another kanban_column event
-// ============================================================================
 
 // `POST /columns` emits a `kanban_column` event.
 test "kanban_add_column_emits_event" {
@@ -467,8 +426,7 @@ test "kanban_add_column_emits_event" {
     // Drain the initial events from the kanban create.
     const drained = discardQueued(s, 5, 300);
     if (drained == 0) {
-        // The Python's loop silently broke out of an empty queue here and
-        // then still asserted on a NEW event.
+        // The Python's loop silently broke out of an empty queue here and then still asserted on a NEW event.
         std.debug.print("note: kanban create queued {d} events before the drain\n", .{drained});
     }
 
@@ -498,12 +456,9 @@ test "kanban_add_column_emits_event" {
     }
 }
 
-// ============================================================================
 // Test 5: SSE client disconnect does not crash pabrik
-// ============================================================================
 
-// Open SSE, close it, then prove the server is still serving: a
-// subsequent API call works.
+// Open SSE, close it, then prove the server is still serving: a subsequent API call works.
 test "sse_drops_quietly_when_client_closes" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -514,9 +469,7 @@ test "sse_drops_quietly_when_client_closes" {
     const s = try openSse(h.port, "workers");
     defer s.deinit();
     const reader = try std.Thread.spawn(.{}, readEvents, .{s});
-    // Registered AFTER `s.deinit`, so LIFO runs the JOIN first: a
-    // reader thread still parked in `readv` would read a socket the
-    // teardown already closed.
+    // Registered AFTER `s.deinit`, so LIFO runs the JOIN first: a reader thread still parked in `readv` would read a socket the teardown already closed.
     defer reader.join();
 
     // Wait briefly to ensure the SSE connection is registered.

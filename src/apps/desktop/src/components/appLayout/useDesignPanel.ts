@@ -57,14 +57,10 @@ export interface UseDesignPanelReturn {
 export function useDesignPanel(deps: DesignPanelDeps): UseDesignPanelReturn {
   const { workspacesStore, designHandlers, activeWorkspaceItem, activeWorkspace } = deps
 
-// ─── Kanban task chat ──────────────────────────────────────────────────────── The kanban task
-// chat is a normal view in the <main> chain (see the `activeWorkspaceItem.item_type === 'kanban'`
-// branch, which sits BEFORE the KanbanView branch), not a modal. There is therefore no open-state.
+// ─── Kanban task chat ────────────────────────────────────────────────────────
 const activeDesignChatPageName = ref<string>('')
 
-// ─── Design chat task FK handle (plan: 2026-08-06-design-chat-as-dialog, bug fix from user report
-// "the chat button keep not popup, chatview") ──── Root cause: the design chat dialog's v-if gate
-// was `activeTask && ... item_type === 'design'`.
+// ─── Design chat task FK handle (plan: 2026-08-06-design-chat-as-dialog, bug fix from user report "the chat button keep not popup, chatview") ──── Root cause …
 const activeDesignChatTaskId = ref<string>('')
 // The store's `activeTaskId` going falsy clears the design-chat refs so the dialog unmounts.
 const activeDesignChatTask = computed<TaskType | null>(() => {
@@ -79,35 +75,27 @@ const activeDesignChatTask = computed<TaskType | null>(() => {
   } as TaskType
 })
 
-// ─── DesignChatDialog open state (plan: 2026-08-06-design-chat-as-dialog) ──── Same v-model:show
-// pattern the kanban chat modal used to have.
+// ─── DesignChatDialog open state (plan: 2026-08-06-design-chat-as-dialog) ────
 const designChatDialogOpen = computed({
   get: () => !!activeDesignChatTaskId.value,
-  // The dialog can only ask to close (it never opens itself). Closing clears
-  // the id, which is what "closed" actually means everywhere else.
+  // The dialog can only ask to close (it never opens itself).
   set: (open: boolean) => {
     if (!open) activeDesignChatTaskId.value = ''
   },
 })
 
-// ─── Design mode event handlers (Chunk 8 of design-mode-redesign) ──── <DesignView> emits these
-// when the user interacts with the canvas: tabs, layers, properties panel, Monaco editor.
+// ─── Design mode event handlers (Chunk 8 of design-mode-redesign) ────
 const handleDesignSelectPage = (_pageId: string) => {
-  // TODO (v2): workspacesStore.setActiveDesignPage(_pageId) once the
-  // store tracks the active page. For now DesignView owns the page
-  // state internally; the parent doesn't need to mirror it.
+  // TODO (v2): workspacesStore.setActiveDesignPage(_pageId) once the store tracks the active page.
   void _pageId
 }
 
 const handleDesignSelectElement = (_elementId: string) => {
-  // TODO (v2): workspacesStore.setActiveDesignElement(_elementId) so
-  // other tabs / the right sidebar can show the element's properties.
-  // For now selection state lives inside DesignView.
+  // TODO (v2): workspacesStore.setActiveDesignElement(_elementId) so other tabs / the right sidebar can show the element's properties.
   void _elementId
 }
 
-// NEW: design-mode chat toggle (top-right 💬 button in DesignView).Migration of legacy data:
-// users created before this fix have a single "Design Chat" canonical task (the pre-fix behavior).
+// NEW: design-mode chat toggle (top-right 💬 button in DesignView).Migration of legacy data
 const handleDesignOpenChat = async (payload: {
   pageId: string
   pageName: string
@@ -119,16 +107,11 @@ const handleDesignOpenChat = async (payload: {
   if (!payload.pageId || !payload.pageName) return
   if (!payload.workspaceItemTaskId) return
 
-  // 2026-07-28 FK rewrite: resolve the chat task
-  // via the FK directly.
+  // 2026-07-28 FK rewrite: resolve the chat task via the FK directly.
   workspacesStore.setActiveTask(payload.workspaceItemTaskId)
-  // 2026-08-06 (plan: design-chat-as-dialog): capture the design page's own name so
-  // DesignChatDialog's header reads "Design Chat: <pageName>". Distinct from the workspace item's
-  // name (which would be the parent design's name like "Design").
+  // 2026-08-06 (plan: design-chat-as-dialog): capture the design page's own name so DesignChatDialog's header reads "Design Chat: <pageName>".
   activeDesignChatPageName.value = payload.pageName
-  // Bug fix (2026-08-06, user report "chat button keep not popup, chatview"): the dialog's v-if was
-  // previously gated on the store's `activeTask` computed, which is null for design items (their
-  // tasks array is empty post-init).
+  // Bug fix (2026-08-06, user report "chat button keep not popup, chatview"): the dialog's v-if was previously gated on the store's `activeTask` computed, which is …
   activeDesignChatTaskId.value = payload.workspaceItemTaskId
 }
 
@@ -146,14 +129,11 @@ const handleDesignUpdateElement = async (
   const ws = activeWorkspace.value
   const item = activeWorkspaceItem.value
   if (!ws || !item) return
-  // Deprecated back-compat path (PATCH /geometry). New typed events
-  // emit translateElement / resizeElement instead — see below.
+  // Deprecated back-compat path (PATCH /geometry).
   await designHandlers.updateElement(ws.id, item.id, elementId, patch)
 }
 
-/** NEW (2026-08-06, split-move-resize plan) — handler for the `translateElement` event fired by
- * DesignView during a single-element drag (move mode). Routes to useDesignHandlers.translateElement
- * → POST /translate. */
+/** NEW (2026-08-06, split-move-resize plan) — handler for the `translateElement` event fired by DesignView during a single-element drag (move mode). */
 const handleDesignTranslateElement = async (
   elementId: string,
   dx: number,
@@ -165,9 +145,7 @@ const handleDesignTranslateElement = async (
   await designHandlers.translateElement(ws.id, item.id, elementId, dx, dy)
 }
 
-/**  * NEW (2026-08-06, split-move-resize plan) — handler for the `resizeElement` event fired by
- * DesignView during a resize gesture. Routes to useDesignHandlers.resizeElement → POST /resize.
- * Resize never cascades (Figma convention). */
+/** NEW (2026-08-06, split-move-resize plan) — handler for the `resizeElement` event fired by DesignView during a resize gesture. */
 const handleDesignResizeElement = async (
   elementId: string,
   patch: Partial<{

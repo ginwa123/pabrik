@@ -5,23 +5,18 @@ import { normalizeToolContent, parseSetPullRequest } from './_shared/toolOutputP
 import ToolParameters from './_shared/ToolParameters.vue'
 import { forgeWording } from '../../helpers/forgeWording'
 
-/** `set_pull_request` result card — the sibling of `SetGitWorktree.vue`. Without this card the tool
- * fell into ChatView's generic fallback, where the collapsed pill printed the raw envelope data:
- * `set_pull_request ✓ {"session_id":"task_…","attached":true,"url":"https://…"}`. */
+/** `set_pull_request` result card — the sibling of `SetGitWorktree.vue`. */
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Threaded for
-   *  uniformity with the other cards; the result carries everything shown. */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the error state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
@@ -35,8 +30,7 @@ const parsed = computed(() => {
 
 const isRunning = computed(() => isEmptyContent(props.content))
 
-// `pr_provider` is empty on every session predating GitLab support, so an
-// empty provider is GitHub far more often than not — never render blank.
+// `pr_provider` is empty on every session predating GitLab support, so an empty provider is GitHub far more often than not — never render blank.
 const forge = computed(() => forgeWording(parsed.value.provider ?? undefined))
 
 // Header label: the change request's own id ("#922"), "(cleared)", or "error".

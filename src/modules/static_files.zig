@@ -1,9 +1,7 @@
-// src/modules/static_files.zig Pure-function static-file resolution for the
-// `--static-dir` HTTP handler.
+// src/modules/static_files.zig Pure-function static-file resolution for the `--static-dir` HTTP handler.
 const std = @import("std");
 
-/// Configuration for the static-file handler. Constructed once at startup,
-/// passed by pointer to every request handler invocation.
+/// Configuration for the static-file handler.
 pub const StaticDirConfig = struct {
     /// Absolute, canonicalized path to the directory whose contents should be served.
     root_dir: []const u8,
@@ -14,9 +12,7 @@ pub const StaticDirConfig = struct {
     spa_fallback_prefix2: ?[]const u8 = null,
 };
 
-/// Result of a static-file lookup. The handler converts this into an HTTP
-/// response. Memory ownership: on `.file`, `abs_path` is allocated with
-/// `cfg.allocator` and must be freed by the caller (use the same allocator).
+/// Result of a static-file lookup.
 pub const LookupResult = union(enum) {
     file: struct {
         abs_path: []const u8,
@@ -30,9 +26,7 @@ pub const LookupResult = union(enum) {
     not_a_file,
 };
 
-// ---------------------------------------------------------------------------
 // Mime detection
-// ---------------------------------------------------------------------------
 
 const MimeEntry = struct {
     ext: []const u8,
@@ -59,9 +53,7 @@ const mime_table = [_]MimeEntry{
     .{ .ext = ".txt", .mime = "text/plain; charset=utf-8" },
 };
 
-/// Returns the mime string for `path`'s extension. Uses the last `.` in the
-/// path (after the final `/`) as the extension boundary, matching standard
-/// practice.
+/// Returns the mime string for `path`'s extension.
 fn mimeForPath(path: []const u8) []const u8 {
     var dot_idx: ?usize = null;
     for (path, 0..) |c, i| {
@@ -79,8 +71,7 @@ fn mimeForPath(path: []const u8) []const u8 {
     return "application/octet-stream";
 }
 
-/// Returns true when `resolved` lives inside `root` (or equals it). Prevents
-/// the false-positive match where `/tmp/abc` is a prefix of `/tmp/abcd/...`.
+/// Returns true when `resolved` lives inside `root` (or equals it).
 fn isInsideRoot(root: []const u8, resolved: []const u8) bool {
     if (!std.mem.startsWith(u8, resolved, root)) return false;
     if (resolved.len == root.len) return true;
@@ -88,32 +79,25 @@ fn isInsideRoot(root: []const u8, resolved: []const u8) bool {
     return next_char == '/' or next_char == '\\';
 }
 
-/// Returns true if the request path looks like a static ASSET (i.e. the final
-/// path component has a file extension).
+/// Returns true if the request path looks like a static ASSET (i.e. the final path component has a file extension).
 fn looksLikeAssetPath(path: []const u8) bool {
     const last_slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse return false;
     const after_last_slash = path[last_slash + 1 ..];
     return std.mem.indexOfScalar(u8, after_last_slash, '.') != null;
 }
 
-/// Returns true if `clean_path` is `<prefix>` or `<prefix>/...`. The boundary
-/// check (prefix-anchored) prevents `/app` from matching `/apple`,
-/// `/api/foo`, etc. — only routes the SPA actually owns.
+/// Returns true if `clean_path` is `<prefix>` or `<prefix>/...`.
 fn pathMatchesSpaPrefix(clean_path: []const u8, prefix: []const u8) bool {
     if (std.mem.eql(u8, clean_path, prefix)) return true;
     if (!std.mem.startsWith(u8, clean_path, prefix)) return false;
-    // After the prefix, the next char must be '/' — otherwise we'd
-    // match unrelated names like `/apple` against prefix `/app`.
+    // After the prefix, the next char must be '/' — otherwise we'd match unrelated names like `/apple` against prefix `/app`.
     const next = clean_path[prefix.len];
     return next == '/';
 }
 
-// ---------------------------------------------------------------------------
 // resolveStaticDirAbs()
-// ---------------------------------------------------------------------------
 
-/// Resolve a `--static-dir` value to an absolute path, allocated with
-/// `allocator` and freed by the caller.
+/// Resolve a `--static-dir` value to an absolute path, allocated with `allocator` and freed by the caller.
 pub fn resolveStaticDirAbs(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -125,16 +109,12 @@ pub fn resolveStaticDirAbs(
     return allocator.dupe(u8, buf[0..abs_len]);
 }
 
-// ---------------------------------------------------------------------------
 // resolve()
-// ---------------------------------------------------------------------------
 
-/// Buffer size for streaming file responses. 64 KB matches a typical
-/// filesystem read-ahead and keeps memory usage bounded for large files.
+/// Buffer size for streaming file responses. 64 KB matches a typical filesystem read-ahead and keeps memory usage bounded for large files.
 const FILE_BUF_SIZE: usize = 64 * 1024;
 
-/// Resolve a request path (e.g. "/assets/index-abc.js") against the static
-/// dir.
+/// Resolve a request path (e.g.
 pub fn resolve(
     cfg: *const StaticDirConfig,
     io: std.Io,
@@ -146,8 +126,7 @@ pub fn resolve(
         clean_path = request_path[0..q];
     }
 
-    // 2. Reject path traversal (defense in depth — the canonicalization
-    //    step below is the real protection).
+    // 2.
     if (std.mem.indexOf(u8, clean_path, "..") != null) {
         return .forbidden;
     }
@@ -175,17 +154,11 @@ pub fn resolve(
     };
     defer root_dir.close(io);
 
-    // 5. Try to open the candidate as a file. `allow_directory = false`
-    //    forces a deterministic `error.IsDir` for directory paths so the
-    //    fallback below is unambiguous.
+    // 5.
     const file = root_dir.openFile(io, rel, .{ .allow_directory = false }) catch |err| switch (err) {
-        // The path resolves to an actual directory — serve that dir's
-        // index.html (the canonical "directory request" path matching
-        // what nginx's `index` directive does).
+        // The path resolves to an actual directory — serve that dir's index.html (the canonical "directory request" path matching what nginx's `index` directive does).
         error.IsDir => return resolveDirIndexHtml(io, cfg, root_dir, rel),
-        // The path doesn't exist as a file or directory. Decide: -
-        // Asset-style path (has a file extension in the final segment, e.g.
-        // /missing.js): return 404.
+        // The path doesn't exist as a file or directory.
         error.FileNotFound => {
             if (looksLikeAssetPath(clean_path)) return .not_found;
             if (cfg.spa_fallback_prefix) |prefix| {
@@ -211,9 +184,7 @@ pub fn resolve(
     const n = try root_dir.realPathFile(io, rel, &path_buf);
     const resolved = try cfg.allocator.dupe(u8, path_buf[0..n]);
 
-    // Path-traversal defense: if `realPathFile` resolved to a path outside
-    // the root (e.g. via symlinks), reject as forbidden AND free the
-    // duplicated path (the errdefer above only fires on error, not on regular
+    // Path-traversal defense: if `realPathFile` resolved to a path outside the root (e.g. via symlinks), reject as forbidden AND free the duplicated path (the …
     if (!isInsideRoot(cfg.root_dir, resolved)) {
         cfg.allocator.free(resolved);
         return .forbidden;
@@ -257,9 +228,7 @@ fn resolveDirIndexHtml(
     } };
 }
 
-/// SPA fallback: serve the ROOT directory's `index.html`. Invoked when a path
-/// doesn't resolve to a real file or directory AND doesn't look like an asset
-/// request (no extension).
+/// SPA fallback: serve the ROOT directory's `index.html`.
 fn resolveRootIndexHtml(
     io: std.Io,
     cfg: *const StaticDirConfig,
@@ -275,9 +244,7 @@ fn resolveRootIndexHtml(
     const idx_abs = try cfg.allocator.dupe(u8, path_buf[0..n]);
     errdefer cfg.allocator.free(idx_abs);
 
-    // Defense in depth: even though "index.html" is a fixed name inside
-    // the root_dir handle, a symlink in the root pointing outside the
-    // configured root_dir would be served here. `isInsideRoot` rejects.
+    // Defense in depth: even though "index.html" is a fixed name inside the root_dir handle, a symlink in the root pointing outside the configured root_dir would be …
     if (!isInsideRoot(cfg.root_dir, idx_abs)) return .forbidden;
 
     return .{ .file = .{
@@ -288,9 +255,7 @@ fn resolveRootIndexHtml(
     } };
 }
 
-// ---------------------------------------------------------------------------
 // parseRange() — HTTP `Range:` header parser
-// ---------------------------------------------------------------------------
 
 /// Parsed byte range from an HTTP `Range: bytes=...` header.
 pub const ByteRange = struct {
@@ -298,8 +263,7 @@ pub const ByteRange = struct {
     end: u64,
 };
 
-/// Parse an HTTP `Range:` header value into a `ByteRange`, validating against
-/// `file_size`.
+/// Parse an HTTP `Range:` header value into a `ByteRange`, validating against `file_size`.
 pub fn parseRange(header: []const u8, file_size: u64) !?ByteRange {
     if (!std.mem.startsWith(u8, header, "bytes=")) return null;
     // A zero-length file has no satisfiable range.
@@ -324,13 +288,9 @@ pub fn parseRange(header: []const u8, file_size: u64) !?ByteRange {
     return .{ .start = start, .end = end };
 }
 
-// ---------------------------------------------------------------------------
 // serve() — HTTP response writer
-// ---------------------------------------------------------------------------
 
-/// Send a static file as an HTTP response. Doesn't mutate `cfg` — all writes
-/// go to the `writer` parameter. On `.file`, frees the abs_path allocated by
-/// `resolve()`.
+/// Send a static file as an HTTP response.
 pub fn serve(
     cfg: *const StaticDirConfig,
     io: std.Io,
@@ -359,9 +319,7 @@ pub fn serve(
         .file => |f| {
             defer cfg.allocator.free(f.abs_path);
 
-            // Content-derived ETag: combines file size and mtime so two
-            // same-size files (common with minified JS/CSS) get distinct ETags
-            // and don't trigger browser cache poisoning on size collision.
+            // Content-derived ETag: combines file size and mtime so two same-size files (common with minified JS/CSS) get distinct ETags and don't trigger browser cache …
             const etag = try std.fmt.allocPrint(cfg.allocator, "\"x-{x}-{x}\"", .{ f.size, f.mtime.nanoseconds });
             defer cfg.allocator.free(etag);
 
@@ -391,9 +349,7 @@ pub fn serve(
     }
 }
 
-/// Stream the entire file at `abs_path` to `writer`. Uses `readPositionalAll`
-/// (not seek + read) — that's the Zig 0.16 idiom for positional reads, and
-/// it's the path that's safe in Io.Threaded's blocking recv model.
+/// Stream the entire file at `abs_path` to `writer`.
 fn writeFileFull(io: std.Io, abs_path: []const u8, writer: std.Io.Writer) !void {
     const file = try std.Io.Dir.openFileAbsolute(io, abs_path, .{});
     defer file.close(io);
@@ -407,9 +363,7 @@ fn writeFileFull(io: std.Io, abs_path: []const u8, writer: std.Io.Writer) !void 
     }
 }
 
-/// Stream the byte range `[start, end]` (inclusive on both ends) of the
-/// file at `abs_path` to `writer`. Caller is responsible for ensuring
-/// `start <= end < file_size`.
+/// Stream the byte range `[start, end]` (inclusive on both ends) of the file at `abs_path` to `writer`.
 fn writeFileRange(
     io: std.Io,
     abs_path: []const u8,
@@ -433,13 +387,10 @@ fn writeFileRange(
 }
 
 // ===== Tests merged from static_files_test.zig (2026-09-29 flatten) =====
-// Tests for src/modules/static_files.zig's `resolve()` function.
 
 const testing = std.testing;
 
-/// Per-test environment: a fresh temp directory plus its realpath so the
-/// sandbox check inside `resolve()` has an absolute, canonical root to
-/// compare against.
+/// Per-test environment: a fresh temp directory plus its realpath so the sandbox check inside `resolve()` has an absolute, canonical root to compare against.
 const TestEnv = struct {
     tmp_dir: std.testing.TmpDir,
     root_abs: []const u8,
@@ -453,27 +404,21 @@ const TestEnv = struct {
 
 fn setupRoot(allocator: std.mem.Allocator) !TestEnv {
     var tmp = std.testing.tmpDir(.{});
-    // Use `realPath` (non-sentinel, caller buffer) + `dupe` so the free
-    // size matches the alloc size. `realPathFileAlloc` would give `[:0]u8`
-    // which loses the sentinel when stored in a `[]const u8` field.
+    // Use `realPath` (non-sentinel, caller buffer) + `dupe` so the free size matches the alloc size.
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const n = try tmp.dir.realPath(testing.io, &path_buf);
     const abs = try allocator.dupe(u8, path_buf[0..n]);
     return .{ .tmp_dir = tmp, .root_abs = abs, .io = testing.io };
 }
 
-// ---------------------------------------------------------------------------
 // resolveStaticDirAbs() behavior
-// ---------------------------------------------------------------------------
 
 test "resolveStaticDirAbs: a relative dir resolves to its realpath" {
     const allocator = testing.allocator;
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // A real directory, spelled absolutely. The tmp dir lives under the
-    // build cache (or /tmp), never at the cwd, so the relative round-trip
-    // below always has path components to walk.
+    // A real directory, spelled absolutely.
     var abs_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const abs_len = try tmp.dir.realPath(testing.io, &abs_buf);
     const abs = try allocator.dupe(u8, abs_buf[0..abs_len]);
@@ -490,9 +435,7 @@ test "resolveStaticDirAbs: a relative dir resolves to its realpath" {
 
     var rel_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const resolved = try resolveStaticDirAbs(testing.io, allocator, rel, &rel_buf);
-    // This free is load-bearing: `testing.allocator` is a DebugAllocator, so
-    // a sentinel-terminated allocation freed as a plain slice (the
-    // `realPathFileAlloc` bug this function replaced) fails here with
+    // This free is load-bearing: `testing.allocator` is a DebugAllocator, so a sentinel-terminated allocation freed as a plain slice (the `realPathFileAlloc` bug …
     defer allocator.free(resolved);
     try testing.expectEqualStrings(abs, resolved);
 }
@@ -513,9 +456,7 @@ test "resolveStaticDirAbs: an absolute dir is passed through, and owned by the c
 }
 
 test "resolveStaticDirAbs: a missing relative dir is an error, not a passthrough" {
-    // Passing the input through unchecked would reach `openDirAbsolute`,
-    // which aborts the process on a non-absolute path — so a bad value has
-    // to fail here, while there is still an error to report.
+    // Passing the input through unchecked would reach `openDirAbsolute`, which aborts the process on a non-absolute path — so a bad value has to fail here, while …
     const allocator = testing.allocator;
     var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     try testing.expectError(
@@ -524,9 +465,7 @@ test "resolveStaticDirAbs: a missing relative dir is an error, not a passthrough
     );
 }
 
-// ---------------------------------------------------------------------------
 // Path resolution behavior
-// ---------------------------------------------------------------------------
 
 test "resolve: index.html for root path" {
     const allocator = testing.allocator;
@@ -605,14 +544,10 @@ test "resolve: returns file for a directory with index.html" {
     try testing.expectEqualStrings("text/html; charset=utf-8", result.file.mime);
 }
 
-// ---------------------------------------------------------------------------
-// SPA fallback — paths under `spa_fallback_prefix` that don't resolve to a
-// real file or directory AND don't have a file extension are served as the
+// SPA fallback — paths under `spa_fallback_prefix` that don't resolve to a real file or directory AND don't have a file extension are served as the
 
 test "resolve SPA: returns root index.html for a route-style path like /app" {
-    // Mirrors the bug: reloading the desktop app at `/app/settings` 404'd
-    // because the SPA build output has no `/app/settings` file, only
-    // `index.html` + `assets/`.
+    // Mirrors the bug: reloading the desktop app at `/app/settings` 404'd because the SPA build output has no `/app/settings` file, only `index.html` + `assets/`.
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -659,9 +594,7 @@ test "resolve SPA: returns root index.html for nested route /app/chat/session_xy
 }
 
 test "resolve SPA: second prefix serves index.html for /login (refresh-safe)" {
-    // The standalone login page lives outside /app but from the same
-    // index.html. Refreshing at /login?redirect=/app (query is stripped
-    // before matching, so this is /login) must serve the SPA shell, not 404.
+    // The standalone login page lives outside /app but from the same index.html.
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -686,8 +619,7 @@ test "resolve SPA: second prefix serves index.html for /login (refresh-safe)" {
 }
 
 test "resolve SPA: /login still 404s when second prefix is unset" {
-    // prefix2 defaults to null — callers that only set /app keep the
-    // old behavior for /login.
+    // prefix2 defaults to null — callers that only set /app keep the old behavior for /login.
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -707,8 +639,7 @@ test "resolve SPA: /login still 404s when second prefix is unset" {
 }
 
 test "resolve SPA: still returns 404 for missing assets that DO have an extension" {
-    // The SPA fallback must NOT silently mask missing JS/CSS/etc. as
-    // index.html — that would hide real build/deploy bugs.
+    // The SPA fallback must NOT silently mask missing JS/CSS/etc. as index.html — that would hide real build/deploy bugs.
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -730,9 +661,7 @@ test "resolve SPA: still returns 404 for missing assets that DO have an extensio
 }
 
 test "resolve SPA: returns not_found when root has no index.html" {
-    // If the SPA isn't even deployed, route-style paths under the prefix
-    // should 404 (not serve some garbage file). The fallback only kicks
-    // in when a real index.html exists.
+    // If the SPA isn't even deployed, route-style paths under the prefix should 404 (not serve some garbage file).
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -749,8 +678,7 @@ test "resolve SPA: returns not_found when root has no index.html" {
 }
 
 test "resolve SPA: real file with extension still wins over fallback" {
-    // Sanity: if a file with the requested name DOES exist (has an extension
-    // AND is present), serve it directly — don't fall back.
+    // Sanity: if a file with the requested name DOES exist (has an extension AND is present), serve it directly — don't fall back.
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -796,8 +724,7 @@ test "resolve SPA: paths OUTSIDE the prefix still 404 (no regression for /api, /
         .spa_fallback_prefix = "/app",
     };
 
-    // Each is a route-style path (no extension) but OUTSIDE the
-    // configured /app prefix — all should 404.
+    // Each is a route-style path (no extension) but OUTSIDE the configured /app prefix — all should 404.
     const cases = [_][]const u8{
         "/api/health",          // API-style
         "/api/not-a-real-path", // API-style, unregistered
@@ -813,9 +740,7 @@ test "resolve SPA: paths OUTSIDE the prefix still 404 (no regression for /api, /
 }
 
 test "resolve SPA: opt-out via spa_fallback_prefix = null (default behavior)" {
-    // Backward compatibility: callers that don't set the prefix get the
-    // old "404 for any missing path" behavior — no silent index.html
-    // fallback. This guards the 3 non-SPA use cases (docs sites, etc.).
+    // Backward compatibility: callers that don't set the prefix get the old "404 for any missing path" behavior — no silent index.html fallback.
     const allocator = testing.allocator;
     var env = try setupRoot(allocator);
     defer env.deinit(allocator);
@@ -832,20 +757,16 @@ test "resolve SPA: opt-out via spa_fallback_prefix = null (default behavior)" {
         .allocator = allocator,
     };
 
-    // Without the prefix, "/app" and "/app/settings" both 404 even
-    // though index.html exists — the old behavior.
+    // Without the prefix, "/app" and "/app/settings" both 404 even though index.html exists — the old behavior.
     try testing.expect((try resolve(&cfg, env.io, "/app")) == .not_found);
     try testing.expect((try resolve(&cfg, env.io, "/app/settings")) == .not_found);
-    // "/" still works (always serves index.html via the existing
-    // root-path branch).
+    // "/" still works (always serves index.html via the existing root-path branch).
     const root = try resolve(&cfg, env.io, "/");
     defer if (root == .file) allocator.free(root.file.abs_path);
     try testing.expect(root == .file);
 }
 
-// ---------------------------------------------------------------------------
 // Mime detection
-// ---------------------------------------------------------------------------
 
 test "resolve: mime types for common web extensions" {
     const allocator = testing.allocator;
@@ -905,9 +826,7 @@ test "resolve: case-insensitive extension match" {
     try testing.expectEqualStrings("text/html; charset=utf-8", result.file.mime);
 }
 
-// ---------------------------------------------------------------------------
 // parseRange() — HTTP `Range:` header parser
-// ---------------------------------------------------------------------------
 
 test "parseRange: full range bytes=0-99 with file_size=200" {
     const result = try parseRange("bytes=0-99", 200);
@@ -924,9 +843,7 @@ test "parseRange: open-ended range bytes=0- with file_size=200" {
 }
 
 test "parseRange: zero-length file rejects every range form" {
-    // `bytes=0-` on an empty file used to compute `0u64 - 1` before the
-    // bounds check ran, which is an unsigned-underflow safety panic and
-    // aborted the process.
+    // `bytes=0-` on an empty file used to compute `0u64 - 1` before the bounds check ran, which is an unsigned-underflow safety panic and aborted the process.
     for ([_][]const u8{ "bytes=0-", "bytes=0-0", "bytes=0-99", "bytes=-1", "bytes=-50", "bytes=5-" }) |header| {
         const result = try parseRange(header, 0);
         try testing.expect(result == null);
@@ -934,8 +851,7 @@ test "parseRange: zero-length file rejects every range form" {
 }
 
 test "parseRange: single-byte file open-ended returns byte 0" {
-    // file_size == 1 is the smallest non-zero size; `file_size - 1` is
-    // legal here and must still produce a usable range.
+    // file_size == 1 is the smallest non-zero size; `file_size - 1` is legal here and must still produce a usable range.
     const result = try parseRange("bytes=0-", 1);
     try testing.expect(result != null);
     try testing.expectEqual(@as(u64, 0), result.?.start);

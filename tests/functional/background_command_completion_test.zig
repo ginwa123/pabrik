@@ -1,6 +1,4 @@
-// Functional e2e for background-command completion (Tasks 1-3). Zig port of
-// `tests/functional/background_command_completion_test.py` (same test names,
-// same order).
+// Functional e2e for background-command completion (Tasks 1-3).
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,26 +10,19 @@ const Io = std.Io;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// A PID that can never be alive on Linux (max pid is 4194304 by
-/// default; kill(999999999, 0) -> ESRCH). Fits in i32 so the cron's
-/// parseInt(i32) accepts the row instead of skipping it as corrupt.
+/// A PID that can never be alive on Linux (max pid is 4194304 by default; kill(999999999, 0) -> ESRCH).
 const DEAD_PID: i64 = 999_999_999;
 
-/// Poll cadence for the cron tick (fires every minute on the minute,
-/// so worst-case wait is ~60s + processing). 5s interval x 18 polls =
-/// 90s budget keeps the suite under ~2min even on a slow CI runner.
+/// Poll cadence for the cron tick (fires every minute on the minute, so worst-case wait is ~60s + processing). 5s interval x 18 polls = 90s budget keeps the suite …
 const POLL_INTERVAL_MS: i64 = 5_000;
 const POLL_ATTEMPTS: usize = 18;
-/// POLL_INTERVAL_MS x POLL_ATTEMPTS, in seconds — the budget the failure
-/// message quotes back to the reader.
+/// POLL_INTERVAL_MS x POLL_ATTEMPTS, in seconds — the budget the failure message quotes back to the reader.
 const POLL_BUDGET_S: u32 = 90;
 
-/// A unique marker planted in the fake background log; the completion
-/// envelope must carry it verbatim.
+/// A unique marker planted in the fake background log; the completion envelope must carry it verbatim.
 const MARKER = "bg-completion-marker-7f3a9c";
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. Exit code for a
-/// finished child, or null if a signal stopped it.
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
         .exited => |c| c,
@@ -110,7 +101,6 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
 }
 
 /// PUT auto-creates the sessions row (ensureSessionExists); no LLM needed.
-/// Python `_create_session`.
 fn createSession(h: *Harness, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -131,9 +121,7 @@ fn getQueue(h: *Harness, session_id: []const u8) !harness.Json {
     return r.json();
 }
 
-/// Insert a `session_background_process` row WHILE the binary runs. Schema
-/// mirrors migration 014: `(session_id, pid, command, log_path, started_at,
-/// status)` with composite PK `(session_id, pid)`.
+/// Insert a `session_background_process` row WHILE the binary runs.
 fn insertBgRow(
     temp_dir: []const u8,
     session_id: []const u8,
@@ -200,9 +188,7 @@ fn countBgRows(temp_dir: []const u8, session_id: []const u8) !u64 {
     };
 }
 
-/// The first queue message containing `needle`, dupe'd for the caller. Python
-/// looped `for entry in body.get("messages", []): msg = entry.get("message",
-/// "")`.
+/// The first queue message containing `needle`, dupe'd for the caller.
 fn findQueueMessage(doc: *const harness.Json, needle: []const u8) !?[]u8 {
     const arr = doc.array("messages") orelse return null;
     for (arr.items) |entry| {
@@ -219,9 +205,7 @@ fn findQueueMessage(doc: *const harness.Json, needle: []const u8) !?[]u8 {
     return null;
 }
 
-// GET .../queue_messages on a session with no queued rows returns
-// {messages: [], count: 0} — the baseline the polling test asserts
-// against before the cron tick fires.
+// GET .../queue_messages on a session with no queued rows returns {messages: [], count: 0} — the baseline the polling test asserts against before the cron tick …
 test "queue_messages_empty_for_fresh_bg_session" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -235,8 +219,7 @@ test "queue_messages_empty_for_fresh_bg_session" {
     var body = try getQueue(&h, session_id);
     defer body.deinit();
 
-    // Python: `body.get("messages") == []` — an ABSENT key must fail, so
-    // `orelse` rather than a defaulted empty array.
+    // Python: `body.get("messages") == []` — an ABSENT key must fail, so `orelse` rather than a defaulted empty array.
     const messages = body.array("messages") orelse {
         std.debug.print("queue_messages body has no `messages` array\n", .{});
         return error.TestUnexpectedResult;
@@ -246,9 +229,7 @@ test "queue_messages_empty_for_fresh_bg_session" {
         return error.TestUnexpectedResult;
     }
 
-    // Python: `body.get("count") == 0`. `doc.int` returns null for a
-    // non-integer, so a missing or string-typed `count` also fails here —
-    // which is what `body.get("count") == 0` did.
+    // Python: `body.get("count") == 0`.
     const count = body.int("count") orelse {
         std.debug.print("queue_messages body has no integer `count`\n", .{});
         return error.TestUnexpectedResult;
@@ -259,9 +240,7 @@ test "queue_messages_empty_for_fresh_bg_session" {
     }
 }
 
-// A bg row with a dead PID is picked up by the per-minute cron: the Task 1
-// envelope lands in queue_messages and the row is deleted. Polls (cron ticks
-// on the minute; worst case ~60s wait).
+// A bg row with a dead PID is picked up by the per-minute cron: the Task 1 envelope lands in queue_messages and the row is deleted.
 test "dead_background_process_notifies_completion_queue" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -285,9 +264,7 @@ test "dead_background_process_notifies_completion_queue" {
         }
     }
 
-    // Log file lives inside the isolated tmpdir so the binary (same
-    // host, same fs) can read it; content is a unique marker the
-    // envelope must contain verbatim.
+    // Log file lives inside the isolated tmpdir so the binary (same host, same fs) can read it; content is a unique marker the envelope must contain verbatim.
     const log_path = try harness.harnessPath(gpa, h.temp_dir, &.{"bg-completion-test.log"});
     defer gpa.free(log_path);
     {
@@ -328,9 +305,7 @@ test "dead_background_process_notifies_completion_queue" {
         return error.TestUnexpectedResult;
     };
 
-    // JSON envelope shape (background_process.zig: buildCompletionMessage):
-    // {pid,command,stdout,truncated,...} object. Role stays user — no
-    // tool_call_id, no prose header, no quote fence.
+    // JSON envelope shape (background_process.zig: buildCompletionMessage)
     if (std.mem.indexOf(u8, env, "\"pid\":") == null) {
         std.debug.print("envelope missing pid key: {s}\n", .{env});
         return error.TestUnexpectedResult;
@@ -356,9 +331,7 @@ test "dead_background_process_notifies_completion_queue" {
         return error.TestUnexpectedResult;
     }
 
-    // Notify-then-delete: the row must be gone once notified (allow one
-    // extra poll for the DELETE to land if the test raced the tick
-    // between the queue INSERT and the batch DELETE).
+    // Notify-then-delete: the row must be gone once notified (allow one extra poll for the DELETE to land if the test raced the tick between the queue INSERT and the …
     var waits: usize = 0;
     while (waits < 3) : (waits += 1) {
         if (try countBgRows(h.temp_dir, session_id) == 0) break;

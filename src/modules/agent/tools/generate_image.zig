@@ -1,6 +1,4 @@
-//! `generate_image` — an agent tool that calls the OpenAI Images API (`POST
-//! /v1/images/generations`) to generate images from a text prompt using
-//! DALL-E 2 / DALL-E 3 / gpt-image-1.
+//! `generate_image` — an agent tool that calls the OpenAI Images API (`POST /v1/images/generations`) to generate images from a text prompt using DALL-E 2 / DALL-E …
 
 const std = @import("std");
 const custom_http_client = @import("kabelweb").client;
@@ -8,9 +6,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const ToolProperty = schemas.ToolProperty;
 
-/// Maximum response body size — 4 MiB covers a single DALL-E 3 b64_json
-/// payload (1-3 MiB PNG → 1.3-4 MiB base64). 4 MiB also covers a 10-image
-/// DALL-E 2 multi-image response comfortably.
+/// Maximum response body size — 4 MiB covers a single DALL-E 3 b64_json payload (1-3 MiB PNG → 1.3-4 MiB base64). 4 MiB also covers a 10-image DALL-E 2 …
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Input structure for the `generate_image` tool.
@@ -19,33 +15,28 @@ pub const GenerateImageInput = struct {
     prompt: []const u8,
     /// Model name. `null` → "dall-e-3".
     model: ?[]const u8 = null,
-    /// Number of images. `null` → 1. Range 1-10; DALL-E 3 and gpt-image-1
-    /// only accept n=1 (OpenAI returns 400 if violated).
+    /// Number of images.
     n: ?u8 = null,
-    /// Output size. `null` → "1024x1024". Allowed values depend on model
-    /// (enforced by `validateModelSize`).
+    /// Output size.
     size: ?[]const u8 = null,
     /// Quality (DALL-E 3 only). Ignored for other models.
     quality: ?[]const u8 = null,
     /// Style (DALL-E 3 only). Ignored for other models.
     style: ?[]const u8 = null,
-    /// Response format. `null` → "b64_json". OpenAI's defaults apply if
-    /// we don't pass it explicitly — we always pass it for predictability.
+    /// Response format.
     response_format: ?[]const u8 = null,
     /// End-user identifier forwarded to OpenAI for abuse detection.
     user: ?[]const u8 = null,
 };
 
-/// One decoded image record from OpenAI's response. Exactly one of `b64_json`
-/// / `url` is non-null (depends on `response_format`); the other is null.
+/// One decoded image record from OpenAI's response.
 pub const ImageRecord = struct {
     b64_json: ?[]const u8 = null,
     url: ?[]const u8 = null,
     revised_prompt: ?[]const u8 = null,
 };
 
-/// One saved image ready to be referenced by `<image>` element in the
-/// envelope.
+/// One saved image ready to be referenced by `<image>` element in the envelope.
 pub const SavedImage = struct {
     path: []const u8,
     bytes: u64,
@@ -95,9 +86,7 @@ pub const generate_image_tool = AgentTool{
 
 // ─── Model + size validation ─────────────────────────────────────────────
 
-/// Allowed (model, size) combinations per OpenAI's API docs as of
-/// 2026-08-14. The set is small and stable; if OpenAI adds new models
-/// or sizes, add them here.
+/// Allowed (model, size) combinations per OpenAI's API docs as of 2026-08-14.
 const ModelSizes = struct {
     model: []const u8,
     sizes: []const []const u8,
@@ -109,17 +98,14 @@ const MODEL_SIZE_TABLE = [_]ModelSizes{
     .{ .model = "gpt-image-1", .sizes = &.{ "1024x1024", "1536x1026", "1024x1536" } },
 };
 
-/// Validate that `size` is one of the sizes allowed for `model`. Returns
-/// `null` on success, or an owned error message string on failure (caller
-/// wraps it in the JSON error payload via `toJSONError`).
+/// Validate that `size` is one of the sizes allowed for `model`.
 pub fn validateModelSize(allocator: std.mem.Allocator, model: []const u8, size: []const u8) !?[]u8 {
     for (MODEL_SIZE_TABLE) |entry| {
         if (std.mem.eql(u8, model, entry.model)) {
             for (entry.sizes) |allowed| {
                 if (std.mem.eql(u8, size, allowed)) return null;
             }
-            // Size not in the allowed list — build an error message
-            // listing the allowed sizes for this model.
+            // Size not in the allowed list — build an error message listing the allowed sizes for this model.
             var allowed_buf = std.ArrayList(u8).empty;
             defer allowed_buf.deinit(allocator);
             for (entry.sizes, 0..) |s, i| {
@@ -213,8 +199,7 @@ pub fn buildJsonRequestBody(allocator: std.mem.Allocator, input: GenerateImageIn
 
 // ─── JSON response parser ────────────────────────────────────────────────
 
-/// Parse an OpenAI Images API response body. Returns one `ImageRecord` per
-/// image in the `data` array.
+/// Parse an OpenAI Images API response body.
 pub fn parseImageResponse(allocator: std.mem.Allocator, body: []const u8) ![]ImageRecord {
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch {
         return error.InvalidJson;
@@ -269,9 +254,7 @@ pub fn parseImageResponse(allocator: std.mem.Allocator, body: []const u8) ![]Ima
 
 // ─── Save image to disk ──────────────────────────────────────────────────
 
-/// Decode `b64_payload` (base64) and write the raw bytes to
-/// `<cwd>/generated_images/img_<unix_ms>_<index>.<ext>`. Returns the absolute
-/// path.
+/// Decode `b64_payload` (base64) and write the raw bytes to `<cwd>/generated_images/img_<unix_ms>_<index>.<ext>`.
 pub fn saveImageToDisk(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -288,9 +271,7 @@ pub fn saveImageToDisk(
     defer allocator.free(decoded);
     decoder.decode(decoded, b64_payload) catch return error.InvalidBase64;
 
-    // 2. Resolve filename + compose the absolute path up front so the
-    //    I/O calls below write to the right place (the cwd passed by
-    //    the caller is the canonical absolute path; we don't chdir).
+    // 2.
     const ts = std.Io.Clock.now(.real, io).toMilliseconds();
     const ext = extForMime(mime);
     const filename = try std.fmt.allocPrint(allocator, "img_{d}_{d}.{s}", .{ ts, index, ext });
@@ -299,9 +280,7 @@ pub fn saveImageToDisk(
     const abs_path = try std.fs.path.join(allocator, &.{ cwd, "generated_images", filename });
     errdefer allocator.free(abs_path);
 
-    // 3. Create the parent directory (mkdir -p). Idempotent — no
-    //    error if the dir already exists. Extract the parent dir from
-    //    the absolute path so we don't depend on process cwd.
+    // 3.
     const parent_dir = std.fs.path.dirname(abs_path) orelse abs_path;
     try std.Io.Dir.cwd().createDirPath(io, parent_dir);
 
@@ -314,8 +293,6 @@ pub fn saveImageToDisk(
 }
 
 /// Map an image MIME type to its conventional file extension.
-/// OpenAI always returns PNG today; the function is here for forward
-/// compatibility (gpt-image-1 may return other formats in the future).
 fn extForMime(mime: []const u8) []const u8 {
     if (std.mem.eql(u8, mime, "image/png")) return "png";
     if (std.mem.eql(u8, mime, "image/jpeg")) return "jpg";
@@ -324,9 +301,7 @@ fn extForMime(mime: []const u8) []const u8 {
     return "png"; // safe default — PNG decoders exist everywhere
 }
 
-/// Read the file size of a just-written image. Returns 0 on any error
-/// (open failure, stat failure) — the LLM still gets a valid path; the
-/// size is metadata, not part of the tool's correctness contract.
+/// Read the file size of a just-written image.
 fn statFileSize(io: std.Io, path: []const u8) u64 {
     const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch return 0;
     defer std.Io.File.close(file, io);
@@ -336,9 +311,7 @@ fn statFileSize(io: std.Io, path: []const u8) u64 {
 
 // ─── XML helpers ─────────────────────────────────────────────────────────
 
-/// Escape XML special characters. Mirrors the helper in
-/// `kanban_list.zig` (duplicated per project convention —
-/// every tool file has its own copy).
+/// Escape XML special characters.
 fn xmlEscape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
@@ -357,8 +330,7 @@ fn xmlEscape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     return try result.toOwnedSlice(allocator);
 }
 
-/// JSON payload for a generate_image result. `std.json` handles all
-/// escaping — no manual layer.
+/// JSON payload for a generate_image result.
 pub const GenerateImageJSONImage = struct {
     index: usize,
     path: []const u8,
@@ -374,9 +346,7 @@ pub const GenerateImageJSON = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Build the success payload:
-/// `{status:"generated", count, model, size, images:[{index, path}], revised_prompt}`.
-/// `revised_prompt` is null when the model doesn't rewrite (DALL-E 2).
+/// Build the success payload
 pub fn toJSONSuccess(
     allocator: std.mem.Allocator,
     model: []const u8,
@@ -400,8 +370,6 @@ pub fn toJSONSuccess(
 }
 
 /// Build the error payload: `{status:"error", error:...}`.
-/// Mirrors the old `<generate_image><error>...</error></generate_image>`
-/// fields (just the message) in JSON form.
 pub fn toJSONError(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     return try std.json.Stringify.valueAlloc(allocator, GenerateImageJSON{
         .status = "error",
@@ -411,9 +379,7 @@ pub fn toJSONError(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
 
 // ─── HTTP execution ──────────────────────────────────────────────────────
 
-/// Execute the `generate_image` tool end-to-end: 1. Validate `prompt`
-/// (non-empty) 2. Apply defaults for `model`, `n`, `size`, `response_format`
-/// 3.
+/// Execute the `generate_image` tool end-to-end: 1.
 pub fn execute_generate_image(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -438,9 +404,7 @@ pub fn execute_generate_image(
         return toJSONError(allocator, err_msg);
     }
 
-    // If the user asked for "url" response_format, surface a clear
-    // warning — we don't currently return the URL in the envelope, so
-    // the user would be confused why their url param had no effect.
+    // If the user asked for "url" response_format, surface a clear warning — we don't currently return the URL in the envelope, so the user would be confused why …
     if (!std.mem.eql(u8, response_format, "b64_json")) {
         std.log.warn("generate_image: response_format={s} requested — image is still saved to disk; URL is not returned in the envelope", .{response_format});
     }
@@ -462,9 +426,7 @@ pub fn execute_generate_image(
     };
     defer allocator.free(uri_str);
 
-    // Validate the URL scheme BEFORE handing to libcurl (same pattern
-    // as Agent.zig:1799-1821 — a missing scheme surfaces as
-    // CURLE_UNSUPPORTED_PROTOCOL with no hint about WHY).
+    // Validate the URL scheme BEFORE handing to libcurl (same pattern as Agent.zig:1799-1821 — a missing scheme surfaces as CURLE_UNSUPPORTED_PROTOCOL with no hint …
     if (!std.mem.startsWith(u8, uri_str, "http://") and
         !std.mem.startsWith(u8, uri_str, "https://"))
     {
@@ -493,8 +455,7 @@ pub fn execute_generate_image(
         .body = json_body,
     };
 
-    // Timeouts: 60 s connect + 120 s total. DALL-E 3 generation takes
-    // 5-30 s typically, gpt-image-1 can be slower for large sizes.
+    // Timeouts: 60 s connect + 120 s total.
     const options = custom_http_client.Options{
         .timeout_ms = 120_000,
         .connect_timeout_ms = 30_000,
@@ -530,8 +491,7 @@ pub fn execute_generate_image(
         return toJSONError(allocator, msg_buf.items);
     }
 
-    // Enforce the response-size cap BEFORE parsing (a runaway server
-    // response shouldn't OOM the LLM context).
+    // Enforce the response-size cap BEFORE parsing (a runaway server response shouldn't OOM the LLM context).
     if (response.body.len > MAX_RESPONSE_BYTES) {
         const msg = try std.fmt.allocPrint(
             allocator,
@@ -561,9 +521,7 @@ pub fn execute_generate_image(
         allocator.free(images);
     }
 
-    // 10. Save each image to disk and collect SavedImage records. If a save
-    // fails, abort and return the error envelope (the user explicitly asked
-    // for the image; partial results are worse than a clean failure).
+    // 10.
     var saved = try allocator.alloc(SavedImage, images.len);
     errdefer {
         for (saved[0..images.len]) |s| allocator.free(@constCast(s.path));
@@ -573,8 +531,7 @@ pub fn execute_generate_image(
     var last_revised: ?[]const u8 = null;
 
     for (images, 0..) |img, i| {
-        // Only b64_json is supported for saving (we don't follow
-        // external URLs — the OpenAI URL expires in 60 min anyway).
+        // Only b64_json is supported for saving (we don't follow external URLs — the OpenAI URL expires in 60 min anyway).
         const b64 = img.b64_json orelse {
             const msg = try std.fmt.allocPrint(
                 allocator,
@@ -595,23 +552,17 @@ pub fn execute_generate_image(
             return toJSONError(allocator, msg);
         };
 
-        // Read back the file size so the LLM sees an honest number
-        // (instead of "0" or the b64 length which differs). On stat
-        // failure, fall back to 0 — the LLM still gets a valid path.
+        // Read back the file size so the LLM sees an honest number (instead of "0" or the b64 length which differs).
         const stat_size: u64 = statFileSize(io, path);
         saved[i] = .{ .path = path, .bytes = stat_size, .mime = "image/png" };
 
-        // Capture the last revised_prompt (DALL-E 3 / gpt-image-1 return
-        // one for every image; for n>1 we use the last one in the
-        // envelope since they're all the same model + same prompt).
+        // Capture the last revised_prompt (DALL-E 3 / gpt-image-1 return one for every image; for n>1 we use the last one in the envelope since they're all the same …
         if (img.revised_prompt) |rp| {
             last_revised = rp;
         }
     }
 
-    // 11. Build the success envelope.
-    //     Note: `last_revised` is borrowed from `images[i].revised_prompt`
-    //     — we MUST not free it. The `defer` above handles the cleanup.
+    // 11.
     const envelope = toJSONSuccess(allocator, model, size, saved, last_revised) catch |err| {
         const msg = try std.fmt.allocPrint(
             allocator,
@@ -622,9 +573,7 @@ pub fn execute_generate_image(
         return toJSONError(allocator, msg);
     };
 
-    // saved[].path was allocated by std.fs.path.join in saveImageToDisk —
-    // ownership transfers to the envelope? No, the envelope only references
-    // the path strings as slices. We have to free them now that we're done.
+    // saved[].path was allocated by std.fs.path.join in saveImageToDisk — ownership transfers to the envelope?
     for (saved) |s| allocator.free(@constCast(s.path));
     allocator.free(saved);
 
@@ -632,8 +581,6 @@ pub fn execute_generate_image(
 }
 
 /// Extract OpenAI's `error.message` field from an error response body.
-/// Returns null if the body is not the error envelope or doesn't have
-/// the expected shape — caller falls back to a generic message.
 fn extractOpenAiErrorMessage(allocator: std.mem.Allocator, body: []const u8) ?[]u8 {
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch return null;
     defer parsed.deinit();
@@ -656,9 +603,7 @@ const pabrikcore = @import("pabrikcore");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-/// Open a fresh `std.Io.Threaded` runtime for tests that need an Io (the
-/// save-to-disk helper needs it for `std.Io.Clock.now` and
-/// `std.Io.Dir.createFile`).
+/// Open a fresh `std.Io.Threaded` runtime for tests that need an Io (the save-to-disk helper needs it for `std.Io.Clock.now` and `std.Io.Dir.createFile`).
 fn setupIo() std.Io.Threaded {
     const threaded = std.Io.Threaded.init(testing.allocator, .{});
     return threaded;
@@ -926,15 +871,11 @@ test "saveImageToDisk writes base64 bytes to <cwd>/generated_images/img_<ts>_<id
     try std.Io.Dir.cwd().createDirPath(io, tmp_cwd);
 
     // "iVBORw0KGgo=" decodes to 8 bytes (PNG signature prefix + IHDR start).
-    // We don't need a valid PNG for the save test — we just verify the
-    // bytes round-trip through disk.
     const path = try saveImageToDisk(alloc, io, tmp_cwd, "iVBORw0KGgo=", 0, "image/png");
     defer alloc.free(path);
 
     try testing.expect(std.mem.endsWith(u8, path, ".png"));
-    // Path separator: `/` on POSIX, `\` on Windows. `std.fs.path.join`
-    // uses the host's separator, so accept either when checking the
-    // subdirectory in the returned path.
+    // Path separator: `/` on POSIX, `\` on Windows.
     const sep_str: []const u8 = if (builtin.os.tag == .windows) "\\" else "/";
     try testing.expect(std.mem.indexOf(u8, path, sep_str ++ "generated_images" ++ sep_str) != null);
     try testing.expect(std.mem.indexOf(u8, path, "img_") != null);
@@ -974,8 +915,7 @@ test "saveImageToDisk rejects when the base64 payload is not valid base64" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    // "not_valid_base64!!!" contains '!' and ' ' which are not in the
-    // base64 alphabet. std.base64.standard.Decoder rejects them.
+    // "not_valid_base64!!!" contains '!' and ' ' which are not in the base64 alphabet. std.base64.standard.Decoder rejects them.
     const result = saveImageToDisk(alloc, io, "/tmp/pabrik-generate-image-bad-b64", "not_valid_base64!!!", 0, "image/png");
     try testing.expectError(error.InvalidBase64, result);
 }
@@ -1041,7 +981,6 @@ test "toJSONError produces status error with message" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1072,9 +1011,7 @@ pub fn execGenerateImage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // 2. Call the impl with the active profile's API endpoint + the session's
-    // working directory. Any tool-level error (HTTP, validation,
-    // save-to-disk) is already encoded in the JSON payload — we just wrap it.
+    // 2.
     const inner = execute_generate_image(
         ctx.allocator,
         ctx.io,
@@ -1097,8 +1034,7 @@ pub fn execGenerateImage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer ctx.allocator.free(inner);
 
-    // 3. Detect the {status:"error", error:...} shape and surface it to the
-    // LLM as success=false.
+    // 3.
     {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch null;
         if (inner_parsed) |pv| {

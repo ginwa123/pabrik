@@ -1,5 +1,4 @@
-//! `POST /api/invitations/:invitation_id/accept` — the invitee says yes, and
-//! THIS is the only place a membership row appears out of an invitation.
+//! `POST /api/invitations/:invitation_id/accept` — the invitee says yes, and THIS is the only place a membership row appears out of an invitation.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -182,8 +181,7 @@ test "useCase answers 404 for an invitation that is not the caller's" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The installation owner is not `inv_1`'s invitee, so the row is invisible
-    // to them — the same concealment a foreign workspace gets.
+    // The installation owner is not `inv_1`'s invitee, so the row is invisible to them — the same concealment a foreign workspace gets.
     try testing.expectError(error.InvitationNotFound, run(&ctx, "inv_1"));
     try testing.expectEqual(@as(u16, 404), statusFor(error.InvitationNotFound));
     try testing.expectEqualStrings("Invitation not found", messageFor(error.InvitationNotFound));

@@ -30,23 +30,18 @@ export interface SettingsSectionItem {
   id: string
   label: string
   icon: UiIconName
-  /**    * Heading this item sits under. A heading is rendered only where the group CHANGES, so the first
-   * group needs no separate label above the scope label the sidebar already shows. */
+  /** Heading this item sits under. */
   group?: string
 }
 
 const USER_SECTIONS: readonly SettingsSectionItem[] = [
-  // Decision D4: General is the only CONFIG left at user level — the rest moved to Workspace
-  // settings. Security sits here too because an account's password is not a workspace value.
-  // Appearance is a per-browser UI preference, which also belongs to the user, not a workspace.
+  // Decision D4: General is the only CONFIG left at user level — the rest moved to Workspace settings.
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'security', label: 'Security', icon: 'lock' },
 ]
 
-/**  * Presentation for each moved config section. A `Record` keyed by the section ids, not a parallel
- * hand-written list: adding an id to `WORKSPACE_AGENT_SECTIONS` without a label here is then a TYPE
- * error, which is what stops the nav and the workspace view drifting into a dead nav item. */
+/** Presentation for each moved config section. */
 const AGENT_SECTION_META: Record<
   (typeof WORKSPACE_AGENT_SECTIONS)[number],
   { label: string; icon: UiIconName }
@@ -61,15 +56,12 @@ const AGENT_SECTION_META: Record<
 const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [
   { id: 'overview', label: 'Overview', icon: 'cards', group: 'Workspace' },
   { id: 'usage', label: 'Usage', icon: 'chart', group: 'Workspace' },
-  // Who is in the workspace, next to what it is. `workspace_members` already
-  // answered "may this user see it"; this section is what manages the rows.
+  // Who is in the workspace, next to what it is.
   { id: 'members', label: 'Members', icon: 'users', group: 'Workspace' },
   { id: 'secrets', label: 'Secrets', icon: 'key', group: 'Workspace' },
   { id: 'skills', label: 'Skills', icon: 'books', group: 'Workspace' },
   { id: 'memories', label: 'Memories', icon: 'brain', group: 'Workspace' },
-  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they edit THIS workspace's
-  // config overlay, which the backend merges over the user-level config, so a workspace that
-  // overrides nothing still behaves exactly as it did before they existed.
+  // The sections that moved here (Migration 105 + `PabrikConfigEditor`): they edit THIS workspace's config overlay, which the backend merges over the user-level …
   ...WORKSPACE_AGENT_SECTIONS.map((id) => ({ id, ...AGENT_SECTION_META[id], group: 'Agent' })),
 ]
 
@@ -90,9 +82,7 @@ const router = (() => {
   try {
     return useRouter()
   } catch (e) {
-    // Router-less mount (unit tests): navigation becomes a no-op. The section state still works
-    // through the local-ref fallback in `useSettingsSection`, so the null here can never surface as
-    // a wrong section — only as a button that does nothing in tests.
+    // Router-less mount (unit tests): navigation becomes a no-op.
     console.warn('[settings-shell] no router, navigation disabled', e)
     return null
   }
@@ -117,8 +107,7 @@ const workspaceOptions = computed(() =>
   workspacesStore.workspaces.map((w) => ({ id: w.id, name: w.name })),
 )
 
-/** The workspace this settings surface is ABOUT: the one in the URL, else the one the app is
- * actually in. `workspaceOptions[0]` is NOT that workspace. */
+/** The workspace this settings surface is ABOUT: the one in the URL, else the one the app is actually in. */
 const inScopeWorkspaceId = computed(() =>
   resolveWorkspaceId(props.workspaceId, workspacesStore.activeWorkspace?.id),
 )
@@ -134,9 +123,7 @@ function goWorkspace(id: string): void {
   void router.push({ path: `/app/${id}/settings` })
 }
 
-/**  * The Workspace tab's target. The in-scope workspace wins; only a cold boot with neither a URL
- * workspace nor an active one falls back to the first listed row, because the tab has to resolve to
- * something. */
+/** The Workspace tab's target. */
 function goWorkspaceScope(): void {
   goWorkspace(inScopeWorkspaceId.value || workspaceOptions.value[0]?.id || '')
 }
@@ -146,8 +133,7 @@ function goBack(): void {
   router.back()
 }
 
-// Notification toast state. Section content reports through the `notify`
-// slot prop; the shell owns the timer so both scopes share one toast.
+// Notification toast state.
 const notification = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
 function notify(message: string, type: 'success' | 'error'): void {

@@ -1,13 +1,10 @@
-// src/apps/desktop_app/subprocess.zig Manages the pabrik child process:
-// spawning it, polling its health endpoint, and cleaning it up.
+// src/apps/desktop_app/subprocess.zig Manages the pabrik child process
 
 const std = @import("std");
 const builtin = @import("builtin");
 const helpers = @import("helpers");
 
-// Windows-only WinSock2 externs, declared at module scope so they can be used
-// by the Windows branch of `httpGet` (`httpGetWindows`). Why a full winsock
-// block instead of `std.c.socket`? — Two reasons: 1.
+// Windows-only WinSock2 externs, declared at module scope so they can be used by the Windows branch of `httpGet` (`httpGetWindows`).
 const win_net = if (builtin.os.tag == .windows) struct {
     extern "ws2_32" fn WSAStartup(wVersionRequested: c_ushort, wsaData: *WSADATA) callconv(.c) c_int;
     extern "ws2_32" fn socket(domain: c_uint, sock_type: c_uint, protocol: c_uint) callconv(.c) c_int;
@@ -17,16 +14,13 @@ const win_net = if (builtin.os.tag == .windows) struct {
     extern "ws2_32" fn closesocket(sockfd: c_int) callconv(.c) c_int;
     extern "ws2_32" fn setsockopt(sockfd: c_int, level: c_int, optname: c_int, optval: ?*const anyopaque, optlen: c_int) callconv(.c) c_int;
 
-    /// WSADATA struct passed to WSAStartup. 400 bytes is the canonical size
-    /// per Winsock 2 docs; the contents are intentionally ignored (we just
-    /// need the call to succeed so the winsock runtime is available for
+    /// WSADATA struct passed to WSAStartup. 400 bytes is the canonical size per Winsock 2 docs; the contents are intentionally ignored (we just need the call to …
     const WSADATA = [400]u8;
 
     var wsa_init_lock: std.atomic.Mutex = .unlocked;
     var wsa_initialized: bool = false;
 
-    /// Winsock must be initialised with WSAStartup() before any other winsock
-    /// call.
+    /// Winsock must be initialised with WSAStartup() before any other winsock call.
     fn ensureWinsockInitialized() void {
         if (wsa_initialized) return;
         while (!wsa_init_lock.tryLock()) std.atomic.spinLoopHint();
@@ -44,30 +38,21 @@ const win_net = if (builtin.os.tag == .windows) struct {
     }
 } else struct {};
 
-/// Handle to a running pabrik subprocess. Caller MUST call `terminate()`
-/// (or `kill` + `wait`) before discarding, otherwise pabrik becomes a
-/// zombie until the OS reaps it.
+/// Handle to a running pabrik subprocess.
 pub const PabrikProcess = struct {
     child: std.process.Child,
     port: u16,
-    /// `child.id` is optional in 0.16; we normalize to a concrete `i32` (or 0
-    /// if the platform doesn't expose a pid — e.g. some sandboxed
-    /// environments).
+    /// `child.id` is optional in 0.16; we normalize to a concrete `i32` (or 0 if the platform doesn't expose a pid — e.g. some sandboxed environments).
     pid: i32,
 
-    /// Send SIGTERM, wait for the child to exit, then SIGKILL if it didn't
-    /// respond within a short grace period.
+    /// Send SIGTERM, wait for the child to exit, then SIGKILL if it didn't respond within a short grace period.
     pub fn terminate(self: *PabrikProcess, io: std.Io) void {
-        // In Zig 0.16, `child.kill(io)` is the all-in-one "terminate + wait +
-        // cleanup" function: it sends SIGTERM, blocks until the child exits,
-        // then sets `child.id = null` to mark the handle reaped.
+        // In Zig 0.16, `child.kill(io)` is the all-in-one "terminate + wait + cleanup" function: it sends SIGTERM, blocks until the child exits, then sets `child.id = …
         self.child.kill(io);
     }
 };
 
-/// Ask a pabrik the desktop itself started to stop. Reports whether the
-/// signal was delivered; a non-positive pid (nobody's child) is a no-op, as
-/// is Windows, where the desktop does not track a pabrik pid.
+/// Ask a pabrik the desktop itself started to stop.
 pub fn terminateByPid(pid: i32) bool {
     if (pid <= 0) return false;
     if (comptime builtin.os.tag == .windows) return false;
@@ -78,16 +63,13 @@ pub fn terminateByPid(pid: i32) bool {
     return true;
 }
 
-/// Poll http://127.0.0.1:<port>/health until it returns 200 or `timeout_ms`
-/// elapses. Returns `error.HealthCheckTimeout` on timeout.
+/// Poll http://127.0.0.1:<port>/health until it returns 200 or `timeout_ms` elapses.
 pub fn waitForHealth(
     port: u16,
     timeout_ms: u32,
     poll_ms: u32,
 ) !void {
-    // Deadline tracking uses `helpers.monotonicTimestampNanos` (QPC on
-    // Windows, CLOCK_MONOTONIC on POSIX — immune to NTP step adjustments) and
-    // the poll sleep uses `helpers.sleepMillis` (kernel32 Sleep on Windows,
+    // Deadline tracking uses `helpers.monotonicTimestampNanos` (QPC on Windows, CLOCK_MONOTONIC on POSIX — immune to NTP step adjustments) and the poll sleep uses …
     const start_ns = helpers.monotonicTimestampNanos();
     const timeout_ns: u64 = @as(u64, timeout_ms) * std.time.ns_per_ms;
 
@@ -97,8 +79,7 @@ pub fn waitForHealth(
         const elapsed_ns = helpers.monotonicTimestampNanos() - start_ns;
         if (elapsed_ns >= timeout_ns) return error.HealthCheckTimeout;
 
-        // Sleep until the next poll, capped at the remaining budget so we
-        // don't overshoot the deadline by a full poll interval.
+        // Sleep until the next poll, capped at the remaining budget so we don't overshoot the deadline by a full poll interval.
         const remaining_ms: u64 = @divFloor(timeout_ns - elapsed_ns, std.time.ns_per_ms);
         const sleep_ms: u32 = @intCast(@min(@as(u64, poll_ms), remaining_ms));
         helpers.sleepMillis(sleep_ms);
@@ -107,42 +88,34 @@ pub fn waitForHealth(
 
 /// Result of one `GET <path>` over a raw loopback socket.
 pub const HttpProbe = struct {
-    /// Parsed HTTP status code, or 0 when the connection failed or the
-    /// status line could not be read.
+    /// Parsed HTTP status code, or 0 when the connection failed or the status line could not be read.
     status: u16 = 0,
     /// True when a literal `<` appears in the response BODY.
     body_looks_html: bool = false,
 };
 
-/// How much of a probe response we read. Comfortably covers the status
-/// line + headers + the start of index.html, which is all the status/`<`
-/// sniff below needs.
+/// How much of a probe response we read.
 const max_probe_bytes: usize = 2048;
 
-/// Platform dispatch: winsock on Windows (UCRT socket calls don't work on
-/// SOCKET handles), libc sockets on POSIX.
+/// Platform dispatch: winsock on Windows (UCRT socket calls don't work on SOCKET handles), libc sockets on POSIX.
 fn httpGet(port: u16, path: []const u8) HttpProbe {
     if (comptime builtin.os.tag == .windows) return httpGetWindows(port, path);
     return httpGetPosix(port, path);
 }
 
-/// `GET <path>` and report the status code (+ a body sniff). Never allocates,
-/// never panics: any failure is reported as `status = 0` so callers can treat
-/// "unreachable" and "not what we asked for" alike.
+/// `GET <path>` and report the status code (+ a body sniff).
 pub fn probeHealth(port: u16) bool {
     const p = httpGet(port, "/health");
     return p.status >= 200 and p.status < 300;
 }
 
-/// Does this server actually serve the desktop webapp at `/`? Requires a 2xx
-/// AND an HTML-looking body.
+/// Does this server actually serve the desktop webapp at `/`?
 pub fn probeWebapp(port: u16) bool {
     const p = httpGet(port, "/");
     return p.status >= 200 and p.status < 300 and p.body_looks_html;
 }
 
-/// Can we stop reading? We need the status line (all of it) plus at least
-/// one body byte that looks like markup.
+/// Can we stop reading?
 fn probeResponseComplete(bytes: []const u8) bool {
     const header_end = std.mem.indexOf(u8, bytes, "\r\n\r\n") orelse return false;
     return std.mem.indexOfScalar(u8, bytes[header_end + 4 ..], '<') != null;
@@ -160,26 +133,20 @@ fn parseProbeResponse(bytes: []const u8) HttpProbe {
     return out;
 }
 
-/// Windows probe via the winsock API directly. Requires WSAStartup
-/// (lazy-init'd above) — without it every `socket()` call fails with
-/// WSANOTINITIALISED and the probe can never succeed.
+/// Windows probe via the winsock API directly.
 fn httpGetWindows(port: u16, path: []const u8) HttpProbe {
     win_net.ensureWinsockInitialized();
 
-    // AF_INET=2, SOCK_STREAM=1, IPPROTO_TCP=6 (same constants
-    // http_server.zig and test_helpers.zig use on Windows).
+    // AF_INET=2, SOCK_STREAM=1, IPPROTO_TCP=6 (same constants http_server.zig and test_helpers.zig use on Windows).
     const sock = win_net.socket(2, 1, 6);
     if (sock == -1) return .{}; // INVALID_SOCKET
     defer _ = win_net.closesocket(sock);
 
-    // 1-second per-call recv() timeout so a half-dead server can't hang the
-    // probe past the next-poll interval.
+    // 1-second per-call recv() timeout so a half-dead server can't hang the probe past the next-poll interval.
     const timeout_ms_win: u32 = 1000;
     _ = win_net.setsockopt(sock, 0xFFFF, 0x1006, @ptrCast(&timeout_ms_win), @sizeOf(u32));
 
-    // sockaddr_in for 127.0.0.1:port. Layout matches test_helpers.zig's
-    // TCP-loopback fixture (family/port/addr/zero); 0x0100007f is
-    // 127.0.0.1 as a little-endian u32 (wire bytes 127,0,0,1).
+    // sockaddr_in for 127.0.0.1:port.
     const sockaddr = std.c.sockaddr.in{
         .family = std.c.AF.INET,
         .port = std.mem.nativeToBig(u16, port),
@@ -188,8 +155,7 @@ fn httpGetWindows(port: u16, path: []const u8) HttpProbe {
     };
     if (win_net.connect(sock, std.mem.asBytes(&sockaddr), @sizeOf(std.c.sockaddr.in)) != 0) return .{};
 
-    // Send a minimal HTTP/1.0 request (server closes after one response
-    // — no keep-alive bookkeeping needed).
+    // Send a minimal HTTP/1.0 request (server closes after one response — no keep-alive bookkeeping needed).
     var req_buf: [256]u8 = undefined;
     const req = std.fmt.bufPrint(
         &req_buf,
@@ -203,9 +169,7 @@ fn httpGetWindows(port: u16, path: []const u8) HttpProbe {
         sent += @intCast(n);
     }
 
-    // Read the status line + the start of the body. We stop early once we
-    // have both (see probeResponseComplete) and otherwise at EOF, which
-    // `Connection: close` guarantees.
+    // Read the status line + the start of the body.
     var buf: [max_probe_bytes]u8 = undefined;
     var total: usize = 0;
     while (total < buf.len) {
@@ -218,15 +182,12 @@ fn httpGetWindows(port: u16, path: []const u8) HttpProbe {
 }
 
 fn httpGetPosix(port: u16, path: []const u8) HttpProbe {
-    // Open a blocking TCP socket. SO_RCVTIMEO gives the recv() call a
-    // per-attempt deadline so a half-dead server can't make the probe hang
-    // past the next-poll interval.
+    // Open a blocking TCP socket.
     const fd: std.c.fd_t = std.c.socket(std.c.AF.INET, std.c.SOCK.STREAM, 0);
     if (fd == -1) return .{};
     defer _ = std.c.close(fd);
 
-    // 1-second per-call recv() timeout. If the server hasn't responded within
-    // 1s we abandon this probe and let the outer loop retry.
+    // 1-second per-call recv() timeout.
     const rcvtimeo: std.c.timeval = .{ .sec = 1, .usec = 0 };
     _ = std.c.setsockopt(
         fd,
@@ -251,17 +212,14 @@ fn httpGetPosix(port: u16, path: []const u8) HttpProbe {
     );
     if (connect_rc == -1) return .{};
 
-    // Send a minimal HTTP/1.0 request. We use HTTP/1.0 (not 1.1) so
-    // the server is allowed to close the connection after the single
-    // response — no keep-alive bookkeeping needed.
+    // Send a minimal HTTP/1.0 request.
     var req_buf: [256]u8 = undefined;
     const req = std.fmt.bufPrint(
         &req_buf,
         "GET {s} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
         .{path},
     ) catch return .{};
-    // Loop the write: a short write on the post-spawn verification path
-    // would look like "server down" and get a healthy child killed.
+    // Loop the write: a short write on the post-spawn verification path would look like "server down" and get a healthy child killed.
     var sent: usize = 0;
     while (sent < req.len) {
         const n: isize = std.c.write(fd, req[sent..].ptr, req.len - sent);
@@ -269,9 +227,7 @@ fn httpGetPosix(port: u16, path: []const u8) HttpProbe {
         sent += @intCast(n);
     }
 
-    // Read the status line + the start of the body. We stop early once we
-    // have both (see probeResponseComplete) and otherwise at EOF, which
-    // `Connection: close` guarantees.
+    // Read the status line + the start of the body.
     var buf: [max_probe_bytes]u8 = undefined;
     var total: usize = 0;
     while (total < buf.len) {
@@ -283,8 +239,7 @@ fn httpGetPosix(port: u16, path: []const u8) HttpProbe {
     return parseProbeResponse(buf[0..total]);
 }
 
-/// Spawn pabrik as a child process with `--port <port>` and, optionally,
-/// `--static-dir <path>` (so pabrik serves the embedded webapp at `/`).
+/// Spawn pabrik as a child process with `--port <port>` and, optionally, `--static-dir <path>` (so pabrik serves the embedded webapp at `/`).
 pub fn spawn(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -294,8 +249,7 @@ pub fn spawn(
 ) !PabrikProcess {
     _ = allocator; // argv is a small stack-allocated array
 
-    // Build the argv slice. The port number is formatted into a small stack
-    // buffer because argv requires a sentinel-free string slice.
+    // Build the argv slice.
     var port_buf: [16]u8 = undefined;
     const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch @panic("bufPrint failed formatting the spawn port");
 
@@ -317,9 +271,7 @@ pub fn spawn(
         .stdout = .ignore,
         .stderr = .ignore,
     }) catch |err| {
-        // Map spawn errors into a single descriptive error so callers
-        // can match on `error.SpawnFailed` without enumerating every
-        // OS-level variant.
+        // Map spawn errors into a single descriptive error so callers can match on `error.SpawnFailed` without enumerating every OS-level variant.
         std.log.err("spawn pabrik at {s} failed: {s}", .{ pabrik_path, @errorName(err) });
         return error.SpawnFailed;
     };
@@ -327,8 +279,7 @@ pub fn spawn(
     return .{
         .child = child,
         .port = port,
-        // Windows note: `child.id` is `?HANDLE` (= `?*anyopaque`) on Windows,
-        // not a numeric PID.
+        // Windows note: `child.id` is `?HANDLE` (= `?*anyopaque`) on Windows, not a numeric PID.
         .pid = switch (builtin.os.tag) {
             .windows => 0,
             else => if (child.id) |pid| @intCast(pid) else 0,
@@ -339,30 +290,22 @@ pub fn spawn(
 
 
 comptime {
-    // Quiet the unused-import warning if the platform branch below is
-    // empty for the current target. `builtin` is referenced in the
-    // module doc; this is just a safety net.
+    // Quiet the unused-import warning if the platform branch below is empty for the current target.
     _ = builtin;
 }
 
 // ===== Tests merged from subprocess_test.zig (2026-09-29 flatten) =====
-// src/apps/desktop_app/subprocess_test.zig Tests for the pabrik subprocess
-// management module.
 
 const testing = std.testing;
 
 test "waitForHealth: returns error.HealthCheckTimeout when target unreachable" {
     // Port 1 is "tcpmux" but on a normal dev box nothing is listening.
-    // The kernel will return ECONNREFUSED on connect, so waitForHealth
-    // never sees a successful response and times out.
     const result = waitForHealth(1, 200, 50);
     try testing.expectError(error.HealthCheckTimeout, result);
 }
 
 test "waitForHealth: succeeds when target returns 200" {
-    // Set up a raw-socket mock server in a separate thread. The server side
-    // uses Linux syscalls (no Io) so the test thread is free to make blocking
-    // syscalls in waitForHealth.
+    // Set up a raw-socket mock server in a separate thread.
     const fd_rc = std.os.linux.socket(
         std.os.linux.AF.INET,
         std.os.linux.SOCK.STREAM,
@@ -372,9 +315,7 @@ test "waitForHealth: succeeds when target returns 200" {
     const fd: i32 = @intCast(fd_rc);
     defer _ = std.os.linux.close(fd);
 
-    // SO_REUSEADDR so the kernel doesn't hold the port in TIME_WAIT
-    // after the test process exits (lets consecutive test runs reuse
-    // the same port).
+    // SO_REUSEADDR so the kernel doesn't hold the port in TIME_WAIT after the test process exits (lets consecutive test runs reuse the same port).
     const one: c_int = 1;
     _ = std.os.linux.setsockopt(
         fd,
@@ -384,9 +325,7 @@ test "waitForHealth: succeeds when target returns 200" {
         @sizeOf(c_int),
     );
 
-    // Bind to 127.0.0.1:0 — kernel picks the port. sockaddr.in is
-    // little-endian on disk (i.e. struct fields) but the .port and .addr
-    // fields are in network byte order (big-endian).
+    // Bind to 127.0.0.1:0 — kernel picks the port. sockaddr.in is little-endian on disk (i.e. struct fields) but the .port and .addr fields are in network byte order …
     var bind_addr = std.os.linux.sockaddr.in{
         .port = 0,
         .addr = 0x0100007F,
@@ -407,8 +346,7 @@ test "waitForHealth: succeeds when target returns 200" {
     const listen_rc = std.os.linux.listen(fd, 1);
     if (listen_rc != 0) return error.TestSetupFailed;
 
-    // Server thread: accept one connection, write 200 OK, close. All
-    // raw syscalls — no Io involvement.
+    // Server thread: accept one connection, write 200 OK, close.
     const thread = try std.Thread.spawn(.{}, struct {
         fn run(server_fd: i32) void {
             const conn_rc = std.os.linux.accept(server_fd, null, null);
@@ -422,8 +360,7 @@ test "waitForHealth: succeeds when target returns 200" {
     }.run, .{fd});
     defer thread.join();
 
-    // Give the server thread a beat to enter accept(). Without this, a very
-    // fast client connect could race the listen() install.
+    // Give the server thread a beat to enter accept().
     var setup_ts: helpers.PosixTimespec = .{ .sec = 0, .nsec = 50 * std.time.ns_per_ms };
     _ = helpers.nanosleep(&setup_ts, null);
 
@@ -438,7 +375,6 @@ test "terminateByPid signals nothing for a pid the desktop does not own" {
 }
 
 test "terminateByPid reports the signal it could not deliver" {
-    // No process can hold this pid: it is above every platform's pid_max,
-    // so POSIX answers ESRCH and Windows never tries.
+    // No process can hold this pid: it is above every platform's pid_max, so POSIX answers ESRCH and Windows never tries.
     try testing.expect(!terminateByPid(2_000_000_000));
 }

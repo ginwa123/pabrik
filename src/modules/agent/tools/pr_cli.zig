@@ -3,13 +3,10 @@ const pr_provider = @import("pr_provider.zig");
 
 const PrProvider = pr_provider.PrProvider;
 
-/// Fields requested from `gh pr view --json`. Kept here (not next to
-/// the caller) so the argv builder and the parser it feeds cannot drift,
-/// and so the GitLab builder below has an obvious sibling to read.
+/// Fields requested from `gh pr view --json`.
 pub const GH_JSON_FIELDS = "number,title,url,state,mergeable,mergeStateStatus,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,author,additions,deletions,changedFiles,headRefOid,reviewDecision,statusCheckRollup";
 
-/// The command-line tool that owns a forge, plus the words its users expect
-/// to read.
+/// The command-line tool that owns a forge, plus the words its users expect to read.
 pub const Cli = struct {
     /// Program to spawn.
     program: []const u8,
@@ -40,8 +37,6 @@ pub const GLAB_CLI: Cli = .{
 };
 
 /// The CLI that owns `provider`, or null when the provider has none.
-/// `generic` deliberately returns null: a forge we cannot identify has
-/// no CLI to ask, and its diffs come from local git refs.
 pub fn cliFor(provider: PrProvider) ?Cli {
     return switch (provider) {
         .github => GH_CLI,
@@ -50,9 +45,7 @@ pub fn cliFor(provider: PrProvider) ?Cli {
     };
 }
 
-/// Whether `provider` is served by a forge CLI. The one-liner callers
-/// use when they need a "not supported here" branch without pulling the
-/// whole `Cli` apart.
+/// Whether `provider` is served by a forge CLI.
 pub fn hasCli(provider: PrProvider) bool {
     return cliFor(provider) != null;
 }
@@ -60,8 +53,7 @@ pub fn hasCli(provider: PrProvider) bool {
 /// Upper bound on `viewArgv` output.
 pub const view_argv_max = 6;
 
-/// Build the read-only "show me this PR/MR" argv: `<prog> <pr|mr> view
-/// [<ref>] <provider flags>`.
+/// Build the read-only "show me this PR/MR" argv: `<prog> <pr|mr> view [<ref>] <provider flags>`.
 pub fn viewArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, ref: []const u8) ?[]const []const u8 {
     const c = cliFor(provider) orelse return null;
     if (storage.len < view_argv_max) return null;
@@ -96,16 +88,13 @@ pub fn viewArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, r
     return storage[0..n];
 }
 
-/// The fields `gh pr view --json` needs for the conversation: the request
-/// body, the issue comments, the reviews and the review verdict.
+/// The fields `gh pr view --json` needs for the conversation: the request body, the issue comments, the reviews and the review verdict.
 pub const GH_CONVERSATION_JSON_FIELDS = "body,title,number,url,author,createdAt,comments,reviews,reviewDecision";
 
 /// Upper bound on `conversationArgv` output.
 pub const conversation_argv_max = 8;
 
-/// Build the "read this change request's conversation" argv. The GitHub form
-/// asks for named fields; the GitLab form asks for the notes, because glab
-/// prints them only when asked.
+/// Build the "read this change request's conversation" argv.
 pub fn conversationArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, ref: []const u8) ?[]const []const u8 {
     const c = cliFor(provider) orelse return null;
     if (storage.len < conversation_argv_max) return null;
@@ -144,9 +133,7 @@ pub fn conversationArgv(storage: [][]const u8, provider: PrProvider, prog: []con
 /// Upper bound on `createArgv` output.
 pub const create_argv_max = 12;
 
-/// Build the "open a new PR/MR" argv: `<prog> <pr|mr> create
-/// --base/--target-branch … --title …`. `prog` is explicit for the same
-/// test-injection reason as `viewArgv`.
+/// Build the "open a new PR/MR" argv: `<prog> <pr|mr> create --base/--target-branch … --title …`.
 pub fn createArgv(
     storage: [][]const u8,
     provider: PrProvider,
@@ -227,9 +214,7 @@ pub const MergeMethod = enum {
         };
     }
 
-    /// The strategy flag for `provider`, or null when the provider's default
-    /// already means this method. Null is a real answer, not a failure: on
-    /// GitLab, `--merge` does not exist and passing it would be a hard error.
+    /// The strategy flag for `provider`, or null when the provider's default already means this method.
     pub fn flag(self: MergeMethod, provider: PrProvider) ?[]const u8 {
         return switch (provider) {
             .github => switch (self) {
@@ -249,27 +234,19 @@ pub const MergeMethod = enum {
 
 /// Everything a merge needs beyond the method itself.
 pub const MergeOptions = struct {
-    /// Delete the source branch after merging. OFF by default in the UI:
-    /// in this app the source branch is usually the session's own worktree
-    /// branch, so ticking this deletes the branch the session stands on.
+    /// Delete the source branch after merging. OFF by default in the UI
     delete_branch: bool = false,
-    /// The head commit the caller believes it is merging. Both forges accept
-    /// a guard, so a merge cannot land on a commit the user never saw.
-    /// Empty = no guard.
+    /// The head commit the caller believes it is merging.
     head_sha: []const u8 = "",
     /// Title / body of the commit the merge creates (squash subject).
     subject: []const u8 = "",
     body: []const u8 = "",
 };
 
-/// Upper bound on `mergeArgv` output: prog, noun, "merge", ref, strategy
-/// flag, then at most four pairs of flag+value, plus GitLab's two mandatory
-/// flags. 18 is past every arm.
+/// Upper bound on `mergeArgv` output: prog, noun, "merge", ref, strategy flag, then at most four pairs of flag+value, plus GitLab's two mandatory flags. 18 is …
 pub const merge_argv_max = 18;
 
-/// Build the "merge this PR/MR" argv: `<prog> <pr|mr> merge [<ref>] <provider
-/// flags>`. `prog` is explicit for the same test-injection reason as
-/// `viewArgv`.
+/// Build the "merge this PR/MR" argv: `<prog> <pr|mr> merge [<ref>] <provider flags>`.
 pub fn mergeArgv(
     storage: [][]const u8,
     provider: PrProvider,
@@ -334,8 +311,7 @@ pub fn mergeArgv(
                 n += 1;
             }
             if (opts.subject.len > 0) {
-                // GitLab separates the squash message from the merge-commit
-                // message; GitHub takes subject/body for both.
+                // GitLab separates the squash message from the merge-commit message; GitHub takes subject/body for both.
                 storage[n] = if (method == .squash) "--squash-message" else "--message";
                 n += 1;
                 storage[n] = opts.subject;
@@ -363,8 +339,7 @@ pub const ListState = enum {
     merged,
     all,
 
-    /// Empty means `open`: both CLIs default to open, so a caller that omits
-    /// the parameter reads the same list the forge's own UI opens on.
+    /// Empty means `open`: both CLIs default to open, so a caller that omits the parameter reads the same list the forge's own UI opens on.
     pub fn fromString(s: []const u8) ?ListState {
         if (s.len == 0) return .open;
         if (std.mem.eql(u8, s, "open")) return .open;
@@ -374,8 +349,7 @@ pub const ListState = enum {
         return null;
     }
 
-    /// The wire name, echoed back in the response so the caller can label a
-    /// tab from what the backend actually asked for.
+    /// The wire name, echoed back in the response so the caller can label a tab from what the backend actually asked for.
     pub fn toString(self: ListState) []const u8 {
         return switch (self) {
             .open => "open",
@@ -385,9 +359,7 @@ pub const ListState = enum {
         };
     }
 
-    /// The GitLab arm of the filter, or null for `open` — GitLab expresses
-    /// these as four booleans with open as the default, so there is no
-    /// `--open` to pass. (`--opened` is not a glab flag.)
+    /// The GitLab arm of the filter, or null for `open` — GitLab expresses these as four booleans with open as the default, so there is no `--open` to pass.
     fn glabFlag(self: ListState) ?[]const u8 {
         return switch (self) {
             .open => null,
@@ -398,12 +370,10 @@ pub const ListState = enum {
     }
 };
 
-/// Upper bound on `listArgv` output: prog, noun, "list", GitHub's three
-/// flag+value pairs, GitLab's state flag plus four pairs.
+/// Upper bound on `listArgv` output: prog, noun, "list", GitHub's three flag+value pairs, GitLab's state flag plus four pairs.
 pub const list_argv_max = 16;
 
-/// Build the "list the change requests" argv: `<prog> <pr|mr> list <state
-/// filter> <limit> <json flag>`.
+/// Build the "list the change requests" argv: `<prog> <pr|mr> list <state filter> <limit> <json flag>`.
 pub fn listArgv(
     storage: [][]const u8,
     limit_buf: []u8,
@@ -450,9 +420,7 @@ pub fn listArgv(
             n += 1;
             storage[n] = limit_str;
             n += 1;
-            // Without an explicit order the list arrives in whatever order
-            // the API happens to return, and the UI's "newest activity
-            // first" line would be a claim about nothing.
+            // Without an explicit order the list arrives in whatever order the API happens to return, and the UI's "newest activity first" line would be a claim about …
             storage[n] = "-o";
             n += 1;
             storage[n] = "updated_at";
@@ -476,8 +444,7 @@ pub fn listArgv(
 /// Upper bound on `closeArgv` output (prog, noun, "close", ref).
 pub const close_argv_max = 4;
 
-/// Build the "close this PR/MR" argv: `<prog> <pr|mr> close <ref>`. `ref` is
-/// REQUIRED here, unlike `viewArgv`.
+/// Build the "close this PR/MR" argv: `<prog> <pr|mr> close <ref>`.
 pub fn closeArgv(
     storage: [][]const u8,
     provider: PrProvider,
@@ -501,17 +468,13 @@ pub fn closeArgv(
     return storage[0..n];
 }
 
-/// Fields requested from `gh pr checks --json`. `bucket` earns its place:
-/// `state` is free-form (`SUCCESS`, `FAILURE`, `NEUTRAL`), `bucket` is gh's own
-/// rollup into pass/fail/pending/skipping/cancel, which a UI can switch on.
+/// Fields requested from `gh pr checks --json`. `bucket` earns its place
 pub const GH_CHECKS_JSON_FIELDS = "bucket,name,state,link,workflow,startedAt,completedAt";
 
 /// Upper bound on `checksArgv` output.
 pub const checks_argv_max = 6;
 
-/// `<gh> pr checks [<ref>] --json <field list>`. Null for every provider but
-/// GitHub: glab has no `mr checks` (its CI surface needs a pipeline id we do
-/// not have).
+/// `<gh> pr checks [<ref>] --json <field list>`.
 pub fn checksArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8, ref: []const u8) ?[]const []const u8 {
     switch (provider) {
         .github => {},
@@ -541,8 +504,6 @@ pub fn checksArgv(storage: [][]const u8, provider: PrProvider, prog: []const u8,
 pub const run_jobs_argv_max = 6;
 
 /// `<gh> run view <run_id> --json jobs` — the second hop behind the Checks tab.
-/// `gh pr checks` reports jobs; only a run's step list answers "which task
-/// failed". `jobs` only: the run's own fields are already on the check rows.
 pub fn runJobsArgv(storage: [][]const u8, prog: []const u8, run_id: []const u8) ?[]const []const u8 {
     if (storage.len < run_jobs_argv_max) return null;
     if (run_id.len == 0) return null;
@@ -563,22 +524,17 @@ pub fn runJobsArgv(storage: [][]const u8, prog: []const u8, run_id: []const u8) 
     return storage[0..n];
 }
 
-/// `<run_id>` out of `…/actions/runs/<run_id>/job/<job_id>`. Borrows from
-/// `link`. Null for a non-Actions check (CircleCI, a bot-posted status): there
-/// is no run to drill into, which is "no steps", not "the lookup failed".
+/// `<run_id>` out of `…/actions/runs/<run_id>/job/<job_id>`.
 pub fn runIdFromJobLink(link: []const u8) ?[]const u8 {
     return digitsAfter(link, "/actions/runs/");
 }
 
-/// `<job_id>` at the tail of an Actions job link. How a check row finds its job
-/// in `run view --json jobs` (whose jobs carry a `databaseId`).
+/// `<job_id>` at the tail of an Actions job link.
 pub fn jobIdFromJobLink(link: []const u8) ?[]const u8 {
     return digitsAfter(link, "/job/");
 }
 
 /// The digits right after `marker`, stopping at the first `/`, `?` or `#`.
-/// Null when absent, empty, or non-numeric — a malformed link must not smuggle
-/// a fragment through as an id.
 fn digitsAfter(link: []const u8, marker: []const u8) ?[]const u8 {
     const at = std.mem.indexOf(u8, link, marker) orelse return null;
     const rest = link[at + marker.len ..];
@@ -605,8 +561,6 @@ pub fn extractCreatedUrl(stdout: []const u8) []const u8 {
 }
 
 /// Whether `s` is a bare `http(s)://…` URL with a non-empty host.
-/// Deliberately strict: a progress line like "✓ Created merge request
-/// for branch-x!" is not a URL, and neither is an ANSI-decorated one.
 pub fn isHttpUrl(s: []const u8) bool {
     const scheme_end = std.mem.indexOf(u8, s, "://") orelse return false;
     if (scheme_end == 0) return false;
@@ -667,8 +621,7 @@ test "createArgv keeps the historical `gh pr create` shape" {
 }
 
 test "createArgv for gitlab passes --source-branch and --yes" {
-    // --yes is load-bearing: without it glab blocks on an interactive
-    // confirm in a non-tty child and the create burns its 60s budget.
+    // --yes is load-bearing: without it glab blocks on an interactive confirm in a non-tty child and the create burns its 60s budget.
     var storage: [create_argv_max][]const u8 = undefined;
     try expectArgv(createArgv(&storage, .gitlab, "glab", "main", "worktree/x", "T", "B"), &.{ "glab", "mr", "create", "--source-branch", "worktree/x", "--target-branch", "main", "--title", "T", "--description", "B", "--yes" });
 }
@@ -695,8 +648,7 @@ test "extractCreatedUrl still works for a bare gh-style URL" {
 }
 
 test "extractCreatedUrl falls back to the last non-empty line" {
-    // No URL anywhere: better to hand the caller whatever the CLI last
-    // said than to store "" and lose the whole answer.
+    // No URL anywhere: better to hand the caller whatever the CLI last said than to store "" and lose the whole answer.
     try std.testing.expectEqualStrings("done", extractCreatedUrl("creating...\ndone\n\n"));
     try std.testing.expectEqualStrings("", extractCreatedUrl("\n\n  \n"));
 }
@@ -722,9 +674,7 @@ test "checksArgv passes a number / URL / branch through verbatim" {
 }
 
 test "checksArgv refuses every forge but GitHub" {
-    // glab has no `mr checks`; returning null is what lets the handler
-    // answer 422 ("not supported") instead of 200 with zero checks,
-    // which a UI reads as "everything passed".
+    // glab has no `mr checks`; returning null is what lets the handler answer 422 ("not supported") instead of 200 with zero checks, which a UI reads as "everything …
     var storage: [checks_argv_max][]const u8 = undefined;
     try std.testing.expect(checksArgv(&storage, .gitlab, "glab", "7") == null);
     try std.testing.expect(checksArgv(&storage, .generic, "gh", "") == null);
@@ -744,20 +694,17 @@ test "runJobsArgv rejects an empty run id and an undersized buffer" {
 
 test "runIdFromJobLink pulls the run id out of an Actions job link" {
     try std.testing.expectEqualStrings("37146940187", runIdFromJobLink("https://github.com/acme/app/actions/runs/37146940187/job/111272848907").?);
-    // Trailing query/fragment and a missing /job segment both terminate
-    // the id the same way.
+    // Trailing query/fragment and a missing /job segment both terminate the id the same way.
     try std.testing.expectEqualStrings("12", runIdFromJobLink("https://github.com/acme/app/actions/runs/12?checkSuite=1").?);
     try std.testing.expectEqualStrings("7", runIdFromJobLink("https://github.com/acme/app/actions/runs/7").?);
 }
 
 test "runIdFromJobLink returns null for a link that is not an Actions job" {
-    // An external check has no run to drill into — the caller must read
-    // this as "no steps", never as "the lookup failed".
+    // An external check has no run to drill into — the caller must read this as "no steps", never as "the lookup failed".
     try std.testing.expect(runIdFromJobLink("https://circleci.com/gh/acme/app/1") == null);
     try std.testing.expect(runIdFromJobLink("https://api.github.com/repos/acme/app") == null);
     try std.testing.expect(runIdFromJobLink("") == null);
-    // Present marker, non-numeric segment: a malformed link must not
-    // smuggle "abc" through as a run id.
+    // Present marker, non-numeric segment: a malformed link must not smuggle "abc" through as a run id.
     try std.testing.expect(runIdFromJobLink("https://github.com/a/b/actions/runs/abc/job/1") == null);
     try std.testing.expect(runIdFromJobLink("https://github.com/a/b/actions/runs//job/1") == null);
 }
@@ -785,9 +732,7 @@ test "MergeMethod round-trips its wire names and refuses everything else" {
     try std.testing.expectEqual(MergeMethod.squash, MergeMethod.fromString("squash").?);
     try std.testing.expectEqual(MergeMethod.rebase, MergeMethod.fromString("rebase").?);
     try std.testing.expectEqualStrings("squash", MergeMethod.squash.toString());
-    // The contract the endpoint leans on: an empty or unknown method is
-    // refused BEFORE anything is spawned. `gh pr merge` with no strategy
-    // flag prompts for the method, and a non-tty child cannot answer.
+    // The contract the endpoint leans on: an empty or unknown method is refused BEFORE anything is spawned.
     try std.testing.expect(MergeMethod.fromString("") == null);
     try std.testing.expect(MergeMethod.fromString("auto") == null);
     try std.testing.expect(MergeMethod.fromString("Squash") == null);
@@ -821,8 +766,7 @@ test "mergeArgv: github carries the head guard, the message and delete-branch" {
 }
 
 test "mergeArgv: a merge is never ARMED instead of performed" {
-    // The regression this pins: `gh pr merge --auto` exits 0 with the PR
-    // still open.
+    // The regression this pins: `gh pr merge --auto` exits 0 with the PR still open.
     var buf: [merge_argv_max][]const u8 = undefined;
     const argv = mergeArgv(&buf, .github, "gh", "891", .squash, .{ .head_sha = "abc123" }).?;
     try std.testing.expect(!hasArg(argv, "--auto"));
@@ -830,9 +774,7 @@ test "mergeArgv: a merge is never ARMED instead of performed" {
 }
 
 test "mergeArgv: gitlab forces --yes and --auto-merge=false" {
-    // Both flags are load-bearing and neither is optional: - without
-    // -y/--yes, `glab mr merge` blocks on a confirmation prompt that a
-    // non-tty child can never answer (the same trap `createArgv` documents
+    // Both flags are load-bearing and neither is optional: - without -y/--yes, `glab mr merge` blocks on a confirmation prompt that a non-tty child can never answer …
     var buf: [merge_argv_max][]const u8 = undefined;
     try expectArgv(
         mergeArgv(&buf, .gitlab, "glab", "7", .squash, .{ .delete_branch = true, .head_sha = "4f21c9e" }),
@@ -841,8 +783,7 @@ test "mergeArgv: gitlab forces --yes and --auto-merge=false" {
 }
 
 test "mergeArgv: gitlab's plain merge passes no strategy flag" {
-    // `glab mr merge` with no strategy IS a merge commit. `--merge` is not a
-    // glab flag, so emitting it would fail the request outright.
+    // `glab mr merge` with no strategy IS a merge commit.
     var buf: [merge_argv_max][]const u8 = undefined;
     try expectArgv(
         mergeArgv(&buf, .gitlab, "glab", "7", .merge, .{}),
@@ -884,8 +825,7 @@ test "ListState round-trips its wire names, defaults empty to open, and refuses 
     try std.testing.expectEqual(ListState.all, ListState.fromString("all").?);
     // A caller that omits the parameter gets the forge's own default.
     try std.testing.expectEqual(ListState.open, ListState.fromString("").?);
-    // `OPEN` is the gh JSON state, not a filter value: accepting either
-    // case here would let a query param mean two different things.
+    // `OPEN` is the gh JSON state, not a filter value: accepting either case here would let a query param mean two different things.
     try std.testing.expect(ListState.fromString("OPEN") == null);
     try std.testing.expect(ListState.fromString("opened") == null);
     try std.testing.expect(ListState.fromString("draft") == null);
@@ -909,8 +849,7 @@ test "listArgv: gitlab maps the four states onto its four booleans" {
     var buf: [list_argv_max][]const u8 = undefined;
     var lb: [16]u8 = undefined;
 
-    // `open` is glab's default, so no state flag at all — there is no
-    // `--open`, and `--opened` is not a glab flag.
+    // `open` is glab's default, so no state flag at all — there is no `--open`, and `--opened` is not a glab flag.
     const open = listArgv(&buf, &lb, .gitlab, "glab", .open, 30).?;
     try std.testing.expect(!hasArg(open, "--closed") and !hasArg(open, "--merged") and !hasArg(open, "--all"));
     try expectArgv(
@@ -937,14 +876,11 @@ test "listArgv: null for no CLI, an empty program, a zero limit, or too little s
     var lb: [16]u8 = undefined;
     try std.testing.expect(listArgv(&buf, &lb, .generic, "gh", .open, 30) == null);
     try std.testing.expect(listArgv(&buf, &lb, .github, "", .open, 30) == null);
-    // A zero limit would ask for nothing and render as an empty list, which
-    // is indistinguishable from "there are none" — refused, not clamped.
+    // A zero limit would ask for nothing and render as an empty list, which is indistinguishable from "there are none" — refused, not clamped.
     try std.testing.expect(listArgv(&buf, &lb, .github, "gh", .open, 0) == null);
     var tiny: [list_argv_max - 1][]const u8 = undefined;
     try std.testing.expect(listArgv(&tiny, &lb, .github, "gh", .open, 30) == null);
-    // 5 bytes cannot hold "30" plus the terminator's headroom for larger
-    // limits; bufPrint fails, and the builder must not hand back a
-    // half-built argv.
+    // 5 bytes cannot hold "30" plus the terminator's headroom for larger limits; bufPrint fails, and the builder must not hand back a half-built argv.
     var small_lb: [1]u8 = undefined;
     try std.testing.expect(listArgv(&buf, &small_lb, .github, "gh", .open, 30) == null);
 }
@@ -954,9 +890,7 @@ test "closeArgv: a plain close, with no comment and no branch deletion" {
     try expectArgv(closeArgv(&buf, .github, "gh", "893"), &.{ "gh", "pr", "close", "893" });
     try expectArgv(closeArgv(&buf, .gitlab, "glab", "7"), &.{ "glab", "mr", "close", "7" });
 
-    // The two flags that must never appear. `--comment` has no glab
-    // counterpart (so it would be a GitHub-only lie), and a branch deletion
-    // here would delete the directory a session worktree lives in.
+    // The two flags that must never appear.
     const argv = closeArgv(&buf, .github, "gh", "893").?;
     try std.testing.expect(!hasArg(argv, "--comment"));
     try std.testing.expect(!hasArg(argv, "-c"));

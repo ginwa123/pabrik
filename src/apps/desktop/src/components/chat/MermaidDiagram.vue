@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** MermaidDiagram — one `<mermaid>…</mermaid>` block of an assistant turn, drawn as SVG. Owns no
- * palette: `helpers/mermaid.ts` reads the app's CSS variables. What it does own is the redraw after
- * a theme flip, because the SVG carries a scoped stylesheet of literal colours. */
+/** MermaidDiagram — one `<mermaid>…</mermaid>` block of an assistant turn, drawn as SVG. */
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import DiagramViewer from './DiagramViewer.vue'
@@ -19,9 +17,7 @@ const preview = ref(false)
 const frame = ref<HTMLElement | null>(null)
 const available = ref(0)
 
-// The source AND the theme revision this component has already asked for. `onUpdated` fires on ANY
-// parent re-render (a streaming sibling, a scroll), so the draw is keyed on both: a theme flip has to
-// rebuild the SVG, whose scoped stylesheet holds literal colours.
+// The source AND the theme revision this component has already asked for.
 let drawn = ''
 // Token so a slow render cannot overwrite the result of a newer one.
 let token = 0
@@ -45,8 +41,7 @@ const draw = (): void => {
     })
 }
 
-/** The column the drawing has to live in. A block's own width is only knowable after layout, so it
- * is read on every update — `available` only re-renders when the number actually changed. */
+/** The column the drawing has to live in. */
 const measure = (): void => {
   available.value = frame.value?.clientWidth ?? 0
 }
@@ -68,8 +63,7 @@ const zoomStyle = computed(() =>
   layout.value ? { width: `${layout.value.width}px` } : undefined,
 )
 
-// A Mermaid parse error is a multi-line dump with the offending source line in it; the first line
-// names the problem, and the source underneath is already the rest of the answer.
+// A Mermaid parse error is a multi-line dump with the offending source line in it; the first line names the problem, and the source underneath is already the …
 const failureLine = computed(() => {
   const first = failure.value.split('\n')[0]?.trim() ?? ''
   return first.length > 200 ? `${first.slice(0, 200)}…` : first

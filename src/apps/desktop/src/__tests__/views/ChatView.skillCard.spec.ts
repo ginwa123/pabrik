@@ -1,6 +1,4 @@
-/** The transcript's rendering of a manual `/skill-` turn: `ChatView.vue` must
- * render the `<slash_skills>` envelope as a card, never echo it. The card's own
- * behaviour is spec'd in `components/preview/__tests__/SkillInvocationCard.spec.ts`. */
+/** The transcript's rendering of a manual `/skill-` turn: `ChatView.vue` must render the `<slash_skills>` envelope as a card, never echo it. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -124,8 +122,7 @@ describe('ChatView, a manual /skill- turn', () => {
   let app: VueApp | null = null
 
   beforeEach(() => {
-    // jsdom in this environment has no working localStorage, and the
-    // navigation store reads it during setup (same stub as streamingStick).
+    // jsdom in this environment has no working localStorage, and the navigation store reads it during setup (same stub as streamingStick).
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       const store: Record<string, string> = {}
       vi.stubGlobal('localStorage', {

@@ -19,8 +19,7 @@ export const syncTabParam = (
   route: RouteLocationNormalizedLoaded,
   tab: PanelTab | null,
 ) => {
-  // No router means no URL to keep in sync — the same reason the read above is guarded. Without
-  // this the first tab switch threw and took the tab with it.
+  // No router means no URL to keep in sync — the same reason the read above is guarded.
   if (!router || !route) return
   const query = { ...route.query }
   if (tab) query.panel = tab
@@ -28,8 +27,7 @@ export const syncTabParam = (
   router.replace({ path: route.path, query }).catch(() => {})
 }
 
-// "⚠ Conflicts only" filter. View state, so it lives in the URL next to ?panel= (refresh / Back /
-// shared links restore the same panel) — a local ref would lose it on reload.
+// "⚠ Conflicts only" filter.
 export const readConflictsParam = (route: RouteLocationNormalizedLoaded): boolean =>
   route.query.conflicts === '1'
 

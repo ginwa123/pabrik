@@ -15,15 +15,11 @@ export function resolveOverlayView(
   hasSkill: boolean,
 ): OverlayView | null {
   if (path === '/app/settings') return 'settings'
-  // LEGACY kanban-settings route (/app/kanban/:itemId/settings); the canonical shape is the
-  // workspace-scoped project path, matched below via parseAppPath. Must come BEFORE the
-  // route.query.view fallthrough: the URL has no `view=` param, the path IS the discriminator.
+  // LEGACY kanban-settings route (/app/kanban/:itemId/settings); the canonical shape is the workspace-scoped project path, matched below via parseAppPath.
   if (/^\/app\/kanban\/[^/]+\/settings\/?$/.test(path)) {
     return 'kanban-settings'
   }
-  // Workspace settings page, `/app/:workspaceId/settings`. Same shape as the kanban-settings branch
-  // above and for the same reason: the path IS the discriminator, there is no `view=` query param
-  // to read, and it must be resolved before anything below claims a `/app/{id}` path.
+  // Workspace settings page, `/app/:workspaceId/settings`.
   if (/^\/app\/[^/]+\/settings\/?$/.test(path)) {
     return 'workspace-settings'
   }
@@ -41,9 +37,7 @@ export function resolveOverlayView(
 /** Path-based half: projects are workspace items, the landing and a bare /app are 'chat'. */
 export function resolvePathView(path: string, queryView: string | undefined): string {
   const parsedPath = parseAppPath(path)
-  // Document page (Migration 095). It is a PAGE, not an overlay: it sits in the same `v-else-if`
-  // chain as every other main view, so the chat behind it is unmounted rather than stacked under.
-  // Checked before the workspace/chat branches so nothing else can claim a doc path.
+  // Document page (Migration 095).
   if (parsedPath.kind === 'doc') return 'documents'
   // Kanban settings page, workspace-scoped: /app/{ws}/projects/{pid}/settings.
   if (parsedPath.kind === 'projectSettings') return 'kanban-settings'
@@ -58,8 +52,6 @@ export function resolvePathView(path: string, queryView: string | undefined): st
   if (parsedPath.kind === 'chat' || parsedPath.kind === 'landing') {
     return 'chat'
   }
-  // SIMPLIFY-URL-BROWSER (2026-08-15): the URL never says `view=task` anymore (legacy URLs are
-  // auto-rewritten on mount). The chat-open state is encoded as /chat/<taskId> on itemId when
-  // view=workspace, so `currentView` returns 'workspace' for both no-chat and chat-open states.
+  // SIMPLIFY-URL-BROWSER (2026-08-15): the URL never says `view=task` anymore (legacy URLs are auto-rewritten on mount).
   return queryView || 'chat'
 }

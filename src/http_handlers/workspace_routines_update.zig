@@ -1,6 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/routine`. Body:
-//! `{description?, instruction?, schedule?, enabled?}` — all optional (absent
-//! = keep existing).
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/routine`. Body
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -12,8 +10,7 @@ const cron = @import("../modules/agent/loop/cron.zig");
 const fire = @import("../modules/agent/loop/fire.zig");
 const get_mod = @import("workspace_routines_get.zig");
 
-/// PATCH body — every field optional. `null` = field absent (keep
-/// existing); a present-but-empty `schedule` clears auto-fire.
+/// PATCH body — every field optional.
 const UpdateRoutineBody = struct {
     description: ?[]const u8 = null,
     instruction: ?[]const u8 = null,
@@ -47,9 +44,7 @@ pub const RoutineUpdateOutput = struct {
     routine: get_mod.RoutineRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -69,8 +64,7 @@ fn useCase(
     defer row.deinit(allocator);
     if (!std.mem.eql(u8, row.values[0], "routine")) return error.NotARoutine;
 
-    // Load existing values so absent fields keep their current state
-    // (effective_* pattern from the deleted task_update routine branch).
+    // Load existing values so absent fields keep their current state (effective_* pattern from the deleted task_update routine branch).
     var qr = db.query(allocator,
         "SELECT description, instruction, schedule, enabled, selected_profile_model, COALESCE(CAST(cwd AS TEXT), '') FROM workspace_routines WHERE id = ?",
         &[_][]const u8{input.item_id},
@@ -111,8 +105,7 @@ fn useCase(
         cron.validate(effective_schedule) catch return error.InvalidSchedule;
     }
 
-    // Recompute next_run_at from the EFFECTIVE schedule/enabled so a
-    // schedule edit, a clear (`""`), or a disable all land correctly.
+    // Recompute next_run_at from the EFFECTIVE schedule/enabled so a schedule edit, a clear (`""`), or a disable all land correctly.
     var next_run_at: []const u8 = "";
     var next_run_at_owned: ?[]u8 = null;
     defer if (next_run_at_owned) |b| allocator.free(b);
@@ -139,8 +132,7 @@ fn useCase(
         &.{ effective_description, effective_instruction, effective_schedule, enabled_str, next_run_at, effective_profile_model, effective_cwd, input.item_id },
     ) catch return error.UpdateFailed;
 
-    // Refetch via the GET use-case's row shape. The GET module's
-    // useCase is private, so re-run the same SELECT here.
+    // Refetch via the GET use-case's row shape.
     var q2 = db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
         \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
@@ -173,9 +165,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workspaceRoutinesUpdateHandler(
     ctx: gserverz.HttpContext,

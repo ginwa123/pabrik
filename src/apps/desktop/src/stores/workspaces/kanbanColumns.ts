@@ -22,9 +22,7 @@ interface KanbanColumnsParams {
 export function createKanbanColumns(p: KanbanColumnsParams) {
   const { workspaces, findItem, cacheTaskMutation, removeTaskFromCache } = p
 
-  // Backfill (or change) the `path` of a kanban workspace item. Used by the KanbanView "Set project
-  // root" banner that surfaces when a kanban was created before the path field existed (the user's
-  // existing kanbans all have `path = NULL`).
+  // Backfill (or change) the `path` of a kanban workspace item.
   async function updateKanbanItemPath(
     workspaceId: string,
     itemId: string,
@@ -42,8 +40,6 @@ export function createKanbanColumns(p: KanbanColumnsParams) {
   }
 
   // Update kanban item name from the Settings dialog or KanbanView inline-rename pencil.
-  // Optimistic: mutate `item.name` BEFORE the API call resolves so the UI updates immediately; roll
-  // back on error.
   async function updateKanbanItemName(
     workspaceId: string,
     itemId: string,
@@ -64,26 +60,21 @@ export function createKanbanColumns(p: KanbanColumnsParams) {
     }
   }
 
-  // Fetch the columns for a kanban from the backend and populate `item.kanban_columns`. Called when
-  // a kanban item is expanded (mirrors the folder-item `fetchFolderContents` pattern).
+  // Fetch the columns for a kanban from the backend and populate `item.kanban_columns`.
   async function fetchKanbanColumns(workspaceId: string, itemId: string): Promise<void> {
     const item = findItem(workspaceId, itemId)
     if (!item) return
     try {
       const { columns } = await api.listKanbanColumns(workspaceId, itemId)
-      // Sort defensively (the backend already orders by position, but
-      // a stale local snapshot from before a backend reorder would
-      // otherwise keep the old ordering).
+      // Sort defensively (the backend already orders by position, but a stale local snapshot from before a backend reorder would otherwise keep the old ordering).
       item.kanban_columns = [...columns].sort((a, b) => a.position - b.position)
     } catch (err) {
       console.error('[workspacesStore.fetchKanbanColumns] API call failed:', err)
-      // Leave whatever columns we have (or undefined) so the UI can
-      // show an empty-state rather than a hard error.
+      // Leave whatever columns we have (or undefined) so the UI can show an empty-state rather than a hard error.
     }
   }
 
-  // Add a column to a kanban and append it to the local item's `kanban_columns` array, sorted by
-  // position. The backend returns the column with its server-assigned id and position.
+  // Add a column to a kanban and append it to the local item's `kanban_columns` array, sorted by position.
   async function addKanbanColumn(
     workspaceId: string,
     itemId: string,
@@ -109,15 +100,11 @@ export function createKanbanColumns(p: KanbanColumnsParams) {
     const result = await api.updateKanbanColumn(workspaceId, itemId, columnId, patch)
     const item = findItem(workspaceId, itemId)
     if (!item) return
-    // Mirror the backend's full board — replaces the previous `item.kanban_columns[i] = result`
-    // bug, which corrupted the single-column slot with the `{columns, count}` envelope and made
-    // every UI field on the saved column read as undefined.
+    // Mirror the backend's full board — replaces the previous `item.kanban_columns[i] = result` bug, which corrupted the single-column slot with the `{columns …
     item.kanban_columns = [...result.columns].sort((a, b) => a.position - b.position)
   }
 
-  // Copy the column spec from `sourceItemId` to `targetItemId`. Destructive for the target in
-  // 'replace' mode (existing columns are deleted via the backend's `deleteColumn` path which
-  // unassigns tasks).
+  // Copy the column spec from `sourceItemId` to `targetItemId`.
   async function copyKanbanSpecFrom(
     workspaceId: string,
     targetItemId: string,
@@ -141,20 +128,15 @@ export function createKanbanColumns(p: KanbanColumnsParams) {
     if (!item?.kanban_columns) return
     const target = item.kanban_columns.find((c) => c.id === targetColumnId)
     if (!target) return
-    // PATCH the moved column to the target's position. The backend's reorderColumn shifts the
-    // siblings (dense renumber) and returns the moved column's NEW position; we ignore the return
-    // value because we'll re-fetch the whole list next.
+    // PATCH the moved column to the target's position.
     await api.updateKanbanColumn(workspaceId, itemId, columnId, {
       position: target.position,
     })
-    // Re-fetch so local state matches the backend's renumbered
-    // sibling positions.
+    // Re-fetch so local state matches the backend's renumbered sibling positions.
     await fetchKanbanColumns(workspaceId, itemId)
   }
 
-  // Delete a kanban column. The backend unassigns tasks in the column (sets kanban_column_id to
-  // NULL) — we mirror that by clearing `kanban_column_id` on any matching tasks in the local store
-  // so the "Unassigned" view is consistent.
+  // Delete a kanban column.
   async function deleteKanbanColumn(
     workspaceId: string,
     itemId: string,

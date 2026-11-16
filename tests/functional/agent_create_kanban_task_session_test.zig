@@ -1,6 +1,4 @@
 // Functional tests for agent-tool/HTTP parity on kanban task session seeding.
-// Zig port of `tests/functional/agent_create_kanban_task_session_test.py`
-// (same test names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Owned copies of the fields the two tests read off the create response.
-/// Python's `_create_task` handed the whole parsed body back to the caller.
 const TaskCreate = struct {
     task_id: []u8,
     session_id: ?[]u8,
@@ -38,8 +33,7 @@ const UserMsgs = struct {
         self.* = undefined;
     }
 
-    /// Print the contents the way the Python assertion's `{user_msgs!r}`
-    /// did, so a failure is readable without a debugger.
+    /// Print the contents the way the Python assertion's `{user_msgs!r}` did, so a failure is readable without a debugger.
     fn dump(self: *const UserMsgs) void {
         std.debug.print("  got {d} user row(s):", .{self.items.len});
         for (self.items, 0..) |c, i| {
@@ -64,7 +58,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/{ws}/items/kanban` → the new board's id.
-/// Caller frees.
 fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -90,8 +83,7 @@ fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     });
 }
 
-/// POST `mode='create_session'` — the frontend's plain `Create task` button
-/// (no agent run).
+/// POST `mode='create_session'` — the frontend's plain `Create task` button (no agent run).
 fn createTask(
     h: *Harness,
     ws_id: []const u8,
@@ -142,8 +134,7 @@ fn createTask(
     });
     errdefer gpa.free(task_id);
 
-    // A missing `session` envelope is the regression this suite exists
-    // for, so it is `null` here rather than an error — each test decides.
+    // A missing `session` envelope is the regression this suite exists for, so it is `null` here rather than an error — each test decides.
     var session_id: ?[]u8 = null;
     var session_status: ?[]u8 = null;
     if (doc.object("session")) |session| {
@@ -212,12 +203,9 @@ fn userRoleMessages(h: *Harness, session_id: []const u8) !UserMsgs {
     return .{ .items = try out.toOwnedSlice(gpa) };
 }
 
-// ============================================================================
 // Test 1: plain create seeds session + user message
-// ============================================================================
 
-// The exact regression the agent tool had: no flag/profile must still
-// yield a session row and one user message.
+// The exact regression the agent tool had: no flag/profile must still yield a session row and one user message.
 test "plain_create_seeds_session_and_user_message" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -260,12 +248,9 @@ test "plain_create_seeds_session_and_user_message" {
     try testing.expectEqualStrings("Agent card\n\ndo the thing", msgs.items[0]);
 }
 
-// ============================================================================
 // Test 2: flag + profile still bound
-// ============================================================================
 
-// Unattended flag + profile must land on the seeded session row (and the
-// user message must still be seeded).
+// Unattended flag + profile must land on the seeded session row (and the user message must still be seeded).
 test "create_with_flag_and_profile_binds_session_columns" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

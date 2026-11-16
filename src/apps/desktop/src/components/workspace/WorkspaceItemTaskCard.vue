@@ -23,9 +23,7 @@
     (Migration 084).
 -->
 <script setup lang="ts">
-// Extracted from WorkspaceItemTask.vue on 2026-07-02. The shared logic (event handlers + drop
-// indicator) now lives in composables/useTaskActions.ts; this file owns ONLY the card layout and
-// the card-specific computeds (description preview, meta row, Jira-style type accent).
+// Extracted from WorkspaceItemTask.vue on 2026-07-02.
 import { inject, ref, computed, onMounted, onUnmounted, onUpdated, type Ref } from 'vue'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useAgentErrorStore } from '../../stores/agentError'
@@ -55,8 +53,7 @@ function tagChipStyle(tag: string): Record<string, string> {
   return { backgroundColor: style.backgroundColor, border: style.border, color: style.color }
 }
 
-// Re-inject processingState from App.vue (same key WorkspaceItem and
-// ChatsList consume). Keyed by task.id == session_id.
+// Re-inject processingState from App.vue (same key WorkspaceItem and ChatsList consume).
 const processingState = inject<Ref<Record<string, boolean>>>(
   'processingState',
   ref<Record<string, boolean>>({}),
@@ -64,8 +61,7 @@ const processingState = inject<Ref<Record<string, boolean>>>(
 
 const workspacesStore = useWorkspacesStore()
 
-// 2026-08-29 (task_1787985074550_0): agent-error indicator surfaces the latest diagnostic for this
-// task on the kanban card.
+// 2026-08-29 (task_1787985074550_0): agent-error indicator surfaces the latest diagnostic for this task on the kanban card.
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorHeadline = computed(() =>
@@ -75,9 +71,7 @@ const errorRetryLabel = computed(() =>
   agentError.value ? parseAgentErrorHeadline(agentError.value.content).retryLabel : null,
 )
 
-// `columns` / `currentColumnId` back the context menu's "Move to column" submenu. They are NOT part
-// of the shared TaskComponentProps because the sidebar-row variant (<WorkspaceItemTaskRow>) has no
-// board to move between and passes neither.
+// `columns` / `currentColumnId` back the context menu's "Move to column" submenu.
 const props = withDefaults(
   defineProps<
     TaskComponentProps & {
@@ -99,36 +93,27 @@ const emit = defineEmits<{
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
-  // Open the full task-detail dialog (kanban-task-detail-dialog
-  // feature). The host (KanbanView) opens the dialog locally with
-  // the matching task — we only emit the id.
+  // Open the full task-detail dialog (kanban-task-detail-dialog feature).
   viewTaskDetail: [taskId: string]
   openTaskInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
   openTaskDetailInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
-  // Context-menu "Move to column". We emit only the DESTINATION — the append position depends on
-  // how many tasks the target column holds, which this component can't see. <KanbanColumn> resolves
-  // it and re-emits the existing `moveTask` shape its host already handles.
+  // Context-menu "Move to column".
   moveTaskToColumn: [payload: { taskId: string; columnId: string }]
-  // Context-menu "Run agent". Starts a worker on this task's existing session without queueing a
-  // new user message — the same `startAgentOnTask` call the detail dialog's caret menu makes, just
-  // reachable without opening the dialog.
+  // Context-menu "Run agent".
   runAgent: [payload: { taskId: string }]
 }>()
 
 // Shared logic — event handlers, drop indicator. Only the two pieces the card still uses inline.
 const { dropIndicatorBoxShadow, handleSelectTask } = useTaskActions(props, emit)
 
-// Right-click action menu for this task. The menu position lives in useContextMenu; the task ids
-// come from props and the handlers below.
+// Right-click action menu for this task.
 const { menuPos, openAt, openAtPoint, close: closeTaskMenu } = useContextMenu()
 
 const onTaskContextMenu = (event: MouseEvent) => {
   openAt(event)
 }
 
-// Enter / Space activate the card. The root is a <div role="button"> rather than a real <button>
-// because the card contains nested interactive controls (the description's @path chips / tag links)
-// and HTML forbids button-inside-button.
+// Enter / Space activate the card.
 const handleCardKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
@@ -137,9 +122,7 @@ const handleCardKeydown = (event: KeyboardEvent) => {
   }
   if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
     event.preventDefault()
-    // Anchor at the card's centre — there is no cursor to follow on a keyboard gesture. Reuses the
-    // same viewport clamp as a real right-click so a card near the bottom-right corner doesn't push
-    // the menu off-screen.
+    // Anchor at the card's centre — there is no cursor to follow on a keyboard gesture.
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
     openAtPoint(
       rect ? rect.left + rect.width / 2 : 0,
@@ -149,16 +132,13 @@ const handleCardKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// Context-menu "Move to column". We forward the destination only; the
-// <KanbanColumn> ancestor resolves the append position and re-emits the
-// existing `moveTask` shape, so nothing above the card changes.
+// Context-menu "Move to column".
 const moveTaskFromMenu = (columnId: string) => {
   closeTaskMenu()
   emit('moveTaskToColumn', { taskId: props.task.id, columnId })
 }
 
-// Pin / rename / view-detail, driven from the context menu. These deliberately do NOT call the
-// `useTaskActions` handlers.
+// Pin / rename / view-detail, driven from the context menu.
 const pinFromMenu = () => {
   closeTaskMenu()
   emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
@@ -172,9 +152,7 @@ const viewDetailFromMenu = () => {
   emit('viewTaskDetail', props.task.id)
 }
 
-// Context-menu "Delete task". Emits straight up like every other task action; the confirmation is
-// owned by whoever performs the delete (Sidebar's ConfirmDialog, via AppLayout's delete-task
-// pass-through).
+// Context-menu "Delete task".
 const requestDeleteFromMenu = () => {
   closeTaskMenu()
   emit('deleteTask', props.workspaceId, props.itemId, props.task.id)
@@ -198,9 +176,7 @@ const openTaskDetailMenuInBackground = () => {
   })
 }
 
-// Right-click menu on the git-branch badge: open GitHub branch / PR URLs in a new tab. Separate
-// position state from the card menu so a badge right-click never opens the chat menu. URLs resolve
-// via the shared PR-info cache; the branch URL derives from the PR repo base.
+// Right-click menu on the git-branch badge: open GitHub branch / PR URLs in a new tab.
 const { menuPos: gitMenuPos, openAt: openGitMenuAt, close: closeGitMenu } = useContextMenu()
 const gitMenuBranchUrl = ref('')
 const gitMenuPrUrl = ref('')
@@ -238,8 +214,7 @@ const openGitPrInBackground = () => {
   window.open(url, '_blank', 'noopener')
 }
 
-// Right-click "Stop agent" — visible only while a worker runs on this task
-// (processingState[task.id] === true, same key the elapsed chip + detail Start-agent button use).
+// Right-click "Stop agent" — visible only while a worker runs on this task (processingState[task.id] === true, same key the elapsed chip + detail Start-agent …
 const isAgentRunning = computed(() => processingState.value[props.task.id] === true)
 const isStoppingAgent = ref(false)
 
@@ -256,9 +231,7 @@ const stopAgentFromMenu = async () => {
   }
 }
 
-// Context-menu "Run agent" — the inverse of the row above. Emits up rather than calling the store
-// itself: the card is also mounted by hosts that have no workspace/item context to build the
-// endpoint path with, and the API call belongs wherever that context lives (KanbanView).
+// Context-menu "Run agent" — the inverse of the row above.
 const runAgentFromMenu = () => {
   closeTaskMenu()
   if (isAgentRunning.value) return
@@ -272,9 +245,7 @@ function typeAccentShadow(): string {
   return ''
 }
 
-// (card-ux-v6) Replaces the v5 visible 1px border with a layered 3D box-shadow. Three layers
-// compose the "card floating on the board" feel without a hard outline: 1. Outer drop shadow at
-// idle   — soft 1+2px offset, dark rgba, lifts the card off the column visually.
+// (card-ux-v6) Replaces the v5 visible 1px border with a layered 3D box-shadow.
 const baseCardShadow =
   '0 1px 3px 0 rgba(0, 0, 0, 0.5), ' +
   '0 1px 2px -1px rgba(0, 0, 0, 0.4), ' +
@@ -285,12 +256,10 @@ const hoverCardShadow =
   '0 2px 4px -2px rgba(0, 0, 0, 0.4), ' +
   'inset 0 0 0 1px rgba(255, 255, 255, 0.1)'
 
-// Local hover state — drives the shadow transition. Pure UX, no
-// business logic.
+// Local hover state — drives the shadow transition.
 const isHovered = ref(false)
 
-// Combined box-shadow for the card. Layered values, in CSS stacking order (first on top): 3D base +
-// Jira-style type accent (left stripe) + yellow drop indicator (pinned-region drag).
+// Combined box-shadow for the card.
 const cardBoxShadow = computed<string>(() => {
   const accent = typeAccentShadow()
   const drop = dropIndicatorBoxShadow.value
@@ -301,32 +270,24 @@ const cardBoxShadow = computed<string>(() => {
   return layers.join(', ')
 })
 
-// The "time since" formatter for the meta row now lives in helpers/formatTaskTimestamp.ts, shared
-// with the row-mode row (KanbanTaskRow.vue) so a card and its row-mode twin can never disagree on
-// what "2h ago" means. The most-recent update timestamp available.
+// The "time since" formatter for the meta row now lives in helpers/formatTaskTimestamp.ts, shared with the row-mode row (KanbanTaskRow.vue) so a card and its …
 const lastUpdated = computed<Date | string | null>(() => {
   if (props.task.updatedAt) return props.task.updatedAt
   if (props.task.createdAt) return props.task.createdAt
   return null
 })
 
-// The rendered "X ago" string. Computed once per lastUpdated change
-// so the card doesn't re-format on every re-render. Empty string
-// when no timestamp is present.
+// The rendered "X ago" string.
 const lastUpdatedLabel = computed<string>(() => formatRelativeTime(lastUpdated.value))
 
 // Blocked badge (kanban task dependencies): count + tooltip for the "blocked by N" chip.
-// Names come from `blocked_by` (the incomplete subset); falls back to the count alone when the
-// backend sent none.
 const blockedCount = computed<number>(() => props.task.blocked_by?.length ?? 0)
 const blockedTitle = computed<string>(() => {
   const names = (props.task.blocked_by ?? []).map((b) => b.name).filter((n) => n.length > 0)
   const head = `Blocked by ${blockedCount.value} task${blockedCount.value === 1 ? '' : 's'}`
   return names.length > 0 ? `${head}: ${names.join(', ')}` : head
 })
-// Visible tags for the chip row (Migration 067). Caps at 3 to keep the card compact; the "+N more"
-// affordance covers the rest. `task.tags` is `[]` for tasks without tags — the v-if on the tags row
-// in the template handles the "no tags" case.
+// Visible tags for the chip row (Migration 067).
 const VISIBLE_TAGS_MAX = 3
 const visibleTags = computed<string[]>(() => {
   const tags = props.task.tags ?? []
@@ -337,8 +298,7 @@ const extraTagsCount = computed<number>(() => {
   return Math.max(0, tags.length - VISIBLE_TAGS_MAX)
 })
 
-// Image thumbnail (Migration 069 read-path fix). The card renders
-// the FIRST image as a 48px-tall thumbnail + a `+N` badge when more images exist.
+// Image thumbnail (Migration 069 read-path fix).
 const firstImage = computed<string | null>(() => {
   const urls = props.task.imageUrls
   if (!urls || urls.length === 0) return null
@@ -350,27 +310,21 @@ const extraImagesCount = computed<number>(() => {
   return Math.max(0, urls.length - 1)
 })
 
-// Media-flags change — list/get carry only flags; the card avoids a per-card
-// media fetch and shows a lightweight badge when the task has media
-// that hasn't been lazy-loaded yet (the detail dialog fetches on open).
+// Media-flags change — list/get carry only flags; the card avoids a per-card media fetch and shows a lightweight badge when the task has media that hasn't been …
 const hasUnloadedMedia = computed<boolean>(() => {
   const t = props.task
   if ((t.imageUrls?.length ?? 0) > 0) return false
   return t.is_have_image === true || t.is_have_video === true
 })
 
-// The user-facing task-type label shown in the meta row. Returns
-// 'memory' for memory tasks, or null for plain standard tasks
-// (no badge — the type is implied by the absence of a badge).
+// The user-facing task-type label shown in the meta row.
 const typeBadge = computed<string | null>(() => {
   const t = props.task.task_type
   if (t === 'memory') return 'memory'
   return null
 })
 
-// Git-branch badge (plan:
-// Null results in NO badge rendered (graceful no-op for non-git
-// workspaces / tasks without worktree + non-git cwd).
+// Git-branch badge (plan
 const gitBranchBadge = computed<string | null>(() => {
   const b = props.task.git_branch
   if (typeof b !== 'string') return null
@@ -378,12 +332,9 @@ const gitBranchBadge = computed<string | null>(() => {
   return b
 })
 
-// Git-branch PR state coloring: green = open, violet = merged, red = closed, orange = plain branch
-// (no PR / fetch failed). Same palette as SidebarDiffPanel's prStatusStyle so the kanban card and
-// the PR tab agree.
+// Git-branch PR state coloring: green = open, violet = merged, red = closed, orange = plain branch (no PR / fetch failed).
 const prStatus = ref('')
 // Conflict-only hint: true when the PR reports CONFLICTING/DIRTY.
-// Quiet-when-clean — false for mergeable, unknown, or failed fetches.
 const prHasConflict = ref(false)
 
 const effectiveCwd = computed<string>(() => props.cwd || props.task.cwd || '')
@@ -404,8 +355,7 @@ const gitBranchTitle = computed<string>(() => {
   return prHasConflict.value ? `${branch} — merge conflicts` : branch
 })
 
-// Label shown in the badge: branch name plus a conflict suffix only
-// when conflicting (quiet-when-clean — clean PRs look as before).
+// Label shown in the badge: branch name plus a conflict suffix only when conflicting (quiet-when-clean — clean PRs look as before).
 const gitBranchLabel = computed<string>(() => {
   const branch = gitBranchBadge.value ?? ''
   return prHasConflict.value ? `${branch} · ⚠ conflicts` : branch
@@ -421,8 +371,7 @@ const loadPrStatus = async () => {
     return
   }
   const seq = ++prSeq
-  // Shared cache: dedupes the board-load burst across cards, retries
-  // transient failures, resolves '' (fail-silent) when unknown.
+  // Shared cache: dedupes the board-load burst across cards, retries transient failures, resolves '' (fail-silent) when unknown.
   const [status, hasConflict] = await Promise.all([
     fetchPrStatusCached(cwd, branch),
     fetchPrConflictCached(cwd, branch),
@@ -432,13 +381,11 @@ const loadPrStatus = async () => {
   prHasConflict.value = hasConflict
 }
 
-// Reload PR status when the badge or cwd changes: mount covers the
-// initial load, prev-combo guard on update covers branch/cwd swaps.
+// Reload PR status when the badge or cwd changes: mount covers the initial load, prev-combo guard on update covers branch/cwd swaps.
 const prevPrKey = ref('')
 const prKey = () => `${gitBranchBadge.value ?? ''}|${effectiveCwd.value}`
 
-// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE event from another
-// client — drops the shared cache entry for that branch and calls this back with the pair.
+// A merge or close ANYWHERE — this tab's MergeBox, or the `git_pr_state` SSE event from another client — drops the shared cache entry for that branch and calls …
 let unsubscribePrStatus: (() => void) | null = null
 onMounted(() => {
   prevPrKey.value = prKey()

@@ -1,5 +1,4 @@
-//! The current branch of a directory, read off disk. Answers the same question
-//! as `git -C <dir> symbolic-ref --short HEAD` without spawning a process.
+//! The current branch of a directory, read off disk.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -19,8 +18,7 @@ const DirProbe = union(enum) {
     not_a_repo,
 };
 
-/// Branch `dir` is checked out on, or null when it has none — detached HEAD,
-/// not a repository, or a path this host cannot open.
+/// Branch `dir` is checked out on, or null when it has none — detached HEAD, not a repository, or a path this host cannot open.
 pub fn resolve(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 {
     if (!resolvablePath(dir)) return null;
 
@@ -40,18 +38,14 @@ pub fn resolve(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 
     return null;
 }
 
-/// A path this host can actually open. Windows also calls `\x` and `/x`
-/// absolute, but a drive-less path has no namespace to open: `stat` answers
-/// STATUS_OBJECT_PATH_INVALID, which Zig's Io escalates to a process panic.
+/// A path this host can actually open.
 fn resolvablePath(dir: []const u8) bool {
     if (dir.len == 0 or !std.fs.path.isAbsolute(dir)) return false;
     if (builtin.os.tag != .windows) return true;
     return std.fs.path.diskDesignatorWindows(dir).len > 0;
 }
 
-/// One stat decides the shape, and neither branch ever opens a path *through*
-/// `.git`: on Windows a parent that is a file comes back as
-/// STATUS_OBJECT_PATH_INVALID, which Zig's Io turns into a process panic.
+/// One stat decides the shape, and neither branch ever opens a path *through* `.git`: on Windows a parent that is a file comes back as STATUS_OBJECT_PATH_INVALID …
 fn probeDir(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -84,8 +78,7 @@ fn headProbe(
     return .{ .branch = branch };
 }
 
-/// One separator, never two: a Windows `\\?\` path is rejected outright when a
-/// component is empty, and a drive root already ends with the separator.
+/// One separator, never two: a Windows `\\?\` path is rejected outright when a component is empty, and a drive root already ends with the separator.
 fn childPath(buf: []u8, parent: []const u8, name: []const u8) ?[]const u8 {
     if (parent.len > 0 and parent[parent.len - 1] == std.fs.path.sep) {
         return std.fmt.bufPrint(buf, "{s}{s}", .{ parent, name }) catch null;
@@ -100,8 +93,7 @@ fn readSmall(io: std.Io, path: []const u8, buf: []u8) ?[]const u8 {
     return buf[0..len];
 }
 
-/// `.git` as a file points at the real git dir of a linked worktree or a
-/// submodule; a relative target resolves against the directory holding it.
+/// `.git` as a file points at the real git dir of a linked worktree or a submodule; a relative target resolves against the directory holding it.
 fn gitDirFromEntry(allocator: std.mem.Allocator, dir: []const u8, entry: []const u8) ?[]u8 {
     const line = std.mem.trim(u8, entry, " \t\r\n");
     if (!std.mem.startsWith(u8, line, gitdir_prefix)) return null;
@@ -121,9 +113,7 @@ fn branchFromHead(allocator: std.mem.Allocator, content: []const u8) ?[]u8 {
     return allocator.dupe(u8, name) catch null;
 }
 
-/// Per-request memo: a page repeats a handful of directories across dozens of
-/// rows, so each distinct one is read once. Nothing outlives the request — a
-/// `git checkout` shows up on the next list load.
+/// Per-request memo: a page repeats a handful of directories across dozens of rows, so each distinct one is read once.
 pub const Cache = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -152,7 +142,6 @@ pub const Cache = struct {
     }
 
     /// Branch of `dir`, borrowed from the cache and valid until `deinit`.
-    /// "" when the directory is on no branch.
     pub fn branch(self: *Cache, dir: []const u8) []const u8 {
         for (self.entries.items) |entry| {
             if (std.mem.eql(u8, entry.dir, dir)) return entry.branch;

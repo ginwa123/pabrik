@@ -27,8 +27,7 @@ const emit = defineEmits<{
   'skill-click': [skill: Skill]
 }>()
 
-// The RESOLVED workspace, not the raw `activeWorkspaceId` ref — same reason DocumentsView.vue reads
-// it this way.
+// The RESOLVED workspace, not the raw `activeWorkspaceId` ref — same reason DocumentsView.vue reads it this way.
 const workspacesStore = useWorkspacesStore()
 const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 
@@ -48,8 +47,7 @@ const fail = (reason: unknown) => (reason instanceof Error ? reason.message : St
 const loadSkills = async () => {
   const ws = workspaceId.value
   if (!ws) {
-    // No scope to read from. Say nothing about emptiness — there is a
-    // dedicated branch in the template for this.
+    // No scope to read from.
     skills.value = []
     error.value = null
     return
@@ -68,9 +66,7 @@ const loadSkills = async () => {
 
   isLoading.value = false
   if (result.ok) {
-    // Only the backend's own empty array means "no skills". A missing or
-    // non-array field is tolerated to zero rows rather than throwing —
-    // a real failure is the other branch, and it renders its reason.
+    // Only the backend's own empty array means "no skills".
     skills.value = Array.isArray(result.value?.skills) ? result.value.skills : []
   } else {
     skills.value = []
@@ -88,9 +84,7 @@ const refreshSkills = () => {
   loadSkills()
 }
 
-// Reload on workspace change. `immediate` covers the first load, so the
-// old mount-plus-immediate-watch double fetch is gone: mount loads once,
-// and the prev-value guard below reloads only when the id moves.
+// Reload on workspace change.
 let prevSkillListWorkspaceId: string | null = workspaceId.value
 onMounted(() => {
   prevSkillListWorkspaceId = workspaceId.value

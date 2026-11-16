@@ -1,6 +1,4 @@
-//! The host's half of the VM's network: the two listeners a workspace's guest
-//! forwarder dials (`<vsock.sock>_5001` egress, `_5002` DNS), its allowlist and
-//! an audit log. The address classified is the address dialled.
+//! The host's half of the VM's network: the two listeners a workspace's guest forwarder dials (`<vsock.sock>_5001` egress, `_5002` DNS), its allowlist and an …
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -27,9 +25,7 @@ const dns_timeout_ms: i32 = 5_000;
 const relay_slice_ms: i32 = 5_000;
 const relay_idle_ms: u32 = 120_000;
 const relay_chunk: usize = 64 * 1024;
-/// A guest that opens a connection and says nothing holds a thread, so the
-/// handshake gets 3 s. `max_connections` is the host-wide admission ceiling:
-/// past it a new connection is closed instead of costing a thread.
+/// A guest that opens a connection and says nothing holds a thread, so the handshake gets 3 s.
 const handshake_slices: u32 = 3;
 const max_connections = 128;
 const max_audit_bytes: i64 = 8 * 1024 * 1024;
@@ -44,11 +40,9 @@ const listen_backlog: u32 = 16;
 const dns_port: u16 = 53;
 
 pub const Config = struct {
-    /// The host's own TCP ports. A workspace may not dial one, whatever
-    /// address carries it.
+    /// The host's own TCP ports.
     host_listeners: []const u16 = &.{8081},
-    /// Where a guest query is forwarded. Empty means this host's
-    /// `/etc/resolv.conf`, read once.
+    /// Where a guest query is forwarded.
     nameservers: []const [4]u8 = &.{},
 };
 
@@ -68,8 +62,6 @@ pub const Allowlist = struct {
     pub const ParseError = error{ InvalidAllowEntry, OutOfMemory };
 
     /// One rule per line: `<host-or-pattern> <port|any>`, with `#` comments.
-    /// Patterns are copied, so the text they were parsed from is the caller's
-    /// to free.
     pub fn parse(allocator: std.mem.Allocator, text: []const u8) ParseError!Allowlist {
         var entries: std.ArrayList(Entry) = .empty;
         errdefer {
@@ -127,8 +119,7 @@ fn validPattern(pattern: []const u8) bool {
     return true;
 }
 
-/// `*` is any host; `*.example.com` is `example.com` or a host under it; a
-/// bare name is that name.
+/// `*` is any host; `*.example.com` is `example.com` or a host under it; a bare name is that name.
 fn hostMatches(pattern: []const u8, host: []const u8) bool {
     if (std.mem.eql(u8, pattern, "*")) return true;
     if (std.mem.startsWith(u8, pattern, "*.")) {
@@ -195,8 +186,7 @@ pub const Dial = struct {
     port: u16,
 };
 
-/// The one line a guest forwarder sends before any payload, or null when the
-/// line is not one.
+/// The one line a guest forwarder sends before any payload, or null when the line is not one.
 pub fn parseHandshake(line: []const u8) ?Dial {
     if (!std.mem.startsWith(u8, line, handshake_prefix)) return null;
     const rest = std.mem.trim(u8, line[handshake_prefix.len..], " \t\r\n");
@@ -211,9 +201,7 @@ pub fn parseHandshake(line: []const u8) ?Dial {
     return .{ .host = host, .port = parsePort(port_text) orelse return null };
 }
 
-/// What the host can refuse before it resolves anything: a port this host
-/// listens on, an address that is not public, or a host the allowlist does
-/// not name.
+/// What the host can refuse before it resolves anything: a port this host listens on, an address that is not public, or a host the allowlist does not name.
 pub fn destinationRefusal(
     host: []const u8,
     port: u16,
@@ -234,8 +222,7 @@ pub fn destinationRefusal(
     return null;
 }
 
-/// The second half of resolve-then-connect: the address about to be dialled,
-/// classified again.
+/// The second half of resolve-then-connect: the address about to be dialled, classified again.
 pub fn answerRefusal(addr_text: []const u8) ?egress.Refusal {
     return egress.decide(addr_text, 0, &.{});
 }
@@ -262,9 +249,7 @@ pub const Answer = struct {
     }
 };
 
-/// The query's own shape: one question, a standard query, and a name the
-/// resolver policy accepts. Labels are expanded into `out`, because the wire
-/// form is length prefixed. Anything else is refused rather than relayed.
+/// The query's own shape: one question, a standard query, and a name the resolver policy accepts.
 pub fn queryName(query: []const u8, out: []u8) ?[]const u8 {
     if (query.len < 12) return null;
     if (query[2] & 0x80 != 0) return null;
@@ -300,9 +285,7 @@ pub fn queryName(query: []const u8, out: []u8) ?[]const u8 {
     return null;
 }
 
-/// The A/AAAA answers of a response, up to `max_answers` of them. Names are
-/// skipped through compression pointers, so a CNAME in front of the addresses
-/// still walks.
+/// The A/AAAA answers of a response, up to `max_answers` of them.
 pub fn answerAddresses(allocator: std.mem.Allocator, reply: []const u8) ![]Answer {
     var out: std.ArrayList(Answer) = .empty;
     errdefer out.deinit(allocator);
@@ -355,9 +338,7 @@ fn skipName(buf: []const u8, start: usize) ?usize {
     return null;
 }
 
-/// The first address in a response the proxy would refuse to dial, written
-/// into `out`, or null when every answer is public. This is what stops a
-/// rebinding name from being a way around the proxy.
+/// The first address in a response the proxy would refuse to dial, written into `out`, or null when every answer is public.
 pub fn deniedAnswer(reply: []const u8, out: []u8, scratch: []Answer) ?[]const u8 {
     const parsed = answerAddresses(std.heap.page_allocator, reply) catch return "unreadable answer";
     defer std.heap.page_allocator.free(parsed);
@@ -369,17 +350,14 @@ pub fn deniedAnswer(reply: []const u8, out: []u8, scratch: []Answer) ?[]const u8
     return null;
 }
 
-/// A response carrying more records than the policy walk covers is refused
-/// whole: the walk stops at `max_answers`, so anything past it would be handed
-/// to the guest unchecked.
+/// A response carrying more records than the policy walk covers is refused whole: the walk stops at `max_answers`, so anything past it would be handed to the …
 pub fn answerCountOverCap(reply: []const u8) bool {
     if (reply.len < 12) return true;
     const ancount = (@as(u32, reply[6]) << 8) | reply[7];
     return ancount > max_answers;
 }
 
-/// A response whose ID does not match the query, or that is not a response,
-/// is stale or poisoned and is dropped rather than forwarded.
+/// A response whose ID does not match the query, or that is not a response, is stale or poisoned and is dropped rather than forwarded.
 pub fn responseBelongsTo(reply: []const u8, query: []const u8) bool {
     if (reply.len < 12 or query.len < 2) return false;
     if (reply[2] & 0x80 == 0) return false;
@@ -417,8 +395,7 @@ pub fn buildQuery(buf: []u8, id: u16, name: []const u8, qtype: u16) ?[]const u8 
 
 // ─── the audit log ──────────────────────────────────────────────────────
 
-/// One append-only line per dial or query. `ts` is an argument, so the line
-/// is a function of its inputs and not of the clock.
+/// One append-only line per dial or query.
 pub fn auditLine(
     allocator: std.mem.Allocator,
     ts: i64,
@@ -472,16 +449,14 @@ const Listener = struct {
     nameservers: []const [4]u8,
 };
 
-/// The workspace's own name, taken from the directory this listener was
-/// created for: nothing a guest sends can choose which allowlist applies.
+/// The workspace's own name, taken from the directory this listener was created for: nothing a guest sends can choose which allowlist applies.
 pub fn workspaceOf(dir: []const u8) []const u8 {
     const trimmed = std.mem.trimEnd(u8, dir, "/");
     const at = std.mem.lastIndexOfScalar(u8, trimmed, '/') orelse return trimmed;
     return trimmed[at + 1 ..];
 }
 
-/// Which listeners are already bound, and by which fd, so a workspace rebinds
-/// after a restart instead of keeping the socket a dead VM left behind.
+/// Which listeners are already bound, and by which fd, so a workspace rebinds after a restart instead of keeping the socket a dead VM left behind.
 var registry = struct {
     lock: std.atomic.Mutex = .unlocked,
     count: usize = 0,
@@ -517,8 +492,7 @@ var registry = struct {
     }
 }{};
 
-/// Bind the two guest-initiated sockets for a workspace, once. Safe to call on
-/// every dispatch, so the listeners exist before the guest's first dial.
+/// Bind the two guest-initiated sockets for a workspace, once.
 pub fn ensure(allocator: std.mem.Allocator, layout: vm_client.Layout, host_listeners: []const u16) void {
     for ([_]u32{ egress_port, resolver_port }) |port| {
         var key_buf: [max_path_bytes]u8 = undefined;
@@ -528,8 +502,7 @@ pub fn ensure(allocator: std.mem.Allocator, layout: vm_client.Layout, host_liste
         const room = registry.count < max_listeners;
         registry.lock.unlock();
         if (known) continue;
-        // Never unlink a socket a live listener owns: with no slot left, the
-        // workspace keeps what it has and says so rather than rebinding.
+        // Never unlink a socket a live listener owns: with no slot left, the workspace keeps what it has and says so rather than rebinding.
         if (!room) {
             log("egress: no listener slot left for {s}", .{key});
             continue;
@@ -594,8 +567,7 @@ fn bindListener(
     return listener;
 }
 
-/// Close and unlink a workspace's listeners, so the next boot rebinds them
-/// instead of leaving a socket the guest's dial would land on forever.
+/// Close and unlink a workspace's listeners, so the next boot rebinds them instead of leaving a socket the guest's dial would land on forever.
 pub fn release(layout: vm_client.Layout) void {
     for ([_]u32{ egress_port, resolver_port }) |port| {
         var key_buf: [max_path_bytes]u8 = undefined;
@@ -626,8 +598,7 @@ fn acceptLoop(listener: *Listener) void {
             continue;
         }
         const conn: linux.fd_t = @intCast(rc);
-        // Admission before a thread: a guest in a loop must not be able to
-        // spend the daemon's threads and fds on connections it never uses.
+        // Admission before a thread: a guest in a loop must not be able to spend the daemon's threads and fds on connections it never uses.
         if (live_connections.fetchAdd(1, .seq_cst) >= max_connections) {
             _ = live_connections.fetchSub(1, .seq_cst);
             _ = linux.close(conn);
@@ -684,8 +655,7 @@ fn egressConnection(listener: *Listener, conn: linux.fd_t) void {
     relay(conn, remote);
 }
 
-/// Resolve the name, check every answer, then dial the literal that was
-/// checked. A name that is already an address skips the resolution.
+/// Resolve the name, check every answer, then dial the literal that was checked.
 fn dialResolved(listener: *Listener, dial: Dial, addr_buf: []u8) ?linux.fd_t {
     if (egress.classifyText(dial.host) != null) {
         if (dial.host.len > addr_buf.len) return null;
@@ -828,8 +798,7 @@ fn forwardQuery(listener: *Listener, query: []const u8, out: []u8) ?[]const u8 {
     return null;
 }
 
-/// A length of zero is the refusal: the guest's resolver answers SERVFAIL for
-/// its own client, so a denied name is a failed lookup and not a silence.
+/// A length of zero is the refusal: the guest's resolver answers SERVFAIL for its own client, so a denied name is a failed lookup and not a silence.
 fn refuseFrame(conn: linux.fd_t) void {
     _ = writeAll(conn, &[_]u8{ 0, 0 });
 }
@@ -1011,8 +980,7 @@ fn cstr(src: []const u8, dst: []u8) ?[*:0]const u8 {
     return @ptrCast(dst.ptr);
 }
 
-/// Read a whole file, up to `cap` bytes. Null when it is absent or longer than
-/// the cap, which the callers all treat as "use the default".
+/// Read a whole file, up to `cap` bytes.
 pub fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8, cap: usize) ?[]u8 {
     var buf: [max_path_bytes]u8 = undefined;
     const path_z = cstr(path, &buf) orelse return null;
@@ -1048,8 +1016,7 @@ fn loadAllowlist(listener: *Listener) Allowlist {
     };
 }
 
-/// One public resolver, for a host whose own configuration names none. Static,
-/// because a listener outlives the call that built it.
+/// One public resolver, for a host whose own configuration names none.
 const fallback_nameservers = [_][4]u8{.{ 1, 1, 1, 1 }};
 
 var loaded_nameservers: ?[]const [4]u8 = null;

@@ -9,14 +9,10 @@ const run_captured = @import("helpers").run_captured;
 /// Wall-clock budget per git invocation.
 pub const GIT_TIMEOUT_MS: u32 = 20_000;
 
-/// Per-stream capture cap. Commit output is a few lines; the cap only
-/// matters for a hook stack trace, which is truncated rather than
-/// forwarded whole.
+/// Per-stream capture cap.
 const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
 /// How much of git's stderr rides along in the HTTP 400 `error` field.
-/// The real causes are one line (`nothing to commit, working tree
-/// clean`, `Author identity unknown`), but a hook stack trace is not.
 const MAX_DETAIL_BYTES: usize = 300;
 
 pub const CommitError = error{
@@ -27,7 +23,6 @@ pub const CommitError = error{
 };
 
 /// Outcome of `git -C <path> commit -m <message>`: the new HEAD.
-/// Caller owns the returned slice.
 pub fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -40,9 +35,7 @@ pub fn useCase(
 
     if (std.mem.trim(u8, message, " \n\r\t").len == 0) return error.EmptyMessage;
 
-    // `message` travels as the VALUE of `-m`, never as a flag, so a message
-    // like `--help` commits literally instead of printing git usage (probed
-    // by the functional test). No shell is involved at any point — argv only.
+    // `message` travels as the VALUE of `-m`, never as a flag, so a message like `--help` commits literally instead of printing git usage (probed by the functional …
     var commit_res = git_route.run(allocator, io, path, &.{ "commit", "-m", message }, .{
         .workspace_id = opts.workspace_id,
         .max_output_bytes = MAX_OUTPUT_BYTES,
@@ -147,9 +140,7 @@ pub fn gitCommitHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitCommitCreateResponse(allocator, response) });
 }
 
-// ===== Synthetic-repo unit tests ===== Same fixture discipline as
-// git_pr_conflicts.zig: the repo lives in the OS temp dir (never under
-// `.zig-cache/tmp/`, which is inside this repository — a `git init` there
+// ===== Synthetic-repo unit tests =====
 
 const FixtureDir = struct {
     path: []const u8,
@@ -206,9 +197,7 @@ fn requireSelfContainedRepo(path: []const u8) !void {
     };
     if (code != 0) return error.GitFailed;
     const toplevel = std.mem.trim(u8, res.stdout, " \n\r\t");
-    // git spells separators `/` on every platform; realPath hands back
-    // `\` on Windows. Normalise before comparing so the guard does not
-    // fire on identical directories.
+    // git spells separators `/` on every platform; realPath hands back `\` on Windows.
     var want_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const want_len = @min(path.len, want_buf.len);
     @memcpy(want_buf[0..want_len], path[0..want_len]);
@@ -245,7 +234,6 @@ fn git(path: []const u8, args: []const []const u8) !void {
 }
 
 /// Fresh repo with one commit plus one staged (uncommitted) change.
-/// Returns the repo path; the caller owns nothing (fixture owns it).
 fn makeRepoWithStagedChange(fx: *const FixtureDir) ![]const u8 {
     try git(fx.path, &.{ "init", "-q", "-b", "main" });
     try requireSelfContainedRepo(fx.path);

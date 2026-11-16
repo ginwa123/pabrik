@@ -1,6 +1,4 @@
-/**  * Phase 3 scroll-spy + URL sync (3.3) and click-to-scroll (3.4, ChatView side): the most-visible
- * stacked section drives currentPath, which syncs to ?diff= via router.replace (never push); the
- * Back button clears the selection and deletes the param. */
+/** Phase 3 scroll-spy + URL sync (3.3) and click-to-scroll (3.4, ChatView side): the most-visible stacked section drives currentPath, which syncs to ?diff= via … */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { scrollToSectionElement, centerDiffSectionId } from '../chat_right_sidebar/parseUnifiedDiff'
 import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
@@ -25,9 +23,7 @@ describe('ChatView scroll-spy + URL sync', () => {
     expect(chatViewSrc).toMatch(/function syncDiffParam\(path: string \| null\)/)
     expect(chatViewSrc).toMatch(/router\.replace\(\{ path: route\.path, query \}\)/)
     expect(chatViewSrc).toMatch(/delete query\.diff/)
-    // No currentPath watcher any more: each assignment site calls syncDiffParam itself, which is
-    // what keeps the URL honest without a watcher re-reading a value it just wrote. The scroll spy
-    // is the writer that matters here — the section it deems most visible becomes ?diff=.
+    // No currentPath watcher any more: each assignment site calls syncDiffParam itself, which is what keeps the URL honest without a watcher re-reading a value it …
     expect(chatViewSrc).toMatch(
       /currentPath\.value = best\s*\n\s*if \(showCenterDiff\.value\) syncDiffParam\(best\)/,
     )

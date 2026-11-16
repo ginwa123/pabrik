@@ -1,5 +1,4 @@
-/** Tests for workspacesStore.runAgentOnNewTask — the store action that wraps api.sendChatMessage
- * for the kanban "Create task & run agent" flow./ Step 1.1 */
+/** Tests for workspacesStore.runAgentOnNewTask — the store action that wraps api.sendChatMessage for the kanban "Create task & run agent" flow./ Step 1.1 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

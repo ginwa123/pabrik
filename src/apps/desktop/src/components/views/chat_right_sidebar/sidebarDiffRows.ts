@@ -1,18 +1,14 @@
 import type { GitFileChange } from '../../../api'
 import { parseUnifiedDiff, type SplitDiffFile } from './parseUnifiedDiff'
 
-// ── Row anatomy ─────────────────────────────────────────────────────────── The panel shows 40+
-// rows of repo-relative paths that mostly share a long identical prefix. Two helpers turn that into
-// something scannable.
+// ── Row anatomy ───────────────────────────────────────────────────────────
 export function pathParts(path: string): { dir: string; name: string } {
   const i = path.lastIndexOf('/')
   if (i < 0) return { dir: '', name: path }
   return { dir: path.slice(0, i + 1), name: path.slice(i + 1) }
 }
 
-// Status as a letter chip rather than a colour emoji. Six emoji render at six different pixel sizes
-// next to 12px paths and cannot be asserted on; one letter in a fixed 16px box cannot drift. See
-// AGENTS.md ("No Emoji as Icons").
+// Status as a letter chip rather than a colour emoji.
 export type StatusChip = { letter: string; bg: string; fg: string; title: string }
 
 const STATUS_CHIPS: Record<string, StatusChip> = {
@@ -74,9 +70,7 @@ export const chipForFile = (file: GitFileChange): StatusChip => {
   return UNKNOWN_CHIP
 }
 
-// ── File filter ─────────────────────────────────────────────────────────── A 40-file list needs a
-// way to narrow it. Shown only past FILTER_MIN_ROWS so a three-file panel is not asked to carry a
-// search box.
+// ── File filter ───────────────────────────────────────────────────────────
 export const FILTER_MIN_ROWS = 8
 
 export const isFilterActive = (query: string): boolean => query.trim() !== ''
@@ -89,9 +83,7 @@ export const pathMatchesFilter = (path: string, query: string): boolean => {
 export const filterRows = <T extends { path: string }>(rows: T[], query: string): T[] =>
   rows.filter((f) => pathMatchesFilter(f.path, query))
 
-// The bar stays put once it appears. Hiding it on the first keystroke
-// would leave no way to widen the query or clear it — the input takes the
-// focus, loses itself, and strands the state.
+// The bar stays put once it appears.
 export const showsFilter = (total: number): boolean => total > FILTER_MIN_ROWS
 
 /** A preview is a glance, not the diff: the first lines, and a count of what is left. */

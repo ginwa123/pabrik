@@ -1,5 +1,4 @@
-// Workspace-scoped chat history: `read_workspace_session` replaces
-// `search_history`.
+// Workspace-scoped chat history: `read_workspace_session` replaces `search_history`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers (mirror command_tool_test.py / agent_kanbans_test.py)
-// ============================================================================
 
 /// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -109,9 +106,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with `mode:
-/// "create_session"` — mirrors the frontend's plain "Create task" button.
-/// Seeds session.id == task.id + one user message → the new task's id. Owned.
+/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with `mode
 fn createTask(
     h: *Harness,
     workspace_id: []const u8,
@@ -156,9 +151,7 @@ fn createTask(
     return gpa.dupe(u8, id);
 }
 
-/// The USER messages of a session: how many there are, and their
-/// contents joined by a space (Python's
-/// `" ".join(str(m.get("content", "")) for m in ...)`).
+/// The USER messages of a session: how many there are, and their contents joined by a space (Python's `" ".join(str(m.get("content", "")) for m in ...)`).
 const UserMessages = struct {
     count: usize,
     body: []u8,
@@ -221,7 +214,6 @@ fn userMessages(h: *Harness, session_id: []const u8) !UserMessages {
 }
 
 /// `GET /api/agent-tools/registry` → the equipped tool names, owned.
-/// Python's `_registry_names`, including its "fixture broken?" guard.
 fn registryNames(h: *Harness) ![][]u8 {
     var r = try h.http(io, .GET, "/api/agent-tools/registry", .{ .expect = &.{200} });
     defer r.deinit();
@@ -280,12 +272,9 @@ fn renderNames(names: []const []u8) ![]u8 {
     return std.mem.join(gpa, ", ", names);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// The equipped surface is `read_workspace_session` ONLY — the old name
-// must never appear again (any spelling).
+// The equipped surface is `read_workspace_session` ONLY — the old name must never appear again (any spelling).
 test "registry_exposes_new_tool_no_old_name" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -327,8 +316,7 @@ test "registry_exposes_new_tool_no_old_name" {
     }
 }
 
-// DELETE/POST/DELETE /api/agents/:id/tools round-trips the new name
-// (it ships as a default, so DELETE first, like `command`).
+// DELETE/POST/DELETE /api/agents/:id/tools round-trips the new name (it ships as a default, so DELETE first, like `command`).
 test "enable_disable_round_trip" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -423,9 +411,7 @@ test "legacy_name_rejected" {
     defer r.deinit();
 }
 
-// Two workspaces, three tasks: session.id == task.id in each, with
-// disjoint user messages. This is the exact join (task → session →
-// workspace) the tool scopes on.
+// Two workspaces, three tasks: session.id == task.id in each, with disjoint user messages.
 test "tasks_seed_disjoint_sessions_per_workspace" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -469,8 +455,7 @@ test "tasks_seed_disjoint_sessions_per_workspace" {
     );
     defer gpa.free(task_b1);
 
-    // session.id == task.id (the invariant workspace_scope joins on):
-    // each seeded session carries at least one user message.
+    // session.id == task.id (the invariant workspace_scope joins on)
     {
         const tasks = [_][]const u8{ task_a1, task_a2, task_b1 };
         for (tasks) |t| {
@@ -483,8 +468,7 @@ test "tasks_seed_disjoint_sessions_per_workspace" {
         }
     }
 
-    // Content is per-session disjoint: the beta session's message
-    // mentions deployment, the alpha sessions mention login.
+    // Content is per-session disjoint: the beta session's message mentions deployment, the alpha sessions mention login.
     {
         var msgs_b = try userMessages(&h, task_b1);
         defer msgs_b.deinit();

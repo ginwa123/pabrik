@@ -10,16 +10,13 @@ import * as api from '../../api'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
 import UiIcon from '../ui/UiIcon.vue'
 
-// The single SELECTED workspace (header dropdown + Projects section). null = no workspace
-// selected/exists — the template renders an empty-state hint instead of rows.
+// The single SELECTED workspace (header dropdown + Projects section). null = no workspace selected/exists — the template renders an empty-state hint instead of …
 const props = defineProps<{
   workspace: Workspace | null
   activeWorkspaceItemId: string | null
 }>()
 
-// Inject processingState from App.vue (same key WorkspaceItem, ChatsList, ChatView consume). Keyed
-// by task.id == session_id, so we scan a workspace's items→tasks for any key present in the map to
-// know "is anything in this workspace currently busy with a worker?".
+// Inject processingState from App.vue (same key WorkspaceItem, ChatsList, ChatView consume).
 const processingState = inject<Ref<Record<string, boolean>>>(
   'processingState',
   ref<Record<string, boolean>>({}),
@@ -40,27 +37,20 @@ const emit = defineEmits<{
   ]
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design
-  // page events from <WorkspaceItem> (which forwards them from
-  // <DesignPageRow>). Sidebar handles the actual store calls.
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): design page events from <WorkspaceItem> (which forwards them from <DesignPageRow>).
   selectDesignPage: [workspaceId: string, itemId: string, pageId: string]
   deleteDesignPage: [workspaceId: string, itemId: string, pageId: string]
   addDesignPage: [workspaceId: string, itemId: string]
-  // NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename"
-  // item forwards the page from WorkspaceItem → ProjectsList → Sidebar.
-  // Sidebar opens RenameDesignPageModal + calls the store action.
+  // NEW (rename-design-pages plan, 2026-08-06): ⋮ menu "Rename" item forwards the page from WorkspaceItem → ProjectsList → Sidebar.
   renameDesignPage: [workspaceId: string, itemId: string, pageId: string, currentName: string]
   openDesignPageInBackground: [payload: { workspaceId: string; itemId: string; pageId: string }]
   loadMoreTasks: [workspaceId: string, itemId: string]
-  // Drag-and-drop reordering for items of a single workspace. Emitted on a successful drop with the
-  // workspace id and the new top-to-bottom array of item IDs.
+  // Drag-and-drop reordering for items of a single workspace.
   reorderWorkspaceItems: [workspaceId: string, orderedItemIds: string[]]
-  // NEW (pinned-tasks feature): pin/unpin and drag-reorder
-  // of the pinned subset, forwarded from <WorkspaceItem>.
+  // NEW (pinned-tasks feature): pin/unpin and drag-reorder of the pinned subset, forwarded from <WorkspaceItem>.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   reorderPinnedTasks: [workspaceId: string, itemId: string, orderedIds: string[]]
   // Right-click "Go to settings" from a workspace item row.
-  // Forwarded verbatim to Sidebar, which routes per item_type.
   goToSettings: [payload: { workspaceId: string; itemId: string; itemType?: string }]
 }>()
 
@@ -68,15 +58,11 @@ const sidebarStore = useSidebarStore()
 const workspacesStore = useWorkspacesStore()
 const activeAddMenu = ref<string | null>(null)
 
-// Sidebar shows every project — the header search filter was removed (v2 sidebar UX: no search,
-// always-visible actions, tighter indent). ─── Drag-and-drop state (item reordering)
-// ──────────────────────────────── Scoped to a single workspace's items.
+// Sidebar shows every project — the header search filter was removed (v2 sidebar UX: no search, always-visible actions, tighter indent). ─── Drag-and-drop state …
 const draggingItemId = ref<string | null>(null)
 const draggingItemWorkspaceId = ref<string | null>(null)
 const dragOverItemId = ref<string | null>(null)
-// When the cursor is hovering over `dragOverItemId`, this boolean records whether the cursor is in
-// the BOTTOM half of that row (true) or the TOP half (false). The drop handler uses this to decide
-// "insert after the target" vs "insert before the target" — see handleItemDrop for the index math.
+// When the cursor is hovering over `dragOverItemId`, this boolean records whether the cursor is in the BOTTOM half of that row (true) or the TOP half (false).
 const dragOverItemInsertAfter = ref(false)
 
 // Close dropdown when clicking outside
@@ -107,9 +93,7 @@ const toggleAddMenu = (workspaceId: string) => {
   }
 }
 
-// Count of running workers across all items in this workspace (= session_id per Migration 052
-// convention, same key `processingState` uses). The header shows a dot + "N running" text — never
-// an elapsed time pill.
+// Count of running workers across all items in this workspace (= session_id per Migration 052 convention, same key `processingState` uses).
 const runningTaskCountInWorkspace = (workspace: Workspace): number => {
   const state = processingState.value
   let n = 0
@@ -170,9 +154,7 @@ const handleLoadMoreTasks = (workspaceId: string, itemId: string) => {
   emit('loadMoreTasks', workspaceId, itemId)
 }
 
-// ─── Drag-and-drop handlers (item reordering) ────────────────────────────── Event delegation
-// pattern: the handlers live on the per-workspace `<ul>` (so they're created once per workspace)
-// but the draggable + data-* attributes live on each `<li>` inside `<WorkspaceItem>`.
+// ─── Drag-and-drop handlers (item reordering) ──────────────────────────────
 const handleItemDragStart = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   const li = target?.closest('[data-item-id]') as HTMLElement | null
@@ -183,31 +165,25 @@ const handleItemDragStart = (event: DragEvent) => {
   draggingItemId.value = itemId
   draggingItemWorkspaceId.value = workspaceId
   if (event.dataTransfer) {
-    // Dedicated MIME type so the item payload doesn't collide with workspace or pinned-task
-    // payloads.
+    // Dedicated MIME type so the item payload doesn't collide with workspace or pinned-task payloads.
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('application/x-item-id', itemId)
   }
 }
 
 const handleItemDragOver = (event: DragEvent) => {
-  // preventDefault on dragover is REQUIRED to allow the drop (HTML5
-  // DnD spec). Without it, the browser cancels the drop with a
-  // "not allowed" cursor.
+  // preventDefault on dragover is REQUIRED to allow the drop (HTML5 DnD spec).
   event.preventDefault()
   const target = event.target as HTMLElement | null
   const li = target?.closest('[data-item-id]') as HTMLElement | null
   if (!li) return
   const itemId = li.dataset.itemId
-  // Don't show the drop indicator on the source row itself (would
-  // look like the drop happened on yourself).
+  // Don't show the drop indicator on the source row itself (would look like the drop happened on yourself).
   if (itemId && itemId !== draggingItemId.value) {
     if (dragOverItemId.value !== itemId) {
       dragOverItemId.value = itemId
     }
-    // Update the "insert before / after" flag on EVERY dragover (not just when the target row
-    // changes) — the cursor can move from the top to the bottom of the same row without
-    // `dragOverItemId` updating, and the drop indicator should follow the cursor.
+    // Update the "insert before / after" flag on EVERY dragover (not just when the target row changes) — the cursor can move from the top to the bottom of the same …
     const rect = li.getBoundingClientRect()
     dragOverItemInsertAfter.value = event.clientY > rect.top + rect.height / 2
   }
@@ -217,9 +193,7 @@ const handleItemDragLeave = (event: DragEvent) => {
   const target = event.target as HTMLElement | null
   const li = target?.closest('[data-item-id]') as HTMLElement | null
   if (!li) return
-  // Only clear when the cursor actually leaves the row. The dragleave event fires when crossing
-  // child elements too, so we check `relatedTarget` to see if the cursor is still inside the row.
-  // If it is, do nothing.
+  // Only clear when the cursor actually leaves the row.
   const related = event.relatedTarget as Node | null
   if (related && li.contains(related)) return
   if (dragOverItemId.value === li.dataset.itemId) {
@@ -237,15 +211,11 @@ const handleItemDrop = (event: DragEvent) => {
   const targetWorkspaceId = li.dataset.workspaceId
   if (!targetItemId || !targetWorkspaceId) return
   if (!draggingItemId.value || !draggingItemWorkspaceId.value) return
-  // Cross-workspace drop: silently no-op. The user dragged an item from workspace A and dropped on
-  // an item in workspace B. The plan scopes reorder to a single workspace; cross-workspace moves
-  // are out of scope (would require a separate "moveItemToWorkspace" endpoint).
+  // Cross-workspace drop: silently no-op.
   if (targetWorkspaceId !== draggingItemWorkspaceId.value) return
   // Drop on self: no-op.
   if (targetItemId === draggingItemId.value) return
-  // Find the workspace and compute the new order: take the current items, splice the source out,
-  // then insert at a position computed from the cursor's Y offset within the target row. Top half =
-  // insert BEFORE the target, bottom half = insert AFTER the target (Trello/Jira UX).
+  // Find the workspace and compute the new order: take the current items, splice the source out, then insert at a position computed from the cursor's Y offset …
   const workspace = props.workspace
   if (!workspace || workspace.id !== targetWorkspaceId) return
   const items = workspace.items.slice()
@@ -253,15 +223,12 @@ const handleItemDrop = (event: DragEvent) => {
   const toIdx = items.findIndex((i) => i.id === targetItemId)
   if (fromIdx === -1 || toIdx === -1) return
   const rect = li.getBoundingClientRect()
-  // Rect.top + rect.height / 2 is the row's vertical midpoint.
-  // clientY > midpoint → cursor in bottom half → insert after.
-  // clientY <= midpoint → cursor in top half → insert before.
+  // Rect.top + rect.height / 2 is the row's vertical midpoint. clientY > midpoint → cursor in bottom half → insert after. clientY <= midpoint → cursor in top half …
   const insertAfter = event.clientY > rect.top + rect.height / 2
   const removed = items.splice(fromIdx, 1)
   const moved = removed[0]
   if (!moved) return
-  // After `splice(fromIdx, 1)`, items with index >= fromIdx have shifted left by 1 in the modified
-  // array. The target row sits at `toIdx - 1` (if toIdx > fromIdx) or `toIdx` (if toIdx < fromIdx).
+  // After `splice(fromIdx, 1)`, items with index >= fromIdx have shifted left by 1 in the modified array.
   const targetIdxInModified = toIdx > fromIdx ? toIdx - 1 : toIdx
   const insertAt = targetIdxInModified + (insertAfter ? 1 : 0)
   items.splice(insertAt, 0, moved)
@@ -273,8 +240,7 @@ const handleItemDrop = (event: DragEvent) => {
 }
 
 const handleItemDragEnd = () => {
-  // Always clear drag state on dragend, even if the drop was
-  // cancelled. Without this, the source row stays dimmed forever.
+  // Always clear drag state on dragend, even if the drop was cancelled.
   draggingItemId.value = null
   draggingItemWorkspaceId.value = null
   dragOverItemId.value = null

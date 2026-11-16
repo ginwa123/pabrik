@@ -22,9 +22,7 @@ pub const WorkerListResult = struct {
     count: u32,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -32,15 +30,12 @@ fn useCase(
     input: WorkerListInput,
     owner: []const u8,
 ) WorkerListError!WorkerListResult {
-    // Only the query string lives in the arena — it is dead the moment
-    // `db.query` returns.
+    // Only the query string lives in the arena — it is dead the moment `db.query` returns.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const q = arena.allocator();
 
-    // Build query with optional session_id filter. SQL convention: alias the
-    // table (`w`) so the column references stay unambiguous when filters grow
-    // (see project memory pabrik-sql-alias-tables.md).
+    // Build query with optional session_id filter.
     const base_sql = "SELECT w.id, w.session_id, w.working_directory, w.last_activity_nano AS last_activity, w.last_activity_description, w.created_at FROM worker w";
 
     // `cancelled = 0` is the whole reason a client can trust this list.
@@ -49,8 +44,7 @@ fn useCase(
     if (input.session_id_filter != null) {
         where_sql = try std.fmt.allocPrint(q, "{s} AND w.session_id = ?", .{where_sql});
     }
-    // Owner scope (plan 2026-09-25, W2.4). Skipped only for the shared/system
-    // user, i.e. auth off, where the system user sees every worker.
+    // Owner scope (plan 2026-09-25, W2.4).
     if (!auth_common.isSharedOwner(owner)) {
         where_sql = try std.fmt.allocPrint(
             q,
@@ -65,9 +59,7 @@ fn useCase(
         .{ base_sql, where_sql },
     );
 
-    // Bound exactly as before the `cancelled` predicate existed: the
-    // visibility clause contributes two `?` (one compared against the system
-    // sentinel, one bound to the owner) and the session filter one more.
+    // Bound exactly as before the `cancelled` predicate existed: the visibility clause contributes two `?` (one compared against the system sentinel, one bound to …
     const query_params: []const []const u8 = if (input.session_id_filter) |sid|
         if (auth_common.isSharedOwner(owner))
             &[_][]const u8{sid}
@@ -107,9 +99,7 @@ fn useCase(
     return .{ .json = json, .count = count };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workerListHandler(
     ctx: gserverz.HttpContext,
@@ -129,8 +119,7 @@ pub fn workerListHandler(
         .session_id_filter = req.query.get("session_id"),
     };
 
-    // Server-derived owner (cookie only). Scopes the list so B never sees A's
-    // running workers; auth off resolves to the system user, who sees all.
+    // Server-derived owner (cookie only).
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, di.auth_enabled, req.headers) catch "";
     defer if (owner.len > 0) allocator.free(owner);
 
@@ -153,17 +142,13 @@ pub fn workerListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = outcome.json });
 }
 
-// ─── Tests
-// ──────────────────────────────────────────────────────────────────
-// Registered in `src/root.zig`'s `test { }` block — the same lazy-compilation
+// ─── Tests Registered in `src/root.zig`'s `test { }` block — the same lazy-compilation
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
-/// Production shape of `worker` after migrations 019/020/075/093 + the
-/// `cancelled` column. `user_id` is read by the owner-visibility clause, so a
-/// table without it would not exercise the scoped query at all.
+/// Production shape of `worker` after migrations 019/020/075/093 + the `cancelled` column.
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -199,9 +184,7 @@ fn seedWorker(
     , &.{ id, session_id, cancelled });
 }
 
-/// `useCase` allocates its rows and its JSON from the allocator it is handed
-/// and never frees either, so the tests hand it an arena instead of
-/// `testing.allocator` — otherwise every test would fail on a leak that the
+/// `useCase` allocates its rows and its JSON from the allocator it is handed and never frees either, so the tests hand it an arena instead of `testing.allocator` …
 fn listAs(
     db: *database.Db,
     arena_alloc: std.mem.Allocator,
@@ -223,8 +206,7 @@ test "a worker row the user stopped is not listed as running" {
     try seedWorker(&s.db, a, "w_live", "s_live", "0");
     try seedWorker(&s.db, a, "w_stopped", "s_stopped", "1");
 
-    // The shared owner sees every worker, so this is the unscoped listing the
-    // Android client's bootstrap actually reads.
+    // The shared owner sees every worker, so this is the unscoped listing the Android client's bootstrap actually reads.
     const result = try listAs(&s.db, a, .{ .limit = 50, .session_id_filter = null }, "");
 
     try testing.expectEqual(@as(u32, 1), result.count);
@@ -307,9 +289,7 @@ test "every listed row still reports itself as running (the Android parser's pre
 
     const result = try listAs(&s.db, a, .{ .limit = 50, .session_id_filter = null }, "");
 
-    // `WorkerApi.parseRunningSessionIds` projects the *presence* of a row
-    // down to the id set and never reads these two fields, precisely because
-    // they are literals.
+    // `WorkerApi.parseRunningSessionIds` projects the *presence* of a row down to the id set and never reads these two fields, precisely because they are literals.
     try testing.expect(std.mem.indexOf(u8, result.json, "\"status\":\"running\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.json, "\"is_running\":true") != null);
 }
@@ -344,16 +324,14 @@ test "a missing worker table surfaces as QueryFailed rather than an empty list" 
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    // An empty list on a broken table is the worst possible answer: every
-    // client would read it as "nothing is running" and clear its spinners.
+    // An empty list on a broken table is the worst possible answer: every client would read it as "nothing is running" and clear its spinners.
     try testing.expectError(
         error.QueryFailed,
         listAs(&s.db, arena.allocator(), .{ .limit = 50, .session_id_filter = null }, ""),
     );
 }
 
-/// The pool policy under test is sqlite's (one reader, a 20 ms budget): a
-/// postgres build has no such knobs, so it only ever compiles this away.
+/// The pool policy under test is sqlite's (one reader, a 20 ms budget): a postgres build has no such knobs, so it only ever compiles this away.
 fn openPoolPressureDb(db: *database.Db, io: std.Io, path: [:0]const u8) !void {
     if (comptime database.backend_is_postgres) {
         return error.SkipZigTest;
@@ -367,9 +345,7 @@ fn openPoolPressureDb(db: *database.Db, io: std.Io, path: [:0]const u8) !void {
 }
 
 test "repeated listings hand their pooled reader back instead of exhausting the pool" {
-    // FILE-BACKED, deliberately: `initWithConfig` skips pooling for
-    // `:memory:` (a second connection would see an empty database), so the
-    // in-memory `setupDb` above cannot observe this at all.
+    // FILE-BACKED, deliberately: `initWithConfig` skips pooling for `:memory:` (a second connection would see an empty database), so the in-memory `setupDb` above …
     const alloc = testing.allocator;
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -386,9 +362,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
 
     var db: database.Db = .{};
     defer db.deinit();
-    // ONE reader, and a budget short enough to fail fast: with a single
-    // reader, a second listing that finds the pool empty has no way to grow
-    // it, so it waits and then falls back onto the write connection.
+    // ONE reader, and a budget short enough to fail fast: with a single reader, a second listing that finds the pool empty has no way to grow it, so it waits and …
     try openPoolPressureDb(&db, threaded.io(), path);
 
     try db.exec(alloc,
@@ -411,9 +385,7 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
     defer arena.deinit();
     const a = arena.allocator();
 
-    // This endpoint is polled continuously, so repeat it: one call proves
-    // nothing, and the single pooled reader is what makes the second one
-    // decisive.
+    // This endpoint is polled continuously, so repeat it: one call proves nothing, and the single pooled reader is what makes the second one decisive.
     for (0..5) |_| {
         const result = try listAs(&db, a, .{ .limit = 50, .session_id_filter = null }, "");
         try testing.expectEqual(@as(u32, 1), result.count);
@@ -422,8 +394,6 @@ test "repeated listings hand their pooled reader back instead of exhausting the 
     // Every listing found a reader waiting for it.
     try testing.expectEqual(@as(u64, 0), db.readFallbackCount());
 
-    // And nothing is still checked out. This catches the leak on its own,
-    // without relying on the pool filling up: a deinited cursor returns its
-    // reader, and a drained one does not.
+    // And nothing is still checked out.
     try testing.expectEqual(@as(usize, 0), db.outstandingClaims());
 }

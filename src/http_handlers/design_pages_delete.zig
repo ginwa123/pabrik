@@ -1,6 +1,4 @@
-//! `DELETE
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
-//! Delete a design page.
+//! `DELETE /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,14 +13,11 @@ pub const DesignPageDeleteError = error{
     PageNotFound,
     /// `deletePage` failed for some other DB reason.
     DbError,
-    /// `std.json.Stringify.valueAlloc` failed for the response
-    /// envelope (effectively unreachable on the per-request arena).
+    /// `std.json.Stringify.valueAlloc` failed for the response envelope (effectively unreachable on the per-request arena).
     OutOfMemory,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -36,9 +31,7 @@ fn useCase(
     if (!deleted) return error.PageNotFound;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designPagesDeleteHandler(
     ctx: gserverz.HttpContext,

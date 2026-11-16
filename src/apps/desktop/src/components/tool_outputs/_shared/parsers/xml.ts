@@ -19,9 +19,7 @@ function findTag(content: string, tag: string): string | null {
 }
 
 export function extractTag(content: string, tag: string, _multiline = true): string | null {
-  // The `_multiline` flag is preserved for back-compat with the original public signature but is
-  // currently a no-op (the implementation already supports multiline inner content via `indexOf`
-  // matching the first `<tag>` / `</tag>` pair, which works for both single-line and multi-line.
+  // The `_multiline` flag is preserved for back-compat with the original public signature but is currently a no-op (the implementation already supports multiline …
   const raw = findTag(content, tag)
   if (raw === null) return null
   return unescapeXml(raw)

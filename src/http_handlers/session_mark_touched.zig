@@ -1,5 +1,4 @@
-//! `POST /api/session/:session_id/touched`. `POST
-//! /api/llm/session/:session_id/touched`.
+//! `POST /api/session/:session_id/touched`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -13,16 +12,12 @@ const auth_common = @import("auth_common.zig");
 pub const MarkSessionTouchedError = error{
     SessionIdRequired,
     /// `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
-    /// Unreachable on the per-request arena, but the type system
-    /// requires the variant.
     OutOfMemory,
 };
 
 pub const MarkSessionTouchedResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub const MarkSessionTouchedResponse = struct {
     success: bool = true,
@@ -36,27 +31,21 @@ fn useCase(
 ) MarkSessionTouchedError!MarkSessionTouchedResult {
     if (session_id.len == 0) return error.SessionIdRequired;
 
-    // 1. Capture "now" once so the DB stamp and the SSE payload below
-    //    agree on the exact unix-ms value (no second SELECT needed).
+    // 1.
     const now_ms = llm_history.unixMillisNow();
 
-    // 2. Ensure the row exists before any UPDATE (mirrors
-    // session_update.zig:66).
+    // 2.
     _ = llm_history.ensureSessionExists(allocator, db, session_id) catch {
-        // Collapse storage errors to a single caller-handled variant
-        // (matches the sibling pattern at
-        // task_mark_human_touched.zig:70 — narrow use-case error sets).
+        // Collapse storage errors to a single caller-handled variant (matches the sibling pattern at task_mark_human_touched.zig:70 — narrow use-case error sets).
         return error.SessionIdRequired;
     };
 
-    // 3. Stamp the column with the captured timestamp (explicit value
-    //    so the SSE payload matches the DB write exactly).
+    // 3.
     llm_history.updateSessionLastHumanTouchedAt(allocator, db, session_id, now_ms) catch {
         return error.SessionIdRequired;
     };
 
-    // 4. Re-read for the SSE payload (mirrors the update_session_status
-    // pattern in llm_history.zig).
+    // 4.
     const session = (llm_history.getSession(allocator, db, session_id) catch {
         return error.SessionIdRequired;
     }) orelse return error.SessionIdRequired;
@@ -92,9 +81,7 @@ fn useCase(
     );
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn sessionMarkTouchedHandler(
     ctx: gserverz.HttpContext,
@@ -106,8 +93,7 @@ pub fn sessionMarkTouchedHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    // The body is intentionally ignored — empty body and `{}` are both
-    // accepted (the stamp needs no input beyond the path param).
+    // The body is intentionally ignored — empty body and `{}` are both accepted (the stamp needs no input beyond the path param).
     const session_id = req.params.get("session_id") orelse "";
     if (session_id.len == 0) {
         return res.jsonResponse(.{
@@ -131,9 +117,7 @@ pub fn sessionMarkTouchedHandler(
         });
     };
 
-    // Claim an ownerless row created by ensureSessionExists above. Without
-    // this, a brand-new chat opened in auth-on mode leaves its session row in
-    // the shared bucket (visible to every user).
+    // Claim an ownerless row created by ensureSessionExists above.
     if (di.auth_enabled) {
         const stamp_owner = auth_common.resolveRequestUserId(allocator, di.db, di.auth_enabled, req.headers) catch null;
         defer if (stamp_owner) |o| allocator.free(o);

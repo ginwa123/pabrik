@@ -1,6 +1,4 @@
-//! `POST /api/terminal/sessions` — spawn a shell on a fresh PTY: on THIS host in
-//! local mode, inside the workspace's VM under `--saas`, which refuses when it
-//! cannot name one rather than exposing the host filesystem.
+//! `POST /api/terminal/sessions` — spawn a shell on a fresh PTY: on THIS host in local mode, inside the workspace's VM under `--saas`, which refuses when it …
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -28,17 +26,14 @@ pub const TerminalCreateBody = struct {
     shell: ?[]const u8 = null,
     cols: ?u16 = null,
     rows: ?u16 = null,
-    /// Which workspace's VM the shell runs in. Required under `--saas`; ignored
-    /// in local mode, where the terminal is a host pty.
+    /// Which workspace's VM the shell runs in.
     workspace_id: ?[]const u8 = null,
 };
 
 pub const TerminalCreateResponse = struct {
     id: []const u8,
     pid: i32,
-    /// Which console this session actually got — `"posix-pty"` on Linux and
-    /// macOS, `"conpty"` for a real Windows pseudoconsole, `"pipe"` for the
-    /// degraded Windows fallback, `"guest-pty"` inside a workspace VM.
+    /// Which console this session actually got — `"posix-pty"` on Linux and macOS, `"conpty"` for a real Windows pseudoconsole, `"pipe"` for the degraded Windows …
     backend: []const u8,
 };
 
@@ -61,15 +56,12 @@ pub fn terminalCreateHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Invalid JSON body" }),
         });
     };
-    // Empty string is "not provided" (strict-validator rule: "" must
-    // not reach the use case as a value).
+    // Empty string is "not provided" (strict-validator rule: "" must not reach the use case as a value).
     const cwd = parsed.cwd;
     const shell: ?[]const u8 = if (parsed.shell) |s| (if (s.len == 0) null else s) else null;
     const workspace_id: ?[]const u8 = if (parsed.workspace_id) |w| (if (w.len == 0) null else w) else null;
 
-    // Owner for the new PTY session (plan 2026-09-25, W2.5). Server-derived
-    // from the `pabrik_session` cookie only — never a body/query/header
-    // field.
+    // Owner for the new PTY session (plan 2026-09-25, W2.5).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
 
@@ -83,9 +75,7 @@ pub fn terminalCreateHandler(
     };
 }
 
-/// A terminal inside the workspace's VM. Nothing here can reach the host shell:
-/// the cwd that crosses the RPC is workspace-relative and the guest is the only
-/// thing that forks.
+/// A terminal inside the workspace's VM. Nothing here can reach the host shell
 fn createGuest(
     allocator: std.mem.Allocator,
     req: gserverz.HttpRequest,
@@ -97,9 +87,7 @@ fn createGuest(
     owner: []const u8,
 ) !gserverz.HttpResponse {
     _ = req;
-    // A workspace that is not VM-backed gets NO Firecracker: the manager is
-    // never asked, so no VM is spawned for it — and the shell never falls back
-    // to the host.
+    // A workspace that is not VM-backed gets NO Firecracker: the manager is never asked, so no VM is spawned for it — and the shell never falls back to the host.
     const di = try pabrikcore.getSingleton();
     if (!workspace_vm.isVmWorkspace(allocator, di.db, workspace_id)) {
         return res.jsonResponse(.{
@@ -160,8 +148,7 @@ fn createHost(
             error.TooManySessions => 429,
             error.UnsupportedPlatform => 501,
             error.SpawnFailed, error.OutOfMemory => 500,
-            // Unreachable on create (no session id involved yet) but
-            // required for an exhaustive switch over SessionError.
+            // Unreachable on create (no session id involved yet) but required for an exhaustive switch over SessionError.
             error.SessionNotFound, error.SessionExited, error.WriteFailed, error.ResizeFailed => 500,
         };
         const message: []const u8 = switch (err) {
@@ -190,9 +177,7 @@ fn createHost(
     return res.jsonResponse(.{ .status_code = 201, .data = json_str });
 }
 
-// ---------------------------------------------------------------------
-// Inline tests (pure wire-shape checks; PTY spawn is covered by
-// terminal_session.zig's posix echo test + the functional harness).
+// Inline tests (pure wire-shape checks; PTY spawn is covered by terminal_session.zig's posix echo test + the functional harness).
 
 const testing = std.testing;
 const terminal_guest_mod = @import("terminal_guest.zig");
@@ -225,8 +210,7 @@ test "create response serializes id + pid" {
 }
 
 test "a --saas create with no workspace is refused before any spawn" {
-    // The route is what the handler switches on, so this is the refusal the
-    // endpoint produces — a host shell is never the fallback.
+    // The route is what the handler switches on, so this is the refusal the endpoint produces — a host shell is never the fallback.
     const route = terminal_guest_mod.routeFor(.saas, null);
     try testing.expectEqualStrings(terminal_guest_mod.workspace_hint, route.refuse);
 }

@@ -56,8 +56,7 @@ describe('ChatEngineDb mapping', () => {
     expect(first.session_id).toBe('sess-1')
     expect(first.created_at).toBe(1700000000)
     expect(res.delta?.nextCursor).toBe('cur-9')
-    // Sync cursor tracks the newest row, not the pagination cursor, so the
-    // next mount fetches the tail instead of re-fetching the same page.
+    // Sync cursor tracks the newest row, not the pagination cursor, so the next mount fetches the tail instead of re-fetching the same page.
     expect(await run(eng.getCursor('sess-1'))).toBe(String(1700000000 * 1e9))
   })
 

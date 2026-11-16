@@ -8,8 +8,7 @@ id: EntityId,
 name: []u8,
 created_at: ?[]u8 = null,
 updated_at: ?[]u8 = null,
-/// Drag-and-drop sort key (Migration 022). Higher = higher in the
-/// sidebar. Scoped globally (no parent scope).
+/// Drag-and-drop sort key (Migration 022).
 position: i64 = 0,
 
 const Self = @This();
@@ -39,8 +38,7 @@ pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     if (self.updated_at) |ua| allocator.free(ua);
 }
 
-/// Deep-copy constructor. Useful for callers that need an owned copy
-/// of an existing instance (e.g. a row pulled from a query result).
+/// Deep-copy constructor.
 pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
     return .init(allocator, .{
         .id = self.id,

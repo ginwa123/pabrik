@@ -1,14 +1,11 @@
-//! `pabrik headless` argument parsing. The flag names, the values they take
-//! and the help text come from `cli/flags.zig`; this file only knows the
-//! verbs, the positional words and how a parsed set becomes a `Command`.
+//! `pabrik headless` argument parsing.
 
 const std = @import("std");
 const cli_flags = @import("../cli/flags.zig");
 const cli_parse = @import("../cli/parse.zig");
 
 pub const RunArgs = struct {
-    /// The user's message. Required — a turn with nothing to say is a
-    /// caller bug, not a default.
+    /// The user's message.
     message: []const u8,
     /// Resume this session instead of minting a new one.
     session_id: ?[]const u8 = null,
@@ -18,8 +15,7 @@ pub const RunArgs = struct {
     profile: ?[]const u8 = null,
     /// Comma-separated tool allowlist. Empty = the config default.
     allowed_tools: []const u8 = "",
-    /// Wall-clock budget for the whole turn, in milliseconds.
-    /// 0 = no budget (wait forever).
+    /// Wall-clock budget for the whole turn, in milliseconds. 0 = no budget (wait forever).
     timeout_ms: u64 = 0,
     /// Print the assistant's text only, not the JSON envelope.
     quiet: bool = false,
@@ -47,15 +43,11 @@ pub const MessagesArgs = struct {
 /// `pabrik headless compaction` — the `compaction` agent tool's own path.
 pub const CompactionArgs = struct {
     session_id: []const u8,
-    /// Run even when the workspace switched agent auto-compaction off. This is
-    /// what the user's Compact button does, so a script can prove the setting
-    /// is the only difference.
+    /// Run even when the workspace switched agent auto-compaction off.
     force: bool = false,
 };
 
-/// The multi-agent session verbs. `next` answers the question the loop asks
-/// once per iteration, so a caller can drive a group with no model in the
-/// way.
+/// The multi-agent session verbs.
 pub const GroupOp = enum {
     create,
     join,
@@ -125,8 +117,7 @@ pub const MemoriesArgs = struct {
     offset: []const u8 = "",
 };
 
-/// The document-folder verbs. One subcommand per write the HTTP API exposes,
-/// so an agent can drive the whole feature with no server and no port.
+/// The document-folder verbs.
 pub const DocumentsOp = enum {
     list,
     search,
@@ -136,9 +127,7 @@ pub const DocumentsOp = enum {
     folder_delete,
     doc_create,
     doc_move,
-    /// `document_markdown` with `action: "create"`, through the real agent
-    /// tool dispatch, so the body's round trip through the object store is
-    /// exercised with no server.
+    /// `document_markdown` with `action: "create"`, through the real agent tool dispatch, so the body's round trip through the object store is exercised with no …
     doc_add,
     /// `document_markdown` with `action: "edit"`, through the same dispatch.
     doc_edit,
@@ -146,12 +135,9 @@ pub const DocumentsOp = enum {
     doc_delete,
     /// `document` with `action: "search"`, through the same dispatch.
     doc_search,
-    /// `document` with `action: "read"`, through the same dispatch. Returns a
-    /// bounded slice of the body, so a 4 MiB document is readable without
-    /// paying for all of it.
+    /// `document` with `action: "read"`, through the same dispatch.
     doc_read,
-    /// `document_html` with `action: "create"`, through the real agent tool
-    /// dispatch, so the HTML page's round trip is exercised with no server.
+    /// `document_html` with `action: "create"`, through the real agent tool dispatch, so the HTML page's round trip is exercised with no server.
     doc_html_add,
     /// `document_html` with `action: "edit"`, through the same dispatch.
     doc_html_edit,
@@ -159,15 +145,12 @@ pub const DocumentsOp = enum {
     doc_html_delete,
     /// Read one document back, body included.
     doc_get,
-    /// Expand the `/document-<id>` tokens in a message exactly as a send does,
-    /// and print the text the model would receive.
+    /// Expand the `/document-<id>` tokens in a message exactly as a send does, and print the text the model would receive.
     expand,
-    /// Write one document, or a zip of several, to a file — the same bytes the
-    /// HTTP export endpoints return.
+    /// Write one document, or a zip of several, to a file — the same bytes the HTTP export endpoints return.
     export_file,
     backfill,
-    /// Set (or clear) a document's or a folder's glyph. `--document` and
-    /// `--folder` are mutually exclusive; an empty `--icon` clears it.
+    /// Set (or clear) a document's or a folder's glyph.
     set_icon,
 };
 
@@ -176,19 +159,16 @@ pub const DocumentsArgs = struct {
     workspace_id: []const u8 = "",
     /// Folder name for `folder-create` / `folder-rename`.
     name: []const u8 = "",
-    /// Parent folder for `folder-create` / `folder-move` / `doc-create` /
-    /// `doc-move`. Null means the root.
+    /// Parent folder for `folder-create` / `folder-move` / `doc-create` /`doc-move`.
     parent_id: ?[]const u8 = null,
     /// The folder being moved, renamed or deleted.
     folder_id: ?[]const u8 = null,
     /// The document being moved, edited or read.
     document_id: ?[]const u8 = null,
     title: []const u8 = "",
-    /// `doc-create` / `doc-add` / `doc-edit`: the body. Markdown text, or a
-    /// Univer snapshot JSON when `format` is `office`.
+    /// `doc-create` / `doc-add` / `doc-edit`: the body.
     content: []const u8 = "",
-    /// `doc-edit` / `doc-html-edit`: exact text to patch in place instead of
-    /// replacing the whole body.
+    /// `doc-edit` / `doc-html-edit`: exact text to patch in place instead of replacing the whole body.
     old_text: ?[]const u8 = null,
     /// `doc-edit` / `doc-html-edit`: the replacement for `old_text`.
     new_text: ?[]const u8 = null,
@@ -196,8 +176,7 @@ pub const DocumentsArgs = struct {
     replace_all: bool = false,
     /// `doc-create`: `markdown` (the default) or `office`.
     format: []const u8 = "",
-    /// `doc-add` / `doc-edit` / `doc-get`: the calling session, which is what
-    /// resolves the workspace. The tool never takes a workspace id.
+    /// `doc-add` / `doc-edit` / `doc-get`: the calling session, which is what resolves the workspace.
     session: []const u8 = "",
     /// `backfill`: stop after this many rows. 0 means no cap.
     limit: usize = 0,
@@ -211,16 +190,13 @@ pub const DocumentsArgs = struct {
     documents: []const u8 = "",
     /// `expand`: the message text whose `/document-<id>` tokens are resolved.
     message: []const u8 = "",
-    /// `export`: where to write the file. Null means the exported file's own
-    /// name, in the current directory.
+    /// `export`: where to write the file.
     out: ?[]const u8 = null,
     /// `set-icon`: the glyph name. Empty clears the override.
     icon: []const u8 = "",
 };
 
-/// The project-row verbs. `create` / `edit` go through `project_model`, the
-/// module the `manage_project` agent tool calls, so the CLI exercises the same
-/// backend with no server; `list` is the read that proves a write persisted.
+/// The project-row verbs.
 pub const WorkspaceItemsOp = enum {
     list,
     set_icon,
@@ -235,8 +211,7 @@ pub const WorkspaceItemsArgs = struct {
     workspace_id: []const u8 = "",
     /// `set-icon`, `edit`: the project row being changed.
     item_id: []const u8 = "",
-    /// `set-icon`: the glyph name. Empty clears the override — the same effect
-    /// as `Reset to default`, which sends JSON null instead.
+    /// `set-icon`: the glyph name.
     icon: []const u8 = "",
     /// `create`: `kanban` or `routine`.
     kind: []const u8 = "",
@@ -252,8 +227,7 @@ pub const WorkspaceItemsArgs = struct {
     enabled: []const u8 = "",
 };
 
-/// The object-store verbs. One per `Storage` method, so an agent can exercise
-/// the whole interface with no server and no bucket.
+/// The object-store verbs.
 pub const StorageOp = enum {
     put,
     get,
@@ -273,13 +247,11 @@ pub const StorageArgs = struct {
     root: ?[]const u8 = null,
     /// `fs` or `s3`. Null falls back to `PABRIK_STORAGE_BACKEND`, then `fs`.
     backend: ?[]const u8 = null,
-    /// Whether `--body` was passed at all. An empty body is a legitimate
-    /// document, so "absent" and "empty" must stay distinguishable.
+    /// Whether `--body` was passed at all.
     body_given: bool = false,
 };
 
-/// The single-message admin verbs. One op per write the HTTP API exposes, so
-/// an agent can delete, restore or drop a row with no server and no port.
+/// The single-message admin verbs.
 pub const MessageOp = enum {
     delete,
     restore,
@@ -322,15 +294,13 @@ pub const FailureKind = enum {
 
 pub const Failure = struct {
     kind: FailureKind,
-    /// The offending word — the unknown subcommand, or the flag whose
-    /// value was missing. Empty when nothing names it.
+    /// The offending word — the unknown subcommand, or the flag whose value was missing.
     value: []const u8 = "",
 };
 
 pub const ParseError = error{OutOfMemory};
 
-/// Every field a `headless` verb may set. The table decides which of them a
-/// given verb accepts, so a field it cannot set stays at its default.
+/// Every field a `headless` verb may set.
 const Flags = struct {
     session_id: ?[]const u8 = null,
     cwd: ?[]const u8 = null,
@@ -404,7 +374,6 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "Output: one JSON object on stdout. Diagnostics go to the log file, never stdout.\n";
 
 /// What `parse` produced: exactly one of the two fields is non-null.
-/// `mod.zig` turns this into the `Command` union.
 pub const Outcome = union(enum) {
     run: RunArgs,
     sessions: SessionsArgs,
@@ -425,16 +394,13 @@ pub const Outcome = union(enum) {
 };
 
 /// Parse `argv` (WITHOUT argv[0] and WITHOUT the leading `headless` word).
-/// Never returns an error union for bad input — the `invalid` payload carries
-/// what was rejected so the caller decides how loudly to report it.
 pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return .help;
 
     const verb = argv[0];
     const rest = argv[1..];
 
-    // `--help` / `-h` anywhere wins, matching the top-level parser's
-    // "help stops scanning" contract.
+    // `--help` / `-h` anywhere wins, matching the top-level parser's "help stops scanning" contract.
     for (argv) |a| {
         if (std.mem.eql(u8, a, "--help") or std.mem.eql(u8, a, "-h")) return .help;
     }
@@ -614,8 +580,7 @@ fn parseRun(argv: []const []const u8) ParseError!Outcome {
 
     if (try parseFlags("run", argv, &got, &words)) |failure| return fail(translate(failure));
 
-    // The first bare word is the message. A second one is a caller bug:
-    // silently joining them would hide an unquoted message.
+    // The first bare word is the message. A second one is a caller bug
     if (words.items.len == 0) return fail(.{ .kind = .run_requires_message });
     if (words.items.len > 1) return fail(.{ .kind = .run_requires_message, .value = words.items[1] });
 
@@ -651,9 +616,7 @@ fn parseMessages(argv: []const []const u8) ParseError!Outcome {
     return .{ .messages = .{ .session_id = words.items[0], .limit = got.limit orelse 50 } };
 }
 
-/// `documents` parses its own tiny flag set: the shared table in
-/// `cli/flags.zig` describes the server CLI, and these six flags exist only
-/// here.
+/// `documents` parses its own tiny flag set: the shared table in `cli/flags.zig` describes the server CLI, and these six flags exist only here.
 fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return fail(.{ .kind = .documents_unknown_op });
 
@@ -843,9 +806,7 @@ fn parseUsage(argv: []const []const u8) ParseError!Outcome {
     return .{ .usage = got };
 }
 
-/// `storage` parses its own flag set for the same reason `documents` does: the
-/// shared table describes the server CLI, and these four flags exist only in
-/// this verb.
+/// `storage` parses its own flag set for the same reason `documents` does: the shared table describes the server CLI, and these four flags exist only in this verb.
 fn parseStorage(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return fail(.{ .kind = .storage_unknown_op });
 
@@ -1094,9 +1055,7 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
     return .{ .workspace_items = got };
 }
 
-/// `group` parses its own flag set for the same reason `documents` does: the
-/// shared table describes the server CLI, and these five flags exist only in
-/// this verb.
+/// `group` parses its own flag set for the same reason `documents` does: the shared table describes the server CLI, and these five flags exist only in this verb.
 fn parseGroup(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return fail(.{ .kind = .group_unknown_op });
 
@@ -1189,8 +1148,7 @@ fn fail(f: Failure) Outcome {
     return .{ .invalid = f };
 }
 
-/// Print the user-facing message for a `Failure`. Kept out of `parse` so
-/// the parser stays pure.
+/// Print the user-facing message for a `Failure`.
 pub fn reportFailure(f: Failure) void {
     switch (f.kind) {
         .unknown_subcommand => std.log.err("headless: unknown subcommand or flag '{s}'", .{f.value}),
@@ -1292,9 +1250,7 @@ test "parse: run takes the first bare word as the message" {
 }
 
 test "parse: run rejects a second bare word rather than silently joining" {
-    // Deliberate: an unquoted multi-word message is a caller bug, and
-    // silently concatenating would hide it. The shell is responsible for
-    // quoting — `headless run "fix the bug"` arrives as ONE argv entry.
+    // Deliberate: an unquoted multi-word message is a caller bug, and silently concatenating would hide it.
     try expectFailure(&.{ "run", "fix", "the", "bug" }, .run_requires_message);
 }
 

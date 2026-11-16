@@ -1,5 +1,4 @@
-/**    * The marks a file tab wears: the file's own `+N −M`, and whether those numbers moved since the tab
- * was last looked at. Pure, so the rule can be read and tested without a fetch. */
+/** The marks a file tab wears: the file's own `+N −M`, and whether those numbers moved since the tab was last looked at. */
 import type { Tab } from './tabTarget'
 
 export type TabCounts = { added: number; removed: number }

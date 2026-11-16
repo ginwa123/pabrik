@@ -4,8 +4,7 @@ import com.pabrik.mobile.cache.OutboxDao
 import com.pabrik.mobile.cache.OutboxEntry
 import java.util.UUID
 
-// Single offline write queue. Owns persistence and ordering; network calls
-// are delegated to the SyncHandler supplied per drain.
+// Single offline write queue.
 class OutboxQueue(private val dao: OutboxDao) {
 
     interface SyncHandler {

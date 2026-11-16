@@ -1,6 +1,4 @@
-/** Tests for ChatView's initializing ready-gate. While the first history fetch is outstanding
- * (`isInitializing`), the transcript shows a skeleton (not the empty state) and the composer is
- * disabled (textarea + send). */
+/** Tests for ChatView's initializing ready-gate. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -80,8 +78,7 @@ vi.mock('../api', async (importOriginal) => {
   }
 })
 
-// Collapse the backoff so the exhausted-retry path is reachable in ms. The
-// policy itself is covered by helpers/__tests__/chatHistoryRetry.spec.ts.
+// Collapse the backoff so the exhausted-retry path is reachable in ms.
 vi.mock('../helpers/chatHistoryRetry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/chatHistoryRetry')>()
   return {
@@ -195,8 +192,7 @@ describe('ChatView initializing gate', () => {
       props: { chatId: 's_init', chatName: 'Init Chat' },
       attachTo: document.body,
     })
-    // The skeleton is up from the first frame, so waiting on it proves
-    // nothing — wait for the load to actually reach the network seam.
+    // The skeleton is up from the first frame, so waiting on it proves nothing — wait for the load to actually reach the network seam.
     await waitFor(() => ctl.fetchCalls > 0)
 
     // Initializing: skeleton visible, empty state hidden, composer disabled.

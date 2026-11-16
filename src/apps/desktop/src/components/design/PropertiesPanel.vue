@@ -54,9 +54,7 @@ import { activeScheme, onThemeApplied } from '../../theme/runtime'
 
 const workspacesStore = useWorkspacesStore()
 
-// True while the active page's element fetch is in flight. Without it
-// the panel renders "Select an element to edit its properties" during
-// the fetch — a false statement about the page's data.
+// True while the active page's element fetch is in flight.
 const isElementsLoading = computed(() => {
   const itemId = workspacesStore.activeWorkspaceItemId
   const pageId = workspacesStore.activeDesignPageId
@@ -64,9 +62,7 @@ const isElementsLoading = computed(() => {
   return workspacesStore.isDesignElementsLoading(itemId, pageId)
 })
 
-// Undo/redo plan (Chunk 4): one history entry per field commit. Pre-state is captured on input
-// focus; post-state on @change. We instantiate the composable here (rather than at DesignView) so
-// the capture is local to each field — no need to plumb ids through props.
+// Undo/redo plan (Chunk 4): one history entry per field commit.
 const history = useDesignHistory(computed(() => workspacesStore.activeDesignPageId))
 
 const props = withDefaults(
@@ -74,9 +70,7 @@ const props = withDefaults(
     // Pass the full selection set (not just the "active" one).
     elements: DesignElement[]
     readonly?: boolean
-    // When true, the parent canvas is in Preview mode (toggle in the canvas header bar). The form
-    // fields are hidden and replaced with a "you're previewing" banner — the user is interacting
-    // with the mockup, not editing its metadata.
+    // When true, the parent canvas is in Preview mode (toggle in the canvas header bar).
     previewMode?: boolean
   }>(),
   {
@@ -86,7 +80,6 @@ const props = withDefaults(
 )
 
 // Computed convenience: the single element when exactly one is selected.
-// Templates can use this instead of `elements[0] ?? null` everywhere.
 const singleElement = computed<DesignElement | null>(() =>
   props.elements.length === 1 ? (props.elements[0] ?? null) : null,
 )
@@ -97,8 +90,7 @@ const emit = defineEmits<{
   delete: [elementId: string]
 }>()
 
-// ─── Form field handlers ─────────────────────────────────────────────── Each handler builds a
-// patch object and emits `update`.
+// ─── Form field handlers ───────────────────────────────────────────────
 type NumericField = 'x' | 'y' | 'width' | 'height' | 'rotation' | 'stroke_width' | 'corner_radius' | 'opacity'
 type StringField = 'name' | 'fill' | 'stroke' | 'text_content' | 'text_style' | 'image_url'
 
@@ -106,9 +98,7 @@ const handleNumericChange = (field: NumericField, value: number): void => {
   const el = singleElement.value
   if (el) {
     void history.capturePreState([el.id])
-    // Post-state is captured via the debounced schedule below — when
-    // the element's field actually changes (via the store update
-    // mirror), we capture post-state. This fires once per @change.
+    // Post-state is captured via the debounced schedule below — when the element's field actually changes (via the store update mirror), we capture post-state.
   }
   emit('update', { [field]: value } as Partial<DesignElement>)
   schedulePropertiesPanelCapturePost()
@@ -123,15 +113,12 @@ const handleStringChange = (field: StringField, value: string): void => {
   schedulePropertiesPanelCapturePost()
 }
 
-// Watch the single-element fields for actual change. When any field updates (from a PropertiesPanel
-// edit), we capture post- state. The watcher is debounced to collapse rapid edits into a single
-// entry.
+// Watch the single-element fields for actual change.
 const fieldsFingerprint = (el: DesignElement): string =>
   `${el.x}|${el.y}|${el.width}|${el.height}|${el.rotation}|${el.fill}|${el.stroke}|${el.stroke_width}|${el.corner_radius}|${el.opacity}|${el.name}|${el.text_content}|${el.image_url}|${el.type}`
 let propertiesPanelPostTimer: ReturnType<typeof setTimeout> | null = null
 function schedulePropertiesPanelCapturePost(): void {
-  // Snapshot before the parent's store update lands; the debounced
-  // callback only captures post-state when the fields actually changed.
+  // Snapshot before the parent's store update lands; the debounced callback only captures post-state when the fields actually changed.
   const before = singleElement.value ? fieldsFingerprint(singleElement.value) : ''
   if (propertiesPanelPostTimer) clearTimeout(propertiesPanelPostTimer)
   propertiesPanelPostTimer = setTimeout(() => {
@@ -177,9 +164,7 @@ onMounted(() => {
   offThemeApplied = onThemeApplied(() => monacoThemeSwitcher?.(monacoThemeName()))
 })
 
-// When the user expands the editor and the element changes, seed the draft with the current HTML
-// body. We don't auto-pull on every element switch — that would clobber the user's in-progress
-// edit. Instead, we pull on (a) first expand and (b) explicit element change while collapsed.
+// When the user expands the editor and the element changes, seed the draft with the current HTML body.
 const prevElementId = ref<string | null>(singleElement.value?.id ?? null)
 onUpdated(() => {
   const id = singleElement.value?.id ?? null
@@ -198,15 +183,11 @@ const handleExpandHtml = async (): Promise<void> => {
   // Seed the draft on first expand.
   htmlDraft.value = singleElement.value.text_content || ''
 
-  // Lazy-load Monaco on first expand. Dynamic import is the only way
-  // to defer the ~3 MB bundle; bundlers will code-split at this
-  // import call.
+  // Lazy-load Monaco on first expand.
   if (monacoEditor.value) return
   try {
     const monaco = await import(/* @vite-ignore */ 'monaco-editor')
-    // Disable web workers — Monaco's default worker setup doesn't work in our Vite/jsdom
-    // environment; the simpler approach is to run monaco in the main thread (slightly slower
-    // autocomplete but no worker setup).
+    // Disable web workers — Monaco's default worker setup doesn't work in our Vite/jsdom environment; the simpler approach is to run monaco in the main thread …
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
       ;(window as any).MonacoEnvironment = {
@@ -236,16 +217,13 @@ const handleExpandHtml = async (): Promise<void> => {
     monacoThemeSwitcher = (theme) => monaco.editor.setTheme(theme)
     monacoLoadError.value = null
   } catch (err) {
-    // Monaco not installed or failed to load — fall back to textarea
-    // (the v-if on the textarea fallback covers this).
+    // Monaco not installed or failed to load — fall back to textarea (the v-if on the textarea fallback covers this).
     monacoLoadError.value = err instanceof Error ? err.message : String(err)
     monacoEditor.value = null
   }
 }
 
-// Wire-up (undo/redo plan Chunk 1): was `emit('htmlChanged', htmlDraft.value)` which went upward to
-// DesignView → re-emitted → AppLayout had no listener → silent drop. Now we call the store action
-// directly.
+// Wire-up (undo/redo plan Chunk 1): was `emit('htmlChanged', htmlDraft.value)` which went upward to DesignView → re-emitted → AppLayout had no listener → silent …
 const handleHtmlSave = async (): Promise<void> => {
   const el = singleElement.value
   if (!el) {
@@ -262,12 +240,9 @@ const handleHtmlSave = async (): Promise<void> => {
       el.id,
       htmlDraft.value,
     )
-    // Push the html_edit entry with before/after body so undo can
-    // restore the previous HTML body via PATCH.
+    // Push the html_edit entry with before/after body so undo can restore the previous HTML body via PATCH.
     void history.capturePostState([el.id]).then(() => {
-      // capturePostState diffs element fields. We also need to attach the html body diff. The
-      // composable's capturePostState doesn't fetch HTML bodies (that would be slow on every drag);
-      // for html_edit we use a dedicated push.
+      // capturePostState diffs element fields.
       const htmlHistoryStore = useDesignHistoryStore()
       htmlHistoryStore.push(workspacesStore.activeDesignPageId, {
         id: `entry_html_${Date.now()}_${Math.random()}`,
@@ -297,8 +272,7 @@ const handleHtmlCancel = (): void => {
   }
 }
 
-// Tear down the Monaco editor on component unmount to release its
-// listeners and DOM references.
+// Tear down the Monaco editor on component unmount to release its listeners and DOM references.
 onBeforeUnmount(() => {
   offThemeApplied?.()
   offThemeApplied = null

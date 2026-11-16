@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** ToolCard — the card for ONE tool call. The dispatch that picks the card lives
- * here, so the dev view and the compact view draw the same card. */
+/** ToolCard — the card for ONE tool call. */
 import { renderResponse, toolPayloadPreview } from '@/helpers'
 import type { SubAgentArgs } from '@/helpers/parseSpawnSubAgentArgs'
 import type { SubAgentProgress } from '@/helpers/subagentProgress'
@@ -43,8 +42,7 @@ export interface ToolCardMessage {
   id: string
   role: string
   content: string
-  /** When the call started, as the chat knows it — the compact header counts
-   * an in-flight call's elapsed time from here. */
+  /** When the call started, as the chat knows it — the compact header counts an in-flight call's elapsed time from here. */
   timestamp?: Date
   tool_name?: string
   tool_call_id?: string
@@ -52,8 +50,7 @@ export interface ToolCardMessage {
   diffview_after?: string
   tool_calls_json?: string
   finish_reason?: string
-  /** Pictures the backend attached to this tool result (`llm_history.image_url`, decoded by
-   * the chat view). A `read_file` of an image carries its bytes here and nowhere else. */
+  /** Pictures the backend attached to this tool result (`llm_history.image_url`, decoded by the chat view). */
   image_urls?: string[]
 }
 

@@ -1,6 +1,4 @@
-//! Which backend the console opens: the server's policy from
-//! `src/boot/db_target.zig`, copied so the console links nothing but
-//! `databases`. The flag and variable names are the server's on purpose.
+//! Which backend the console opens: the server's policy from `src/boot/db_target.zig`, copied so the console links nothing but `databases`.
 
 const std = @import("std");
 const dialect = @import("dialect");
@@ -23,8 +21,7 @@ pub const Backend = enum {
         return null;
     }
 
-    /// The backend `-Ddb_used` compiled in. One build opens one backend, the
-    /// same rule the server's `Backend.compiled()` follows.
+    /// The backend `-Ddb_used` compiled in.
     pub fn compiled() Backend {
         return if (dialect.is_postgres) .postgres else .sqlite;
     }
@@ -36,7 +33,6 @@ pub const Error = error{
 };
 
 /// The backend to open: the request, else the one this build compiled in.
-/// Naming a backend the build left out is a refusal, not a fallback.
 pub fn resolve(requested: ?[]const u8) Error!Backend {
     const asked: ?[]const u8 = if (requested) |raw| blk: {
         const trimmed = std.mem.trim(u8, raw, " \t");
@@ -52,8 +48,7 @@ pub fn resolve(requested: ?[]const u8) Error!Backend {
     return backend;
 }
 
-/// The `-Ddb_used` list that would compile `backend` in — the rebuild a refusal
-/// message should name.
+/// The `-Ddb_used` list that would compile `backend` in — the rebuild a refusal message should name.
 pub fn buildList(backend: Backend) []const u8 {
     return if (backend == .postgres) "sqlite,postgres" else "sqlite";
 }

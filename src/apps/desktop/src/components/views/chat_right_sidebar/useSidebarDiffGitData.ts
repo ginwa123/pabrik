@@ -20,9 +20,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
   const gitError = ref<string | null>(null)
   const isStaging = ref(false)
 
-  // ── Per-file +added / -removed ──────────────────────────────────────────── GitHub/GitLab put a
-  // line count on every file row; without one a 35-file list is 35 identical-looking paths and the
-  // only way to find the big change is to click each.
+  // ── Per-file +added / -removed ────────────────────────────────────────────
   const diffCounts = ref(new Map<string, { added: number; removed: number }>())
 
   const changeCount = computed(
@@ -38,9 +36,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
       diffCounts.value = new Map()
       return
     }
-    // Stale-response guard: rapid cwd flips (session → worktree A → B)
-    // resolve out of order without this — the slower fetch wins and the
-    // panel shows the wrong branch + file list.
+    // Stale-response guard: rapid cwd flips (session → worktree A → B) resolve out of order without this — the slower fetch wins and the panel shows the wrong branch …
     const seq = ++opts.loadSeq.current
     const cwd = opts.cwd()
     isLoadingGit.value = true
@@ -73,8 +69,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     }
 }
 
-  // Stacked center view: fetch every changed file so the center column renders all diffs without
-  // per-click round-trips.
+  // Stacked center view: fetch every changed file so the center column renders all diffs without per-click round-trips.
   const loadFullList = async (cwd: string = opts.cwd()) => {
     if (!cwd) return
     const seq = opts.loadSeq.current
@@ -84,20 +79,17 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
       return
     }
     try {
-      // Folder mode: the server walks the repo itself, so this body stays
-      // three fields wide whether the worktree has 3 dirty files or 300.
+      // Folder mode: the server walks the repo itself, so this body stays three fields wide whether the worktree has 3 dirty files or 300.
       const batch = await api.getGitFolderDiffs(cwd)
       if (seq !== opts.loadSeq.current) return
       const applied = folderDiffApplied(cwd, targets, batch)
       diffCounts.value = applied.counts
       opts.emit('show-diff-list', applied.list)
     } catch (err) {
-      // Error rows, not a quieter retry: a visible failure is what stops this
-      // from turning back into a silent per-file request storm.
+      // Error rows, not a quieter retry: a visible failure is what stops this from turning back into a silent per-file request storm.
       console.error(`[SidebarDiffPanel] folder diff failed for ${cwd}:`, err)
       if (seq !== opts.loadSeq.current) return
-      // Unknown, not zero: the rows must not claim "unchanged" for files
-      // whose diff we never received.
+      // Unknown, not zero: the rows must not claim "unchanged" for files whose diff we never received.
       diffCounts.value = new Map()
       opts.emit('show-diff-list', folderDiffErrorList(targets))
     }
@@ -108,8 +100,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     if (opts.isPrTab()) return
     if (!opts.cwd() || !opts.selection.path.value) return
     try {
-      // `loadFullList` already fetched every changed file in this cwd and primed the shared snapshot,
-      // so this is a map read on the hot path.
+      // `loadFullList` already fetched every changed file in this cwd and primed the shared snapshot, so this is a map read on the hot path.
       const diff = await fetchFolderDiff(opts.cwd(), opts.selection.path.value, opts.selection.staged.value)
       const parsed = parseUnifiedDiff(diff.diff_content)
       opts.emit('show-diff', {
@@ -138,9 +129,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     void loadDiff()
 }
 
-  // Commit-history file click (GitCommits with inline-file-diff=false): fetch the file's unified diff
-  // at that commit and show it in ChatView's center column — the same show-diff flow as worktree/PR
-  // file rows. Rename rows carry "old -> new"; the diff is fetched for the new side.
+  // Commit-history file click (GitCommits with inline-file-diff=false): fetch the file's unified diff at that commit and show it in ChatView's center column — the …
   const onCommitFileClick = async (payload: { commit: api.GitCommit; file: api.GitCommitFile }) => {
     if (!opts.cwd()) return
     const rawPath = payload.file.path
@@ -176,8 +165,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     isStaging.value = true
     try {
       await api.stageGitFiles(opts.cwd(), [file.path])
-      // The SSE event is the primary path: the backend emits `git_file_staged` and
-      // `applyFileStageEvent` moves the row.
+      // The SSE event is the primary path: the backend emits `git_file_staged` and `applyFileStageEvent` moves the row.
       applyFileStageEvent({ action: 'staged', path: file.path, cwd: opts.cwd(), failed: false })
     } catch (err) {
       console.error('Failed to stage file:', err)
@@ -199,15 +187,11 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     }
 }
 
-  /**  * Apply one `git_file_stage` SSE event: move the row it names and re-prime only that file's diff
-   * and counts. Deliberately does NOT call `loadGitStatus()` — that is the whole point of the
-   * channel. The manual ↻ refresh and the commit flow keep the full reload path. */
+  /** Apply one `git_file_stage` SSE event: move the row it names and re-prime only that file's diff and counts. */
   function applyFileStageEvent(event: api.GitFileStageEvent): void {
-    // A failed git command must not move anything: the row stays where it is
-    // and the user sees the file still listed on the side they left it.
+    // A failed git command must not move anything: the row stays where it is and the user sees the file still listed on the side they left it.
     if (event.failed) return
-    // One browser tab can show several worktrees; only the panel bound to the
-    // event's cwd may move a row.
+    // One browser tab can show several worktrees; only the panel bound to the event's cwd may move a row.
     if (!opts.cwd() || event.cwd !== opts.cwd()) return
     if (!event.path) return
     // PR mode has no worktree lists to move.
@@ -226,8 +210,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     unstagedFiles.value = moved.unstaged
     untrackedFiles.value = moved.untracked
 
-    // Re-prime the one file's diff + counts. `getGitFileDiffs` in LIST mode is
-    // one request for one path — not the folder-wide re-fetch the old code did.
+    // Re-prime the one file's diff + counts.
     void reprimeFileDiff(event.path, moved.to === 'staged')
     // Keep the centre column's open diff in step with the row that just moved.
     if (opts.selection.path.value === event.path) {
@@ -236,9 +219,7 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     }
 }
 
-  /**  * Fetch one file's diff and fold it into the shared snapshot + the row's counts. A failure leaves
-   * the previous counts in place rather than showing `+0 -0`, which would read as "this file is
-   * unchanged". */
+  /** Fetch one file's diff and fold it into the shared snapshot + the row's counts. */
   async function reprimeFileDiff(path: string, staged: boolean): Promise<void> {
     if (!opts.cwd()) return
     try {
@@ -255,15 +236,11 @@ export function useSidebarDiffGitData(opts: PanelDataCommon) {
     }
 }
 
-  // Commit box state (Files tab). The message is transient text like the
-  // file filter — it lives in a ref, not in the URL, because Back/Forward
-  // must never step through keystrokes.
+  // Commit box state (Files tab).
   const commitMessage = ref('')
   const isCommitting = ref(false)
   const commitError = ref('')
-  // `git commit` commits the index, so the button needs staged files AND a
-  // message. Untracked-only worktrees stay disabled with a hint instead of
-  // failing server-side.
+  // `git commit` commits the index, so the button needs staged files AND a message.
   const canCommit = computed(
     () =>
       commitMessage.value.trim().length > 0 &&

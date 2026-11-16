@@ -1,5 +1,4 @@
-/** The `documents` channel at the API layer: the wire token, the three pre-registered granular
- * event names, and the dispatch into the channel callback. */
+/** The `documents` channel at the API layer: the wire token, the three pre-registered granular event names, and the dispatch into the channel callback. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'
@@ -38,8 +37,7 @@ describe('createUnifiedSseConnection: documents channel', () => {
   it('pre-registers all three granular wire names so the browser dispatches them', () => {
     createUnifiedSseConnection({ channels: { documents: vi.fn() } })
 
-    // A name missing here is dropped by EventSource before onEvent — the
-    // failure mode that looks exactly like a dead stream.
+    // A name missing here is dropped by EventSource before onEvent — the failure mode that looks exactly like a dead stream.
     expect(capturedOpts?.additionalEventTypes).toContain('document_created')
     expect(capturedOpts?.additionalEventTypes).toContain('document_updated')
     expect(capturedOpts?.additionalEventTypes).toContain('document_deleted')

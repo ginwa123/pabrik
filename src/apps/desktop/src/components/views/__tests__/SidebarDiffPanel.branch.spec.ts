@@ -1,5 +1,4 @@
-/** Branch source-of-truth: the bottom status bar (ChatView `gitStatus`) owns the branch;
- * SidebarDiffPanel only displays the drilled `branch` prop and keeps its own fetch as fallback. */
+/** Branch source-of-truth: the bottom status bar (ChatView `gitStatus`) owns the branch; SidebarDiffPanel only displays the drilled `branch` prop and keeps its … */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'

@@ -1,6 +1,4 @@
-// New Chat "Session not found" regression. Zig port of
-// `tests/functional/new_chat_session_not_found_test.py` (same test names,
-// same order).
+// New Chat "Session not found" regression.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,9 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Issue a request WITHOUT a status assertion — the caller asserts. Python's
-/// `_raw` returned `(status, headers, body)` and caught `HTTPError` so a
-/// 401/404 could be inspected.
+/// Issue a request WITHOUT a status assertion — the caller asserts.
 fn raw(
     h: *Harness,
     method: harness.HttpMethod,
@@ -37,8 +33,7 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
-/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
+/// Run `pabrik create-admin` against the harness HOME.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -84,9 +79,7 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     return try gpa.dupe(u8, token);
 }
 
-/// Poll `GET /api/llm/session/:id` until it stops 404. `POST
-/// /api/llm/session` returns 201 before the row exists — the insert is handed
-/// to a concurrent worker.
+/// Poll `GET /api/llm/session/:id` until it stops 404.
 fn waitForSessionRow(h: *Harness, cookie: []const u8, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);

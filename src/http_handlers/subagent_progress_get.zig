@@ -1,6 +1,4 @@
-//! GET /api/subagent/progress/:tool_call_id — live spawn-batch snapshot.
-//! 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1): Progress
-//! events are SSE-ephemeral, so a page refresh mid-run wipes ChatView's
+//! GET /api/subagent/progress/:tool_call_id — live spawn-batch snapshot. 2026-09-04 spawn-subagent-refresh-persist (task_1788505292766_1): Progress events are …
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -22,9 +20,7 @@ pub fn subAgentProgressGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpR
 
     const rows = try subagent_progress.getSnapshot(allocator, tool_call_id);
 
-    // Build the JSON body manually — `data` must be a pre-serialized JSON
-    // string (see worker_get.zig / stream_get.zig pattern), not an anonymous
-    // struct.
+    // Build the JSON body manually — `data` must be a pre-serialized JSON string (see worker_get.zig / stream_get.zig pattern), not an anonymous struct.
     var buf: std.ArrayList(u8) = .empty;
     try buf.print(allocator, "{{\"tool_call_id\":{f},\"progress\":[", .{std.json.fmt(tool_call_id, .{})});
     for (rows, 0..) |row, i| {

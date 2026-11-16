@@ -1,6 +1,4 @@
-/** `SyncStore` — the local-cache boundary of the sync engine. This used to be a plain interface
- * with exactly one production implementation (`IndexedDbStore`) plus a hand-rolled in-memory
- * fallback inside the engine. */
+/** `SyncStore` — the local-cache boundary of the sync engine. */
 import { Context, Effect, Layer } from 'effect'
 import { SyncStorageError } from './SyncError'
 import type { Syncable } from './SyncTypes'
@@ -54,9 +52,7 @@ export function sortNewestFirst<T extends Syncable>(rows: ReadonlyArray<T>): T[]
 
 const cell = (store: string, key: string): string => `${store} ${key}`
 
-/**  * In-memory `SyncStore`: the no-IndexedDB fallback (SSR, tests, private browsing) and the test
- * double. It cannot fail, so its error channel is `never` — which is precisely why substituting it
- * needs no stubbing. */
+/** In-memory `SyncStore`: the no-IndexedDB fallback (SSR, tests, private browsing) and the test double. */
 export function makeMemorySyncStore(): SyncStoreShape {
   const rows = new Map<string, Syncable[]>()
   const cursors = new Map<string, string | null>()

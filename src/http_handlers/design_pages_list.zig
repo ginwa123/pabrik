@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages`. List the
-//! design pages belonging to a workspace item of `item_type='design'`.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,16 +9,13 @@ const design_model = @import("../modules/agent/loop/design_model.zig");
 pub const DesignPagesListError = error{
     ItemIdRequired,
     QueryFailed,
-    /// `makeDesignPageListResponse` returns `![]u8` (its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
+    /// `makeDesignPageListResponse` returns `![]u8` (its body uses `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
     OutOfMemory,
 };
 
 pub const DesignPagesListResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -34,9 +30,7 @@ fn useCase(
     return try http_response.makeDesignPageListResponse(allocator, pages);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designPagesListHandler(
     ctx: gserverz.HttpContext,

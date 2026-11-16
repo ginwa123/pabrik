@@ -154,7 +154,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     ])
     expect(result.length).toBe(3)
 
-    // Local cache mirrors the server response.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const elements = (store.workspaces[0] as any).items[0].design_elements
     expect(elements[0].x).toBe(100)
@@ -203,18 +202,14 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
   })
 
   it('local mirror survives a fetchDesignElements array replace (race regression)', async () => {
-    // Bug history (2026-08-06): the first drag of a group/frame moved only the group, not the
-    // descendants.
+    // Bug history (2026-08-06): the first drag of a group/frame moved only the group, not the descendants.
     const store = makeWorkspacesStore()
 
-    // Initial baseline: stub getDesignPage to return the same
-    // elements array reference (NOT replaced by fetch).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const baseline = (store.workspaces[0] as any).items[0].design_elements
     expect(baseline.length).toBe(3)
 
-    // Mock the API to return the cascade — group + 2 children,
-    // each with new x/y.
+    // Mock the API to return the cascade — group + 2 children, each with new x/y.
     vi.spyOn(await import('../api'), 'moveDesignElementsBatch').mockResolvedValueOnce({
       updated: [
         {
@@ -251,8 +246,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
       { element_id: 'elem_root', dx: 100, dy: 50 },
     ])
 
-    // CRITICAL: the design_elements array must be the SAME reference after the mirror — Vue 3
-    // reactivity depends on per-index writes to the same reactive array.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const after = (store.workspaces[0] as any).items[0].design_elements
     expect(after).toBe(baseline)
@@ -265,8 +258,7 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(after[2].y).toBe(150)
   })
 
-  /** BUG FIX (2026-08-06, design-mode-second-drag): the `POST .../elements/move-batch` endpoint
-   * historically emitted `elem_type` (the Zig struct field name) instead of `type` on the wire. */
+  /** BUG FIX (2026-08-06, design-mode-second-drag): the `POST .../elements/move-batch` endpoint historically emitted `elem_type` (the Zig struct field name) instead … */
   it('local mirror preserves `type` when backend emits `elem_type` (legacy wire shape)', async () => {
     const store = makeWorkspacesStore()
     // Seed the store with an item containing a group + a leaf.
@@ -308,8 +300,6 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
      
     ])
 
-    // EXPECTED: the local mirror preserves `type === 'group'` so the
-    // next drag still sees `isGroupLike = true` and uses the cascade.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const after = (store.workspaces[0] as any).items[0].design_elements
     expect(after[0].type).toBe('group')
@@ -317,8 +307,7 @@ describe('workspacesStore.moveDesignElementsBatch', () => {
     expect(after[0].y).toBe(150)
   })
 
-  /**    * Same bug as above but verifying the canonical wire shape is also accepted (the new backend).
-   * Locks in that we don't regress the happy path while defending against the legacy shape. */
+  /** Same bug as above but verifying the canonical wire shape is also accepted (the new backend). */
   it('local mirror preserves `type` when backend emits `type` (canonical wire shape)', async () => {
     const store = makeWorkspacesStore()
     const baseline = [

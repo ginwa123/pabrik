@@ -1,6 +1,4 @@
-// Functional tests for the web-launch toggle (browser mode, random port). Zig
-// port of `tests/functional/web_launch_toggle_test.py` (same test names, same
-// order).
+// Functional tests for the web-launch toggle (browser mode, random port).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,8 +9,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The config directory the running child will read and write, derived
-/// from `h.temp_dir`. Owned; caller frees.
+/// The config directory the running child will read and write, derived from `h.temp_dir`.
 fn platformConfigDir(h: *Harness) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, h.temp_dir, &.{ "Library", "Application Support", "pabrik" }),
@@ -21,9 +18,7 @@ fn platformConfigDir(h: *Harness) ![]u8 {
     };
 }
 
-/// The owned, parsed `config.json` the server wrote on disk. Python
-/// `_on_disk_config` returned `json.loads(path.read_text())`, so the analogue
-/// is a `harness.Json` the caller must `deinit`.
+/// The owned, parsed `config.json` the server wrote on disk.
 fn onDiskConfig(h: *Harness) !harness.Json {
     const dir = try platformConfigDir(h);
     defer gpa.free(dir);
@@ -44,11 +39,9 @@ fn onDiskConfig(h: *Harness) !harness.Json {
     };
 }
 
-/// `PUT /api/config/pabrik` with the profiles scaffolding the backend
-/// expects.
+/// `PUT /api/config/pabrik` with the profiles scaffolding the backend expects.
 fn putWebLaunch(h: *Harness, web_launch_enabled: ?bool) !void {
-    // A COMPILE-TIME literal, not a formatted string: `null` must put
-    // NOTHING on the wire, and an empty string here is exactly that.
+    // A COMPILE-TIME literal, not a formatted string: `null` must put NOTHING on the wire, and an empty string here is exactly that.
     const flag: []const u8 = if (web_launch_enabled) |b| switch (b) {
         true => ",\"web_launch_enabled\":true",
         false => ",\"web_launch_enabled\":false",
@@ -86,8 +79,7 @@ fn expectWebLaunchFlag(h: *Harness, want: bool, context: []const u8) !void {
     }
 }
 
-/// Boot the `web_harness` fixture: a harness with a stub LLM profile so the
-/// binary starts without a real API key.
+/// Boot the `web_harness` fixture: a harness with a stub LLM profile so the binary starts without a real API key.
 fn bootWebHarness() !Harness {
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     errdefer h.deinit(io) catch {};
@@ -213,8 +205,7 @@ test "omitting_web_launch_does_not_reset_it" {
     try expectWebLaunchFlag(&h, true, "after a PUT that omitted the flag");
 }
 
-// GET /api/web/status returns the harness's live random port (not a
-// hardcoded 8081) and tracks the flag across a PUT.
+// GET /api/web/status returns the harness's live random port (not a hardcoded 8081) and tracks the flag across a PUT.
 test "web_status_reports_live_port_and_reflects_flag" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -223,16 +214,14 @@ test "web_status_reports_live_port_and_reflects_flag" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Called twice — once before the PUT, once after — so it is a
-    // function rather than an inline block.
+    // Called twice — once before the PUT, once after — so it is a function rather than an inline block.
     try expectWebStatus(&h, false);
 
     try putWebLaunch(&h, true);
     try expectWebStatus(&h, true);
 }
 
-/// Assert the four fields `GET /api/web/status` reports: running, the
-/// flag, the LIVE port, and the URL derived from that same port.
+/// Assert the four fields `GET /api/web/status` reports: running, the flag, the LIVE port, and the URL derived from that same port.
 fn expectWebStatus(h: *Harness, want_enabled: bool) !void {
     var r = try h.http(io, .GET, "/api/web/status", .{ .expect = &.{200} });
     defer r.deinit();
@@ -281,8 +270,7 @@ fn expectWebStatus(h: *Harness, want_enabled: bool) !void {
     }
 }
 
-// The advertised URL origin is actually reachable (lifecycle A: the same
-// server serves the UI — no second listener needed).
+// The advertised URL origin is actually reachable (lifecycle A: the same server serves the UI — no second listener needed).
 test "web_status_url_serves_http" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -300,14 +288,11 @@ test "web_status_url_serves_http" {
         std.debug.print("web/status has no `url`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
     };
-    // `urllib.parse.urljoin(url, "/health")` — the status url always ends in
-    // `/`, so trimming it and re-appending `"/health"` is the same string.
+    // `urllib.parse.urljoin(url, "/health")` — the status url always ends in `/`, so trimming it and re-appending `"/health"` is the same string.
     const health_url = try std.fmt.allocPrint(gpa, "{s}/health", .{std.mem.trimEnd(u8, url, "/")});
     defer gpa.free(health_url);
 
-    // A FRESH `std.http.Client`, not the harness's pooled one: Python used
-    // `urllib.request.urlopen`, i.e. a new connection, so that the origin is
-    // proven live independently of whatever the harness client already has
+    // A FRESH `std.http.Client`, not the harness's pooled one: Python used `urllib.request.urlopen`, i.e. a new connection, so that the origin is proven live …
     var client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();
 
@@ -329,9 +314,7 @@ test "web_status_url_serves_http" {
     }
 }
 
-// A taken default port falls back to a free one instead of dying — on every
-// platform (no OS branches below: raw loopback sockets, child spawn with an
-// explicit env map, and std.http.Client are all portable).
+// A taken default port falls back to a free one instead of dying — on every platform (no OS branches below: raw loopback sockets, child spawn with an explicit …
 test "busy_default_port_falls_back_to_a_free_port_and_serves" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -348,9 +331,7 @@ test "busy_default_port_falls_back_to_a_free_port_and_serves" {
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
-    // Child env mirrors Harness.boot's isolation so config + DB land
-    // inside scratch on all three platforms (POSIX: HOME + XDG;
-    // Windows: USERPROFILE + APPDATA/LOCALAPPDATA).
+    // Child env mirrors Harness.boot's isolation so config + DB land inside scratch on all three platforms (POSIX: HOME + XDG; Windows: USERPROFILE + …
     const home = try harness.harnessPath(gpa, scratch, &.{"home"});
     defer gpa.free(home);
     try std.Io.Dir.cwd().createDirPath(io, home);
@@ -391,8 +372,7 @@ test "busy_default_port_falls_back_to_a_free_port_and_serves" {
     var log_file = try std.Io.Dir.cwd().createFile(io, log_path, .{});
     defer log_file.close(io);
 
-    // No --port: the whole point. The server must observe EADDRINUSE on
-    // 8081 and pick a free port itself.
+    // No --port: the whole point.
     const argv = [_][]const u8{bin};
     var child = try std.process.spawn(io, .{
         .argv = &argv,
@@ -406,8 +386,7 @@ test "busy_default_port_falls_back_to_a_free_port_and_serves" {
         child.kill(io);
     }
 
-    // Wait up to 30 s for readiness, polling the log (same signal the
-    // smoke script waits for).
+    // Wait up to 30 s for readiness, polling the log (same signal the smoke script waits for).
     var ready = false;
     var attempt: usize = 0;
     while (attempt < 300) : (attempt += 1) {

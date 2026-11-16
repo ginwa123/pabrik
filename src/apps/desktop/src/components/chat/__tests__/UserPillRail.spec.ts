@@ -31,9 +31,7 @@ describe('UserPillRail', () => {
     })
     const buttons = wrapper.findAll('[data-testid="user-pill"]')
     expect(buttons[0]!.attributes('aria-label')).toBe('Jump to message: hello world')
-    // The styled message box is the single affordance now. A native `title` would ALSO fire, so the
-    // user would see the OS tooltip appear next to (or on top of) the box — two previews for one
-    // hover. Assert it is gone, not merely unused.
+    // The styled message box is the single affordance now.
     expect(buttons[0]!.attributes('title')).toBeUndefined()
     expect(wrapper.find('[data-testid="user-pill-rail"]').attributes('aria-label')).toBe(
       'Jump to user messages',
@@ -106,9 +104,7 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('moving between pills swaps the box instead of blanking it', async () => {
-    // `mouseleave` on the pill being LEFT can arrive after `mouseenter` on the next one. An
-    // unguarded close would blank the box the user just moved to — the box would flicker off on
-    // every pill-to-pill move, which is the whole point of the feature.
+    // `mouseleave` on the pill being LEFT can arrive after `mouseenter` on the next one.
     const wrapper = mountRail()
     const [first, second] = wrapper.findAll('[data-testid="user-pill"]')
     await first!.trigger('mouseenter')
@@ -140,9 +136,7 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('leaving the rail entirely closes the box', async () => {
-    // The pointer can exit the rail through the gap between pills (the
-    // rail has padding, and the box itself is pointer-events:none), so
-    // the rail needs its own leave as a backstop.
+    // The pointer can exit the rail through the gap between pills (the rail has padding, and the box itself is pointer-events:none), so the rail needs its own leave …
     const wrapper = mountRail()
     await wrapper.findAll('[data-testid="user-pill"]')[0]!.trigger('mouseenter')
     expect(wrapper.find('[data-testid="user-pill-message"]').exists()).toBe(true)
@@ -152,8 +146,7 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('the box is aria-hidden — the pill aria-label already carries the text', async () => {
-    // Without this a screen reader reads every message twice while
-    // tabbing the rail: once from the button's label, once from the box.
+    // Without this a screen reader reads every message twice while tabbing the rail: once from the button's label, once from the box.
     const wrapper = mountRail()
     await wrapper.findAll('[data-testid="user-pill"]')[0]!.trigger('mouseenter')
     expect(wrapper.find('[data-testid="user-pill-message"]').attributes('aria-hidden')).toBe('true')
@@ -161,9 +154,7 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('the box is aligned to the pill that opened it, not to the rail middle', async () => {
-    // The rail is a uniform stack, so the box's `top` is derived from the open pill's index. A box
-    // pinned at the rail's centre would sit level with the wrong pill whenever the hovered one is
-    // not the middle one — which is most of the time.
+    // The rail is a uniform stack, so the box's `top` is derived from the open pill's index.
     const wrapper = mountRail()
     await wrapper.findAll('[data-testid="user-pill"]')[2]!.trigger('mouseenter')
     const top = wrapper.find('[data-testid="user-pill-message"]').attributes('style')
@@ -183,8 +174,7 @@ describe('UserPillRail — hover/focus message box', () => {
   })
 
   it('a pill whose key vanished (SSE regroup) closes the box rather than erroring', async () => {
-    // `openPill` resolves by key; if the group disappears between hover
-    // and render the lookup must degrade to "no box", not throw.
+    // `openPill` resolves by key; if the group disappears between hover and render the lookup must degrade to "no box", not throw.
     const wrapper = mountRail()
     await wrapper.findAll('[data-testid="user-pill"]')[0]!.trigger('mouseenter')
     expect(wrapper.find('[data-testid="user-pill-message"]').exists()).toBe(true)
@@ -195,9 +185,7 @@ describe('UserPillRail — hover/focus message box', () => {
 })
 
 describe('UserPillRail — the preview box is actually SIZED (source contract)', () => {
-  // jsdom has no layout engine, so no mount can tell a 280px box from a 33.7px one - which is
-  // how #953 shipped a 33.7px box behind a green suite. These pin the styling contract that the
-  // browser measurement in tests/functional_ui/ then proves.
+  // jsdom has no layout engine, so no mount can tell a 280px box from a 33.7px one - which is how #953 shipped a 33.7px box behind a green suite.
   const messageRule = (): string => {
     const start = railSrc.indexOf('.user-pill-message {')
     expect(start).toBeGreaterThan(-1)
@@ -206,15 +194,12 @@ describe('UserPillRail — the preview box is actually SIZED (source contract)',
   }
 
   it('carries an explicit width, not only a max-width', () => {
-    // `max-width: 280px` with no `width` leaves an absolutely-positioned box shrink-to-fit
-    // against its containing block — the rail's 32px padding box — where max-width never binds.
+    // `max-width: 280px` with no `width` leaves an absolutely-positioned box shrink-to-fit against its containing block — the rail's 32px padding box — where …
     expect(messageRule()).toMatch(/^\s*width:\s*max-content/m)
   })
 
   it('is anchored once, not twice', () => {
-    // `right: 0` already anchors the box's right edge at the rail's right edge; adding
-    // `translateX(-100%)` counted the same offset twice, so the gap to the pill grew with the
-    // box (256px at full width) and the box flew away from the pill that opened it.
+    // `right: 0` already anchors the box's right edge at the rail's right edge; adding `translateX(-100%)` counted the same offset twice, so the gap to the pill grew …
     const rule = messageRule()
     expect(rule).toMatch(/^\s*right:\s*100%/m)
     expect(rule).not.toMatch(/translate\(-100%/)

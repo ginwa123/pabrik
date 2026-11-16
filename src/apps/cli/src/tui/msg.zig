@@ -1,5 +1,4 @@
-//! Messages: the events that flow through the event loop into
-//! `Model.update`.
+//! Messages: the events that flow through the event loop into `Model.update`.
 
 const std = @import("std");
 const key_mod = @import("key.zig");
@@ -9,8 +8,7 @@ pub const Msg = union(enum) {
     key: key_mod.Key,
     /// Terminal was resized.
     resize: Size,
-    /// Periodic tick (drives spinner + polling). `millis` is the tick
-    /// interval that produced it.
+    /// Periodic tick (drives spinner + polling).
     tick: u64,
     /// Streaming chunk arrived from the backend.
     stream_chunk: []const u8,
@@ -22,9 +20,7 @@ pub const Msg = union(enum) {
 
 pub const Size = struct { width: u16, height: u16 };
 
-/// A deferred side-effect returned by `Model.update`. The Program
-/// executes it after update returns and feeds any resulting Msg back
-/// into the loop. Mirrors Bubble Tea's `Cmd`.
+/// A deferred side-effect returned by `Model.update`.
 pub const Cmd = union(enum) {
     none,
     /// Send a chat message to the backend.

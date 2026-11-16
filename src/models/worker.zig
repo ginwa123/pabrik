@@ -1,5 +1,4 @@
-//! Data model for the `worker` entity table. One row per active agent worker
-//! (one per session that's currently running).
+//! Data model for the `worker` entity table.
 
 const std = @import("std");
 
@@ -8,14 +7,11 @@ pub const EntityId = []u8;
 id: EntityId,
 session_id: []u8,
 working_directory: ?[]u8 = null,
-/// Unix-seconds timestamp of the last heartbeat. Updated by the
-/// worker on every tool call.
+/// Unix-seconds timestamp of the last heartbeat.
 last_activity: i64 = 0,
 last_activity_description: ?[]u8 = null,
 created_at: []u8,
-/// Set to `true` by the worker shutdown handler. Cancelled rows are
-/// filtered out of "Active Workers" listings but kept for
-/// post-mortem debugging.
+/// Set to `true` by the worker shutdown handler.
 cancelled: bool = false,
 
 const Self = @This();

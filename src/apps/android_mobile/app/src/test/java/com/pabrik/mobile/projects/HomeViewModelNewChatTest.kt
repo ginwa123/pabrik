@@ -25,25 +25,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * `HomeViewModel.newChat()` — the drawer's top-level "New Chat".
- *
- * Three behaviours worth pinning, because each is a way the feature can look
- * fine on screen and still be wrong:
- *
- *  1. **The happy path costs no network.** The server ensures the default on
- *     every items read, so the list the ViewModel already holds carries it. A
- *     round trip here would make the row feel laggy for no reason.
- *  2. **The cold path asks the server once**, and only because the app was
- *     already running when Migration 094 landed.
- *  3. **A failure neither navigates nor invents a project.** The existing
- *     `_createdChat` flow is what opens the chat, so a fabricated id would put
- *     the reader on a route that cannot resolve — worse than doing nothing.
- *
- * The per-project `+` behaviour (the double-tap guard, the forced expansion,
- * the Room write-through) is covered by `CreateTaskTest`; `newChat` hands off to
- * that same path on purpose and is not re-tested here.
- */
+/** `HomeViewModel.newChat()` — the drawer's top-level "New Chat". */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelNewChatTest {
 
@@ -71,11 +53,7 @@ class HomeViewModelNewChatTest {
         }
     }
 
-    /**
-     * Answers the reads the ViewModel makes on launch, and records every POST so
-     * a test can assert the exact *number* of creates — a "no network on the
-     * happy path" claim is only meaningful if the counter can see zero.
-     */
+    /** Answers the reads the ViewModel makes on launch, and records every POST so a test can assert the exact *number* of creates — a "no network on the happy path" … */
     private class NewChatTransport(
         private val itemsBody: String,
         private val defaultProjectStatus: Int = 201,
@@ -162,17 +140,14 @@ class HomeViewModelNewChatTest {
     fun theDefaultIsFoundLocallyAndCostsNoRequest() = newChatTest { s ->
         val transport = NewChatTransport(itemsWithDefault())
         val model = viewModel(s.ioDispatcher, transport)
-        // The initial load. Without it selectedWorkspaceId stays null and
-        // newChat() returns at its first guard — a test that then "passes" by
-        // asserting zero POSTs while proving nothing.
+        // The initial load.
         model.onUserChanged("user_a")
         s.drain()
 
         model.newChat()
         s.drain()
 
-        // The one POST that must exist: the chat create, under the DEFAULT
-        // project. No default-project POST, because the list already had it.
+        // The one POST that must exist: the chat create, under the DEFAULT project.
         assertEquals(0, transport.posts.count { it.endsWith("/default-project") })
         assertEquals(1, model.taskCreatePostCount(transport))
         assertTrue(
@@ -186,9 +161,7 @@ class HomeViewModelNewChatTest {
     fun aListWithoutADefaultAsksTheServerThenCreatesTheChat() = newChatTest { s ->
         val transport = NewChatTransport(itemsWithoutDefault())
         val model = viewModel(s.ioDispatcher, transport)
-        // The initial load. Without it selectedWorkspaceId stays null and
-        // newChat() returns at its first guard — a test that then "passes" by
-        // asserting zero POSTs while proving nothing.
+        // The initial load.
         model.onUserChanged("user_a")
         s.drain()
 
@@ -196,8 +169,7 @@ class HomeViewModelNewChatTest {
         s.drain()
 
         assertEquals(1, transport.posts.count { it.endsWith("/default-project") })
-        // The chat still lands in the DEFAULT project the endpoint returned —
-        // not in the ordinary project that was the only one in the list.
+        // The chat still lands in the DEFAULT project the endpoint returned — not in the ordinary project that was the only one in the list.
         assertTrue(
             transport.posts.any { it == "/api/workspaces/ws_1/items/item_default/tasks" },
         )
@@ -207,17 +179,14 @@ class HomeViewModelNewChatTest {
     fun theDefaultProjectRequestSendsNoBody() = newChatTest { s ->
         val transport = NewChatTransport(itemsWithoutDefault())
         val model = viewModel(s.ioDispatcher, transport)
-        // The initial load. Without it selectedWorkspaceId stays null and
-        // newChat() returns at its first guard — a test that then "passes" by
-        // asserting zero POSTs while proving nothing.
+        // The initial load.
         model.onUserChanged("user_a")
         s.drain()
 
         model.newChat()
         s.drain()
 
-        // The endpoint is a command ("give me the default"); a body would tempt
-        // a name/path override the invariant forbids.
+        // The endpoint is a command ("give me the default"); a body would tempt a name/path override the invariant forbids.
         assertEquals(1, transport.defaultProjectBodies.size)
         assertEquals("", transport.defaultProjectBodies.single())
     }
@@ -231,9 +200,7 @@ class HomeViewModelNewChatTest {
             defaultProjectStatus = 500,
         )
         val model = viewModel(s.ioDispatcher, transport)
-        // The initial load. Without it selectedWorkspaceId stays null and
-        // newChat() returns at its first guard — a test that then "passes" by
-        // asserting zero POSTs while proving nothing.
+        // The initial load.
         model.onUserChanged("user_a")
         s.drain()
 
@@ -252,9 +219,7 @@ class HomeViewModelNewChatTest {
     fun aDoubleTapCreatesOneChat() = newChatTest { s ->
         val transport = NewChatTransport(itemsWithDefault())
         val model = viewModel(s.ioDispatcher, transport)
-        // The initial load. Without it selectedWorkspaceId stays null and
-        // newChat() returns at its first guard — a test that then "passes" by
-        // asserting zero POSTs while proving nothing.
+        // The initial load.
         model.onUserChanged("user_a")
         s.drain()
 
@@ -262,8 +227,7 @@ class HomeViewModelNewChatTest {
         model.newChat()
         s.drain()
 
-        // One create at a time. Two "New Chat" rows from one tap is the exact
-        // bug the existing global in-flight guard exists to prevent.
+        // One create at a time.
         assertEquals(1, model.taskCreatePostCount(transport))
     }
 
@@ -271,9 +235,7 @@ class HomeViewModelNewChatTest {
     fun aCreatedChatIsEmittedForTheGraphToNavigateTo() = newChatTest { s ->
         val transport = NewChatTransport(itemsWithDefault())
         val model = viewModel(s.ioDispatcher, transport)
-        // The initial load. Without it selectedWorkspaceId stays null and
-        // newChat() returns at its first guard — a test that then "passes" by
-        // asserting zero POSTs while proving nothing.
+        // The initial load.
         model.onUserChanged("user_a")
         s.drain()
 
@@ -286,10 +248,7 @@ class HomeViewModelNewChatTest {
         model.newChat()
         s.drain()
 
-        // The graph navigates off this flow. Asserting the emit rather than a
-        // navigation is deliberate: `PabrikNavGraph` owns the NavController, and
-        // this is the contract between the two — exactly one id, and it is the
-        // task the create returned.
+        // The graph navigates off this flow.
         assertEquals(listOf("task_9"), emitted)
         collector.cancel()
     }

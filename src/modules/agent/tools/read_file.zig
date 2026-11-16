@@ -42,9 +42,7 @@ pub fn readFile(
     path: []const u8,
     opts: ReadFileOptions,
 ) !ReadFileResult {
-    // The LLM chooses this path. On Windows a malformed NT name makes std's
-    // Io backend `ntstatusBug()` — a panic that kills the process, not just
-    // this call. See helpers/path_validate.zig.
+    // The LLM chooses this path.
     if (invalidPathReason(path)) |reason| {
         std.log.debug("read_file rejected path: {s}", .{reason});
         return error.InvalidPathReason;
@@ -53,9 +51,7 @@ pub fn readFile(
     const file = try std.Io.Dir.cwd().openFile(io, path, .{});
     defer std.Io.File.close(file, io);
 
-    // A head peek decides whether the whole file is worth reading: an image is
-    // refused from its reported size, so a 500 MB "screenshot.png" costs one
-    // pread and one stat instead of 500 MB of heap. Text keeps today's read.
+    // A head peek decides whether the whole file is worth reading: an image is refused from its reported size, so a 500 MB "screenshot.png" costs one pread and one …
     const is_image = blk: {
         var head: [helpers_image.header_len]u8 = undefined;
         const len = file.readPositionalAll(io, &head, 0) catch 0;
@@ -79,12 +75,9 @@ pub fn readFile(
     return shapeContent(allocator, on_disk, opts);
 }
 
-/// The file's bytes, shaped into the paginated result. Shared by the host read
-/// above and the guest read in `execReadFile`, so a read answers with the same
-/// shape whichever substrate produced the bytes.
+/// The file's bytes, shaped into the paginated result.
 pub fn shapeContent(allocator: std.mem.Allocator, on_disk: []const u8, opts: ReadFileOptions) !ReadFileResult {
-    // An image is answered with the image, not with its bytes as text: a
-    // screenshot handed to a model as mojibake costs context and says nothing.
+    // An image is answered with the image, not with its bytes as text: a screenshot handed to a model as mojibake costs context and says nothing.
     if (helpers_image.sniffImageMime(on_disk)) |mime| return shapeImage(allocator, on_disk, mime);
     if (helpers_image.looksBinary(on_disk)) return error.BinaryFileNotText;
 
@@ -124,8 +117,7 @@ pub fn shapeContent(allocator: std.mem.Allocator, on_disk: []const u8, opts: Rea
         if (c == '\n' or i == raw.len - 1) {
             const line_end = if (c == '\n') i + 1 else i + 1;
             if (line_idx >= offset and captured < limit) {
-                // Raw content only — no per-line number prefix. Callers derive
-                // absolute 1-indexed line numbers as start_line + 1 + index.
+                // Raw content only — no per-line number prefix.
                 try out.appendSlice(allocator, raw[line_start..line_end]);
                 captured += 1;
                 end_line = line_idx;
@@ -159,8 +151,7 @@ fn shapeImage(allocator: std.mem.Allocator, bytes: []const u8, mime: []const u8)
     };
 }
 
-/// JSON payload for an image read. The image itself rides on the tool result's
-/// `image_url`, so this text stays small enough to keep forever.
+/// JSON payload for an image read.
 pub const ReadFileImageJSON = struct {
     path: []const u8,
     mime: []const u8,
@@ -177,9 +168,7 @@ pub fn toJSONImage(allocator: std.mem.Allocator, image: ReadFileImage, path: []c
     }, .{});
 }
 
-/// JSON payload for a successful read: mirrors the old `<path>` /
-/// `<content>` / `<total_lines>` / `<start_line>` / `<end_line>` tags 1:1.
-/// `content` is raw file text — `<`/`&` need no escaping in JSON.
+/// JSON payload for a successful read: mirrors the old `<path>` /`<content>` / `<total_lines>` / `<start_line>` / `<end_line>` tags 1:1.
 pub const ReadFileJSON = struct {
     path: []const u8,
     content: []const u8,
@@ -252,7 +241,6 @@ pub const read_file_tool = AgentTool{
 };
 
 // ─── Raw-content contract tests ─────────────────────────────────────────
-// Content is raw (no per-line number prefixes).
 
 test "read_file returns raw content without line-number prefixes" {
     var tmp = std.testing.tmpDir(.{});
@@ -291,8 +279,6 @@ test "read_file paginated slice is raw with correct start/end lines" {
 }
 
 // ─── CRLF contract ───────────────────────────────────────────────────────
-// `text_replace` normalizes the file to LF *before* it searches for `old_str`
-// (text_replace.zig: `had_crlf` → `normalizeLineEndings` → `indexOf`).
 const text_replace = @import("text_replace.zig");
 
 fn writeTmp(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir, name: []const u8, data: []const u8) ![]const u8 {
@@ -313,8 +299,7 @@ test "read_file strips CR from a CRLF file" {
 
     try std.testing.expect(std.mem.indexOfScalar(u8, result.content, '\r') == null);
     try std.testing.expectEqualStrings("alpha\nbeta\ngamma\n", result.content);
-    // Pagination metadata must be untouched by the normalization: CRLF has
-    // exactly one '\n' per line, so the counts cannot move.
+    // Pagination metadata must be untouched by the normalization: CRLF has exactly one '\n' per line, so the counts cannot move.
     try std.testing.expectEqual(@as(usize, 3), result.total_lines);
     try std.testing.expectEqual(@as(usize, 0), result.start_line);
     try std.testing.expectEqual(@as(usize, 2), result.end_line);
@@ -335,8 +320,7 @@ test "read_file CRLF paginated slice is LF and correctly bounded" {
     try std.testing.expectEqual(@as(usize, 2), result.end_line);
 }
 
-// THE end-to-end contract: whatever read_file hands the model must be
-// directly usable as `old_str` by text_replace.
+// THE end-to-end contract: whatever read_file hands the model must be directly usable as `old_str` by text_replace.
 test "read_file output is directly usable as text_replace old_str (CRLF round trip)" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -365,14 +349,11 @@ test "read_file output is directly usable as text_replace old_str (CRLF round tr
         std.Io.Limit.limited(1 << 20),
     );
     defer std.testing.allocator.free(final);
-    // The contract under test is that the exact string read_file handed the
-    // model was ACCEPTED by text_replace. What text_replace then writes back
-    // (LF here) is its own concern and deliberately not asserted here.
+    // The contract under test is that the exact string read_file handed the model was ACCEPTED by text_replace.
     try std.testing.expectEqualStrings("package main\n\nfunc main() { }\n", final);
 }
 
-// Guard against over-normalizing: a bare CR is a Mac Classic line ending,
-// not a CRLF artefact, and must survive. Same for an LF file.
+// Guard against over-normalizing: a bare CR is a Mac Classic line ending, not a CRLF artefact, and must survive.
 test "read_file leaves LF files and bare-CR content alone" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -412,9 +393,7 @@ test "toJSONSuccess payload carries raw content and line range" {
     try std.testing.expectEqual(@as(i64, 1), obj.get("end_line").?.integer);
 }
 
-/// The bytes of `path_abs`, shaped into the tool's result. Under `--saas` they
-/// come from the guest agent and the host opens no tenant file at all; every
-/// other mode keeps today's read, because `forSession` installs nothing.
+/// The bytes of `path_abs`, shaped into the tool's result.
 fn readThrough(ctx: ToolExecContext, path_abs: []const u8, opts: ReadFileOptions) !ReadFileResult {
     const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
     if (guest) |handle| {
@@ -428,7 +407,6 @@ fn readThrough(ctx: ToolExecContext, path_abs: []const u8, opts: ReadFileOptions
 }
 
 // Exec adapter — merged from `read_file.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -461,9 +439,7 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
-    // call works in, and the base a relative `path` resolves against. See
-    // helpers/exec_path_validate.zig for the one implementation of that rule.
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this call works in, and the base a relative `path` resolves against.
     exec_path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -479,8 +455,7 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
 
     var read_result = readThrough(ctx, path_abs, read_opts) catch |err| {
-        // The path is the one thing the model can act on here, so it is
-        // passed as the explanation's context.
+        // The path is the one thing the model can act on here, so it is passed as the explanation's context.
         const err_msg = try error_explain.explain(ctx.allocator, err, path_abs);
         defer ctx.allocator.free(err_msg);
         const output = try wrapToolOutput(ctx.allocator, "read_file", tc.function.arguments, false, err_msg, "");
@@ -495,8 +470,7 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         try exec_toJSONSuccess(ctx.allocator, read_result, path_abs);
     defer ctx.allocator.free(inner);
     const output = try wrapToolOutput(ctx.allocator, "read_file", tc.function.arguments, true, null, inner);
-    // The base64 is moved, not copied: it is megabytes that would otherwise
-    // sit in memory twice between here and the row.
+    // The base64 is moved, not copied: it is megabytes that would otherwise sit in memory twice between here and the row.
     const image_url = if (read_result.image) |img| img.url else null;
     read_result.image = null;
     return ToolExecResult{
@@ -514,9 +488,7 @@ const webp_bytes = "RIFF\x24\x00\x00\x00WEBPVP8 ";
 const gif_bytes = "GIF89a\x01\x00\x01\x00";
 const elf_bytes = "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00";
 
-/// Counts what a read costs, so "the whole file never loads" is an assertion
-/// and not a hope. `resize`/`remap` decline, which makes every growth a
-/// alloc+copy+free and keeps both counters honest.
+/// Counts what a read costs, so "the whole file never loads" is an assertion and not a hope.
 const CountingAllocator = struct {
     child: std.mem.Allocator,
     live: usize = 0,
@@ -650,8 +622,7 @@ test "an oversized image costs a pread and a stat, not the whole file" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // PNG magic at byte 0, then a sparse tail out to 64 MiB. Loading that tail
-    // is the backend-exhaustion path this test exists to make impossible.
+    // PNG magic at byte 0, then a sparse tail out to 64 MiB.
     const abs = try writeTmp(allocator, &tmp, "huge.png", png_bytes);
     defer allocator.free(abs);
     {
@@ -693,8 +664,7 @@ test "the image payload names the path, the mime and the byte count" {
 
 test "shapeContent: the guest read and the host read answer with one shape" {
     const allocator = std.testing.allocator;
-    // Whatever produced the bytes — a host open or a guest RPC — the tool's
-    // contract is the same: LF, raw, no prefixes, absolute 1-indexed lines.
+    // Whatever produced the bytes — a host open or a guest RPC — the tool's contract is the same: LF, raw, no prefixes, absolute 1-indexed lines.
     const shaped = try shapeContent(allocator, "l1\r\nl2\r\nl3\r\n", .{ .offset = 1, .limit = 1 });
     defer shaped.deinit(allocator);
     try std.testing.expectEqualStrings("l2\n", shaped.content);

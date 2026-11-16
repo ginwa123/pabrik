@@ -1,34 +1,36 @@
 /**
- * `local/max-comment-lines` — a comment block may span at most three lines.
+ * `local/max-comment-lines` — a comment block may span at most ONE line.
  *
  * The Vue/TS half of CODING_STANDARDS.md §4, whose Zig half is
- * `zginlint/max-comment-lines`. Same ceiling, same semantics, same reason:
- * a comment block is a paragraph, and a paragraph in the middle of a
+ * `zginlint/max-comment-lines` and whose Kotlin half is
+ * `scripts/lint-kt-comment-lines.py`. Same ceiling, same semantics, same
+ * reason: a comment block is a paragraph, and a paragraph in the middle of a
  * function grows until the code is off the screen.
  *
  * A comment line carries comment content and no code byte, so a blank line
  * or a code line ends a block and a trailing comment never joins one. A
  * `/* ... *\/` comment counts by the lines it spans.
  *
- * OUT OF SCOPE, each a documented gap in CODING_STANDARDS.md §5 rather
- * than a silent one: HTML comments in `<template>` (464 of 1,107 are
- * multi-line template prose) and CSS comments in `<style>` (72 of 102 —
- * `vue-eslint-parser` does not parse the style block, so there is no AST
- * to read). Comment markers inside a literal are text; ESLint's lexer
- * already knows the difference, so this rule inherits that for free.
+ * OUT OF SCOPE, each a documented gap in CODING_STANDARDS.md §5 rather than a
+ * silent one: HTML comments in `<template>` and CSS comments in `<style>`,
+ * which `vue-eslint-parser` gives no comment line this rule can count.
+ * Comment markers inside a literal are text; ESLint's lexer already knows the
+ * difference, so this rule inherits that for free.
  *
  * WHY ESLINT AND NOT A SCRIPT: the frontend already has a per-file count
  * ratchet (`eslint --suppress-rule` + `eslint-suppressions.json`) that
  * `local/no-try-catch` and `local/no-watch` ride. A second baseline format
  * for the same job would be a second thing to maintain and to get wrong.
+ * `local/max-comment-lines` itself carries no suppression entry: the debt was
+ * converted, so a finding is a finding.
  *
  * `docs/comment-length-policy.md` is the working companion: how to fix a
  * finding, what stays legal, and why there is no inline exemption.
  */
 import type { Rule } from 'eslint'
 
-/** Three lines, matching `zginlint/max-comment-lines`'s default. */
-const DEFAULT_MAX_LINES = 3
+/** One line, matching `zginlint/max-comment-lines`'s `--max-comment-lines 1`. */
+const DEFAULT_MAX_LINES = 1
 
 /** A comment as ESLint's lexer reports it: `Line` or `Block`, with a range. */
 type Comment = {
@@ -96,7 +98,7 @@ export const maxCommentLines: Rule.RuleModule = {
     type: 'suggestion',
     docs: {
       description:
-        'Disallow comment blocks longer than three lines — the extra sentences belong in docs/, the commit message or the PR body.',
+        'Disallow comment blocks longer than one line — the extra sentences belong in docs/, the commit message or the PR body.',
     },
     schema: [
       {
@@ -109,7 +111,7 @@ export const maxCommentLines: Rule.RuleModule = {
     ],
     messages: {
       maxCommentLines:
-        'This comment block spans {{actual}} lines; the ceiling is {{max}}. A comment block is a paragraph, and a paragraph in the middle of a function grows until the code is off the screen. Keep the three lines that say WHY — which operation this guards, which invariant it relies on — and move the rest to `docs/`, the commit message or the PR body, where it is read once instead of sitting between the reader and the code. (CODING_STANDARDS.md §4; the Zig half is `zginlint/max-comment-lines`.)',
+        'This comment block spans {{actual}} lines; the ceiling is {{max}}. A comment block is a paragraph, and a paragraph in the middle of a function grows until the code is off the screen. Keep the one line that says WHY — which operation this guards, which invariant it relies on — and move the rest to `docs/`, the commit message or the PR body, where it is read once instead of sitting between the reader and the code. (CODING_STANDARDS.md §4; the Zig half is `zginlint/max-comment-lines`.)',
     },
   },
   create(context) {

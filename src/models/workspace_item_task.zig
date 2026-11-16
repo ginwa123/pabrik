@@ -1,6 +1,4 @@
-//! Data model for the `workspace_item_tasks` entity table. Each task belongs
-//! to one `workspace_item` (typically a kanban). The table grew across many
-//! migrations — see the column table below.
+//! Data model for the `workspace_item_tasks` entity table.
 
 const std = @import("std");
 
@@ -11,26 +9,19 @@ name: []u8,
 workspace_item_id: []u8,
 created_at: []u8,
 updated_at: []u8,
-/// One of `"standard"` | `"memory"` | `"unknown"` (or any string the
-/// caller wrote). The DB column has no CHECK constraint. ('routine'
-/// is legacy — Migration 084 normalizes those rows to 'standard'.)
+/// One of `"standard"` | `"memory"` | `"unknown"` (or any string the caller wrote).
 task_type: []u8,
 is_pinned: bool = false,
 pinned_position: i64 = 0,
-/// Migration 062 — free-form description. Empty slice is the
-/// canonical "no description" sentinel (NOT NULL DEFAULT '').
+/// Migration 062 — free-form description.
 description: []u8 = &.{},
-/// Migration 046 — unix-ms timestamp of the last user-initiated
-/// edit. NULL when the task has never been touched by a human.
+/// Migration 046 — unix-ms timestamp of the last user-initiated edit.
 last_human_touched_at: ?[]u8 = null,
-/// Migration 067 — JSON-encode array string. Empty slice is the
-/// canonical "no tags" sentinel.
+/// Migration 067 — JSON-encode array string.
 tags: []u8 = &.{},
-/// Migration 069 — `||`-delimited base64 data URLs. Empty slice is
-/// the canonical "no images" sentinel.
+/// Migration 069 — `||`-delimited base64 data URLs.
 image_urls: []u8 = &.{},
-/// Migration 070 — per-task cwd override. Empty slice is the
-/// canonical "inherit from workspace_items.path" sentinel.
+/// Migration 070 — per-task cwd override.
 cwd: []u8 = &.{},
 
 const Self = @This();

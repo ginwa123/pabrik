@@ -6,11 +6,7 @@ import java.time.DateTimeException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
-/**
- * One page of messages plus the session metadata the messages endpoint happens
- * to carry, which is how the web learns the session's cwd and profile without a
- * second request.
- */
+/** One page of messages plus the session metadata the messages endpoint happens to carry, which is how the web learns the session's cwd and profile without a … */
 data class ChatPage(
     val messages: List<ChatMessage>,
     val hasMore: Boolean,
@@ -20,26 +16,12 @@ data class ChatPage(
     val total: Int?,
 )
 
-/**
- * The chat endpoint and the wire shape that comes back.
- *
- * Auth is the `pabrik_session` cookie and nothing else, exactly as for the
- * sidebar — the backend accepts no `Authorization` header and has no CSRF
- * token. See [ChatClient].
- *
- * Every quirk in here is load-bearing and mirrored from the backend rather than
- * from the desktop client, which gets at least one of them wrong (it reads
- * `total_count`, a key the server never emits).
- */
+/** The chat endpoint and the wire shape that comes back. */
 object ChatApi {
     /** The web's `PAGE_SIZE`; one page is the whole visible transcript. */
     const val MESSAGES_PAGE_LIMIT = 1000
 
-    /**
-     * The `/api/session` and `/api/llm/session` trees are the same handlers
-     * registered twice. The `/api/llm/session` alias is the one the desktop and
-     * the web client use, so it is the one pinned here.
-     */
+    /** The `/api/session` and `/api/llm/session` trees are the same handlers registered twice. */
     fun messagesPath(
         sessionId: String,
         limit: Int = MESSAGES_PAGE_LIMIT,
@@ -51,9 +33,7 @@ object ChatApi {
         append("/messages?limit=")
         append(limit.coerceIn(1, MAX_LIMIT))
         append("&sort_by=")
-        // `sort_by=created_at` orders page 1 by the *session's* created_at (so
-        // it degenerates to id order) and later pages by the message's. `id` is
-        // the one key that is consistent across pages.
+        // `sort_by=created_at` orders page 1 by the *session's* created_at (so it degenerates to id order) and later pages by the message's.
         append("id&direction=")
         append(if (direction == "desc") "desc" else "asc")
         if (!cursor.isNullOrBlank()) {
@@ -65,29 +45,10 @@ object ChatApi {
     fun sessionPath(sessionId: String): String =
         "/api/llm/session/${encodeQueryValue(sessionId)}"
 
-    /**
-     * The profile list. Same tree as the web's `api.getPabrikConfig()`
-     * (`api/index.ts:4313`), which is the call `ChatView.vue`'s picker reads.
-     */
+    /** The profile list. */
     fun profilesPath(): String = "/api/config/pabrik"
 
-    /**
-     * `PUT /api/llm/session/{id}` — the per-session profile choice.
-     *
-     * Field-for-field the desktop's `api.updateSession`
-     * (`api/index.ts:1588`), including the two empty strings. They are not
-     * padding: the backend treats an empty `name` and an empty
-     * `is_auto_retry_until_stop` as "leave alone"
-     * (`session_update.zig:92`), so omitting them would change the meaning
-     * only if the handler ever stopped defaulting them to `""`. Sending them
-     * is what makes the request say what it means instead of depending on a
-     * struct default.
-     *
-     * An **empty** `selected_profile_model` is a real instruction, not an
-     * absent field: `session_update.zig:84` writes the column unconditionally
-     * precisely so a chat can be put back on the default profile. Clearing the
-     * per-session override and keeping it are the same PUT with different text.
-     */
+    /** `PUT /api/llm/session/{id}` — the per-session profile choice. */
     fun updateSessionBody(
         selectedProfileModel: String,
         name: String = "",
@@ -98,20 +59,7 @@ object ChatApi {
         .put("is_auto_retry_until_stop", isAutoRetryUntilStop)
         .toString()
 
-    /**
-     * The profile list, and the one the server calls active.
-     *
-     * `profiles` is a raw passthrough of `config.profiles_models` — an *object*
-     * keyed by profile name, not the array the web's own type would suggest —
-     * so it is read with `optJSONObject` and the keys are the names. Reading it
-     * as an array yields an empty list, which renders as a picker saying "no
-     * profiles configured" while the server has several.
-     *
-     * `active_profile` is `""` rather than null when unset, so it is normalised
-     * to null here. That mirrors the web, which does the same coercion, and it
-     * is what makes the effective-profile cascade a single `?:` instead of a
-     * three-way branch every reader has to re-derive.
-     */
+    /** The profile list, and the one the server calls active. */
     fun parseProfiles(body: String): ProfilesPage {
         val json = JSONObject(body)
         val profiles = json.optJSONObject("profiles")
@@ -129,42 +77,17 @@ object ChatApi {
         )
     }
 
-    /**
-     * The turns waiting behind this chat's current run, oldest first.
-     *
-     * The same `/api/llm/session/{id}` tree as everything else here, with
-     * `queue_messages` last — which matters, because the router walks its
-     * routes in registration order and a `/queue_messages` registered after
-     * `/messages` and before `/stream` is what keeps `/stream` reachable
-     * (`main.zig:549`, and the route-order contract in `stream_get.zig:177`).
-     *
-     * The queue is server state with no replay: a turn queued while this app
-     * was closed emits its `queue_queued` frame into the void, so this read is
-     * the only way to learn it happened. The `queue` SSE channel keeps it live
-     * afterwards.
-     */
+    /** The turns waiting behind this chat's current run, oldest first. */
     fun queueMessagesPath(sessionId: String): String =
         "/api/llm/session/${encodeQueryValue(sessionId)}/queue_messages"
 
-    /**
-     * `{"messages": [{"id", "message"}], "count": n}`.
-     *
-     * The array is the authority and `count` is not read: the server computes
-     * the two together (`queue_messages_get.zig`), so trusting `count` would
-     * only add a second way for the number and the list to disagree.
-     *
-     * `message` is nullable — Migration 054 dropped the NOT NULL so the
-     * background-process rows that carry only an image can live in the same
-     * table — so it is read through [optNullableString] and a textless row
-     * renders as a placeholder rather than as the word `null`.
-     */
+    /** `{"messages": [{"id", "message"}], "count": n}`. */
     fun parseQueuedMessages(body: String): List<QueuedChatMessage> {
         val raw = JSONObject(body).optJSONArray("messages")
         return buildList(raw?.length() ?: 0) {
             for (index in 0 until (raw?.length() ?: 0)) {
                 val row = raw?.optJSONObject(index) ?: continue
-                // No id means no way to match a later `queue_deleted` to this
-                // row, so it could only ever be appended and never removed.
+                // No id means no way to match a later `queue_deleted` to this row, so it could only ever be appended and never removed.
                 val id = row.optNullableString("id").orEmpty()
                 if (id.isEmpty()) continue
                 add(
@@ -180,18 +103,7 @@ object ChatApi {
     fun stopPath(sessionId: String): String =
         "/api/llm/session/${encodeQueryValue(sessionId)}/stop"
 
-    /**
-     * Settles a pending `ask_user` question.
-     *
-     * The `ask_user` tool *ends the turn* — it records a question and returns.
-     * Nothing resumes until this is posted, which is why an unanswered question
-     * is a stuck chat rather than a missing message.
-     *
-     * `question_id` is preferred and `tool_call_id` is the fallback the card
-     * always has, because it is on the tool row. The endpoint is idempotent, so
-     * a double tap or a retry after a timeout returns the stored status rather
-     * than an error.
-     */
+    /** Settles a pending `ask_user` question. */
     fun answerPath(sessionId: String): String =
         "/api/llm/session/${encodeQueryValue(sessionId)}/answer"
 
@@ -209,13 +121,7 @@ object ChatApi {
     fun streamSnapshotPath(sessionId: String): String =
         "/api/llm/session/${encodeQueryValue(sessionId)}/stream"
 
-    /**
-     * Sending a message is the *same* endpoint that creates a session. Omitting
-     * `session_id` mints one; supplying it queues a turn on the existing chat.
-     * It returns 201 as soon as the work is enqueued — the reply never contains
-     * the message, which is why the web waits for the SSE echo rather than
-     * inserting an optimistic bubble.
-     */
+    /** Sending a message is the *same* endpoint that creates a session. */
     fun sendMessageBody(
         sessionId: String,
         message: String,
@@ -228,8 +134,7 @@ object ChatApi {
         .put("queue_message", message)
         .put("allowed_tools", DEFAULT_ALLOWED_TOOLS)
         .put("cwd_session", cwd)
-        // Pipe-delimited, not a JSON array. This is the single most surprising
-        // field in the contract and the backend stores it verbatim.
+        // Pipe-delimited, not a JSON array.
         .put("image_urls", imageUrls.joinToString("|"))
         .put("video_urls", videoUrls.joinToString("|"))
         .put("selected_profile_model", selectedProfileModel)
@@ -256,20 +161,12 @@ object ChatApi {
             nextCursor = json.optNullableString("next_cursor"),
             selectedProfileModel = json.optNullableString("selected_profile_model").orEmpty(),
             cwd = json.optNullableString("cwd").orEmpty(),
-            // `total`, not `total_count`. The desktop reads the key the server
-            // never emits and silently gets undefined.
+            // `total`, not `total_count`.
             total = if (json.isNull("total")) null else json.optInt("total"),
         )
     }
 
-    /**
-     * The one mapper. Every message the app renders — fresh from the network,
-     * replayed from the cache, or rebuilt from an SSE frame — goes through here.
-     *
-     * Returns null for a row with no id, because an idless row cannot be
-     * merged, de-duplicated or keyed by the list, and a duplicate key is a crash
-     * in `LazyColumn`.
-     */
+    /** The one mapper. */
     fun toChatMessage(row: JSONObject): ChatMessage? {
         val id = row.optNullableString("id").orEmpty()
         if (id.isEmpty()) return null
@@ -302,15 +199,7 @@ object ChatApi {
         null
     }
 
-    /**
-     * The backend's `created_at` is a JSON *string* holding a nanosecond
-     * integer, but some writers store a SQLite UTC datetime in the same column
-     * — so both shapes genuinely occur on the wire.
-     *
-     * Branching on "all digits" is not a shortcut: reading the datetime branch
-     * as a number yields a nonsense epoch that sorts the row to the wrong end
-     * of the transcript, which reads as a missing message rather than a bug.
-     */
+    /** The backend's `created_at` is a JSON *string* holding a nanosecond integer, but some writers store a SQLite UTC datetime in the same column — so both shapes … */
     fun parseCreatedAtNanos(raw: String?): Long {
         val trimmed = raw?.trim().orEmpty()
         if (trimmed.isEmpty()) return 0L
@@ -338,19 +227,12 @@ object ChatApi {
                 .toInstant(ZoneOffset.UTC)
                 .toEpochMilli()
         } catch (_: DateTimeException) {
-            // Calendar-invalid values ("2026-02-31 00:00:00") match the pattern
-            // but are not instants. A missing label beats a wrong one.
+            // Calendar-invalid values ("2026-02-31 00:00:00") match the pattern but are not instants.
             null
         }
     }
 
-    /**
-     * Write-through merge: a same-id incoming row replaces the cached value.
-     *
-     * Order is not touched here — callers pass a list they already hold in
-     * transcript order, and re-sorting mid-stream would fight the append that
-     * is already correct.
-     */
+    /** Write-through merge: a same-id incoming row replaces the cached value. */
     fun mergeById(
         current: List<ChatMessage>,
         incoming: List<ChatMessage>,
@@ -362,10 +244,7 @@ object ChatApi {
         return byId.values.toList()
     }
 
-    /**
-     * `image_url` / `video_url` are pipe-delimited strings, not arrays. A blank
-     * entry is dropped rather than rendered as an empty attachment.
-     */
+    /** `image_url` / `video_url` are pipe-delimited strings, not arrays. */
     fun splitPipeDelimited(raw: String?): List<String> =
         raw.orEmpty()
             .split('|')
@@ -378,39 +257,17 @@ object ChatApi {
     private val SqliteUtcPattern =
         Regex("""^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$""")
 
-    /**
-     * No max clamp on the server, so the client picks one. Unix nanoseconds
-     * since 2001 are 19 digits; 13 is a millisecond stamp, 10 a second stamp.
-     * Anything shorter is a year, not a timestamp.
-     */
+    /** No max clamp on the server, so the client picks one. */
     private const val MIN_NANO_DIGITS = 13
     private const val MAX_LIMIT = 1000
-    /**
-     * Shared rather than private: [ChatViewModel] stamps frame-delivered rows on
-     * the same scale the parser reads the server's `created_at` on, and two
-     * constants for one unit is how they drift apart.
-     */
+    /** Shared rather than private: [ChatViewModel] stamps frame-delivered rows on the same scale the parser reads the server's `created_at` on, and two constants for … */
     internal const val NANOS_PER_MILLI = 1_000_000L
 }
 
-/**
- * A string field, or null when it is absent or an explicit JSON null.
- *
- * `JSONObject.optString` renders an explicit null as the four-character text
- * `"null"`, so every field of an envelope the server marks optional would come
- * back as a string saying "null" rather than as nothing. This is top-level
- * rather than a member of [ChatApi] so the cache and the event stream — which
- * read the same wire shapes — share one rule instead of three copies of it.
- */
+/** A string field, or null when it is absent or an explicit JSON null. */
 internal fun JSONObject.optNullableString(name: String): String? =
     if (!has(name) || isNull(name)) null else optString(name).takeIf { it != "null" }
 
-/**
- * A nested object, or null when absent or an explicit JSON null.
- *
- * `usage` on a `chunk_final` frame is the reason this exists: the token counts
- * are nested one level down, and reading them from the top level yields nothing
- * on every single turn.
- */
+/** A nested object, or null when absent or an explicit JSON null. */
 internal fun JSONObject.optNullableObject(name: String): JSONObject? =
     if (!has(name) || isNull(name)) null else optJSONObject(name)

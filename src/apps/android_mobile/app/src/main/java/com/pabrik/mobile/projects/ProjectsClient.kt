@@ -7,16 +7,7 @@ import com.pabrik.mobile.auth.SessionStore
 import com.pabrik.mobile.recents.RecentsResult
 import java.net.HttpURLConnection
 
-/**
- * Reads the drawer's project lists over the same [AuthTransport] the auth flow
- * and [com.pabrik.mobile.recents.RecentsClient] use, so the app keeps a single
- * call site and the in-app network inspector shows these requests alongside
- * sign-in.
- *
- * The plumbing is deliberately a copy of `RecentsClient`'s — same cookie-only
- * auth, same status mapping, same sealed result. The one thing that is *not*
- * copied is the wording, see [messageForStatus].
- */
+/** Reads the drawer's project lists over the same [AuthTransport] the auth flow and [com.pabrik.mobile.recents.RecentsClient] use, so the app keeps a single call … */
 class ProjectsClient(
     private val sessionStore: SessionStore,
     baseUrlProvider: () -> String = { AuthConfig.BASE_URL },
@@ -31,10 +22,7 @@ class ProjectsClient(
         parse = ProjectsApi::parseItems,
     )
 
-    /**
-     * One page of [itemId]'s chats. Pass the previous page's `nextCursor` to get
-     * the next one; leave it null for the first page.
-     */
+    /** One page of [itemId]'s chats. */
     fun loadProjectChats(
         workspaceId: String,
         itemId: String,
@@ -45,25 +33,7 @@ class ProjectsClient(
         parse = { body -> ProjectsApi.parseProjectChatsPage(body, itemId) },
     )
 
-    /**
-     * Create a task under a project — an ordinary chat, a memory file, or a card
-     * on a kanban board.
-     *
-     * One method rather than three, because everything around the POST is
-     * identical: the same cookie header, the same status mapping, the same
-     * "a create that succeeded with no id is [RecentsResult.Unavailable]"
-     * rule. The only thing [request] changes is **which route** is posted to —
-     * `/tasks` for a chat and a memory, `/kanban/tasks` for a card — and the
-     * two routes answer in different shapes, so the parser is chosen the same
-     * way the path is.
-     *
-     * Returns the row the server just inserted, so the caller can paint it
-     * without re-fetching the page it landed in. A create that "succeeds" with
-     * no id is reported as [RecentsResult.Unavailable] rather than as an empty
-     * [com.pabrik.mobile.projects.ProjectChat]: there is nothing to open and
-     * nothing to select, and pretending otherwise would drop the reader into a
-     * chat route that cannot resolve.
-     */
+    /** Create a task under a project — an ordinary chat, a memory file, or a card on a kanban board. */
     fun createTask(
         workspaceId: String,
         itemId: String,
@@ -105,10 +75,7 @@ class ProjectsClient(
             return RecentsResult.Unavailable(createMessageForStatus(response.statusCode))
         }
 
-        // The two parsers are picked together with the two paths because
-        // getting this wrong is silent, not loud: parse a `{"task":…}` envelope
-        // with the bare-row parser and it returns null (no top-level `id`), and
-        // a perfectly good card is reported to the reader as a server error.
+        // The two parsers are picked together with the two paths because getting this wrong is silent, not loud: parse a `{"task":…}` envelope with the bare-row parser …
         val created = try {
             if (isKanbanCard) {
                 ProjectsApi.parseCreatedKanbanTask(response.body, itemId)
@@ -122,18 +89,7 @@ class ProjectsClient(
         return RecentsResult.Loaded(created)
     }
 
-    /**
-     * Cold-start fallback for the drawer's "New Chat" row: the workspace's
-     * default project, created server-side when there is none.
-     *
-     * Normally never called — `loadProjects` already went through
-     * `GET /api/workspaces/{ws}/items`, which ensures the default on read, so
-     * the list the ViewModel holds already carries it. This exists for the app
-     * having been open when Migration 094 ran.
-     *
-     * Cookie-only auth, exactly like [createTask]: this app sends the session
-     * cookie and no `Authorization` header.
-     */
+    /** Cold-start fallback for the drawer's "New Chat" row: the workspace's default project, created server-side when there is none. */
     suspend fun getOrCreateDefaultProject(
         workspaceId: String,
     ): RecentsResult<ProjectSummary> {
@@ -146,11 +102,7 @@ class ProjectsClient(
         val response = try {
             transport.post(
                 path = ProjectsApi.defaultProjectPath(workspaceId),
-                // No body: this is a command ("give me the default"), and the
-                // name and path are fixed by the invariant. The transport
-                // signature takes a non-null String, and the server route
-                // ignores the body, so an empty string is the honest
-                // "no body" here.
+                // No body: this is a command ("give me the default"), and the name and path are fixed by the invariant.
                 body = "",
                 headers = sessionCookie
                     ?.let { cookie ->
@@ -168,8 +120,7 @@ class ProjectsClient(
         if (response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED) {
             return RecentsResult.SignedOut
         }
-        // 200 = the default already existed, 201 = this call created it. Both
-        // are success; the body tells the caller which.
+        // 200 = the default already existed, 201 = this call created it.
         if (response.statusCode !in 200..299) {
             return RecentsResult.Unavailable(createMessageForStatus(response.statusCode))
         }
@@ -196,8 +147,7 @@ class ProjectsClient(
         val response = try {
             transport.get(
                 path = path,
-                // The backend reads the session from this cookie and from
-                // nowhere else, so it has to ride along on every call.
+                // The backend reads the session from this cookie and from nowhere else, so it has to ride along on every call.
                 headers = sessionCookie
                     ?.let { cookie -> mapOf("Cookie" to "${AuthConfig.SESSION_COOKIE_NAME}=$cookie") }
                     .orEmpty(),
@@ -224,40 +174,18 @@ class ProjectsClient(
     private fun unreachableMessage(): String =
         "Could not reach ${AuthConfig.BASE_URL}. Check your connection."
 
-    /**
-     * These say "projects", not "sidebar".
-     *
-     * `RecentsClient.messageForStatus` hard-codes "sidebar" into its 5xx and
-     * default messages, and reusing it here would tell a user whose *projects*
-     * failed to load that the server "could not load your sidebar". A wrong noun
-     * in a user-facing error is a small lie about what is broken, and this
-     * codebase's comments refuse exactly that kind of drift, so the wording is
-     * restated rather than shared.
-     */
+    /** These say "projects", not "sidebar". */
     private fun messageForStatus(statusCode: Int): String = when {
         statusCode == HttpURLConnection.HTTP_CLIENT_TIMEOUT -> unreachableMessage()
         statusCode in 500..599 -> "The server could not load your projects. Try again."
         else -> "Could not load your projects. Try again."
     }
 
-    /**
-     * The same statuses, said about a *write*.
-     *
-     * A distinct function rather than a parameter on [messageForStatus] because
-     * the two sentences are about different promises: "could not load" is
-     * describing a list the reader can still scroll, and "could not create"
-     * is telling them the thing they just asked for did not happen. Reusing the
-     * read wording on a failed create reads as though the create may have
-     * worked, which is exactly the ambiguity that sends people looking for a
-     * chat that was never made.
-     */
+    /** The same statuses, said about a *write*. */
     private fun createMessageForStatus(statusCode: Int): String = when {
         statusCode == HttpURLConnection.HTTP_CLIENT_TIMEOUT -> unreachableMessage()
         statusCode in 500..599 -> "The server could not create that. Try again."
-        // 400 and 403 land here. The server's own message names the offending
-        // field and this client cannot forward it safely — it is free text from
-        // a handler that has changed wording across migrations — so the app says
-        // what it can vouch for and the form re-asks.
+        // 400 and 403 land here.
         else -> "Could not create that. Check the name and try again."
     }
 

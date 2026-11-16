@@ -6,16 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The two rules the cache still owns in Kotlin: the `raw` envelope, and the
- * cursor rule.
- *
- * Everything this file used to test about *storage* — key namespacing, the JSON
- * envelope, merge, sort, corrupt-payload handling — is SQL now, and lives in
- * `RoomChatCacheTest` against a real database. That split is the point: the
- * things that were easy to get wrong by hand are now impossible to get wrong
- * by hand, and the tests moved to where the remaining risk actually is.
- */
+/** The two rules the cache still owns in Kotlin: the `raw` envelope, and the cursor rule. */
 class ChatCacheCodecTest {
 
     private fun row(
@@ -61,8 +52,7 @@ class ChatCacheCodecTest {
 
     @Test
     fun `a row without an id cannot be cached`() {
-        // The id is the primary key. A row that has none has no address, and
-        // storing it under a synthesized one would collide with a real row.
+        // The id is the primary key.
         assertNull(ChatCacheCodec.toCachedMessage("sess_1", JSONObject().put("content", "x")))
     }
 
@@ -97,9 +87,7 @@ class ChatCacheCodecTest {
 
     @Test
     fun `an empty delta keeps the previous cursor instead of wiping it to null`() {
-        // The server only sends `next_cursor` when `has_more` is true, so
-        // persisting it would null out a good cursor after every small delta
-        // and force a full descending reload on the next mount.
+        // The server only sends `next_cursor` when `has_more` is true, so persisting it would null out a good cursor after every small delta and force a full descending …
         assertEquals(
             "500",
             ChatCacheCodec.newestCursor(emptyList(), nextCursor = null, previousCursor = "500"),

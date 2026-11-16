@@ -1,5 +1,4 @@
-/** Tests for useAgentErrorStore — Pinia store backing the persistent per-session "agent error" card
- * slot. */
+/** Tests for useAgentErrorStore — Pinia store backing the persistent per-session "agent error" card slot. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAgentErrorStore } from '../stores/agentError'

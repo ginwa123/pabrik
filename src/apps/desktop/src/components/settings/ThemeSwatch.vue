@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { ThemeDefinition } from '../../theme/themes'
 
-/** The four-colour preview tile for a theme. Literal colours, not tokens: the tile can show a theme
- * that is not the applied one, so it cannot read the live cascade. */
+/** The four-colour preview tile for a theme. */
 const props = withDefaults(defineProps<{ swatch: ThemeDefinition['swatch']; large?: boolean }>(), {
   large: false,
 })

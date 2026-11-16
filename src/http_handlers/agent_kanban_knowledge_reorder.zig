@@ -1,6 +1,4 @@
-//! `PATCH /api/agent-kanbans/:kanban_id/knowledge/reorder`. Body:
-//! `{ordered_ids: string[]}`. Reorders the board's knowledge rows to match
-//! the supplied order.
+//! `PATCH /api/agent-kanbans/:kanban_id/knowledge/reorder`. Body
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -14,8 +12,7 @@ const ReorderBody = struct {
     ordered_ids: []const []const u8 = &.{},
 };
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const KnowledgeReorderError = error{
     /// `kanban_id` path param was missing or empty.
     KanbanIdRequired,
@@ -33,13 +30,9 @@ pub const KnowledgeReorderInput = struct {
     ordered_ids: []const []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Reorder knowledge rows for the given agent-kanbans config. All updates
-/// happen inside a single BEGIN/COMMIT — if any UPDATE fails the whole
-/// reorder rolls back.
+/// Reorder knowledge rows for the given agent-kanbans config.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -55,9 +48,7 @@ fn useCase(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanKnowledgeReorderHandler(
@@ -112,7 +103,6 @@ pub fn agentKanbanKnowledgeReorderHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

@@ -1,5 +1,4 @@
-//! LLM tool: `set_design_page` — idempotent create/update for a design canvas
-//! page.
+//! LLM tool: `set_design_page` — idempotent create/update for a design canvas page.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -12,16 +11,11 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `set_design_page` tool. The agent passes `item_id`
-/// from the active chat context (injected by the frontend via
-/// `BuildDesignCanvasPrompt` into the system prompt).
+/// Input structure for `set_design_page` tool.
 pub const SetDesignPageInput = struct {
-    /// The design workspace item id. From the chat's workspace context
-    /// (system prompt's `## Workspace Context` section). Always starts
-    /// with `item_` and has `item_type = 'design'`.
+    /// The design workspace item id.
     item_id: []const u8 = "",
-    /// Human-readable page name (e.g. "Login", "Dashboard", "Settings"). Must
-    /// be unique within the design item.
+    /// Human-readable page name (e.g.
     page_name: []const u8 = "",
     /// Page width in CSS pixels. Defaults to 1440 when null.
     width: ?i64 = null,
@@ -81,31 +75,25 @@ pub const set_design_page_tool = AgentTool{
     },
 };
 
-/// Generate an error JSON object (replaces the old per-tool XML escape +
-/// error envelope helpers).
+/// Generate an error JSON object (replaces the old per-tool XML escape + error envelope helpers).
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
     return try std.json.Stringify.valueAlloc(allocator, .{ .@"error" = clean }, .{});
 }
 
-/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it
-/// on return. Used to avoid leaks when the caller's message is an
-/// `allocPrint` result (can't `defer` across a `return`).
+/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it on return.
 pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     defer allocator.free(error_msg);
     return try errorJSON(allocator, error_msg);
 }
 
-/// Detect the two known LLM id-confusion mistakes (task_id or column_id
-/// passed where item_id was expected).
+/// Detect the two known LLM id-confusion mistakes (task_id or column_id passed where item_id was expected).
 pub fn validateItemIdShape(allocator: std.mem.Allocator, item_id: []const u8) !?[]u8 {
     if (item_id.len == 0) {
         return try errorJSON(allocator, "item_id is required (pass the design item's id from the Workspace Context listing)");
     }
-    // The DB-generated ids use these prefixes (see workspace_items_create.zig
-    // for item_, workspace_item_tasks_create.zig for task_,
-    // kanban_model.generateColumnId for col_, workspaces_create.zig for ws_).
+    // The DB-generated ids use these prefixes (see workspace_items_create.zig for item_, workspace_item_tasks_create.zig for task_, kanban_model.generateColumnId for …
     if (std.mem.startsWith(u8, item_id, "task_")) {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator,
             \\item_id '{s}' looks like a TASK id (starts with 'task_'). Pass the DESIGN's item_id instead — find it next to the literal text `item_id: ` in the Workspace Context listing. The item_id always starts with 'item_'.
@@ -140,9 +128,7 @@ pub fn executeSetDesignPageToString(
     db: *database.Db,
     input: SetDesignPageInput,
 ) ![]u8 {
-    // 0. Detect the four known LLM id-confusion mistakes. Runs BEFORE
-    //    the DB query so the LLM gets a fast, typed error instead of
-    //    a silent failure.
+    // 0.
     if (try validateItemIdShape(allocator, input.item_id)) |err_xml| {
         return err_xml;
     }
@@ -158,14 +144,11 @@ pub fn executeSetDesignPageToString(
         return try errorJSON(allocator, "page_name must not contain null bytes");
     }
 
-    // 2. Resolve width/height defaults (1440 × 1024 = v6 standard
-    //    design viewport).
+    // 2.
     const width = input.width orelse 1440;
     const height = input.height orelse 1024;
 
-    // 3. Idempotent create/update. Returns the page_id of the
-    //    existing-or-newly-created page. Errors are surfaced as
-    //    structured {"error":...} responses.
+    // 3.
     const page_id = design_model.setDesignPage(allocator, db, .{
         .item_id = input.item_id,
         .page_name = input.page_name,
@@ -178,23 +161,17 @@ pub fn executeSetDesignPageToString(
     };
     defer allocator.free(page_id);
 
-    // 4. Re-fetch the page + all elements via getPageWithElements
-    //    (returns a bundled PageWithElements — single query for the
-    //    page, single query for the elements).
+    // 4.
     var bundle = design_model.getPageWithElements(allocator, db, page_id) catch |err| {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: getPageWithElements failed: {s}", .{@errorName(err)}));
     };
     defer bundle.deinit(allocator);
 
-    // 5. Render the JSON. The element list omits `html` (the LLM
-    //    doesn't need it) and emits the file_path so the LLM knows
-    //    where the on-disk content lives.
+    // 5.
     return try toJSON(allocator, bundle.page, bundle.elements);
 }
 
-/// Serialize a page + its elements to the LLM-facing JSON string. Element
-/// shape (per design §6.2 response, keys mirror the old `<element ... />`
-/// attributes 1:1; omitted-when-empty attributes become explicit nulls).
+/// Serialize a page + its elements to the LLM-facing JSON string.
 pub const PageElementJSON = struct {
     id: []const u8,
     name: []const u8,
@@ -256,8 +233,7 @@ pub fn toJSON(
     }, .{});
 }
 
-/// Clean an optional free-text field: empty becomes null, otherwise the
-/// control-char-sanitized copy owned by the caller's arena.
+/// Clean an optional free-text field: empty becomes null, otherwise the control-char-sanitized copy owned by the caller's arena.
 fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     if (s.len == 0) return null;
     return try sanitizeControlChars(allocator, s);
@@ -457,8 +433,7 @@ test "errorJSON on missing field returns an error object" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the v6 design schema (workspace_items +
-/// design_pages + design_page_elements with the 11 Migration 057 columns).
+/// Set up an in-memory SQLite with the v6 design schema (workspace_items + design_pages + design_page_elements with the 11 Migration 057 columns).
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded, item_id: []u8, item_path: []u8 } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -521,8 +496,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded, item_id: []u8
         \\    FOREIGN KEY (page_id) REFERENCES design_pages(id) ON DELETE CASCADE)
     , &.{});
 
-    // Real tempdir for path (setDesignPage needs a non-empty path so
-    // its `ItemPathMissing` early-return doesn't fire).
+    // Real tempdir for path (setDesignPage needs a non-empty path so its `ItemPathMissing` early-return doesn't fire).
     var tmp = testing.tmpDir(.{});
     var tmpdir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmpdir_len = try tmp.dir.realPath(testing.io, &tmpdir_buf);
@@ -585,8 +559,7 @@ test "executeSetDesignPageToString is idempotent on second call with same name" 
     try testing.expectEqual(@as(i64, 800), parsed1.value.object.get("width").?.integer);
     try testing.expectEqual(@as(i64, 600), parsed1.value.object.get("height").?.integer);
 
-    // Second call with same name → must reuse the same page id (idempotent
-    // upsert via setDesignPage), and pick up the new dimensions.
+    // Second call with same name → must reuse the same page id (idempotent upsert via setDesignPage), and pick up the new dimensions.
     const input2 = SetDesignPageInput{
         .item_id = s.item_id,
         .page_name = "Login",
@@ -771,7 +744,6 @@ test "executeSetDesignPageToString returns ItemPathMissing error when item has n
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -794,9 +766,7 @@ pub fn execSetDesignPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // executeSetDesignPageToString returns a JSON string. Errors are
-    // encoded as {"error":...</error></page> so the LLM sees a
-    // structured failure rather than a tool crash.
+    // executeSetDesignPageToString returns a JSON string.
     const inner = executeSetDesignPageToString(
         ctx.allocator,
         ctx.db,
@@ -809,9 +779,7 @@ pub fn execSetDesignPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

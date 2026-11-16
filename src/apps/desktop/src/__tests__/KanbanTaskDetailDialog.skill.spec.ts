@@ -1,6 +1,4 @@
-/** Skills picker in KanbanTaskDetailDialog (create mode only). Migration 112:
- * a checkbox dropdown that stays open, a search box, and removable chips.
- * Mount pattern: same as KanbanTaskDetailDialog.profile.spec.ts. */
+/** Skills picker in KanbanTaskDetailDialog (create mode only). Migration 112 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

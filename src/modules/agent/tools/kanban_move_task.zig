@@ -23,30 +23,21 @@ pub fn freeColumnMatches(allocator: std.mem.Allocator, matches: []ColumnMatch) v
     allocator.free(matches);
 }
 
-/// Input structure for kanban_move_task tool. The agent should pass
-/// `workspace_id` + `item_id` from the active chat context (injected by the
-/// frontend — see Sub-task 5 of the task plan).
+/// Input structure for kanban_move_task tool.
 pub const KanbanMoveTaskInput = struct {
     /// The workspace that owns the kanban item. From chat context.
     workspace_id: []const u8 = "",
     /// The kanban workspace item id. From chat context.
     item_id: []const u8 = "",
-    /// The task to move. Found via `kanban_list` (returns each
-    /// task's `<id>`).
+    /// The task to move.
     task_id: []const u8 = "",
-    /// Target column — exact id (preferred when known). The agent
-    /// gets this from `kanban_list` output.
+    /// Target column — exact id (preferred when known).
     target_column_id: ?[]const u8 = null,
-    /// Target column — human-readable name (e.g. "done"). Matched
-    /// case-insensitively after trim against the board's columns.
+    /// Target column — human-readable name (e.g.
     target_column_name: ?[]const u8 = null,
-    /// 0-based position within the target column. When null, the
-    /// task is appended to the end (server picks a high position
-    /// that the renumber will compact to last).
+    /// 0-based position within the target column.
     position: ?i64 = null,
-    /// Migration 111 — skip the dependency gate. Only for a blocker the agent
-    /// can justify out loud in its reply; the default (false) refuses the move
-    /// and names the unfinished tasks instead.
+    /// Migration 111 — skip the dependency gate.
     force: bool = false,
 };
 
@@ -118,9 +109,7 @@ pub const kanban_move_task_tool = AgentTool{
     },
 };
 
-/// Resolve a column name to an id via a case-insensitive trimmed match
-/// against the board's columns. Returns the FIRST match (or an empty slice
-/// when no match).
+/// Resolve a column name to an id via a case-insensitive trimmed match against the board's columns.
 pub fn findColumnsByName(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -162,9 +151,7 @@ pub fn findColumnsByName(
     return try matches.toOwnedSlice(allocator);
 }
 
-/// Lowercase a string into a stack buffer when it fits, else heap. The
-/// pointer-equality on the returned slice tells the caller whether to free
-/// it. Trims nothing — the caller should trim first.
+/// Lowercase a string into a stack buffer when it fits, else heap.
 fn toLowerInto(allocator: std.mem.Allocator, s: []const u8, buf: []u8) ![]const u8 {
     if (s.len > buf.len) {
         const out = try allocator.alloc(u8, s.len);
@@ -179,17 +166,13 @@ fn toLowerInto(allocator: std.mem.Allocator, s: []const u8, buf: []u8) ![]const 
     return buf[0..s.len];
 }
 
-/// Read a task's current column id + name from the DB. Used to
-/// enrich the success response (so the LLM can confirm "the task
-/// moved to column X").
+/// Read a task's current column id + name from the DB.
 fn readTaskCurrentColumn(
     allocator: std.mem.Allocator,
     db: *database.Db,
     task_id: []const u8,
 ) !struct { column_id: []u8, column_name: []u8 } {
-    // After Migration 072, the task's current kanban column lives in the
-    // `kanban` join table. LEFT JOIN kanban so unassigned tasks (no kanban
-    // row) return column_id = '' + column_name = '' (the COALESCE fallback).
+    // After Migration 072, the task's current kanban column lives in the `kanban` join table.
     var q = try db.query(allocator,
         \\SELECT COALESCE(CAST(k.kanban_column_id AS TEXT), ''), COALESCE(CAST(kc.name AS TEXT), '')
         \\FROM workspace_item_tasks t
@@ -218,8 +201,7 @@ pub fn executeKanbanMoveTaskToJSON(
     if (input.item_id.len == 0) return errorJSON(allocator, "Missing required field: item_id");
     if (input.task_id.len == 0) return errorJSON(allocator, "Missing required field: task_id");
 
-    // Matches array (for target_column_name resolution) must outlive the use
-    // of `target_column_id` (which borrows from matches[0].id).
+    // Matches array (for target_column_name resolution) must outlive the use of `target_column_id` (which borrows from matches[0].id).
     var name_matches: ?[]ColumnMatch = null;
     defer if (name_matches) |m| freeColumnMatches(allocator, m);
 
@@ -279,8 +261,7 @@ pub fn executeKanbanMoveTaskToJSON(
     const position_str = try std.fmt.allocPrint(allocator, "{d}", .{position});
     defer allocator.free(position_str);
 
-    // 3. Call kanban_model.moveTaskChecked — this applies the Migration 111
-    //    dependency gate, then handles the sibling renumber atomically.
+    // 3.
     pabrikcore.ai_mod.kanban_model.moveTaskChecked(
         allocator,
         db,
@@ -294,8 +275,7 @@ pub fn executeKanbanMoveTaskToJSON(
         else => return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: moveTask failed: {s}", .{@errorName(err)})),
     };
 
-    // 3a. Emit the `kanban_task` SSE event so connected KanbanView clients
-    // refresh their board.
+    // 3a.
     pabrikcore.ai_mod.on_event_sent_kanban.onEventSendKanbanTask(allocator, .{
         .action = "moved",
         .workspace_id = input.workspace_id,
@@ -304,15 +284,11 @@ pub fn executeKanbanMoveTaskToJSON(
         .new_column_id = target_column_id,
         .new_position = position,
     }) catch |err| {
-        // Non-fatal: the LLM still gets the success XML; the
-        // card auto-refresh just won't fire on sibling tabs.
-        // The next kanban mutation will re-emit and catch up.
+        // Non-fatal: the LLM still gets the success XML; the card auto-refresh just won't fire on sibling tabs.
         std.log.warn("kanban_move_task: SSE emit failed (non-fatal): {s}", .{@errorName(err)});
     };
 
-    // 4. Read the post-move state (column name) for the success
-    //    response. The task was just moved to target_column_id, so
-    //    we know its new column id — just look up the name.
+    // 4.
     const post = readTaskCurrentColumn(allocator, db, input.task_id) catch |err| {
         return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: readTaskCurrentColumn failed: {s}", .{@errorName(err)}));
     };
@@ -322,8 +298,7 @@ pub fn executeKanbanMoveTaskToJSON(
     return successJSON(allocator, input.task_id, task_name_slice, post.column_id, post.column_name, position);
 }
 
-/// Success payload for `kanban_move_task`. Keys mirror the old
-/// `<kanban_move>` child tags 1:1.
+/// Success payload for `kanban_move_task`.
 pub const KanbanMoveSuccess = struct {
     success: bool,
     task_id: []const u8,
@@ -362,8 +337,7 @@ pub fn successJSON(
     }, .{});
 }
 
-/// Generate the error JSON payload. Mirrors the pattern in
-/// `set_git_worktree.zig` / `add_skill.zig`.
+/// Generate the error JSON payload.
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -373,8 +347,7 @@ pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     }, .{});
 }
 
-/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it after
-/// use.
+/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it after use.
 pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     defer allocator.free(error_msg);
     return errorJSON(allocator, error_msg);
@@ -393,13 +366,11 @@ pub const KanbanMoveBlocked = struct {
     blocked: bool = true,
     task_id: []const u8,
     @"error": []const u8,
-    /// The tasks that must finish first. Finish THESE — retrying the move (or
-    /// passing `force`) is not progress.
+    /// The tasks that must finish first.
     blocked_by: []const BlockedDependency,
 };
 
-/// Explain a refused move: WHICH tasks are unfinished, in which column, and
-/// that the way forward is to finish them.
+/// Explain a refused move: WHICH tasks are unfinished, in which column, and that the way forward is to finish them.
 fn blockedJSON(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -416,8 +387,7 @@ fn blockedJSON(
             .{@errorName(err)},
         ));
     };
-    // Freed through `kanban_model.deps` — the same module copy that produced
-    // the slice.
+    // Freed through `kanban_model.deps` — the same module copy that produced the slice.
     defer pabrikcore.ai_mod.kanban_model.deps.freeEdges(allocator, blocked);
 
     const names = try allocator.alloc(BlockedDependency, blocked.len);
@@ -569,8 +539,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  task_type TEXT
         \\)
     , &.{});
-    // Post-Migration-072 schema: the task→column mapping lives in the
-    // `kanban` join table, not on workspace_item_tasks directly.
+    // Post-Migration-072 schema: the task→column mapping lives in the `kanban` join table, not on workspace_item_tasks directly.
     try db.exec(alloc,
         \\CREATE TABLE kanban (
         \\  workspace_item_task_id TEXT PRIMARY KEY,
@@ -793,7 +762,6 @@ test "executeKanbanMoveTaskToJSON without position appends to end of column" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -828,9 +796,7 @@ pub fn execKanbanMoveTask(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {"success":false,"error":...} via the top-level "error" key
-    // (parsed, not substring-matched, so task/column names containing
-    // the word "error" can't false-positive).
+    // Detect {"success":false,"error":...} via the top-level "error" key (parsed, not substring-matched, so task/column names containing the word "error" can't …
     if (std.json.parseFromSlice(struct { @"error": ?[]const u8 = null }, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {

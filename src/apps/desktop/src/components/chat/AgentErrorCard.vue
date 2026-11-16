@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** AgentErrorCard — dedicated renderer for agentic-loop error/retry diagnostics
- * (task_1787663566535_2). */
+/** AgentErrorCard — dedicated renderer for agentic-loop error/retry diagnostics (task_1787663566535_2). */
 import { computed } from 'vue'
 import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 
@@ -16,8 +15,7 @@ const delayMs = computed((): string | null => {
   return m ? m[1]! : null
 })
 
-// Everything after "Server said:" — the raw server detail (HTTP body,
-// SSE sample, etc.). May span multiple lines.
+// Everything after "Server said:" — the raw server detail (HTTP body, SSE sample, etc.).
 const serverDetail = computed((): string | null => {
   const idx = props.content.indexOf('Server said:')
   if (idx === -1) return null

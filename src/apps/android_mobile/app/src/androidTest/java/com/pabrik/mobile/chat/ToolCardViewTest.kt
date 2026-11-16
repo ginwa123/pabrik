@@ -15,16 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * Tool cards, as drawn.
- *
- * The unit tests cover the parsing; these cover the two things only a composed
- * tree can show. First, that a tool row renders as a *card* and not as a chat
- * bubble — the regression this feature exists to fix, and one no parser test
- * can catch. Second, that expansion survives the `LazyColumn` recycling a card
- * through an off-screen pass, which is the whole reason the open/closed state
- * is hoisted above the list.
- */
+/** Tool cards, as drawn. */
 class ToolCardViewTest {
 
     @get:Rule
@@ -75,8 +66,7 @@ class ToolCardViewTest {
         )
 
         compose.onNodeWithTag("chat_tool_t1").assertIsDisplayed()
-        // The old rendering: a bubble carrying the tool name as a caption and
-        // the raw envelope as its body.
+        // The old rendering: a bubble carrying the tool name as a caption and the raw envelope as its body.
         compose.onAllNodesWithTag("chat_message_t1").assertCountEquals(0)
     }
 
@@ -115,10 +105,7 @@ class ToolCardViewTest {
         compose.onNodeWithText("/etc/hosts", substring = true).assertIsDisplayed()
     }
 
-    /**
-     * The one bit of state a card owns. Hoisted above the `LazyColumn` in
-     * `ChatView`, so scrolling a card off screen and back must not close it.
-     */
+    /** The one bit of state a card owns. */
     @Test
     fun anExpandedCardStaysOpen() {
         render(
@@ -135,17 +122,14 @@ class ToolCardViewTest {
         compose.onAllNodesWithTag("tool_card_chevron")[0].performClick()
         compose.onAllNodesWithTag("read_file_body").assertCountEquals(1)
 
-        // The other card is independent, so tapping its own chevron must not
-        // disturb the first.
+        // The other card is independent, so tapping its own chevron must not disturb the first.
         compose.onAllNodesWithTag("tool_card_chevron")[1].performClick()
         compose.onAllNodesWithTag("read_file_body").assertCountEquals(2)
     }
 
     @Test
     fun aStillRunningCardSaysSoAndTakesItsPathFromTheArguments() {
-        // The placeholder row has no result at all, so the path can only come
-        // from `parameters`. Without it the card reads "unknown" for the whole
-        // time the tool takes.
+        // The placeholder row has no result at all, so the path can only come from `parameters`.
         render(
             ChatUiState(
                 sessionId = "s",
@@ -193,11 +177,7 @@ class ToolCardViewTest {
         compose.onNodeWithText("No such file", substring = true).assertIsDisplayed()
     }
 
-    /**
-     * A diff is the one body with real layout, and the gutter is the part that
-     * silently drifts: line numbers that do not line up with their text read as
-     * corruption rather than as an off-by-one.
-     */
+    /** A diff is the one body with real layout, and the gutter is the part that silently drifts: line numbers that do not line up with their text read as corruption … */
     @Test
     fun aTextReplaceCardDrawsADiff() {
         render(
@@ -221,14 +201,7 @@ class ToolCardViewTest {
         compose.onNodeWithText("c", substring = true).assertIsDisplayed()
     }
 
-    /**
-     * A call with no result yet is the only thing drawing that call, so it gets
-     * a header — and nothing else. No bubble: the row says "I am going to call
-     * this", which is not something worth a message.
-     *
-     * The paired half is in `ChatViewTest`: once the result lands, this header
-     * disappears, because the card already shows the same call.
-     */
+    /** A call with no result yet is the only thing drawing that call, so it gets a header — and nothing else. */
     @Test
     fun anUnansweredToolCallRendersAsASummary() {
         render(
@@ -239,8 +212,7 @@ class ToolCardViewTest {
                     ChatMessage(
                         id = "a1",
                         role = ChatMessage.ROLE_ASSISTANT,
-                        // The body is empty on such a turn; only the call list
-                        // says anything happened.
+                        // The body is empty on such a turn; only the call list says anything happened.
                         content = "",
                         createdAtEpochMillis = 0L,
                         sortKeyNanos = 0L,
@@ -280,8 +252,7 @@ class ToolCardViewTest {
             onAnswer = { answers.add(it) },
         )
 
-        // `ask_user` ends the run, so this card defaults to open — a collapsed
-        // blocking question is a chat that looks hung.
+        // `ask_user` ends the run, so this card defaults to open — a collapsed blocking question is a chat that looks hung.
         compose.onNodeWithTag("question_text").assertIsDisplayed()
         compose.onNodeWithTag("question_blocked_note").assertIsDisplayed()
         // Nothing selected yet, so the send affordance does nothing.
@@ -346,8 +317,7 @@ class ToolCardViewTest {
         )
 
         compose.onNodeWithTag("question_text").assertIsDisplayed()
-        // Offering an answer to a settled question would post a second one, and
-        // the endpoint would silently return the stored status.
+        // Offering an answer to a settled question would post a second one, and the endpoint would silently return the stored status.
         compose.onAllNodesWithTag("question_send").assertCountEquals(0)
     }
 }

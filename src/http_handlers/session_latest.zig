@@ -1,6 +1,4 @@
 //! `GET /api/sessions/latest?cwd=...` — fetch the latest session for a cwd.
-//! Layered as `useCase` (resolve singleton + DB query) and a thin handler
-//! that maps the outcome + errors to status codes / JSON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,17 +23,14 @@ pub const SessionLatestData = struct {
     created_at: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     cwd: []const u8,
 ) SessionLatestError!SessionLatestResult {
-    // Local arena isolates allocations to this use-case so the
-    // returned data can outlive the function scope cleanly.
+    // Local arena isolates allocations to this use-case so the returned data can outlive the function scope cleanly.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
@@ -46,9 +41,7 @@ fn useCase(
     ) catch return error.QueryFailed;
 
     if (latest_session) |session| {
-        // Copy out of the local arena so the returned data
-        // outlives the useCase (the caller's per-request arena
-        // will reap it at request end).
+        // Copy out of the local arena so the returned data outlives the useCase (the caller's per-request arena will reap it at request end).
         return .{
             .found = .{
                 .session_id = try allocator.dupe(u8, session.session_id),
@@ -60,9 +53,7 @@ fn useCase(
     return .not_found;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn sessionLatestHandler(
     ctx: gserverz.HttpContext,

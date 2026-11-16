@@ -6,8 +6,7 @@ const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dialect = common.dialect;
 
-/// Migration 145 — a session can carry one pending delegation: the agent the
-/// next turn belongs to, set by the `delegate_agent` tool.
+/// Migration 145 — a session can carry one pending delegation: the agent the next turn belongs to, set by the `delegate_agent` tool.
 pub const Migration145AddPendingDelegate = struct {
     pub const version: u32 = 145;
     pub const name = "add_pending_delegate";

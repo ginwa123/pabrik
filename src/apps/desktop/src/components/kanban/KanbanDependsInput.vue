@@ -57,14 +57,12 @@ const emit = defineEmits<{
   'update:modelValue': [ids: string[]]
 }>()
 
-// Free-text filter for the dropdown. Local state — picking is a
-// discrete event, same as KanbanTagsInput's draftInput.
+// Free-text filter for the dropdown.
 const filter = ref('')
 const isFocused = ref(false)
 const highlightedIndex = ref(-1)
 
-// Name lookup for chip labels. Unknown ids (stale edges) fall
-// back to the raw id so the chip still renders + can be removed.
+// Name lookup for chip labels.
 const nameById = computed<Record<string, string>>(() => {
   const map: Record<string, string> = {}
   for (const t of props.tasks) map[t.id] = t.name
@@ -73,8 +71,7 @@ const nameById = computed<Record<string, string>>(() => {
 const labelFor = (id: string): string => nameById.value[id] ?? id
 const isBlocked = (id: string): boolean => props.blockedIds.includes(id)
 
-// Dropdown rows: other tasks of the board, minus self and minus
-// already-chosen, filtered by case-insensitive name substring.
+// Dropdown rows: other tasks of the board, minus self and minus already-chosen, filtered by case-insensitive name substring.
 const dropdownRows = computed<DependsCandidate[]>(() => {
   const chosen = new Set(props.modelValue)
   const q = filter.value.trim().toLowerCase()
@@ -110,8 +107,7 @@ function onFocus(): void {
 }
 
 function onBlur(): void {
-  // Same 150ms delayed close as KanbanTagsInput so a row click
-  // lands before the dropdown unmounts.
+  // Same 150ms delayed close as KanbanTagsInput so a row click lands before the dropdown unmounts.
   setTimeout(() => {
     isFocused.value = false
     highlightedIndex.value = -1

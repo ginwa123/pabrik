@@ -1,14 +1,11 @@
-/** Regression tests for the programmatic-scroll signal (2026-08-25 append-gap fix,
- * task_1787668645042_0). Bug: VirtualScroller.measureItems()'s anchor compensation writes
- * `containerRef.scrollTop` directly. */
+/** Regression tests for the programmatic-scroll signal (2026-08-25 append-gap fix, task_1787668645042_0). */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
 import { readChatViewSource } from '../../__tests__/helpers/chatViewSource'
 
-/** Mount a scroller with N items at the ChatView-like settings
- * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport. */
+/** Mount a scroller with N items at the ChatView-like settings (defaultItemHeight 64, buffer 30) and a fixed 800px viewport. */
 function mountScroller(n: number) {
   const items = Array.from({ length: n }, (_, i) => ({ id: i }))
   const wrapper = mount(VirtualScroller, {
@@ -32,15 +29,12 @@ function scroll(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/**  * Simulate the browser firing the scroll event that follows a programmatic scrollTop write:
- * dispatch WITHOUT touching scrollTop — the element's current (post-write) value is what onScroll
- * reads. */
+/** Simulate the browser firing the scroll event that follows a programmatic scrollTop write */
 function fireScrollEvent(el: HTMLElement) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/** Give every rendered child a fake offsetHeight: `tallPx` for items
- * above `anchorIndex`, `estimatePx` for the rest. */
+/** Give every rendered child a fake offsetHeight: `tallPx` for items above `anchorIndex`, `estimatePx` for the rest. */
 function mockChildHeights(el: HTMLElement, anchorIndex: number, tallPx: number, estimatePx: number) {
   const content = el.querySelector('.virtual-scroller-content')
   if (!content) throw new Error('.virtual-scroller-content not found')
@@ -56,8 +50,7 @@ function scrollEmits(wrapper: ReturnType<typeof mountScroller>['wrapper']) {
   return (wrapper.emitted('scroll') ?? []) as Array<[number, string, HTMLElement, boolean]>
 }
 
-// Viewport geometry: scrollTop 6400 → anchor item 100; buffer=30 puts
-// items 70..143 in the DOM, so 30 children sit ABOVE the anchor.
+// Viewport geometry: scrollTop 6400 → anchor item 100; buffer=30 puts items 70..143 in the DOM, so 30 children sit ABOVE the anchor.
 const ABOVE_ANCHOR_COUNT = 30
 
 describe('VirtualScroller programmatic-scroll signal', () => {
@@ -84,9 +77,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
   })
 
   it('anchor-compensation scrollTop write emits isProgrammatic=true (the append-gap misread)', async () => {
-    // Scenario: user parked mid-list (anchor = item 100). The measure pass discovers every
-    // above-anchor buffer item is really 300px (vs the 64px estimate) → compensation moves
-    // scrollTop UP by Σ(300−64).
+    // Scenario: user parked mid-list (anchor = item 100).
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 
@@ -100,8 +91,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
     vi.advanceTimersByTime(60) // debounced measureItems runs + compensates
     await nextTick()
 
-    // Compensation actually ran: scrollTop advanced by Σ(300−64) over
-    // the 30 above-anchor buffer items.
+    // Compensation actually ran: scrollTop advanced by Σ(300−64) over the 30 above-anchor buffer items.
     const expectedShift = ABOVE_ANCHOR_COUNT * (300 - 64)
     expect(el.scrollTop).toBe(6400 + expectedShift)
 
@@ -121,9 +111,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
   })
 
   it('DOWNWARD compensation (content settles shorter) is also programmatic — the exact misread case', async () => {
-    // The production failure: measured heights come in BELOW the estimate, compensation moves
-    // scrollTop DOWN, and the old code read deltaTop<0 as "user scrolled up". The label must be
-    // true so ChatView can exclude it from userScrolledUp.
+    // The production failure: measured heights come in BELOW the estimate, compensation moves scrollTop DOWN, and the old code read deltaTop<0 as "user scrolled up".
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 
@@ -147,8 +135,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
     vi.advanceTimersByTime(60)
     await nextTick()
 
-    // scrollTop moved DOWN by Σ(100−300) — the old code's false
-    // "user scrolled up" signal.
+    // scrollTop moved DOWN by Σ(100−300) — the old code's false "user scrolled up" signal.
     const downShift = ABOVE_ANCHOR_COUNT * (100 - 300)
     expect(el.scrollTop).toBe(afterGrowth + downShift)
 
@@ -165,8 +152,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
   })
 
   it('the programmatic mark is consumed by exactly ONE scroll event', async () => {
-    // One compensation write → exactly one labeled event; the NEXT
-    // user-dispatched scroll must be false again (no flag leakage).
+    // One compensation write → exactly one labeled event; the NEXT user-dispatched scroll must be false again (no flag leakage).
     const { wrapper, el } = mountScroller(255)
     await nextTick()
 
@@ -194,9 +180,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
 describe('ChatView handleVirtualScroll programmatic guard (static contract)', () => {
   it('userScrolledUp must exclude programmatic scroll events', async () => {
     const src = readChatViewSource()
-    // The guard must not treat a programmatic compensation write as a
-    // real upward gesture — otherwise isAtBottom flips false and the
-    // auto-stick disengages for the rest of the stream (the gap bug).
+    // The guard must not treat a programmatic compensation write as a real upward gesture — otherwise isAtBottom flips false and the auto-stick disengages for the …
     expect(src).toMatch(/userScrolledUp\s*=\s*!isProgrammatic\s*&&\s*deltaTop\s*<\s*0/)
   })
 

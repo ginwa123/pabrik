@@ -1,5 +1,4 @@
-// Functional coverage for the document agent tools — `document` reads and
-// searches, `document_markdown` writes (create / edit / delete).
+// Functional coverage for the document agent tools — `document` reads and searches, `document_markdown` writes (create / edit / delete).
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,12 +10,9 @@ const io = testing.io;
 const DOCUMENT_MARKDOWN = "document_markdown";
 const DOCUMENT_READER = "document";
 
-// ============================================================================
 // Expected tool list — mirrors tests/functional/default_tools.py
-// ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the wire
-/// order of `GET /api/agents/:agent_id/tools`.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the wire order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "add_skill",
     "command",
@@ -56,8 +52,7 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "write_file",
 };
 
-/// The four per-action names `document_markdown` replaced. None of them may
-/// survive in the registry or the seeded set.
+/// The four per-action names `document_markdown` replaced.
 const RETIRED_DOCUMENT_TOOLS = [_][]const u8{
     "add_document",
     "edit_document",
@@ -65,8 +60,7 @@ const RETIRED_DOCUMENT_TOOLS = [_][]const u8{
     "delete_document",
 };
 
-/// `DEFAULT_AGENT_TOOLS` minus `document_markdown` — the post-DELETE
-/// expectation, so the assertion is about the SET and not a re-derivation.
+/// `DEFAULT_AGENT_TOOLS` minus `document_markdown` — the post-DELETE expectation, so the assertion is about the SET and not a re-derivation.
 const DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS = [_][]const u8{
     "add_skill",
     "command",
@@ -105,9 +99,7 @@ const DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS = [_][]const u8{
     "write_file",
 };
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -126,9 +118,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent
-/// item's id. Owned. `path` is derived from `h.temp_dir` — see the
-/// module header for why.
+/// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent item's id.
 fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"doc-tools-agent"});
     defer gpa.free(agent_path);
@@ -200,8 +190,7 @@ fn addDocument(h: *Harness, workspace_id: []const u8, title: []const u8, content
     return gpa.dupe(u8, id);
 }
 
-/// A GET whose body the caller parses itself. Returns OWNED bytes —
-/// a `harness.Json` would alias the `Response` body this frame frees.
+/// A GET whose body the caller parses itself.
 fn getOwned(h: *Harness, path: []const u8, expect: []const u16) ![]u8 {
     var r = try h.http(io, .GET, path, .{ .expect = expect });
     defer r.deinit();
@@ -257,8 +246,7 @@ fn namesContain(names: []const []u8, needle: []const u8) bool {
     return false;
 }
 
-/// `assert sorted(after) == sorted(want)` — sorts the wire list so the
-/// assertion is about the SET, exactly as the Python did.
+/// `assert sorted(after) == sorted(want)` — sorts the wire list so the assertion is about the SET, exactly as the Python did.
 fn expectSortedSet(names: []const []u8, want: []const []const u8) !void {
     const sorted = try gpa.dupe([]const u8, names);
     defer gpa.free(sorted);
@@ -278,8 +266,7 @@ fn expectSortedSet(names: []const []u8, want: []const []const u8) !void {
     }
 }
 
-/// `assert tools == DEFAULT_AGENT_TOOLS` — order-sensitive, on purpose:
-/// the wire order IS the contract the Python compared.
+/// `assert tools == DEFAULT_AGENT_TOOLS` — order-sensitive, on purpose
 fn expectExactSet(names: []const []u8, want: []const []const u8) !void {
     if (!nameSlicesEqual(names, want)) {
         const got = try std.mem.join(gpa, ", ", names);
@@ -291,9 +278,7 @@ fn expectExactSet(names: []const []u8, want: []const []const u8) !void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // REGISTRY — the tool exists, is dispatchable, and describes itself.
 test "registry_lists_both_document_tools" {
@@ -338,16 +323,13 @@ test "registry_lists_both_document_tools" {
         return error.TestUnexpectedResult;
     }
 
-    // A non-empty description is the floor: the registry feeds the
-    // `search_tool` catalog too, and an entry with no description is a
-    // row the model cannot choose on.
+    // A non-empty description is the floor: the registry feeds the `search_tool` catalog too, and an entry with no description is a row the model cannot choose on.
     if (std.mem.trim(u8, desc.?, " \t\r\n").len == 0) {
         std.debug.print("{s} has an empty description — nothing for the model to read\n", .{DOCUMENT_MARKDOWN});
         return error.TestUnexpectedResult;
     }
 
-    // The description has to name every action, or the model never
-    // discovers `delete`.
+    // The description has to name every action, or the model never discovers `delete`.
     for ([_][]const u8{ "create", "edit", "delete" }) |action| {
         if (std.mem.indexOf(u8, desc.?, action) == null) {
             std.debug.print("{s} must name the `{s}` action; got \"{s}\"\n", .{ DOCUMENT_MARKDOWN, action, desc.? });
@@ -355,15 +337,13 @@ test "registry_lists_both_document_tools" {
         }
     }
 
-    // `delete` is irreversible, and the description is the only place the
-    // model can learn that before it calls.
+    // `delete` is irreversible, and the description is the only place the model can learn that before it calls.
     if (std.mem.indexOf(u8, desc.?, "IRREVERSIBLE") == null) {
         std.debug.print("{s} must lead with the irreversibility of `delete`; got \"{s}\"\n", .{ DOCUMENT_MARKDOWN, desc.? });
         return error.TestUnexpectedResult;
     }
 
-    // The reader is a SEPARATE tool now, so its own description is where the
-    // model has to find `read` and `search`.
+    // The reader is a SEPARATE tool now, so its own description is where the model has to find `read` and `search`.
     const reader = reader_desc orelse {
         std.debug.print("{s} missing from the registry — the writer's read half is unreachable\n", .{DOCUMENT_READER});
         return error.TestUnexpectedResult;
@@ -407,14 +387,11 @@ test "fresh_agent_is_seeded_with_document_markdown" {
             return error.TestUnexpectedResult;
         }
     }
-    // The whole seeded set still matches the shared transcription, so this
-    // test doubles as the "you forgot default_tools.py" alarm.
+    // The whole seeded set still matches the shared transcription, so this test doubles as the "you forgot default_tools.py" alarm.
     try expectExactSet(tools, &DEFAULT_AGENT_TOOLS);
 }
 
 // Registered is not the same as enabled — the user can still tick it off.
-// `POST /api/agents/:id/tools` validates `tool_name` against
-// `UNIFIED_TOOL_REGISTRY` and 400s on anything unknown.
 test "document_markdown_can_be_disabled_and_reenabled" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -463,9 +440,7 @@ test "document_markdown_can_be_disabled_and_reenabled" {
     try expectExactSet(final, &DEFAULT_AGENT_TOOLS);
 }
 
-// The registry validation is real, not a rubber stamp. Without this, "POST
-// returned 201" in the test above would prove nothing — an endpoint that
-// accepts any string would pass it too.
+// The registry validation is real, not a rubber stamp.
 test "an_unknown_tool_name_is_still_rejected" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -554,9 +529,7 @@ test "documents_crud_round_trip_the_search_tool_reads" {
         try expectFieldStr(document, "content", "# Release plan\n\n- ship 095\n", raw);
     }
 
-    // A second document with the same title in a DIFFERENT workspace must
-    // not appear in the first workspace's list — the same `workspace_id`
-    // guard the `search` action relies on, exercised over the wire.
+    // A second document with the same title in a DIFFERENT workspace must not appear in the first workspace's list — the same `workspace_id` guard the `search` …
     {
         const other_ws = try createWorkspace(&h, "doc-tools-crud-other");
         defer gpa.free(other_ws);
@@ -613,9 +586,7 @@ test "documents_crud_round_trip_the_search_tool_reads" {
         }
     }
 
-    // A deleted document is gone for the tools too — 404, not a 200 with
-    // an empty body, so the `delete` action's "already gone" case and this
-    // one agree.
+    // A deleted document is gone for the tools too — 404, not a 200 with an empty body, so the `delete` action's "already gone" case and this one agree.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/documents/{s}", .{ ws_id, doc_id });
         defer gpa.free(path);
@@ -626,8 +597,6 @@ test "documents_crud_round_trip_the_search_tool_reads" {
 }
 
 // The `search` action has to match an empty body without erroring.
-// `SqliteBackend.exec` binds a zero-length slice as SQL NULL, so an empty
-// body is the one input that has historically broken writes.
 test "documents_body_empty_round_trips_as_empty_string" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -656,9 +625,7 @@ test "documents_body_empty_round_trips_as_empty_string" {
     try expectFieldStr(document, "content", "", raw);
 }
 
-// ============================================================================
 // Assertion helpers
-// ============================================================================
 
 fn expectFieldStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, body: []const u8) !void {
     const v = obj.get(key) orelse {
@@ -682,9 +649,7 @@ fn expectFieldStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, bo
     }
 }
 
-/// Element-wise equality over a list of tool names. `std.mem.eql([]const u8,
-/// a, b)` does not compile: its `a_elem != b_elem` test rejects a slice
-/// element. Comparing length then each name is the spelling that does.
+/// Element-wise equality over a list of tool names.
 fn nameSlicesEqual(a: []const []const u8, b: []const []const u8) bool {
     if (a.len != b.len) return false;
     for (a, b) |x, y| {
@@ -694,8 +659,7 @@ fn nameSlicesEqual(a: []const []const u8, b: []const []const u8) bool {
 }
 
 comptime {
-    // Body-analysis barrier — an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one stays invisible.
+    // Body-analysis barrier — an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible.
     _ = createWorkspace;
     _ = createAgent;
     _ = addDocument;

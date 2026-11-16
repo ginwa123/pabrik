@@ -41,16 +41,13 @@ const router = createRouter({
       name: 'task',
       component: AppLayout,
     },
-    // LEGACY kanban-settings route (plan: 2026-09-02-kanban-settings-as-page) — kept so old
-    // links still boot. The canonical shape is the workspace-scoped project route below.
+    // LEGACY kanban-settings route (plan: 2026-09-02-kanban-settings-as-page) — kept so old links still boot.
     {
       path: '/app/kanban/:itemId/settings',
       name: 'kanban-settings',
       component: AppLayout,
     },
-    // Path-based URL contract (plan: 2026-09-22-revamp-ui-chats). Most-specific first — vue-router
-    // matches in registration order. See `helpers/appUrl.ts` (single builder / parser) and
-    // `parseAppPath`'s RESERVED_FIRST_SEGMENTS guard.
+    // Path-based URL contract (plan: 2026-09-22-revamp-ui-chats).
     {
       path: '/app/:workspaceId/projects/:projectId/chat/:taskId',
       name: 'project-chat',
@@ -62,9 +59,7 @@ const router = createRouter({
       name: 'project-settings',
       component: AppLayout,
     },
-    // The board and its add-task page (`/add`) are ONE record on purpose: vue-router runs
-    // `onBeforeRouteUpdate` only for the records in BOTH the from- and the to-route, so as two
-    // records no guard ever saw the move between them (browser Back left the add page on screen).
+    // The board and its add-task page (`/add`) are ONE record on purpose: vue-router runs `onBeforeRouteUpdate` only for the records in BOTH the from- and the …
     {
       path: '/app/:workspaceId/projects/:projectId/:add(add)?',
       name: 'project',
@@ -75,16 +70,13 @@ const router = createRouter({
       name: 'workspace-chat',
       component: AppLayout,
     },
-    // Document page (Migration 095). A PAGE shape, not a `?doc=` overlay: the document replaces the
-    // main view, so it must own its own path instead of borrowing whichever one happened to be open
-    // underneath.
+    // Document page (Migration 095).
     {
       path: '/app/:workspaceId/doc/:documentId',
       name: 'workspace-doc',
       component: AppLayout,
     },
-    // Workspace settings page. Which settings SECTION is open is a query param (`?section=`), not a
-    // second path segment — `?tab=` belongs to browser tab-mode.
+    // Workspace settings page.
     {
       path: '/app/:workspaceId/settings',
       name: 'workspace-settings',
@@ -95,9 +87,7 @@ const router = createRouter({
       name: 'workspace',
       component: AppLayout,
     },
-    // Global catch-all: any path the backend's SPA fallback serves index.html for but no route
-    // above matches (stale deep link, refresh at a removed URL) lands on /app instead of rendering
-    // an empty router-view. Must stay LAST — Vue matches in order.
+    // Global catch-all: any path the backend's SPA fallback serves index.html for but no route above matches (stale deep link, refresh at a removed URL) lands on …
     {
       path: '/:pathMatch(.*)*',
       redirect: '/app',
@@ -108,9 +98,7 @@ const router = createRouter({
 /** The app's route table, exported so a test can mount the REAL paths (not a copy of them). */
 export const appRoutes: readonly RouteRecordRaw[] = router.options.routes
 
-// Auth guard: when the backend runs with `--auth`, every `/app*` view requires a valid
-// `pabrik_session` cookie. Anonymous visits redirect to `/login?redirect=<target>` (router.replace,
-// so Back skips the bounce); authed visits to `/login` bounce back to the target.
+// Auth guard: when the backend runs with `--auth`, every `/app*` view requires a valid `pabrik_session` cookie.
 function loadingStore() {
   try {
     return useLoadingStore()
@@ -129,8 +117,7 @@ function applyIdentity(
       : null
   const previousId = getCurrentUserId()
   if (previousId !== nextId) {
-    // Identity changed (including "was A, now nobody"): drop the previous
-    // user's scoped keys so they can never be painted under the new scope.
+    // Identity changed (including "was A, now nobody"): drop the previous user's scoped keys so they can never be painted under the new scope.
     setCurrentUserId(nextId)
     purgeForeignScopedKeys()
   } else {
@@ -159,8 +146,7 @@ router.beforeEach(async (to) => {
     return true
   }
   try {
-    // Cached + 4s timeout: the async auth check was the slowest part of
-    // a redirect (~20s on a busy boot) — see helpers/authMe.
+    // Cached + 4s timeout: the async auth check was the slowest part of a redirect (~20s on a busy boot) — see helpers/authMe.
     const { status, data } = await getAuthMeCached()
     applyIdentity(data)
     if (data) {
@@ -171,16 +157,14 @@ router.beforeEach(async (to) => {
     if (status === 401) {
       return { path: '/login', query: { redirect: to.fullPath }, replace: true }
     }
-    // Non-401 error (offline/500): let the view render; apiFetch
-    // toasts will surface the failure. Avoids login-loop on outage.
+    // Non-401 error (offline/500): let the view render; apiFetch toasts will surface the failure.
     return true
   } catch {
     return true
   }
 })
 
-/** The workspace a route names: its `:workspaceId` path segment, else the
- * legacy `?workspaceId=` query. */
+/** The workspace a route names: its `:workspaceId` path segment, else the legacy `?workspaceId=` query. */
 function workspaceIdOfRoute(to: { params: Record<string, unknown>; query: Record<string, unknown> }): string | null {
   const fromQuery = to.query.workspaceId
   const named = resolveWorkspaceId(

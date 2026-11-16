@@ -1,5 +1,4 @@
-//! `DELETE /api/workspaces/:workspace_id/documents/:document_id`. Removes one
-//! document.
+//! `DELETE /api/workspaces/:workspace_id/documents/:document_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,9 +19,7 @@ pub const DocumentsDeleteInput = struct {
     document_id: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -35,9 +32,7 @@ fn useCase(
     try store.deleteDocument(allocator, input.workspace_id, input.document_id);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn documentsDeleteHandler(
     ctx: gserverz.HttpContext,
@@ -151,8 +146,7 @@ test "useCase: deletes the document and leaves the sibling alone" {
         error.NotFound,
         documents_store.getDocument(alloc, &ctx.db, "ws_1", "doc_a"),
     );
-    // The other workspace's row is untouched — the scope is in the
-    // WHERE clause, so a delete cannot reach across.
+    // The other workspace's row is untouched — the scope is in the WHERE clause, so a delete cannot reach across.
     const survivor = try documents_store.getDocument(alloc, &ctx.db, "ws_2", "doc_b");
     defer documents_store.freeDocumentRow(alloc, survivor);
     try testing.expectEqualStrings("doc_b", survivor.id);

@@ -9,8 +9,7 @@ const helpers = @import("helpers");
 const cron = @import("../modules/agent/loop/cron.zig");
 const fire = @import("../modules/agent/loop/fire.zig");
 
-/// Request body for the routine-item create endpoint. `name` + `path`
-/// required; the rest optional.
+/// Request body for the routine-item create endpoint.
 const CreateRoutineBody = struct {
     name: []const u8,
     path: []const u8,
@@ -21,8 +20,7 @@ const CreateRoutineBody = struct {
     enabled: bool = true,
 };
 
-/// Response item — mirrors `CreateAgentItemResponse` with
-/// `item_type = "routine"`.
+/// Response item — mirrors `CreateAgentItemResponse` with `item_type = "routine"`.
 pub const CreateRoutineItemResponse = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -72,9 +70,7 @@ pub const WorkspaceItemsCreateRoutineInput = struct {
 
 pub const WorkspaceItemsCreateRoutineResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -87,19 +83,15 @@ fn useCase(
     if (trimmed_name.len == 0) return error.EmptyName;
     if (input.body.path.len == 0) return error.PathRequired;
 
-    // Validate the cron expression when one is given. Empty schedule =
-    // manual-run only (no validation, next_run_at stays NULL).
+    // Validate the cron expression when one is given.
     const trimmed_schedule = std.mem.trim(u8, input.body.schedule, " \t\n\r");
     if (trimmed_schedule.len > 0) {
         cron.validate(trimmed_schedule) catch return error.InvalidSchedule;
     }
 
-    // Compute next_run_at when scheduled + enabled. Empty schedule or
-    // disabled → NULL (bound as "" — Backend.exec binds empty
-    // slices as SQL NULL).
+    // Compute next_run_at when scheduled + enabled.
     var next_run_at: []const u8 = "";
-    // Owned only when computed; freed below after the INSERT dupes it
-    // via bind (exec copies bind values during the call).
+    // Owned only when computed; freed below after the INSERT dupes it via bind (exec copies bind values during the call).
     var next_run_at_owned: ?[]u8 = null;
     defer if (next_run_at_owned) |b| allocator.free(b);
     if (trimmed_schedule.len > 0 and input.body.enabled) {
@@ -113,9 +105,7 @@ fn useCase(
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
     errdefer allocator.free(item_id);
 
-    // tx so the 3 INSERTs are atomic (same rationale as the
-    // agent create — a crash mid-flow must not leave a
-    // workspace_items row without its routine siblings).
+    // tx so the 3 INSERTs are atomic (same rationale as the agent create — a crash mid-flow must not leave a workspace_items row without its routine siblings).
     var tx = db.begin() catch return error.DatabaseError;
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
@@ -125,9 +115,7 @@ fn useCase(
         &.{ item_id, input.workspace_id, trimmed_name, input.body.path, input.workspace_id },
     ) catch return error.DatabaseError;
 
-    // COALESCE(NULLIF(?, ''), '') guards the NOT NULL DEFAULT '' columns:
-    // Backend.exec binds empty slices as SQL NULL, which would violate
-    // the constraint (see memory `sqlite-backend-empty-slice-binds-as-null`).
+    // COALESCE(NULLIF(?, ''), '') guards the NOT NULL DEFAULT '' columns
     const enabled_str: []const u8 = if (input.body.enabled) "1" else "0";
     tx.exec(allocator,
         \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at, cwd)
@@ -136,9 +124,7 @@ fn useCase(
         &.{ item_id, item_id, input.body.description, input.body.instruction, trimmed_schedule, enabled_str, next_run_at, input.body.cwd },
     ) catch return error.DatabaseError;
 
-    // Seed the agent_routines config row so the RoutineView Agent tab works
-    // immediately (mirrors the agent_kanbans seed in
-    // workspace_items_create_kanban.zig).
+    // Seed the agent_routines config row so the RoutineView Agent tab works immediately (mirrors the agent_kanbans seed in workspace_items_create_kanban.zig).
     tx.exec(allocator,
         "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'routine') ON CONFLICT DO NOTHING",
         &.{ item_id, item_id },
@@ -174,8 +160,7 @@ fn useCase(
     return json;
 }
 
-/// Re-read the `position` of a freshly-INSERTed workspace_item
-/// (mirrors `workspace_items_create_agent.zig::readInsertedPosition`).
+/// Re-read the `position` of a freshly-INSERTed workspace_item (mirrors `workspace_items_create_agent.zig::readInsertedPosition`).
 fn readInsertedPosition(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -193,9 +178,7 @@ fn readInsertedPosition(
     return 0;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workspaceItemsCreateRoutineHandler(
     ctx: gserverz.HttpContext,

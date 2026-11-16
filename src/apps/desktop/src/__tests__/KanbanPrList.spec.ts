@@ -1,6 +1,4 @@
-/**  * Behavioural tests for KanbanPrList — the board-level change-request list. The critical
- * distinction (PR-#719 bug class): a failed forge call must render `pr-list-error`, never the empty
- * state. An empty list is ONLY rendered when the request resolved with `changes: []`. */
+/** Behavioural tests for KanbanPrList — the board-level change-request list. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
@@ -23,9 +21,7 @@ vi.mock('../api', async () => {
   }
 })
 
-// ConfirmDialog teleports to `body`, which escapes the wrapper — stub it in place so the confirm
-// flow stays queryable. The `pr-close-confirm` testid lives on the wrapper div in KanbanPrList's
-// own template, so it survives stubbing.
+// ConfirmDialog teleports to `body`, which escapes the wrapper — stub it in place so the confirm flow stays queryable.
 const ConfirmDialogStub = defineComponent({
   props: ['show', 'title', 'message', 'confirmText', 'cancelText'],
   emits: ['close', 'confirm'],
@@ -141,8 +137,7 @@ describe('KanbanPrList', () => {
     expect(row909.text()).toContain('On the board')
     expect(row909.text()).toContain('Board card')
     expect(wrapper.find('[data-testid="pr-list-row-910"]').exists()).toBe(false)
-    // …but turning the filter off reveals the off-board row with its
-    // "no card" badge.
+    // …but turning the filter off reveals the off-board row with its "no card" badge.
     await wrapper.find('[data-testid="pr-only-this-board"]').trigger('click')
     const row910 = wrapper.find('[data-testid="pr-list-row-910"]')
     expect(row910.exists()).toBe(true)
@@ -259,8 +254,7 @@ describe('KanbanPrList', () => {
     expect(listPrsMock).toHaveBeenCalledTimes(1)
     expect(listPrsMock).toHaveBeenLastCalledWith('/repo', { state: 'open', limit: 30 })
 
-    // A tab prop change alone refetches nothing — the parent owns
-    // the tab and calls reload() explicitly (local/no-watch).
+    // A tab prop change alone refetches nothing — the parent owns the tab and calls reload() explicitly (local/no-watch).
     await wrapper.setProps({ tab: 'closed' })
     await flushPromises()
     expect(listPrsMock).toHaveBeenCalledTimes(1)

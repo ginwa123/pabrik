@@ -12,29 +12,21 @@ const parse_thinking = @import("parse_thinking.zig");
 pub const SkillEvalsConfig = struct {
     /// Master switch. False = the feature is off and cannot spend anything.
     enabled: bool = false,
-    /// Upper bound on sub-agent fan-out within a single run. Above this the
-    /// remaining skills are recorded as skipped rather than silently dropped.
+    /// Upper bound on sub-agent fan-out within a single run.
     max_skills_per_run: u32 = 8,
     /// Daily ceiling on eval runs, counted from `skill_eval_runs.created_at`.
     max_evals_per_day: u32 = 10,
-    /// How long a `skill_eval_facts` row may sit in the `'computing'` lease
-    /// before another session may steal it. A crashed owner must not be able
-    /// to poison the shared cache forever.
+    /// How long a `skill_eval_facts` row may sit in the `'computing'` lease before another session may steal it.
     fact_lease_seconds: u32 = 300,
     /// Whether a skill that was *listed* but never loaded is evaluated too.
-    /// Off would hide the "the agent was offered the right skill and ignored
-    /// it" finding, which is a real one, so this defaults on.
     include_listed_without_loading: bool = true,
-    /// What may be done with a verdict. `propose` records and surfaces it but
-    /// never writes to a skill without a human clicking Apply.
+    /// What may be done with a verdict.
     apply_mode: ApplyMode = .propose,
 
     pub const ApplyMode = enum { off, propose, auto_low_risk };
 };
 
-/// Tolerant JSON mirror of `SkillEvalsConfig`. A separate type from the
-/// runtime one for the same reason `AgentJson` is separate from
-/// `LlmAgent`: the JSON side must survive a user typo.
+/// Tolerant JSON mirror of `SkillEvalsConfig`.
 pub const SkillEvalsJson = struct {
     enabled: bool = false,
     max_skills_per_run: u32 = 8,
@@ -90,67 +82,42 @@ pub const LlmConfig = struct {
     base_url: []const u8,
     model_compaction_size_kb: usize,
     mcpServers_parsed: ?json.Parsed(json.Value),
-    /// Typed map of MCP servers. Keys are server names, values are owned
-    /// `McpServerConfig` (with their own owned `url` and `headers`).
+    /// Typed map of MCP servers.
     mcp_servers: McpServersMap,
-    /// The configured agents, keyed by name. Parsed from the on-disk
-    /// `profiles_models` key (the storage contract keeps its old name).
+    /// The configured agents, keyed by name.
     agents: AgentsMap,
     url_style: []const u8,
-    /// When true, fire an OS-level notification when an LLM response finishes
-    /// with `finish_reason === 'stop'`. Off by default — the user opts in via
-    /// the config.
+    /// When true, fire an OS-level notification when an LLM response finishes with `finish_reason === 'stop'`.
     notify_on_complete: bool = true,
-    /// When true, fire an OS-level notification when the LLM workflow hits a
-    /// transport error, retries exhaust (TooManyRetries), or the outer
-    /// agentic loop catches an unrecoverable error.
+    /// When true, fire an OS-level notification when the LLM workflow hits a transport error, retries exhaust (TooManyRetries), or the outer agentic loop catches an …
     notify_on_error: bool = false,
-    /// When true, browser mode is on: the same UI served to the desktop
-    /// webview is advertised for the user's system browser on a random local
-    /// port (settings General tab shows the URL + auto-opens it).
+    /// When true, browser mode is on: the same UI served to the desktop webview is advertised for the user's system browser on a random local port (settings General …
     web_launch_enabled: bool = false,
     /// How the chat draws tool calls.
     chat_view: ChatViewMode = .dev,
-    /// Skill Evals — the agent evaluates the skills it actually used. Off by
-    /// default; see `SkillEvalsConfig` for the switch and the reasoning.
+    /// Skill Evals — the agent evaluates the skills it actually used.
     skill_evals: SkillEvalsConfig = .{},
-    /// Delay in milliseconds that the workflow sleeps before retrying a
-    /// failed `callDynamicAgentNew` call. 0 = no delay (current behavior, the
-    /// retry fires immediately on the next loop iteration).
+    /// Delay in milliseconds that the workflow sleeps before retrying a failed `callDynamicAgentNew` call. 0 = no delay (current behavior, the retry fires immediately …
     retry_delay_ms: u32 = 0,
-    /// Absolute path (or PATH name) of the interpreter that runs
-    /// `register_hook.py`. Empty = resolve it: `PABRIK_HOOK_PYTHON`, then the
-    /// first of `python`, `python3`, `py` that is a Python 3.
+    /// Absolute path (or PATH name) of the interpreter that runs `register_hook.py`.
     hook_python_bin: []const u8 = "",
-    /// Overall deadline in milliseconds for ONE streaming LLM call (response
-    /// head + body). A design turn's 100k-token prompt plus a 7k-token answer
-    /// needs more than the 5 minutes this used to be hard-coded to.
+    /// Overall deadline in milliseconds for ONE streaming LLM call (response head + body).
     llm_read_timeout_ms: u32 = 900_000,
     /// Optional top-level override for the context window (in tokens).
     max_capacity_token_model: ?u32 = null,
-    /// Optional top-level compaction threshold as a percentage (0-100) of the
-    /// model's context window.
+    /// Optional top-level compaction threshold as a percentage (0-100) of the model's context window.
     compaction_threshold_percent: ?u8 = null,
-    /// Add a model-written summary to each compaction envelope. Off by default:
-    /// the envelope is deterministic without it.
+    /// Add a model-written summary to each compaction envelope. Off by default
     compaction_llm_summary: bool = false,
-    /// Whether the AGENT may compact its own context through the `compaction`
-    /// tool. Absent → enabled. NOT the threshold switch: with the tool off the
-    /// loop still compacts at `compaction_threshold_percent`, and Compact works.
+    /// Whether the AGENT may compact its own context through the `compaction` tool.
     agent_auto_compaction: bool = true,
-    /// Plan 2026-08-06-set-active-profile-default — the agent the workflow
-    /// uses as the default when neither the session's selection nor the POST
-    /// names one. Parsed from the on-disk `active_profile` key.
+    /// Plan 2026-08-06-set-active-profile-default — the agent the workflow uses as the default when neither the session's selection nor the POST names one.
     active_agent: ?[]const u8 = null,
-    /// Owned slice of random sub-agent names that `resolveAgent` generated
-    /// for the random-fallback case. Each name is allocated on
-    /// `self.allocator` and is freed in `deinit`.
+    /// Owned slice of random sub-agent names that `resolveAgent` generated for the random-fallback case.
     random_names: [][]u8 = &.{},
-    /// Default tool checklist from config.json (plan
-    /// 2026-09-22-tools-menu-config-default-tools).
+    /// Default tool checklist from config.json (plan 2026-09-22-tools-menu-config-default-tools).
     tools: ?[]const []const u8 = null,
-    /// User-configured web-search providers, keyed by the provider name the
-    /// agent passes as the `provider` tool argument.
+    /// User-configured web-search providers, keyed by the provider name the agent passes as the `provider` tool argument.
     web_search: ?WebSearchProvidersMap = null,
 
     pub const LoadError = error{
@@ -164,25 +131,18 @@ pub const LlmConfig = struct {
         /// `compaction_threshold_percent` outside the 0..100 range.
         InvalidThresholdPercent,
         /// `thinking_budget_tokens` outside the (0, 2_000_000] range.
-        /// Surfaced by the HTTP PUT handler (plan 2026-08-23-model-thinking).
         InvalidThinkingBudgetTokens,
         /// `reasoning_effort` outside the {low, medium, high, auto} set.
-        /// Surfaced by the HTTP PUT handler via the `parse_thinking`
-        /// helper.
         InvalidReasoningEffort,
     };
 
-    /// Canonical `backend` values — the transport discriminator, orthogonal
-    /// to `url_style` (which describes HTTP wire format only).
+    /// Canonical `backend` values — the transport discriminator, orthogonal to `url_style` (which describes HTTP wire format only).
     pub const Backend = struct {
-        /// POST to `base_url` using the profile's `url_style`. The default
-        /// for every config that does not name a backend.
+        /// POST to `base_url` using the profile's `url_style`.
         pub const http = "http";
         /// Run the local `claude` CLI (subscription auth via `claude login`).
-        /// `base_url` / `api_key` / `url_style` do not apply.
         pub const claude_code = "claude-code";
         /// Run the local `opencode` CLI (agentic loop via `opencode run`).
-        /// `base_url` / `api_key` / `url_style` do not apply.
         pub const opencode = "opencode";
     };
 
@@ -194,58 +154,39 @@ pub const LlmConfig = struct {
         temperature: []const u8 = "auto",
         api_key: []const u8 = "",
         url_style: []const u8 = "openai",
-        /// The agent's persona. Injected into a spawned child's system
-        /// prompt as its `## Your Active Agent Configuration` block.
+        /// The agent's persona.
         system_prompt: []const u8 = "",
-        /// Transport discriminator — `""` (unset → resolves to `"http"`) or
-        /// `"claude-code"`.
+        /// Transport discriminator — `""` (unset → resolves to `"http"`) or `"claude-code"`.
         backend: []const u8 = "",
-        /// Claude Code only: the directory the `claude` CLI reads its
-        /// credentials/config from (`CLAUDE_CONFIG_DIR`).
+        /// Claude Code only: the directory the `claude` CLI reads its credentials/config from (`CLAUDE_CONFIG_DIR`).
         config_dir: ?[]const u8 = null,
-        /// Claude Code only: agentic turn ceiling passed as
-        /// `--max-turns`. `null` = the CLI's own default.
+        /// Claude Code only: agentic turn ceiling passed as `--max-turns`.
         max_turns: ?u32 = null,
-        /// OpenCode only: which of the CLI's agents runs the turn
-        /// (`--agent`). `null` = the CLI's default agent.
+        /// OpenCode only: which of the CLI's agents runs the turn (`--agent`).
         opencode_agent: ?[]const u8 = null,
-        /// OpenCode only: whether to pass `--auto`. `null` = on (the headless
-        /// default); `false` = off. Stored as an optional so the absent key
-        /// costs no allocation and `freeAgentsMap` stays balanced.
+        /// OpenCode only: whether to pass `--auto`.
         opencode_auto: ?bool = null,
-        /// Optional override for the context window (in tokens) used by this
-        /// agent.
+        /// Optional override for the context window (in tokens) used by this agent.
         max_capacity_tokens: ?u32 = null,
-        /// Compaction threshold as a percentage (0-100) of the model's
-        /// context window. `null` = use the built-in 80. Values > 100
-        /// are rejected by the HTTP layer with `error.InvalidThresholdPercent`.
+        /// Compaction threshold as a percentage (0-100) of the model's context window.
         compaction_threshold_percent: ?u8 = null,
-        /// Anthropic-only: override for `thinking.budget_tokens`. When set,
-        /// used directly by `buildJsonAnthropicRequest` (clamped to >=1024
-        /// and <max_tokens).
+        /// Anthropic-only: override for `thinking.budget_tokens`.
         thinking_budget_tokens: ?u32 = null,
-        /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1). One
-        /// of "low" | "medium" | "high" | "auto". Validated by
-        /// `parse_thinking.parseReasoningEffort`.
+        /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1).
         reasoning_effort: ?[]const u8 = null,
-        /// False = the profile is switched OFF: `list_agents` does not offer
-        /// it and `resolveAgent` will not resolve it. Absent = enabled, so
-        /// every pre-existing config keeps its exact behaviour.
+        /// False = the profile is switched OFF: `list_agents` does not offer it and `resolveAgent` will not resolve it.
         enabled: bool = true,
     };
 
     /// Resolved agent configuration — the output of `resolveAgent`.
     pub const ResolvedAgent = struct {
-        /// Name to record as `agent_name` for the spawned child's session
-        /// and to embed in the session_id suffix.
+        /// Name to record as `agent_name` for the spawned child's session and to embed in the session_id suffix.
         name: []const u8,
 
-        /// True iff `agent_name` was provided but not found among the
-        /// configured agents. False when the name was found.
+        /// True iff `agent_name` was provided but not found among the configured agents.
         is_random_fallback: bool,
 
-        /// The name the LLM originally requested. Useful for
-        /// logging. Empty if no `agent_name` was provided.
+        /// The name the LLM originally requested.
         requested_name: []const u8,
 
         /// Resolved LLM endpoint fields (overlay applied).
@@ -257,41 +198,31 @@ pub const LlmConfig = struct {
         /// Resolved transport — `"http"` | `"claude-code"`.
         backend: []const u8,
 
-        /// Claude Code only: resolved `CLAUDE_CONFIG_DIR` (`null` =
-        /// inherit / CLI default).
+        /// Claude Code only: resolved `CLAUDE_CONFIG_DIR` (`null` = inherit / CLI default).
         config_dir: ?[]const u8,
 
         /// Claude Code only: resolved `--max-turns` (`null` = inherit).
         max_turns: ?u32,
 
-        /// OpenCode only: resolved `--agent` (`null` = inherit / CLI
-        /// default).
+        /// OpenCode only: resolved `--agent` (`null` = inherit / CLI default).
         opencode_agent: ?[]const u8,
 
         /// OpenCode only: resolved `--auto` (`null` = inherit).
         opencode_auto: ?bool,
 
-        /// Resolved `thinking` setting. `null` = "auto" — inherit
-        /// from parent's value at run time.
+        /// Resolved `thinking` setting.
         is_thinking: ?bool,
 
-        /// Resolved `temperature` setting. `null` = "auto" — inherit
-        /// from parent's value at run time.
+        /// Resolved `temperature` setting.
         temperature: ?f32,
 
-        /// Resolved Anthropic `thinking.budget_tokens` override. `null`
-        /// = inherit from the parent agent. Range-validated upstream
-        /// (HTTP layer rejects 0 or > 2_000_000).
+        /// Resolved Anthropic `thinking.budget_tokens` override.
         thinking_budget_tokens: ?u32,
 
-        /// Resolved OpenAI `reasoning_effort` value (already validated
-        /// to one of "low" | "medium" | "high" | "auto"). `null` =
-        /// inherit from the parent agent.
+        /// Resolved OpenAI `reasoning_effort` value (already validated to one of "low" | "medium" | "high" | "auto").
         reasoning_effort: ?[]const u8,
 
-        /// System prompt to inject as the child's
-        /// `## Your Active Agent Configuration`. Empty for the
-        /// random-fallback case.
+        /// System prompt to inject as the child's `## Your Active Agent Configuration`.
         system_prompt: []const u8,
 
         /// The agent this config came from. `""` for the random fallback.
@@ -307,8 +238,7 @@ pub const LlmConfig = struct {
         url_style: []const u8 = "openai",
         /// The agent's persona. Absent = no system prompt.
         system_prompt: []const u8 = "",
-        /// Transport discriminator. Absent key = `"http"`, which is what
-        /// keeps every pre-existing config byte-identical.
+        /// Transport discriminator.
         backend: []const u8 = "http",
         /// Claude Code only: `CLAUDE_CONFIG_DIR`. Null = CLI default.
         config_dir: ?[]const u8 = null,
@@ -319,18 +249,12 @@ pub const LlmConfig = struct {
         /// OpenCode only: `--auto`. Null = on (the headless default).
         opencode_auto: ?bool = null,
         /// Optional per-profile override for the context window (in tokens).
-        /// Null = use LLMModels built-in per-model default.
         max_capacity_tokens: ?u32 = null,
-        /// Optional per-profile override for the compaction threshold
-        /// percentage (0-100). Null = use built-in 80. Range-validated
-        /// at the HTTP layer.
+        /// Optional per-profile override for the compaction threshold percentage (0-100).
         compaction_threshold_percent: ?u8 = null,
-        /// Anthropic-only override for `thinking.budget_tokens`. Range-
-        /// validated upstream (HTTP layer rejects 0 or > 2_000_000).
+        /// Anthropic-only override for `thinking.budget_tokens`.
         thinking_budget_tokens: ?u32 = null,
         /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1).
-        /// Parsed via `parse_thinking.parseReasoningEffort`; a bad
-        /// value here surfaces at HTTP layer as `InvalidReasoningEffort`.
         reasoning_effort: ?[]const u8 = null,
     };
 
@@ -340,58 +264,41 @@ pub const LlmConfig = struct {
         base_url: []const u8 = "",
         url_style: []const u8 = "openai",
         model_compaction_size_kb: usize = 100,
-        /// Opt-in: fire an OS notification when an LLM response finishes
-        /// with `finish_reason === 'stop'`. Default false (user must
-        /// explicitly enable in config to avoid surprise notifications).
+        /// Opt-in: fire an OS notification when an LLM response finishes with `finish_reason === 'stop'`.
         notify_on_complete: bool = false,
-        /// Opt-in: fire an OS notification when the LLM workflow hits an
-        /// error (transport failure, TooManyRetries, outer catch). Default
-        /// false.
+        /// Opt-in: fire an OS notification when the LLM workflow hits an error (transport failure, TooManyRetries, outer catch).
         notify_on_error: bool = false,
-        /// Opt-in: allow the agent to launch URLs in the user's web
-        /// browser. Default false. Mirrors `notify_on_complete`.
+        /// Opt-in: allow the agent to launch URLs in the user's web browser.
         web_launch_enabled: bool = false,
         /// How the chat draws tool calls: "dev" or "compact".
         chat_view: []const u8 = "dev",
         /// Skill Evals.
         skill_evals: SkillEvalsJson = .{},
         /// Delay in milliseconds before retrying a failed workflow call.
-        /// See `LlmConfig.retry_delay_ms` for semantics. Plan
-        /// 2026-07-15-retry-delay.
         retry_delay_ms: u32 = 0,
         /// Interpreter for `register_hook.py`. Empty = auto-resolve.
         hook_python_bin: []const u8 = "",
         /// Overall deadline in milliseconds for one streaming LLM call.
-        /// See `LlmConfig.llm_read_timeout_ms`.
         llm_read_timeout_ms: u32 = 900_000,
         /// Optional top-level override for the context window (in tokens).
-        /// Null = fall through to the per-profile override, then built-in.
         max_capacity_token_model: ?u32 = null,
         /// Optional top-level compaction threshold as a percentage (0-100).
-        /// Null = fall through to per-profile override, then 80.
         compaction_threshold_percent: ?u8 = null,
-        /// Add a model-written summary to each compaction envelope. Off by
-        /// default: the envelope is deterministic without it.
+        /// Add a model-written summary to each compaction envelope.
         compaction_llm_summary: bool = false,
         /// Whether the agent may compact its own context (`compaction` tool).
-        /// Null = the key is absent, which reads as enabled.
         agent_auto_compaction: ?bool = null,
-        /// Plan 2026-08-06-set-active-profile-default — name of the profile
-        /// to use as the default when no other selection is set.
+        /// Plan 2026-08-06-set-active-profile-default — name of the profile to use as the default when no other selection is set.
         active_profile: ?[]const u8 = null,
         /// Configured MCP servers (snake_case, matches PABRIK.md JSON convention).
         mcp_servers: ?std.json.Value = null,
         /// Profiles - parsed as json.Value then converted to map
         profiles_models: ?std.json.Value = null,
         /// Stable per-install UUID used as the LLM-API end-user identifier.
-        /// Empty string when missing from the parsed JSON (legacy configs).
         user_identifier: []const u8 = "",
-        /// Default tool checklist (plan
-        /// 2026-09-22-tools-menu-config-default-tools).
+        /// Default tool checklist (plan 2026-09-22-tools-menu-config-default-tools).
         tools: ?[]const []const u8 = null,
-        /// Configured web-search providers (snake_case). Raw JSON value
-        /// parsed into the typed `WebSearchProvidersMap`; the map owns the
-        /// duped strings because this parse struct borrows.
+        /// Configured web-search providers (snake_case).
         web_search: ?std.json.Value = null,
     };
 
@@ -405,12 +312,9 @@ pub const LlmConfig = struct {
     };
 
     /// Map of HTTP header name to header value for a single MCP server.
-    /// The map owns both the keys and the values (all are allocated strings).
     pub const McpHeadersMap = std.StringHashMap([]const u8);
 
-    /// Typed configuration for a single MCP server. Each entry is EITHER an
-    /// HTTP server (with `url` + optional `headers`) OR a stdio server (with
-    /// `command` + optional `args` + optional `cwd`).
+    /// Typed configuration for a single MCP server.
     pub const McpServerConfig = struct {
         /// HTTP transport: the URL of the MCP server. Null for stdio entries.
         url: ?[]const u8,
@@ -422,23 +326,18 @@ pub const LlmConfig = struct {
         args: ?[]const []const u8,
         /// stdio transport: working directory. Null = inherit from parent.
         cwd: ?[]const u8,
-        /// Whether the server is enabled. Defaults to true — absent or
-        /// non-bool `enabled` values parse as true (ignored, not fatal).
+        /// Whether the server is enabled.
         enabled: bool = true,
 
         pub const Transport = enum { http, stdio };
 
-        /// Returns the transport discriminator — derived from which
-        /// field is set. `command` takes precedence over `url` (so a
-        /// future "hybrid" entry would default to stdio).
+        /// Returns the transport discriminator — derived from which field is set.
         pub fn transport(self: McpServerConfig) Transport {
             if (self.command) |c| if (c.len > 0) return .stdio;
             return .http;
         }
 
-        /// Returns true when the server is configured with exactly one
-        /// non-empty transport (HTTP url OR stdio command, but not both,
-        /// not neither, not either empty).
+        /// Returns true when the server is configured with exactly one non-empty transport (HTTP url OR stdio command, but not both, not neither, not either empty).
         pub fn isValid(self: McpServerConfig) bool {
             const has_url = if (self.url) |u| u.len > 0 else false;
             const has_cmd = if (self.command) |c| c.len > 0 else false;
@@ -446,33 +345,23 @@ pub const LlmConfig = struct {
         }
     };
 
-    /// Map of MCP server name (e.g. "context7") to its typed configuration.
-    /// The map owns the server-name keys and the `McpServerConfig` payloads.
+    /// Map of MCP server name (e.g.
     pub const McpServersMap = std.StringHashMap(McpServerConfig);
 
     /// One user-configured web-search provider.
     pub const WebSearchProviderEntry = struct {
-        /// The host pin. This is the ONLY host whose requests may ever
-        /// carry `key`; it is compared against the host of whatever curl
-        /// the agent sends, before substitution happens.
+        /// The host pin.
         url: []const u8,
-        /// The credential. Optional — a self-hosted provider needs none.
-        /// An absent field means "no credential"; `""` is never a valid
-        /// stored value (see `isUsable`).
+        /// The credential.
         key: ?[]const u8 = null,
-        /// Request template copied from the provider's own docs, with
-        /// `{key}` where the credential goes.
+        /// Request template copied from the provider's own docs, with `{key}` where the credential goes.
         curl: []const u8,
-        /// Free-text note the user writes about when to prefer this
-        /// provider. Optional. `curl` says HOW to call it; this says
-        /// WHEN to use it.
+        /// Free-text note the user writes about when to prefer this provider.
         description: ?[]const u8 = null,
         /// Defaults to true, mirroring `McpServerConfig.enabled`.
         enabled: bool = true,
 
-        /// True when this entry can actually be dispatched: it is enabled,
-        /// has a host pin and a template, and — if it declares a credential —
-        /// that credential is non-empty.
+        /// True when this entry can actually be dispatched: it is enabled, has a host pin and a template, and — if it declares a credential — that credential is non-empty.
         pub fn isUsable(self: WebSearchProviderEntry) bool {
             if (!self.enabled) return false;
             if (self.url.len == 0) return false;
@@ -484,8 +373,7 @@ pub const LlmConfig = struct {
         }
     };
 
-    /// Map of provider name (e.g. "tinyfish") to its configuration. The
-    /// name is what the agent passes as the `provider` tool argument.
+    /// Map of provider name (e.g.
     pub const WebSearchProvidersMap = std.StringHashMap(WebSearchProviderEntry);
 
     /// Free every owned string in a `WebSearchProvidersMap`, then the map.
@@ -502,9 +390,7 @@ pub const LlmConfig = struct {
         map.deinit();
     }
 
-    /// Parse one provider entry from its JSON object. Returns null (with a
-    /// warning) for a malformed entry rather than aborting the whole map:
-    /// one bad paste must not take every other provider down with it.
+    /// Parse one provider entry from its JSON object.
     fn parseWebSearchProviderEntry(
         allocator: std.mem.Allocator,
         name: []const u8,
@@ -516,9 +402,7 @@ pub const LlmConfig = struct {
         }
         const obj = value.object;
 
-        // A hand-edited entry with a numeric or null field is a typo, not
-        // a crash. Read each field defensively rather than trusting the
-        // shape the way a typed parse struct would.
+        // A hand-edited entry with a numeric or null field is a typo, not a crash.
         const url_raw = switch (obj.get("url") orelse json.Value{ .null = {} }) {
             .string => |s| s,
             else => {
@@ -546,9 +430,7 @@ pub const LlmConfig = struct {
             allocator.free(entry.curl);
         }
 
-        // `key` is OPTIONAL — a self-hosted provider has none. An empty
-        // string is normalised to absent here so `isUsable` has a single
-        // rule to check.
+        // `key` is OPTIONAL — a self-hosted provider has none.
         if (obj.get("key")) |kv| switch (kv) {
             .string => |s| if (s.len > 0) {
                 entry.key = try allocator.dupe(u8, s);
@@ -571,8 +453,7 @@ pub const LlmConfig = struct {
         return entry;
     }
 
-    /// Free the owned strings in one provider entry. The name key is NOT
-    /// freed — the map owns it.
+    /// Free the owned strings in one provider entry.
     fn freeWebSearchProviderEntry(cfg: *WebSearchProviderEntry, allocator: std.mem.Allocator) void {
         allocator.free(cfg.url);
         allocator.free(cfg.curl);
@@ -595,9 +476,7 @@ pub const LlmConfig = struct {
 
         var it = raw.object.iterator();
         while (it.next()) |entry| {
-            // A hand-edited file with the same provider name twice keeps the
-            // first entry. JSON parsers hand us both, and silently letting
-            // the last one win would make the pin depend on document order.
+            // A hand-edited file with the same provider name twice keeps the first entry.
             if (providers.contains(entry.key_ptr.*)) {
                 std.log.warn("duplicate web_search provider '{s}'; keeping the first", .{entry.key_ptr.*});
                 continue;
@@ -615,9 +494,7 @@ pub const LlmConfig = struct {
         return providers;
     }
 
-    /// Initialize an `LlmConfig` from disk (boot / file mode only). Thin I/O
-    /// wrapper around `initFromJsonText`: resolves the path, reads the file,
-    /// then delegates to the single JSON -> struct mapping.
+    /// Initialize an `LlmConfig` from disk (boot / file mode only).
     pub fn init(allocator: std.mem.Allocator, io: std.Io, path: ?[]const u8, environment: *std.process.Environ.Map) LoadError!LlmConfig {
         const config_path = if (path) |p|
             try allocator.dupe(u8, p)
@@ -625,8 +502,7 @@ pub const LlmConfig = struct {
             try getDefaultConfigPath(allocator, environment);
         defer allocator.free(config_path);
 
-        // `config_path` is either the validated default path (see
-        // `getDefaultConfigDir`) or an explicit `--config <path>` argument.
+        // `config_path` is either the validated default path (see `getDefaultConfigDir`) or an explicit `--config <path>` argument.
         if (!std.fs.path.isAbsolute(config_path)) {
             std.log.warn("Config path is not an absolute path: {s}", .{config_path});
             return error.ConfigFileNotFound;
@@ -634,9 +510,7 @@ pub const LlmConfig = struct {
 
         const file = Io.Dir.openFileAbsolute(io, config_path, .{}) catch |err| switch (err) {
             error.FileNotFound => blk: {
-                // First-run auto-init: only for the default path. An explicit
-                // path that doesn't exist is treated as a user error (they
-                // asked us to read a specific file and it's missing).
+                // First-run auto-init: only for the default path.
                 if (path != null) {
                     std.log.info("Config file not found at explicit path {s}", .{config_path});
                     return error.ConfigFileNotFound;
@@ -649,9 +523,7 @@ pub const LlmConfig = struct {
                     std.log.warn("Failed to auto-create config file {s}: {s}", .{ config_path, @errorName(write_err) });
                     return error.ConfigFileNotFound;
                 };
-                // Retry the open. If THIS fails (e.g. permission denied on
-                // the new file), surface it as ConfigFileNotFound to match
-                // the rest of the catch arm's behavior.
+                // Retry the open.
                 break :blk Io.Dir.openFileAbsolute(io, config_path, .{}) catch |retry_err| {
                     std.log.warn("Failed to open auto-created config file {s}: {s}", .{ config_path, @errorName(retry_err) });
                     return error.ConfigFileNotFound;
@@ -675,9 +547,7 @@ pub const LlmConfig = struct {
         return initFromJsonText(allocator, content);
     }
 
-    /// Build an `LlmConfig` from in-memory JSON text, applying the same
-    /// shape, tolerance (`ignore_unknown_fields`) and post-processing
-    /// (`parseToolsList`, `backfillTopLevelFromAgents`,
+    /// Build an `LlmConfig` from in-memory JSON text, applying the same shape, tolerance (`ignore_unknown_fields`) and post-processing (`parseToolsList` …
     pub fn initFromJsonText(
         allocator: std.mem.Allocator,
         content: []const u8,
@@ -707,16 +577,13 @@ pub const LlmConfig = struct {
             .retry_delay_ms = config_json.retry_delay_ms,
             .hook_python_bin = try allocator.dupe(u8, config_json.hook_python_bin),
             .llm_read_timeout_ms = config_json.llm_read_timeout_ms,
-            // Top-level compaction defaults — restored in plan
-            // 2026-07-07-compaction-inline.
+            // Top-level compaction defaults — restored in plan 2026-07-07-compaction-inline.
             .max_capacity_token_model = config_json.max_capacity_token_model,
             .compaction_threshold_percent = config_json.compaction_threshold_percent,
             .compaction_llm_summary = config_json.compaction_llm_summary,
-            // Absent key reads as enabled: the `compaction` tool works for
-            // every config that never heard of it.
+            // Absent key reads as enabled: the `compaction` tool works for every config that never heard of it.
             .agent_auto_compaction = config_json.agent_auto_compaction orelse true,
-            // Plan 2026-08-06-set-active-profile-default — load the
-            // user-chosen default profile from JSON.
+            // Plan 2026-08-06-set-active-profile-default — load the user-chosen default profile from JSON.
             .active_agent = blk: {
                 const raw = config_json.active_profile orelse break :blk null;
                 if (raw.len == 0) break :blk null;
@@ -740,12 +607,10 @@ pub const LlmConfig = struct {
             if (config.mcpServers_parsed) |*p| p.deinit();
         }
 
-        // Owned copy of the `tools` checklist — `parsed` deinits at the end
-        // of `init`, so the borrowed slices must be duped here.
+        // Owned copy of the `tools` checklist — `parsed` deinits at the end of `init`, so the borrowed slices must be duped here.
         config.tools = try parseToolsList(allocator, config_json.tools);
 
-        // Web-search providers: absent key = no providers. Parsed from the
-        // borrowed `config_json` tree, so every string is duped.
+        // Web-search providers: absent key = no providers.
         if (config_json.web_search) |ws| {
             config.web_search = try parseWebSearchProvidersMap(allocator, ws);
         }
@@ -766,8 +631,7 @@ pub const LlmConfig = struct {
             // Store the full Parsed wrapper so we can call .deinit() on it later
             config.mcpServers_parsed = reparsed;
 
-            // Also populate the typed map. Both representations stay in sync
-            // because they are built from the same JSON object.
+            // Also populate the typed map.
             const typed = reparsed.value;
             switch (typed) {
                 .object => |obj| {
@@ -780,9 +644,7 @@ pub const LlmConfig = struct {
             }
         }
 
-        // Parse the on-disk `profiles_models` map into the agents map.
-        // 2026-08-06-config-profiles-arbitrary-keys: the previous
-        // implementation parsed `profiles_models` against a hardcoded 4-field
+        // Parse the on-disk `profiles_models` map into the agents map. 2026-08-06-config-profiles-arbitrary-keys: the previous implementation parsed `profiles_models` …
         if (config_json.profiles_models) |agents_json| {
             const agents_str = std.json.Stringify.valueAlloc(allocator, agents_json, .{}) catch {
                 return error.InvalidJson;
@@ -800,9 +662,7 @@ pub const LlmConfig = struct {
                 .object => |obj| {
                     var it = obj.iterator();
                     while (it.next()) |entry| {
-                        // entry.key_ptr.* is the user-chosen agent
-                        // name (e.g. "900ribu"). entry.value_ptr is a
-                        // json.Value for the agent object.
+                        // entry.key_ptr.* is the user-chosen agent name (e.g.
                         const agent_json_str = std.json.Stringify.valueAlloc(
                             allocator,
                             entry.value_ptr,
@@ -831,8 +691,7 @@ pub const LlmConfig = struct {
             }
         }
 
-        // Plan 2026-08-24-config-simplify-remove-defaults: config.json no
-        // longer carries top-level api_key/model/base_url/url_style.
+        // Plan 2026-08-24-config-simplify-remove-defaults: config.json no longer carries top-level api_key/model/base_url/url_style.
         try backfillTopLevelFromAgents(&config);
 
         return config;
@@ -846,12 +705,10 @@ pub const LlmConfig = struct {
             config.api_key.len == 0;
         if (!needs_backfill) return;
 
-        // resolveSessionAgentCompat walks selected→active; here there is
-        // no session context, so selection is just active_profile.
+        // resolveSessionAgentCompat walks selected→active; here there is no session context, so selection is just active_profile.
         var p: ?LlmAgent = config.resolveSessionAgentCompat("");
         if (p == null) {
-            // No active profile (or it names a missing entry): fall back to
-            // the first profile with a non-empty model.
+            // No active profile (or it names a missing entry): fall back to the first profile with a non-empty model.
             var it = config.agents.iterator();
             while (it.next()) |entry| {
                 if (entry.value_ptr.model.len > 0) {
@@ -871,18 +728,15 @@ pub const LlmConfig = struct {
         if (config.api_key.len == 0) {
             config.api_key = try config.allocator.dupe(u8, prof.api_key);
         }
-        // url_style: profile-wins rule (see doc comment above). Only when
-        // we actually backfilled something AND the profile's style is set.
+        // url_style: profile-wins rule (see doc comment above).
         if (prof.url_style.len > 0 and !std.mem.eql(u8, config.url_style, prof.url_style)) {
-            // Free the old owned slice before replacing (url_style is
-            // always heap-owned: duped in init/clone).
+            // Free the old owned slice before replacing (url_style is always heap-owned: duped in init/clone).
             config.allocator.free(config.url_style);
             config.url_style = try config.allocator.dupe(u8, prof.url_style);
         }
     }
 
-    /// Parse the top-level `tools` checklist into an owned slice of owned
-    /// names.
+    /// Parse the top-level `tools` checklist into an owned slice of owned names.
     fn parseToolsList(allocator: std.mem.Allocator, src: ?[]const []const u8) LoadError!?[]const []const u8 {
         const list = src orelse return null;
         const owned = try allocator.alloc([]const u8, list.len);
@@ -898,8 +752,7 @@ pub const LlmConfig = struct {
         return owned;
     }
 
-    /// Free the owned `tools` checklist (names + slice header). No-op on
-    /// `null` and on `[]` (a zero-length `free` is a no-op).
+    /// Free the owned `tools` checklist (names + slice header).
     fn freeToolsList(list: ?[]const []const u8, allocator: std.mem.Allocator) void {
         const names = list orelse return;
         for (names) |name| allocator.free(name);
@@ -926,9 +779,7 @@ pub const LlmConfig = struct {
         map.deinit();
     }
 
-    /// Read `enabled` out of a profile object. A non-bool degrades to ENABLED
-    /// instead of failing the whole parse, so a typo cannot erase an agent
-    /// (same rule as `mcp_servers`' `enabled`).
+    /// Read `enabled` out of a profile object.
     fn profileEnabled(value: json.Value) bool {
         const obj = switch (value) {
             .object => |o| o,
@@ -978,8 +829,7 @@ pub const LlmConfig = struct {
             break :blk try alloc.dupe(u8, d);
         };
         errdefer if (config_dir) |d| alloc.free(d);
-        // OpenCode's `--agent` follows the same "empty stays absent" rule as
-        // `config_dir`, so an absent key costs no allocation.
+        // OpenCode's `--agent` follows the same "empty stays absent" rule as `config_dir`, so an absent key costs no allocation.
         const opencode_agent: ?[]const u8 = blk: {
             const a = agent.opencode_agent orelse break :blk null;
             if (a.len == 0) break :blk null;
@@ -1013,8 +863,7 @@ pub const LlmConfig = struct {
         });
     }
 
-    /// Free all owned memory inside a `McpHeadersMap` (header keys + values)
-    /// and then deinit the map itself. Safe to call with an empty map.
+    /// Free all owned memory inside a `McpHeadersMap` (header keys + values) and then deinit the map itself.
     fn freeMcpHeadersMap(map: *McpHeadersMap, allocator: std.mem.Allocator) void {
         var it = map.iterator();
         while (it.next()) |entry| {
@@ -1024,9 +873,7 @@ pub const LlmConfig = struct {
         map.deinit();
     }
 
-    /// Free all owned memory inside a `McpServersMap`:
-    /// the server-name keys, the per-server `url`, and the per-server headers.
-    /// Safe to call with an empty map.
+    /// Free all owned memory inside a `McpServersMap`
     fn freeMcpServersMap(map: *McpServersMap, allocator: std.mem.Allocator) void {
         var it = map.iterator();
         while (it.next()) |entry| {
@@ -1037,7 +884,6 @@ pub const LlmConfig = struct {
     }
 
     /// Parse a `McpHeadersMap` from a JSON object map.
-    /// Non-string header values are silently skipped (with a warning).
     fn parseMcpHeadersMap(allocator: std.mem.Allocator, obj: std.json.ObjectMap) !McpHeadersMap {
         var headers = McpHeadersMap.init(allocator);
         errdefer freeMcpHeadersMap(&headers, allocator);
@@ -1063,9 +909,7 @@ pub const LlmConfig = struct {
         return headers;
     }
 
-    /// Parse a single `McpServerConfig` from a JSON object value. Returns
-    /// `null` when `value` is not an object, or when the object has neither a
-    /// non-empty `url` (HTTP) nor a non-empty `command` (stdio).
+    /// Parse a single `McpServerConfig` from a JSON object value.
     fn parseMcpServerConfig(allocator: std.mem.Allocator, value: std.json.Value) !?McpServerConfig {
         const obj = switch (value) {
             .object => |o| o,
@@ -1150,8 +994,7 @@ pub const LlmConfig = struct {
             }
         }
 
-        // enabled (optional, both transports). Accept only .bool —
-        // absent or non-bool values keep the default true (ignored, not fatal).
+        // enabled (optional, both transports).
         if (obj.get("enabled")) |enabled_field| {
             if (enabled_field == .bool) {
                 config.enabled = enabled_field.bool;
@@ -1169,8 +1012,7 @@ pub const LlmConfig = struct {
         return config;
     }
 
-    /// Free all owned memory inside a `McpServerConfig` (but NOT the
-    /// `McpServersMap` entry itself). Safe to call with partial configs.
+    /// Free all owned memory inside a `McpServerConfig` (but NOT the `McpServersMap` entry itself).
     fn freeMcpServerConfig(cfg: *McpServerConfig, allocator: std.mem.Allocator) void {
         if (cfg.url) |u| allocator.free(u);
         if (cfg.command) |c| allocator.free(c);
@@ -1182,9 +1024,7 @@ pub const LlmConfig = struct {
         freeMcpHeadersMap(&cfg.headers, allocator);
     }
 
-    /// Parse a full `McpServersMap` from a JSON object map (the body of
-    /// `mcp_servers` or `mcpServers`). Malformed entries are skipped with
-    /// a warning rather than aborting the whole parse.
+    /// Parse a full `McpServersMap` from a JSON object map (the body of `mcp_servers` or `mcpServers`).
     fn parseMcpServersMap(allocator: std.mem.Allocator, obj: std.json.ObjectMap) !McpServersMap {
         var servers = McpServersMap.init(allocator);
         errdefer freeMcpServersMap(&servers, allocator);
@@ -1212,8 +1052,7 @@ pub const LlmConfig = struct {
         self.allocator.free(self.base_url);
         self.allocator.free(self.url_style);
         self.allocator.free(self.hook_python_bin);
-        // Plan 2026-08-06-set-active-profile-default — owned slice was
-        // duped in `init` only when non-empty.
+        // Plan 2026-08-06-set-active-profile-default — owned slice was duped in `init` only when non-empty.
         if (self.active_agent) |ap| self.allocator.free(ap);
 
         freeMcpServersMap(&self.mcp_servers, self.allocator);
@@ -1225,9 +1064,7 @@ pub const LlmConfig = struct {
             parsed.deinit();
         }
 
-        // Free each random sub-agent name that resolveAgent generated,
-        // then free the tracking slice itself. The names borrow from
-        // `self.allocator` and the slice header was grown via `realloc`.
+        // Free each random sub-agent name that resolveAgent generated, then free the tracking slice itself.
         for (self.random_names) |name| {
             self.allocator.free(name);
         }
@@ -1248,18 +1085,15 @@ pub const LlmConfig = struct {
             .notify_on_error = self.notify_on_error,
             .web_launch_enabled = self.web_launch_enabled,
             .chat_view = self.chat_view,
-            // Plain value copy — `SkillEvalsConfig` owns no memory, so the
-            // clone needs no dupe and `deinit` needs no new free.
+            // Plain value copy — `SkillEvalsConfig` owns no memory, so the clone needs no dupe and `deinit` needs no new free.
             .skill_evals = self.skill_evals,
-            // Top-level compaction defaults — primitive copies, no
-            // allocation needed (they're plain optionals).
+            // Top-level compaction defaults — primitive copies, no allocation needed (they're plain optionals).
             .max_capacity_token_model = self.max_capacity_token_model,
             .compaction_threshold_percent = self.compaction_threshold_percent,
             .compaction_llm_summary = self.compaction_llm_summary,
             .agent_auto_compaction = self.agent_auto_compaction,
             .hook_python_bin = try self.allocator.dupe(u8, self.hook_python_bin),
-            // Plan 2026-08-06-set-active-profile-default — deep-dupe
-            // the user-chosen default profile name (null stays null).
+            // Plan 2026-08-06-set-active-profile-default — deep-dupe the user-chosen default profile name (null stays null).
             .active_agent = if (self.active_agent) |ap|
                 try self.allocator.dupe(u8, ap)
             else
@@ -1326,9 +1160,7 @@ pub const LlmConfig = struct {
             config.mcpServers_parsed = reparsed;
         }
 
-        // Deep-copy the typed MCP servers map. Each entry is cloned field
-        // by field — only the transport actually in use (url OR command)
-        // has its strings duped; the other's slots stay null.
+        // Deep-copy the typed MCP servers map.
         var mcp_it = self.mcp_servers.iterator();
         while (mcp_it.next()) |entry| {
             const src = entry.value_ptr.*;
@@ -1436,20 +1268,17 @@ pub const LlmConfig = struct {
     }
 
     /// Returns true if a server with the given name is configured.
-    /// Lookup is by direct hash match on the server name key.
     pub fn hasMcpServer(self: *const LlmConfig, name: []const u8) bool {
         return self.mcp_servers.contains(name);
     }
 
-    /// Get the typed configuration for a single MCP server by name. Returns
-    /// null when no server with that name is configured.
+    /// Get the typed configuration for a single MCP server by name.
     pub fn mcpServerConfig(self: *const LlmConfig, name: []const u8) ?McpServerConfig {
         const entry = self.mcp_servers.getEntry(name) orelse return null;
         return entry.value_ptr.*;
     }
 
     /// Get the URL for a single MCP server, or null when not configured.
-    /// The returned slice borrows from `self` (do not outlive the config).
     pub fn mcpServerUrl(self: *const LlmConfig, name: []const u8) ?[]const u8 {
         return if (self.mcpServerConfig(name)) |c| c.url else null;
     }
@@ -1459,19 +1288,13 @@ pub const LlmConfig = struct {
         return @intCast(self.mcp_servers.count());
     }
 
-    /// Input for `addMcpServerStdio` — the stdio-only transport variant
-    /// (HTTP follows in a sibling task). All string fields are borrowed;
-    /// the primitive deep-copies them into the live `mcp_servers` map.
+    /// Input for `addMcpServerStdio` — the stdio-only transport variant (HTTP follows in a sibling task).
     pub const AddMcpServerStdioInput = struct {
-        /// The server name (key in `mcp_servers`). Must be non-empty and
-        /// must not collide with an existing server. Trailing whitespace is
-        /// NOT trimmed — the caller is responsible for the exact key.
+        /// The server name (key in `mcp_servers`).
         name: []const u8,
-        /// The command to spawn. Must be non-empty (an empty command would
-        /// never reach the `parseMcpServerConfig` validity check anyway).
+        /// The command to spawn.
         command: []const u8,
-        /// Optional argv after `command`. `null` means no args. Each entry
-        /// is deep-copied into the new `McpServerConfig.args` slice.
+        /// Optional argv after `command`.
         args: ?[]const []const u8 = null,
         /// Optional working directory. `null` means inherit from the parent.
         cwd: ?[]const u8 = null,
@@ -1514,8 +1337,7 @@ pub const LlmConfig = struct {
             const k = try self.allocator.dupe(u8, input.name);
             errdefer self.allocator.free(k);
             try self.mcp_servers.put(k, entry);
-            // Transfer ownership of the entry's heap-allocated fields to the
-            // map.
+            // Transfer ownership of the entry's heap-allocated fields to the map.
             entry = .{
                 .url = null,
                 .headers = McpHeadersMap.init(self.allocator),
@@ -1533,15 +1355,12 @@ pub const LlmConfig = struct {
     }
 
     /// Input for `addMcpServerHttp` — the HTTP transport variant.
-    /// All string fields are borrowed; the primitive deep-copies them.
     pub const AddMcpServerHttpInput = struct {
-        /// The server name (key in `mcp_servers`). Must be non-empty and
-        /// must not collide with an existing server.
+        /// The server name (key in `mcp_servers`).
         name: []const u8,
         /// The MCP server URL. Must be non-empty.
         url: []const u8,
-        /// Optional request headers (e.g. `Authorization`). Each entry's
-        /// `name` + `value` are deep-copied into the new headers map.
+        /// Optional request headers (e.g.
         headers: ?[]const McpHeaderInput = null,
         /// Whether the agent may use this server. Defaults to true.
         enabled: bool = true,
@@ -1553,9 +1372,7 @@ pub const LlmConfig = struct {
         value: []const u8,
     };
 
-    /// Add a new HTTP MCP server to the live config in-place. The stdio
-    /// sibling is `addMcpServerStdio`; both mutate the typed map AND
-    /// rebuild `mcpServers_parsed`. Errors: InvalidName, InvalidUrl,
+    /// Add a new HTTP MCP server to the live config in-place.
     pub fn addMcpServerHttp(
         self: *LlmConfig,
         input: AddMcpServerHttpInput,
@@ -1589,8 +1406,7 @@ pub const LlmConfig = struct {
             const k = try self.allocator.dupe(u8, input.name);
             errdefer self.allocator.free(k);
             try self.mcp_servers.put(k, entry);
-            // Ownership transferred to the map — reset the local so the
-            // errdefer above cannot double-free the shared strings.
+            // Ownership transferred to the map — reset the local so the errdefer above cannot double-free the shared strings.
             entry = .{
                 .url = null,
                 .headers = McpHeadersMap.init(self.allocator),
@@ -1606,33 +1422,25 @@ pub const LlmConfig = struct {
         try rebuildMcpServersParsed(self);
     }
 
-    /// Input for `editMcpServer` — a partial update of an existing
-    /// server. Every field is optional; a null field means "leave the
-    /// stored value alone". `transport` REPLACES the entry's transport.
+    /// Input for `editMcpServer` — a partial update of an existing server.
     pub const EditMcpServerInput = struct {
         /// The server to edit. Must already exist.
         name: []const u8,
-        /// New transport. When present, the entry is rebuilt from the
-        /// supplied transport-specific fields (a stdio→http switch
-        /// drops `command`/`args`/`cwd`, and vice versa).
+        /// New transport.
         transport: ?[]const u8 = null,
         /// stdio command. Required when `transport == "stdio"`.
         command: ?[]const u8 = null,
-        /// stdio argv. `null` leaves the stored value; an empty slice
-        /// clears it.
+        /// stdio argv.
         args: ?[]const []const u8 = null,
         /// HTTP URL. Required when `transport == "http"`.
         url: ?[]const u8 = null,
-        /// HTTP headers. `null` leaves the stored map; an empty slice
-        /// clears it.
+        /// HTTP headers.
         headers: ?[]const McpHeaderInput = null,
         /// Enable/disable toggle. `null` leaves the stored flag.
         enabled: ?bool = null,
     };
 
-    /// Edit an existing MCP server in-place. Mutates the typed map AND
-    /// rebuilds `mcpServers_parsed`. A transport switch is a full
-    /// rebuild: the OLD transport's fields are dropped. Errors:
+    /// Edit an existing MCP server in-place.
     pub fn editMcpServer(
         self: *LlmConfig,
         input: EditMcpServerInput,
@@ -1640,8 +1448,7 @@ pub const LlmConfig = struct {
         if (input.name.len == 0) return error.InvalidName;
         const entry_ptr = self.mcp_servers.getPtr(input.name) orelse return error.ServerNotFound;
 
-        // Resolve the target transport first: an explicit `transport`
-        // wins, otherwise keep whatever the stored entry already is.
+        // Resolve the target transport first: an explicit `transport` wins, otherwise keep whatever the stored entry already is.
         const target: McpServerConfig.Transport = blk: {
             if (input.transport) |t| {
                 if (std.mem.eql(u8, t, "stdio")) break :blk .stdio;
@@ -1651,8 +1458,7 @@ pub const LlmConfig = struct {
             break :blk entry_ptr.transport();
         };
 
-        // Build the replacement entry, then swap it in. Building first
-        // means a validation failure leaves the stored entry untouched.
+        // Build the replacement entry, then swap it in.
         var next: McpServerConfig = .{
             .url = null,
             .headers = McpHeadersMap.init(self.allocator),
@@ -1683,9 +1489,7 @@ pub const LlmConfig = struct {
                     for (old, 0..) |a, i| dup[i] = try self.allocator.dupe(u8, a);
                     next.args = dup;
                 }
-                // `cwd` is not editable through the agent tool (the
-                // parameter was dropped from `add_mcp_server` on
-                // 2026-10-14), so a stdio entry keeps its stored value.
+                // `cwd` is not editable through the agent tool (the parameter was dropped from `add_mcp_server` on 2026-10-14), so a stdio entry keeps its stored value.
                 if (entry_ptr.cwd) |c| next.cwd = try self.allocator.dupe(u8, c);
             },
             .http => {
@@ -1715,18 +1519,14 @@ pub const LlmConfig = struct {
             },
         }
 
-        // Swap: free the old payload, install the new one. The map KEY
-        // is untouched — the server name is the identity and is not
-        // editable here (a rename is a delete + add).
+        // Swap: free the old payload, install the new one.
         freeMcpServerConfig(entry_ptr, self.allocator);
         entry_ptr.* = next;
 
         try rebuildMcpServersParsed(self);
     }
 
-    /// Remove an MCP server from the live config in-place. Mutates the
-    /// typed map AND rebuilds `mcpServers_parsed`. Errors: InvalidName,
-    /// ServerNotFound.
+    /// Remove an MCP server from the live config in-place.
     pub fn removeMcpServer(self: *LlmConfig, name: []const u8) !void {
         if (name.len == 0) return error.InvalidName;
         const kv = self.mcp_servers.fetchRemove(name) orelse return error.ServerNotFound;
@@ -1737,8 +1537,6 @@ pub const LlmConfig = struct {
     }
 
     /// Serialize the typed `mcp_servers` map back into `mcpServers_parsed`.
-    /// Called by `addMcpServerStdio` after each insert; safe to call when
-    /// `mcpServers_parsed` is null (re-builds from scratch).
     fn rebuildMcpServersParsed(self: *LlmConfig) !void {
         const allocator = self.allocator;
         var new_obj = try json.ObjectMap.init(allocator, &.{}, &.{});
@@ -1771,8 +1569,7 @@ pub const LlmConfig = struct {
                 try server_obj.put(allocator, "command", .{ .string = try allocator.dupe(u8, c) });
             }
             if (cfg.args) |a| {
-                // Transfer ownership: `args_arr` (and its duped string items)
-                // becomes part of the JSON tree.
+                // Transfer ownership: `args_arr` (and its duped string items) becomes part of the JSON tree.
                 var args_arr = json.Array.init(allocator);
                 for (a) |arg| {
                     try args_arr.append(.{ .string = try allocator.dupe(u8, arg) });
@@ -1800,14 +1597,10 @@ pub const LlmConfig = struct {
         });
         errdefer reparsed.deinit();
 
-        // Free the source tree manually. ObjectMap.deinit only frees the hash
-        // map structure — it does NOT recurse into values or free the outer
-        // keys.
+        // Free the source tree manually.
         freeNewObjDeep(allocator, &new_obj);
 
-        // Free the old mcpServers_parsed (its underlying ObjectMap is now
-        // orphaned — we own a fresh one inside `reparsed`). Matches the
-        // deinit pattern in `LlmConfig.deinit`.
+        // Free the old mcpServers_parsed (its underlying ObjectMap is now orphaned — we own a fresh one inside `reparsed`).
         if (self.mcpServers_parsed) |*old| old.deinit();
         self.mcpServers_parsed = reparsed;
     }
@@ -1822,9 +1615,7 @@ pub const LlmConfig = struct {
         new_obj.deinit(allocator);
     }
 
-    /// Free a single server's ObjectMap. The KEYS are string literals
-    /// ("command", "args", "url", "cwd", "headers", "enabled") — DO NOT
-    /// free them. The VALUES own memory (duped strings, headers sub-map).
+    /// Free a single server's ObjectMap.
     fn freeServerObjDeep(allocator: std.mem.Allocator, server_obj: *json.ObjectMap) void {
         var it = server_obj.iterator();
         while (it.next()) |kv| {
@@ -1833,9 +1624,7 @@ pub const LlmConfig = struct {
         server_obj.deinit(allocator);
     }
 
-    /// Free one value out of a server_obj entry. The captured pattern
-    /// `|*arr|` is fragile because switch captures are immutable, so we
-    /// pass a pointer to the Value union and dispatch on the active tag.
+    /// Free one value out of a server_obj entry.
     fn freeServerObjValue(allocator: std.mem.Allocator, value_ptr: *json.Value) void {
         switch (value_ptr.*) {
             .string => |s| allocator.free(s),
@@ -1862,13 +1651,9 @@ pub const LlmConfig = struct {
         hdr_obj.deinit(allocator);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
     // Inline tests for `addMcpServerStdio` — plan 2026-08-28-add-mcp-server-agent-tool
-    // ─────────────────────────────────────────────────────────────────────
 
-    /// Build a minimal `LlmConfig` for the `addMcpServerStdio` tests. Only
-    /// the fields touched by the primitive are wired up; the rest are
-    /// sentinel values that `deinit()` doesn't free.
+    /// Build a minimal `LlmConfig` for the `addMcpServerStdio` tests.
     fn addMcpServerStdioFixture(allocator: std.mem.Allocator) !LlmConfig {
         return .{
             .allocator = allocator,
@@ -1974,8 +1759,7 @@ pub const LlmConfig = struct {
             .command = "first-cmd",
             .args = &.{"a"},
         });
-        // Second insert with the same name MUST fail — the typed map and
-        // mcpServers_parsed are unchanged.
+        // Second insert with the same name MUST fail — the typed map and mcpServers_parsed are unchanged.
         const result = cfg.addMcpServerStdio(.{
             .name = "ctx",
             .command = "second-cmd",
@@ -2009,9 +1793,7 @@ pub const LlmConfig = struct {
     }
 
     test "addMcpServerStdio: rebuilds mcpServers_parsed from scratch when previously null" {
-        // Guards the "first MCP server ever" path — mcpServers_parsed was
-        // never populated, so rebuildMcpServersParsed must create a fresh
-        // ObjectMap rather than dereferencing the null one.
+        // Guards the "first MCP server ever" path — mcpServers_parsed was never populated, so rebuildMcpServersParsed must create a fresh ObjectMap rather than …
         const allocator = std.testing.allocator;
         var cfg = try addMcpServerStdioFixture(allocator);
         defer cfg.deinit();
@@ -2025,9 +1807,7 @@ pub const LlmConfig = struct {
     }
 
     test "addMcpServerStdio: cloned strings are independent (mutating input doesn't leak)" {
-        // The primitive deep-copies every string. We mutate the source
-        // slices after the call and assert the typed map's values are
-        // unchanged — guards against accidental shallow-copy regression.
+        // The primitive deep-copies every string.
         const allocator = std.testing.allocator;
         var cfg = try addMcpServerStdioFixture(allocator);
         defer cfg.deinit();
@@ -2043,8 +1823,7 @@ pub const LlmConfig = struct {
             .cwd = cwd_src,
         });
 
-        // Mutate the source buffers in-place — the typed map must still
-        // hold the original bytes (deep copy semantics).
+        // Mutate the source buffers in-place — the typed map must still hold the original bytes (deep copy semantics).
         @memcpy(cmd_buf[0.."MUTATED-MUT".len], "MUTATED-MUT");
         @memcpy(cwd_buf[0.."/MUTATED-MU".len], "/MUTATED-MU");
 
@@ -2053,9 +1832,7 @@ pub const LlmConfig = struct {
         try std.testing.expectEqualStrings("/initial", server.cwd.?);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
     // Inline tests for addMcpServerHttp / editMcpServer / removeMcpServer
-    // ─────────────────────────────────────────────────────────────────────
 
     test "addMcpServerHttp: valid entry persists url + headers" {
         const allocator = std.testing.allocator;
@@ -2281,25 +2058,19 @@ pub const LlmConfig = struct {
         try std.testing.expect(cfg.hasMcpServer("keep"));
     }
 
-    /// Look up an agent by name (the key in `agents`). Returns null when
-    /// not configured. The returned `LlmAgent` borrows from `self` — the lifetime
-    /// is tied to this `LlmConfig` (do not outlive the config).
+    /// Look up an agent by name (the key in `agents`).
     pub fn getAgent(self: *const LlmConfig, name: []const u8) ?LlmAgent {
         const entry = self.agents.getEntry(name) orelse return null;
         return entry.value_ptr.*;
     }
 
     /// True only when `name` is a configured agent AND it is switched on.
-    /// A disabled profile is still stored (the user can switch it back on)
-    /// but it is not offered to the model and cannot be spawned.
     pub fn agentEnabled(self: *const LlmConfig, name: []const u8) bool {
         const entry = self.agents.getEntry(name) orelse return false;
         return entry.value_ptr.enabled;
     }
 
-    /// Returns true if an agent with the given name exists and has a non-empty
-    /// `model` field. Use this before calling `getAgent` if you need to know
-    /// whether resolution will succeed.
+    /// Returns true if an agent with the given name exists and has a non-empty `model` field.
     pub fn hasAgent(self: *const LlmConfig, name: []const u8) bool {
         if (self.agents.getEntry(name)) |entry| {
             return entry.value_ptr.model.len > 0;
@@ -2307,21 +2078,17 @@ pub const LlmConfig = struct {
         return false;
     }
 
-    /// Fully-resolved effective settings for one LLM call, produced by
-    /// walking the canonical agent cascade (see `resolveEffectiveAgent`).
+    /// Fully-resolved effective settings for one LLM call, produced by walking the canonical agent cascade (see `resolveEffectiveAgent`).
     pub const EffectiveAgent = struct {
         model: []const u8,
         base_url: []const u8,
         api_key: []const u8,
         url_style: []const u8,
-        /// Which transport runs this call: `"http"` | `"claude-code"`. Never
-        /// empty.
+        /// Which transport runs this call: `"http"` | `"claude-code"`.
         backend: []const u8,
-        /// Claude Code only: `CLAUDE_CONFIG_DIR` for this call. `null` = the
-        /// CLI's own default (`~/.claude`).
+        /// Claude Code only: `CLAUDE_CONFIG_DIR` for this call.
         config_dir: ?[]const u8,
-        /// Claude Code only: `--max-turns` for this call. `null` = CLI
-        /// default.
+        /// Claude Code only: `--max-turns` for this call.
         max_turns: ?u32,
         /// OpenCode only: `--agent` for this call. `null` = CLI default.
         opencode_agent: ?[]const u8,
@@ -2330,7 +2097,6 @@ pub const LlmConfig = struct {
         /// Raw resolved `thinking` string ("auto" when nothing set).
         thinking_str: []const u8,
         /// Derived: parseThinkingString(thinking_str) catch null.
-        /// "auto"/"" → null, "on"/"true" → true, "off"/"false" → false.
         is_thinking: ?bool,
         /// Derived: std.mem.eql(u8, thinking_str, "auto").
         thinking_adaptive: bool,
@@ -2340,15 +2106,13 @@ pub const LlmConfig = struct {
         reasoning_effort: ?[]const u8,
     };
 
-    /// Internal: getAgent that treats an empty name as a miss so the
-    /// cascade can pass `active_profile orelse ""` without branching.
+    /// Internal: getAgent that treats an empty name as a miss so the cascade can pass `active_profile orelse ""` without branching.
     fn getAgentIfSet(self: *const LlmConfig, name: []const u8) ?LlmAgent {
         if (name.len == 0) return null;
         return self.getAgent(name);
     }
 
-    /// THE canonical profile cascade — ONE implementation for the whole
-    /// codebase. Walks: 1.
+    /// THE canonical profile cascade — ONE implementation for the whole codebase.
     pub fn resolveEffectiveAgent(
         self: *const LlmConfig,
         selected_profile_model: []const u8,
@@ -2380,9 +2144,7 @@ pub const LlmConfig = struct {
             if (act) |p| if (p.url_style.len > 0) break :blk p.url_style;
             break :blk self.url_style;
         };
-        // thinking: empty on a profile → default "auto" (NOT top-level
-        // self.thinking — the top-level LlmConfig has no `thinking`
-        // field; workflow.zig's old block defaulted to "auto").
+        // thinking: empty on a profile → default "auto" (NOT top-level self.thinking — the top-level LlmConfig has no `thinking` field; workflow.zig's old block …
         const thinking_str: []const u8 = blk: {
             if (sel) |p| if (p.thinking.len > 0) break :blk p.thinking;
             if (act) |p| if (p.thinking.len > 0) break :blk p.thinking;
@@ -2406,9 +2168,7 @@ pub const LlmConfig = struct {
             }
             break :blk null;
         };
-        // Transport. Empty on a profile means "not set" (same fall-through
-        // rule as the string fields above); nothing set anywhere → "http",
-        // which is what makes an absent `backend` key a no-op.
+        // Transport.
         const backend: []const u8 = blk: {
             if (sel) |p| if (p.backend.len > 0) break :blk p.backend;
             if (act) |p| if (p.backend.len > 0) break :blk p.backend;
@@ -2435,8 +2195,7 @@ pub const LlmConfig = struct {
             break :blk null;
         };
 
-        // Derived ONCE from the final string (pre-refactor:
-        // workflow.zig:471 parseThinkingString catch null; :477 eql "auto").
+        // Derived ONCE from the final string (pre-refactor
         return .{
             .model = model,
             .base_url = base_url,
@@ -2455,8 +2214,7 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Whole-agent variant of the cascade: returns the winning `LlmAgent`
-    /// (selected → active → null), NOT per-field merged.
+    /// Whole-agent variant of the cascade: returns the winning `LlmAgent` (selected → active → null), NOT per-field merged.
     pub fn resolveSessionAgentCompat(
         self: *const LlmConfig,
         selected_profile_model: []const u8,
@@ -2470,9 +2228,7 @@ pub const LlmConfig = struct {
         return null;
     }
 
-    /// Resolve an agent by name for a spawn. The lookup is against the
-    /// ENABLED configured agents — a disabled profile resolves as a miss,
-    /// so `spawn_sub_agent` cannot run one.
+    /// Resolve an agent by name for a spawn.
     pub fn resolveAgent(
         self: *LlmConfig,
         agent_name: []const u8,
@@ -2486,8 +2242,7 @@ pub const LlmConfig = struct {
             // Last-ditch fallback: empty string.
             break :blk "";
         };
-        // Track the name for cleanup in deinit (no-op for empty string
-        // fallback).
+        // Track the name for cleanup in deinit (no-op for empty string fallback).
         if (random_name.len > 0) {
             const new_len = self.random_names.len + 1;
             var grown: [][]u8 = self.allocator.realloc(self.random_names, new_len) catch blk: {
@@ -2503,8 +2258,7 @@ pub const LlmConfig = struct {
                 self.random_names = grown;
             }
         }
-        // Transport for the random fallback: whatever the orchestrator
-        // resolves to.
+        // Transport for the random fallback: whatever the orchestrator resolves to.
         const act_profile = self.resolveSessionAgentCompat("");
         return ResolvedAgent{
             .name = random_name,
@@ -2528,29 +2282,22 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Internal helper — convert a matched `LlmAgent` into a
-    /// `ResolvedAgent` with string→bool/f32 parsing for `thinking` /
-    /// `temperature`.
+    /// Internal helper — convert a matched `LlmAgent` into a `ResolvedAgent` with string→bool/f32 parsing for `thinking` /`temperature`.
     fn buildResolvedFromAgent(
         self: *const LlmConfig,
         sa: LlmAgent,
         requested_name: []const u8,
     ) ResolvedAgent {
-        // thinking: route through the pure parse_thinking helper. The helper
-        // accepts "auto" / "on" / "off" / "true" / "false" / "" and surfaces
-        // `error.InvalidThinkingMode` on garbage.
+        // thinking: route through the pure parse_thinking helper.
         const resolved_thinking: ?bool = parse_thinking.parseThinkingString(sa.thinking) catch null;
 
-        // temperature: "auto" → null. Numeric → parseFloat. Anything
-        // else → null.
+        // temperature: "auto" → null.
         const resolved_temperature: ?f32 = blk: {
             if (std.mem.eql(u8, sa.temperature, "auto")) break :blk null;
             break :blk std.fmt.parseFloat(f32, sa.temperature) catch null;
         };
 
-        // thinking_budget_tokens: pass through. HTTP layer enforces the (0,
-        // 2_000_000] range, so by the time we see this value it's guaranteed
-        // non-zero.
+        // thinking_budget_tokens: pass through.
         const resolved_budget: ?u32 = sa.thinking_budget_tokens;
 
         // reasoning_effort: pass through.
@@ -2565,14 +2312,11 @@ pub const LlmConfig = struct {
             .is_random_fallback = false,
             .requested_name = requested_name,
             // Overlay: empty field on the agent → orchestrator default.
-            // NOTE (plan 2026-08-23-refactor-profile-resolution): this is
-            // deliberately NOT `resolveEffectiveAgent`.
             .model = if (sa.model.len > 0) sa.model else self.model,
             .base_url = if (sa.base_url.len > 0) sa.base_url else self.base_url,
             .api_key = if (sa.api_key.len > 0) sa.api_key else self.api_key,
             .url_style = if (sa.url_style.len > 0) sa.url_style else self.url_style,
-            // Transport follows the same overlay rule as the fields above:
-            // a sub-agent that names no backend runs on the orchestrator's.
+            // Transport follows the same overlay rule as the fields above
             .backend = if (sa.backend.len > 0) sa.backend else self.effectiveBackend(),
             .config_dir = if (sa.config_dir) |d| d else blk: {
                 const p = self.resolveSessionAgentCompat("") orelse break :blk null;
@@ -2599,22 +2343,18 @@ pub const LlmConfig = struct {
         };
     }
 
-    /// Resolve the effective max-context-window in tokens for a given model
-    /// under the optional agent scope. Cascade order: 1.
+    /// Resolve the effective max-context-window in tokens for a given model under the optional agent scope.
     pub fn maxCapacityForModel(
         self: *const LlmConfig,
         agent: ?*const LlmAgent,
         defaults: ?*const LlmConfig,
         model_name: []const u8,
     ) u32 {
-        // No catalog: the pre-models.dev cascade, byte for byte. Kept as its
-        // own entry point because callers that genuinely have no catalog (and
-        // every existing test) must not accidentally start consulting one.
+        // No catalog: the pre-models.dev cascade, byte for byte.
         return self.maxCapacityForModelWith(agent, defaults, model_name, null);
     }
 
     /// The cascade, with an explicit catalog in step 3: 1.
-    /// `agent.max_capacity_tokens` 2. `defaults.max_capacity_token_model` 3.
     pub fn maxCapacityForModelWith(
         self: *const LlmConfig,
         agent: ?*const LlmAgent,
@@ -2633,9 +2373,7 @@ pub const LlmConfig = struct {
         return LLMModels.getModelTokenCount(model_name);
     }
 
-    /// Resolve the compaction threshold as a percentage (0-100). Cascade
-    /// order (same shape as `maxCapacityForModel`): 1.
-    /// `agent.compaction_threshold_percent` (if non-null and set) 2.
+    /// Resolve the compaction threshold as a percentage (0-100).
     pub fn compactionThresholdPercent(
         self: *const LlmConfig,
         agent: ?*const LlmAgent,
@@ -2647,8 +2385,7 @@ pub const LlmConfig = struct {
         return 80;
     }
 
-    /// The default `config.json` content written on first run (when no config
-    /// file exists at the platform-default path).
+    /// The default `config.json` content written on first run (when no config file exists at the platform-default path).
     pub const defaultConfigJson: []const u8 =
         \\{
         \\  "profiles_models": {},
@@ -2671,14 +2408,11 @@ pub const LlmConfig = struct {
         \\}
     ;
 
-    /// Write `defaultConfigJson` to `path`, creating any missing parent
-    /// directories (mkdir -p semantics).
+    /// Write `defaultConfigJson` to `path`, creating any missing parent directories (mkdir -p semantics).
     pub fn writeDefaultConfig(allocator: std.mem.Allocator, io: std.Io, path: []const u8) LoadError!void {
         _ = allocator; // unused in current implementation, kept for future use
 
-        // Ensure the parent directory exists (mkdir -p semantics).
-        // std.Io.Dir.cwd().createDirPath is the project-wide pattern for
-        // "create nested dirs relative to cwd" (see Logger.zig:136,
+        // Ensure the parent directory exists (mkdir -p semantics). std.Io.Dir.cwd().createDirPath is the project-wide pattern for "create nested dirs relative to cwd" …
         if (std.fs.path.dirname(path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| {
                 std.log.warn("Failed to create config dir {s}: {s}", .{ parent, @errorName(err) });
@@ -2686,8 +2420,7 @@ pub const LlmConfig = struct {
             };
         }
 
-        // Write the default config. .truncate = true means any stale file at
-        // `path` is replaced atomically by the kernel.
+        // Write the default config. .truncate = true means any stale file at `path` is replaced atomically by the kernel.
         if (!std.fs.path.isAbsolute(path)) {
             std.log.warn("Refusing to write the default config to a relative path: {s}", .{path});
             return error.ConfigFileReadError;
@@ -2711,9 +2444,7 @@ pub const LlmConfig = struct {
     }
 };
 
-/// Generate a random sub-agent name of the form `"agent-{randomhex}"` for the
-/// random-fallback case when a requested `agent_name` is not found in any
-/// sub_agents list.
+/// Generate a random sub-agent name of the form `"agent-{randomhex}"` for the random-fallback case when a requested `agent_name` is not found in any sub_agents …
 fn generateRandomAgentName(allocator: std.mem.Allocator) ![]u8 {
     // 8 bytes of pseudo-random entropy → 16 hex chars.
     var entropy_bytes: [8]u8 = undefined;
@@ -2796,13 +2527,9 @@ pub fn loadDefault(allocator: std.mem.Allocator, environment: *std.process.Envir
     return LlmConfig.init(allocator, null, environment);
 }
 
-// ---------------------------------------------------------------------------
-// resolveEffectiveAgent — THE canonical agent cascade (plan
-// 2026-08-23-refactor-profile-resolution).
+// resolveEffectiveAgent — THE canonical agent cascade (plan 2026-08-23-refactor-profile-resolution).
 
-/// Shared fixture: top-level defaults + two profiles ("alpha" fully
-/// populated, "partial" with only model set). Built directly (no disk
-/// round-trip).
+/// Shared fixture: top-level defaults + two profiles ("alpha" fully populated, "partial" with only model set).
 fn cascadeFixture(allocator: std.mem.Allocator) !LlmConfig {
     var cfg: LlmConfig = .{
         .allocator = allocator,
@@ -2995,12 +2722,9 @@ test "config module imports" {
     try std.testing.expect(@hasDecl(LlmConfig, "hasMcpServers"));
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Write `json` to a temp `config.json` and load it with `LlmConfig.init`.
-/// Caller owns the returned `LlmConfig` and must call `deinit` on it.
 fn writeAndRead(allocator: std.mem.Allocator, io: std.Io, json_body: []const u8) !LlmConfig {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -3022,9 +2746,7 @@ fn writeAndRead(allocator: std.mem.Allocator, io: std.Io, json_body: []const u8)
     return LlmConfig.init(allocator, io, config_path, &env_map);
 }
 
-// ---------------------------------------------------------------------------
 // Parsing: snake_case `mcp_servers` field (the canonical form)
-// ---------------------------------------------------------------------------
 
 test "mcp_servers: parses snake_case field with one server" {
     const allocator = std.testing.allocator;
@@ -3104,8 +2826,6 @@ test "mcp_servers: parses multiple servers" {
     try std.testing.expectEqual(@as(u32, 0), @as(u32, @intCast(plain.headers.count())));
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // Robustness
 
 test "mcp_servers: empty config yields empty map" {
@@ -3430,9 +3150,7 @@ test "mcp_servers: missing headers field is treated as empty" {
     try std.testing.expectEqual(@as(u32, 0), @as(u32, @intCast(nh.headers.count())));
 }
 
-// ---------------------------------------------------------------------------
 // Backward compat: the existing `mcpServers()` json.Value accessor still works
-// ---------------------------------------------------------------------------
 
 test "mcp_servers: legacy mcpServers() json.Value accessor still returns data" {
     const allocator = std.testing.allocator;
@@ -3457,13 +3175,9 @@ test "mcp_servers: legacy mcpServers() json.Value accessor still returns data" {
     try std.testing.expectEqualStrings("https://mcp.context7.com/mcp", ctx_obj.get("url").?.string);
 }
 
-// ---------------------------------------------------------------------------
 // Lifecycle: clone produces a deep, independent copy
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
 // notify_on_complete: opt-in OS notification flag
-// ---------------------------------------------------------------------------
 
 test "notify_on_complete: defaults to false when missing from JSON" {
     const allocator = std.testing.allocator;
@@ -3510,9 +3224,7 @@ test "notify_on_complete: reads false from JSON when explicitly false" {
     try std.testing.expectEqual(false, cfg.notify_on_complete);
 }
 
-// ---------------------------------------------------------------------------
-// notify_on_error: opt-in OS notification flag for the error path (transport
-// failure, TooManyRetries, outer catch).
+// notify_on_error: opt-in OS notification flag for the error path (transport failure, TooManyRetries, outer catch).
 
 test "notify_on_error: defaults to false when missing from JSON" {
     const allocator = std.testing.allocator;
@@ -3560,9 +3272,7 @@ test "notify_on_error: reads false from JSON when explicitly false" {
 }
 
 test "notify_on_error: round-trips independently of notify_on_complete" {
-    // The two flags are independent toggles — enabling one MUST NOT
-    // flip the other. Lock the contract so a future refactor doesn't
-    // accidentally collapse them into a single `notify: bool`.
+    // The two flags are independent toggles — enabling one MUST NOT flip the other.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -3580,7 +3290,6 @@ test "notify_on_error: round-trips independently of notify_on_complete" {
     try std.testing.expectEqual(false, cfg.notify_on_error);
 }
 
-// ---------------------------------------------------------------------------
 // web_launch_enabled: opt-in browser-launch flag.
 
 test "chat_view: defaults to dev and reads compact from JSON" {
@@ -3643,8 +3352,7 @@ test "web_launch_enabled: reads true from JSON when present" {
 }
 
 test "web_launch_enabled: round-trips independently of notify_on_complete" {
-    // The two flags are independent toggles — enabling one MUST NOT
-    // flip the other.
+    // The two flags are independent toggles — enabling one MUST NOT flip the other.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -3662,9 +3370,7 @@ test "web_launch_enabled: round-trips independently of notify_on_complete" {
     try std.testing.expectEqual(false, cfg.web_launch_enabled);
 }
 
-// ---------------------------------------------------------------------------
-// url_style: top-level OpenAI vs Anthropic selector (regression for
-// `PabrikSettings.vue` URL Style dropdown — see plan
+// url_style: top-level OpenAI vs Anthropic selector (regression for `PabrikSettings.vue` URL Style dropdown — see plan
 
 test "LlmConfig: url_style field round-trips through disk JSON" {
     const allocator = std.testing.allocator;
@@ -3695,9 +3401,7 @@ test "LlmConfig: url_style defaults to openai when missing from JSON" {
     try std.testing.expectEqualStrings("openai", cfg.url_style);
 }
 
-// ---------------------------------------------------------------------------
-// retry_delay_ms: workflow retry backoff in milliseconds. 0 = no delay
-// (current behavior).
+// retry_delay_ms: workflow retry backoff in milliseconds. 0 = no delay (current behavior).
 
 test "LlmConfig: retry_delay_ms defaults to 0 when missing from JSON" {
     const allocator = std.testing.allocator;
@@ -3728,7 +3432,6 @@ test "LlmConfig: retry_delay_ms reads from JSON when present" {
     try std.testing.expectEqual(@as(u32, 5000), cfg.retry_delay_ms);
 }
 
-// ---------------------------------------------------------------------------
 // llm_read_timeout_ms: the deadline for ONE streaming LLM call.
 
 test "LlmConfig: llm_read_timeout_ms defaults to 15 minutes when missing from JSON" {
@@ -3760,9 +3463,7 @@ test "LlmConfig: llm_read_timeout_ms reads from JSON when present" {
     try std.testing.expectEqual(@as(u32, 1_800_000), cfg.llm_read_timeout_ms);
 }
 
-// ---------------------------------------------------------------------------
-// model_compaction_size_kb: session-compactor threshold (consumed by
-// `session_compact.zig:57`).
+// model_compaction_size_kb: session-compactor threshold (consumed by `session_compact.zig:57`).
 
 test "LlmConfig: model_compaction_size_kb reads value from JSON" {
     const allocator = std.testing.allocator;
@@ -3829,9 +3530,7 @@ test "mcp_servers: clone produces independent deep copy" {
     try std.testing.expect(orig_key.ptr != ctx.headers.get("CONTEXT7_API_KEY").?.ptr);
 }
 
-// ---------------------------------------------------------------------------
 // sub_agents: top-level typed array
-// ---------------------------------------------------------------------------
 
 test "agents: each agent carries its own system_prompt" {
     const allocator = std.testing.allocator;
@@ -3892,23 +3591,18 @@ test "agents: clone produces an independent deep copy" {
     try std.testing.expect(orig.system_prompt.ptr != a.system_prompt.ptr);
 }
 
-// ---------------------------------------------------------------------------
 // resolveAgent — config-driven agent selection
-// ---------------------------------------------------------------------------
 
 const resolve_alloc = std.testing.allocator;
 const resolve_io = std.testing.io;
 
-/// Pair of (cfg, resolved) so the test can keep cfg alive while inspecting
-/// the resolved struct.
+/// Pair of (cfg, resolved) so the test can keep cfg alive while inspecting the resolved struct.
 const ResolvedPair = struct {
     cfg: LlmConfig,
     resolved: LlmConfig.ResolvedAgent,
 };
 
-/// Helper: build a config JSON and resolve `agent_name` against the
-/// configured agents. Caller owns the returned `cfg` and must call `deinit`
-/// on it AFTER they're done with `resolved`.
+/// Helper: build a config JSON and resolve `agent_name` against the configured agents.
 fn resolveFromAgents(json_body: []const u8, agent_name: []const u8) !ResolvedPair {
     var cfg = try writeAndRead(resolve_alloc, resolve_io, json_body);
     const resolved = cfg.resolveAgent(agent_name);
@@ -4066,9 +3760,7 @@ test "resolveAgent: no configured agents means every name misses" {
     try std.testing.expect(pair.resolved.is_random_fallback);
 }
 
-// ---------------------------------------------------------------------------
 // resolveAgent — the configured-agents lookup
-// ---------------------------------------------------------------------------
 
 test "resolveAgent: the agent's own system_prompt reaches the resolved config" {
     const json_body =
@@ -4178,9 +3870,7 @@ test "agents: clone carries the enabled flag on every profile" {
     try std.testing.expect(!cloned.agentEnabled("off"));
 }
 
-// ---------------------------------------------------------------------------
 // Auto-init: writeDefaultConfig() bootstrap helper (Chunk 1)
-// ---------------------------------------------------------------------------
 
 test "writeDefaultConfig creates a valid JSON config file at the given path" {
     const allocator = std.testing.allocator;
@@ -4210,9 +3900,7 @@ test "writeDefaultConfig creates a valid JSON config file at the given path" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, content, .{});
     defer parsed.deinit();
     const obj = parsed.value.object;
-    // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
-    // defaults are GONE from the default file. Profiles + operational
-    // settings only.
+    // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM defaults are GONE from the default file.
     try std.testing.expect(obj.get("api_key") == null);
     try std.testing.expect(obj.get("model") == null);
     try std.testing.expect(obj.get("base_url") == null);
@@ -4220,9 +3908,7 @@ test "writeDefaultConfig creates a valid JSON config file at the given path" {
     try std.testing.expect(obj.get("profiles_models") != null);
     try std.testing.expectEqual(@as(i64, 100), obj.get("model_compaction_size_kb").?.integer);
     try std.testing.expectEqual(@as(bool, false), obj.get("notify_on_complete").?.bool);
-    // Plan 2026-07-07-compaction-inline: the top-level
-    // `max_capacity_token_model` and `compaction_threshold_percent` fields
-    // are RESTORED.
+    // Plan 2026-07-07-compaction-inline: the top-level `max_capacity_token_model` and `compaction_threshold_percent` fields are RESTORED.
     try std.testing.expect(obj.get("max_capacity_token_model").? == .null);
     try std.testing.expect(obj.get("compaction_threshold_percent").? == .null);
 }
@@ -4252,15 +3938,12 @@ test "writeDefaultConfig creates parent directories that do not exist" {
     const content = try reader.interface.allocRemaining(allocator, .limited(64 * 1024));
     defer allocator.free(content);
     try std.testing.expect(content.len > 0);
-    // Plan 2026-08-24-config-simplify-remove-defaults: no top-level
-    // api_key in the default file anymore.
+    // Plan 2026-08-24-config-simplify-remove-defaults: no top-level api_key in the default file anymore.
     try std.testing.expect(std.mem.indexOf(u8, content, "api_key") == null);
     try std.testing.expect(std.mem.indexOf(u8, content, "\"profiles_models\"") != null);
 }
 
-// ---------------------------------------------------------------------------
 // Auto-init: LlmConfig.init() creates default config on first run (Chunk 2)
-// ---------------------------------------------------------------------------
 
 test "init auto-creates config.json when default path does not exist (path=null)" {
     const allocator = std.testing.allocator;
@@ -4268,8 +3951,7 @@ test "init auto-creates config.json when default path does not exist (path=null)
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Get the canonical absolute path of the tmp dir — this becomes our fake
-    // $HOME / $XDG_CONFIG_HOME / %APPDATA% depending on platform.
+    // Get the canonical absolute path of the tmp dir — this becomes our fake $HOME / $XDG_CONFIG_HOME / %APPDATA% depending on platform.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const base_len = try tmp.dir.realPath(std.testing.io, &path_buf);
     const base_path = path_buf[0..base_len];
@@ -4280,13 +3962,11 @@ test "init auto-creates config.json when default path does not exist (path=null)
     try env_map.put("XDG_CONFIG_HOME", base_path);
     try env_map.put("APPDATA", base_path);
 
-    // Call init() with path = null. The default config path resolves via
-    // getDefaultConfigPath to a platform-appropriate location (e.g.
+    // Call init() with path = null.
     var cfg = try LlmConfig.init(allocator, std.testing.io, null, &env_map);
     defer cfg.deinit();
 
-    // Post-condition: the file now exists on disk and contains the default
-    // template.
+    // Post-condition: the file now exists on disk and contains the default template.
     const expected_path = try getDefaultConfigPath(allocator, &env_map);
     defer allocator.free(expected_path);
 
@@ -4299,12 +3979,9 @@ test "init auto-creates config.json when default path does not exist (path=null)
     try std.testing.expect(std.mem.indexOf(u8, content, "api_key") == null);
     try std.testing.expect(std.mem.indexOf(u8, content, "\"profiles_models\": {}") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "\"model_compaction_size_kb\": 100") != null);
-    // Plan 2026-07-15-retry-delay: top-level `retry_delay_ms` is
-    // auto-created as 0 (the documented default = no delay).
+    // Plan 2026-07-15-retry-delay: top-level `retry_delay_ms` is auto-created as 0 (the documented default = no delay).
     try std.testing.expect(std.mem.indexOf(u8, content, "\"retry_delay_ms\": 0") != null);
-    // Plan 2026-07-07-compaction-inline: top-level `max_capacity_token_model`
-    // and `compaction_threshold_percent` are RESTORED as null defaults in the
-    // auto-created file. The loader sees them as the cascade wildcard.
+    // Plan 2026-07-07-compaction-inline: top-level `max_capacity_token_model` and `compaction_threshold_percent` are RESTORED as null defaults in the auto-created …
     try std.testing.expect(std.mem.indexOf(u8, content, "max_capacity_token_model") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "compaction_threshold_percent") != null);
 }
@@ -4328,8 +4005,7 @@ test "init does NOT auto-create when explicit path is missing" {
     try env_map.put("XDG_CONFIG_HOME", base_path);
     try env_map.put("APPDATA", base_path);
 
-    // Explicit path arg (non-null) — must surface ConfigFileNotFound, NOT
-    // silently auto-create.
+    // Explicit path arg (non-null) — must surface ConfigFileNotFound, NOT silently auto-create.
     const result = LlmConfig.init(allocator, std.testing.io, missing_path, &env_map);
     try std.testing.expectError(error.ConfigFileNotFound, result);
 }
@@ -4340,9 +4016,7 @@ test "init does NOT auto-create when file exists with parse error" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Write invalid JSON to the existing file FIRST (realPathFileAlloc
-    // requires the file to exist; mirrors the order used by the
-    // existing writeAndRead helper above).
+    // Write invalid JSON to the existing file FIRST (realPathFileAlloc requires the file to exist; mirrors the order used by the existing writeAndRead helper above).
     try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "config.json",
         .data = "not json{",
@@ -4357,9 +4031,7 @@ test "init does NOT auto-create when file exists with parse error" {
     try env_map.put("HOME", "/tmp");
     try env_map.put("XDG_CONFIG_HOME", "/tmp");
 
-    // File exists → auto-init must NOT run; the parse error surfaces. Note:
-    // `LlmConfig.init` logs via std.log.err on this path for production
-    // observability.
+    // File exists → auto-init must NOT run; the parse error surfaces. Note
     const result = LlmConfig.init(allocator, std.testing.io, config_path, &env_map);
     try std.testing.expectError(error.InvalidJson, result);
 
@@ -4369,16 +4041,12 @@ test "init does NOT auto-create when file exists with parse error" {
     try std.testing.expectEqualStrings("not json{", content_slice);
 }
 
-// ---------------------------------------------------------------------------
-// Compaction overrides: max_capacity_token_model +
-// compaction_threshold_percent (configurable compaction settings — see
+// Compaction overrides: max_capacity_token_model + compaction_threshold_percent (configurable compaction settings — see
 
 test "LlmConfig: LlmAgent.max_capacity_tokens reads value from JSON" {
     const allocator = std.testing.allocator;
 
-    // NOTE: `profiles_models` is a real JSON map (matches the shape the UI
-    // sends). The legacy `profile1..profile4` keys are convenience shorthands
-    // for tests; both shapes parse to the same internal `AgentsMap`.
+    // NOTE: `profiles_models` is a real JSON map (matches the shape the UI sends).
     const json_body =
         \\{ "api_key": "k", "model": "m", "base_url": "b",
         \\  "profiles_models": { "profile1": { "model": "m", "max_capacity_tokens": 128000 } } }
@@ -4506,9 +4174,7 @@ test "LlmConfig: compactionThresholdPercent returns 80 when no profile / null pr
     try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null));
 }
 
-// ============================================================ Top-level
-// defaults round-trip + cascade tests (restored in plan
-// 2026-07-07-compaction-inline)
+// ============================================================ Top-level defaults round-trip + cascade tests (restored in plan 2026-07-07-compaction-inline)
 
 test "LlmConfig: top-level max_capacity_token_model reads from JSON" {
     const allocator = std.testing.allocator;
@@ -4618,14 +4284,10 @@ test "LlmConfig: top-level defaults are skipped when defaults=null passed" {
     try std.testing.expectEqual(@as(u8, 80), cfg.compactionThresholdPercent(null, null));
 }
 
-// ---------------------------------------------------------------------------
 // `active_profile` round-trip (plan 2026-08-06-set-active-profile-default)
-// ---------------------------------------------------------------------------
 
 test "active_profile: parses top-level 'active_profile' string from JSON" {
-    // Regression for "set_active_profile not work too" — the field was
-    // persisted by the PUT handler but dropped on load, so the workflow could
-    // never see it.
+    // Regression for "set_active_profile not work too" — the field was persisted by the PUT handler but dropped on load, so the workflow could never see it.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4662,8 +4324,7 @@ test "active_profile: missing key → null (back-compat with legacy configs)" {
 }
 
 test "active_profile: empty string normalises to null" {
-    // Defends against manual `""` JSON edits (matches the
-    // `pabrik_config_put.zig` PUT coercion: empty string → null).
+    // Defends against manual `""` JSON edits (matches the `pabrik_config_put.zig` PUT coercion: empty string → null).
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4681,14 +4342,10 @@ test "active_profile: empty string normalises to null" {
     try std.testing.expect(cfg.active_agent == null);
 }
 
-// ---------------------------------------------------------------------------
-// profiles_models: arbitrary key names (not just profile1..profile4)
-// Regression for "profile not selected as effective on demand"
+// profiles_models: arbitrary key names (not just profile1..profile4) Regression for "profile not selected as effective on demand"
 
 test "profiles_models: arbitrary name 'alpha' is loaded" {
-    // Pre-fix: ProfilesModelsJson hardcodes profile1..profile4 keys;
-    //           `alpha` is silently dropped → cfg.agents is empty.
-    // Post-fix: `alpha` appears in cfg.agents with its fields intact.
+    // Pre-fix: ProfilesModelsJson hardcodes profile1..profile4 keys; `alpha` is silently dropped → cfg.agents is empty.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4712,8 +4369,7 @@ test "profiles_models: arbitrary name 'alpha' is loaded" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    // The profile name must be preserved verbatim (no renaming to
-    // profile1..profile4).
+    // The profile name must be preserved verbatim (no renaming to profile1..profile4).
     const entry = cfg.agents.getEntry("alpha");
     try std.testing.expect(entry != null);
     try std.testing.expectEqualStrings("alpha-model", entry.?.value_ptr.model);
@@ -4723,9 +4379,7 @@ test "profiles_models: arbitrary name 'alpha' is loaded" {
 }
 
 test "profiles_models: numeric prefix name '900ribu' is loaded" {
-    // The user's actual profile name (per /home/ginwa/.config/pabrik/config.json
-    // at the time of the bug report). Pre-fix this returned null and
-    // the workflow fell back to top-level config silently.
+    // The user's actual profile name (per /home/ginwa/.config/pabrik/config.json at the time of the bug report).
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4756,8 +4410,7 @@ test "profiles_models: numeric prefix name '900ribu' is loaded" {
 }
 
 test "profiles_models: multiple arbitrary names all loaded" {
-    // Defends against the pre-fix schema only loading the first 4
-    // named slots. Three user-named profiles must all be present.
+    // Defends against the pre-fix schema only loading the first 4 named slots.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4792,9 +4445,7 @@ test "profiles_models: multiple arbitrary names all loaded" {
 }
 
 test "profiles_models: empty {} → cfg.agents.count is 0" {
-    // Pre-fix this passed (the schema decoded {} as 4 nulls which produced no
-    // entries), but it's still worth pinning so the post-fix json.Value
-    // iteration doesn't accidentally crash on an empty object.
+    // Pre-fix this passed (the schema decoded {} as 4 nulls which produced no entries), but it's still worth pinning so the post-fix json.Value iteration doesn't …
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4813,9 +4464,7 @@ test "profiles_models: empty {} → cfg.agents.count is 0" {
 }
 
 test "profiles_models: missing key → cfg.agents.count is 0 (back-compat)" {
-    // Legacy configs that never declared profiles_models must still
-    // load cleanly. The post-fix `if (config_json.agents) |…|`
-    // short-circuits when the key is absent.
+    // Legacy configs that never declared profiles_models must still load cleanly.
     const allocator = std.testing.allocator;
 
     const json_body =
@@ -4832,9 +4481,7 @@ test "profiles_models: missing key → cfg.agents.count is 0 (back-compat)" {
     try std.testing.expectEqual(@as(u32, 0), cfg.agents.count());
 }
 
-// ---------------------------------------------------------------------------
-// Top-level defaults backfill (plan
-// 2026-08-24-config-simplify-remove-defaults) config.json no longer carries
+// Top-level defaults backfill (plan 2026-08-24-config-simplify-remove-defaults) config.json no longer carries
 
 test "backfill: missing top-level keys derived from active_profile" {
     const allocator = std.testing.allocator;
@@ -4961,8 +4608,7 @@ test "backfill: no profiles at all → fields stay empty (first-run shape)" {
 test "backfill: active_profile names a missing profile → falls back to first entry" {
     const allocator = std.testing.allocator;
 
-    // Single-profile fixture keeps the fallback deterministic (HashMap
-    // iteration order is unspecified for multi-profile maps).
+    // Single-profile fixture keeps the fallback deterministic (HashMap iteration order is unspecified for multi-profile maps).
     const json_body =
         \\{
         \\  "profiles_models": {
@@ -5124,9 +4770,7 @@ test "rebuildMcpServersParsed: enabled server omits enabled key" {
     try std.testing.expect(mcp_val.object.get("second").?.object.get("enabled") == null);
 }
 
-// ---------------------------------------------------------------------------
-// tools: top-level default tool checklist (Tools tab, plan
-// 2026-09-22-tools-menu-config-default-tools).
+// tools: top-level default tool checklist (Tools tab, plan 2026-09-22-tools-menu-config-default-tools).
 
 test "tools: missing key → null (legacy defaults, D2 absent)" {
     const allocator = std.testing.allocator;
@@ -5175,8 +4819,7 @@ test "tools: present list parses into an owned slice and survives clone" {
     try std.testing.expectEqualStrings("read_file", cfg.tools.?[1]);
     try std.testing.expectEqualStrings("glob", cfg.tools.?[2]);
 
-    // Clone deep-copies (owned by the clone's allocator, independent
-    // pointers) — `parsed.deinit()` in init must not have left aliases.
+    // Clone deep-copies (owned by the clone's allocator, independent pointers) — `parsed.deinit()` in init must not have left aliases.
     try std.testing.expect(cloned.tools != null);
     try std.testing.expectEqual(@as(usize, 3), cloned.tools.?.len);
     try std.testing.expect(cfg.tools.?[0].ptr != cloned.tools.?[0].ptr);
@@ -5192,8 +4835,7 @@ test "tools: empty array stays non-null with len 0 (D2 [] ≠ absent)" {
     var cfg = try writeAndRead(allocator, std.testing.io, json_body);
     defer cfg.deinit();
 
-    // The D2 distinction: `[]` must NOT collapse to null, or an
-    // all-unchecked checklist would silently snap back to legacy defaults.
+    // The D2 distinction: `[]` must NOT collapse to null, or an all-unchecked checklist would silently snap back to legacy defaults.
     try std.testing.expect(cfg.tools != null);
     try std.testing.expectEqual(@as(usize, 0), cfg.tools.?.len);
 }
@@ -5201,8 +4843,7 @@ test "tools: empty array stays non-null with len 0 (D2 [] ≠ absent)" {
 test "tools: wrong type (string) fails whole-config parse with InvalidJson" {
     const allocator = std.testing.allocator;
 
-    // Typed field: a hand-edited non-array value is a hard parse error
-    // (same failure mode as the other typed fields — plan §8).
+    // Typed field: a hand-edited non-array value is a hard parse error (same failure mode as the other typed fields — plan §8).
     const json_body =
         \\{ "api_key": "k", "model": "m", "base_url": "b", "tools": "bash" }
     ;
@@ -5211,8 +4852,6 @@ test "tools: wrong type (string) fails whole-config parse with InvalidJson" {
 }
 
 // ─── Skill Evals — the config toggle (default OFF) ───────────────────────
-// These live inline rather than in config_test.zig because they exercise
-// `LlmConfig.LlmConfigJson` and `parseApplyMode`, both of which are private
 
 test "skill_evals defaults to disabled" {
     const cfg: SkillEvalsConfig = .{};
@@ -5227,8 +4866,7 @@ test "skill_evals defaults to disabled" {
 test "skill_evals is disabled when config.json omits the key entirely" {
     const allocator = std.testing.allocator;
 
-    // The guarantee that matters for an existing install: a config written
-    // before this feature existed must parse to exactly the old behaviour.
+    // The guarantee that matters for an existing install: a config written before this feature existed must parse to exactly the old behaviour.
     const parsed = try std.json.parseFromSlice(LlmConfig.LlmConfigJson, allocator,
         \\{"model":"m","provider":"p"}
     , .{ .ignore_unknown_fields = true });
@@ -5247,8 +4885,7 @@ test "skill_evals defaults to disabled when the block is present but empty" {
     defer parsed.deinit();
 
     try std.testing.expect(!parsed.value.skill_evals.enabled);
-    // The non-switch knobs still get their documented defaults, so turning the
-    // switch on alone is enough to get a safe, bounded configuration.
+    // The non-switch knobs still get their documented defaults, so turning the switch on alone is enough to get a safe, bounded configuration.
     try std.testing.expectEqual(@as(u32, 8), parsed.value.skill_evals.max_skills_per_run);
     try std.testing.expectEqual(@as(u32, 300), parsed.value.skill_evals.fact_lease_seconds);
 }
@@ -5269,9 +4906,7 @@ test "skill_evals honours an explicit opt-in" {
 test "defaultConfigJson ships the feature off and still parses" {
     const allocator = std.testing.allocator;
 
-    // The file `Config.init` writes for a brand-new install. Parsing it back
-    // must succeed (a template that does not round-trip would break startup)
-    // and must leave the feature off.
+    // The file `Config.init` writes for a brand-new install.
     const parsed = try std.json.parseFromSlice(
         LlmConfig.LlmConfigJson,
         allocator,
@@ -5291,9 +4926,7 @@ test "defaultConfigJson ships the feature off and still parses" {
 test "an unrecognised apply_mode degrades to propose instead of failing the parse" {
     const allocator = std.testing.allocator;
 
-    // `apply_mode` is a nullable string on the JSON side precisely so a typo
-    // here cannot make the user's whole config.json unloadable. This test
-    // pins both halves of that: the parse succeeds, and the mapping is safe.
+    // `apply_mode` is a nullable string on the JSON side precisely so a typo here cannot make the user's whole config.json unloadable.
     const parsed = try std.json.parseFromSlice(LlmConfig.LlmConfigJson, allocator,
         \\{"skill_evals":{"enabled":true,"apply_mode":"proposal"}}
     , .{ .ignore_unknown_fields = true });
@@ -5320,8 +4953,7 @@ test "parseApplyMode maps the known values and is safe on absent input" {
 
 // ───────────────────── tests: web_search provider config (Task 1) ──────────
 
-/// Parse a `web_search` body the way `init` does, then free it. Returns an
-/// owned map the caller must release with `freeTestProviders`.
+/// Parse a `web_search` body the way `init` does, then free it.
 fn parseTestProviders(
     allocator: std.mem.Allocator,
     body: []const u8,
@@ -5382,9 +5014,7 @@ test "web_search: an empty-string key is normalised to absent, never stored" {
     );
     defer freeTestProviders(&providers, alloc);
 
-    // `Backend.exec` binds "" as SQL NULL, so a blank credential is
-    // the exact shape that survives a JSON round-trip while meaning unset.
-    // Normalising it here keeps `isUsable` a single rule.
+    // `Backend.exec` binds "" as SQL NULL, so a blank credential is the exact shape that survives a JSON round-trip while meaning unset.
     try std.testing.expectEqual(@as(?[]const u8, null), providers.get("x").?.key);
 }
 
@@ -5443,9 +5073,7 @@ test "web_search: the config `curl` keeps the literal {key} and never the secret
     const p = providers.get("p").?;
     // The template carries the placeholder...
     try std.testing.expect(std.mem.indexOf(u8, p.curl, "{key}") != null);
-    // ...and never the credential. This is the property that makes
-    // `list_web_search_providers` safe to hand to the model with no
-    // redaction logic at all.
+    // ...and never the credential.
     try std.testing.expect(std.mem.indexOf(u8, p.curl, "SENTINEL_SECRET_DO_NOT_LEAK") == null);
 }
 

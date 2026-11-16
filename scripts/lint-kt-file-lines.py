@@ -3,10 +3,10 @@
 
 WHY THIS EXISTS
 ---------------
-CODING_STANDARDS.md §4 caps a Zig comment block at three lines, §5 the same
-in Vue/TypeScript, and §7 the same in Kotlin at two. Those rules cap the
-prose. Nothing capped the CODE, so a Kotlin file could grow until the reader
-had to scroll to find the class it declares.
+CODING_STANDARDS.md §4 caps a Zig comment block at one line, §5 the same in
+Vue/TypeScript, and §7 the same in Kotlin. Those rules cap the prose.
+Nothing capped the CODE, so a Kotlin file could grow until the reader had to
+scroll to find the class it declares.
 
 The desktop app has had that cap since it was written — ESLint's `max-lines`
 at 600 for source, 1000 for tests, 800 for `.d.ts`. This is the Android half,

@@ -1,6 +1,4 @@
-//! Bulk endpoint `POST .../kanban/columns/:column_id/run_all_agents`. Starts
-//! agents on every idle task in a kanban column, including tasks not yet
-//! loaded by frontend pagination.
+//! Bulk endpoint `POST .../kanban/columns/:column_id/run_all_agents`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -12,9 +10,7 @@ const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 const start_agent = @import("start_agent.zig");
 
-// =====================================================================
 // Domain types
-// =====================================================================
 
 /// Per-task outcome inside a bulk run.
 pub const PerTaskResult = enum {
@@ -23,15 +19,13 @@ pub const PerTaskResult = enum {
     failed,
 };
 
-/// Injectable per-task starter. Production wraps `startAgentUseCase`;
-/// tests supply a fake that consults the real `isTaskRunning` guard.
+/// Injectable per-task starter.
 pub const TaskStarter = struct {
     ptr: ?*anyopaque,
     run: *const fn (?*anyopaque, []const u8) PerTaskResult,
 };
 
-/// Bulk outcome: owned id lists. Caller owns every string + slice;
-/// release with `deinit`.
+/// Bulk outcome: owned id lists.
 pub const RunAllAgentsOutcome = struct {
     started: [][]u8,
     skipped: [][]u8,
@@ -50,9 +44,7 @@ pub const RunAllAgentsOutcome = struct {
     }
 };
 
-// =====================================================================
 // Injectable core (behavioural-test seam)
-// =====================================================================
 
 /// List every task id in `column_id`, then run `starter` per id.
 pub fn runAllAgentsWithStarter(
@@ -78,8 +70,7 @@ pub fn runAllAgentsWithStarter(
         }
     }
 
-    // 2. Server-side id list (pagination-agnostic): the kanban join
-    //    table holds the 1:1 task-to-column placement post-Migration-072.
+    // 2.
     var ids = std.ArrayList([]u8).empty;
     errdefer {
         for (ids.items) |id| allocator.free(id);
@@ -100,9 +91,7 @@ pub fn runAllAgentsWithStarter(
         }
     }
 
-    // 3. Sequential per-id loop (avoids thundering herd on
-    //    emit_run_agent + sqlite worker writes). One failure never
-    //    aborts the rest.
+    // 3.
     var started = std.ArrayList([]u8).empty;
     errdefer {
         for (started.items) |id| allocator.free(id);
@@ -126,8 +115,7 @@ pub fn runAllAgentsWithStarter(
             .failed => try failed.append(allocator, id),
         }
     }
-    // Ownership of every id slice moves into the three outcome lists;
-    // release only the staging container (not its elements).
+    // Ownership of every id slice moves into the three outcome lists; release only the staging container (not its elements).
     ids.deinit(allocator);
 
     return .{
@@ -137,9 +125,7 @@ pub fn runAllAgentsWithStarter(
     };
 }
 
-// =====================================================================
 // Live binding (Option C: reuse startAgentUseCase per id)
-// =====================================================================
 
 const LiveCtx = struct {
     allocator: std.mem.Allocator,
@@ -158,9 +144,7 @@ fn liveRun(ptr: ?*anyopaque, task_id: []const u8) PerTaskResult {
     };
 }
 
-/// Production use-case: reuse the single-task `startAgentUseCase` per id
-/// (keeping its 404-via-getWorkspaceItemTask + 409-via-isTaskRunning guards —
-/// never copy-pasted).
+/// Production use-case: reuse the single-task `startAgentUseCase` per id (keeping its 404-via-getWorkspaceItemTask + 409-via-isTaskRunning guards — never …
 pub fn runAllAgentsUseCase(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -174,12 +158,9 @@ pub fn runAllAgentsUseCase(
     return runAllAgentsWithStarter(allocator, db, column_id, starter);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// `POST
-/// /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/run_all_agents`.
+/// `POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/run_all_agents`.
 pub fn runAllAgentsHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -187,8 +168,7 @@ pub fn runAllAgentsHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // 1. Validate `:column_id` path parameter (empty-slice-as-NULL rule:
-    //    "" must never reach a WHERE binding).
+    // 1. Validate `:column_id` path parameter (empty-slice-as-NULL rule
     const column_id = req.params.get("column_id") orelse "";
     if (column_id.len == 0) {
         return res.jsonResponse(.{
@@ -206,9 +186,7 @@ pub fn runAllAgentsHandler(
     };
     const sqlite_db = di.db;
 
-    // 3. Apply the use-case (which reuses startAgentUseCase per task id).
-    // Owner rides along so each started worker keeps its session row owned
-    // under `--auth` (plan 2026-09-25).
+    // 3.
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
     const outcome = runAllAgentsUseCase(allocator, sqlite_db, di, column_id, owner) catch |err| {
@@ -230,12 +208,9 @@ pub fn runAllAgentsHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "run_all_agents use-case failed" }),
         });
     };
-    // Note: outcome slices are arena-allocated on the success path; the
-    // per-request arena frees them (no deinit here). The ColumnNotFound
-    // branch above maps unknown columns to 404.
+    // Note: outcome slices are arena-allocated on the success path; the per-request arena frees them (no deinit here).
 
-    // 4. Success envelope with the three id lists the frontend summary
-    //    banner needs: "started", "skipped", "failed".
+    // 4.
     const started_json = try std.json.Stringify.valueAlloc(allocator, outcome.started, .{});
     const skipped_json = try std.json.Stringify.valueAlloc(allocator, outcome.skipped, .{});
     const failed_json = try std.json.Stringify.valueAlloc(allocator, outcome.failed, .{});
@@ -249,14 +224,11 @@ pub fn runAllAgentsHandler(
     });
 }
 
-// =====================================================================
 // Inline behavioural tests.
 
 const testing = std.testing;
 
-// =====================================================================
 // Behavioural harness: bare in-memory DB + fake starter
-// =====================================================================
 
 const TestDb = struct {
     db: database.Db,
@@ -281,9 +253,7 @@ fn setupDb() !TestDb {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Post-Migration-072 minimal schema: the kanban join table holds the
-/// 1:1 task-to-board placement (workspace_item_tasks has NO
-/// kanban_column_id column). Mirrors the kanban_model.zig test setup.
+/// Post-Migration-072 minimal schema: the kanban join table holds the 1:1 task-to-board placement (workspace_item_tasks has NO kanban_column_id column).
 fn setupColumnSchema(ctx: *TestDb) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,
@@ -300,8 +270,7 @@ fn setupColumnSchema(ctx: *TestDb) !void {
         \\    workspace_item_task_id TEXT PRIMARY KEY, kanban_column_id TEXT NOT NULL,
         \\    kanban_position INTEGER NOT NULL DEFAULT 0)
     , &.{});
-    // isTaskRunning only reads worker.session_id; the minimal schema
-    // is enough (extra production columns are never referenced).
+    // isTaskRunning only reads worker.session_id; the minimal schema is enough (extra production columns are never referenced).
     try ctx.db.exec(alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY, session_id TEXT NOT NULL)
@@ -309,7 +278,6 @@ fn setupColumnSchema(ctx: *TestDb) !void {
 }
 
 /// Seed one column (c1) with three tasks (A idle, B running, C idle).
-/// B gets a `worker` row so the real `isTaskRunning` guard fires.
 fn seedThreeTaskColumn(ctx: *TestDb) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,
@@ -328,9 +296,7 @@ fn seedThreeTaskColumn(ctx: *TestDb) !void {
         &.{});
 }
 
-/// Fake per-task starter with production guard semantics: consults the real
-/// `isTaskRunning` (seeded `worker` row ⇒ skipped), honours a scripted
-/// fail-list (⇒ failed), otherwise ⇒ started.
+/// Fake per-task starter with production guard semantics: consults the real `isTaskRunning` (seeded `worker` row ⇒ skipped), honours a scripted fail-list (⇒ …
 const FakeCtx = struct {
     db: *database.Db,
     fail_ids: []const []const u8 = &.{},
@@ -363,9 +329,7 @@ test "runAllAgents rejects empty column_id" {
     defer ctx.deinit();
     var fake = FakeCtx{ .db = &ctx.db };
 
-    // Empty-slice-as-NULL rule: "" must never reach a `WHERE id = ?`
-    // binding (Backend binds "" as SQL NULL). The use-case
-    // validates first and returns EmptyColumnId.
+    // Empty-slice-as-NULL rule: "" must never reach a `WHERE id = ?` binding (Backend binds "" as SQL NULL).
     const result = runAllAgentsWithStarter(
         testing.allocator,
         &ctx.db,
@@ -428,8 +392,7 @@ test "runAllAgents collects single-task failures instead of throwing" {
     defer ctx.deinit();
     try setupColumnSchema(&ctx);
     try seedThreeTaskColumn(&ctx);
-    // task-C's starter blows up (e.g. emit_run_agent DB error in
-    // production); A must still start and B must still skip.
+    // task-C's starter blows up (e.g. emit_run_agent DB error in production); A must still start and B must still skip.
     const fail_ids: []const []const u8 = &.{"task-C"};
     var fake = FakeCtx{ .db = &ctx.db, .fail_ids = fail_ids };
 

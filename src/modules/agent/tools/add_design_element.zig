@@ -11,20 +11,15 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `add_element` tool. The agent passes `page_id` (from
-/// the `set_design_page` response), the element's `name`, `type`, and `html`.
+/// Input structure for `add_element` tool.
 pub const AddElementInput = struct {
-    /// The page id (NOT the item_id). The LLM discovers page_ids
-    /// via `set_design_page` (the response includes the page id).
+    /// The page id (NOT the item_id).
     page_id: []const u8 = "",
-    /// Human-readable element name. Must be unique within the page.
-    /// Must NOT contain '/' or null bytes (the v6 file-backed model
-    /// stores the HTML body at `<page_dir>/<sanitized_name>.html`).
+    /// Human-readable element name.
     name: []const u8 = "",
     /// Element type — one of: rectangle, ellipse, text, image, frame, group.
     type: []const u8 = "rectangle",
-    /// HTML body. Written to
-    /// `<workspace_item.path>/.pabrik/design/<page>/<element>.html`.
+    /// HTML body.
     html: []const u8 = "",
     /// X position in CSS pixels. Defaults to 0.
     x: ?i64 = null,
@@ -34,8 +29,7 @@ pub const AddElementInput = struct {
     width: ?i64 = null,
     /// Height in CSS pixels. Defaults to 100.
     height: ?i64 = null,
-    /// Fill color (CSS color string, e.g. `#ffffff`, `rgba(0,0,0,0.5)`,
-    /// `transparent`). Defaults to "" (no fill).
+    /// Fill color (CSS color string, e.g. `#ffffff`, `rgba(0,0,0,0.5)`, `transparent`).
     fill: []const u8 = "",
     /// Rotation in degrees (clockwise). Defaults to 0.
     rotation: ?f64 = null,
@@ -45,20 +39,15 @@ pub const AddElementInput = struct {
     opacity: ?f64 = null,
     /// Text content (for `type='text'`). Defaults to "".
     text_content: []const u8 = "",
-    /// Text style (JSON-encoded string, e.g.
-    /// `{"font":"Inter","size":14}`). Defaults to "".
+    /// Text style (JSON-encoded string, e.g. `{"font":"Inter","size":14}`).
     text_style: []const u8 = "",
     /// Image URL (for `type='image'`). Defaults to "".
     image_url: []const u8 = "",
-    /// Optional FK to an existing `group` or `frame` on the SAME page. When
-    /// set, the new element nests under that container instead of landing at
-    /// top-level.
+    /// Optional FK to an existing `group` or `frame` on the SAME page.
     parent_id: ?[]const u8 = null,
 };
 
-/// Top-level tool definition for the LLM. The description enumerates the 6
-/// valid types, lists the geometry defaults, and tells the LLM that `page_id`
-/// comes from a previous `set_design_page` call (NOT from Workspace Context).
+/// Top-level tool definition for the LLM.
 pub const add_design_element_tool_system_prompt =
     \\## Add Design Element Tool — Behavior
     \\Use `add_element` to create a new positioned element on a design page.
@@ -164,8 +153,7 @@ pub const add_design_element_tool = AgentTool{
     },
 };
 
-/// Generate an error JSON object `{"error":...}` for the tool
-/// dispatcher (detected via the top-level `error` key).
+/// Generate an error JSON object `{"error":...}` for the tool dispatcher (detected via the top-level `error` key).
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -178,9 +166,7 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     return try errorJSON(allocator, error_msg);
 }
 
-/// Parse the `type` string into an `ElementType` enum. Returns the parsed
-/// enum on success, or `null` when the string is not one of the 6 valid
-/// types.
+/// Parse the `type` string into an `ElementType` enum.
 pub fn parseElementType(type_str: []const u8) ?design_model.ElementType {
     if (std.mem.eql(u8, type_str, "rectangle")) return .rectangle;
     if (std.mem.eql(u8, type_str, "ellipse")) return .ellipse;
@@ -191,8 +177,7 @@ pub fn parseElementType(type_str: []const u8) ?design_model.ElementType {
     return null;
 }
 
-/// Canonical element JSON object (keys mirror the old `<element ... />`
-/// attributes 1:1; attributes omitted-when-empty become explicit nulls).
+/// Canonical element JSON object (keys mirror the old `<element ...
 pub const ElementJSON = struct {
     id: []const u8,
     page_id: []const u8,
@@ -248,15 +233,13 @@ pub fn elementToJSON(
     }, .{});
 }
 
-/// Clean an optional free-text field: empty becomes null, otherwise the
-/// control-char-sanitized copy owned by the caller's arena.
+/// Clean an optional free-text field: empty becomes null, otherwise the control-char-sanitized copy owned by the caller's arena.
 fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     if (s.len == 0) return null;
     return try sanitizeControlChars(allocator, s);
 }
 
 /// Validate `page_id` is non-empty and has the right `page_` prefix.
-/// Returns null when shape is correct, or an error JSON object on mismatch.
 fn validatePageIdShape(allocator: std.mem.Allocator, page_id: []const u8) !?[]u8 {
     if (page_id.len == 0) {
         return try errorJSON(allocator, "page_id is required (find it in the `id=\"...\"` attribute of a previous set_design_page response)");
@@ -293,9 +276,7 @@ fn validateNameShape(allocator: std.mem.Allocator, name: []const u8) !?[]u8 {
     return null;
 }
 
-/// Validate `html` is non-empty. The DB stores `html` separately on
-/// disk, so an empty body would create an orphan `<element>` row with
-/// a zero-byte file.
+/// Validate `html` is non-empty.
 fn validateHtmlShape(allocator: std.mem.Allocator, html: []const u8) !?[]u8 {
     if (html.len == 0) {
         return try errorJSON(allocator, "html is required (the element's HTML body — write something)");
@@ -303,9 +284,7 @@ fn validateHtmlShape(allocator: std.mem.Allocator, html: []const u8) !?[]u8 {
     return null;
 }
 
-/// Validate `parent_id` (when provided) has the right shape — starts with
-/// `elem_`. The deeper validation (same page, type in {`group`, `frame`})
-/// runs in `design_model.addElement` once the DB is consulted.
+/// Validate `parent_id` (when provided) has the right shape — starts with `elem_`.
 fn validateParentIdShape(allocator: std.mem.Allocator, parent_id: []const u8) !?[]u8 {
     if (!std.mem.startsWith(u8, parent_id, "elem_")) {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator,
@@ -330,9 +309,7 @@ pub fn executeAddElementToString(
         if (try validateParentIdShape(allocator, pid)) |e| return e;
     }
 
-    // 1. Parse the type string into the ElementType enum. Returns a
-    // structured error when the type is not one of the 6 valid values — the
-    // LLM is told all 6 in the description so it can self-correct.
+    // 1.
     const elem_type = parseElementType(input.type) orelse {
         return try errorJSON(allocator, "type must be one of: rectangle, ellipse, text, image, frame, group");
     };
@@ -346,8 +323,7 @@ pub fn executeAddElementToString(
     const corner_radius = input.corner_radius orelse 0;
     const opacity = input.opacity orelse 1.0;
 
-    // 3. Call addElement (atomically writes the HTML to disk and inserts the
-    // metadata row).
+    // 3.
     const fill_for_db: []const u8 = if (input.fill.len == 0) "transparent" else input.fill;
     const element_id = design_model.addElement(allocator, db, io, .{
         .page_id = input.page_id,
@@ -377,8 +353,7 @@ pub fn executeAddElementToString(
     };
     defer allocator.free(element_id);
 
-    // 4. Re-fetch the full element via getElement so the LLM gets
-    //    the canonical state (with file_path, timestamps, etc.).
+    // 4.
     const elem = design_model.getElement(allocator, db, element_id) catch |err| {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: getElement failed: {s}", .{@errorName(err)}));
     };
@@ -619,9 +594,7 @@ fn setupDbWithPage() !struct {
     var tmp = testing.tmpDir(.{});
     var tmpdir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmpdir_len = try tmp.dir.realPath(testing.io, &tmpdir_buf);
-    // Use the stack buffer directly (don't dupe — `db.exec` copies the slice
-    // internally). The `tmp` dir is reclaimed by the OS at process exit
-    // (acceptable for test-suite use, per design_model_test.zig's precedent).
+    // Use the stack buffer directly (don't dupe — `db.exec` copies the slice internally).
     const tmpdir_path: []const u8 = tmpdir_buf[0..tmpdir_len];
 
     const item_id_str = "item_design_1";
@@ -731,8 +704,7 @@ test "executeAddElementToString accepts all 6 element types" {
         defer alloc.free(json);
         var parsed = try expectNoJSONError(alloc, json);
         defer parsed.deinit();
-        // Verify the type appears in the response (the wire format is
-        // the "type" key of the element object).
+        // Verify the type appears in the response (the wire format is the "type" key of the element object).
         try testing.expectEqualStrings(t, parsed.value.object.get("type").?.string);
     }
 }
@@ -837,8 +809,7 @@ test "executeAddElementToString accepts parent_id (nests new element under exist
     };
     const child_json = try executeAddElementToString(alloc, &s.db, s.threaded.io(), child_input);
     defer alloc.free(child_json);
-    // Response JSON must include the parent_id key (the LLM needs
-    // to confirm the nesting took effect).
+    // Response JSON must include the parent_id key (the LLM needs to confirm the nesting took effect).
     var child_parsed = try expectNoJSONError(alloc, child_json);
     defer child_parsed.deinit();
     try testing.expectEqualStrings(parent_elem_id, child_parsed.value.object.get("parent_id").?.string);
@@ -941,7 +912,6 @@ test "executeAddElementToString returns PageNotFound error when page_id doesn't 
 }
 
 // Exec adapter — merged from `add_design_element.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -964,8 +934,7 @@ pub fn execAddElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer parsed.deinit();
 
-    // addElement needs Io for the mkdir-p + atomic file write of the
-    // HTML body. ctx.io is the per-request Io runtime.
+    // addElement needs Io for the mkdir-p + atomic file write of the HTML body. ctx.io is the per-request Io runtime.
     const inner = executeAddElementToString(
         ctx.allocator,
         ctx.db,
@@ -979,9 +948,7 @@ pub fn execAddElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

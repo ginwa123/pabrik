@@ -22,15 +22,7 @@ sealed interface ChatResult<out T> {
     data class Unavailable(val message: String) : ChatResult<Nothing>
 }
 
-/**
- * The chat endpoints, over the same [AuthTransport] the auth flow and the
- * sidebar use, so the in-app network inspector records the exact bytes the chat
- * sent rather than a parallel implementation.
- *
- * The event stream is the one exception: it is a long-lived connection with no
- * end of body, so it cannot go through a request/response transport at all.
- * See [ChatEventStream].
- */
+/** The chat endpoints, over the same [AuthTransport] the auth flow and the sidebar use, so the in-app network inspector records the exact bytes the chat sent … */
 class ChatClient(
     private val sessionStore: SessionStore,
     baseUrlProvider: () -> String = { AuthConfig.BASE_URL },
@@ -49,11 +41,7 @@ class ChatClient(
         parse = ChatApi::parseMessages,
     )
 
-    /**
-     * Queues a turn. Returns as soon as the server has enqueued it — the reply
-     * carries no message, which is why the transcript waits for the SSE echo
-     * instead of inserting a local bubble.
-     */
+    /** Queues a turn. */
     fun sendMessage(
         sessionId: String,
         message: String,
@@ -82,33 +70,13 @@ class ChatClient(
         return interpretWrite(response, "Your message could not be sent. Try again.")
     }
 
-    /**
-     * Every configured profile, and the reader's active default.
-     *
-     * Read once when a session opens rather than per tap, because a profile
-     * list cannot change from inside this app — it changes in the desktop's
-     * settings dialog. See [ChatUiState.availableProfiles] for why that makes a
-     * per-tap refetch pure waste rather than a refresh.
-     */
+    /** Every configured profile, and the reader's active default. */
     fun loadProfiles(): ChatResult<ProfilesPage> = get(
         path = ChatApi.profilesPath(),
         parse = ChatApi::parseProfiles,
     )
 
-    /**
-     * Saves which profile this chat runs on.
-     *
-     * A `PUT` and not a field on the next send, because the choice has to
-     * outlive this process: the reader picks a profile on Tuesday, and the
-     * reply that goes out on Wednesday is queued by a worker this phone is not
-     * holding. Sending it with the turn would make the selection apply to
-     * exactly one message.
-     *
-     * [profileName] empty clears the per-session override and puts the chat
-     * back on the cascade's next step. That is a real instruction the server
-     * honours (`session_update.zig:84` writes the column unconditionally), so
-     * it is the same call with different text rather than a second method.
-     */
+    /** Saves which profile this chat runs on. */
     fun updateSelectedProfile(
         sessionId: String,
         profileName: String,
@@ -129,19 +97,7 @@ class ChatClient(
         )
     }
 
-    /**
-     * The turns waiting behind this chat's current run.
-     *
-     * The bootstrap for the composer's queue panel, and the only honest answer
-     * to "did my message go anywhere" after a cold open: the `queue_queued`
-     * frame for a turn queued while the app was closed was emitted to nobody,
-     * and the stream keeps no replay to ask again.
-     *
-     * A failed read leaves the panel showing what the stream has said since,
-     * which is why this returns a [ChatResult] rather than throwing — an
-     * offline phone should still be able to see a message it queued a minute
-     * ago on a connection that has since dropped.
-     */
+    /** The turns waiting behind this chat's current run. */
     fun loadQueuedMessages(sessionId: String): ChatResult<List<QueuedChatMessage>> = get(
         path = ChatApi.queueMessagesPath(sessionId),
         parse = ChatApi::parseQueuedMessages,
@@ -160,13 +116,7 @@ class ChatClient(
         return interpretWrite(response, "Could not stop the run. Try again.")
     }
 
-    /**
-     * Answers a pending `ask_user` question, which is what resumes the run.
-     *
-     * The reply carries the new status rather than the rewritten tool row, so
-     * the caller refetches the transcript: the authoritative row arrives over
-     * SSE, and rewriting the card optimistically would fight that echo.
-     */
+    /** Answers a pending `ask_user` question, which is what resumes the run. */
     fun answerQuestion(
         sessionId: String,
         questionId: String? = null,
@@ -191,61 +141,25 @@ class ChatClient(
         return interpretWrite(response, "The answer could not be sent. Try again.")
     }
 
-    /**
-     * The in-flight partial text for a run that is still going.
-     *
-     * There is no SSE replay to re-attach from, so a reconnect or a process
-     * death mid-run is repaired by reading this snapshot and then refetching the
-     * transcript. It is in-memory on the server, so `active: false` after a
-     * server restart is normal rather than an error.
-     */
+    /** The in-flight partial text for a run that is still going. */
     fun loadStreamSnapshot(sessionId: String): ChatResult<String> = get(
         path = ChatApi.streamSnapshotPath(sessionId),
         parse = { body -> JSONObject(body).optNullableString("content").orEmpty() },
     )
 
-    /**
-     * The sessions with a live worker, as a bootstrap for the running set
-     * that [com.pabrik.mobile.worker.RunningSessionsStore] holds.
-     *
-     * The stream carries no replay, so a run that was already going when the app
-     * opened produces no event at all — the list is the only way to learn about
-     * it, and the only way to un-learn a run that stopped while the socket was
-     * down.
-     *
-     * It answers with the *rows*, not a boolean per session: the backend
-     * hardcodes `status: "running"` and `is_running: true` for everything it
-     * returns, so [WorkerApi.parseRunningSessionIds] projects presence down to
-     * the set of ids rather than trusting a field that is always true.
-     */
+    /** The sessions with a live worker, as a bootstrap for the running set that [com.pabrik.mobile.worker.RunningSessionsStore] holds. */
     fun loadRunningSessions(): ChatResult<Set<String>> = get(
         path = WorkerApi.workersPath(),
         parse = WorkerApi::parseRunningSessionIds,
     )
 
-    /**
-     * Whether a worker is registered on this one session right now.
-     *
-     * The authoritative answer to "did the run I am watching finish?", asked
-     * per-session so the [WorkerApi.WORKERS_PAGE_LIMIT] truncation in the
-     * global list cannot turn a live run into `false`.
-     *
-     * Separate from [loadRunningSessions] rather than a membership test against
-     * it: this is read at a moment when a wrong `false` destroys real state —
-     * a chat that un-freezes its placeholder mid-answer and drops the text it
-     * had streamed — so it cannot be served from a projection with a cap and a
-     * throttle on it. `RunningSessionsStore` answers the same question for the
-     * sidebar's spinner, where the cost of being briefly wrong is a glance;
-     * here it is the difference between a transcript and a lie.
-     */
+    /** Whether a worker is registered on this one session right now. */
     fun isSessionRunning(sessionId: String): ChatResult<Boolean> =
         when (val result = get(
             path = WorkerApi.workersPathForSession(sessionId),
             parse = WorkerApi::parseRunningSessionIds,
         )) {
-            // A null parse comes back as `Unavailable`, never as `false`: an
-            // envelope without the array is not the server saying nothing is
-            // running.
+            // A null parse comes back as `Unavailable`, never as `false`: an envelope without the array is not the server saying nothing is running.
             is ChatResult.Loaded -> ChatResult.Loaded(sessionId in result.value)
             is ChatResult.SignedOut -> ChatResult.SignedOut
             is ChatResult.Rejected -> result
@@ -264,19 +178,7 @@ class ChatClient(
         return interpretRead(response, parse)
     }
 
-    /**
-     * [parse] returns null when the payload was readable but the field this
-     * read needs was **absent** — which is not the same answer as an empty one,
-     * and the difference is the whole point of a nullable `parse`.
-     *
-     * It used to return `ChatResult.Loaded(emptySet())` for both, so a payload
-     * without the array was indistinguishable from a server with nothing
-     * running, and the caller — a spinner, and now a streaming placeholder
-     * that would otherwise delete real text — acted on a fabricated empty.
-     * Every caller already treats `Unavailable` as "answer nothing, change
-     * nothing", which is the correct response to a shape it does not
-     * recognise.
-     */
+    /** [parse] returns null when the payload was readable but the field this read needs was **absent** — which is not the same answer as an empty one, and the … */
     private fun <T : Any> interpretRead(
         response: AuthHttpResponse,
         parse: (String) -> T?,
@@ -285,17 +187,14 @@ class ChatClient(
             return ChatResult.SignedOut
         }
         if (response.statusCode == HttpURLConnection.HTTP_NOT_FOUND) {
-            // A 404 here means "not yours" as often as "does not exist" — the
-            // backend collapses both. Saying "not found" keeps it neutral.
+            // A 404 here means "not yours" as often as "does not exist" — the backend collapses both.
             return ChatResult.Rejected("That chat no longer exists.")
         }
         if (response.statusCode !in 200..299) {
             return ChatResult.Unavailable(messageForStatus(response.statusCode))
         }
         return try {
-            // Null and "threw" are the same answer here on purpose: both mean
-            // the payload did not carry a field this read needs, and neither is
-            // an answer about the server's state.
+            // Null and "threw" are the same answer here on purpose: both mean the payload did not carry a field this read needs, and neither is an answer about the server's …
             parse(response.body)?.let { ChatResult.Loaded(it) }
                 ?: ChatResult.Unavailable("The server sent a response this app could not read.")
         } catch (_: Exception) {
@@ -303,27 +202,13 @@ class ChatClient(
         }
     }
 
-    /**
-     * A write whose reply carries nothing this client needs.
-     *
-     * An overload rather than a defaulted `parse` on the generic one: a default
-     * of `{ Unit }` leaves `T` unconstrained, so the compiler cannot infer it
-     * at a call site and every existing caller would have to say
-     * `interpretWrite<Unit>(...)`. Two functions keep each call site saying only
-     * what it actually reads.
-     */
+    /** A write whose reply carries nothing this client needs. */
     private fun interpretWrite(
         response: AuthHttpResponse,
         rejectionMessage: String,
     ): ChatResult<Unit> = interpretWrite(response, rejectionMessage, parse = { })
 
-    /**
-     * A write that answers with a value, run through [parse].
-     *
-     * The parse is *inside* the try-free region but guarded, so an unreadable
-     * success body is [ChatResult.Unavailable] rather than an exception
-     * escaping into a coroutine — the same rule [interpretRead] follows.
-     */
+    /** A write that answers with a value, run through [parse]. */
     private fun <T> interpretWrite(
         response: AuthHttpResponse,
         rejectionMessage: String,
@@ -332,8 +217,7 @@ class ChatClient(
         if (response.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED) {
             return ChatResult.SignedOut
         }
-        // 4xx here means the request itself was wrong, so a retry sends the
-        // same wrong request. 5xx and timeouts are worth retrying.
+        // 4xx here means the request itself was wrong, so a retry sends the same wrong request. 5xx and timeouts are worth retrying.
         if (response.statusCode in 400..499) {
             return ChatResult.Rejected(rejectionMessage)
         }
@@ -355,8 +239,7 @@ class ChatClient(
         }
         return buildMap {
             if (json) put("Content-Type", "application/json")
-            // The backend reads the session from this cookie and from nowhere
-            // else — no bearer token, no CSRF token — so it rides on every call.
+            // The backend reads the session from this cookie and from nowhere else — no bearer token, no CSRF token — so it rides on every call.
             cookie?.let { put("Cookie", "${AuthConfig.SESSION_COOKIE_NAME}=$it") }
         }
     }

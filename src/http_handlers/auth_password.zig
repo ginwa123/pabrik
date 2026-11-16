@@ -1,6 +1,4 @@
 //! `POST /api/auth/password` — a signed-in user rotates their own password.
-//! Verifies the current password, applies the length policy, re-hashes with
-//! bcrypt, then revokes every OTHER session so a leaked cookie dies here.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,12 +9,10 @@ const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 
-/// Mirrors `create-admin`'s floor, so an account cannot be rotated into a
-/// password the CLI would have refused to create.
+/// Mirrors `create-admin`'s floor, so an account cannot be rotated into a password the CLI would have refused to create.
 pub const min_password_len: usize = 8;
 
-/// bcrypt stops reading after 72 bytes and `silently_truncate_password`
-/// hides that, so a longer password is rejected rather than quietly weakened.
+/// bcrypt stops reading after 72 bytes and `silently_truncate_password` hides that, so a longer password is rejected rather than quietly weakened.
 pub const max_password_len: usize = 72;
 
 pub const Rejection = enum {
@@ -48,8 +44,7 @@ fn countRows(
     return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
 }
 
-/// Delete every session of `user_id` whose token is not `keep_token_hash`,
-/// returning how many rows went. An empty `keep_token_hash` revokes all.
+/// Delete every session of `user_id` whose token is not `keep_token_hash`, returning how many rows went.
 fn revokeSessions(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -70,9 +65,7 @@ fn revokeSessions(
     return revoked;
 }
 
-/// The whole change-password use case, transport-free so behavior tests can
-/// drive it against an in-memory database. `current_token` is the raw cookie
-/// value: it identifies the session that asked and therefore survives.
+/// The whole change-password use case, transport-free so behavior tests can drive it against an in-memory database.
 pub fn changePassword(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -95,8 +88,7 @@ pub fn changePassword(
     if (row.values.len == 0) return .{ .rejected = .not_authenticated };
     const stored_hash = row.values[0];
 
-    // The current password is checked first: a caller who cannot prove they
-    // own the account learns nothing about the policy for the new one.
+    // The current password is checked first: a caller who cannot prove they own the account learns nothing about the policy for the new one.
     if (!auth_common.verifyPassword(stored_hash, current_password)) {
         return .{ .rejected = .wrong_current_password };
     }
@@ -160,8 +152,7 @@ pub fn authChangePasswordHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const di = try pabrikcore.getSingleton();
-    // No accounts exist without `--auth`, so there is nothing to verify and
-    // the UI is told to hide the form instead of failing on every submit.
+    // No accounts exist without `--auth`, so there is nothing to verify and the UI is told to hide the form instead of failing on every submit.
     if (!di.auth_enabled) return reject(res, allocator, .auth_disabled);
 
     const token = auth_common.parseSessionToken(req.headers) orelse
@@ -208,9 +199,7 @@ pub fn authChangePasswordHandler(
     };
 }
 
-// ============================================================================
 // Behavior tests — in-memory SQLite, no HTTP, no globals.
-// ============================================================================
 
 const testing = std.testing;
 

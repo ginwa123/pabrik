@@ -114,9 +114,7 @@ describe('highlightLines', () => {
 
 describe('highlightLinesForFile', () => {
   it('resolves the language from the path, not from the text', () => {
-    // Guard against the mix-up this API exists to prevent: a *language id*
-    // passed where a path is expected must NOT style the line (it has no
-    // extension), while the path does.
+    // Guard against the mix-up this API exists to prevent: a *language id* passed where a path is expected must NOT style the line (it has no extension), while the …
     expect(highlightLines(['const x = 1'], 'typescript')).not.toEqual(
       highlightLinesForFile(['const x = 1'], 'typescript'),
     )

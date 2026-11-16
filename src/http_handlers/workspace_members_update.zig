@@ -1,6 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/members/:user_id` — change one
-//! member's role. The last owner can never be demoted: a workspace with no
-//! owner has nobody left who could undo it.
+//! `PATCH /api/workspaces/:workspace_id/members/:user_id` — change one member's role.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,8 +8,7 @@ const http_response = @import("http_response.zig");
 const gate = @import("workspace_members_gate.zig");
 const store = @import("../modules/agent/loop/workspace_members_store.zig");
 
-/// An empty `role` is a 400, never a silent `viewer`: a PATCH with nothing
-/// to change is a mistake, not a request.
+/// An empty `role` is a 400, never a silent `viewer`: a PATCH with nothing to change is a mistake, not a request.
 const UpdateBody = struct {
     role: []const u8 = "",
 };
@@ -56,8 +53,7 @@ fn useCase(
         error.UpdateFailed => return error.UpdateFailed,
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
-        // `setRole` requires both ids itself; an insert-only or delete-only
-        // failure cannot come out of an UPDATE.
+        // `setRole` requires both ids itself; an insert-only or delete-only failure cannot come out of an UPDATE.
         else => unreachable,
     };
     return .{ .member = member };

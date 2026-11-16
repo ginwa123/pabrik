@@ -2,8 +2,7 @@
 import { tryUnwrapToolOutput } from '../../../helpers/unwrapToolOutput'
 import { extractTag } from './toolOutputParser'
 
-/** The argument that identifies a call, per tool. A tool that is not listed
- * falls back to the first argument it was given. */
+/** The argument that identifies a call, per tool. */
 const PRIMARY_ARG: Record<string, string> = {
   read_file: 'path',
   write_file: 'path',

@@ -20,6 +20,5 @@ pub const Migration076CreateSessionPlan = struct {
             \\)
         , &[_][]const u8{});
         // No FK on session_id (matches session_activity Migration 073 precedent).
-        // No index — session_id IS the PK, lookups are O(log n) by definition.
     }
 };

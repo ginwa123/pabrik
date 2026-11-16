@@ -39,9 +39,7 @@ pub const Migration054MakeSessionQueueMessageNullable = struct {
             \\)
         , &[_][]const u8{});
 
-        // 4. Copy all existing rows. The image_url column defaults to NULL
-        //    on DBs that pre-date Migration 037 (which is harmless — the
-        //    application treats NULL and "" identically on read).
+        // 4.
         if (has_image_url) {
             try db.exec(allocator,
                 \\INSERT INTO session_queue_messages

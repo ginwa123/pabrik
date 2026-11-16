@@ -12,21 +12,17 @@ const escapeHtml = (text: string): string => {
 
 const MAX_CACHE_ENTRIES = 200
 
-// Map is module-scoped so the cache survives across component re-renders and even across
-// mount/unmount (the hot path is the long-lived chat, where the same messages re-render dozens of
-// times). Tests reset via `_resetRenderResponseCache`.
+// Map is module-scoped so the cache survives across component re-renders and even across mount/unmount (the hot path is the long-lived chat, where the same …
 const cache = new Map<string, string>()
 
-/**  * Test-only cache reset. Not exported through the helpers barrel (helpers/index.ts) so production
- * callers can't accidentally clobber the cache. */
+/** Test-only cache reset. */
 export const _resetRenderResponseCache = (): void => {
   cache.clear()
   streamSlot = null
 }
 
 const computeKey = (content: string, role: string, toolName: string | undefined): string => {
-  // Pipe delimiter is safe: none of the inputs contain `|` (markdown
-  // and tool envelopes are user/LLM text, not pipes).
+  // Pipe delimiter is safe: none of the inputs contain `|` (markdown and tool envelopes are user/LLM text, not pipes).
   return `${role}|${toolName ?? ''}|${content.trim()}`
 }
 
@@ -47,9 +43,7 @@ const cacheSet = (key: string, value: string): void => {
   cache.set(key, value)
 }
 
-/**  * The inline pill for a tool whose result carries no summary of its own: the tool name, plus
- * whether it worked. Shared by the empty-content path and the unregistered-tool fallback so the two
- * cannot drift apart. */
+/** The inline pill for a tool whose result carries no summary of its own: the tool name, plus whether it worked. */
 const toolNamePill = (toolName: string, status?: 'ok' | 'failed', detail?: string): string => {
   const name = escapeHtml(toolName)
   if (status === 'failed') {
@@ -66,17 +60,13 @@ export const renderResponse = (
   content: string,
   role: string,
   tool_name?: string,
-  // 4 trailing parameters kept for diff readability with the original Vue call sites. They are not
-  // used by the function body — the return value depends only on (content, role, tool_name), which
-  // is also what the cache keys on.
+  // 4 trailing parameters kept for diff readability with the original Vue call sites.
   _diffviewBefore?: string,
   _diffviewAfter?: string,
   _finish_reason?: string,
   _tool_calls_json?: string,
 ): string => {
-  // Cache check BEFORE the trim() so a miss on the raw input doesn't
-  // allocate a new trimmed string. The computeKey() inside is cheap
-  // (one .trim() + concat).
+  // Cache check BEFORE the trim() so a miss on the raw input doesn't allocate a new trimmed string.
   const key = computeKey(content, role, tool_name)
   const cached = cacheGet(key)
   if (cached !== undefined) return cached
@@ -95,8 +85,7 @@ const guardedRender = (content: string, render: (trimmed: string) => string): st
   }
 }
 
-/** One parse for every caller: the HTML goes straight into `v-html`, so an opener the model left
- * unclosed must not be able to swallow the rest of the message. */
+/** One parse for every caller: the HTML goes straight into `v-html`, so an opener the model left unclosed must not be able to swallow the rest of the message. */
 const parseMarkdown = (text: string): string =>
   neutralizeSwallowingHtml(marked.parse(text, { async: false }) as string)
 
@@ -109,8 +98,7 @@ const renderUncached = (content: string, role: string, tool_name?: string): stri
   return guardedRender(content, (text) => {
     if (role === 'assistant') {
       if (isThinkingTags(text)) {
-        // getThinkingTags returns raw text, not marked output, so it cannot go through parseMarkdown
-        // — but the same `v-html` span injects it and it needs the same guard.
+        // getThinkingTags returns raw text, not marked output, so it cannot go through parseMarkdown — but the same `v-html` span injects it and it needs the same guard.
         return neutralizeSwallowingHtml(getThinkingTags(text))
       }
       return parseMarkdown(stripThinkingTags(text))
@@ -144,8 +132,7 @@ export const renderMarkdown = (payload: string): string => {
   return html
 }
 
-// Tool branch — extracted from renderResponse so the assistant cache
-// path stays short and the file is easier to scan.
+// Tool branch — extracted from renderResponse so the assistant cache path stays short and the file is easier to scan.
 const renderTool = (content: string, tool_name: string | undefined): string => {
   if (tool_name === 'read_file') {
     const mathPath = content.match(/<path>(.*?)<\/path>/)
@@ -187,9 +174,7 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">glob → "${pattern}"${resultsText}</span>`
   }
 
-  // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
-  // ListDirectory.vue card so users see the same info (path + entry count) whether they look at the
-  // collapsed bubble or the expanded body.
+  // Collapsed-bubble summary for the inline tool pill in ChatView.
   if (tool_name === 'list_directory') {
     const errorMatch = content.match(/<error>([\s\S]*?)<\/error>/)
     if (errorMatch) {
@@ -209,9 +194,7 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">${tool_name} → "${query || 'unknown'}"</span>`
   }
 
-  // Universal MCP summary: ANY `mcp_<server>_<tool>` (graphify, db, future servers). The backend
-  // stores MCP success as RAW server text (no `<tool>` envelope), so unwrap may fail — fall back to
-  // the raw content. Truncate to one line / 80 chars so the collapsed pill stays one line.
+  // Universal MCP summary: ANY `mcp_<server>_<tool>` (graphify, db, future servers).
   if (tool_name?.startsWith('mcp_')) {
     const unwrappedMcp = tryUnwrapToolOutput(content)
     const dataRaw =
@@ -239,8 +222,7 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   if (tool_name === 'set_git_worktree') {
-    // JSON envelope first (canonical): {"tool":...,"success":bool,"data":{path,branch,cleared,created},"error":...}
-    // Falls back to legacy <worktree> XML for old chat history.
+    // JSON envelope first (canonical): {"tool":...,"success":bool,"data":{path,branch,cleared,created},"error":...} Falls back to legacy <worktree> XML for old chat …
     try {
       const parsed: unknown = JSON.parse(content)
       const record =
@@ -294,9 +276,7 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   if (tool_name === 'read_compacted_messages') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
-    // ReadCompactedMessages.vue card so users see the same info (mode + count + session) whether
-    // they look at the collapsed bubble or the expanded body.
+    // Collapsed-bubble summary for the inline tool pill in ChatView.
     const errorMatch = content.match(/<error>([\s\S]*?)<\/error>/)
     if (errorMatch) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(errorMatch[1]?.trim() || 'error')}</span>`
@@ -311,25 +291,19 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
   }
 
   if (tool_name === 'update_plan') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
-    // UpdatePlan.vue card so users see "wrote N bytes" whether they look at the collapsed bubble or
-    // expand the structured card.
+    // Collapsed-bubble summary for the inline tool pill in ChatView.
     const updateError = content.match(/<error>([\s\S]*?)<\/error>/)
     if (updateError && updateError[1]) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(updateError[1].trim()) || 'error'}</span>`
     }
-    // Estimate byte count from the inner envelope length as a rough "how big was this plan write"
-    // signal. We pull the inner envelope (stripping both <tool> and <update_plan> wrappers) so the
-    // number reflects the actual content, not the XML envelope chrome.
+    // Estimate byte count from the inner envelope length as a rough "how big was this plan write" signal.
     const innerPlanMatch = content.match(/<update_plan>([\s\S]*?)<\/update_plan>/)
     const innerBytes = innerPlanMatch?.[1]?.length ?? 0
     return `<span class="tool-inline">${tool_name} → wrote ${innerBytes}b of plan</span>`
   }
 
   if (tool_name === 'get_plan') {
-    // Collapsed-bubble summary for the inline tool pill in ChatView. Mirrors the structured
-    // GetPlan.vue card so users see "fetched current plan · N items" whether they look at the
-    // collapsed bubble or expand the structured card.
+    // Collapsed-bubble summary for the inline tool pill in ChatView.
     const getError = content.match(/<error>([\s\S]*?)<\/error>/)
     if (getError && getError[1]) {
       return `<span class="tool-inline">${tool_name} → ${escapeHtml(getError[1].trim()) || 'error'}</span>`
@@ -338,9 +312,7 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     if (/<empty\s*\/?>/.test(content)) {
       return `<span class="tool-inline">${tool_name} → no plan set</span>`
     }
-    // Count `- [ ]` / `- [x]` items in the CDATA-wrapped body for the "N items" hint. We strip the
-    // CDATA wrappers first so we only match checklist markers, not any literal `[ ]` text inside
-    // non-checklist prose.
+    // Count `- [ ]` / `- [x]` items in the CDATA-wrapped body for the "N items" hint.
     const cdataMatch = content.match(/<!\[CDATA\[([\s\S]*?)\]\]>/)
     const cdata = cdataMatch?.[1] ?? ''
     const itemMatches = cdata.match(/^- \[(x| )\]\s+/gim)
@@ -358,8 +330,7 @@ const renderTool = (content: string, tool_name: string | undefined): string => {
     return `<span class="tool-inline">${tool_name} → ${agentCount} agents (${succeeded} succeeded, ${failed} failed)</span>`
   }
 
-  // Unregistered tool — no card claimed this name, so this pill is all the transcript shows until
-  // the reader expands the row (ChatView prints the payload there via `toolPayloadPreview`).
+  // Unregistered tool — no card claimed this name, so this pill is all the transcript shows until the reader expands the row (ChatView prints the payload there via …
   const unwrapped = tryUnwrapToolOutput(content)
   if (unwrapped === null) {
     return toolNamePill(tool_name || 'tool')

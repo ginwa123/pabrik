@@ -46,17 +46,7 @@ import com.pabrik.mobile.ui.PabrikError
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * The chrome every tool card shares: the violet tool name, the truncated
- * primary field, the right-hand meta, the status glyph and the disclosure
- * chevron.
- *
- * Modelled on the web's `_shared/ToolCardHeader.vue`, with the two affordances
- * it carries dropped rather than reimplemented: copy-to-clipboard (a phone has
- * no hover, so a hover-revealed button is a button nobody finds — long-press to
- * select is the platform idiom) and open-in-code-editor (this app has no
- * editor).
- */
+/** The chrome every tool card shares: the violet tool name, the truncated primary field, the right-hand meta, the status glyph and the disclosure chevron. */
 @Composable
 fun ToolCardHeader(
     toolName: String,
@@ -108,9 +98,7 @@ fun ToolCardHeader(
                 style = MaterialTheme.typography.labelSmall,
                 color = PabrikAccentSoft,
                 maxLines = 1,
-                // One line, ellipsised. A path on a 360dp-wide phone is already
-                // wider than the card, and a header that wraps doubles the height
-                // of every card in a forty-step run.
+                // One line, ellipsised.
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
@@ -142,9 +130,7 @@ fun ToolCardHeader(
         }
 
         Text(
-            // A tick, a cross or a dash. The dash is "not known yet" rather
-            // than "failed" — drawing a cross on a placeholder makes an
-            // in-flight tool look broken.
+            // A tick, a cross or a dash.
             text = when {
                 running -> "·"
                 success -> "✓"
@@ -176,14 +162,7 @@ fun ToolCardHeader(
     }
 }
 
-/**
- * The `Arguments` disclosure every card carries.
- *
- * Mirrors `_shared/ToolParameters.vue`, including the guard that hides the
- * section entirely for a tool that took no arguments — the header is already
- * saying what the tool did, and an empty `{}` under it is noise repeated once
- * per tool call.
- */
+/** The `Arguments` disclosure every card carries. */
 @Composable
 fun ToolParametersBlock(
     parametersJson: String,
@@ -236,13 +215,7 @@ fun ToolParametersBlock(
     }
 }
 
-/**
- * Drops keys the card already visualises, so a diff card does not repeat the
- * whole edited file as raw JSON underneath the diff of it.
- *
- * Applies only when the parameters parse as an object; anything else is passed
- * through untouched, which is the same rule the web applies.
- */
+/** Drops keys the card already visualises, so a diff card does not repeat the whole edited file as raw JSON underneath the diff of it. */
 internal fun filterParameters(parametersJson: String, exclude: Set<String>): String {
     val trimmed = parametersJson.trim()
     if (trimmed.isEmpty() || exclude.isEmpty()) return trimmed
@@ -257,13 +230,7 @@ internal fun filterParameters(parametersJson: String, exclude: Set<String>): Str
     }
 }
 
-/**
- * A monospace, horizontally scrollable, whitespace-preserving text block.
- *
- * The horizontal scroll is not decoration: a build log has 200-column lines and
- * a `whiteSpace = PreWrap` alone reflows them into a paragraph, which turns a
- * stack trace into an unreadable smear.
- */
+/** A monospace, horizontally scrollable, whitespace-preserving text block. */
 @Composable
 fun MonospaceBlock(
     text: String,

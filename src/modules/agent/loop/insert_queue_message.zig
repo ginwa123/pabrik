@@ -17,11 +17,9 @@ pub const InsertQueueMessageInput = struct {
     message: []const u8,
     image_url: []const u8,
     video_url: []const u8 = "",
-    /// The chat's file attachments, as the JSON payload the model path
-    /// reads. Empty when the message carries no file.
+    /// The chat's file attachments, as the JSON payload the model path reads.
     file_attachments: []const u8 = "",
-    /// The one agent this message is addressed to, in a group session. Empty
-    /// means whoever is running.
+    /// The one agent this message is addressed to, in a group session.
     target_agent: []const u8 = "",
     event_bus: ?*event_bus_mod.EventBus,
     is_emit_sse: bool,
@@ -82,14 +80,11 @@ pub fn insertQueueMessage(
                 .event_type = "queue_queued",
             };
 
-            // Per-session emit (kept for any future server-side fan-out that
-            // needs only this session's queue messages).
+            // Per-session emit (kept for any future server-side fan-out that needs only this session's queue messages).
             const key = try std.fmt.allocPrint(allocator, "queue_messages_{s}", .{session_id});
             defer allocator.free(key);
             ev.emit(on_event_sent.SseEvent, key, event);
-            // Central broadcast: subscribers to bare "queue" receive ALL sessions'
-            // queue messages. The frontend listener filter narrows to the current
-            // session_id on the JS side.
+            // Central broadcast: subscribers to bare "queue" receive ALL sessions' queue messages.
             ev.emit(on_event_sent.SseEvent, "queue", event);
         }
     }
@@ -209,8 +204,7 @@ test "insertQueueMessage with is_emit_sse=true and event_bus=null is a safe no-o
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // The implementation must check `if (event_bus) |ev|` BEFORE any
-    // payload allocation. The DB writes must still complete.
+    // The implementation must check `if (event_bus) |ev|` BEFORE any payload allocation.
     try insertQueueMessage(.{
         .allocator = testing.allocator,
         .db = &s.db,

@@ -24,45 +24,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/**
- * Owns one chat's real data.
- *
- * The shape is the web's cache-then-revalidate: paint from disk, then fetch the
- * tail, then write through. It lives in one function ([openSession]) rather than
- * being something every call site has to remember to do in the right order,
- * because there is deliberately no TTL to catch a caller that forgets — a cached
- * paint with no fetch behind it is permanently stale and nothing will ever
- * correct it.
- *
- * The disk read and the JSON parse are on [ioDispatcher], not on the caller.
- * [openSession] is called from a tap handler, and the cache holds the *verbatim*
- * server row, so a 400-row window is megabytes to read and parse — work that
- * used to land on the UI thread before the navigation even started, and which
- * read on the phone as a freeze.
- *
- * There is no preview or mock data here. A transcript that quietly renders demo
- * turns is indistinguishable from a working one.
- */
+/** Owns one chat's real data. */
 class ChatViewModel(
     private val client: ChatClient,
     private val cache: ChatCache,
-    /**
-     * The app's ONE event connection, shared with the sidebar.
-     *
-     * Subscribed once, in `init`, for the life of the ViewModel — which is the
-     * life of the Activity. Previously this owned a second socket that was
-     * stopped and started on every session switch; the bus is opened at sign-in
-     * and never per chat, so "which chat is open" became a *filter* in
-     * [handleBusEvent] rather than a reason to reconnect.
-     */
+    /** The app's ONE event connection, shared with the sidebar. */
     private val bus: SseBus,
-    // Reads a picked `content://` image into an encoded attachment. Injected
-    // because it is the only part of the send path that needs a `Bitmap`, and
-    // threading a `Context` in for it would put the Android framework in the
-    // middle of a rule that is really about a 10 MB cap.
+    // Reads a picked `content://` image into an encoded attachment.
     private val imageReader: PickedImageReader = PickedImageReader { null },
-    // Injected so tests can drive the fetch on the same scheduler as the paint;
-    // `advanceUntilIdle` cannot wait on the real IO pool.
+    // Injected so tests can drive the fetch on the same scheduler as the paint; `advanceUntilIdle` cannot wait on the real IO pool.
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
@@ -72,11 +42,7 @@ class ChatViewModel(
     private val _sessionExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val sessionExpired: SharedFlow<Unit> = _sessionExpired.asSharedFlow()
 
-    /**
-     * Detaches from the root bus. Held because the subscription outlives every
-     * session: this ViewModel is Activity-scoped, so unsubscribing is tied to
-     * the Activity dying, not to the user leaving a chat.
-     */
+    /** Detaches from the root bus. */
     private var unsubscribeFromBus: (() -> Unit)? = null
 
     init {
@@ -102,22 +68,10 @@ class ChatViewModel(
     /** The `PUT /api/llm/session/{id}` that saves a picked profile. */
     private var profileJob: Job? = null
 
-    /**
-     * Ids delivered live over SSE in this session view. A REST response skips
-     * these, because a tail fetch that started before a tool finished still
-     * carries that row's placeholder content — writing it back would roll a
-     * finished tool result into a spinner.
-     */
+    /** Ids delivered live over SSE in this session view. */
     private val liveMessageIds = mutableSetOf<String>()
 
-    /**
-     * Sub-agent pings seen so far, keyed by the spawning `tool_call_id`.
-     *
-     * The backend keys its own progress map the same way, so two concurrent
-     * fan-outs never cross-contaminate — and neither do they here. Cleared on
-     * every session change for the same reason: the map is only meaningful
-     * within one run.
-     */
+    /** Sub-agent pings seen so far, keyed by the spawning `tool_call_id`. */
     private val subAgentBatches = mutableMapOf<String, MutableSet<SubAgentPing>>()
 
     /** One sub-agent's latest known lifecycle state, keyed within its batch. */
@@ -129,67 +83,23 @@ class ChatViewModel(
     /** Cursor for the next *older* page, from the server's `has_more`. */
     private var olderCursor: String? = null
 
-    /**
-     * Whether a full descending page has already answered the older-page
-     * question for the chat now open.
-     *
-     * Not the same question as "is [olderCursor] set", because the answer to
-     * *this* one is sometimes "there is nothing older" — and that answer has no
-     * cursor to show for itself. Without the flag, a restored cursor from a
-     * previous chat could arrive after a fresh page had said there was nothing
-     * and quietly re-arm scroll-back against a transcript that is complete.
-     */
+    /** Whether a full descending page has already answered the older-page question for the chat now open. */
     private var olderPageIsSettled: Boolean = false
 
-    /**
-     * Bumped on every session change so a fetch that finishes late can tell it
-     * belongs to a chat the user already left.
-     */
+    /** Bumped on every session change so a fetch that finishes late can tell it belongs to a chat the user already left. */
     private var generation: Int = 0
 
-    /**
-     * Whether anything *newer than the cache* has painted for this generation.
-     *
-     * Set the moment a page, a live frame or a paged-older response lands. The
-     * cache prime reads and parses on an IO dispatcher now, so it can finish
-     * *after* a tail fetch that left first — and the cache, by definition, is
-     * older than what that fetch returned. Publishing it then would roll a
-     * finished turn back to whatever placeholder the cache holds, which is the
-     * one thing paint-from-cache is never allowed to do.
-     *
-     * `@Volatile` because the writes are not all on the same thread: a live
-     * frame arrives on the SSE pump thread, and the read is on the main thread
-     * where the prime resumes. Without it the main thread is entitled to serve
-     * itself a stale `false` from a register.
-     */
+    /** Whether anything *newer than the cache* has painted for this generation. */
     @Volatile
     private var hasFreshContent: Boolean = false
 
-    /**
-     * Has the bus dropped and come back since the open chat was opened?
-     *
-     * Reset in [openSession], so what it actually answers is "did this chat miss
-     * anything?", which is the question that matters. That reading survived the
-     * move to one shared socket: the first `Live` *after* a chat is open is
-     * either a reconnect — in which case the refetch is the only repair, since
-     * the server keeps no replay buffer — or a connect the chat was already
-     * open for, in which case [openSession]'s own load covered the gap.
-     */
+    /** Has the bus dropped and come back since the open chat was opened? */
     private var hasConnectedStreamOnce = false
 
-    /**
-     * Monotonic suffix for streaming placeholder ids.
-     *
-     * A wall-clock id is not safe here: two chunks of consecutive turns landing
-     * in the same millisecond mint the same id, and two messages sharing an id
-     * means two groups with one LazyColumn key — which throws, not warns.
-     */
+    /** Monotonic suffix for streaming placeholder ids. */
     private var streamingCounter: Long = 0
 
-    /**
-     * The signed-in account namespaces the transcript cache. Called before any
-     * session is opened, so the very first paint is already in the right scope.
-     */
+    /** The signed-in account namespaces the transcript cache. */
     fun onUserChanged(newUserId: String?) {
         val accountChanged = newUserId != userId
         userId = newUserId
@@ -204,22 +114,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Opens a chat: paint from cache, then attach the stream, then revalidate.
-     *
-     * **Returns immediately.** This runs from a tap handler, so everything it
-     * can do to the caller is bounded: it resets the state, publishes the empty
-     * loading paint, and hands the rest to coroutines. The cache read, the
-     * parse, the fetch and the stream attach all run behind it. The transcript
-     * is correct for whichever of them lands first: the cache never overwrites
-     * something newer (see [hasFreshContent]), and a fetch that lands first
-     * simply becomes the state the cache declines to touch.
-     *
-     * The stream is attached *before* the fetch, deliberately. A tool call can
-     * finish while the first REST load is still in flight, and an event that
-     * arrives in that window with nobody listening is gone for good — the
-     * backend has no replay buffer to ask again.
-     */
+    /** Opens a chat: paint from cache, then attach the stream, then revalidate. */
     fun openSession(sessionId: String) {
         if (sessionId.isBlank()) return
         if (_uiState.value.sessionId == sessionId && !_uiState.value.isLoading) return
@@ -233,9 +128,7 @@ class ChatViewModel(
         queueJob?.cancel()
         stopJob?.cancel()
         answerJob?.cancel()
-        // Nothing to detach: the bus is already carrying this chat's events and
-        // the handlers below filter by the session the state says is open. The
-        // socket is not re-pointed per chat — see [handleBusEvent].
+        // Nothing to detach: the bus is already carrying this chat's events and the handlers below filter by the session the state says is open.
         liveMessageIds.clear()
         subAgentBatches.clear()
         olderCursor = null
@@ -243,28 +136,16 @@ class ChatViewModel(
         hasConnectedStreamOnce = false
         hasFreshContent = false
 
-        // The empty paint is the *only* part of the prime that stays on the
-        // caller's thread, and it is a field assignment. It has to be here: the
-        // navigation that follows reads `sessionId` to decide whether this chat
-        // is open yet, and the transcript needs a state to render its spinner
-        // against.
+        // The empty paint is the *only* part of the prime that stays on the caller's thread, and it is a field assignment.
         _uiState.value = ChatUiState(sessionId = sessionId, isLoading = true)
 
-        // The read and the parse are the expensive half, and they are not cheap
-        // because of the SQL: the cache keeps the *verbatim* server row, so a
-        // 400-row window is megabytes of `diffview_before`/`diffview_after` and
-        // double-escaped `tool_calls_json` to pull off disk and JSON-parse, per
-        // session switch. Doing that in the tap handler is what froze the phone
-        // on a long transcript, so it now runs on the IO pool and publishes when
-        // it lands.
+        // The read and the parse are the expensive half, and they are not cheap because of the SQL: the cache keeps the *verbatim* server row, so a 400-row window is …
         cachePrimeJob?.cancel()
         cachePrimeJob = viewModelScope.launch {
             val painted = withContext(ioDispatcher) { readCachedTranscript(sessionId) }
             if (requestGeneration != generation) return@launch
             if (painted == null || hasFreshContent) return@launch
             // The cache reads newest-first; a transcript reads oldest-first.
-            // Sorting by the hoisted nano key is what lets the auto-scroll target
-            // "the last item" without the view knowing anything about sort order.
             _uiState.update { state ->
                 if (state.sessionId != sessionId) {
                     state
@@ -282,21 +163,7 @@ class ChatViewModel(
         revalidateQueue(sessionId, requestGeneration)
     }
 
-    /**
-     * Fetches the profile list the composer's picker offers.
-     *
-     * On the same [generation] guard as everything else in an open: a profile
-     * list fetched for the chat the reader just left would otherwise land on
-     * the new one, and since profiles are account-wide the two lists are the
-     * same — but the *publish* is not, and a stale publish after a
-     * sign-out is a stale account's data on screen.
-     *
-     * Failure is silent by design. A profile list is a dropdown, not the
-     * transcript, and surfacing its failure through [ChatUiState.errorMessage]
-     * would blank a chat that loaded perfectly well to complain about a menu
-     * the reader may never open. The chip degrades to a plain label, which is
-     * exactly the control it used to be.
-     */
+    /** Fetches the profile list the composer's picker offers. */
     private fun loadProfiles(requestGeneration: Int) {
         profilesJob?.cancel()
         profilesJob = viewModelScope.launch {
@@ -313,20 +180,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Reads the server's queue for this chat and *replaces* what is on screen.
-     *
-     * A replacement rather than a merge, deliberately, in both directions: the
-     * local mirror is built from `queue_queued` / `queue_deleted` frames, and a
-     * frame missed while the socket was down leaves it permanently wrong. This
-     * is the only read that repairs that, and it is cheap — one row per waiting
-     * turn — so it runs on every open and every reconnect.
-     *
-     * A failure publishes nothing. The mirror is still better than nothing for
-     * the turns the stream *did* report, and replacing it with an empty list
-     * because the network blipped would delete a message the reader can see
-     * was queued.
-     */
+    /** Reads the server's queue for this chat and *replaces* what is on screen. */
     private fun revalidateQueue(sessionId: String, requestGeneration: Int) {
         queueJob?.cancel()
         queueJob = viewModelScope.launch {
@@ -343,48 +197,20 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Puts a waiting turn back in the box, which is the reader's way of
-     * editing it before the worker gets to it.
-     *
-     * The row **stays queued**: it is the server's turn, not the reader's
-     * draft, and the only way to take it out of the queue is for the worker to
-     * drain it. Copying the text out of a list the reader is about to send is
-     * what the web does here too (`FileInput.vue:415`), and matching it means a
-     * reader who learns the gesture on the phone is not surprised on the web.
-     */
+    /** Puts a waiting turn back in the box, which is the reader's way of editing it before the worker gets to it. */
     fun useQueuedMessage(message: QueuedChatMessage) {
         _uiState.update { state ->
             state.copy(draft = message.message.trim())
         }
     }
 
-    /**
-     * Re-reads the queue behind an open panel.
-     *
-     * The panel is where the reader is deciding whether to wait or to compose
-     * something else, so the list they are looking at is the one worth being
-     * certain about — a locally-mirrored row that the worker already drained
-     * would have them compose a turn that duplicates one they just sent.
-     */
+    /** Re-reads the queue behind an open panel. */
     fun refreshQueuedMessages() {
         val sessionId = _uiState.value.sessionId ?: return
         revalidateQueue(sessionId, generation)
     }
 
-    /**
-     * Put this chat on [profileName], and remember that it is there.
-     *
-     * Empty clears the override, which is a real choice — see
-     * [ChatClient.updateSelectedProfile] — and is what the picker's "Default"
-     * row sends.
-     *
-     * **The state changes only after the server agrees.** An optimistic write
-     * here would be actively wrong: the chip would name a profile the next
-     * turn does not use, and the reader's only evidence that the pick failed
-     * would be a chip they already trusted. A failed pick leaves the chip
-     * where it was and puts the reason on screen.
-     */
+    /** Put this chat on [profileName], and remember that it is there. */
     fun selectProfile(profileName: String) {
         val state = _uiState.value
         val sessionId = state.sessionId ?: return
@@ -398,8 +224,7 @@ class ChatViewModel(
             }
             when (result) {
                 is ChatResult.Loaded -> _uiState.update {
-                    // The server echoes the column it stored, which is the
-                    // authority on what this chat will now use.
+                    // The server echoes the column it stored, which is the authority on what this chat will now use.
                     it.copy(
                         selectedProfileModel = result.value,
                         isUpdatingProfile = false,
@@ -422,24 +247,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Puts the *older* paging boundary back, the way the transcript cache puts
-     * the messages back.
-     *
-     * Without it, `hasMoreOlder` and [olderCursor] survive only inside the
-     * view model instance, and the second open of a chat is a different one:
-     * [revalidate] finds a stored *tail* cursor, takes the warm ascending path,
-     * and the descending page that carried `next_cursor` and `has_more` is never
-     * asked for again. The sentinel row that arms scroll-to-top is therefore
-     * never rendered, [loadOlderMessages] returns on a null cursor, and a
-     * long chat silently stops at the newest few hundred messages for the rest
-     * of the app's life. The tail cursor and the older boundary are two
-     * independent facts and the warm path can only answer for one of them.
-     *
-     * Skipped when a full descending page has already answered for this chat —
-     * that one is authoritative, because the server has just produced it rather
-     * than remembered it.
-     */
+    /** Puts the *older* paging boundary back, the way the transcript cache puts the messages back. */
     private fun restoreOlderPage(sessionId: String, requestGeneration: Int) {
         olderPagePrimeJob?.cancel()
         olderPagePrimeJob = viewModelScope.launch {
@@ -457,18 +265,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Re-attaches the partial text of a run that is already going.
-     *
-     * An in-progress turn has no row yet — the backend writes `llm_history`
-     * only when the turn completes — so a cold open mid-run shows a transcript
-     * that stops one message short of the live answer. The snapshot is the only
-     * way to show that text: the stream carries no replay, so chunks already
-     * sent are gone.
-     *
-     * Skipped when a placeholder is already on screen, which is the case
-     * whenever this is a reconnect rather than a fresh open.
-     */
+    /** Re-attaches the partial text of a run that is already going. */
     private fun reattachInFlightTurn(sessionId: String, requestGeneration: Int) {
         viewModelScope.launch {
             val result = withContext(ioDispatcher) { client.loadStreamSnapshot(sessionId) }
@@ -488,8 +285,7 @@ class ChatViewModel(
                             role = ChatMessage.ROLE_ASSISTANT,
                             content = content,
                             createdAtEpochMillis = nowMillis(),
-                            // Sorts last: the turn has not been written yet, so
-                            // there is no server timestamp to order it by.
+                            // Sorts last: the turn has not been written yet, so there is no server timestamp to order it by.
                             sortKeyNanos = Long.MAX_VALUE,
                             isStreaming = true,
                         ),
@@ -500,67 +296,28 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * The last-known transcript, oldest-first, or null when there is none.
-     *
-     * **Off the main thread, deliberately.** This is the single most expensive
-     * thing a session switch does: [ChatViewModel.CACHED_MESSAGE_LIMIT] rows of
-     * verbatim server JSON, each one a full `JSONObject` parse, with the tool
-     * rows carrying both sides of a diff. Room is opened with
-     * `allowMainThreadQueries()` so this *may* run inline, and it used to — from
-     * inside the tap handler, before the navigation even started. A phone paid
-     * hundreds of milliseconds of UI-thread time per switch there, which reads
-     * to the user as the app freezing.
-     *
-     * The cost of moving it is one spinner frame on a warm cache. The cost of
-     * leaving it was the whole freeze.
-     */
+    /** The last-known transcript, oldest-first, or null when there is none. */
     private fun readCachedTranscript(sessionId: String): List<ChatMessage>? {
         val cached = cache.readMessages(userId, sessionId, CACHED_MESSAGE_LIMIT)
         if (cached.isNullOrEmpty()) return null
         return cached.mapNotNull { ChatApi.toChatMessage(it.raw) }
     }
 
-    /**
-     * [isFullReload] is true only for a cold load, i.e. one with no stored
-     * cursor. A warm tail fetch is short by definition, so the server reports
-     * `has_more=false` and `next_cursor=null` for it — letting that reset the
-     * paging state would permanently disable scroll-back after any session
-     * rename or reconnect, even though the transcript visibly has history above
-     * it.
-     */
+    /** [isFullReload] is true only for a cold load, i.e. one with no stored cursor. */
     private fun revalidate(sessionId: String, requestGeneration: Int) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val storedCursor = withContext(ioDispatcher) { cache.readCursor(userId, sessionId) }
             val isFullReload = storedCursor == null
             val (result, runIsActive) = withContext(ioDispatcher) {
-                // Two reads, one instant, because neither alone can tell a
-                // finished run from a live one.
-                //
-                // The transcript knows which turns have been *written*; the
-                // worker list knows whether anything is still *running*. The
-                // frames that normally retire a streaming placeholder —
-                // `chunk_final` and `llm_full` — are ordinary SSE frames on a
-                // connection the server keeps no replay buffer for, so a phone
-                // that was backgrounded, rotated or briefly offline across the
-                // end of a run misses both and cannot tell. Asking again is the
-                // only repair, and asking only one of these two questions is a
-                // repair that cannot see the failure it exists for.
+                // Two reads, one instant, because neither alone can tell a finished run from a live one.
                 val page = client.loadMessages(
                     sessionId = sessionId,
                     cursor = storedCursor,
-                    // Cold (no cursor): a full descending load. Warm: only the
-                    // tail past the cursor. The web switches the same way, and
-                    // the reason is that a stored cursor is a *newest* row, not
-                    // a page break.
+                    // Cold (no cursor): a full descending load.
                     direction = if (storedCursor == null) "desc" else "asc",
                 )
-                // A read that failed answers nothing, and the only safe answer
-                // to "nothing" here is "still running" — same rule
-                // `WorkerActivityViewModel` applies to its own set. Clearing a
-                // live answer because the network blipped is the same lie as
-                // never lighting one up.
+                // A read that failed answers nothing, and the only safe answer to "nothing" here is "still running" — same rule `WorkerActivityViewModel` applies to its own set.
                 val active = (client.isSessionRunning(sessionId) as? ChatResult.Loaded)?.value
                 page to (active ?: true)
             }
@@ -575,8 +332,7 @@ class ChatViewModel(
                 }
 
                 is ChatResult.Unavailable -> _uiState.update {
-                    // Keep whatever is on screen — cached or not. A stale
-                    // transcript beats a blank one when the network blips.
+                    // Keep whatever is on screen — cached or not.
                     it.copy(isLoading = false, errorMessage = result.message)
                 }
 
@@ -590,65 +346,24 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * What one refetch has to say about the turn that was in flight.
-     *
-     * [rows] is the transcript with every placeholder settled;
-     * [stillStreaming] is whether the header should go on claiming a run.
-     */
+    /** What one refetch has to say about the turn that was in flight. */
     private class StreamingSettle(
         val rows: List<ChatMessage>,
         val stillStreaming: Boolean,
     )
 
-    /**
-     * Reconciles the streaming placeholder against what the server just said.
-     *
-     * A placeholder is a *claim* that a turn exists on the server but has not
-     * been written yet. Two things mint one — the `llm_chunk` deltas and the
-     * in-memory snapshot read by [reattachInFlightTurn] — and the frames that
-     * normally retire it are delivered on a stream with no replay. Miss both
-     * and the phone keeps claiming a run that finished minutes ago: the header
-     * reads "Working…", the composer offers a Stop button for a worker that no
-     * longer exists, and a `streaming…` hint hangs under a turn that is already
-     * answered. Nothing else in the class can repair that — [ChatApi.mergeById]
-     * keeps a row whose id never appears in a server page, and a `streaming-`
-     * id by construction never does — so the refetch has to.
-     *
-     * Two facts arrive together and each settles a different half:
-     *
-     * - `incoming` is the authoritative transcript. A placeholder whose text is
-     *   a **prefix** of the newest assistant row in it is a turn that has
-     *   landed, and the row beside it is now the real one. This is the only
-     *   test here that deletes a row, so it runs on positive evidence only.
-     * - `runIsActive` is the backend's own answer to "is a worker on this
-     *   session". No worker means no further `llm_chunk` can arrive, so a
-     *   placeholder with no matching row is a turn that will never be written
-     *   at all — a cancel before the first token, or a crash — and its partial
-     *   text is the whole answer. It is unfrozen rather than dropped, which is
-     *   exactly what a reader who pressed Stop is given.
-     *
-     * A live run is left completely alone: no row is touched and the flag stays
-     * set, because a refetch during one is routine.
-     */
+    /** Reconciles the streaming placeholder against what the server just said. */
     private fun settleStreaming(
         rows: List<ChatMessage>,
         incoming: List<ChatMessage>,
         runIsActive: Boolean,
     ): StreamingSettle {
         if (rows.none { it.isStreamingPlaceholder }) {
-            // Nothing to settle, and nothing this refetch is entitled to
-            // conclude about a run: no row is frozen, so the flag belongs to
-            // whatever wrote it. Leaving it alone is the safe direction — the
-            // one thing that must never happen here is un-setting a flag whose
-            // cause this function cannot see.
+            // Nothing to settle, and nothing this refetch is entitled to conclude about a run: no row is frozen, so the flag belongs to whatever wrote it.
             return StreamingSettle(rows, stillStreaming = true)
         }
 
-        // The placeholder is always the newest turn, so the row that can retire
-        // it is the newest assistant turn that is not itself a placeholder.
-        // Scoping the search that way is what keeps a short partial from
-        // matching some older answer that happens to start the same way.
+        // The placeholder is always the newest turn, so the row that can retire it is the newest assistant turn that is not itself a placeholder.
         val newestAssistant = (incoming + rows.filterNot { it.isStreamingPlaceholder })
             .filter { it.role == ChatMessage.ROLE_ASSISTANT }
             .maxByOrNull { it.sortKeyNanos }
@@ -656,15 +371,12 @@ class ChatViewModel(
         val settled = rows.mapNotNull { row ->
             if (!row.isStreamingPlaceholder) return@mapNotNull row
             if (newestAssistant?.supersedesStreaming(row) == true) {
-                // The turn landed. Drop the stub; the canonical row arrives
-                // through the merge below and takes its place.
+                // The turn landed.
                 null
             } else if (runIsActive) {
                 row
             } else {
-                // No worker, no row: the turn ended without being written, so
-                // the text on screen is the answer and must stop claiming
-                // otherwise.
+                // No worker, no row: the turn ended without being written, so the text on screen is the answer and must stop claiming otherwise.
                 row.copy(isStreaming = false)
             }
         }
@@ -678,8 +390,7 @@ class ChatViewModel(
         runIsActive: Boolean,
     ) {
         val incoming = page.messages.filterNot { message -> message.id in liveMessageIds }
-        // Whatever the network just returned is newer than the cache, so the
-        // prime must not be allowed to land on top of it.
+        // Whatever the network just returned is newer than the cache, so the prime must not be allowed to land on top of it.
         hasFreshContent = true
 
         _uiState.update { state ->
@@ -702,9 +413,7 @@ class ChatViewModel(
         }
 
         withContext(ioDispatcher) {
-            // The cursor advance is skipped when any row was filtered out as
-            // live: advancing past a row that was deliberately not written
-            // leaves a hole the next tail fetch can never fill.
+            // The cursor advance is skipped when any row was filtered out as live: advancing past a row that was deliberately not written leaves a hole the next tail fetch …
             if (incoming.size == page.messages.size) {
                 val rows = incoming.mapNotNull { message ->
                     ChatCacheCodec.toCachedMessage(sessionId, rawObjectFor(message))
@@ -718,10 +427,7 @@ class ChatViewModel(
                         ChatCacheCodec.newestCursor(rows, page.nextCursor, previous),
                     )
                 }
-                // Only a *full descending* page carries a boundary. A warm tail
-                // fetch is short by definition, so its `next_cursor`/`has_more`
-                // describe the delta, not the transcript, and persisting them
-                // would point scroll-back at the newest row.
+                // Only a *full descending* page carries a boundary.
                 if (isFullReload) {
                     cache.writeOlderPage(
                         userId,
@@ -733,13 +439,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * A scroll to the top pages backwards.
-     *
-     * The server pages a *cursor* in one direction only, so "older than what I
-     * have" is a descending request seeded with the page cursor. The response
-     * comes back newest-first and is reversed before it is prepended.
-     */
+    /** A scroll to the top pages backwards. */
     fun loadOlderMessages() {
         val state = _uiState.value
         val sessionId = state.sessionId ?: return
@@ -777,8 +477,7 @@ class ChatViewModel(
                         .filterNot { message -> message.id in liveMessageIds }
                         .asReversed()
                     _uiState.update { current ->
-                        // A tail fetch may have appended while this page was in
-                        // flight, so merge by id rather than prepending blindly.
+                        // A tail fetch may have appended while this page was in flight, so merge by id rather than prepending blindly.
                         val known = current.messages.map { message -> message.id }.toSet()
                         current.copy(
                             messages = ChatApi.mergeById(
@@ -789,16 +488,11 @@ class ChatViewModel(
                             hasMoreOlder = result.value.hasMore,
                         )
                     }
-                    // An empty page means we reached the start of the transcript;
-                    // holding the old cursor would re-request it forever.
+                    // An empty page means we reached the start of the transcript; holding the old cursor would re-request it forever.
                     olderCursor = result.value.nextCursor?.takeIf { older.isNotEmpty() }
                     olderPageIsSettled = true
 
-                    // The boundary moved, so the one on disk is stale. Leaving
-                    // it is not a smaller problem than the warm open it feeds:
-                    // a reader who paged back to the start of a long chat and
-                    // then reopened it would be shown a cursor that re-requests
-                    // the page they have already read.
+                    // The boundary moved, so the one on disk is stale.
                     val moved = olderCursor?.let { ChatOlderPage(it, result.value.hasMore) }
                     withContext(ioDispatcher) {
                         if (older.isNotEmpty()) {
@@ -821,18 +515,7 @@ class ChatViewModel(
         _uiState.update { it.copy(draft = value) }
     }
 
-    /**
-     * Decode a picked image and add it to the turn being composed.
-     *
-     * The cap is checked **after** the decode and against the attachments
-     * already on the turn, not against a guess made before it. The reader
-     * downsamples and re-encodes, so the size that matters is only known once
-     * the bytes exist — and checking a pre-decode estimate is how an app ends
-     * up refusing a 200 KB screenshot it had room for.
-     *
-     * A refusal is a message, not a silent drop: the reader picked a file, and
-     * the only honest answer to "nothing happened" is which rule said no.
-     */
+    /** Decode a picked image and add it to the turn being composed. */
     fun attachImage(source: String) {
         if (_uiState.value.isAttaching) return
         attachJob?.cancel()
@@ -856,9 +539,7 @@ class ChatViewModel(
                         )
                     }
 
-                // Re-picked the same photo. Its id is derived from the URI, so
-                // this is a real duplicate rather than a near miss — and adding
-                // it twice would spend the reader's budget on one image.
+                // Re-picked the same photo.
                 state.pendingAttachments.any { it.id == attachment.id } ->
                     _uiState.update { it.copy(isAttaching = false) }
 
@@ -872,46 +553,19 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Drop one attached image.
-     *
-     * Immediate rather than round-tripped: a reader who taps the ✕ on a
-     * picture they just chose expects the picture to go, and an optimistic
-     * removal here has nothing to roll back — the bytes were never sent.
-     */
+    /** Drop one attached image. */
     fun removeAttachment(id: String) {
         _uiState.update { state ->
             state.copy(pendingAttachments = state.pendingAttachments.filterNot { it.id == id })
         }
     }
 
-    /**
-     * Queues a turn.
-     *
-     * **"Queue" is this method's normal case, not a special one.** There is no
-     * separate queue endpoint and no flag: the same `POST /llm/session` with a
-     * `queue_message` starts a run when the session is idle and lands in
-     * `session_queue_messages` when a worker is already live
-     * (`workflow.zig:688`, drained by the loop check at `workflow.zig:1565`).
-     * The composer's queue button therefore calls this, and the whole client-
-     * side difference is whether the button is offered.
-     *
-     * There is no optimistic bubble. The web removed one deliberately: a local
-     * push sits at the wrong end of the array and re-keys the grouped list,
-     * which silently re-renders tool cards the user had just expanded. The
-     * canonical row arrives over SSE instead, so the draft is cleared only once
-     * the server has actually accepted the turn — and a *queued* turn produces
-     * no row at all until the worker drains it, which is what
-     * [ChatUiState.queuedMessages] is for.
-     */
+    /** Queues a turn. */
     fun sendMessage() {
         val state = _uiState.value
         val sessionId = state.sessionId ?: return
         val text = state.draft.trim()
-        // An image on its own is a turn. "You can't send a message with no
-        // message" is a rule from a client that had no attachments, and the
-        // reader who attached a screenshot and wrote nothing is asking a
-        // question the picture answers.
+        // An image on its own is a turn.
         val attachments = state.pendingAttachments
         if ((text.isEmpty() && attachments.isEmpty()) || state.isSending) return
 
@@ -923,10 +577,7 @@ class ChatViewModel(
                     sessionId = sessionId,
                     message = text,
                     cwd = state.cwd,
-                    // Already-encoded data URLs. The backend splits this field
-                    // on `|` and validates each segment is
-                    // `data:image/*;base64,…`; base64's alphabet contains no
-                    // pipe, so no escaping is needed or possible here.
+                    // Already-encoded data URLs.
                     imageUrls = ChatAttachments.dataUrls(attachments),
                     selectedProfileModel = state.selectedProfileModel,
                 )
@@ -944,8 +595,7 @@ class ChatViewModel(
                 is ChatResult.Rejected,
                 is ChatResult.Unavailable,
                 -> _uiState.update {
-                    // The draft survives, so a failed send is one tap to retry
-                    // rather than a retyped message.
+                    // The draft survives, so a failed send is one tap to retry rather than a retyped message.
                     it.copy(isSending = false, errorMessage = messageFor(result))
                 }
             }
@@ -958,18 +608,11 @@ class ChatViewModel(
         stopJob?.cancel()
         stopJob = viewModelScope.launch {
             val result = withContext(ioDispatcher) { client.stopRun(sessionId) }
-            // A stop for a chat the user already left must not surface its
-            // error, or sign out on, the chat now on screen.
+            // A stop for a chat the user already left must not surface its error, or sign out on, the chat now on screen.
             if (requestGeneration != generation) return@launch
             when (result) {
                 is ChatResult.SignedOut -> expireSession()
-                // Cleared on the way out, not left to the frames that will
-                // follow. A stop does not always produce a final chunk or a
-                // completed row — the turn it interrupts is precisely the one
-                // that never finishes — so waiting for one leaves the header
-                // reading "Working…" with a Stop button against a run that is
-                // already gone, and the only thing that clears it is opening
-                // another chat.
+                // Cleared on the way out, not left to the frames that will follow.
                 is ChatResult.Loaded -> stopStreaming()
 
                 is ChatResult.Rejected,
@@ -979,15 +622,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Settles a pending `ask_user` question.
-     *
-     * `ask_user` ends the run, so an unanswered question is a chat that is
-     * stopped rather than one that is waiting — the composer would queue a turn
-     * behind a run that is not going to continue. Answering is therefore the
-     * only way out, which is why the card carries the affordance rather than
-     * leaving the reader to discover the desktop client.
-     */
+    /** Settles a pending `ask_user` question. */
     fun answerQuestion(
         questionId: String?,
         toolCallId: String,
@@ -1011,9 +646,7 @@ class ChatViewModel(
             if (requestGeneration != generation) return@launch
             when (result) {
                 is ChatResult.Loaded -> {
-                    // The rewritten tool row arrives over SSE; refetching too
-                    // covers the case where the stream is down, which is exactly
-                    // when the reader most needs the answer to have landed.
+                    // The rewritten tool row arrives over SSE; refetching too covers the case where the stream is down, which is exactly when the reader most needs the answer to …
                     revalidate(sessionId, requestGeneration)
                 }
 
@@ -1029,15 +662,10 @@ class ChatViewModel(
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    /**
-     * Sign-out. The cached transcript is purged rather than left namespaced: the
-     * user asked to switch accounts, the device may be shared, and refetching
-     * costs one request.
-     */
+    /** Sign-out. */
     fun onSignedOut() {
         generation++
-        // The socket is not this ViewModel's to close any more -- `MainActivity`
-        // closes the bus, which is what holds the cookie.
+        // The socket is not this ViewModel's to close any more -- `MainActivity` closes the bus, which is what holds the cookie.
         userId = null
         liveMessageIds.clear()
         subAgentBatches.clear()
@@ -1064,22 +692,7 @@ class ChatViewModel(
         super.onCleared()
     }
 
-    /**
-     * Drops the claim that a turn is still arriving — in **both** the places it
-     * is held, because the header and the transcript read different ones.
-     *
-     * [ChatUiState.isStreaming] drives `isChatWorking`, so it is what keeps the
-     * "Working…" label and the Stop button on screen. [ChatMessage.isStreaming]
-     * on the row drives `StreamingHint`, the "streaming…" line under the turn.
-     * Clearing only the state flag leaves a terminal failure rendering as a
-     * settled header over a turn that still claims to be mid-sentence — two
-     * halves of one truth, disagreeing, which is the state a reader has no way
-     * to interpret.
-     *
-     * The rows themselves are kept, unfrozen. The placeholder's text is real
-     * output the reader watched arrive, and [ChatViewModel.upsertFullMessage]
-     * still owns replacing it with the canonical row when that lands.
-     */
+    /** Drops the claim that a turn is still arriving — in **both** the places it is held, because the header and the transcript read different ones. */
     private fun stopStreaming(
         errorMessage: String? = null,
         isLive: Boolean? = null,
@@ -1096,26 +709,16 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * The bus's connection state, narrowed to the chat that is open.
-     *
-     * One socket means one set of transitions for the whole process, so this
-     * ignores them while no chat is open rather than letting a sidebar-driven
-     * reconnect grey out a transcript that is perfectly fine.
-     */
+    /** The bus's connection state, narrowed to the chat that is open. */
     private fun handleBusState(state: ChatStreamState) {
         val sessionId = _uiState.value.sessionId ?: return
         when (state) {
             is ChatStreamState.Live -> {
                 _uiState.update { it.copy(isLive = true) }
-                // A *re*connect means events were missed with no way to ask for
-                // them, so the only repair is a refetch. The first connect needs
-                // none — the load already in flight covers that window.
+                // A *re*connect means events were missed with no way to ask for them, so the only repair is a refetch.
                 if (hasConnectedStreamOnce) {
                     revalidate(sessionId, generation)
-                    // Same reasoning, applied to the queue: frames lost while
-                    // the socket was down are gone, and the list the reader is
-                    // about to tap is built out of exactly those frames.
+                    // Same reasoning, applied to the queue: frames lost while the socket was down are gone, and the list the reader is about to tap is built out of exactly those …
                     revalidateQueue(sessionId, generation)
                 }
                 hasConnectedStreamOnce = true
@@ -1125,15 +728,7 @@ class ChatViewModel(
             is ChatStreamState.Reconnecting,
             -> _uiState.update { it.copy(isLive = false) }
 
-            // Terminal, so this is the last word on the turn. The pump
-            // `return`s on a rejected handshake instead of retrying
-            // (HttpChatEventStream: a non-2xx handshake is reported and the
-            // pump exits), which means neither `chunk_final` nor `llm_full` is
-            // ever coming for a turn that is still flagged as streaming. Left
-            // set, `isChatWorking` keeps the Stop button and the "Working…"
-            // label on screen for a run that cannot report anything again — the
-            // same argument the `ChatStreamEvent.Failed` branch below makes for
-            // an `is_error` frame.
+            // Terminal, so this is the last word on the turn.
             is ChatStreamState.Failed -> stopStreaming(
                 errorMessage = state.message,
                 isLive = false,
@@ -1141,16 +736,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * One handler for every event on the shared bus, scoped to the open chat.
-     *
-     * The bus carries *all* sessions' `llm` and `queue` traffic — that is what
-     * makes one socket enough — so `sessionId` is read from the state on every
-     * event rather than captured when a stream was opened. Reading it live is
-     * also what makes the two filters below equivalent: an event that arrives
-     * between a session switch and the next paint is dropped by the state guard
-     * before the per-event one is even reached.
-     */
+    /** One handler for every event on the shared bus, scoped to the open chat. */
     private fun handleBusEvent(event: ChatStreamEvent) {
         val sessionId = _uiState.value.sessionId ?: return
         when (event) {
@@ -1166,51 +752,25 @@ class ChatViewModel(
                 if (event.sessionId == sessionId) upsertFullMessage(sessionId, event)
 
             // A fan-out that reports nothing for two minutes looks like a hang.
-            // These never become turns, so the state they drive is a separate
-            // line in the header rather than a row in the transcript.
             is ChatStreamEvent.SubAgentProgress ->
                 if (event.sessionId == sessionId) recordSubAgentProgress(event)
 
             is ChatStreamEvent.SessionChanged ->
                 if (event.sessionId == sessionId) revalidate(sessionId, generation)
 
-            // Mirrored, not counted. A composer that can queue a turn has to
-            // be able to show *which* turn is waiting — a turn that has left
-            // the app and is now behind a two-minute tool call is a message
-            // that looks lost, and "1 queued" does not tell the reader it is
-            // their own.
+            // Mirrored, not counted.
             is ChatStreamEvent.QueueChanged ->
                 if (event.sessionId == sessionId) applyQueueChange(event)
 
-            // A diagnostic frame (`is_error`) is not a run in progress, so it
-            // must clear the flag too — otherwise the header claims the agent
-            // is still working after it has given up.
+            // A diagnostic frame (`is_error`) is not a run in progress, so it must clear the flag too — otherwise the header claims the agent is still working after it has …
             is ChatStreamEvent.Failed -> stopStreaming(errorMessage = event.message)
 
-            // Worker liveness is not this screen's state. It is kept for the
-            // whole app in `RunningSessionsStore` and fed by
-            // `WorkerActivityViewModel`, which is the *other* subscriber to this
-            // same bus. Both now see every worker frame, so this branch exists to
-            // say "deliberately not mine" rather than because the channel is
-            // elsewhere.
+            // Worker liveness is not this screen's state.
             is ChatStreamEvent.WorkerChanged -> Unit
         }
     }
 
-    /**
-     * Folds one `queue_queued` / `queue_deleted` frame into the mirror.
-     *
-     * Matched by id rather than by count, and an id already present is
-     * ignored: the same frame is delivered on the per-session key *and* on the
-     * central `queue` broadcast (`insert_queue_message.zig`), so the same
-     * queueing arrives twice and a blind append would show every queued turn
-     * twice. The web has the same double delivery and the same guard
-     * (`ChatView.vue:3716`).
-     *
-     * A delete for an id that is not in the list is a no-op for the same
-     * reason: the frame is real, the mirror is behind, and the next
-     * [revalidateQueue] is what settles it.
-     */
+    /** Folds one `queue_queued` / `queue_deleted` frame into the mirror. */
     private fun applyQueueChange(event: ChatStreamEvent.QueueChanged) {
         _uiState.update { state ->
             when (event.action) {
@@ -1234,10 +794,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * The backend sends *raw provider deltas*, so this appends. Assigning would
-     * leave only the last fragment on screen.
-     */
+    /** The backend sends *raw provider deltas*, so this appends. */
     private fun appendStreamingChunk(event: ChatStreamEvent.Chunk) {
         hasFreshContent = true
         _uiState.update { state ->
@@ -1247,8 +804,7 @@ class ChatViewModel(
                 role = ChatMessage.ROLE_ASSISTANT,
                 content = (existing?.content.orEmpty()) + event.content,
                 createdAtEpochMillis = nowMillis(),
-                // Sorts last, so the placeholder is never spliced into the
-                // middle of a transcript whose later turns already arrived.
+                // Sorts last, so the placeholder is never spliced into the middle of a transcript whose later turns already arrived.
                 sortKeyNanos = existing?.sortKeyNanos ?: Long.MAX_VALUE,
                 reasoningContent = (existing?.reasoningContent.orEmpty()) +
                     event.reasoningContent,
@@ -1265,9 +821,7 @@ class ChatViewModel(
         "${ChatMessage.STREAMING_ID_PREFIX}${++streamingCounter}"
 
     private fun finishStreaming() {
-        // The placeholder deliberately stays: the canonical row has not arrived
-        // yet, and dropping it here flashes an empty bubble between the last
-        // delta and the completed turn. The `full` frame removes it.
+        // The placeholder deliberately stays: the canonical row has not arrived yet, and dropping it here flashes an empty bubble between the last delta and the …
         _uiState.update { state ->
             val placeholder = state.messages.lastOrNull { message -> message.isStreaming }
                 ?: return@update state.copy(isStreaming = false)
@@ -1280,40 +834,14 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * The canonical row for a turn. It replaces any row with the same id and
-     * drops the streaming placeholder, then goes straight into the cache so a
-     * cold start after this turn reads the completed text rather than a stub.
-     *
-     * **Appended, never re-sorted**, and that is the whole point.
-     *
-     * The backend's `llm_full` payload (`SseEventLLMHistory`,
-     * `src/agentic_loop/sse_on_event_send_llm_history.zig:19-56`) declares no
-     * `created_at` member, so a row decoded from a frame arrives with a sort key
-     * of `0`. Sorting that against a transcript whose every other row carries a
-     * real nanosecond timestamp files the turn the reader JUST SENT at **index
-     * 0** — the top of the chat — while the viewport is pinned to the last index.
-     * The reader watches a spinner appear over a conversation that never shows
-     * their own words, and the defect then persists: `liveMessageIds` suppresses
-     * the REST repair, and [rawObjectFor] writes `created_at = "0"` so a cold
-     * start re-reads the same wrong position.
-     *
-     * An `llm_full` frame is by construction the row the worker has *just*
-     * written, so arrival order *is* chronological order. The Vue web relies on
-     * exactly that and pushes the frame with a local clock
-     * (`ChatView.vue:3870-3873`); this mirrors it rather than inventing a second
-     * ordering rule for the same wire.
-     */
+    /** The canonical row for a turn. */
     private fun upsertFullMessage(sessionId: String, event: ChatStreamEvent.Full) {
         val message = event.message
         liveMessageIds += message.id
         hasFreshContent = true
 
         _uiState.update { state ->
-            // Match the placeholder by its RESERVED ID, not just by
-            // `isStreaming`: `finishStreaming` has already cleared that flag by
-            // the time the canonical row lands, so flag-matching alone leaves
-            // the stub on screen next to the real turn.
+            // Match the placeholder by its RESERVED ID, not just by `isStreaming`: `finishStreaming` has already cleared that flag by the time the canonical row lands, so …
             val dropped = state.messages.filterNot { candidate ->
                 candidate.isStreamingPlaceholder ||
                     candidate.id == message.id
@@ -1326,11 +854,6 @@ class ChatViewModel(
         }
 
         // The STAMPED row is what goes to disk, not the frame as it arrived.
-        // `rawObjectFor` persists `created_at = sortKeyNanos`, so writing the
-        // unstamped copy stores `"0"` and the next cold start re-sorts this turn
-        // to the top of the chat — the exact defect this stamps it to prevent,
-        // re-armed on every restart. `update` publishes synchronously, so the
-        // stamped row is already in the state by the time this reads it back.
         val placed = _uiState.value.messages.lastOrNull { it.id == message.id }
             ?: message
 
@@ -1347,21 +870,7 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Gives a frame-delivered row a sort key it can actually be ordered by.
-     *
-     * A row that already carries a server timestamp is left alone: that
-     * timestamp is the authority, and a local clock must never outrank it.
-     *
-     * One that does not gets this phone's arrival clock — **floored just above
-     * every row already on screen**. The floor is what makes the fix independent
-     * of the phone's clock being right: a device whose clock is an hour behind
-     * the server's would otherwise stamp its own turn with an older key than the
-     * transcript around it and re-sort it back to where it just came from. The
-     * floor is computed against the rows that survive the merge, and skips the
-     * `Long.MAX_VALUE` sentinel the streaming placeholder uses, so it can never
-     * overflow on the increment.
-     */
+    /** Gives a frame-delivered row a sort key it can actually be ordered by. */
     private fun ChatMessage.stampedForArrival(siblings: List<ChatMessage>): ChatMessage {
         if (sortKeyNanos > 0L) return this
         val millis = nowMillis()
@@ -1375,21 +884,9 @@ class ChatViewModel(
         )
     }
 
-    /**
-     * Folds one sub-agent lifecycle ping into the header counters.
-     *
-     * The running count is *derived* by replaying the batch rather than by
-     * incrementing and decrementing. A `completed` for an agent whose `launched`
-     * ping was missed — which is exactly what a reconnect in the middle of a
-     * fan-out produces — would otherwise decrement a count that was never
-     * incremented and drive it below zero.
-     */
+    /** Folds one sub-agent lifecycle ping into the header counters. */
     private fun recordSubAgentProgress(event: ChatStreamEvent.SubAgentProgress) {
         // A ping with no `agent_name` still happened, and still has to count.
-        // Keying the batch on the name alone collapsed every nameless ping onto
-        // one entry, so an N-agent fan-out reported "1 of N" the whole way
-        // through — wrong in both directions at once, which is the only kind of
-        // wrong that tells the reader nothing.
         val key = event.agentName.ifBlank { "#${event.agentIndex}" }
         val batch = subAgentBatches.getOrPut(event.toolCallId) { mutableSetOf() }
         batch.removeIf { it.key == key }
@@ -1399,9 +896,7 @@ class ChatViewModel(
         val finished = batch.count { it.status != ChatStreamEvent.SubAgentProgress.STATUS_LAUNCHED }
         val failed = batch.count { it.status == ChatStreamEvent.SubAgentProgress.STATUS_FAILED }
 
-        // A batch the backend never told us the size of is pruned once every
-        // member it *did* report has finished, so a session that runs a hundred
-        // fan-outs does not retain a hundred sets.
+        // A batch the backend never told us the size of is pruned once every member it *did* report has finished, so a session that runs a hundred fan-outs does not …
         val complete = finished > 0 && (
             finished == launched &&
                 (event.totalAgents <= 0 || finished >= event.totalAgents)
@@ -1427,15 +922,7 @@ class ChatViewModel(
         is ChatResult.Loaded -> ""
     }
 
-    /**
-     * Rebuilds the wire object for a message.
-     *
-     * The cache stores the *verbatim* server row so a cached paint and a live
-     * paint cannot disagree. A message that originated as an SSE frame never
-     * carried a stored raw, so it is reconstructed from the fields the frame
-     * had — same key names, same JSON-in-a-string and pipe-delimited
-     * conventions, so the two paths stay interchangeable.
-     */
+    /** Rebuilds the wire object for a message. */
     private fun rawObjectFor(message: ChatMessage): JSONObject = JSONObject()
         .put("id", message.id)
         .put("session_id", _uiState.value.sessionId.orEmpty())
@@ -1462,12 +949,7 @@ class ChatViewModel(
     }
 
     companion object {
-        /**
-         * Bounded so the cache read in [readCachedTranscript] is a bounded
-         * amount of JSON on a background dispatcher rather than an unbounded
-         * one. Older turns stay reachable by scrolling, which pages them from
-         * the network.
-         */
+        /** Bounded so the cache read in [readCachedTranscript] is a bounded amount of JSON on a background dispatcher rather than an unbounded one. */
         const val CACHED_MESSAGE_LIMIT = 400
 
         const val OLDER_PAGE_LIMIT = 200
@@ -1478,8 +960,7 @@ class ChatViewModel(
                 ChatViewModel(
                     client = ChatClient(
                         sessionStore = sessionStore,
-                        // Recorded like auth, so the inspector shows the exact
-                        // bytes the chat sent.
+                        // Recorded like auth, so the inspector shows the exact bytes the chat sent.
                         httpTransport = RecordingAuthTransport(
                             HttpsAuthTransport { AuthConfig.BASE_URL },
                         ),

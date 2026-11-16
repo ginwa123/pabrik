@@ -8,9 +8,7 @@ import {
 } from './iframeAutoResize'
 import { activeScheme, activeTheme } from '../theme/runtime'
 
-/**
- * The frame is a separate NULL-origin document, so app CSS custom properties do not cascade in.
- */
+/** The frame is a separate NULL-origin document, so app CSS custom properties do not cascade in. */
 export interface HtmlFramePalette {
   bg: string
   fg: string
@@ -40,8 +38,7 @@ const readCssVar = (name: string, fallback: string): string => {
   return value || fallback
 }
 
-/** Memoized PER THEME: this runs on every assistant render, and a theme flip must re-read the
- * tokens rather than reuse the shell painted for the previous theme. */
+/** Memoized PER THEME: this runs on every assistant render, and a theme flip must re-read the tokens rather than reuse the shell painted for the previous theme. */
 export const resolveHtmlFramePalette = (): HtmlFramePalette => {
   const theme = activeTheme()
   if (htmlFramePalette && htmlFramePaletteTheme === theme) return htmlFramePalette

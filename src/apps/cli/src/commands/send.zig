@@ -20,8 +20,7 @@ pub fn run(args: Args, cfg: config.Config, io: std.Io) @import("root.zig").Dispa
 
     // Pick the session id (CLI flag → config default → fresh session).
     const session_id = args.session_id orelse cfg.session_id orelse blk: {
-        // Generate a fresh session id with a millisecond timestamp suffix
-        // (matches the project's `session-<unix-ms>` convention).
+        // Generate a fresh session id with a millisecond timestamp suffix (matches the project's `session-<unix-ms>` convention).
         const ts_ms = std.Io.Clock.now(.real, io).toMilliseconds();
         const buf = std.fmt.allocPrint(allocator, "session-{d}", .{ts_ms}) catch return .err;
         break :blk buf;
@@ -58,14 +57,11 @@ pub fn run(args: Args, cfg: config.Config, io: std.Io) @import("root.zig").Dispa
     return .ok;
 }
 
-// A tiny alias so the run() signature reads naturally without forcing
-// the caller to spell out `custom_http_client.Client`.
+// A tiny alias so the run() signature reads naturally without forcing the caller to spell out `custom_http_client.Client`.
 const custom_http_client = @import("kabelweb").client;
 const client_typedef = custom_http_client;
 
-// ===== Tests merged from send_test.zig (2026-09-29 flatten) ===== Tests for
-// src/commands/send.zig (POST /api/llm/session). Real tests land when the
-// command itself lands.
+// ===== Tests merged from send_test.zig (2026-09-29 flatten) =====
 
 const testing = std.testing;
 

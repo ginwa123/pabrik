@@ -49,9 +49,7 @@ const name = ref('')
 const selectedPath = ref('')
 const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
-// Same "touched + visible error" UX as AddItemDialog. After the user types (or blurs) the name
-// field empty/whitespace, the dialog shows "Name is required" below the input so the disabled Add
-// button is self-explanatory.
+// Same "touched + visible error" UX as AddItemDialog.
 const nameTouched = ref(false)
 const nameError = computed<string | null>(() => {
   if (!nameTouched.value) return null
@@ -59,8 +57,7 @@ const nameError = computed<string | null>(() => {
   return null
 })
 
-// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
-// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
+// ─── Picker data source ────────────────────────────────────────────────────
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path, props.workspaceId) : await getSystemFolder(props.workspaceId)
   return (data.entries || []) as FolderEntry[]
@@ -74,9 +71,7 @@ const handleFolderSelected = (path: string) => {
 
 const handleCreate = () => {
   const trimmedName = name.value.trim()
-  // Path is OPTIONAL (since 2026-08-06) — only `name` is required. Empty string is forwarded when
-  // the user skipped the picker; the backend's `NULLIF(?, '')` writes `NULL` for empty paths,
-  // creating a cwd-less kanban.
+  // Path is OPTIONAL (since 2026-08-06) — only `name` is required.
   if (trimmedName) {
     emit('create', trimmedName, selectedPath.value)
     handleClose()
@@ -93,9 +88,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset state when the
-// dialog opens. We deliberately do NOT preserve either the name or the selected path across
-// open/close so the dialog is predictable for users.
+// ─── Lifecycle ─────────────────────────────────────────────────────────────
 const handleOpen = async () => {
   name.value = ''
   selectedPath.value = ''
@@ -110,9 +103,7 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

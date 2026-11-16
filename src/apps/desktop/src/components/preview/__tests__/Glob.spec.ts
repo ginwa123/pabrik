@@ -52,9 +52,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // De-bubble contract — the whole point of this migration
-// ────────────────────────────────────────────────────────────────────────
 describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => {
   it('root element carries the shared .chat-tool-card class', () => {
     const wrapper = makeWrapper({ content: matchData() })
@@ -70,8 +68,6 @@ describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => 
 
   it('source has no leftover bubble-frame CSS (border-radius/card-bg on a .gl root)', () => {
     // Read the component source and assert the old frame block is gone.
-    // This is the static half of the contract — the DOM assertions above
-    // are the rendered half.
     const src = readFileSync(resolve(__dirname, '../Glob.vue'), 'utf8')
     expect(src).toContain('.chat-tool-card')
     expect(src).not.toContain('border-radius: 6px')
@@ -94,9 +90,7 @@ describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => 
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Behaviour preserved from pre-migration
-// ────────────────────────────────────────────────────────────────────────
 describe('Glob.vue — behaviour preserved', () => {
   it('shows file count summary for match results', () => {
     const wrapper = makeWrapper({ content: matchData() })
@@ -143,8 +137,7 @@ describe('Glob.vue — behaviour preserved', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
-// Arguments must still be reachable.
+// ──────────────────────────────────────────────────────────────────────── Empty/no-match results — Arguments must still be reachable.
 describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',
@@ -178,9 +171,7 @@ describe('Glob.vue — warning data still shows Arguments (empty/no-match)', () 
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────── Error/empty states — the
-// "not showing output" fix. - Envelope failures render a red error block instead of a bare "0
-// files".
+// ──────────────────────────────────────────────────────────────────────── Error/empty states — the "not showing output" fix. - Envelope failures render a red …
 describe('Glob.vue — error/empty states', () => {
   it('shows a red error block for envelope failures', async () => {
     const envelope = {

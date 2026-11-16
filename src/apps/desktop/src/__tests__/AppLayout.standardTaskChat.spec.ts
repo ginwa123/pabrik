@@ -92,8 +92,7 @@ function mountApp(): VueWrapper {
       mocks: { $router: { replace: vi.fn() } },
       provide: { processingState: ref<Record<string, boolean>>({}) },
       stubs: {
-        // Custom ChatView stub: the default `true` stub renders no HTML, which makes prop-level
-        // assertions impossible.
+        // Custom ChatView stub: the default `true` stub renders no HTML, which makes prop-level assertions impossible.
         ChatView: {
           template:
             '<div data-testid="chatview-stub" :data-chat-id="chatId" :data-chat-name="chatName" :data-chat-cwd="cwd" />',
@@ -153,8 +152,7 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   })
 
   it('renders <ChatView> when active task belongs to a folder item (regression: blank chatview)', async () => {
-    // Pre-fix: NO branch matched → right pane rendered blank. Post-fix: this v-else-if matches:
-    // activeWorkspaceItem.item_type !== 'kanban' && !== 'design' && activeTask
+    // Pre-fix: NO branch matched → right pane rendered blank. Post-fix: this v-else-if matches
     const ws = useWorkspacesStore()
     ws.workspaces = [
       {
@@ -212,9 +210,7 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   })
 
   it('does NOT render <ChatView> when no active task is set on the folder item', async () => {
-    // activeWorkspaceItem is set (folder) but activeTask is null → the new branch's `&& activeTask`
-    // guard fails, falling through to the workspace-folder-preview empty state. No chat renders
-    // because there's nothing to chat with.
+    // activeWorkspaceItem is set (folder) but activeTask is null → the new branch's `&& activeTask` guard fails, falling through to the workspace-folder-preview …
     const ws = useWorkspacesStore()
     ws.workspaces = [
       {
@@ -233,8 +229,7 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   })
 
   it('does NOT route a kanban task through this branch (its chat is the kanban view)', async () => {
-    // This branch is gated on `item_type !== 'kanban' && !== 'design'`, so a kanban task is claimed
-    // by the kanban chat branch instead. Guards against an accidental double-mount.
+    // This branch is gated on `item_type !== 'kanban' && !== 'design'`, so a kanban task is claimed by the kanban chat branch instead.
     const ws = useWorkspacesStore()
     ws.workspaces = [
       {
@@ -265,8 +260,7 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
   })
 
   it('passes the workspace item path as :cwd to <ChatView> (regression: empty cwd_session in sendChatMessage)', async () => {
-    // REGRESSION (task_1787027750097, follow-up): before the fix, the new branch (and the
-    // standalone ChatView branch above) did NOT pass `:cwd` to <ChatView>.
+    // REGRESSION (task_1787027750097, follow-up): before the fix, the new branch (and the standalone ChatView branch above) did NOT pass `:cwd` to <ChatView>.
     const FOLDER_PATH = '/home/user/projects/myapp'
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -292,9 +286,7 @@ describe('AppLayout — standard task chat (folder / memory / chat items)', () =
     await nextTick()
     const chatView = wrapper.find('[data-testid="chatview-stub"]')
     expect(chatView.exists()).toBe(true)
-    // The :cwd prop must be the folder's path — ChatView's onMounted reads `if (props.cwd)
-    // sessionCwd.value = props.cwd`, which becomes the `cwd_session` field on every
-    // api.sendChatMessage call. Without this, the field was `""`.
+    // The :cwd prop must be the folder's path — ChatView's onMounted reads `if (props.cwd) sessionCwd.value = props.cwd`, which becomes the `cwd_session` field on …
     expect(chatView.attributes('data-chat-cwd')).toBe(FOLDER_PATH)
     wrapper.unmount()
   })

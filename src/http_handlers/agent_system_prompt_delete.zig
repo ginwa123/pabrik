@@ -1,5 +1,4 @@
-//! `DELETE /api/agents/:agent_id/system_prompt/:prompt_id`. Removes a
-//! system-prompt entry. Returns `{ok: true}` on success.
+//! `DELETE /api/agents/:agent_id/system_prompt/:prompt_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -22,9 +21,7 @@ pub const SystemPromptDeleteInput = struct {
     prompt_id: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Delete a system-prompt row for the given agent.
 fn useCase(
@@ -40,13 +37,9 @@ fn useCase(
         return error.DeleteFailed;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentSystemPromptDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -83,8 +76,6 @@ pub fn agentSystemPromptDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). Behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -104,20 +95,16 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Migration 076 (Agent Mode) only creates the `agents`,
-    // `agent_knowledge`, `agent_tools` tables.
+    // Migration 076 (Agent Mode) only creates the `agents`, `agent_knowledge`, `agent_tools` tables.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
 
     try Migration116.up(&db, testing.allocator);
-    // Production DBs run every migration in order — the harness must
-    // mirror that, or the agent_system_prompt table (Migration 080) is
-    // missing.
+    // Production DBs run every migration in order — the harness must mirror that, or the agent_system_prompt table (Migration 080) is missing.
 
-    // Seed: 1 workspace_item of type 'agent' + matching agents row +
-    // 1 system-prompt row, so the happy-path test has something to delete.
+    // Seed: 1 workspace_item of type 'agent' + matching agents row + 1 system-prompt row, so the happy-path test has something to delete.
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'agent', 'My Agent')",
         &[_][]const u8{},
@@ -196,8 +183,7 @@ test "useCase: non-matching prompt_id is a no-op (no error)" {
 
     try testing.expectEqual(@as(u32, 1), try countPrompts(&ctx.db, alloc, "ws_item_1"));
 
-    // prompt_id that doesn't exist — DELETE just affects 0 rows,
-    // and `exec` returns success. No error.
+    // prompt_id that doesn't exist — DELETE just affects 0 rows, and `exec` returns success.
     try useCase(alloc, &ctx.db, .{ .agent_id = "ws_item_1", .prompt_id = "asp_404" });
 
     try testing.expectEqual(@as(u32, 1), try countPrompts(&ctx.db, alloc, "ws_item_1"));

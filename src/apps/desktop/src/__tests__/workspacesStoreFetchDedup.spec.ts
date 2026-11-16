@@ -1,5 +1,4 @@
-/** Regression for frontend double-task bug (task_1788811916878_4): same task id visible in 2
- * columns until refresh. */
+/** Regression for frontend double-task bug (task_1788811916878_4): same task id visible in 2 columns until refresh. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
@@ -47,8 +46,7 @@ describe('fetchKanbanTasks — id dedup (double-task regression)', () => {
 
   it('dest refetch evicts stale source copy with same id (mirror-miss)', async () => {
     const store = seedWithStaleCopy()
-    // Server moved task_1 colA -> colB. Local still has stale colA copy
-    // (mirror missed). Dest refetch returns the fresh colB copy.
+    // Server moved task_1 colA -> colB.
     vi.spyOn(api, 'getTasks').mockResolvedValue({
       tasks: [{ id: 'task_1', name: 'impleme...', kanban_column_id: 'colB', kanban_position: 0 }],
       has_more: false,
@@ -66,7 +64,6 @@ describe('fetchKanbanTasks — id dedup (double-task regression)', () => {
   it('parallel race: two columns returning same id collapses to one copy', async () => {
     const store = seedWithStaleCopy()
     // Simulate fetch colA (stale, still has task) resolving AFTER fetch colB.
-    // After both land there must be exactly one copy.
     vi.spyOn(api, 'getTasks').mockImplementation(async (ws, item, _l, _c, _s, _d, columnId) => {
       if (columnId === 'colB') {
         return { tasks: [{ id: 'task_1', name: 'x', kanban_column_id: 'colB', kanban_position: 0 }], has_more: false, next_cursor: null }

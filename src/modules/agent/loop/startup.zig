@@ -4,9 +4,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const Scheduler = @import("Scheduler.zig");
 
-/// Submit the routine scheduler as a concurrent task on the Io
-/// runtime. The task runs forever; on the same Io group as
-/// session-create tasks. No thread is spawned.
+/// Submit the routine scheduler as a concurrent task on the Io runtime.
 pub fn start(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,

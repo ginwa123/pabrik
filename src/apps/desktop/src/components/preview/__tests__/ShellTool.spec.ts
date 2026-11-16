@@ -1,6 +1,4 @@
-/** Tests for ShellTool.vue — in-progress (placeholder) rendering. Regression: while a shell tool
- * (bash/pwsh/command) is still running, the backend has only emitted the Phase-1 placeholder
- * envelope (handle_tool.zig: empty `<data></data>`). */
+/** Tests for ShellTool.vue — in-progress (placeholder) rendering. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -19,8 +17,7 @@ const completedEnvelope = {
 
 const emptyPlaceholder = ''
 
-/** The exact `response_content` the backend persisted for the four failed calls in session
- * task_1790447864669_3 (llm_history row 1790452019027732862 and its three siblings). */
+/** The exact `response_content` the backend persisted for the four failed calls in session task_1790447864669_3 (llm_history row 1790452019027732862 and its three … */
 const unknownToolEnvelope = JSON.stringify({
   tool: 'bash',
   parameters: {
@@ -124,8 +121,7 @@ describe('ShellTool.vue — in-progress placeholder (TDD: unknown bug)', () => {
   })
 })
 
-/** Regression: a `success:false` shell envelope used to render as a card with a pill, a command
- * line, and nothing else — `normalized.error` was computed and then read by nobody. */
+/** Regression: a `success:false` shell envelope used to render as a card with a pill, a command line, and nothing else — `normalized.error` was computed and then … */
 describe('ShellTool.vue — ANSI escape soup never reaches the card', () => {
   const msbuildStdout =
     'C:\\Users\\gilang.trisetya\\AppData\\Local\\Microsoft\\dotnet\\sdk\\10.0.401\\Microsoft.Common.CurrentVersion.targets(4919,5): ' +
@@ -207,8 +203,7 @@ describe('ShellTool.vue — failed envelope is never blank', () => {
       content: { ...completedEnvelope, exit_code: 2, stderr: 'boom' },
       expanded: true,
     })
-    // exit_code:2 with empty `error` field → no envelope-error block; the
-    // existing exit-code badge remains the failure signal.
+    // exit_code:2 with empty `error` field → no envelope-error block; the existing exit-code badge remains the failure signal.
     expect(wrapper.find('[data-testid="shell-tool-error"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="shell-tool-exit-code"]').text()).toBe('2')
   })

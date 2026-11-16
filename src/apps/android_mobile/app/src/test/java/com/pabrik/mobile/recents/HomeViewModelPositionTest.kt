@@ -25,21 +25,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The last position, at the ViewModel level: the workspace a relaunch seeds
- * itself from, and the writes a user's own taps leave behind.
- *
- * The workspace half is asserted here rather than in `ResumePlanTest` because it
- * happens at a moment no other test can reach: before the first fetch, while
- * the drawer is painting from cache. Getting it wrong is not visible in a
- * screenshot of the finished app — it is a wasted request for the wrong
- * workspace's recents, a dropdown that jumps once the right list arrives, and a
- * store that keeps consulting an id the server deleted.
- *
- * Main and IO run on separate schedulers for the reason
- * [HomeViewModelCacheTest] gives: the cached paint is only observable while the
- * fetch is still pending.
- */
+/** The last position, at the ViewModel level: the workspace a relaunch seeds itself from, and the writes a user's own taps leave behind. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelPositionTest {
 
@@ -56,12 +42,7 @@ class HomeViewModelPositionTest {
             }
         }
 
-        /**
-         * Runs exactly far enough for the workspace list to have landed and been
-         * applied, with the *chat* fetch for the selected workspace queued on IO
-         * and not yet run. That window is the whole point of the test that uses
-         * this, and it takes one hop per scheduler to stop in.
-         */
+        /** Runs exactly far enough for the workspace list to have landed and been applied, with the *chat* fetch for the selected workspace queued on IO and not yet run. */
         fun advanceToChatFetchPending() {
             main.advanceUntilIdle() // runs `onUserChanged`, queues the workspace fetch
             io.advanceUntilIdle()   // the workspace response is in, continuation on main
@@ -113,10 +94,7 @@ class HomeViewModelPositionTest {
     ) = HomeViewModel(
         client = RecentsClient(MemorySessionStore(), httpTransport = transport),
         cache = cache,
-        // The projects section has no say in these tests, so it gets a
-        // client that answers nothing and a cache that answers nothing —
-        // which is what keeps an unrelated project fetch from showing up
-        // as a second request these tests would then have to account for.
+        // The projects section has no say in these tests, so it gets a client that answers nothing and a cache that answers nothing — which is what keeps an unrelated …
         projectsClient = ProjectsClient(MemorySessionStore()),
         projectsCache = InMemoryProjectsCache(),
         kanbanClient = KanbanClient(MemorySessionStore()),
@@ -137,9 +115,7 @@ class HomeViewModelPositionTest {
         )
         model.onUserChanged("user_a")
 
-        // Undrained: this is the first frame. If the seed were applied after the
-        // list arrived, this frame would show workspace "One" and the app would
-        // then fetch recents for it.
+        // Undrained: this is the first frame.
         val state = model.uiState.value
         assertEquals("ws_b", state.selectedWorkspaceId)
         assertEquals(listOf("sess_c"), state.chats.map { it.id })
@@ -166,8 +142,7 @@ class HomeViewModelPositionTest {
         model.onUserChanged("user_a")
         s.drain()
 
-        // Not an error and not an empty drawer: the list is the truth about
-        // which workspaces exist, and the stale id simply loses.
+        // Not an error and not an empty drawer: the list is the truth about which workspaces exist, and the stale id simply loses.
         assertEquals("ws_a", model.uiState.value.selectedWorkspaceId)
         assertEquals(null, model.uiState.value.errorMessage)
     }
@@ -189,8 +164,7 @@ class HomeViewModelPositionTest {
         s.drain()
         assertEquals("ws_a", model.uiState.value.selectedWorkspaceId)
 
-        // And again, after the user deliberately selected ws_a: the seed has to
-        // stay spent, or a workspace the user left behind keeps winning.
+        // And again, after the user deliberately selected ws_a: the seed has to stay spent, or a workspace the user left behind keeps winning.
         model.selectWorkspace("ws_b")
         model.selectWorkspace("ws_a")
         s.drain()
@@ -227,10 +201,7 @@ class HomeViewModelPositionTest {
 
     @Test
     fun `a tap writes the workspace the drawer is actually on`() = positionTest { s ->
-        // The store's workspace and the drawer's can disagree — a saved id the
-        // server no longer has is exactly how — and the chat a tap persists has
-        // to be filed under the workspace the user is really looking at, or the
-        // next launch validates it against the wrong list.
+        // The store's workspace and the drawer's can disagree — a saved id the server no longer has is exactly how — and the chat a tap persists has to be filed under …
         val positionStore = store(user = "user_a", position = LastPosition("ws_deleted", "sess_old"))
         val model = model(ioDispatcher = s.ioDispatcher, positionStore = positionStore)
         model.onUserChanged("user_a")
@@ -249,9 +220,7 @@ class HomeViewModelPositionTest {
         model.onUserChanged("user_a")
         s.drain()
 
-        // The drawer opens on ws_b, so this is the row the user is on. Tapping it
-        // must not be read as a workspace switch, which would drop the very chat
-        // they were reading.
+        // The drawer opens on ws_b, so this is the row the user is on.
         model.selectWorkspace("ws_b")
 
         assertEquals(LastPosition("ws_b", "sess_c"), positionStore.read("user_a"))
@@ -276,9 +245,7 @@ class HomeViewModelPositionTest {
         model.onUserChanged("user_a")
         s.drain()
 
-        // The user moves to ws_a, and a background revalidate runs. Re-reading
-        // here would drag the drawer back to the seeded workspace on the next
-        // refresh, which is the same bug as losing the selection on a refresh.
+        // The user moves to ws_a, and a background revalidate runs.
         model.selectWorkspace("ws_a")
         s.drain()
         model.refresh()
@@ -296,8 +263,7 @@ class HomeViewModelPositionTest {
 
         model.onSignedOut()
 
-        // The next account to sign in on this device would otherwise open
-        // straight into the previous one's transcript.
+        // The next account to sign in on this device would otherwise open straight into the previous one's transcript.
         assertTrue("sign-out must purge the position", positionStore.cleared)
         assertTrue(positionStore.read("user_a").isEmpty)
         assertTrue(model.uiState.value.workspaces.isEmpty())
@@ -324,16 +290,6 @@ class HomeViewModelPositionTest {
     @Test
     fun `the chat list arrives after the app has already settled`() = positionTest { s ->
         // The timing the resume depends on, asserted where it comes from.
-        //
-        // `isLoading` covers the *workspace* list; the chat list for the workspace
-        // it selects is fetched after that, and nothing raises the flag again in
-        // between (raising it would blank the rows a cache paint just put on
-        // screen). So there is a real window where the app is settled, the
-        // workspace is chosen, and the chat list has not arrived.
-        //
-        // An empty chat list therefore cannot be read as "there is nothing to
-        // resume" — that reading would end the question during a launch with no
-        // cache to paint from, which is the launch this feature exists for.
         val model = model(
             ioDispatcher = s.ioDispatcher,
             positionStore = store("user_a", LastPosition("ws_b", "sess_c")),
@@ -357,9 +313,7 @@ class HomeViewModelPositionTest {
 
     @Test
     fun `the current selection outranks the seed`() = positionTest { s ->
-        // The precedence in one assertion, because it is the rule two call sites
-        // share: a workspace the user is looking at is never moved out from under
-        // them by a value read at launch.
+        // The precedence in one assertion, because it is the rule two call sites share: a workspace the user is looking at is never moved out from under them by a value …
         assertEquals(
             "ws_a",
             selectWorkspaceId(

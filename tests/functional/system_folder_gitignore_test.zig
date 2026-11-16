@@ -1,6 +1,4 @@
 // Functional wire tests for .gitignore filtering on GET /api/system/folder.
-// Zig port of `tests/functional/system_folder_gitignore_test.py` (same test
-// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,8 +10,7 @@ const io = testing.io;
 
 // QUERY STRINGS RIDE IN `path`, NOT IN `HttpOptions.params`.
 
-/// A scratch directory to hold the fixture repo, mirroring pytest's
-/// `tmp_path`. Removed on the way out, whatever the test's outcome.
+/// A scratch directory to hold the fixture repo, mirroring pytest's `tmp_path`.
 const Scratch = struct {
     tmp: std.testing.TmpDir,
     root: []u8,
@@ -48,9 +45,7 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// `git init --initial-branch=main --quiet <path>`. `git init` is what makes
-/// `git check-ignore` evaluate rules at all: without a repository, git
-/// refuses the pathspec and the batched helper has nothing to report.
+/// `git init --initial-branch=main --quiet <path>`.
 fn gitInit(path: []const u8) !void {
     var argv: [5][]const u8 = .{ "git", "init", "--initial-branch=main", "--quiet", path };
     const res = std.process.run(gpa, io, .{ .argv = &argv }) catch |err| {
@@ -90,8 +85,7 @@ fn buildGitignoreRepo(s: *Scratch) ![]u8 {
         defer gpa.free(p);
         try writeFileAt(p, "ignored via *.log\n");
     }
-    // The nested file inside the ignored directory — it must not leak
-    // into `search` results even though `debug.log` did not.
+    // The nested file inside the ignored directory — it must not leak into `search` results even though `debug.log` did not.
     {
         const dir = try std.fs.path.join(gpa, &.{ cwd, "ignored_dir" });
         defer gpa.free(dir);
@@ -104,8 +98,7 @@ fn buildGitignoreRepo(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// Does the entry array carry an entry named exactly `name`? Python's
-/// `[e["name"] for e in r.json()["entries"]]` reduced to a membership test.
+/// Does the entry array carry an entry named exactly `name`?
 fn entriesHaveName(entries: std.json.Array, name: []const u8) bool {
     for (entries.items) |v| {
         const o = switch (v) {
@@ -135,8 +128,7 @@ test "search_respects_gitignore_rules" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // `q=` is the empty search term — `action=search` with no filter
-    // is the "what would this panel show on open" probe.
+    // `q=` is the empty search term — `action=search` with no filter is the "what would this panel show on open" probe.
     const url = try std.fmt.allocPrint(gpa, "/api/system/folder?action=search&path={s}&q=&limit=50", .{gitignore_cwd});
     defer gpa.free(url);
 

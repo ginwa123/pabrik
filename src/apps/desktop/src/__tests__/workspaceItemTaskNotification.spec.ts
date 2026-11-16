@@ -1,5 +1,4 @@
-/** Component tests for the kanban task notification icon — the orange "AI finished — awaiting
- * review" dot and the green "reviewed" checkmark on <WorkspaceItemTaskCard>. */
+/** Component tests for the kanban task notification icon — the orange "AI finished — awaiting review" dot and the green "reviewed" checkmark on … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -46,9 +45,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     vi.restoreAllMocks()
   })
 
-  // ─────────────────────────────────────────────────────────────────
   // State 2: orange "awaiting review" dot
-  // ─────────────────────────────────────────────────────────────────
   it('renders the orange needs-review dot when needs_human_review=true and not running', () => {
     wrapper = mountCard({
       id: 't1',
@@ -64,8 +61,6 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
 
   it('shows the orange dot alongside the time pill when the worker is active', () => {
     // AI is mid-turn AND a previous turn finished with stop awaiting review.
-    // The spinner is gone, so both markers show: the dot (review state)
-    // and the elapsed pill (activity state).
     const now = Date.now()
     wrapper = mountCard(
       {
@@ -87,9 +82,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     expect(wrapper.find('[data-testid="task-card-elapsed-chip"]').exists()).toBe(true)
   })
 
-  // ─────────────────────────────────────────────────────────────────
   // State 3: green "reviewed" checkmark
-  // ─────────────────────────────────────────────────────────────────
   it('renders the green reviewed checkmark when finish_reason=stop AND needs_human_review=false AND not running', () => {
     wrapper = mountCard({
       id: 't1',
@@ -100,15 +93,12 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     const check = wrapper.find('[data-testid="task-reviewed"]')
     expect(check.exists()).toBe(true)
     expect(check.attributes('title')).toContain('Reviewed')
-    // The orange dot and the spinner must NOT be present — only the
-    // checkmark for this terminal state.
+    // The orange dot and the spinner must NOT be present — only the checkmark for this terminal state.
     expect(wrapper.find('[data-testid="task-needs-review"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="task-spinner"]').exists()).toBe(false)
   })
 
-  // ─────────────────────────────────────────────────────────────────
   // State 4: never ran (no last_finish_reason)
-  // ─────────────────────────────────────────────────────────────────
   it('renders nothing when last_finish_reason is missing AND needs_human_review is false (default empty task)', () => {
     wrapper = mountCard({ id: 't1', name: 'Brand new' })
     expect(wrapper.find('[data-testid="task-needs-review"]').exists()).toBe(false)
@@ -116,8 +106,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   })
 
   it('renders nothing when last_finish_reason="" AND needs_human_review=false (legacy task, never chatted)', () => {
-    // Backwards compat: backend COALESCE'd NULL last_finish_reason
-    // to ''. The UI must treat '' the same as missing.
+    // Backwards compat: backend COALESCE'd NULL last_finish_reason to ''.
     wrapper = mountCard({
       id: 't1',
       name: 'Legacy',
@@ -130,9 +119,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
 
   // ───────────────────────────────────────────────────────────────── State 5: defensive.
   it('renders nothing when finish_reason=tool_calls even if needs_human_review is true (defensive)', () => {
-    // The SQL predicate COALESCE(s.last_finish_reason,'')='stop' guarantees this in normal flow,
-    // but the UI also gates on it so a stale React prop doesn't paint a phantom dot during a state
-    // transition.
+    // The SQL predicate COALESCE(s.last_finish_reason,'')='stop' guarantees this in normal flow, but the UI also gates on it so a stale React prop doesn't paint a …
     wrapper = mountCard({
       id: 't1',
       name: 'Mid-tool',
@@ -143,9 +130,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     expect(wrapper.find('[data-testid="task-reviewed"]').exists()).toBe(false)
   })
 
-  // ───────────────────────────────────────────────────────────────── Static-contract: the orange
-  // dot must use the project's palette — matches the existing yellow-spinner so the card doesn't
-  // introduce a third colour. ─────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────── Static-contract: the orange dot must use the project's palette — matches the existing …
   it('paints the review dot with the theme orange, so it flips with the palette', () => {
     wrapper = mountCard({
       id: 't1',
@@ -157,9 +142,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
     expect(dot.attributes('style') ?? '').toContain('var(--color-orange)')
   })
 
-  // ───────────────────────────────────────────────────────────────── Static-contract: the icon
-  // renders in the single branch for all task types (per-task routine branches were deleted in
-  // Migration 084.
+  // ───────────────────────────────────────────────────────────────── Static-contract: the icon renders in the single branch for all task types (per-task routine …
   it('renders the orange dot on legacy routine-typed cards (single branch now)', () => {
     wrapper = mountCard({
       id: 't1',
@@ -172,9 +155,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   })
 
   it('DOES render the green checkmark on memory cards (memory shares the standard branch)', () => {
-    // Memory tasks render via the standard-branch template (the `v-if="isRoutine"` is false for
-    // memory, so memory goes into the `v-else` branch). The notification icon therefore applies to
-    // memory cards too — there's no separate memory branch affordance for AI-finished state.
+    // Memory tasks render via the standard-branch template (the `v-if="isRoutine"` is false for memory, so memory goes into the `v-else` branch).
     wrapper = mountCard({
       id: 't1',
       name: 'project-notes',

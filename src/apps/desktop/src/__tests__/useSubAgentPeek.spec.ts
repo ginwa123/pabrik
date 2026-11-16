@@ -1,6 +1,4 @@
-/** Tests for the useSubAgentPeek composable (skeleton — Chunk 1). Mocks global.fetch to assert the
- * initial history call shape and the messages ref updates. The SSE/chunk-accumulation behavior is
- * covered by Chunk 2 tests. */
+/** Tests for the useSubAgentPeek composable (skeleton — Chunk 1). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -14,8 +12,7 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// ─── shared SSE stub ──────────────────────────────────────────────────────── Mirrors the helper
-// in chatViewWorktree.spec.ts / sseBus.spec.ts.
+// ─── shared SSE stub ────────────────────────────────────────────────────────
 function makeStubClient(initial: SseState): SseClient {
   const stub: {
     close: ReturnType<typeof vi.fn>
@@ -41,8 +38,7 @@ describe('useSubAgentPeek', () => {
     fetchMock.mockReset()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    // Install the bus BEFORE mounting so useSubAgentPeek's `useSseBus()` call in openSse finds an
-    // installed bus (the bus throws "useSseBus called before installSseBus" if not installed).
+    // Install the bus BEFORE mounting so useSubAgentPeek's `useSseBus()` call in openSse finds an installed bus (the bus throws "useSseBus called before …
     __resetSseBus()
     installSseBus({} as unknown as Parameters<typeof installSseBus>[0])
     __setSseBusGlobalClient(makeStubClient('connecting'))
@@ -63,9 +59,7 @@ describe('useSubAgentPeek', () => {
     } as Response)
   }
 
-  // Build a Message[] with permissive typing — the backend sends `finish_reason: null` for
-  // in-progress messages even though the TypeScript interface declares it as `string | undefined`.
-  // We build the realistic shape here and cast at the boundary.
+  // Build a Message[] with permissive typing — the backend sends `finish_reason: null` for in-progress messages even though the TypeScript interface declares it as …
   function msgs(rows: Array<Partial<Message> & { id: string; role: Message['role']; content: string; created_at: number }>): Message[] {
     return rows as unknown as Message[]
   }
@@ -110,9 +104,7 @@ describe('useSubAgentPeek', () => {
     expect(url).toContain('direction=asc')
     expect(peek.messages.value).toHaveLength(2)
     expect(peek.messages.value[0]?.id).toBe('m1')
-    // Last message has no finish_reason → SSE should open. After the global EventSource migration,
-    // opening SSE no longer touches any per-session client; status=streaming is the observable
-    // signal that the listener was registered on the bus.
+    // Last message has no finish_reason → SSE should open.
     expect(peek.status.value).toBe('streaming')
   })
 
@@ -142,9 +134,7 @@ describe('useSubAgentPeek', () => {
 
   it('marks status=error when the initial fetch throws', async () => {
     fetchMock.mockRejectedValueOnce(new Error('network down'))
-    // The apiFetch wrapper turns a rejected fetch into an ApiError
-    // via the !response.ok branch — emulate that with a non-ok
-    // response.
+    // The apiFetch wrapper turns a rejected fetch into an ApiError via the !response.ok branch — emulate that with a non-ok response.
     fetchMock.mockReset()
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -196,8 +186,7 @@ describe('useSubAgentPeek', () => {
     await flushPromises()
     expect(peek.status.value).toBe('streaming')
 
-    // Sanity: events for the peek sid DO update messages while the
-    // composable is mounted.
+    // Sanity: events for the peek sid DO update messages while the composable is mounted.
     __dispatchSseBus('llm', {
       session_id: peekSessionId,
       id: 'a1',
@@ -211,9 +200,7 @@ describe('useSubAgentPeek', () => {
 
     wrapper.unmount()
 
-    // After unmount, dispatching more events for the peek sid must
-    // NOT mutate messages — the listener unsubscribe in closeSse()
-    // removed the callback from the bus's llm Set.
+    // After unmount, dispatching more events for the peek sid must NOT mutate messages — the listener unsubscribe in closeSse() removed the callback from the bus's …
     __dispatchSseBus('llm', {
       session_id: peekSessionId,
       id: 'a2',
@@ -235,14 +222,10 @@ describe('useSubAgentPeek', () => {
     expect(peek.totalTokens.value).toBe(0)
   })
 
-  // ── Chunk 2 — chunk accumulation tests ────────────────────────────────── After the bus
-  // migration, chunks arrive via `__dispatchSseBus('llm', ...)` rather than the old per-channel
-  // onEvent callback.
+  // ── Chunk 2 — chunk accumulation tests ──────────────────────────────────
   const CHUNK_PEEK_SID = 'subagent_chunk_test'
 
-  /**    * Drive streaming chunks through the bus's llm channel. Returns the composable's peek so callers
-   * can assert on the final state. Each chunk is dispatched as `{ session_id: CHUNK_PEEK_SID,
-   * ...chunk }` so the listener-side filter passes through. */
+  /** Drive streaming chunks through the bus's llm channel. */
   async function runChunkScenario(
     initialMessages: Message[],
     chunks: Array<{
@@ -315,9 +298,7 @@ describe('useSubAgentPeek', () => {
     })
     await flushPromises()
 
-    // Drive the chunk through the bus with the peek's sid so the listener-side filter lets it
-    // through. The chunk has no matching message in `messages` (empty initial fetch) so
-    // `applyChunkToMessages` must create a NEW tool message.
+    // Drive the chunk through the bus with the peek's sid so the listener-side filter lets it through.
     __dispatchSseBus('llm', {
       session_id: NEW_MSG_PEEK_SID,
       id: 'x1',
@@ -335,9 +316,7 @@ describe('useSubAgentPeek', () => {
   })
 
   it('listener-side filter drops bus events for OTHER session_ids (cross-peek isolation)', async () => {
-    // Two peeks on different sids — bus events for sid A must not
-    // mutate peek B's messages, and vice versa. Mirrors the
-    // cross-session isolation test in chatViewWorktree.spec.ts.
+    // Two peeks on different sids — bus events for sid A must not mutate peek B's messages, and vice versa.
     mockFetchOnce(200, { messages: [], has_more: false, next_cursor: null })
     mockFetchOnce(200, { messages: [], has_more: false, next_cursor: null })
 
@@ -406,8 +385,7 @@ describe('useSubAgentPeek', () => {
   })
 
   it('keeps status=streaming on tool_calls finish_reason (tool result still pending)', async () => {
-    // 2026-09-04 subagent-peek fix: tool_calls is NOT terminal — the old
-    // assertion (complete) stranded the panel on the first tool call.
+    // 2026-09-04 subagent-peek fix: tool_calls is NOT terminal — the old assertion (complete) stranded the panel on the first tool call.
     const initial = msgs([
       { id: 'a1', role: 'assistant', content: '', created_at: 1000 },
     ])
@@ -438,8 +416,7 @@ describe('useSubAgentPeek', () => {
   })
 
   it('refetches when a parent subagent_progress completed event arrives for our sid', async () => {
-    // 2026-09-04 subagent-peek P2: panel opened mid-run with 0 rows must
-    // populate after done via the parent-scoped completed event.
+    // 2026-09-04 subagent-peek P2: panel opened mid-run with 0 rows must populate after done via the parent-scoped completed event.
     const sid = 'subagent_9_refetch_me'
     mockFetchOnce(200, { messages: [], has_more: false, next_cursor: null })
     const { peek } = mountWith({ sessionId: sid, agentName: 'x', instruction: 'do X' })

@@ -1,6 +1,4 @@
-/**  * Unit tests for the workspaces store's `renameTask` action. Covers the optimistic-update +
- * rollback contract, the navigation store sync when the renamed task is the active one, and the
- * early-return guards for empty / unchanged names. */
+/** Unit tests for the workspaces store's `renameTask` action. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -24,8 +22,7 @@ describe('useWorkspacesStore.renameTask', () => {
     })
 
     vi.spyOn(api, 'updateTaskSimple').mockImplementation(updateTaskSimpleMock)
-    // init() also calls these; we never trigger init() in these tests
-    // but stub them defensively in case a future test does.
+    // init() also calls these; we never trigger init() in these tests but stub them defensively in case a future test does.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -36,9 +33,7 @@ describe('useWorkspacesStore.renameTask', () => {
     updateTaskSimpleMock.mockReset()
   })
 
-  // Seed the store directly with one workspace / item / task. The
-  // rename action operates on a fully-resolved state tree, so
-  // skipping init() keeps the tests focused.
+  // Seed the store directly with one workspace / item / task.
   function seedStore(taskName: string) {
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -99,12 +94,9 @@ describe('useWorkspacesStore.renameTask', () => {
   it('updates navigationStore.activeChatName when renaming the active task', async () => {
     const ws = seedStore('Old Active')
     const nav = useNavigationStore()
-    // Set the renamed task as the active one (drives the
-    // chat-view / chat-list header binding).
+    // Set the renamed task as the active one (drives the chat-view / chat-list header binding).
     ws.setActiveTask('task_1')
-    // And seed the navigation store's current name (as
-    // setActiveTask would, by transitivity: the AppLayout header
-    // sets it on chat-list interactions; we set it directly here).
+    // And seed the navigation store's current name (as setActiveTask would, by transitivity: the AppLayout header sets it on chat-list interactions; we set it …
     nav.setActiveChatName('Old Active')
 
     updateTaskSimpleMock.mockResolvedValueOnce({ success: true })

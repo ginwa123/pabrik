@@ -1,6 +1,4 @@
-//! `PUT
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
-//! Update an existing design element.
+//! `PUT /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,41 +25,29 @@ const UpdateElementBody = struct {
     text_content: ?[]const u8 = null,
     text_style: ?[]const u8 = null,
     image_url: ?[]const u8 = null,
-    /// FK to a `group`/`frame` element on the same page. `null` =
-    /// leave unchanged. Pass `""` (empty string) to clear the parent
-    /// (reparent to top-level).
+    /// FK to a `group`/`frame` element on the same page.
     parent_id: ?[]const u8 = null,
-    /// Optional post-update position normalization. Today only
-    /// "last_in_parent" is supported; unrecognized values are treated as
-    /// `null` (no position recompute) by the handler.
+    /// Optional post-update position normalization.
     reposition: ?[]const u8 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each variant to an
-/// HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const DesignElementUpdateError = error{
     /// `:element_id` path param was missing or empty.
     ElementIdRequired,
     /// `type` field was not a valid `ElementType` enum variant.
     InvalidType,
-    /// No fields were provided in the body — would result in a
-    /// no-op UPDATE. Maps to 400 so the frontend gets explicit
-    /// feedback (instead of silently returning the existing row).
+    /// No fields were provided in the body — would result in a no-op UPDATE.
     NoChanges,
-    /// `design_model.updateElement` returned `ElementNotFound`
-    /// (no row with that `element_id`).
+    /// `design_model.updateElement` returned `ElementNotFound` (no row with that `element_id`).
     ElementNotFound,
-    /// `design_model.updateElement` returned `FileWriteFailed`
-    /// (atomic-rename failed for the new `html` content).
+    /// `design_model.updateElement` returned `FileWriteFailed` (atomic-rename failed for the new `html` content).
     FileWriteFailed,
-    /// `design_model.updateElement` returned `error.CycleDetected`
-    /// — the requested parent_id is the element's own id or one
-    /// of its transitive descendants. Maps to 400 BadReparent.
+    /// `design_model.updateElement` returned `error.CycleDetected` — the requested parent_id is the element's own id or one of its transitive descendants.
     BadReparent,
     /// `updateElement` failed for some other DB reason.
     DbError,
-    /// Update succeeded but the element wasn't visible in the
-    /// subsequent `getElement` (consistency violation).
+    /// Update succeeded but the element wasn't visible in the subsequent `getElement` (consistency violation).
     ElementNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
@@ -86,25 +72,19 @@ pub const UpdateElementInput = struct {
     text_content: ?[]const u8,
     text_style: ?[]const u8,
     image_url: ?[]const u8,
-    /// FK to a `group`/`frame` element on the same page. `null` =
-    /// leave unchanged. Pass `""` (empty string) to clear the
-    /// parent (reparent to top-level).
+    /// FK to a `group`/`frame` element on the same page.
     parent_id: ?[]const u8,
-    /// Optional position normalization after the UPDATE. Today only
-    /// `.last_in_parent` is supported; see the model's `RepositionMode`.
+    /// Optional position normalization after the UPDATE.
     reposition: ?design_model.RepositionMode,
 };
 
 /// Output of the update-element use-case.
 pub const UpdateElementOutput = struct {
     /// The updated element (post-update state, via `getElement`).
-    /// Heap-owned by the use-case (mirrors the create pattern).
     element: design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Update a design element. Steps: 1. Validate `element_id`. 2.
 pub fn useCase(
@@ -115,9 +95,7 @@ pub fn useCase(
     // 1. Validate.
     if (input.element_id.len == 0) return error.ElementIdRequired;
 
-    // 2. Detect "no changes" at the use-case boundary (the model
-    //    silently no-ops when only `updated_at` is set; we surface
-    //    that as a 400 to the client).
+    // 2.
     const any_change = input.name != null or
         input.elem_type != null or
         input.html != null or
@@ -174,13 +152,9 @@ pub fn useCase(
     return .{ .element = element };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn designElementsUpdateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -227,9 +201,7 @@ pub fn designElementsUpdateHandler(
         };
     }
 
-    // Translate the wire `reposition` string to the enum (if provided). Today
-    // only "last_in_parent" is supported; any unrecognized value is silently
-    // ignored (treated as `null`) to keep the wire shape forward-compatible.
+    // Translate the wire `reposition` string to the enum (if provided).
     var reposition: ?design_model.RepositionMode = null;
     if (parsed.reposition) |r| {
         if (std.mem.eql(u8, r, "last_in_parent")) {
@@ -290,8 +262,7 @@ pub fn designElementsUpdateHandler(
     // Free the useCase's heap-owned element slices (no-op on arena).
     defer design_model.freeElement(allocator, output.element);
 
-    // 4. Build the success response (200 OK — PUT that updates an
-    //    existing resource, not 201 Created).
+    // 4.
     return res.jsonResponse(.{
         .status_code = 200,
         .data = try std.json.Stringify.valueAlloc(
@@ -302,9 +273,7 @@ pub fn designElementsUpdateHandler(
     });
 }
 
-// ─── Behavioural tests for parent_id + reposition wire (Chunk 1 Task 1.3) ─
-// Pulled in from design_elements_update_reparent_test.zig — one-file-per-impl
-// convention.
+// ─── Behavioural tests for parent_id + reposition wire (Chunk 1 Task 1.3) ─ Pulled in from design_elements_update_reparent_test.zig — one-file-per-impl …
 
 const testing_update_reparent = std.testing;
 const sqlite_update_reparent = pabrikcore.sqlite;
@@ -548,9 +517,7 @@ test "useCase rejects an invalid reposition string with BadReparent (handler map
     });
     defer alloc.free(leaf_id);
 
-    // The wire layer translates "garbage" to null (since it's not
-    // "last_in_parent"); the useCase then no-ops on reposition and either
-    // succeeds or rejects based on parent_id.
+    // The wire layer translates "garbage" to null (since it's not "last_in_parent"); the useCase then no-ops on reposition and either succeeds or rejects based on …
     const result = useCase(alloc, &ctx.db, .{
         .element_id = leaf_id,
         .name = null, .elem_type = null, .html = null,

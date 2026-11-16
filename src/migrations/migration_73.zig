@@ -12,9 +12,7 @@ pub const Migration073AddSessionActivity = struct {
     pub const name = "add_session_activity";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // 1. Source table — append-only log, no UNIQUE constraint.
-        // `description` is NOT NULL (callers must supply) but has no DEFAULT
-        // — an empty description would defeat the purpose of the log.
+        // 1.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS session_activity (
             \\    id TEXT PRIMARY KEY,
@@ -24,9 +22,7 @@ pub const Migration073AddSessionActivity = struct {
             \\)
         , &[_][]const u8{});
 
-        // 2. Per-session newest-first index. Matches the index name
-        //    pattern used elsewhere (`idx_llm_history_session`,
-        //    `idx_session_skills_session`, `idx_agent_memories_updated`).
+        // 2.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_session_activity_session_created " ++
                 "ON session_activity(session_id, created_at DESC)",

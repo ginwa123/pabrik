@@ -1,6 +1,4 @@
-/** The skills the create-task dialog opens with: the set the user picked the
- * last time they created a task on the same board, scoped per user + board so
- * one board's picks never leak into another's. */
+/** The skills the create-task dialog opens with: the set the user picked the last time they created a task on the same board, scoped per user + board so one … */
 import { userScopedKey } from './userScope'
 
 const KEY_PREFIX = 'pabrik-kanban-skill-defaults:v1'

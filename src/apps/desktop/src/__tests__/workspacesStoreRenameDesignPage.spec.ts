@@ -21,8 +21,7 @@ describe('useWorkspacesStore.renameDesignPage', () => {
     })
 
     vi.spyOn(api, 'updateDesignPage').mockImplementation(updateDesignPageMock)
-    // init() also calls these; we never trigger init() in these tests
-    // but stub them defensively in case a future test does.
+    // init() also calls these; we never trigger init() in these tests but stub them defensively in case a future test does.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({
@@ -38,8 +37,6 @@ describe('useWorkspacesStore.renameDesignPage', () => {
   })
 
   // Seed the store directly with one workspace / item + a design-pages cache for that item.
-  // Skipping init() keeps these tests focused on the rename contract. The cache is the source of
-  // truth for design page metadata — both the sidebar tree and DesignView read from it.
   function seedStore() {
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -58,8 +55,6 @@ describe('useWorkspacesStore.renameDesignPage', () => {
         ],
       },
     ]
-    // Set the design pages cache directly (mirrors what fetchDesignPages
-    // would have populated).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(ws as any).designPagesByItemId = {
       item_design: [
@@ -96,12 +91,10 @@ describe('useWorkspacesStore.renameDesignPage', () => {
     await ws.renameDesignPage('ws_1', 'item_design', 'page_1', '  Renamed Page  ')
 
      
-    // Optimistic: cache reflects the trimmed value.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cached = (ws as any).designPagesByItemId.item_design[0]
     expect(cached.name).toBe('Renamed Page')
-    // API: called once with the workspace/item/page ids + width/height
-    // (the row's pre-existing geometry) + trimmed name.
+    // API: called once with the workspace/item/page ids + width/height (the row's pre-existing geometry) + trimmed name.
     expect(updateDesignPageMock).toHaveBeenCalledTimes(1)
     expect(updateDesignPageMock).toHaveBeenCalledWith('ws_1', 'item_design', 'page_1', {
       width: 1440,
@@ -121,7 +114,6 @@ describe('useWorkspacesStore.renameDesignPage', () => {
 
  
 
-    // Rollback: name reverts to the original.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cached = (ws as any).designPagesByItemId.item_design[0]
     expect(cached.name).toBe('Original Name')
@@ -133,7 +125,6 @@ describe('useWorkspacesStore.renameDesignPage', () => {
      
     await ws.renameDesignPage('ws_1', 'item_design', 'page_1', '   ')
     expect(updateDesignPageMock).not.toHaveBeenCalled()
-    // Name unchanged.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cached = (ws as any).designPagesByItemId.item_design[0]
     expect(cached.name).toBe('Original Name')

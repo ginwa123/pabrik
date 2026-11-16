@@ -1,6 +1,4 @@
-//! `PATCH /api/agents/:agent_id/knowledge/:knowledge_id`. Updates file_path
-//! and/or label of an existing knowledge entry. Body: `{file_path?, label?}`
-//! (both optional; at least one required).
+//! `PATCH /api/agents/:agent_id/knowledge/:knowledge_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,9 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body. Decoupled from the domain `KnowledgeUpdateInput`
-/// so the wire format can evolve independently (e.g. adding `?`
-/// optional fields) without touching the use-case.
+/// HTTP request body.
 const UpdateKnowledgeBody = struct {
     file_path: ?[]const u8 = null,
     label: ?[]const u8 = null,
@@ -36,8 +32,6 @@ pub const KnowledgeUpdateError = error{
     /// Refetched row vanished (should be impossible — surfaces as 404).
     RowNotFound,
     /// `allocator.alloc` failed while building the dynamic SQL.
-    /// Unreachable under arena allocator but the type system requires
-    /// the variant so `try` propagates a typed error.
     OutOfMemory,
 };
 
@@ -47,20 +41,16 @@ pub const KnowledgeUpdateInput = struct {
     knowledge_id: []const u8,
     file_path: ?[]const u8,
     label: ?[]const u8,
-    /// Inline manual text. Providing it switches the row to
-    /// content-backed; null leaves the column untouched.
+    /// Inline manual text.
     content: ?[]const u8 = null,
 };
 
-/// Output of the knowledge-update use-case. `knowledge` is owned by
-/// the caller (lifetime = request arena).
+/// Output of the knowledge-update use-case.
 pub const KnowledgeUpdateOutput = struct {
     knowledge: Knowledge,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Update an existing knowledge row.
 pub fn useCase(
@@ -76,7 +66,6 @@ pub fn useCase(
     }
     if (input.file_path) |fp| {
         // Empty string = clear the column (mode switch to text-backed).
-        // Only NON-empty paths must be absolute.
         if (fp.len > 0 and !std.fs.path.isAbsolute(fp)) return error.NotAbsolutePath;
     }
 
@@ -96,13 +85,9 @@ pub fn useCase(
     return .{ .knowledge = knowledge };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentKnowledgeUpdateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -159,8 +144,6 @@ pub fn agentKnowledgeUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 5 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -180,8 +163,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
@@ -330,9 +312,7 @@ test "useCase: PATCH can set content on an existing row" {
     try testing.expectEqualStrings("/tmp/orig.md", output.knowledge.file_path);
 }
 
-// ─── Mode-switch tests (2026-08-22, PR #291 follow-up) ───────────────── The
-// edit dialog's File↔Text mode switch sends BOTH source fields in one PATCH —
-// the inactive one as "".
+// ─── Mode-switch tests (2026-08-22, PR #291 follow-up) ─────────────────
 
 test "useCase: file_path='' clears path and sets content (file→text switch)" {
     const alloc = testing.allocator;
@@ -349,8 +329,7 @@ test "useCase: file_path='' clears path and sets content (file→text switch)" {
         .content = "inline body after switch",
     });
     defer agent_db.freeKnowledgeRow(alloc, output.knowledge);
-    // Regression: this used to 400 with "file_path must be absolute"
-    // because isAbsolute("") is false.
+    // Regression: this used to 400 with "file_path must be absolute" because isAbsolute("") is false.
     try testing.expectEqualStrings("", output.knowledge.file_path);
     try testing.expectEqualStrings("inline body after switch", output.knowledge.content);
     try testing.expectEqualStrings("Switched", output.knowledge.label);
@@ -371,8 +350,7 @@ test "useCase: content='' clears text and sets path (text→file switch)" {
         .content = "",
     });
     defer agent_db.freeKnowledgeRow(alloc, output.knowledge);
-    // Regression: content="" used to 500 because Backend.exec
-    // binds empty slices as SQL NULL → NOT NULL constraint fail.
+    // Regression: content="" used to 500 because Backend.exec binds empty slices as SQL NULL → NOT NULL constraint fail.
     try testing.expectEqualStrings("", output.knowledge.content);
     try testing.expectEqualStrings("/tmp/switched.md", output.knowledge.file_path);
 }
@@ -394,9 +372,7 @@ test "useCase: relative non-empty file_path still returns NotAbsolutePath" {
     );
 }
 
-// ===== Tests merged from agent_knowledge_update_functional_test.zig
-// (2026-09-11 flatten) ===== ISOLATED functional tests for the
-// agent-knowledge UPDATE flow (PATCH
+// ===== Tests merged from agent_knowledge_update_functional_test.zig (2026-09-11 flatten) ===== ISOLATED functional tests for the agent-knowledge UPDATE flow …
 
 const update_mod = @This();
 
@@ -413,17 +389,14 @@ fn setupDb_merged() !TestCtx_merged {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Mirror the production schema exactly: workspace_items shape the
-    // delete handler's harness established + migrations IN ORDER (076
-    // then 079) — production runs every migration sequentially.
+    // Mirror the production schema exactly: workspace_items shape the delete handler's harness established + migrations IN ORDER (076 then 079) — production runs …
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try Migration116.up(&db, testing.allocator);
 
-    // Seed: 1 agent + 1 FILE-BACKED knowledge row (the case the edit
-    // dialog opens on by default).
+    // Seed: 1 agent + 1 FILE-BACKED knowledge row (the case the edit dialog opens on by default).
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'agent', 'My Agent')",
         &[_][]const u8{},
@@ -452,8 +425,7 @@ test "functional: file→text switch payload {file_path:'', content} succeeds en
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // EXACT body the edit dialog sends for a Text-mode save on a
-    // file-backed row (JSON round-trip so the wire shape is honest).
+    // EXACT body the edit dialog sends for a Text-mode save on a file-backed row (JSON round-trip so the wire shape is honest).
     const Body = struct {
         label: []const u8,
         content: []const u8,
@@ -462,8 +434,7 @@ test "functional: file→text switch payload {file_path:'', content} succeeds en
     const body_json =
         \\{"label":"Switched","content":"inline body after switch","file_path":""}
     ;
-    // parseFromSliceLeaky (arena-less) would leak under testing.allocator;
-    // use the allocating variant and free its Parsed wrapper.
+    // parseFromSliceLeaky (arena-less) would leak under testing.allocator; use the allocating variant and free its Parsed wrapper.
     var parsed = try std.json.parseFromSlice(Body, alloc, body_json, .{});
     defer parsed.deinit();
 
@@ -527,8 +498,7 @@ test "functional: text→file switch payload {file_path, content:''} succeeds en
     });
     defer freeKnowledge(alloc, output.knowledge);
 
-    // Row flipped to file-backed: content cleared to '' (NOT a crash),
-    // path set.
+    // Row flipped to file-backed: content cleared to '' (NOT a crash), path set.
     try testing.expectEqualStrings("/tmp/switched.md", output.knowledge.file_path);
     try testing.expectEqualStrings("", output.knowledge.content);
 
@@ -565,4 +535,3 @@ test "functional: non-empty relative file_path still returns NotAbsolutePath" {
 }
 
 // ─── D. route order ─────────────────────────────────────────────────────
-// The `/knowledge/reorder` literal must win over its `:knowledge_id` sibling.

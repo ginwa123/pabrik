@@ -6,18 +6,13 @@ export type OpenInCodeEditorOptions = {
   filePath: string
   fileName?: string
   cwd: string
-  /**    * Optional 1-based line number to scroll to when the editor opens. When `undefined`, the editor
-   * opens at line 1. Threaded through from the diff-view's `@jump-to-line` emit so the user can
-   * click a line in the diff and land on that exact line in the editor. */
+  /** Optional 1-based line number to scroll to when the editor opens. */
   line?: number
-  /**    * Open the same file on its changes: `?mode=diff`. A file and its diff are two entries in a
-   * session's strip, not one entry with a toggle. */
+  /** Open the same file on its changes: `?mode=diff`. */
   diff?: boolean
-  /**    * The commit whose changes the diff shows (`?rev=`). A commit row's diff is that commit's, not
-   * the worktree's. */
+  /** The commit whose changes the diff shows (`?rev=`). */
   rev?: string
-  /**    * The pull request whose changes the diff shows (`?pr=`). A PR row's diff is the request's, not
-   * the worktree's. */
+  /** The pull request whose changes the diff shows (`?pr=`). */
   pr?: string
 }
 
@@ -27,9 +22,7 @@ export const OPEN_IN_CODE_EDITOR_KEY: InjectionKey<OpenInCodeEditorFn> = Symbol(
   'openInCodeEditor',
 ) as InjectionKey<OpenInCodeEditorFn>
 
-/**  * Inject the `openInCodeEditor` handler provided by `AppLayout`. Returns `null` when the component
- * is rendered outside of an `AppLayout` subtree (e.g. in unit tests), so the calling component can
- * gracefully hide its "Open in editor" button. */
+/** Inject the `openInCodeEditor` handler provided by `AppLayout`. */
 export function useInjectOpenInCodeEditor(): OpenInCodeEditorFn | null {
   return inject(OPEN_IN_CODE_EDITOR_KEY, null)
 }
@@ -57,16 +50,12 @@ export const CODE_VIEWER_STATE_KEY: InjectionKey<CodeViewerState> = Symbol(
   'codeViewerState',
 ) as InjectionKey<CodeViewerState>
 
-/**  * Inject the open-file state provided by `AppLayout`. `null` outside an `AppLayout` subtree (unit
- * tests) — callers then render nothing, which is exactly the pre-existing behaviour for a chat with
- * no file open. */
+/** Inject the open-file state provided by `AppLayout`. */
 export function useInjectCodeViewer(): CodeViewerState | null {
   return inject(CODE_VIEWER_STATE_KEY, null)
 }
 
-/**  * Never-null projection of `CodeViewerState` for templates: the reactive refs unwrapped to plain
- * values, or an empty model when there is no provider. A template can then bind one object without
- * narrowing. */
+/** Never-null projection of `CodeViewerState` for templates: the reactive refs unwrapped to plain values, or an empty model when there is no provider. */
 export type CodeViewerView = {
   file: FolderEntry | null
   content: string

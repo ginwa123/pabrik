@@ -1,5 +1,4 @@
-/** Behavioural tests for `CodeViewerStage` — the code viewer's three states, shared by both hosts
- * (ChatView's center column and AppLayout's full-surface overlay) so they can never drift apart. */
+/** Behavioural tests for `CodeViewerStage` — the code viewer's three states, shared by both hosts (ChatView's center column and AppLayout's full-surface overlay) … */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CodeViewerStage from '../CodeViewerStage.vue'
@@ -48,8 +47,7 @@ describe('CodeViewerStage — error', () => {
 
   it('an error wins over stale content', () => {
     const w = mountStage({ error: 'Failed to read file' })
-    // The file view is not mounted at all — a late read response can
-    // never paint over the error message.
+    // The file view is not mounted at all — a late read response can never paint over the error message.
     expect(w.find('[data-testid="code-editor"]').exists()).toBe(false)
     expect(w.find('[data-testid="code-viewer-error"]').exists()).toBe(true)
   })

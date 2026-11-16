@@ -1,5 +1,4 @@
-//! `execListWebSearchProviders` — the discovery adapter. Trivial by design:
-//! resolve the providers for THIS session and render them.
+//! `execListWebSearchProviders` — the discovery adapter. Trivial by design
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -39,18 +38,14 @@ fn render(
 }
 
 pub fn execListWebSearchProviders(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // Per-session FIRST. `ctx.config` is the singleton, and in `--auth` mode
-    // it does not hold what the user saved — see web_search_config.zig for
-    // the full story and the Skill Evals incident that motivated it.
+    // Per-session FIRST.
     if (web_search_config.resolve(ctx.allocator, ctx.db, ctx.session_id)) |owned| {
         var map = owned;
         defer config_mod.LlmConfig.freeWebSearchProvidersMap(&map, ctx.allocator);
         return render(ctx, tc, &map);
     }
 
-    // `resolve` returned null, which means the DATABASE is not the authority
-    // here (file mode, or a session with no owner) — not that the user has no
-    // providers.
+    // `resolve` returned null, which means the DATABASE is not the authority here (file mode, or a session with no owner) — not that the user has no providers.
     if (ctx.config.web_search) |*singleton| return render(ctx, tc, singleton);
 
     const inner = web_search_mod.notConfiguredEnvelope(ctx.allocator) catch |err| {

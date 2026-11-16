@@ -18,8 +18,7 @@ pub const WorkspaceItemsGetError = error{
     DatabaseError,
 };
 
-/// GET /api/workspaces/:workspace_id/items - Get all workspace items D12:
-/// this read also ENSURES the workspace's default project exists.
+/// GET /api/workspaces/:workspace_id/items - Get all workspace items D12
 pub fn workspaceItemsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -46,8 +45,7 @@ pub fn workspaceItemsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRe
         if (ensured) |project| {
             defer project.deinit(allocator);
             if (project.created) {
-                // Not an error, just a workspace that had no default —
-                // which means a legacy workspace healed on this read.
+                // Not an error, just a workspace that had no default — which means a legacy workspace healed on this read.
                 std.log.info("workspace_items_list: created default project for workspace {s}", .{workspace_id});
             }
         } else |err| {

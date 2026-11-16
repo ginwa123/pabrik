@@ -59,8 +59,7 @@ const elementType = ref<DesignElementType>('rectangle')
 const initialHtml = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
 
-// Default HTML body per type — provides a starting point the user can
-// edit further in the PropertiesPanel's Monaco editor.
+// Default HTML body per type — provides a starting point the user can edit further in the PropertiesPanel's Monaco editor.
 const defaultHtmlFor = (t: DesignElementType): string => {
   switch (t) {
     case 'rectangle':
@@ -84,9 +83,7 @@ const defaultHtmlFor = (t: DesignElementType): string => {
 const handleCreate = (): void => {
   const trimmedName = name.value.trim()
   if (!trimmedName) return
-  // If the user didn't edit the HTML textarea, use the type-default
-  // body so the new element has SOME content (the canvas preview
-  // shows the rectangle / image / text instead of empty).
+  // If the user didn't edit the HTML textarea, use the type-default body so the new element has SOME content (the canvas preview shows the rectangle / image / text …
   const html = initialHtml.value.trim() || defaultHtmlFor(elementType.value)
   emit('create', {
     name: trimmedName,
@@ -106,9 +103,7 @@ const handleKeydown = (event: KeyboardEvent): void => {
   }
 }
 
-// ─── Lifecycle ───────────────────────────────────────────────────────── Reset all state when the
-// dialog opens. We deliberately do NOT preserve any field across open/close — matches
-// AddKanbanDialog's UX and avoids surprising the user with stale data.
+// ─── Lifecycle ─────────────────────────────────────────────────────────
 const handleOpen = async () => {
   name.value = ''
   elementType.value = 'rectangle'
@@ -117,8 +112,7 @@ const handleOpen = async () => {
   nameInput.value?.focus()
 }
 
-// Auto-fill the HTML textarea when the type is picked (only if the user
-// hasn't typed anything yet — we don't want to clobber their draft).
+// Auto-fill the HTML textarea when the type is picked (only if the user hasn't typed anything yet — we don't want to clobber their draft).
 const onTypeSelect = (event: Event) => {
   const t = (event.target as HTMLSelectElement).value as DesignElementType
   elementType.value = t
@@ -127,9 +121,7 @@ const onTypeSelect = (event: Event) => {
   }
 }
 
-// Open-reset without a watcher: seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without a watcher: seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

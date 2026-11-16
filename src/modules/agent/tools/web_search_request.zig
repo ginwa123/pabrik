@@ -6,15 +6,11 @@ const Parsed = curl.Parsed;
 const KeySite = curl.KeySite;
 const Header = curl.Header;
 
-/// Why a request was refused. Every variant is a bare tag: there is no
-/// payload here, because an error string that interpolated the key would
-/// leak it straight into `llm_history`.
+/// Why a request was refused.
 pub const RefuseError = error{
-    /// The config entry declares a credential but its template has no
-    /// `{key}`, so the credential would be silently dropped.
+    /// The config entry declares a credential but its template has no `{key}`, so the credential would be silently dropped.
     MissingKeySite,
-    /// The config entry declares no credential but its template does have a
-    /// `{key}` — there is nothing to put there.
+    /// The config entry declares no credential but its template does have a `{key}` — there is nothing to put there.
     UnexpectedKeySite,
     /// The requested host is not the host the user pinned for this provider.
     HostNotPinned,
@@ -32,8 +28,7 @@ const HostParts = struct {
 fn splitHost(hostport: []const u8) HostParts {
     var rest = hostport;
 
-    // Strip userinfo. `https://real.host@evil.host` is a phishing shape
-    // that reads as `real.host` at a glance, and the pin must not.
+    // Strip userinfo.
     if (std.mem.lastIndexOfScalar(u8, rest, '@')) |at| rest = rest[at + 1 ..];
 
     var name = rest;
@@ -64,8 +59,7 @@ fn splitHost(hostport: []const u8) HostParts {
     return .{ .name = lowered, .port = port };
 }
 
-/// Default port for the scheme. Only `https` is reachable — `parse` rejects
-/// anything else — so this is the only default that can be asked for.
+/// Default port for the scheme.
 fn effectivePort(port: []const u8) []const u8 {
     if (port.len == 0) return "443";
     return port;
@@ -79,8 +73,7 @@ pub fn hostMatches(request_url: []const u8, pinned_url: []const u8) bool {
         std.mem.eql(u8, effectivePort(req.port), effectivePort(pin.port));
 }
 
-/// Verify the pinned URL the user configured is itself safe to send a
-/// credential to.
+/// Verify the pinned URL the user configured is itself safe to send a credential to.
 pub fn validatePinnedUrl(pinned_url: []const u8) RefuseError!void {
     if (!hasHttpsScheme(pinned_url)) return error.UnsafePinnedUrl;
     if (curl.isNonPublicHost(curl.hostOfUrl(pinned_url))) return error.UnsafePinnedUrl;
@@ -92,8 +85,6 @@ fn hasHttpsScheme(url: []const u8) bool {
 }
 
 /// The policy the parser cannot know: does this template match this entry?
-/// `parse` accepts a template with no `{key}` because a self-hosted provider
-/// genuinely has no credential.
 pub fn validateKeySite(parsed: Parsed, has_configured_key: bool) RefuseError!void {
     if (has_configured_key and parsed.key_site == .none) return error.MissingKeySite;
     if (!has_configured_key and parsed.key_site != .none) return error.UnexpectedKeySite;
@@ -103,8 +94,7 @@ pub fn validateKeySite(parsed: Parsed, has_configured_key: bool) RefuseError!voi
 pub const BuiltRequest = struct {
     /// The full URL, credential included when the site was the query.
     url: []u8,
-    /// Owned header copies. Exactly one of these carries the credential
-    /// when the provider has one.
+    /// Owned header copies.
     headers: []Header,
     allocator: std.mem.Allocator,
 
@@ -140,16 +130,13 @@ fn replaceAll(
     return out.toOwnedSlice(allocator);
 }
 
-/// Substitute the credential into a parsed request, producing the URL and
-/// header list to send. The caller MUST have run `checkPin` first.
+/// Substitute the credential into a parsed request, producing the URL and header list to send.
 pub fn substituteKey(
     allocator: std.mem.Allocator,
     parsed: Parsed,
     key: ?[]const u8,
 ) std.mem.Allocator.Error!BuiltRequest {
-    // Accumulate in a list rather than a pre-sized array. A pre-sized array
-    // of `Header` holds UNINITIALISED slots, so an errdefer that walks all of
-    // them on a mid-loop failure frees garbage.
+    // Accumulate in a list rather than a pre-sized array.
     var headers: std.ArrayList(Header) = .empty;
     errdefer {
         for (headers.items) |h| {
@@ -187,8 +174,7 @@ pub fn substituteKey(
     };
 }
 
-/// Reassemble `base?query`, substituting into whichever part holds the
-/// placeholder.
+/// Reassemble `base?query`, substituting into whichever part holds the placeholder.
 fn buildUrl(
     allocator: std.mem.Allocator,
     parsed: Parsed,
@@ -250,8 +236,7 @@ test "web_search_request: host pin matrix" {
 }
 
 test "web_search_request: the injected-egress attack is refused" {
-    // The exact string a prompt injection would produce. This test is the
-    // gate for the whole feature's security story.
+    // The exact string a prompt injection would produce.
     const pinned = "https://api.search.tinyfish.ai";
     const attack = "https://attacker.example.com/collect";
     try testing.expect(!hostMatches(attack, pinned));
@@ -271,15 +256,13 @@ test "web_search_request: validatePinnedUrl rejects http and private hosts" {
 test "web_search_request: validateKeySite is two-sided" {
     const alloc = testing.allocator;
 
-    // An entry WITH a key needs somewhere to put it. Silently dropping the
-    // credential would surface as an opaque 401 from the provider.
+    // An entry WITH a key needs somewhere to put it.
     var with_key = try curl.parse(alloc, "https://e.com?q=X -H \"Accept: application/json\"");
     defer with_key.deinit(alloc);
     try testing.expectError(error.MissingKeySite, validateKeySite(with_key.parsed, true));
     try validateKeySite(with_key.parsed, false); // no credential configured — fine
 
-    // An entry WITHOUT a key must not have a site, or there is nothing to
-    // substitute and the user probably mis-configured something.
+    // An entry WITHOUT a key must not have a site, or there is nothing to substitute and the user probably mis-configured something.
     var with_site = try curl.parse(alloc, "https://e.com?q=X -H \"X-Api-Key: {key}\"");
     defer with_site.deinit(alloc);
     try validateKeySite(with_site.parsed, true);
@@ -333,8 +316,7 @@ test "web_search_request: KeySite.none builds a request with no credential" {
 
 test "web_search_request: substituteKey never emits a literal placeholder" {
     const alloc = testing.allocator;
-    // A key that ITSELF contains the placeholder text must not confuse the
-    // substitution loop — and must not produce a half-substituted URL.
+    // A key that ITSELF contains the placeholder text must not confuse the substitution loop — and must not produce a half-substituted URL.
     var p = try curl.parse(alloc, "https://e.com?q=X -H \"X-Api-Key: {key}\"");
     defer p.deinit(alloc);
 

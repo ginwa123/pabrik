@@ -38,8 +38,7 @@ describe('pairSplitRows — changes', () => {
   it('renders context on BOTH sides — the two gutters are independently readable', () => {
     const out = rows(MODIFY)
     const context = out.filter((r) => r.kind === 'context')
-    // 4 context lines: 760, 761, (blank 762), 764, 765 → the trailing blank
-    // line after the hunk is emitter noise, not a source line.
+    // 4 context lines: 760, 761, (blank 762), 764, 765 → the trailing blank line after the hunk is emitter noise, not a source line.
     expect(context.map((r) => r.oldLineNum)).toContain(760)
     expect(context.map((r) => r.newLineNum)).toContain(760)
     for (const row of context) {
@@ -66,8 +65,7 @@ describe('pairSplitRows — changes', () => {
     ].join('\n')
     const changed = rows(diff).filter((r) => r.isChanged)
     expect(changed).toHaveLength(3)
-    // `IsBalanced` consumes old/new 24, so the removals are 25/26/27 and the
-    // insertions 25/26 — index-wise pairing leaves old 27 with a filler.
+    // `IsBalanced` consumes old/new 24, so the removals are 25/26/27 and the insertions 25/26 — index-wise pairing leaves old 27 with a filler.
     expect(changed.map((r) => [r.oldLineNum, r.newLineNum])).toEqual([
       [25, 25],
       [26, 26],
@@ -75,8 +73,7 @@ describe('pairSplitRows — changes', () => {
     ])
     expect(changed[2]!.newText).toBeNull()
     expect(changed[2]!.oldText).toBe('\tHasTaxOverride    bool')
-    // The following context row keeps ITS number — the filler must not consume
-    // a line number on the new side.
+    // The following context row keeps ITS number — the filler must not consume a line number on the new side.
     const after = rows(diff).find((r) => r.kind === 'context' && r.oldLineNum === 28)
     expect(after?.newLineNum).toBe(27)
   })

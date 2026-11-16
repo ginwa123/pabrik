@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/resize`.
-//! Resize a single element (set absolute x/y/width/height/rotation).
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/resize`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,8 +19,7 @@ const ResizeBody = struct {
 
 pub const DesignElementResizeError = error{
     ElementIdRequired,
-    /// No geometry fields were provided in the body — would result
-    /// in a no-op UPDATE.
+    /// No geometry fields were provided in the body — would result in a no-op UPDATE.
     NoChanges,
     ElementNotFound,
     DbError,
@@ -156,8 +153,7 @@ fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     );
 }
 
-// ===== Tests merged from design_elements_resize_test.zig (2026-09-11
-// flatten) ===== Behavioural tests for the `POST .../resize` handler.
+// ===== Tests merged from design_elements_resize_test.zig (2026-09-11 flatten) ===== Behavioural tests for the `POST .../resize` handler.
 
 const http_handlers = @import("mod.zig");
 const migration = @import("../migrations/migration.zig");
@@ -181,8 +177,7 @@ fn teardownResizeCtx(ctx: *TestCtx) void {
     testing_alloc.free(ctx.tmpdir_path);
 }
 
-/// Open a fresh in-memory DB and walk every migration in
-/// `src/migrations/migration.zig` so the schema matches production exactly.
+/// Open a fresh in-memory DB and walk every migration in `src/migrations/migration.zig` so the schema matches production exactly.
 fn setupResizeCtx() !TestCtx {
     var threaded = std.Io.Threaded.init(testing_alloc, .{});
     errdefer threaded.deinit();
@@ -320,9 +315,7 @@ test "useCase resizes a GROUP without cascading to children (resize is per-eleme
     var ctx = try setupResizeCtx();
     defer teardownResizeCtx(&ctx);
 
-    // group at (0, 0) 200x200
-    // child1 at (10, 10) 50x50 (parent=group)
-    // child2 at (100, 100) 50x50 (parent=group)
+    // group at (0, 0) 200x200 child1 at (10, 10) 50x50 (parent=group) child2 at (100, 100) 50x50 (parent=group)
     const group = try design_model.addElement(alloc, &ctx.db, ctx.threaded.io(), .{
         .page_id = ctx.page_id,
         .name = "g",
@@ -351,8 +344,7 @@ test "useCase resizes a GROUP without cascading to children (resize is per-eleme
     try testing.expectEqual(@as(i64, 500), output.element.width);
     try testing.expectEqual(@as(i64, 500), output.element.height);
 
-    // CRITICAL: children MUST keep their own positions and sizes
-    // (resize never cascades, by Figma convention).
+    // CRITICAL: children MUST keep their own positions and sizes (resize never cascades, by Figma convention).
     try testing.expectEqual(@as(i64, 10), try readX(alloc, &ctx.db, c1));
     try testing.expectEqual(@as(i64, 10), try readY(alloc, &ctx.db, c1));
     try testing.expectEqual(@as(i64, 50), try readWidth(alloc, &ctx.db, c1));

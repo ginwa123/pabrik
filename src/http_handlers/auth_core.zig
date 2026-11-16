@@ -1,6 +1,4 @@
-//! The part of `--auth` that needs nothing but SQLite and `std.crypto`: the
-//! session cookie, the token hash and the password hash. It is its own module
-//! so the admin console can link this instead of all of pabrik.
+//! The part of `--auth` that needs nothing but SQLite and `std.crypto`: the session cookie, the token hash and the password hash.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -9,8 +7,7 @@ pub const cookie_name = "pabrik_session";
 
 pub const session_max_age_secs: u32 = 30 * 24 * 3600; // 30 days
 
-/// Extract `pabrik_session` cookie value. Returns null for missing,
-/// empty, or malformed Cookie headers (empty is treated as absent).
+/// Extract `pabrik_session` cookie value.
 pub fn parseSessionToken(headers: anytype) ?[]const u8 {
     const cookie = headers.get("Cookie") orelse headers.get("cookie") orelse return null;
     if (cookie.len == 0) return null;
@@ -45,14 +42,11 @@ pub const SessionLookup = struct {
 };
 
 /// A session is live while `expires_at` is future and the account can sign in.
-/// This is `dialect.now_stamp_utc`, respelled because this file is its own
-/// module (`auth_core`) and cannot import `dialect.zig`.
 const live_session = " AND s.expires_at > " ++
     (if (database.backend_is_postgres) "(now() AT TIME ZONE 'UTC')" else "datetime('now')") ++
     " AND u.is_active = 1";
 
-/// Validate a raw cookie token against `auth_sessions` + `users`, or null
-/// when it is empty, unknown, expired, or the account is switched off.
+/// Validate a raw cookie token against `auth_sessions` + `users`, or null when it is empty, unknown, expired, or the account is switched off.
 pub fn lookupSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -88,9 +82,7 @@ pub fn freeSessionLookup(allocator: std.mem.Allocator, s: SessionLookup) void {
     allocator.free(s.role);
 }
 
-/// Verify a password against a stored `users.password_hash`. The sentinel
-/// `!disabled` (the system account) always fails, and any format other than
-/// bcrypt fails closed.
+/// Verify a password against a stored `users.password_hash`.
 pub fn verifyPassword(stored_hash: []const u8, password: []const u8) bool {
     if (stored_hash.len == 0 or password.len == 0) return false;
     if (std.mem.eql(u8, stored_hash, "!disabled")) return false;

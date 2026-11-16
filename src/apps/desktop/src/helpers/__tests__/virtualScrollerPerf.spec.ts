@@ -1,6 +1,4 @@
-/** Unit tests for the P1 performance helpers used by VirtualScroller.vue. Why this file exists
- * (task_1787551495337_9, "make virtual scroller more smooth"): 1. `quantizePx` — measured heights
- * are read from `offsetHeight`, which in Chromium can be fractional (sub-pixel layout). */
+/** Unit tests for the P1 performance helpers used by VirtualScroller.vue. */
 import { describe, it, expect } from 'vitest'
 import { quantizePx, AdaptiveItemHeightEstimator } from '../virtualScrollerPerf'
 
@@ -18,9 +16,7 @@ describe('quantizePx', () => {
   })
 
   it('clamps non-positive and non-finite values to a minimum of 1px', () => {
-    // offsetHeight should never be ≤ 0 for rendered items, but jsdom
-    // returns 0 for unstyled elements — the scroller already filters
-    // h > 0 before calling; this is defense-in-depth.
+    // offsetHeight should never be ≤ 0 for rendered items, but jsdom returns 0 for unstyled elements — the scroller already filters h > 0 before calling; this is …
     expect(quantizePx(0)).toBe(1)
     expect(quantizePx(-5)).toBe(1)
     expect(quantizePx(NaN)).toBe(1)
@@ -42,8 +38,7 @@ describe('AdaptiveItemHeightEstimator', () => {
 
   it('learns the median of observed heights', () => {
     const est = new AdaptiveItemHeightEstimator({ seed: 64 })
-    // Median of [200, 220, 240] = 220 — NOT the mean (220 is same here,
-    // use asymmetric set below to prove median semantics).
+    // Median of [200, 220, 240] = 220 — NOT the mean (220 is same here, use asymmetric set below to prove median semantics).
     est.observe(200)
     est.observe(220)
     est.observe(240)
@@ -98,9 +93,7 @@ describe('AdaptiveItemHeightEstimator', () => {
   })
 
   it('updates in O(log n) per observation (sorted insert via binary search)', () => {
-    // Behavioral proxy for the complexity contract: many observations stay fast and correct. If
-    // someone replaces binary insert with a full sort per observe(), this still passes but the perf
-    // contract is documented here + enforced by review.
+    // Behavioral proxy for the complexity contract: many observations stay fast and correct.
     const est = new AdaptiveItemHeightEstimator({ seed: 64, maxSamples: 50 })
     for (let i = 0; i < 1000; i++) {
       est.observe((i % 400) + 40)
@@ -150,8 +143,7 @@ describe('AdaptiveItemHeightEstimator', () => {
     est.freeze()
     expect(est.estimate()).toBe(200)
 
-    // A whole window of much SHORTER rows arrives — exactly what scrolling into a run of one-liners
-    // does.
+    // A whole window of much SHORTER rows arrives — exactly what scrolling into a run of one-liners does.
     for (let i = 0; i < 8; i++) est.observe(40)
     expect(est.estimate()).toBe(200)
   })
@@ -166,8 +158,7 @@ describe('AdaptiveItemHeightEstimator', () => {
   })
 
   it('freeze() with no observations freezes the seed', () => {
-    // A chat shorter than the freeze threshold still freezes the moment the
-    // caller asks; there is simply nothing learned yet.
+    // A chat shorter than the freeze threshold still freezes the moment the caller asks; there is simply nothing learned yet.
     const est = new AdaptiveItemHeightEstimator({ seed: 64 })
     est.freeze()
     est.observe(900)

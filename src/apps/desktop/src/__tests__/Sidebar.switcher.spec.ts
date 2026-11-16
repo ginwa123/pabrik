@@ -84,9 +84,7 @@ describe('Sidebar header WorkspaceSwitcher wiring', () => {
   it('renders the resolved active workspace on the header trigger', async () => {
     const wrapper = mountSidebar()
     await nextTick()
-    // No explicit selection yet → activeWorkspace getter falls back
-    // to the first workspace, so the header shows a real name (the
-    // hard-coded word is gone).
+    // No explicit selection yet → activeWorkspace getter falls back to the first workspace, so the header shows a real name (the hard-coded word is gone).
     expect(wrapper.find('[data-testid="workspace-switcher-trigger"]').text()).toContain(
       'agentic coding',
     )

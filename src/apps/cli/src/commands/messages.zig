@@ -39,9 +39,7 @@ pub fn run(args: Args, cfg: config.Config, io: std.Io) @import("root.zig").Dispa
     return .ok;
 }
 
-// ===== Tests merged from messages_test.zig (2026-09-29 flatten) ===== Tests
-// for src/commands/messages.zig (GET /api/llm/session/:id/messages). Real
-// tests land when the command itself lands.
+// ===== Tests merged from messages_test.zig (2026-09-29 flatten) =====
 
 const testing = std.testing;
 

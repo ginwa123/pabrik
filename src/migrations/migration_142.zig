@@ -8,8 +8,6 @@ const helpers = @import("helpers");
 const dialect = common.dialect;
 
 /// Migration 142 — a session can hold a roster of agents instead of one.
-/// `group_lead` marks a group, `session_group_members` is its roster, and
-/// `target_agent` lets an interrupt name one member.
 pub const Migration142AddSessionGroup = struct {
     pub const version: u32 = 142;
     pub const name = "add_session_group";

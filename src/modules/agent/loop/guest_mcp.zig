@@ -1,6 +1,4 @@
-//! The host half of an MCP server that runs in the tenant's VM: who may open a
-//! duplex, and the channel that carries its bytes. Local mode installs
-//! nothing — a caller asks `route` and keeps today's child-pipe transport.
+//! The host half of an MCP server that runs in the tenant's VM: who may open a duplex, and the channel that carries its bytes.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,9 +19,7 @@ pub const Error = error{
     GuestOpenRefused,
 };
 
-/// Where an MCP server's process lives. `host` is every local install; `guest`
-/// is a duplex in the tenant's VM; `unavailable` is a `--saas` process that
-/// cannot reach it, which is never a quiet fall back to the host.
+/// Where an MCP server's process lives.
 pub const Route = union(enum) {
     host,
     guest: Target,
@@ -37,8 +33,7 @@ pub const Route = union(enum) {
     }
 };
 
-/// A tenant's VM, named by the workspace and the daemon's socket. Owns both
-/// strings, so it outlives the request that resolved it.
+/// A tenant's VM, named by the workspace and the daemon's socket.
 pub const Target = struct {
     allocator: std.mem.Allocator,
     workspace_id: []u8,
@@ -105,8 +100,7 @@ const Duplex = struct {
             self.duplex_id,
             @min(dst.len, policy.max_duplex_chunk),
         ) catch |err| switch (err) {
-            // The guest host answers "nothing listening" as an EOF, so a
-            // connect failure here is the daemon, not the server.
+            // The guest host answers "nothing listening" as an EOF, so a connect failure here is the daemon, not the server.
             error.Timeout => return error.NothingYet,
             error.OutOfMemory => return error.OutOfMemory,
             else => return error.Closed,
@@ -155,8 +149,7 @@ const vtable = mcp_stdio.Channel.VTable{
     .close = Duplex.close,
 };
 
-/// The opener the guest registry uses: one duplex per server, opened through
-/// the daemon and addressed by the id the guest minted.
+/// The opener the guest registry uses: one duplex per server, opened through the daemon and addressed by the id the guest minted.
 pub fn openChannel(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -191,12 +184,9 @@ pub fn openChannel(
     return handle.channel();
 }
 
-// ============================================================================
 // The transport a call runs on, whichever side of the seam it lives
-// ============================================================================
 
-/// `StdioClient` and `GuestStdioClient` have the same three calls; this is
-/// what lets a call site stay transport-agnostic.
+/// `StdioClient` and `GuestStdioClient` have the same three calls; this is what lets a call site stay transport-agnostic.
 pub const Transport = union(enum) {
     stdio: *mcp_stdio.StdioClient,
     guest: *mcp_stdio.GuestStdioClient,
@@ -220,8 +210,7 @@ pub const Transport = union(enum) {
         };
     }
 
-    /// Where a response body was allocated, so the caller frees it in the same
-    /// arena that produced it.
+    /// Where a response body was allocated, so the caller frees it in the same arena that produced it.
     pub fn allocator(self: Transport) std.mem.Allocator {
         return switch (self) {
             .stdio => |client| client.allocator(),
@@ -242,8 +231,7 @@ pub const Held = union(enum) {
         };
     }
 
-    /// Flag the server for replacement: the next `acquire` respawns a child or
-    /// reopens a duplex instead of handing back the same broken one.
+    /// Flag the server for replacement: the next `acquire` respawns a child or reopens a duplex instead of handing back the same broken one.
     pub fn markStale(self: Held) void {
         switch (self) {
             .stdio => |lease| lease.markStale(),
@@ -264,8 +252,7 @@ pub const initialize_body = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"init
 pub const initialized_body = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
 pub const tools_list_body = "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"tools/list\",\"params\":{}}";
 
-/// A transport seen as three calls, so the handshake can be driven by a
-/// recording fake in a test instead of a spawned child.
+/// A transport seen as three calls, so the handshake can be driven by a recording fake in a test instead of a spawned child.
 pub const Wire = struct {
     ctx: *anyopaque,
     send_fn: *const fn (ctx: *anyopaque, body: []const u8, deadline_ns: u64, cancel: ?*const fn () bool) anyerror!void,
@@ -310,8 +297,7 @@ pub fn wireOf(transport: *const Transport) Wire {
     };
 }
 
-/// initialize -> notifications/initialized -> tools/list. Returns the
-/// tools/list response body, allocated by the transport.
+/// initialize -> notifications/initialized -> tools/list.
 pub fn handshakeAndListTools(wire: Wire, deadline_ns: u64, cancel: ?*const fn () bool) ![]u8 {
     try wire.send(initialize_body, deadline_ns, cancel);
     try wire.send(initialized_body, deadline_ns, cancel);
@@ -321,8 +307,7 @@ pub fn handshakeAndListTools(wire: Wire, deadline_ns: u64, cancel: ?*const fn ()
     return wire.recv(deadline_ns, cancel);
 }
 
-/// initialize -> notifications/initialized, for a call that only needs the
-/// session live before `tools/call`.
+/// initialize -> notifications/initialized, for a call that only needs the session live before `tools/call`.
 pub fn handshake(wire: Wire, deadline_ns: u64, cancel: ?*const fn () bool) !void {
     try wire.send(initialize_body, deadline_ns, cancel);
     try wire.send(initialized_body, deadline_ns, cancel);
@@ -331,15 +316,13 @@ pub fn handshake(wire: Wire, deadline_ns: u64, cancel: ?*const fn () bool) !void
 }
 
 pub const LeaseOptions = struct {
-    /// How long to wait for another caller's in-flight transaction. Never 0:
-    /// `AcquireOptions`' 0 means "wait forever", which parks a neighbour.
+    /// How long to wait for another caller's in-flight transaction. Never 0
     wait_ns: u64,
     is_cancelled: ?*const fn () bool = null,
     scope: mcp_scope.Scope = .{},
 };
 
-/// Hold `server_name` on the transport the route names. This is the ONE place
-/// host-versus-guest is decided, so no call site can forget the rule.
+/// Hold `server_name` on the transport the route names.
 pub fn acquire(
     allocator: std.mem.Allocator,
     io: ?std.Io,
@@ -360,8 +343,7 @@ pub fn acquire(
         },
         .guest => |target| {
             const io_value = io orelse return Error.GuestManagerUnavailable;
-            // Through the singleton so the registry outlives the per-turn
-            // arena that a tool call's `allocator` may be.
+            // Through the singleton so the registry outlives the per-turn arena that a tool call's `allocator` may be.
             const registry = pabrikcore.mcpGuestRegistry(io_value, openChannel, allocator);
             const lease = try registry.acquire(server_name, argv, .{
                 .wait_ns = opts.wait_ns,
@@ -375,9 +357,7 @@ pub fn acquire(
     }
 }
 
-// ============================================================================
-// Behaviour tests — the route table. A live VM is the smoke scripts' job.
-// ============================================================================
+// Behaviour tests — the route table.
 
 const testing = std.testing;
 

@@ -7,15 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Wire row → card model.
- *
- * Every payload here is shaped like one the backend actually emits, taken from
- * the per-tool builders. The field names that look wrong in isolation —
- * `file_write` for a write path, `agents` for an agent list, a *number* for
- * `glob`'s `truncated` — are the ones a client guesses wrongly, so they are
- * the ones asserted.
- */
+/** Wire row → card model. */
 class ToolCardModelTest {
 
     private fun toolRow(
@@ -60,16 +52,14 @@ class ToolCardModelTest {
         assertEquals("/x.txt", model.primary)
         assertEquals("3L", model.rightMeta)
         val body = model.body as ToolBody.ReadFile
-        // The backend's `start_line` is a 0-based offset, so line 10 is the
-        // 11th line and the gutter has to say 11.
+        // The backend's `start_line` is a 0-based offset, so line 10 is the 11th line and the gutter has to say 11.
         assertEquals(11, body.firstLineNumber)
         assertEquals(listOf("a", "b", "c"), body.lines)
     }
 
     @Test
     fun `a running read_file shows the requested path from its arguments`() {
-        // The placeholder row carries no result at all, so the path has to come
-        // from `parameters` or the card says "unknown" for the whole run.
+        // The placeholder row carries no result at all, so the path has to come from `parameters` or the card says "unknown" for the whole run.
         val model = ToolCard.from(
             toolRow("read_file", "null", parameters = """{"path":"/secret.txt"}"""),
         )
@@ -81,11 +71,7 @@ class ToolCardModelTest {
 
     // ─── write_file ─────────────────────────────────────────────────────────
 
-    /**
-     * `write_file` names its result key `file_write`; there is no `path` on the
-     * success payload. A client that reads `path` renders an empty card for
-     * every write.
-     */
+    /** `write_file` names its result key `file_write`; there is no `path` on the success payload. */
     @Test
     fun `write_file reads file_write, not path`() {
         val model = ToolCard.from(
@@ -118,12 +104,7 @@ class ToolCardModelTest {
         assertTrue(model.success)
     }
 
-    /**
-     * A non-zero exit is a *result*, not a tool failure: the shell ran and
-     * reported faithfully, so the envelope says success and the card keeps its
-     * tick. The distinction is carried by the exit code in the header, which
-     * is the only thing a collapsed card can show.
-     */
+    /** A non-zero exit is a *result*, not a tool failure: the shell ran and reported faithfully, so the envelope says success and the card keeps its tick. */
     @Test
     fun `a non-zero exit code shows in the header without failing the card`() {
         val model = ToolCard.from(
@@ -273,8 +254,7 @@ class ToolCardModelTest {
         )
 
         val body = model.body as ToolBody.Diff
-        // Re-deriving the diff locally and disagreeing with the server is worse
-        // than showing what the server said.
+        // Re-deriving the diff locally and disagreeing with the server is worse than showing what the server said.
         assertEquals("@@ -1 +1 @@\n-a\n+b", body.unified)
         assertEquals("1 line", model.rightMeta)
     }
@@ -352,8 +332,7 @@ class ToolCardModelTest {
         assertTrue(model.defaultsExpanded)
         assertEquals("q1", body.questionId)
         assertEquals(listOf("a", "b"), body.options)
-        // The answer endpoint falls back to the tool row's own id, so the card
-        // has to carry it.
+        // The answer endpoint falls back to the tool row's own id, so the card has to carry it.
         assertEquals("call_1", model.toolCallId)
     }
 
@@ -718,10 +697,7 @@ class ToolCardModelTest {
         assertEquals("tinyfish", model.primary)
     }
 
-    /**
-     * A failure envelope carries `data:null` and the reason in `error`, so
-     * there is nothing to draw in the body — and the card must still say why.
-     */
+    /** A failure envelope carries `data:null` and the reason in `error`, so there is nothing to draw in the body — and the card must still say why. */
     @Test
     fun `a failed web_search reports the envelope error`() {
         val model = ToolCard.from(
@@ -751,8 +727,7 @@ class ToolCardModelTest {
         )
 
         assertEquals(ToolKind.ListSearchProviders, model.kind)
-        // The listing is inert by construction (D14): the template carries the
-        // literal `{key}`, so a card may show it — and must never show a key.
+        // The listing is inert by construction (D14): the template carries the literal `{key}`, so a card may show it — and must never show a key.
         val body = model.body as ToolBody.Raw
         assertTrue(body.text.contains("{key}"))
         assertTrue(body.text.contains("tinyfish"))
@@ -760,10 +735,7 @@ class ToolCardModelTest {
 
     // ─── fallbacks ──────────────────────────────────────────────────────────
 
-    /**
-     * `remove_file` still emits XML, so its "JSON" payload is `{"_raw": …}`. A
-     * client that only knows JSON renders an empty card for every real call.
-     */
+    /** `remove_file` still emits XML, so its "JSON" payload is `{"_raw": …}`. */
     @Test
     fun `a raw payload body renders as text`() {
         val model = ToolCard.from(
@@ -841,11 +813,9 @@ class ToolCardModelTest {
         // `brand_new` and `remove_file` are deliberately absent: the first is
         // the unknown-tool control, and the second's payload is raw XML by
         // design — ToolKind.Raw is their *correct* dispatch, not a fall-through.
-        // Both are asserted above.
         names.forEach { name ->
             val model = ToolCard.from(toolRow(name, "{}"))
-            // Not merely "some body": an empty `{}` payload satisfies almost any
-            // assertion, including a silent fall-through to the raw renderer.
+            // Not merely "some body": an empty `{}` payload satisfies almost any assertion, including a silent fall-through to the raw renderer.
             assertNotEquals(
                 "a known tool fell through to the generic renderer: $name",
                 ToolKind.Raw,

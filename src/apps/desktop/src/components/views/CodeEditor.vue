@@ -11,8 +11,7 @@ import CodeEditorDiff from './CodeEditorDiff.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
-/** Read-only code viewer for `?view=code-editor`. */
-/** One inline blame annotation: author + pre-formatted age. */
+// Read-only code viewer for `?view=code-editor`.
 export interface LineBlame {
   line: number
   author: string
@@ -27,12 +26,9 @@ const props = defineProps<{
   /** Explicit language override; defaults to the file extension. */
   language?: string
   cwd?: string
-  /**    * Optional 1-based line to jump to once the viewer mounts (threaded from the diff review's "open
-   * at this line" / `?line=` deep link). The target row is marked and scrolled to the middle of the
-   * viewport. */
+  /** Optional 1-based line to jump to once the viewer mounts (threaded from the diff review's "open at this line" / `?line=` deep link). */
   line?: number
-  /** Whole-file unified diff (`git diff -U<all>`). Drives the gutter bars,
-   * the Diff view, and the change navigator. Self-fetched when absent. */
+  /** Whole-file unified diff (`git diff -U<all>`). */
   diffText?: string
   /** Inline blame annotations. Self-fetched when absent. */
   blame?: LineBlame[]
@@ -54,8 +50,7 @@ const detectedLanguage = computed(() => props.language || detectLanguage(props.f
 
 const hasContent = computed(() => (props.content ?? '').length > 0)
 
-// A file that ends in a newline would otherwise render a phantom last
-// row (editors number real lines only).
+// A file that ends in a newline would otherwise render a phantom last row (editors number real lines only).
 const lines = computed<string[]>(() => {
   const raw = (props.content ?? '').split('\n')
   if (raw.length > 1 && raw[raw.length - 1] === '') raw.pop()
@@ -68,8 +63,7 @@ const targetLine = computed(() =>
   typeof props.line === 'number' && props.line > 0 ? props.line : null,
 )
 
-// Repo-relative path for the git endpoints: the explorer hands down an
-// absolute filePath, the endpoints want it relative to the cwd.
+// Repo-relative path for the git endpoints: the explorer hands down an absolute filePath, the endpoints want it relative to the cwd.
 const relativeFilePath = computed(() =>
   props.cwd && props.filePath.startsWith(props.cwd + '/')
     ? props.filePath.slice(props.cwd.length + 1)
@@ -165,8 +159,7 @@ const isTarget = (lineNumber: number) =>
 /** Split one line into colored token spans (plaintext ⇒ one plain span). */
 const tokensFor = (line: string) => highlightLine(line, detectedLanguage.value)
 
-/** Bring a line into view. Best-effort: jsdom has no
- * `scrollIntoView`, and a `?line=` beyond EOF is simply ignored. */
+/** Bring a line into view. */
 async function scrollToLine(line: number | null): Promise<void> {
   if (line === null) return
   await nextTick()
@@ -192,9 +185,7 @@ function goToBlock(direction: 1 | -1): void {
   void scrollToLine(block.startLine)
 }
 
-// Annotation identity: file + cwd + content length + explicit props. A change resets fetched state
-// and re-fetches (prev-value guard on update — same pattern the line/content scroll uses; mount
-// covers the initial load).
+// Annotation identity: file + cwd + content length + explicit props.
 const annoKey = () =>
   `${props.filePath}|${props.cwd ?? ''}|${props.content?.length ?? 0}|${props.diffText ?? ''}|${props.blame ? 'b' : ''}|${props.rev ?? ''}|${props.pr ?? ''}`
 
@@ -204,15 +195,13 @@ onMounted(() => {
   scrollToTarget()
 })
 
-// Re-scroll when the target line or the content changes (prev-value guard
-// on update — same call the watcher made; mount is covered above).
+// Re-scroll when the target line or the content changes (prev-value guard on update — same call the watcher made; mount is covered above).
 let prevEditorLine = props.line
 let prevEditorContent = props.content
 let prevAnnoKey = ''
 let prevInitialDiff = props.initialDiff === true
 onUpdated(() => {
-  // The tab that names this file decides code vs changes: following a tab click must not be left to
-  // whatever the previous file was showing.
+  // The tab that names this file decides code vs changes: following a tab click must not be left to whatever the previous file was showing.
   if ((props.initialDiff === true) !== prevInitialDiff) {
     prevInitialDiff = props.initialDiff === true
     showDiff.value = prevInitialDiff
@@ -234,9 +223,7 @@ onUpdated(() => {
   scrollToTarget()
 })
 
-// Footer shows the full path. filePath from the sidebar explorer is already absolute (backend
-// listDirectory joins dir_path + name), so prefixing cwd would double it:
-// /home/u/work//home/u/work/migration/README.md.
+// Footer shows the full path. filePath from the sidebar explorer is already absolute (backend listDirectory joins dir_path + name), so prefixing cwd would double …
 const displayPath = computed(() => displayPathFor(props.cwd, props.filePath))
 
 // File icon for display

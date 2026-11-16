@@ -1,15 +1,11 @@
-//! POST /api/dev/sse/emit_llm — TEST-ONLY SSE event injection. Purpose: let
-//! functional UI tests drive the chatview's SSE streaming path WITHOUT a real
-//! LLM.
+//! POST /api/dev/sse/emit_llm — TEST-ONLY SSE event injection.
 
 const std = @import("std");
 pub const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const ai_workflow = pabrikcore.ai_workflow;
 
-/// The gate. Read once per call (cheap getenv) so a test can flip it
-/// mid-process in the future if needed; production binaries never set
-/// the var so the read is a single failed lookup.
+/// The gate.
 fn gateEnabled() bool {
     const v = std.c.getenv("PABRIK_TEST_SSE_EMIT") orelse return false;
     return std.mem.eql(u8, std.mem.span(v), "1");
@@ -24,9 +20,7 @@ const EmitRequest = struct {
     role: []const u8 = "",
     tool_call_id: []const u8 = "",
     tool_name: []const u8 = "",
-    /// Mirrors SseEventLLMHistory.is_error — lets UI tests inject
-    /// agentic-loop diagnostics through the real wire path
-    /// (task_1787663566535_2).
+    /// Mirrors SseEventLLMHistory.is_error — lets UI tests inject agentic-loop diagnostics through the real wire path (task_1787663566535_2).
     is_error: bool = false,
     /// Mirrors SseEventLLMHistory.agent_name — the author the transcript badges.
     agent_name: []const u8 = "",
@@ -70,9 +64,7 @@ pub fn emitLlmHandler(
     };
     const event_bus = di.event_bus;
 
-    // Build the same JSON payload shape the real emitters produce (see
-    // on_event_sent.zig ContentChunkJson / FinalChunkJson and
-    // sse_on_event_send_llm_history.zig SseEventLLMHistory).
+    // Build the same JSON payload shape the real emitters produce (see on_event_sent.zig ContentChunkJson / FinalChunkJson and sse_on_event_send_llm_history.zig …
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
 
@@ -81,8 +73,7 @@ pub fn emitLlmHandler(
             \\{{"index":{d},"type":"chunk_final","finish_reason":"stop","session_id":"{s}"}}
         , .{ parsed.index, parsed.session_id });
     } else if (std.mem.eql(u8, parsed.type, "full")) {
-        // SseEventLLMHistory-shaped. The frontend's `full` branch
-        // requires finish_reason + at least one renderable field.
+        // SseEventLLMHistory-shaped.
         try buf.print(allocator,
             \\{{"index":{d},"content":{f},"type":"full","session_id":"{s}","role":"{s}","finish_reason":"{s}","tool_call_id":"{s}","tool_name":"{s}","is_error":{},"agent_name":{f},"id":"test-{d}"}}
         , .{
@@ -111,9 +102,7 @@ pub fn emitLlmHandler(
         .data = data_copy,
         .event_type = "llm_chunk",
     };
-    // Same dual emit as the real emitters: per-session key + central
-    // "llm" broadcast (the frontend's single global EventSource
-    // subscribes to the central key and filters by session_id in JS).
+    // Same dual emit as the real emitters: per-session key + central "llm" broadcast (the frontend's single global EventSource subscribes to the central key and …
     event_bus.emit(pabrikcore.ai_mod.on_event_sent.SseEvent, parsed.session_id, event);
     event_bus.emit(pabrikcore.ai_mod.on_event_sent.SseEvent, "llm", event);
 
@@ -126,17 +115,14 @@ pub fn emitLlmHandler(
 // ─── Static contract tests ──────────────────────────────────────────────────
 
 test "gate is off by default (no env var)" {
-    // Note: this asserts the DEFAULT state. If the developer's shell exports
-    // PABRIK_TEST_SSE_EMIT=1 the test would fail — that's intentional (the
-    // gate must be opt-in per-process).
+    // Note: this asserts the DEFAULT state.
     if (std.c.getenv("PABRIK_TEST_SSE_EMIT") == null) {
         try std.testing.expect(!gateEnabled());
     }
 }
 
 test "gate accepts exactly '1'" {
-    // gateEnabled() reads the real environ; we can't inject. Instead
-    // pin the comparison logic via a mirror of the implementation.
+    // gateEnabled() reads the real environ; we can't inject.
     const v: ?[]const u8 = "1";
     try std.testing.expect(v != null and std.mem.eql(u8, v.?, "1"));
     const bad: ?[]const u8 = "0";

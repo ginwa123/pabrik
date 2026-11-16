@@ -8,15 +8,13 @@ describe('resolveWorkspaceId', () => {
   })
 
   it('falls back to the active workspace when the route has none', () => {
-    // Legacy workspace-less routes (`/app`, `/app/chat/:sessionId`) and the
-    // router-less mounts specs use.
+    // Legacy workspace-less routes (`/app`, `/app/chat/:sessionId`) and the router-less mounts specs use.
     expect(resolveWorkspaceId(undefined, 'ws_from_store')).toBe('ws_from_store')
     expect(resolveWorkspaceId('', 'ws_from_store')).toBe('ws_from_store')
   })
 
   it('yields an empty id when neither source names a workspace', () => {
-    // Empty is meaningful: it means "no workspace in scope", and the callers
-    // must not substitute a guess (`workspaces[0]`).
+    // Empty is meaningful: it means "no workspace in scope", and the callers must not substitute a guess (`workspaces[0]`).
     expect(resolveWorkspaceId(undefined, undefined)).toBe('')
     expect(resolveWorkspaceId('', null)).toBe('')
   })

@@ -1,6 +1,4 @@
-//! The `git_pr_state` SSE channel: the backend telling every client that a
-//! branch's change request moved — merged or closed — so the badges that read
-//! the shared PR-status cache re-ask the forge instead of keeping the colour
+//! The `git_pr_state` SSE channel: the backend telling every client that a branch's change request moved — merged or closed — so the badges that read the shared …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,13 +6,10 @@ const SseEvent = @import("sse.zig").SseEvent;
 
 const event_bus_mod = pabrikcore.event_bus;
 
-/// The central routing key. The frontend subscribes with the
-/// `git_pr_state` channel token, which `parseChannels` maps to this key.
+/// The central routing key.
 pub const RoutingKey = "git_pr_state";
 
-/// A merge landed. `git pr merge` exiting 0 without merging (an armed
-/// auto-merge, a GitHub merge queue) is deliberately NOT this — see
-/// `emitMerged`'s caller.
+/// A merge landed.
 pub const EventMerged = "git_pr_state_merged";
 /// The change request was closed without being merged.
 pub const EventClosed = "git_pr_state_closed";
@@ -22,16 +17,13 @@ pub const EventClosed = "git_pr_state_closed";
 pub const GitPrStateEventInput = struct {
     /// `merged` | `closed`.
     action: []const u8,
-    /// The repo/worktree the forge command ran in. The frontend filters on
-    /// this — and it is also the first half of the cache key it invalidates.
+    /// The repo/worktree the forge command ran in.
     cwd: []const u8,
-    /// The change request's head branch (`head_ref`) — the second half of the
-    /// cache key.
+    /// The change request's head branch (`head_ref`) — the second half of the cache key.
     branch: []const u8,
 };
 
-/// Emit one change-request state event. No-op when `event_bus` is null (unit
-/// tests, and any caller that has no bus).
+/// Emit one change-request state event.
 pub fn emitGitPrStateEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -54,8 +46,7 @@ pub fn emitGitPrStateEvent(
         "git_pr_state_unknown";
 
     bus.emit(SseEvent, RoutingKey, .{
-        // The routing-key literal, not a session id: this channel is not
-        // session-scoped (see the module docstring).
+        // The routing-key literal, not a session id: this channel is not session-scoped (see the module docstring).
         .session_id = RoutingKey,
         .data = data,
         .event_type = event_type_name,
@@ -118,9 +109,7 @@ test "each action maps to its own granular wire name" {
         captured = null;
         defer alloc.free(ev.data);
         try testing.expectEqualStrings(c.want, ev.event_type orelse "");
-        // The envelope id is the routing-key literal, NOT a session id —
-        // this channel is cwd-scoped, and the frontend filters on the
-        // payload's `cwd`.
+        // The envelope id is the routing-key literal, NOT a session id — this channel is cwd-scoped, and the frontend filters on the payload's `cwd`.
         try testing.expectEqualStrings(RoutingKey, ev.session_id);
     }
 }
@@ -138,8 +127,7 @@ test "the payload carries the cwd and branch the cache key is built from" {
 
     try testing.expect(captured != null);
     const data = captured.?.data;
-    // `parsed` borrows slices into `data`, so it must be deinit'd BEFORE the
-    // buffer is freed — the other order is a use-after-free.
+    // `parsed` borrows slices into `data`, so it must be deinit'd BEFORE the buffer is freed — the other order is a use-after-free.
     {
         const parsed = try std.json.parseFromSlice(std.json.Value, alloc, data, .{});
         defer parsed.deinit();

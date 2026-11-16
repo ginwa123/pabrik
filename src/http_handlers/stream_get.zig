@@ -1,6 +1,4 @@
-//! GET /api/llm/session/:session_id/stream — in-flight stream snapshot.
-//! 2026-09-02 stream-resume-on-reselect (task_1787673548905_0): When the user
-//! closes/re-selects a chat session mid-stream, ChatView drops its
+//! GET /api/llm/session/:session_id/stream — in-flight stream snapshot. 2026-09-02 stream-resume-on-reselect (task_1787673548905_0): When the user …
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -22,8 +20,7 @@ pub fn streamGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
 
     const snap = try stream_snapshot.getSnapshot(allocator, session_id);
 
-    // Build the JSON body manually — `data` must be a pre-serialized
-    // JSON string (see worker_get.zig pattern), not an anonymous struct.
+    // Build the JSON body manually — `data` must be a pre-serialized JSON string (see worker_get.zig pattern), not an anonymous struct.
     const body = try std.fmt.allocPrint(
         allocator,
         "{{\"active\":{},\"content\":{f}}}",

@@ -4,9 +4,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
 import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
-/** The PR panel redraw: the request header, the status chips and the
- *  Conversation tab. These lock the behaviour the redraw promised: the title
- *  is on the screen, and each chip opens the tab that holds its reason. */
+/** The PR panel redraw: the request header, the status chips and the Conversation tab. */
 const {
   getGitChangesMock,
   getGitFolderDiffsMock,
@@ -182,8 +180,7 @@ describe('SidebarDiffPanel — the request header and the status chips', () => {
       review_decision: 'CHANGES_REQUESTED',
     })
     const { wrapper } = await mountPanel()
-    // The headline still says the merge is blocked; the reason moves to the
-    // line under it, where the counts belong.
+    // The headline still says the merge is blocked; the reason moves to the line under it, where the counts belong.
     expect(wrapper.get('[data-testid="pr-merge-headline"]').text()).toBe('Merging is blocked')
     expect(wrapper.get('[data-testid="pr-merge-detail"]').text()).toContain('changes requested')
   })

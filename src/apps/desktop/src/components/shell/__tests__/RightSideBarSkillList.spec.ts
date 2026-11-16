@@ -1,6 +1,4 @@
-/** RightSideBarSkillList.vue — the sidebar's skills pane. One list now (a skill is a row scoped to
- * one workspace), fed by `getSkills(workspaceId)`. Three things are pinned here because they are
- * where this pane breaks: 1. */
+/** RightSideBarSkillList.vue — the sidebar's skills pane. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -14,9 +12,7 @@ vi.mock('../../../api', async () => {
   return { ...actual, getSkills: getSkillsMock }
 })
 
-// jsdom 29 dropped localStorage from default globals. The sidebar store
-// reads it while the store is created, so the stub has to exist before
-// any component touches `useSidebarStore()`.
+// jsdom 29 dropped localStorage from default globals.
 beforeAll(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     value: (() => {
@@ -41,8 +37,7 @@ function makeWorkspace(id: string, name: string): Workspace {
   return { id, name, icon: '📁', items: [], expanded: true }
 }
 
-/** Populates the store WITHOUT setting `activeWorkspaceId` — the state a
- *  user is in after reaching the sidebar by clicking a project row. */
+/** Populates the store WITHOUT setting `activeWorkspaceId` — the state a user is in after reaching the sidebar by clicking a project row. */
 function seedWorkspacesOnly(ws: Workspace | null): void {
   const store = useWorkspacesStore()
   store.workspaces = ws ? [ws] : []
@@ -73,8 +68,7 @@ describe('RightSideBarSkillList — one list, scoped to the active workspace', (
     mount(RightSideBarSkillList)
     await flushPromises()
 
-    // `activeWorkspaceId` was never set, so a component bound to the raw
-    // ref would have requested nothing at all here.
+    // `activeWorkspaceId` was never set, so a component bound to the raw ref would have requested nothing at all here.
     expect(useWorkspacesStore().activeWorkspaceId).toBeNull()
     expect(getSkillsMock).toHaveBeenCalledWith('ws_1')
   })
@@ -93,8 +87,7 @@ describe('RightSideBarSkillList — one list, scoped to the active workspace', (
     // The two collapsible sections, their icons and the row paths are gone.
     expect(wrapper.text()).not.toContain('Global Skills')
     expect(wrapper.text()).not.toContain('Local Skills')
-    // Positive control first: the toggle itself still draws an icon, so
-    // the two absences below cannot pass because the selector is dead.
+    // Positive control first: the toggle itself still draws an icon, so the two absences below cannot pass because the selector is dead.
     expect(wrapper.find('[data-icon="brain"]').exists()).toBe(true)
     expect(wrapper.find('[data-icon="globe"]').exists()).toBe(false)
     expect(wrapper.find('[data-icon="folder"]').exists()).toBe(false)
@@ -235,8 +228,6 @@ describe('RightSideBarSkillList — one list, scoped to the active workspace', (
 
     await wrapper.find('[data-testid="skills-list-section-toggle"]').trigger('click')
     // `v-show`, so the rows stay mounted and only the container's inline `display` changes.
-    // Asserted on that attribute rather than on `isVisible()`: jsdom caches the computed cascade
-    // and keeps reporting `display: none` after the inline style was cleared.
     expect(listContainerStyle(wrapper)).toContain('display: none')
 
     await wrapper.find('[data-testid="skills-list-section-toggle"]').trigger('click')

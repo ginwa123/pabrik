@@ -1,6 +1,4 @@
-/** Tests for ChatView's live skills-badge update from `llm_full` SSE. 2026-09-08
- * live-session-skills-sse Task 3 — the backend piggybacks `session_skills` on every `llm_full`
- * event (sse_on_event_send_llm_history.zig:45). */
+/** Tests for ChatView's live skills-badge update from `llm_full` SSE. 2026-09-08 live-session-skills-sse Task 3 — the backend piggybacks `session_skills` on every … */
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { readChatViewSource } from '../../../__tests__/helpers/chatViewSource'
@@ -16,17 +14,14 @@ type FullEventLike = {
   session_skills?: api.SkillInfo[] | unknown
 }
 
-// Mirrors the ChatView.vue bus.on('llm') skills snippet (Task 3):
-// session-scoped, Array.isArray-guarded, no loadChatHistory call.
+// Mirrors the ChatView.vue bus.on('llm') skills snippet (Task 3)
 function makeSkillsHandler() {
   const sessionSkills = ref<api.SkillInfo[]>([])
   const loadChatHistory = vi.fn()
   const onEvent = (event: FullEventLike) => {
     if (event.session_id !== SID) return
     if (event.type !== 'full') return
-    // Live skills: backend piggybacks session_skills on every llm_full
-    // (fresh on tool-result emit, stale on assistant emit — see
-    // handle_tool.zig:459 vs :745). REST remains initial source.
+    // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result emit, stale on assistant emit — see handle_tool.zig:459 vs :745).
     if (Array.isArray((event as { session_skills?: unknown }).session_skills))
       sessionSkills.value = (event as { session_skills: api.SkillInfo[] }).session_skills
   }

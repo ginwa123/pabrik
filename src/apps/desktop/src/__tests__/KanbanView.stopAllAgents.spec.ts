@@ -1,5 +1,4 @@
-/** Tests for KanbanView.handleStopAllAgents — the column "Stop all agents" host handler, mirroring
- * KanbanView.runAllAgents.spec.ts. */
+/** Tests for KanbanView.handleStopAllAgents — the column "Stop all agents" host handler, mirroring KanbanView.runAllAgents.spec.ts. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

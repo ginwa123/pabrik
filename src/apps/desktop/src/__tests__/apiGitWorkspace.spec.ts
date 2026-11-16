@@ -1,6 +1,4 @@
-/** Every `/api/git/*` request must NAME the workspace it means: under `--saas`
- *  the tree lives in the workspace's VM, and a bare `path` cannot identify it,
- *  so the server has no workspace to resolve. */
+/** Every `/api/git/*` request must NAME the workspace it means: under `--saas` the tree lives in the workspace's VM, and a bare `path` cannot identify it, so the … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -14,8 +12,7 @@ describe('the git API names the workspace', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
-    // The probe gate remembers a cwd for the whole module: one test's answer
-    // must not silence the next test's request.
+    // The probe gate remembers a cwd for the whole module: one test's answer must not silence the next test's request.
     forgetGitProbe('/workspace')
     global.fetch = fetchMock as unknown as typeof fetch
     fetchMock.mockResolvedValue({

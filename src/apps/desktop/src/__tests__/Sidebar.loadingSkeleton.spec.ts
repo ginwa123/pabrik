@@ -1,6 +1,4 @@
-/** Sidebar loading skeletons — PINNED + RECENT, PROJECTS, DOCUMENTS. Each section used to flash its
- * empty state (or plain "Loading..." text) while the first fetch was in flight. The skeleton keeps
- * the layout stable instead. */
+/** Sidebar loading skeletons — PINNED + RECENT, PROJECTS, DOCUMENTS. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'

@@ -1,6 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/secrets`. Creates one workspace-scoped
-//! secret and answers 201 with the stored row — id, name and timestamps, and
-//! NO VALUE.
+//! `POST /api/workspaces/:workspace_id/secrets`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,8 +9,7 @@ const secrets_store = @import("../modules/agent/loop/secrets_store.zig");
 const gate = @import("workspace_members_gate.zig");
 const secrets_at_rest = @import("../modules/agent/loop/secrets_at_rest.zig");
 
-/// Request body. Every field defaults to "" so an empty body parses and is
-/// then refused by validation rather than answering "Invalid JSON body".
+/// Request body.
 const CreateSecretBody = struct {
     name: []const u8 = "",
     value: []const u8 = "",
@@ -28,8 +25,7 @@ pub const SecretsCreateError = error{
     DescriptionTooLong,
     NameTaken,
     InsertFailed,
-    /// No master key on this host: the value cannot be sealed, so nothing is
-    /// stored rather than stored in plaintext.
+    /// No master key on this host: the value cannot be sealed, so nothing is stored rather than stored in plaintext.
     SealingUnavailable,
     OutOfMemory,
 };
@@ -43,9 +39,7 @@ pub const SecretsCreateOutput = struct {
     secret: secrets_store.SecretRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -68,8 +62,7 @@ fn useCase(
         error.InsertFailed => return error.InsertFailed,
         error.SealingUnavailable => return error.SealingUnavailable,
         error.OutOfMemory => return error.OutOfMemory,
-        // The rest of the store's shared error set belongs to the read and
-        // update paths, which `createSecret` cannot reach.
+        // The rest of the store's shared error set belongs to the read and update paths, which `createSecret` cannot reach.
         error.IdsRequired,
         error.NotFound,
         error.QueryFailed,
@@ -80,9 +73,7 @@ fn useCase(
     return .{ .secret = row };
 }
 
-// ===================================================================== Error
-// mapping
-// ===================================================================== Two
+// ===================================================================== Error mapping ===================================================================== Two
 
 fn statusFor(err: SecretsCreateError) u16 {
     return switch (err) {
@@ -97,8 +88,7 @@ fn statusFor(err: SecretsCreateError) u16 {
     };
 }
 
-/// `requested_name` is only read for the duplicate answer, which names the
-/// offending key so the UI can say which row to change instead of "conflict".
+/// `requested_name` is only read for the duplicate answer, which names the offending key so the UI can say which row to change instead of "conflict".
 fn messageFor(
     err: SecretsCreateError,
     allocator: std.mem.Allocator,
@@ -110,8 +100,7 @@ fn messageFor(
         error.InvalidName => "name must match [A-Za-z0-9_-]{1,64}",
         error.ValueRequired => "value is required",
         error.DescriptionTooLong => "description is too long",
-        // The key name is not itself a secret — it is what the model types
-        // into a placeholder — so echoing it here discloses nothing.
+        // The key name is not itself a secret — it is what the model types into a placeholder — so echoing it here discloses nothing.
         error.NameTaken => try std.fmt.allocPrint(
             allocator,
             "a secret named '{s}' already exists in this workspace",
@@ -123,9 +112,7 @@ fn messageFor(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn secretsCreateHandler(
     ctx: gserverz.HttpContext,
@@ -146,8 +133,7 @@ pub fn secretsCreateHandler(
         });
     };
 
-    // An empty body is legal on the wire so the validation errors below are
-    // what a blank submission sees; only unparseable JSON is a 400 here.
+    // An empty body is legal on the wire so the validation errors below are what a blank submission sees; only unparseable JSON is a 400 here.
     var body = CreateSecretBody{};
     if (req.body.len > 0) {
         body = std.json.parseFromSliceLeaky(CreateSecretBody, allocator, req.body, .{}) catch {
@@ -191,8 +177,7 @@ const TestCtx = struct {
 };
 
 fn setupDb() !TestCtx {
-    // The store seals on write and refuses a write with no key, so the fixture
-    // installs one — never the host's real key file.
+    // The store seals on write and refuses a write with no key, so the fixture installs one — never the host's real key file.
     var fixture_key: [secrets_at_rest.KEY_LEN]u8 = undefined;
     for (&fixture_key, 0..) |*b, i| b.* = @intCast(i + 1);
     secrets_at_rest.setKey(fixture_key);
@@ -218,8 +203,7 @@ fn countRows(ctx: *TestCtx) !usize {
     return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
 }
 
-/// The credential behind a stored value, opened through the cipher: a row written by the store is an
-/// envelope, so asserting on the raw column would compare against ciphertext.
+/// The credential behind a stored value, opened through the cipher: a row written by the store is an envelope, so asserting on the raw column would compare …
 fn openedValue(ctx: *TestCtx, name: []const u8) ![]u8 {
     const alloc = testing.allocator;
     const stored = try storedValue(ctx, name);
@@ -262,8 +246,7 @@ test "useCase: creates a secret and stamps both timestamps" {
     defer secrets_store.freeSecretRow(alloc, output.secret);
 
     try testing.expectEqualStrings("ws_1", output.secret.workspace_id);
-    // Trimmed, so the sidebar row renders no leading padding and the name
-    // matches what a `{{SECRETS:...}}` placeholder has to spell.
+    // Trimmed, so the sidebar row renders no leading padding and the name matches what a `{{SECRETS:...}}` placeholder has to spell.
     try testing.expectEqualStrings("GITHUB_TOKEN", output.secret.name);
     try testing.expect(output.secret.id.len > 0);
     try testing.expect(output.secret.created_at.len > 0);
@@ -344,8 +327,7 @@ test "useCase: the created response carries no value" {
     try testing.expect(std.mem.indexOf(u8, json, "sk_live_do_not_leak") == null);
     try testing.expect(std.mem.indexOf(u8, json, "value") == null);
 
-    // ...while the value really was stored, so the absence above is the
-    // response shape's doing and not a write that silently dropped it.
+    // ...while the value really was stored, so the absence above is the response shape's doing and not a write that silently dropped it.
     const kept = try openedValue(&ctx, "STRIPE_KEY");
     defer alloc.free(kept);
     try testing.expectEqualStrings("sk_live_do_not_leak", kept);
@@ -410,9 +392,7 @@ test "useCase: value \"\" is ValueRequired, a 400 — never a 500 constraint err
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // `Backend.exec` binds a zero-length slice as SQL NULL, and `value
-    // TEXT NOT NULL` rejects NULL — so without the store's pre-check this
-    // exact request would answer 500 "DB error" for what is really a blank
+    // `Backend.exec` binds a zero-length slice as SQL NULL, and `value TEXT NOT NULL` rejects NULL — so without the store's pre-check this exact request would answer …
     try testing.expectError(
         error.ValueRequired,
         useCase(alloc, &ctx.db, .{
@@ -452,8 +432,7 @@ test "useCase: a duplicate name in one workspace is NameTaken, a 409" {
     );
     try testing.expectEqual(@as(u16, 409), statusFor(error.NameTaken));
 
-    // The duplicate must not have overwritten the stored credential — a
-    // 409 that half-applied would be worse than no answer at all.
+    // The duplicate must not have overwritten the stored credential — a 409 that half-applied would be worse than no answer at all.
     const kept = try openedValue(&ctx, "GITHUB_TOKEN");
     defer alloc.free(kept);
     try testing.expectEqualStrings("ghp_first", kept);
@@ -479,8 +458,7 @@ test "useCase: the same name in a second workspace is not a duplicate" {
     });
     defer secrets_store.freeSecretRow(alloc, in_ws1.secret);
 
-    // Names are unique per workspace, not per database — two workspaces
-    // are two different tenants and each keeps its own GITHUB_TOKEN.
+    // Names are unique per workspace, not per database — two workspaces are two different tenants and each keeps its own GITHUB_TOKEN.
     const in_ws2 = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_2",
         .body = .{ .name = "GITHUB_TOKEN", .value = "ghp_b" },

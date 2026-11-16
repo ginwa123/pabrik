@@ -1,6 +1,4 @@
-/** Hand `blob` to the browser as a file named `filename` — the same path a link with a
- * `download` attribute takes. The object URL is revoked on the next task, not immediately:
- * revoking in the same tick can cancel the download in some engines. */
+/** Hand `blob` to the browser as a file named `filename` — the same path a link with a `download` attribute takes. */
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

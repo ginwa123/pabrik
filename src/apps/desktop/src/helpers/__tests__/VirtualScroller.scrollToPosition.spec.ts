@@ -1,5 +1,4 @@
-/** Tests for VirtualScroller.scrollToPosition — the new public method that lets the parent request
- * an arbitrary scrollTop without bypassing the scroller's internal state. */
+/** Tests for VirtualScroller.scrollToPosition — the new public method that lets the parent request an arbitrary scrollTop without bypassing the scroller's … */
 import {
   afterEach,
   beforeAll,
@@ -48,9 +47,7 @@ interface ScrollHarness {
   scrollerRef: Ref<VirtualScrollerTestExposed | null>
 }
 
-/**  * Hand-typed mirror of VirtualScroller's exposed methods that this test uses. The Vue 3 SFC can't
- * be referenced via `InstanceType<typeof VirtualScroller>` — SFCs are functions, not classes. The
- * same approach ChatView.vue uses for `VirtualScrollerExposed` (see ChatView.vue:453-464). */
+/** Hand-typed mirror of VirtualScroller's exposed methods that this test uses. */
 interface VirtualScrollerTestExposed {
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
 }
@@ -91,9 +88,7 @@ function setScrollGeometry(
     writable: true,
     configurable: true,
   })
-  // jsdom does NOT implement Element.scrollTo — install a minimal
-  // stub that mirrors the browser behavior (sets scrollTop). This
-  // is what the existing scrollToTop/scrollToBottom methods call.
+  // jsdom does NOT implement Element.scrollTo — install a minimal stub that mirrors the browser behavior (sets scrollTop).
   container.scrollTo = ((arg: ScrollToOptions | number, _y?: number): void => {
     if (typeof arg === 'number') {
       container.scrollTop = arg
@@ -162,8 +157,6 @@ describe('VirtualScroller.scrollToPosition', () => {
     harness.scrollerRef.value?.scrollToPosition(500)
 
     // The browser still sets scrollTop, but the scroller's own method should have been a no-op.
-    // With max <= 0, the spec is "no scroll needed" — the value stays at 0 because there's nothing
-    // to scroll past.
     expect(harness.container.scrollTop).toBe(0)
     harness.wrapper.unmount()
   })

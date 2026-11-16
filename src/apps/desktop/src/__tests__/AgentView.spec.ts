@@ -1,5 +1,4 @@
-// Behavioural tests for AgentView. Mounts the component with stub
-// props and asserts the wired emits + conditional rendering.
+// Behavioural tests for AgentView.
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -395,8 +394,7 @@ describe('AgentView', () => {
       const search = wrapper.find('[data-testid="agent-tools-search"]')
       await search.setValue('file')
       await nextTick()
-      // 'file' matches read_file + write_file + kanban_list (description),
-      // but only disabled ones survive → read_file + write_file.
+      // 'file' matches read_file + write_file + kanban_list (description), but only disabled ones survive → read_file + write_file.
       const visible = wrapper.findAll('[data-testid="agent-tool-item"]')
       expect(visible.length).toBe(2)
     })

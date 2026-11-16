@@ -19,9 +19,7 @@ pub const SESSION_START_EVENT = "session_start";
 pub const FINISH_REASON_EVENT = "finish_reason";
 pub const SESSION_END_EVENT = "session_end";
 
-/// How many times one run may be kept alive by a `finish_reason` hook
-/// returning `{ continue = true }`. Without a cap a hook that always
-/// continues spins the loop forever.
+/// How many times one run may be kept alive by a `finish_reason` hook returning `{ continue = true }`.
 pub const MAX_HOOK_CONTINUES: u8 = 3;
 
 pub const PreResult = union(enum) {
@@ -54,8 +52,7 @@ pub const PostResult = union(enum) {
     }
 };
 
-/// What a lifecycle hook (`session_start`, `finish_reason`, `session_end`)
-/// asked for. Both fields are owned by the caller.
+/// What a lifecycle hook (`session_start`, `finish_reason`, `session_end`) asked for.
 pub const LifecycleResult = struct {
     /// Text to append to the system prompt for this run.
     context: ?[]u8 = null,
@@ -74,8 +71,7 @@ pub const FieldValue = union(enum) {
     boolean: bool,
 };
 
-/// One key of a hook's `data` table. The same list feeds the Lua table and
-/// the Python JSON payload, so the two runtimes cannot drift.
+/// One key of a hook's `data` table.
 pub const Field = struct {
     key: []const u8,
     value: FieldValue,
@@ -90,8 +86,7 @@ pub const HookContext = struct {
     python_bin: []const u8 = "",
 };
 
-/// Resolve `<config_dir>/hooks` (caller frees). Returns null when there is
-/// no environment to read a home directory from.
+/// Resolve `<config_dir>/hooks` (caller frees).
 pub fn getHooksDir(allocator: std.mem.Allocator, environment: ?*const std.process.Environ.Map) !?[]u8 {
     const env = environment orelse return null;
     const config_dir = try config_mod.getDefaultConfigDir(allocator, @constCast(env));
@@ -109,9 +104,7 @@ fn resolveInDir(allocator: std.mem.Allocator, dir: []const u8, filename: []const
     return full;
 }
 
-/// Resolve the global hook file path (caller frees). Returns null when
-/// there is no environment or the file does not exist. Never errors on
-/// a missing file — absence is normal.
+/// Resolve the global hook file path (caller frees).
 pub fn resolveHookFile(allocator: std.mem.Allocator, environment: ?*const std.process.Environ.Map) !?[]u8 {
     const hooks_dir = try getHooksDir(allocator, environment) orelse return null;
     defer allocator.free(hooks_dir);
@@ -125,9 +118,7 @@ pub fn resolvePythonHookFile(allocator: std.mem.Allocator, environment: ?*const 
     return resolveInDir(allocator, hooks_dir, PY_HOOK_FILENAME);
 }
 
-/// Resolve the per-project hook file `<cwd>/.pabrik/hooks/register_hook.lua`
-/// (caller frees). Returns null when cwd is empty or the file does not
-/// exist. No directory walk: the path is exact and predictable.
+/// Resolve the per-project hook file `<cwd>/.pabrik/hooks/register_hook.lua` (caller frees).
 pub fn resolveProjectHookFile(allocator: std.mem.Allocator, cwd: []const u8) !?[]u8 {
     if (cwd.len == 0) return null;
     const dir = try std.fs.path.join(allocator, &.{ cwd, ".pabrik", "hooks" });
@@ -143,9 +134,7 @@ pub fn resolveProjectPythonHookFile(allocator: std.mem.Allocator, cwd: []const u
     return resolveInDir(allocator, dir, PY_HOOK_FILENAME);
 }
 
-/// The four hook files in chain order: global Lua, global Python, project
-/// Lua, project Python. A scope's Lua hook runs before its Python hook, so
-/// the order is deterministic regardless of which language a user picks.
+/// The four hook files in chain order: global Lua, global Python, project Lua, project Python.
 const HookFiles = [4]?[]u8;
 
 fn resolveHookFiles(
@@ -182,8 +171,7 @@ fn isPythonHook(hook_file: []const u8) bool {
     return std.mem.endsWith(u8, hook_file, ".py");
 }
 
-/// Run the pre-tool hooks: global first, then project (which sees the global
-/// hook's modifications). First `deny` or `mock` stops the chain.
+/// Run the pre-tool hooks: global first, then project (which sees the global hook's modifications).
 pub fn runPreHook(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -226,7 +214,6 @@ pub fn runPreHook(
 }
 
 /// Run the post-tool hooks: same global-then-project chain as `runPreHook`.
-/// First `deny` stops the chain; `replace` outputs chain forward.
 pub fn runPostHook(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -269,8 +256,6 @@ pub fn runPostHook(
 }
 
 /// Load `hook_file`, call `init("pre_tool_use", data)`, parse the return.
-/// Errors (load/run/init failures) propagate to `runPreHook`, which maps
-/// them to `.allow`. A missing `init` function is NOT an error.
 fn callPreHook(
     allocator: std.mem.Allocator,
     logger: *Logger,
@@ -323,9 +308,7 @@ fn callPostHook(
     return parsePostReturn(allocator, logger, L);
 }
 
-/// Run the lifecycle hooks: global Lua, global Python, project Lua, project
-/// Python. `context` accumulates across the chain; `continue_with` is
-/// first-wins, matching the "first deny stops the chain" convention.
+/// Run the lifecycle hooks: global Lua, global Python, project Lua, project Python.
 pub fn runLifecycleHook(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -474,8 +457,7 @@ fn callLifecycleHook(
     return parseLifecycleReturn(allocator, logger, L);
 }
 
-/// `luaL_loadfilex` + `pcall` the chunk so its globals (incl. `init`)
-/// exist. Logs the Lua message and errors on any failure.
+/// `luaL_loadfilex` + `pcall` the chunk so its globals (incl.
 fn loadHookFile(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaState, hook_file: []const u8) !void {
     const zpath = try allocator.dupeZ(u8, hook_file);
     defer allocator.free(zpath);
@@ -489,8 +471,7 @@ fn loadHookFile(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaState
     }
 }
 
-/// Push the global `init` onto the stack. Returns false (leaving a clean
-/// stack) when it doesn't exist or isn't a function.
+/// Push the global `init` onto the stack.
 fn pushInitFn(L: ?*lua.LuaState) bool {
     _ = lua.lua_getglobal(L, "init");
     if (lua.lua_type(L, -1) != lua.LUA_TFUNCTION) {
@@ -500,8 +481,7 @@ fn pushInitFn(L: ?*lua.LuaState) bool {
     return true;
 }
 
-/// Push the `data` table for one tool hook call. Stack: [..., fn, event] →
-/// [..., fn, event, table]. `output` is present for post hooks only.
+/// Push the `data` table for one tool hook call.
 fn pushDataTable(
     L: ?*lua.LuaState,
     allocator: std.mem.Allocator,
@@ -565,8 +545,7 @@ fn eventJson(allocator: std.mem.Allocator, fields: []const Field) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// Parse the `init` return value at the stack top. Priority: deny, then
-/// arguments (must be valid JSON), then output. Anything else is `.allow`.
+/// Parse the `init` return value at the stack top.
 fn parsePreReturn(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaState) !PreResult {
     const t = lua.lua_type(L, -1);
     if (t == lua.LUA_TNIL or t == lua.LUA_TNONE) return .allow;
@@ -608,8 +587,7 @@ fn parsePostReturn(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaSt
     return .keep;
 }
 
-/// Parse a lifecycle `init` return value. `context` is the text to append to
-/// the system prompt; `continue` + `prompt` keep the run going.
+/// Parse a lifecycle `init` return value.
 fn parseLifecycleReturn(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaState) !LifecycleResult {
     const t = lua.lua_type(L, -1);
     if (t == lua.LUA_TNIL or t == lua.LUA_TNONE) return .{};
@@ -723,8 +701,7 @@ fn getBoolField(L: ?*lua.LuaState, key: [*:0]const u8) bool {
     return lua.lua_toboolean(L, -1) != 0;
 }
 
-/// Read a string field from the table at the stack top. Returns an owned
-/// copy or null when missing/wrong-typed. Only OOM errors.
+/// Read a string field from the table at the stack top.
 fn getStringField(allocator: std.mem.Allocator, L: ?*lua.LuaState, key: [*:0]const u8) !?[]u8 {
     _ = lua.lua_getfield(L, -1, key);
     defer lua.lua_settop(L, -2);
@@ -747,9 +724,7 @@ fn logLuaError(logger: *Logger, L: ?*lua.LuaState, hook_file: []const u8, phase:
     lua.lua_settop(L, 0);
 }
 
-// ============================================================================
 // Tests (Lua is vendored for every target, so these run everywhere).
-// ============================================================================
 
 const testing = std.testing;
 
@@ -777,8 +752,7 @@ test "hooks: missing file resolves to null (disabled)" {
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const n = try tmp.dir.realPath(testing.io, &path_buf);
     try env_map.put("HOME", path_buf[0..n]);
-    // %APPDATA% backs the config dir on Windows: without it resolveHookFile
-    // errors instead of resolving to null.
+    // %APPDATA% backs the config dir on Windows: without it resolveHookFile errors instead of resolving to null.
     const appdata_abs = try std.fs.path.join(allocator, &.{ path_buf[0..n], "appdata" });
     defer allocator.free(appdata_abs);
     try env_map.put("APPDATA", appdata_abs);
@@ -918,8 +892,7 @@ test "hooks: broken syntax fails open" {
 
     const pre = try runPreHook(allocator, testing.io, &lg, null, "bash", "{}", .{});
     _ = pre;
-    // runPreHook with null env resolves to allow without touching the file;
-    // the broken file itself must error at the call level (fail-open above it).
+    // runPreHook with null env resolves to allow without touching the file; the broken file itself must error at the call level (fail-open above it).
     if (callPreHook(allocator, &lg, path, "bash", "{}", .{})) |r| {
         r.deinit(allocator);
         return error.TestUnexpectedSuccess;
@@ -956,7 +929,6 @@ test "hooks: data table reaches Lua (tool_name visible)" {
 }
 
 /// Write a per-project hook at <proj>/.pabrik/hooks/register_hook.lua.
-/// Returns the project root absolute path (owned).
 fn writeProjectHook(allocator: std.mem.Allocator, proj: std.Io.Dir, io: std.Io, content: []const u8) ![]u8 {
     try proj.createDirPath(io, ".pabrik/hooks");
     var hooks_dir = try proj.openDir(io, ".pabrik/hooks", .{});
@@ -974,8 +946,7 @@ fn emptyHomeEnv(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir) !std.pro
     var env_map = std.process.Environ.Map.init(allocator);
     errdefer env_map.deinit();
     try env_map.put("HOME", home);
-    // %APPDATA% backs the config dir on Windows; point it inside the tmp
-    // home so tests stay hermetic there too (unused on POSIX/macOS).
+    // %APPDATA% backs the config dir on Windows; point it inside the tmp home so tests stay hermetic there too (unused on POSIX/macOS).
     const appdata = try std.fs.path.join(allocator, &.{ home, "appdata" });
     defer allocator.free(appdata);
     try env_map.put("APPDATA", appdata);
@@ -1130,8 +1101,7 @@ test "hooks: empty cwd skips project tier" {
 }
 
 test "hooks: long-bracket args with backslashes survive verbatim" {
-    // Windows paths (`C:\...`) inside Lua short strings break on escape
-    // processing (`\U` is invalid).
+    // Windows paths (`C:\...`) inside Lua short strings break on escape processing (`\U` is invalid).
     const allocator = testing.allocator;
     var lg = testLogger(allocator);
     var tmp = testing.tmpDir(.{});

@@ -1,5 +1,4 @@
-//! `GET /api/git/pr/list` — the change requests of one repository, for the
-//! kanban board's PR surface (`KanbanPrList.vue`).
+//! `GET /api/git/pr/list` — the change requests of one repository, for the kanban board's PR surface (`KanbanPrList.vue`).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -9,25 +8,17 @@ const git_route = @import("git_route.zig");
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
-// Provider resolution, the error-detail formatter and the state normalizer
-// are shared with the status endpoint: two endpoints that disagreed about
-// which forge a repo is on would list one forge's rows and close the other's.
+// Provider resolution, the error-detail formatter and the state normalizer are shared with the status endpoint: two endpoints that disagreed about which forge a …
 const pr_status = @import("git_pr_status.zig");
 
-/// A list is a read, so it gets the read budget — generous enough for a
-/// cold GitHub search, bounded enough that a credential prompt cannot wedge
-/// a worker-pool thread.
+/// A list is a read, so it gets the read budget — generous enough for a cold GitHub search, bounded enough that a credential prompt cannot wedge a worker-pool …
 pub const LIST_TIMEOUT_MS: u32 = 20_000;
 
-/// Per-stream capture cap. A page of 100 rows with long titles is ~60 KiB, so
-/// this is more than an order of magnitude of headroom while still bounding a
-/// CLI that decides to print a wall of text.
+/// Per-stream capture cap.
 const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
 
 pub const DEFAULT_LIMIT: u32 = 30;
-/// Anything above this is refused rather than clamped: a clamped page would
-/// report `truncated` for a limit the caller never asked for, and the caller
-/// would have no way to learn its parameter was ignored.
+/// Anything above this is refused rather than clamped: a clamped page would report `truncated` for a limit the caller never asked for, and the caller would have …
 pub const MAX_LIMIT: u32 = 100;
 
 const ListError = error{
@@ -35,13 +26,11 @@ const ListError = error{
     NotARepository,
     /// No forge CLI on PATH (or the forge has none).
     CliMissing,
-    /// The CLI ran and failed, or answered something unparseable. `detail`
-    /// carries its own words.
+    /// The CLI ran and failed, or answered something unparseable.
     FetchFailed,
 };
 
-/// The forge binaries. Injectable so tests point the whole path at fixture
-/// scripts instead of real, authenticated CLIs.
+/// The forge binaries.
 pub const Programs = struct {
     gh: []const u8 = "gh",
     glab: []const u8 = "glab",
@@ -68,9 +57,7 @@ fn listUseCase(
     return listUseCaseWithPrograms(allocator, io, .{}, path, state, limit, provider_override, detail, opts);
 }
 
-/// The whole read path: repo gate → provider → argv → spawn → parse. `pub` so
-/// the functional suite can drive it against fixture scripts through the same
-/// seam the status/merge paths expose.
+/// The whole read path: repo gate → provider → argv → spawn → parse.
 pub fn listUseCaseWithPrograms(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -98,8 +85,7 @@ pub fn listUseCaseWithPrograms(
     const prog = programs.forProvider(provider);
     if (prog.len == 0) return error.CliMissing;
 
-    // `limit_buf` outlives the spawn because it lives here, in the caller's
-    // frame — see the note on `listArgv`.
+    // `limit_buf` outlives the spawn because it lives here, in the caller's frame — see the note on `listArgv`.
     var argv_buf: [pr_cli.list_argv_max][]const u8 = undefined;
     var limit_buf: [16]u8 = undefined;
     const argv = pr_cli.listArgv(&argv_buf, &limit_buf, provider, prog, state, limit) orelse return error.CliMissing;
@@ -109,9 +95,7 @@ pub fn listUseCaseWithPrograms(
         .max_output_bytes = MAX_CAPTURE_BYTES,
         .timeout_ms = LIST_TIMEOUT_MS,
     }) catch |err| switch (err) {
-        // The CLI not being on PATH is the overwhelmingly common spawn
-        // failure (the repo gate above already proved the directory exists),
-        // and it is a 422 with a "install gh" sentence, not a 502.
+        // The CLI not being on PATH is the overwhelmingly common spawn failure (the repo gate above already proved the directory exists), and it is a 422 with a "install …
         error.FileNotFound, error.AccessDenied, error.PermissionDenied, error.InvalidExe => return error.CliMissing,
         else => {
             var msg_buf: [160]u8 = undefined;
@@ -130,9 +114,7 @@ pub fn listUseCaseWithPrograms(
     switch (res.term) {
         .exited => |code| {
             if (code != 0) {
-                // The CLI's own words: an auth failure, a rate limit, a repo
-                // it cannot resolve. Replacing that with a generic apology is
-                // how a user never learns to run `gh auth login`.
+                // The CLI's own words: an auth failure, a rate limit, a repo it cannot resolve.
                 pr_status.setFetchDetail(allocator, detail, res.stderr);
                 if (detail.* == null) {
                     var code_buf: [96]u8 = undefined;
@@ -172,8 +154,7 @@ pub fn listUseCaseWithPrograms(
         .program = try allocator.dupe(u8, cli.program),
         .state = try allocator.dupe(u8, state.toString()),
         .changes = items,
-        // Exactly `limit` rows means the page may be cut short. Fewer means we
-        // saw everything, however large "everything" was.
+        // Exactly `limit` rows means the page may be cut short.
         .truncated = items.len == limit,
         .detail = "",
     };
@@ -198,8 +179,7 @@ const GhPrRow = struct {
     isDraft: bool = false,
     headRefName: []const u8 = "",
     baseRefName: []const u8 = "",
-    /// `null` on a PR whose author account was deleted; `?` keeps that from
-    /// failing the whole page.
+    /// `null` on a PR whose author account was deleted; `?` keeps that from failing the whole page.
     author: ?GhAuthor = null,
     updatedAt: []const u8 = "",
 };
@@ -212,9 +192,7 @@ fn parseGithubList(
     cli: pr_cli.Cli,
     detail: *?[]u8,
 ) ![]http_response.GitPrListItem {
-    // `parseFromSlice`, deliberately NOT the Leaky variant: parsing an ARRAY
-    // with the Leaky variant allocates the array and its element buffers and
-    // offers no `deinit`, so it is only correct under an arena — every string
+    // `parseFromSlice`, deliberately NOT the Leaky variant: parsing an ARRAY with the Leaky variant allocates the array and its element buffers and offers no …
     var parsed = std.json.parseFromSlice([]const GhPrRow, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, detail, cli, trimmed.len);
         return error.FetchFailed;
@@ -260,9 +238,7 @@ fn parseGlabList(
     cli: pr_cli.Cli,
     detail: *?[]u8,
 ) ![]http_response.GitPrListItem {
-    // `parseFromSlice`, deliberately NOT the Leaky variant: `GlabMrRow` holds
-    // a `std.json.Value` (the author object), and a Value duplicates itself
-    // into a parser-owned arena that the Leaky variant has no `deinit` to
+    // `parseFromSlice`, deliberately NOT the Leaky variant: `GlabMrRow` holds a `std.json.Value` (the author object), and a Value duplicates itself into a …
     var parsed = std.json.parseFromSlice([]const GlabMrRow, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         setParseDetail(allocator, detail, cli, trimmed.len);
         return error.FetchFailed;
@@ -273,8 +249,7 @@ fn parseGlabList(
     const out = try allocator.alloc(http_response.GitPrListItem, rows.len);
     for (rows, 0..) |r, i| {
         out[i] = .{
-            // `iid` is the per-project number users see in the URL; `id` is
-            // the global one. Prefer the one on the MR page.
+            // `iid` is the per-project number users see in the URL; `id` is the global one.
             .number = if (r.iid != 0) r.iid else r.id,
             .title = try allocator.dupe(u8, r.title),
             .url = try allocator.dupe(u8, pr_status.firstNonEmpty(&.{ r.web_url, r.url })),
@@ -289,17 +264,14 @@ fn parseGlabList(
     return out;
 }
 
-/// "invalid JSON from <prog> <noun> list (N bytes stdout)" — names the CLI
-/// that produced it, because the overwhelmingly common cause is a version
-/// whose JSON flag we did not pass (a text table parsed as JSON).
+/// "invalid JSON from <prog> <noun> list (N bytes stdout)" — names the CLI that produced it, because the overwhelmingly common cause is a version whose JSON flag …
 fn setParseDetail(allocator: std.mem.Allocator, detail: *?[]u8, cli: pr_cli.Cli, raw_len: usize) void {
     var buf: [256]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "invalid JSON from {s} {s} list ({d} bytes stdout)", .{ cli.program, cli.noun, raw_len }) catch "invalid JSON from the forge CLI";
     pr_status.setFetchDetail(allocator, detail, msg);
 }
 
-/// `limit` from the query string: absent/empty → `DEFAULT_LIMIT`, anything
-/// not in 1..=MAX_LIMIT → null (→ 400). No clamping: see `MAX_LIMIT`.
+/// `limit` from the query string: absent/empty → `DEFAULT_LIMIT`, anything not in 1..=MAX_LIMIT → null (→ 400).
 fn parseLimit(raw: ?[]const u8) ?u32 {
     const s = raw orelse return DEFAULT_LIMIT;
     const trimmed = std.mem.trim(u8, s, " \t");
@@ -309,9 +281,7 @@ fn parseLimit(raw: ?[]const u8) ?u32 {
     return n;
 }
 
-/// GET
-/// /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=github]
-/// The kanban board's PR surface: every open change request of the board's
+/// GET /api/git/pr/list?path=<repo>[&state=open|closed|merged|all][&limit=30][&provider=github] The kanban board's PR surface: every open change request of the …
 pub fn gitPrListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -345,8 +315,7 @@ pub fn gitPrListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
         },
         error.CliMissing => {
-            // Name the CLI for THIS repo's forge: a GitLab repo with no glab
-            // must not be told to install gh.
+            // Name the CLI for THIS repo's forge: a GitLab repo with no glab must not be told to install gh.
             const cli = handlerCli(allocator, io, path_param, provider_param);
             const msg = try std.fmt.allocPrint(allocator, "{s} CLI not found on PATH (install {s} to list {s}s)", .{ cli.program, cli.program, cli.label });
             return res.jsonResponse(.{ .status_code = 422, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = msg }) });
@@ -359,18 +328,14 @@ pub fn gitPrListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
                 try std.fmt.allocPrint(allocator, "failed to list {s}s (check {s} auth and the repo's remote)", .{ cli.label, cli.program });
             return res.jsonResponse(.{ .status_code = 502, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = msg }) });
         },
-        // Allocation failure and anything else the use case can still raise
-        // (only OOM today): let the server's error path answer rather than
-        // inventing a status for it here.
+        // Allocation failure and anything else the use case can still raise (only OOM today): let the server's error path answer rather than inventing a status for it …
         else => return err,
     };
 
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitPrListResponse(allocator, result) });
 }
 
-/// Best-effort provider, used ONLY to word an error message. A list request
-/// carries no `pr` argument, so the resolution order is the override then the
-/// repo's own origin remote — the same order the use case used.
+/// Best-effort provider, used ONLY to word an error message.
 fn handlerCli(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -381,17 +346,13 @@ fn handlerCli(
     return pr_cli.cliFor(p) orelse pr_cli.GH_CLI;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 const builtin_t = @import("builtin");
 const hf = @import("helpers").host_fixture;
 
-/// A throwaway directory plus fixture programs, written by `host_fixture`
-/// so they run on POSIX and Windows alike. The whole path (argv → spawn →
-/// capture → parse) runs with no real `gh` on PATH and no platform declined.
+/// A throwaway directory plus fixture programs, written by `host_fixture` so they run on POSIX and Windows alike.
 const Fixture = struct {
     inner: hf.Fixture,
     allocator: std.mem.Allocator,
@@ -418,9 +379,7 @@ const Fixture = struct {
     }
 };
 
-/// Frees every owned field of a list response. A test that forgets one field
-/// fails CI's leak detector, and hand-written frees forget exactly one — so
-/// all of them go through here.
+/// Frees every owned field of a list response.
 fn freeListResponse(a: std.mem.Allocator, res: http_response.GitPrListResponse) void {
     a.free(res.provider);
     a.free(res.program);
@@ -458,8 +417,7 @@ test "parseLimit: default, explicit, and the values it refuses" {
     try testing.expectEqual(DEFAULT_LIMIT, parseLimit("").?);
     try testing.expectEqual(@as(u32, 7), parseLimit("7").?);
     try testing.expectEqual(MAX_LIMIT, parseLimit("100").?);
-    // Refused rather than clamped: a silent clamp would report `truncated`
-    // for a limit nobody asked for.
+    // Refused rather than clamped: a silent clamp would report `truncated` for a limit nobody asked for.
     try testing.expect(parseLimit("0") == null);
     try testing.expect(parseLimit("101") == null);
     try testing.expect(parseLimit("-1") == null);
@@ -493,8 +451,7 @@ test "parseGithubList maps rows, normalizes state, and tolerates a null author" 
     try testing.expectEqualStrings("ginwa123", rows[0].author);
     try testing.expectEqualStrings("worktree/why-theres-a-box", rows[0].head_ref);
     try testing.expect(!rows[0].is_draft);
-    // A deleted author account must not fail the page, and CLOSED must not
-    // arrive at the UI as the raw forge spelling.
+    // A deleted author account must not fail the page, and CLOSED must not arrive at the UI as the raw forge spelling.
     try testing.expectEqualStrings("", rows[1].author);
     try testing.expectEqualStrings("closed", rows[1].state);
     try testing.expect(rows[1].is_draft);
@@ -547,8 +504,7 @@ test "parseGlabList reads the iid/web_url spelling and the draft aliases" {
     try testing.expect(rows[0].is_draft);
     try testing.expectEqualStrings("https://gitlab.com/g/s/r/-/merge_requests/7", rows[0].url);
     try testing.expectEqualStrings("ginwa123", rows[0].author);
-    // Falls back to `id` when `iid` is absent, to `url` when `web_url` is,
-    // and to a bare-string author — three aliases in one row.
+    // Falls back to `id` when `iid` is absent, to `url` when `web_url` is, and to a bare-string author — three aliases in one row.
     try testing.expectEqual(@as(i64, 99124), rows[1].number);
     try testing.expectEqualStrings("https://gitlab.com/g/s/r/-/merge_requests/8", rows[1].url);
     try testing.expectEqualStrings("merged", rows[1].state);
@@ -610,8 +566,7 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
     try testing.expect(full.truncated);
     try testing.expectEqual(@as(usize, 2), full.changes.len);
 
-    // A CLI that prints nothing on the JSON flag exited cleanly with nothing
-    // to report — an empty list with a note, never an error.
+    // A CLI that prints nothing on the JSON flag exited cleanly with nothing to report — an empty list with a note, never an error.
     const silent = try fx.writeProgram("gh-silent", .{});
     defer a.free(silent);
     var detail2: ?[]u8 = null;
@@ -656,9 +611,7 @@ test "list: a missing CLI is CliMissing (422), not a fetch failure" {
 }
 
 test "list: a non-repository path is refused before any CLI runs" {
-    // Three guards, all copied from the status suite's repo-gate test rather
-    // than invented here — each one is a way this assertion was already known
-    // to lie: 1.
+    // Three guards, all copied from the status suite's repo-gate test rather than invented here — each one is a way this assertion was already known to lie: 1.
     const a = testing.allocator;
     var fx = try Fixture.init(a);
     defer fx.deinit();

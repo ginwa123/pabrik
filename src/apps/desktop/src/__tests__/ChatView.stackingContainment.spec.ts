@@ -1,6 +1,4 @@
-/** Chat surface stacking containment — structural contract. The document viewer is now its own PAGE
- * (`/app/<ws>/doc/<id>`) and REPLACES the chat, so it no longer needs this containment — that was
- * the follow-up fix. */
+/** Chat surface stacking containment — structural contract. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -107,8 +105,7 @@ describe('ChatView stacking containment — document overlay must cover the chat
       getState: (): SseState => 'connecting',
       onStateChange: () => () => {},
     } as unknown as SseClient
-    // `installSseBus` takes an optional Vue app; the client is installed
-    // separately via `__setSseBusGlobalClient`.
+    // `installSseBus` takes an optional Vue app; the client is installed separately via `__setSseBusGlobalClient`.
     installSseBus()
     __setSseBusGlobalClient(sse)
   })
@@ -127,27 +124,19 @@ describe('ChatView stacking containment — document overlay must cover the chat
     const column = wrapper!.element.querySelector('.chat-column') as HTMLElement
     expect(column).toBeTruthy()
 
-    // `position: relative` alone is NOT enough — with z-index auto it does not create a stacking
-    // context, which is precisely why the chat chrome used to paint over the document overlay. The
-    // `relative` class is here because the composer dock anchors to this column.
+    // `position: relative` alone is NOT enough — with z-index auto it does not create a stacking context, which is precisely why the chat chrome used to paint over …
     expect(column.classList.contains('relative')).toBe(true)
 
-    // The scoped rule in the SFC is what actually opens the stacking context. jsdom does NOT apply
-    // SFC <style> blocks to the mounted tree, so `getComputedStyle` here would read the empty
-    // default (`isolation: ''`) on the buggy source AND on the fixed one.
+    // The scoped rule in the SFC is what actually opens the stacking context. jsdom does NOT apply SFC <style> blocks to the mounted tree, so `getComputedStyle` here …
   })
 
   it('the isolation is declared in the stylesheet, not only in a test-visible class', () => {
-    // Guards against the class being dropped from the class attribute while the declaration is what
-    // actually does the work, and vice versa: the runtime check above needs the rule to EXIST, and
-    // the rule needs the element to CARRY it. Pin both ends.
+    // Guards against the class being dropped from the class attribute while the declaration is what actually does the work, and vice versa: the runtime check above …
     expect(chatColumnIsolation()).toBe('isolate')
   })
 
   it('every chat chrome tier outranks the remaining app overlays without the containment', () => {
-    // The isolation above is what makes this ordering irrelevant to the result — but these ARE the
-    // numbers that regressed the bug, so keep them visible. If someone drops `isolation`, this is
-    // exactly the comparison that lets the chat win.
+    // The isolation above is what makes this ordering irrelevant to the result — but these ARE the numbers that regressed the bug, so keep them visible.
     const overlayZ = Number(appLayoutSrc.match(/z-index:\s*(\d+)/)?.[1])
     const tierZ = CHROME_Z_TIERS.map((t) => t.z)
     expect({ overlayZ, tierZ, allChatTiersWin: tierZ.every((z) => z > overlayZ) }).toEqual({
@@ -158,9 +147,7 @@ describe('ChatView stacking containment — document overlay must cover the chat
   })
 
   it('the chrome element named in the bug report is inside the chat column', async () => {
-    // Locks the blast radius to the composer dock — the element the screenshot showed sitting on
-    // top of the document. If a future refactor moves it OUT of the column it stops being
-    // contained, and the isolation stops covering it, so this must stay true for the fix to hold.
+    // Locks the blast radius to the composer dock — the element the screenshot showed sitting on top of the document.
     await mountChat()
 
     const column = wrapper!.element.querySelector('.chat-column') as HTMLElement

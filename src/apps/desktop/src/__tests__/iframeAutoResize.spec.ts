@@ -119,12 +119,10 @@ describe('autoResizeScript', () => {
     expect(script).toContain(JSON.stringify(CHAT_HTML_FRAME_RESIZE_SOURCE))
     expect(script).toContain('parent.postMessage')
     expect(script).toContain('scrollHeight')
-    // Emitted as a real script element (the helper splits the tag so the
-    // literal can live in a TS source file without closing it early).
+    // Emitted as a real script element (the helper splits the tag so the literal can live in a TS source file without closing it early).
     expect(script.startsWith('<script>')).toBe(true)
     expect(script.endsWith('</script>')).toBe(true)
-    // The script itself must not close a surrounding <script> block early:
-    // only the final tag exists.
+    // The script itself must not close a surrounding <script> block early
     expect(script.split('</script>').length - 1).toBe(1)
   })
 
@@ -170,9 +168,7 @@ describe('the frame height report (a number the frame itself must not influence)
   const reporterSource = () =>
     autoResizeScript(CHAT_HTML_FRAME_RESIZE_SOURCE).slice('<script>'.length, -'</script>'.length)
 
-  /** What the browser measures for a frame whose viewport is `frameHeight` px over a document with
-   * `bodyHeight` px of body content. jsdom lays nothing out, so these numbers ARE the input; the
-   * return value is the height the reporter posts — the only thing the parent acts on. */
+  /** What the browser measures for a frame whose viewport is `frameHeight` px over a document with `bodyHeight` px of body content. jsdom lays nothing out, so these … */
   interface FrameGeometry {
     /** The frame's own viewport (`window.innerHeight`). */
     frameHeight: number
@@ -238,8 +234,7 @@ describe('the frame height report (a number the frame itself must not influence)
   })
 
   it('reports a height the frame can adopt without changing the next report', () => {
-    // The ratchet: a report the parent applies must be the report the reflowed document produces,
-    // or every cycle moves the frame again — forever, in 16px body-margin steps.
+    // The ratchet: a report the parent applies must be the report the reflowed document produces, or every cycle moves the frame again — forever, in 16px body-margin …
     const first = reportedHeight({
       frameHeight: 120,
       bodyHeight: 600,
@@ -256,8 +251,7 @@ describe('the frame height report (a number the frame itself must not influence)
   })
 
   it('ignores a root extent larger than the body box', () => {
-    // A positioned overlay extends the root's scroll area without adding body content; letting it
-    // through grows a frame around something nobody can see.
+    // A positioned overlay extends the root's scroll area without adding body content; letting it through grows a frame around something nobody can see.
     expect(
       reportedHeight({
         frameHeight: 600,
@@ -296,8 +290,7 @@ describe('growFrameToContent (no inner scrollbar)', () => {
   })
 
   it('sizes the root against its content, never against the frame viewport', () => {
-    // `html{height:100%}` in the shell would make the root as tall as the frame the parent is
-    // about to size from this document's report — the loop that clipped and ratcheted reports.
+    // `html{height:100%}` in the shell would make the root as tall as the frame the parent is about to size from this document's report — the loop that clipped and …
     expect(FRAME_NO_SCROLLBAR_STYLE).toContain('html{height:auto!important}')
   })
 })

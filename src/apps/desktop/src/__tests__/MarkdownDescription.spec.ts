@@ -1,6 +1,4 @@
-/** Tests for MarkdownDescription — the display-only component used to render kanban task
- * descriptions. —
- * MarkdownDescription component (display only). */
+/** Tests for MarkdownDescription — the display-only component used to render kanban task descriptions. — MarkdownDescription component (display only). */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownDescription from '../components/kanban/MarkdownDescription.vue'
@@ -57,7 +55,6 @@ describe('MarkdownDescription', () => {
 
   it('does NOT match /path/without/at-prefix when wrapped in backticks', () => {
     // Backticks are the new opt-out (replacing the `@` requirement).
-    // The path inside backticks renders as inline code, not a chip.
     const wrapper = mount(MarkdownDescription, {
       props: { source: 'edit `/src/main.zig` to add the new route' },
     })
@@ -65,9 +62,7 @@ describe('MarkdownDescription', () => {
   })
 
   it('matches /path/without/at-prefix (no @ required anymore)', () => {
-    // The new (rich editor) convention: file paths are just `/path`
-    // — no `@` prefix. The legacy `@/path` form is also still
-    // supported for backward compatibility (see other tests).
+    // The new (rich editor) convention: file paths are just `/path` — no `@` prefix.
     const wrapper = mount(MarkdownDescription, {
       props: { source: 'edit /src/main.zig to add the new route' },
     })

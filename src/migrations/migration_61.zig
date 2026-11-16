@@ -8,17 +8,13 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 061 — Re-backfill `created_iso` for rows that are NULL, empty,
-/// OR have the wrong year (e.g. year 58,507 from the nanosecond/microsecond
-/// mismatch). ## Why this migration exists Migration 060's backfill only
+/// Migration 061 — Re-backfill `created_iso` for rows that are NULL, empty, OR have the wrong year (e.g. year 58,507 from the nanosecond/microsecond mismatch).
 pub const Migration061FixCreatedIsoYear = struct {
     pub const version: u32 = 61;
     pub const name = "fix_llm_history_created_iso_year";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // UPDATE WHERE clause matches three categories: 1. created_iso IS
-        // NULL 2. created_iso = '' 3. created_iso has a year that doesn't
-        // match any plausible Unix‑timestamp year — i.e.
+        // UPDATE WHERE clause matches three categories: 1. created_iso IS NULL 2. created_iso = '' 3. created_iso has a year that doesn't match any plausible …
         const from_epoch = try dialect.epochToText(allocator, "substr(CAST(created_at AS TEXT), 1, 10)");
         defer allocator.free(from_epoch);
         const backfill = try std.fmt.allocPrint(

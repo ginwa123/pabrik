@@ -1,6 +1,4 @@
-/** Tests for FileInput's Stop button — visible only when `isLLMProcessing` is true. The button
- * emits a `stop-session` event for the parent (ChatView) to translate into a `POST
- * /api/llm/session/:session/stop` call. */
+/** Tests for FileInput's Stop button — visible only when `isLLMProcessing` is true. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -65,7 +63,6 @@ describe("FileInput — Stop button (visible only when isLLMProcessing)", () => 
     const btn = wrapper.find<HTMLButtonElement>('[data-testid="stop-session-button"]')
     expect(btn.element.disabled).toBe(true)
     // The spinner is the border-2 rounded-full animate-spin element.
-    // Confirm by checking for the animate-spin class presence.
     expect(wrapper.find('[data-testid="stop-session-button"] .animate-spin').exists()).toBe(true)
   })
 
@@ -92,8 +89,7 @@ describe("FileInput — Stop button (visible only when isLLMProcessing)", () => 
   })
 
   it('H: when isLLMProcessing flips from true to false while isStopping=true, the watch resets isStopping to false', async () => {
-    // We start with both isLLMProcessing=true and isStopping=true (parent has been waiting for
-    // SSE).
+    // We start with both isLLMProcessing=true and isStopping=true (parent has been waiting for SSE).
     const wrapper = await mountInput({
       isLLMProcessing: true,
       isStopping: true,
@@ -102,8 +98,7 @@ describe("FileInput — Stop button (visible only when isLLMProcessing)", () => 
     await wrapper.setProps({ isLLMProcessing: false })
     await flushPromises()
 
-    // After the reset, setting isLLMProcessing back to true should NOT
-    // carry over the stuck spinner. We assert by checking the label.
+    // After the reset, setting isLLMProcessing back to true should NOT carry over the stuck spinner.
     await wrapper.setProps({
       isLLMProcessing: true,
       isStopping: false, // parent has reset it

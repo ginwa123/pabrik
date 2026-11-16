@@ -7,37 +7,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The one invariant the base-URL seam must not break: **release never relaxes**.
- *
- * The debug variant can be pointed at a plain-HTTP pabrik on the machine hosting
- * the emulator, which is what makes the functional UI suite possible. That is a
- * deliberate hole, and a hole is only safe if something refuses to let it widen.
- * Three separate things have to stay true, and they fail independently:
- *
- *  1. `ALLOW_INSECURE_HTTP` is `false` in the release build type.
- *  2. No release source set ships a cleartext allowance, so the platform refusal
- *     in the main manifest cannot be lifted by a file nobody looks at.
- *  3. The debug allowance itself stays scoped to the three loopback addresses
- *     it was written for, rather than drifting to `base-config`.
- *
- * (1) is asserted against the build script and (2)/(3) against the files
- * themselves, because a value in a build script cannot be read off a test —
- * the unit tests only ever run under the debug variant, so `BuildConfig` here
- * can prove the debug side and nothing about release. That is the same split
- * `ToolCardFrameTest` uses for a frame that only exists in a draw lambda, and
- * the same reason: Compose can report a rendered pixel, not a policy.
- */
+/** The one invariant the base-URL seam must not break: **release never relaxes**. */
 class AuthConfigContractTest {
 
     @Test
     fun `BASE_URL comes from the build, not from a literal in this package`() {
-        // The seam, not the value. `AuthConfig.BASE_URL` was a `const val` with
-        // the production host inline; if that ever comes back while the
-        // BuildConfig field stays, the debug variant would silently stop
-        // honouring `-PpabrikBaseUrl` and every instrumented test would talk to
-        // production — which would look like a network failure, not a wiring
-        // failure.
+        // The seam, not the value.
         assertTrue(
             "AuthConfig.kt still hardcodes a host: ${authConfigSource().take(200)}",
             !authConfigSource().contains("agent.ginwa.site"),
@@ -46,16 +21,7 @@ class AuthConfigContractTest {
 
     @Test
     fun `BASE_URL is the build default only while nothing has been chosen`() {
-        // `BASE_URL` stopped being a `val` holding `BuildConfig.API_BASE_URL`
-        // and became a getter over `ServerUrl`, which is what lets a person point
-        // the app at their own deployment. The build-time seam it used to be has
-        // not gone with it: an *unbound* holder still answers with the build's
-        // host, which is the value `-PpabrikBaseUrl` drives and the one the
-        // functional UI suite depends on.
-        //
-        // `ServerUrl.reset()` rather than a fresh process, because the holder is
-        // a module-level singleton and this suite shares one JVM with the store
-        // tests that install into it.
+        // `BASE_URL` stopped being a `val` holding `BuildConfig.API_BASE_URL` and became a getter over `ServerUrl`, which is what lets a person point the app at their …
         ServerUrl.reset()
 
         assertEquals(BuildConfig.API_BASE_URL, AuthConfig.BASE_URL)
@@ -78,10 +44,7 @@ class AuthConfigContractTest {
 
     @Test
     fun `this variant is debug and has the insecure allowance on`() {
-        // `testDebugUnitTest` is the only unit-test task this project runs, so
-        // asserting the variant pins the meaning of the next assertion: the
-        // allowance being on here is the debug build's business, and
-        // `releaseKeepsTheAllowanceOff` is what stops it being everyone's.
+        // `testDebugUnitTest` is the only unit-test task this project runs, so asserting the variant pins the meaning of the next assertion: the allowance being on here …
         assertEquals("debug", BuildConfig.BUILD_TYPE)
         assertTrue(
             "debug must allow the local-server seam the functional UI suite needs",
@@ -97,9 +60,7 @@ class AuthConfigContractTest {
             "the release build type must declare ALLOW_INSECURE_HTTP = false:\n$release",
             release.contains("ALLOW_INSECURE_HTTP\", \"false\""),
         )
-        // The *interpolation*, not the identifier: the release block's own
-        // comment names the debug value in prose to explain why it is absent,
-        // and a check on the bare word would fail on its own explanation.
+        // The *interpolation*, not the identifier: the release block's own comment names the debug value in prose to explain why it is absent, and a check on the bare …
         assertTrue(
             "release must wire the production url",
             release.contains("\$productionBaseUrl"),
@@ -127,8 +88,7 @@ class AuthConfigContractTest {
 
     @Test
     fun `no release source set ships a cleartext allowance`() {
-        // A network security config in `src/release` would lift the manifest's
-        // cleartext refusal in the one build that must never have it lifted.
+        // A network security config in `src/release` would lift the manifest's cleartext refusal in the one build that must never have it lifted.
         for (relative in RELEASE_SOURCES) {
             assertTrue(
                 "$relative must not exist — release stays HTTPS-only",

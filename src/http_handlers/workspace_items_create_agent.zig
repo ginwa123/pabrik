@@ -1,6 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/items/agent`. Creates a new workspace
-//! item of `item_type='agent'` and the matching 1-1 row in the `agents`
-//! sibling table, in a single BEGIN/COMMIT transaction.
+//! `POST /api/workspaces/:workspace_id/items/agent`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -12,15 +10,13 @@ const helpers = @import("helpers");
 const agent_db = @import("../models/agent.db.zig");
 const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 
-/// Request body for the agent-item create endpoint. Both fields are
-/// required (the Agent has a cwd like Kanban/Design).
+/// Request body for the agent-item create endpoint.
 const CreateAgentBody = struct {
     name: []const u8,
     path: []const u8,
 };
 
-/// Response item — mirrors `CreateKanbanResponse` minus the kanban-
-/// specific fields. `path` mirrors the request body.
+/// Response item — mirrors `CreateKanbanResponse` minus the kanban-specific fields.
 pub const CreateAgentItemResponse = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -60,16 +56,12 @@ pub const WorkspaceItemsCreateAgentInput = struct {
     workspace_id: []const u8,
     body: CreateAgentBody,
     /// Live config.json `tools` checklist (null = legacy defaults).
-    /// Read from the singleton by the HTTP handler and threaded into
-    /// the seed so D2's absent/list/[] semantics reach `agent_tools`.
     config_tools: ?[]const []const u8 = null,
 };
 
 pub const WorkspaceItemsCreateAgentResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -82,35 +74,25 @@ fn useCase(
     if (trimmed_name.len == 0) return error.EmptyName;
     if (input.body.path.len == 0) return error.PathRequired;
 
-    // Generate item id. SAME pattern as workspace_items_create_kanban.zig
-    // (helpers.unixTimestampNanos is cross-platform; std.c.clock_gettime
-    // doesn't compile on Windows in Zig 0.16).
+    // Generate item id.
     const timestamp_ns = helpers.unixTimestampNanos();
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
-    // If anything below this point fails before we build the JSON,
-    // free item_id — the production handler relies on the arena to
-    // reap it, but tests use testing.allocator which leak-detects.
+    // If anything below this point fails before we build the JSON, free item_id — the production handler relies on the arena to reap it, but tests use …
     errdefer allocator.free(item_id);
 
-    // tx so the 2 INSERTs are atomic. A crash mid-flow
-    // would otherwise leave a workspace_items row without an agent
-    // sibling (breaking the 1-1 invariant).
+    // tx so the 2 INSERTs are atomic.
     var tx = db.begin() catch return error.DatabaseError;
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // 1. INSERT INTO workspace_items with item_type='agent' and a
-    //    fresh position. NULLIF(?, '') stores NULL when the caller
-    //    didn't pass a path (matching the kanban convention).
+    // 1.
     tx.exec(
         allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, created_at, updated_at) VALUES (?, ?, 'agent', ?, NULLIF(?, ''), COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &.{ item_id, input.workspace_id, trimmed_name, input.body.path, input.workspace_id },
     ) catch return error.DatabaseError;
 
-    // 2. INSERT INTO agents with the SAME id (spec D3 — agents.id
-    //    shares the workspace_item_id space; UNIQUE(workspace_item_id)
-    //    enforces 1-1 at the DB layer).
+    // 2.
     agent_db.insert(allocator, .{ .tx = &tx }, item_id, item_id) catch return error.DatabaseError;
 
     // 3.
@@ -119,13 +101,10 @@ fn useCase(
     // COMMIT.
     tx.commit() catch return error.DatabaseError;
 
-    // Read back the freshly-inserted position (mirrors the kanban
-    // CREATE flow — see workspace_items_create_kanban.zig::readInsertedPosition).
+    // Read back the freshly-inserted position (mirrors the kanban CREATE flow — see workspace_items_create_kanban.zig::readInsertedPosition).
     const position = readInsertedPosition(allocator, db, item_id);
 
-    // Build the wire envelope. created_at / updated_at are populated
-    // by SQLite's CURRENT_TIMESTAMP — we use empty strings here; the
-    // frontend doesn't read them on create (it refetches via getWorkspacesItems).
+    // Build the wire envelope. created_at / updated_at are populated by SQLite's CURRENT_TIMESTAMP — we use empty strings here; the frontend doesn't read them on …
     const json = try std.json.Stringify.valueAlloc(allocator, CreateAgentResponseFull{
         .item = .{
             .id = item_id,
@@ -143,9 +122,7 @@ fn useCase(
             .updated_at = "",
         },
     }, .{});
-    // item_id was copied into the JSON by valueAlloc; the original allocPrint
-    // buffer is no longer needed. The production handler doesn't need this —
-    // the arena reaps it — but tests using testing.allocator leak-detect.
+    // item_id was copied into the JSON by valueAlloc; the original allocPrint buffer is no longer needed.
     allocator.free(item_id);
     return json;
 }
@@ -169,9 +146,7 @@ fn readInsertedPosition(
     return 0;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workspaceItemsCreateAgentHandler(
     ctx: gserverz.HttpContext,
@@ -191,9 +166,7 @@ pub fn workspaceItemsCreateAgentHandler(
         });
     }
 
-    // Live `tools` checklist — seeds the fresh agent's allowlist instead of
-    // the defaults when set (plan 2026-09-22-tools-menu). It is the
-    // WORKSPACE's list: tools are workspace-scoped.
+    // Live `tools` checklist — seeds the fresh agent's allowlist instead of the defaults when set (plan 2026-09-22-tools-menu).
     const workspace_cfg = auth_common.requestWorkspaceConfig(allocator, di, workspace_id, req.headers) orelse
         pabrikcore.getLlmConfig(di);
     const config_tools = workspace_cfg.tools;
@@ -218,8 +191,7 @@ pub fn workspaceItemsCreateAgentHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "name is required" }),
         });
     }
-    // Trim leading/trailing ASCII whitespace. Reject whitespace-only
-    // names at the handler level too (the useCase also rejects them).
+    // Trim leading/trailing ASCII whitespace.
     if (std.mem.trim(u8, parsed.name, " \t\n\r").len == 0) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -263,8 +235,6 @@ pub fn workspaceItemsCreateAgentHandler(
     });
 }
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -283,9 +253,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // The useCase INSERTs into workspace_items + agents. workspace_items
-    // needs the full shape (per spec D6) — re-create here matching the
-    // post-migration-018 schema.
+    // The useCase INSERTs into workspace_items + agents. workspace_items needs the full shape (per spec D6) — re-create here matching the post-migration-018 schema.
     try db.exec(
         testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -382,9 +350,7 @@ test "useCase: position increments per workspace" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Use DIFFERENT workspace_ids for each call so the agents INSERT's
-    // workspace_item_id column doesn't collide on the UNIQUE constraint (the
-    // production code passes input.workspace_id as workspace_item_id, not
+    // Use DIFFERENT workspace_ids for each call so the agents INSERT's workspace_item_id column doesn't collide on the UNIQUE constraint (the production code passes …
     const a1 = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .body = .{ .name = "Agent 1", .path = "/tmp/a1" },
@@ -396,9 +362,7 @@ test "useCase: position increments per workspace" {
     });
     defer alloc.free(a2);
 
-    // Parse the position out of both responses. The wire shape is {item:
-    // {...}, agent: {...}} — we capture the same fields as
-    // CreateAgentResponseFull so the parser sees a shape it recognizes.
+    // Parse the position out of both responses. The wire shape is {item
     const PosView = CreateAgentResponseFull;
     const p1_pos = try std.json.parseFromSliceLeaky(PosView, alloc, a1, .{});
     try testing.expectEqual(@as(i64, 0), p1_pos.item.position);

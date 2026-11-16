@@ -104,9 +104,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('returns workspace view (no itemId) for standalone ?view=workspace&workspaceId=X', () => {
-    // Header-dropdown workspace switch with no item open — the
-    // selection-only URL shape (revamp plan 2026-09-22). itemId is
-    // absent so no sidebar row is active.
+    // Header-dropdown workspace switch with no item open — the selection-only URL shape (revamp plan 2026-09-22). itemId is absent so no sidebar row is active.
     mockRoute({ view: 'workspace', workspaceId: 'ws_7' })
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {
@@ -160,9 +158,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('does NOT have a kind=task variant (legacy view=task URLs are auto-rewritten on mount)', () => {
-    // Sanity: the legacy shape ?view=task&task=X is not handled by this composable —
-    // AppLayout.onMounted silently rewrites those URLs to the new shape before the composable is
-    // consulted. This test pins the contract.
+    // Sanity: the legacy shape ?view=task&task=X is not handled by this composable — AppLayout.onMounted silently rewrites those URLs to the new shape before the …
     mockRoute({ view: 'task', task: 'task_old' })
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {
@@ -172,9 +168,7 @@ describe('useCurrentMainView', () => {
     expect(v.value.kind).toBe('none')
   })
 
-  // ────────────────────────────────────────────────────────────────── kanban-settings variant
-  // (plan: 2026-09-02-kanban-settings-as-page) Path-based vue-router route
-  // /app/kanban/:itemId/settings. itemId comes from route.params.
+  // ────────────────────────────────────────────────────────────────── kanban-settings variant (plan: 2026-09-02-kanban-settings-as-page) Path-based vue-router …
   it('returns kanban-settings view when URL is /app/kanban/:itemId/settings', () => {
     mockRoute({}, '/app/kanban/item_kanban/settings', { itemId: 'item_kanban' })
     let v!: ReturnType<typeof useCurrentMainView>
@@ -206,9 +200,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('returns kanban-settings view with empty itemId when the path lacks :itemId (defensive)', () => {
-    // Path is /app/kanban//settings (double slash) — Vue Router would
-    // normally reject this, but we want the composable to degrade
-    // gracefully so the sidebar can still react.
+    // Path is /app/kanban//settings (double slash) — Vue Router would normally reject this, but we want the composable to degrade gracefully so the sidebar can still …
     mockRoute({}, '/app/kanban//settings', { itemId: '' })
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {
@@ -243,8 +235,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('returns kanban-settings view with the workspace from /app/{ws}/projects/{pid}/settings', () => {
-    // The canonical shape: the URL names the workspace AND the board, so the
-    // view never has to guess which workspace the board belongs to.
+    // The canonical shape: the URL names the workspace AND the board, so the view never has to guess which workspace the board belongs to.
     mockRoute({}, '/app/ws_1/projects/item_kanban/settings', {
       workspaceId: 'ws_1',
       projectId: 'item_kanban',
@@ -268,13 +259,11 @@ describe('useCurrentMainView', () => {
       v = useCurrentMainView()
     }
     setup()
-    // /app/settings is its own view — the composable's chat/workspace
-    // branches don't match it either, so it falls through to 'none'.
+    // /app/settings is its own view — the composable's chat/workspace branches don't match it either, so it falls through to 'none'.
     expect(v.value).toEqual({ kind: 'none' })
   })
 
-  // Path-based contract (2026-09-22 revamp). A project is a workspace
-  // item, so path projects map onto the `workspace` kind.
+  // Path-based contract (2026-09-22 revamp).
   it('returns none for the /app landing', () => {
     mockRoute({}, '/app', {})
     let v!: ReturnType<typeof useCurrentMainView>
@@ -325,8 +314,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('returns workspace with itemId for /app/{ws}/projects/{pid}/add', () => {
-    // The add page is the project's own page, so it keeps the same
-    // `workspace` view — the sidebar keeps its active project row open.
+    // The add page is the project's own page, so it keeps the same `workspace` view — the sidebar keeps its active project row open.
     mockRoute({ pageId: 'page_1' }, '/app/ws_1/projects/item_7/add', {
       workspaceId: 'ws_1',
       projectId: 'item_7',
@@ -375,9 +363,7 @@ describe('useCurrentMainView', () => {
     expect(v.value).toEqual({ kind: 'chat', sessionId: 'session_abc' })
   })
 
-  // ── Document page (Migration 095) ─────────────────────────────────── `/app/{ws}/doc/{id}` is a
-  // PATH shape: the document REPLACES the main view instead of layering `?doc=` over whatever was
-  // open.
+  // ── Document page (Migration 095) ───────────────────────────────────
   it('returns the document view for a /doc/ path', () => {
     mockRoute({}, '/app/ws_1/doc/doc_1')
     let v!: ReturnType<typeof useCurrentMainView>
@@ -399,8 +385,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('the doc path wins over a chat/project path', () => {
-    // A leftover query from the old overlay must not out-rank the path,
-    // and a doc path must not be mistaken for a workspace called "doc".
+    // A leftover query from the old overlay must not out-rank the path, and a doc path must not be mistaken for a workspace called "doc".
     mockRoute({ doc: 'doc_stale' }, '/app/ws_1/doc/doc_1')
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {
@@ -429,8 +414,7 @@ describe('useCurrentMainView', () => {
   })
 
   it('a stale ?doc= query no longer names a document', () => {
-    // Migration 095 shipped documents as a `?doc=` overlay and was replaced by the `/doc/` path
-    // before that shape was in wide use, so there is no fallback.
+    // Migration 095 shipped documents as a `?doc=` overlay and was replaced by the `/doc/` path before that shape was in wide use, so there is no fallback.
     mockRoute({ doc: 'doc_1' }, '/app/ws_1')
     let v!: ReturnType<typeof useCurrentMainView>
     function setup() {

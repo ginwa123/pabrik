@@ -5,9 +5,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 120 — grant `set_skill_metadata` beside `edit_skill` in every
-/// existing allowlist: `DEFAULT_AGENT_TOOLS` only applies to a config with NO
-/// rows, so a new tool name reaches an agent only via SQL.
+/// Migration 120 — grant `set_skill_metadata` beside `edit_skill` in every existing allowlist: `DEFAULT_AGENT_TOOLS` only applies to a config with NO rows, so a …
 pub const Migration120GrantSetSkillMetadata = struct {
     pub const version: u32 = 120;
     pub const name = "grant_set_skill_metadata";
@@ -23,9 +21,7 @@ pub const Migration120GrantSetSkillMetadata = struct {
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         if (!try tableExists(allocator, db)) return;
 
-        // One statement, no cursor held across writes: the subquery is
-        // evaluated first, and the conflict clause makes a replay a no-op on
-        // the UNIQUE (config_id, tool_name) key when it exists.
+        // One statement, no cursor held across writes: the subquery is evaluated first, and the conflict clause makes a replay a no-op on the UNIQUE (config_id …
         const statement = try std.fmt.allocPrint(
             allocator,
             \\{s} INTO agent_config_tools (id, config_id, tool_name, enabled, created_at)
@@ -122,8 +118,7 @@ test "Migration120 inherits a disabled sibling instead of re-enabling the tool" 
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
-    // `enabled` mirrors the sibling: a config that turned the edit half off
-    // must not have the metadata half switched on underneath it.
+    // `enabled` mirrors the sibling: a config that turned the edit half off must not have the metadata half switched on underneath it.
     try testing.expectEqualStrings("0", row.values[0]);
 }
 

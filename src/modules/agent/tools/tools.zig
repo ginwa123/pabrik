@@ -25,6 +25,4 @@ pub const set_git_worktree_tool = set_git_worktree.set_git_worktree_tool;
 pub const set_pull_request_tool = set_pull_request.set_pull_request_tool;
 pub const status_pull_request_tool = status_pull_request.status_pull_request_tool;
 
-// Path validation: `helpers.path_validate.invalidPathReason` is the single
-// implementation, and every path-taking agent tool calls it before its first
-// `std.fs` call.
+// Path validation: `helpers.path_validate.invalidPathReason` is the single implementation, and every path-taking agent tool calls it before its first `std.fs` …

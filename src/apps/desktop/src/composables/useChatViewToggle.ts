@@ -1,5 +1,4 @@
-/** Grouped transcript vs the raw `llm_history` table. Module state, not a prop: `ChatAppBar.vue`
- * is mounted bare in specs and rendered by every chat host, and all of them share one value. */
+/** Grouped transcript vs the raw `llm_history` table. */
 import { computed } from 'vue'
 import { chatViewMode, setChatViewMode } from '../stores/chatView'
 

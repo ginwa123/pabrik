@@ -1,6 +1,4 @@
-/** The provide/inject seam for the KanbanTaskDetail panel: the panel provides one context object
- * (state + actions) and every extracted sub-panel injects it, so a child component holds markup and
- * nothing else. */
+/** The provide/inject seam for the KanbanTaskDetail panel: the panel provides one context object (state + actions) and every extracted sub-panel injects it, so a … */
 import { inject, type InjectionKey } from 'vue'
 import type { TaskDetailContext } from './kanbanTaskDetailTypes'
 

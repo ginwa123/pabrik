@@ -11,8 +11,7 @@ pub const WorkspaceItemsCreateError = error{
     MissingBody,
     MissingName,
     NameNotString,
-    /// The `name` field is present and a string but, after trimming
-    /// leading/trailing ASCII whitespace, is empty.
+    /// The `name` field is present and a string but, after trimming leading/trailing ASCII whitespace, is empty.
     EmptyName,
     MissingPath,
     PathNotString,
@@ -44,8 +43,7 @@ fn useCase(
 ) WorkspaceItemsCreateError!WorkspaceItemsCreateResult {
     if (body.len == 0) return error.MissingBody;
 
-    // Per pabrik-http-handler-thin-wrapper-pattern.md: parseFromSliceLeaky
-    // is the correct API for per-request arena allocators.
+    // Per pabrik-http-handler-thin-wrapper-pattern.md: parseFromSliceLeaky is the correct API for per-request arena allocators.
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{}) catch {
         return error.InvalidJson;
     };
@@ -53,9 +51,7 @@ fn useCase(
 
     const name_val = root.get("name") orelse return error.MissingName;
     if (name_val != .string) return error.NameNotString;
-    // Trim leading/trailing ASCII whitespace and reject empty names. The trim
-    // returns a slice into the same backing JSON memory owned by the
-    // per-request arena, so no allocation needed.
+    // Trim leading/trailing ASCII whitespace and reject empty names.
     const trimmed_name = std.mem.trim(u8, name_val.string, " \t\n\r");
     if (trimmed_name.len == 0) return error.EmptyName;
     const name = trimmed_name;
@@ -73,8 +69,7 @@ fn useCase(
 
     const item_id = generateItemId(allocator, io) catch return error.OutOfMemory;
 
-    // Insert with timestamps, item_type, name, path, AND a fresh `position`
-    // value.
+    // Insert with timestamps, item_type, name, path, AND a fresh `position` value.
     sqlite_db.exec(allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1, datetime('now'), datetime('now'))",
         &[_][]const u8{ item_id, workspace_id, item_type, name, path, workspace_id },

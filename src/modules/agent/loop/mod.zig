@@ -15,9 +15,7 @@ pub const generate_image = @import("../tools/generate_image.zig");
 pub const get_design_context = @import("../tools/get_design_context.zig");
 pub const preview_design_page = @import("../tools/preview_design_page.zig");
 pub const delete_worker = @import("delete_worker.zig");
-// Background-command completion queue (bg-completion Task 1+2) — pure log
-// helpers + completion envelope, consumed by the
-// schedulers/cleanup_stale_background_process.zig cron via
+// Background-command completion queue (bg-completion Task 1+2) — pure log helpers + completion envelope, consumed by the …
 pub const background_process = @import("background_process.zig");
 pub const background_process_events = @import("background_process_events.zig");
 pub const guest_jobs = @import("guest_jobs.zig");
@@ -35,16 +33,11 @@ pub const design_io = @import("design_io.zig");
 pub const design_model = @import("design_model.zig");
 pub const inherited_context = @import("inherited_context.zig");
 pub const agent_memories = @import("agent_memories.zig");
-// In-flight stream snapshot registry (task_1787673548905_0
-// stream-resume-on-reselect) — read by http_handlers/stream_get.zig.
+// In-flight stream snapshot registry (task_1787673548905_0 stream-resume-on-reselect) — read by http_handlers/stream_get.zig.
 pub const stream_snapshot = @import("stream_snapshot.zig");
-// Live spawn-batch snapshot registry (task_1788505292766_1
-// spawn-subagent-refresh-persist) — mirrored on every progress emit,
-// read by http_handlers/subagent_progress_get.zig.
+// Live spawn-batch snapshot registry (task_1788505292766_1 spawn-subagent-refresh-persist) — mirrored on every progress emit, read by …
 pub const subagent_progress = @import("subagent_progress.zig");
-// Pending question state + the answer round-trip (Migration 087). The HTTP
-// answer handler and the `session_create` abandon guard both reach it through
-// here.
+// Pending question state + the answer round-trip (Migration 087).
 pub const ask_user_pending = @import("ask_user_pending.zig");
 
 // Re-export workspace functions from llm_history for backward compatibility

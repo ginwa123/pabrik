@@ -1,14 +1,6 @@
 package com.pabrik.mobile.chat
 
-/**
- * A line of a two-sided diff, in transcript order.
- *
- * [beforeLine] / [afterLine] are 1-based display numbers, null on the side the
- * line does not appear on. They are display numbers rather than diff hunks
- * because a phone renders the whole file inline — there is nowhere to jump to,
- * so a collapsed hunk would just hide the change the user opened the card to
- * see.
- */
+/** A line of a two-sided diff, in transcript order. */
 data class DiffRow(
     val kind: DiffRowKind,
     val beforeLine: Int?,
@@ -22,25 +14,9 @@ enum class DiffRowKind {
     Removed,
 }
 
-/**
- * Line diff for `text_replace` results and the generic `diffview_before` /
- * `diffview_after` fallback.
- *
- * The web uses Myers (`_shared/myersDiff.ts`). This is a plain LCS instead,
- * which produces the same rows for the sizes involved here and is O(n·m) rather
- * than O(n·d) — the trade is deliberate, and [MAX_CELLS] is what keeps the wrong
- * side of it from ever being paid.
- *
- * The budget is sized for *jank*, not for memory. [compute] runs on the Compose
- * main thread, from a `remember`, so a 4M-cell table is not an OOM risk — it is
- * a several-hundred-millisecond freeze on the scroll that revealed the card. A
- * 500×500 edit still diffs exactly at this ceiling, and a real `text_replace`
- * touches a handful of lines of a file a few hundred lines long.
- */
+/** Line diff for `text_replace` results and the generic `diffview_before` /`diffview_after` fallback. */
 object ToolDiff {
-    /**
-     * 250k cells ≈ 500×500 lines. 1 MB of `IntArray`, well inside one frame.
-     */
+    /** 250k cells ≈ 500×500 lines. 1 MB of `IntArray`, well inside one frame. */
     const val MAX_CELLS = 250_000L
 
     /** The file body is not truncated: a truncated diff is a lie about the file. */
@@ -83,10 +59,7 @@ object ToolDiff {
         val rows = before.size
         val columns = after.size
 
-        // table[i][j] = length of the longest common subsequence of
-        // before[i..] and after[j..]. Built backwards so the walk below runs
-        // forwards, which keeps the emitted rows in transcript order without a
-        // reverse pass.
+        // table[i][j] = length of the longest common subsequence of before[i..] and after[j..].
         val table = Array(rows + 1) { IntArray(columns + 1) }
         for (i in rows - 1 downTo 0) {
             for (j in columns - 1 downTo 0) {
@@ -109,9 +82,7 @@ object ToolDiff {
                     j++
                 }
 
-                // Deletions are emitted before insertions so a replacement reads
-                // as "old line, new line" rather than "new line, old line",
-                // which is the order a reader scanning a diff expects.
+                // Deletions are emitted before insertions so a replacement reads as "old line, new line" rather than "new line, old line", which is the order a reader scanning a …
                 table[i + 1][j] >= table[i][j + 1] -> {
                     out.add(DiffRow(DiffRowKind.Removed, i + 1, null, before[i]))
                     i++
@@ -134,14 +105,7 @@ object ToolDiff {
         return out
     }
 
-    /**
-     * Splits on newlines, dropping the single empty trailing entry a final `\n`
-     * produces.
-     *
-     * Without that drop the gutter claims one line more than the file has, and
-     * a diff of two files differing only in their final newline gains a phantom
-     * blank row.
-     */
+    /** Splits on newlines, dropping the single empty trailing entry a final `\n` produces. */
     fun splitLines(text: String): List<String> {
         if (text.isEmpty()) return emptyList()
         val lines = text.split("\n").toMutableList()

@@ -1,6 +1,4 @@
-//! `model_catalog_refresh` — the network half of the model catalog: read the
-//! cached snapshot at boot, fetch models.dev on a timer, and RECORD what the last
-//! attempt did so "why is there no catalog yet?" has an answer.
+//! `model_catalog_refresh` — the network half of the model catalog: read the cached snapshot at boot, fetch models.dev on a timer, and RECORD what the last …
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -11,31 +9,24 @@ const catalog = @import("model_catalog.zig");
 const store = @import("../../../models/model_catalog_store.zig");
 const http_client = @import("kabelweb").client;
 
-/// models.dev's payload was 5,451,834 bytes on 2026-10-13. 32 MiB is headroom
-/// for a busy catalog, not a target.
+/// models.dev's payload was 5,451,834 bytes on 2026-10-13. 32 MiB is headroom for a busy catalog, not a target.
 pub const MAX_FETCH_BYTES: usize = 32 * 1024 * 1024;
 
 /// One hour, in nanoseconds.
 pub const SYNC_INTERVAL_NS: i96 = 3_600 * 1_000_000_000;
 
-/// The loop's FIRST wait: a boot that read NO snapshot fetches NOW, because an
-/// hour of silence leaves every agent on the built-in window (and a server
-/// restarted more often than hourly would never fetch at all).
+/// The loop's FIRST wait: a boot that read NO snapshot fetches NOW, because an hour of silence leaves every agent on the built-in window (and a server restarted …
 pub fn firstDelayNs(have_snapshot: bool) i96 {
     return if (have_snapshot) SYNC_INTERVAL_NS else 0;
 }
 
-/// The gate's decision, split from the environment read so a test can cover it
-/// on every host. OFF only on an explicit `"0"`: a wrong default there silently
-/// empties the catalog.
+/// The gate's decision, split from the environment read so a test can cover it on every host.
 fn gateAllows(value: ?[]const u8) bool {
     const v = value orelse return true;
     return !std.mem.eql(u8, v, "0");
 }
 
-/// `PABRIK_MODEL_CATALOG_FETCH=0` disables the fetch. `Harness.boot` sets it,
-/// since a functional-test child boots with no snapshot and would otherwise make
-/// one live 5 MB request per spawned server. Production never sets it.
+/// `PABRIK_MODEL_CATALOG_FETCH=0` disables the fetch.
 fn fetchingEnabled() bool {
     const value: ?[]const u8 = if (std.c.getenv("PABRIK_MODEL_CATALOG_FETCH")) |z| std.mem.span(z) else null;
     return gateAllows(value);
@@ -54,8 +45,7 @@ pub const FetchError = error{
     CatalogFetchStatus,
 };
 
-/// What the last `refresh` did, for the READ side to report. `error_name` is
-/// `@errorName`'s static string: nothing to free, no lifetime to get wrong.
+/// What the last `refresh` did, for the READ side to report.
 pub const LastAttempt = struct {
     /// 0 = nothing attempted in this process yet.
     at_ms: i64 = 0,
@@ -68,16 +58,14 @@ pub const LastAttempt = struct {
 
 var last_attempt: LastAttempt = .{};
 
-/// Zig 0.16 removed `std.Thread.Mutex`; `std.atomic.Mutex` plus a spin loop is
-/// what the rest of this directory uses (see `stream_snapshot.zig`).
+/// Zig 0.16 removed `std.Thread.Mutex`; `std.atomic.Mutex` plus a spin loop is what the rest of this directory uses (see `stream_snapshot.zig`).
 var last_attempt_mu: std.atomic.Mutex = .unlocked;
 
 fn lastAttemptLock() void {
     while (!last_attempt_mu.tryLock()) std.atomic.spinLoopHint();
 }
 
-/// A COPY, taken under the lock: `refresh` runs on the timer's thread while
-/// handlers read this, and a torn pair would read as a failure that succeeded.
+/// A COPY, taken under the lock: `refresh` runs on the timer's thread while handlers read this, and a torn pair would read as a failure that succeeded.
 pub fn lastAttempt() LastAttempt {
     lastAttemptLock();
     defer last_attempt_mu.unlock();
@@ -90,9 +78,7 @@ fn recordAttempt(attempt: LastAttempt) void {
     last_attempt = attempt;
 }
 
-/// Fetch models.dev and install the result. Every failure propagates — the
-/// endpoint reports it, the timer logs it — and BOTH record it: an empty catalog
-/// whose syncs failed silently reads exactly like one that was never tried.
+/// Fetch models.dev and install the result.
 pub fn refresh(alloc: Allocator, io: std.Io, db: *database.Db) !Report {
     const report = fetchAndInstall(alloc, io, db) catch |err| {
         recordAttempt(.{
@@ -133,8 +119,7 @@ fn fetchAndInstall(alloc: Allocator, io: std.Io, db: *database.Db) !Report {
     cat.* = try catalog.Catalog.fromCacheJson(alloc, trimmed);
     errdefer cat.deinit();
 
-    // An empty catalog is a broken fetch, not a fact. Refuse it rather than
-    // trading a good snapshot for nothing.
+    // An empty catalog is a broken fetch, not a fact.
     if (cat.providerCount() == 0 or cat.modelCount() == 0) return FetchError.CatalogFetchStatus;
 
     const saved = try store.saveCatalog(db, alloc, cat);
@@ -151,8 +136,7 @@ fn fetchAndInstall(alloc: Allocator, io: std.Io, db: *database.Db) !Report {
     };
 }
 
-/// Read the DB into the in-memory index. Returns whether a catalog was
-/// installed. Called once, from boot, on the main thread.
+/// Read the DB into the in-memory index.
 pub fn loadAtBoot(alloc: Allocator, db: *database.Db) bool {
     const cat = store.loadCatalog(db, alloc) catch |err| {
         std.log.warn("model catalog: could not read the cached catalog: {s}", .{@errorName(err)});
@@ -170,9 +154,7 @@ pub fn loadAtBoot(alloc: Allocator, db: *database.Db) bool {
     return true;
 }
 
-/// Detached sync timer. Nothing joins it; it dies with the process.
-/// `loadAtBoot` runs first, so the FIRST fetch is immediate when boot had nothing
-/// to read and waits the interval when it did.
+/// Detached sync timer.
 pub fn startBackgroundSync(alloc: Allocator, db: *database.Db) void {
     if (!fetchingEnabled()) {
         std.log.info("model catalog: background sync disabled (PABRIK_MODEL_CATALOG_FETCH=0)", .{});
@@ -193,8 +175,7 @@ pub fn startBackgroundSync(alloc: Allocator, db: *database.Db) void {
 }
 
 fn backgroundLoop(alloc: Allocator, db: *database.Db, first_delay_ns: i96) void {
-    // Its OWN io instance: `std.Io.Threaded` is not shareable across threads,
-    // and the timer must not borrow the server's.
+    // Its OWN io instance: `std.Io.Threaded` is not shareable across threads, and the timer must not borrow the server's.
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
@@ -207,8 +188,7 @@ fn backgroundLoop(alloc: Allocator, db: *database.Db, first_delay_ns: i96) void 
     }
 }
 
-/// The timer's refresh: same call the manual endpoint makes, with the error
-/// turned into a log line instead of an HTTP body.
+/// The timer's refresh: same call the manual endpoint makes, with the error turned into a log line instead of an HTTP body.
 pub fn refreshOnceWithLog(alloc: Allocator, io: std.Io, db: *database.Db) void {
     const report = refresh(alloc, io, db) catch |err| {
         std.log.warn("model catalog: scheduled sync failed ({s}); keeping the previous snapshot", .{@errorName(err)});
@@ -220,15 +200,12 @@ pub fn refreshOnceWithLog(alloc: Allocator, io: std.Io, db: *database.Db) void {
     );
 }
 
-// ============================================================================
 // Behaviour tests
 
 const testing = std.testing;
 
 test "model catalog refresh: a boot WITH a snapshot waits an interval, one WITHOUT waits zero" {
-    // The snapshot is the whole difference: boot already loaded it, so there is
-    // nothing to fetch yet. With nothing loaded, the hour of silence is what
-    // left the DB empty and every agent on the built-in window.
+    // The snapshot is the whole difference: boot already loaded it, so there is nothing to fetch yet.
     try testing.expectEqual(SYNC_INTERVAL_NS, firstDelayNs(true));
     try testing.expectEqual(@as(i96, 0), firstDelayNs(false));
 }

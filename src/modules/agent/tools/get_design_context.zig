@@ -1,6 +1,4 @@
 //! LLM tool: `get_design_context` — read-only inspection of a design canvas.
-//! Pass EITHER `page_id` to get one page with its elements, OR
-//! `workspace_item_id` to get ALL pages of the design item.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -152,8 +150,7 @@ fn executeForItem(
     return try std.json.Stringify.valueAlloc(allocator, .{ .pages = out.items }, .{});
 }
 
-/// JSON page object (keys mirror the old `<page ...>` attributes 1:1;
-/// repeated `<element>` children become the `elements` array).
+/// JSON page object (keys mirror the old `<page ...>` attributes 1:1; repeated `<element>` children become the `elements` array).
 pub const ContextPageJSON = struct {
     id: []const u8,
     name: []const u8,
@@ -163,8 +160,7 @@ pub const ContextPageJSON = struct {
     elements: []ContextElementJSON,
 };
 
-/// JSON element object (keys mirror the old `<element ... />` attributes
-/// 1:1; attributes rendered-when-empty become explicit nulls).
+/// JSON element object (keys mirror the old `<element ...
 pub const ContextElementJSON = struct {
     id: []const u8,
     page_id: []const u8,
@@ -241,16 +237,13 @@ fn contextElementJSON(
     };
 }
 
-/// Clean an optional free-text field: empty becomes null, otherwise the
-/// control-char-sanitized copy owned by the caller's arena.
+/// Clean an optional free-text field: empty becomes null, otherwise the control-char-sanitized copy owned by the caller's arena.
 fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     if (s.len == 0) return null;
     return try sanitizeControlChars(allocator, s);
 }
 
-// ===== Tests merged from get_design_context_test.zig (2026-09-29 flatten)
-// ===== NOT REGISTERED: no registrar imports this file, so these tests are
-// not discovered by `zig build test`.
+// ===== Tests merged from get_design_context_test.zig (2026-09-29 flatten) ===== NOT REGISTERED: no registrar imports this file, so these tests are not …
 
 const testing = std.testing;
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -349,9 +342,7 @@ fn teardownCtx(db: *database.Db, threaded: *std.Io.Threaded) void {
     threaded.deinit();
 }
 
-/// Insert a raw element row directly into `design_page_elements` (bypasses
-/// the on-disk HTML write of `addElement`). Used by tests that only need
-/// the metadata.
+/// Insert a raw element row directly into `design_page_elements` (bypasses the on-disk HTML write of `addElement`).
 fn insertElementRaw(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -397,7 +388,6 @@ fn insertElementRaw(
 }
 
 // Exec adapter — merged from `get_design_context.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -432,9 +422,7 @@ pub fn execGetDesignContext(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecR
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

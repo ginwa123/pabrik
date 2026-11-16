@@ -1,6 +1,4 @@
-//! `pabrik-vm-agent` — guest PID 1: mount the pseudo filesystems, create the
-//! device nodes this kernel lacks, then serve framed JSON over vsock (`hello`,
-//! `exec`, `spawn`, `fs.*`, `tty open`, `shutdown`).
+//! `pabrik-vm-agent` — guest PID 1: mount the pseudo filesystems, create the device nodes this kernel lacks, then serve framed JSON over vsock (`hello`, `exec` …
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -17,25 +15,20 @@ const max_frame = wire.max_frame;
 const read_chunk: usize = 4096;
 const arena_bytes: usize = 16 * 1024;
 const max_argv: usize = 64;
-/// The workspace is the tenant's own machine, so inside it they are root — the
-/// same bargain a container makes; the host never runs a workload. Without it
-/// `dnf install` in the workspace's own terminal demands superuser privileges.
+/// The workspace is the tenant's own machine, so inside it they are root — the same bargain a container makes; the host never runs a workload.
 const default_uid: u32 = 0;
 const default_gid: u32 = 0;
 const max_timeout_ms: u32 = 600_000;
 const default_budget: usize = 256 * 1024;
 /// `wait4`'s WNOHANG: probe must never block PID 1.
 const wno_hang: u32 = 1;
-/// Detached jobs log here, and a `read_log` reply carries at most this much of
-/// one: 16 KiB of bytes is ~22 KiB of base64, comfortably inside `max_frame`.
+/// Detached jobs log here, and a `read_log` reply carries at most this much of one: 16 KiB of bytes is ~22 KiB of base64, comfortably inside `max_frame`.
 const job_log_dir = "/tmp/pabrik";
 const log_read_chunk: usize = 16 * 1024;
 const reply_buf_bytes: usize = wire.max_frame;
 const registry_bytes: usize = 4096;
 
-/// The slot bookkeeping PID 1 shares with every connection process: a slot
-/// index IS its vsock port, and a fork copies memory, so the page is mapped
-/// MAP_SHARED once, before the fork that would otherwise split it.
+/// The slot bookkeeping PID 1 shares with every connection process: a slot index IS its vsock port, and a fork copies memory, so the page is mapped MAP_SHARED …
 const Registry = struct {
     tty: [max_ttys]TtySlot = [_]TtySlot{.{}} ** max_ttys,
     duplex: [max_duplex]DuplexSlot = [_]DuplexSlot{.{}} ** max_duplex,
@@ -64,8 +57,7 @@ fn registry() *Registry {
     return page;
 }
 
-/// Claiming a slot is one atomic swap on its own flag: the claimer and the
-/// releaser run in different processes, on the same page.
+/// Claiming a slot is one atomic swap on its own flag: the claimer and the releaser run in different processes, on the same page.
 fn claimFlag(flag: *u8) bool {
     return @cmpxchgStrong(u8, flag, 0, 1, .seq_cst, .seq_cst) == null;
 }
@@ -75,8 +67,7 @@ fn releaseFlag(flag: *u8, host_pid: *i64) void {
     @atomicStore(u8, flag, 0, .seq_cst);
 }
 
-/// A host this process did not fork is nobody's child once its parent is gone:
-/// `wait4` answers ECHILD and only `kill` can still say whether it is there.
+/// A host this process did not fork is nobody's child once its parent is gone
 fn processGone(pid: i64) bool {
     if (pid <= 0) return true;
     var status: u32 = 0;
@@ -85,8 +76,7 @@ fn processGone(pid: i64) bool {
     return linux.errno(linux.syscall2(.kill, @intCast(pid), 0)) == .SRCH;
 }
 
-/// The in-guest network forwarder: loopback, the resolver config, and the two
-/// proxies the tenant's traffic leaves through.
+/// The in-guest network forwarder: loopback, the resolver config, and the two proxies the tenant's traffic leaves through.
 const netd_path = "/usr/bin/pabrik-vm-netd";
 /// `port.forward` carries one HTTP request in and one response out, in pieces.
 const port_forward_chunk: usize = 32 * 1024;
@@ -161,8 +151,7 @@ fn mountPseudo(fstype: [*:0]const u8, target: [*:0]const u8) bool {
     return linux.errno(rc) == .SUCCESS;
 }
 
-/// The stock CI kernel has no devtmpfs, so `/dev` is empty. PID 1 is root in
-/// the guest and can create the nodes itself — cheaper than a custom kernel.
+/// The stock CI kernel has no devtmpfs, so `/dev` is empty.
 fn mknodNode(path: [*:0]const u8, kind: u32, major: u32, minor: u32) bool {
     const dev = (major << 8) | minor;
     const rc = linux.mknod(path, kind, @intCast(dev));
@@ -199,8 +188,7 @@ const ExecRequest = struct {
 var arena: [arena_bytes]u8 = undefined;
 var argv_ptrs: [max_argv + 1]?[*:0]const u8 = undefined;
 
-/// Copy argv into one sentinel-terminated buffer. Returns null on overflow so
-/// the caller reports an error frame instead of exec'ing something truncated.
+/// Copy argv into one sentinel-terminated buffer.
 fn buildArgv(args: []const []const u8) ?[*:null]const ?[*:0]const u8 {
     var off: usize = 0;
     if (args.len == 0 or args.len > max_argv) return null;
@@ -222,9 +210,7 @@ fn cstr(src: []const u8, dst: []u8) ?[*:0]const u8 {
     return @ptrCast(dst.ptr);
 }
 
-/// What a workload's process is started with. The guest has no network device,
-/// so the loopback proxy is the only egress: without these four a `git clone`
-/// dials the internet directly and gets `ENETUNREACH`.
+/// What a workload's process is started with.
 const exec_env = [_:null]?[*:0]const u8{
     "PATH=/bin:/usr/bin",
     "HOME=/workspace",
@@ -268,9 +254,7 @@ fn closeIfOpen(fd: linux.fd_t) void {
     if (fd >= 0) _ = linux.close(fd);
 }
 
-/// Fork/exec `req.argv` as a non-root uid and stream both pipes back until the
-/// child exits, the deadline passes, or the output budget is spent. Budget is
-/// enforced on the host's behalf: a flooding child loses output, not the host.
+/// Fork/exec `req.argv` as a non-root uid and stream both pipes back until the child exits, the deadline passes, or the output budget is spent.
 fn runExec(conn_fd: linux.fd_t, req: *const ExecRequest) void {
     const budget = if (req.max_output_bytes == 0) default_budget else req.max_output_bytes;
     const timeout_ms = if (req.timeout_ms > max_timeout_ms) max_timeout_ms else req.timeout_ms;
@@ -365,9 +349,7 @@ fn runExec(conn_fd: linux.fd_t, req: *const ExecRequest) void {
 
 // ─── detached jobs ───────────────────────────────────────────────────────
 
-/// A detached job runs as the same identity an `exec` does: the workspace's
-/// own machine, where the tenant is root. Its log, its tree and its `git` are
-/// then the ones the next foreground command sees.
+/// A detached job runs as the same identity an `exec` does: the workspace's own machine, where the tenant is root.
 const SpawnRequest = struct {
     id: i64 = 0,
     argv: []const []const u8 = &.{},
@@ -375,8 +357,7 @@ const SpawnRequest = struct {
     log_path: []const u8 = "",
 };
 
-/// The detached child: its own session (so a dead caller cannot take it down),
-/// the log on both output streams, and the caller's uid — never root.
+/// The detached child: its own session (so a dead caller cannot take it down), the log on both output streams, and the caller's uid — never root.
 fn spawnChild(req: *const SpawnRequest, log_fd: linux.fd_t) noreturn {
     var cwd_buf: [1024]u8 = undefined;
     _ = linux.setsid();
@@ -400,8 +381,7 @@ fn spawnChild(req: *const SpawnRequest, log_fd: linux.fd_t) noreturn {
     linux.exit(127);
 }
 
-/// Fork the job off and report its pid. The pid the caller is handed IS the
-/// job's process-group id, which is what makes a tree stop one syscall.
+/// Fork the job off and report its pid.
 fn runSpawn(conn_fd: linux.fd_t, req: *const SpawnRequest) void {
     if (req.argv.len == 0 or req.log_path.len == 0) {
         reply(conn_fd, "{{\"type\":\"spawn.error\",\"id\":{d},\"message\":\"argv and log_path are required\"}}", .{req.id});
@@ -431,15 +411,13 @@ fn runSpawn(conn_fd: linux.fd_t, req: *const SpawnRequest) void {
     reply(conn_fd, "{{\"type\":\"spawn.result\",\"id\":{d},\"pid\":{d}}}", .{ req.id, fork_rc });
 }
 
-/// Signal 0 is the existence probe, and a zombie still answers it, so the job
-/// is reaped first. `EPERM` means "it is there, just not mine".
+/// Signal 0 is the existence probe, and a zombie still answers it, so the job is reaped first.
 fn runProbe(conn_fd: linux.fd_t, id: i64, pid: i64) void {
     const alive = !processGone(pid);
     reply(conn_fd, "{{\"type\":\"probe.result\",\"id\":{d},\"alive\":{s}}}", .{ id, if (alive) "true" else "false" });
 }
 
-/// The job's process GROUP first, then the pid itself: a job that forked keeps
-/// its workers in the group, and killing only the leader leaves them running.
+/// The job's process GROUP first, then the pid itself: a job that forked keeps its workers in the group, and killing only the leader leaves them running.
 fn runSignal(conn_fd: linux.fd_t, id: i64, pid: i64, sig: i64) void {
     const pid_u: usize = @intCast(pid);
     const group: usize = @bitCast(-@as(isize, @intCast(pid)));
@@ -452,8 +430,7 @@ fn logChunkMissing(conn_fd: linux.fd_t, id: i64) void {
     reply(conn_fd, "{{\"type\":\"log.chunk\",\"id\":{d},\"missing\":true}}", .{id});
 }
 
-/// One positional read of a job's log. `eof` is derived from the file's own
-/// size, so the caller's cursor and the end of the file cannot disagree.
+/// One positional read of a job's log.
 fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_bytes: usize) void {
     var path_buf: [1024]u8 = undefined;
     const path_z = cstr(path, &path_buf) orelse return logChunkMissing(conn_fd, id);
@@ -462,8 +439,7 @@ fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_b
     const fd: linux.fd_t = @intCast(open_rc);
     defer _ = linux.close(fd);
 
-    // `lseek` to the end is the size: cheaper than a stat, and the fd is ours
-    // alone for the length of this request.
+    // `lseek` to the end is the size: cheaper than a stat, and the fd is ours alone for the length of this request.
     const end_rc = linux.lseek(fd, 0, linux.SEEK.END);
     if (linux.errno(end_rc) != .SUCCESS) return logChunkMissing(conn_fd, id);
     const size: i64 = @intCast(end_rc);
@@ -494,9 +470,7 @@ fn runReadLog(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_b
 const workspace_root = "/workspace";
 const fs_read_chunk: usize = wire.max_reply_chunk;
 const max_fs_path: usize = 1024;
-/// `RESOLVE_BENEATH`: every component is resolved under the workspace fd, so a
-/// symlink that leaves the workspace is `EXDEV` rather than a read of something
-/// else. The kernel's answer, not a string check, is what contains the path.
+/// `RESOLVE_BENEATH`: every component is resolved under the workspace fd, so a symlink that leaves the workspace is `EXDEV` rather than a read of something else.
 const resolve_beneath: u64 = 0x08;
 const o_directory: u64 = 0o200000;
 /// `AT_REMOVEDIR`: `unlinkat`'s "this is a directory" flag.
@@ -507,12 +481,10 @@ const o_creat: u64 = 0o100;
 const o_trunc: u64 = 0o1000;
 /// What the guest creates: uid 1000 owns the tree it works in.
 const fs_file_mode: u64 = 0o644;
-/// A walk is bounded in both directions — how deep it goes and how many
-/// entries it reports — so no tree can be walked into an endless reply.
+/// A walk is bounded in both directions — how deep it goes and how many entries it reports — so no tree can be walked into an endless reply.
 const max_walk_depth: u32 = 32;
 const max_walk_entries: usize = 20_000;
-/// Entries per `fs.walk` reply frame. The reply is streamed: the caller keeps
-/// reading until a frame says `done`.
+/// Entries per `fs.walk` reply frame.
 const fs_walk_frame_entries: usize = 48;
 /// `getdents64`'s d_type for the three kinds a walk names.
 const dt_dir: u8 = 4;
@@ -525,8 +497,7 @@ const OpenHow = extern struct {
     resolve: u64,
 };
 
-/// The agent's own containment rule, carried here because this binary imports
-/// nothing but std: no absolute path, no `.`/`..` segment, no NUL.
+/// The agent's own containment rule, carried here because this binary imports nothing but std: no absolute path, no `.`/`..` segment, no NUL.
 fn relPathOk(path: []const u8) bool {
     if (path.len == 0 or path.len > max_fs_path) return false;
     if (path[0] == '/') return false;
@@ -551,8 +522,7 @@ fn openBeneath(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64) ?linux.fd_t
     return openBeneathMode(root_fd, path, flags, 0);
 }
 
-/// The same open, with the `mode` an `O_CREAT` open requires. Kept apart so a
-/// creation and a read cannot be spelled by accident.
+/// The same open, with the `mode` an `O_CREAT` open requires.
 fn openBeneathMode(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64, mode: u64) ?linux.fd_t {
     var how = OpenHow{ .flags = flags, .mode = mode, .resolve = resolve_beneath };
     const rc = linux.syscall6(
@@ -568,8 +538,7 @@ fn openBeneathMode(root_fd: linux.fd_t, path: [*:0]const u8, flags: u64, mode: u
     return @intCast(rc);
 }
 
-/// The file descriptor a `fs.read` path was opened through, or null with the
-/// refusal already sent.
+/// The file descriptor a `fs.read` path was opened through, or null with the refusal already sent.
 fn fsOpen(conn_fd: linux.fd_t, id: i64, path: []const u8, flags: u64) ?struct { root: linux.fd_t, file: linux.fd_t } {
     if (!relPathOk(path)) {
         reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
@@ -593,8 +562,6 @@ fn fsOpen(conn_fd: linux.fd_t, id: i64, path: []const u8, flags: u64) ?struct { 
 }
 
 /// `fs.stat`: the kind and size of one path, resolved beneath the workspace.
-/// "Is it a directory" is asked by opening it as one, which needs no stat
-/// structure and cannot disagree with what the read would then do.
 fn runFsStat(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
     if (!relPathOk(path)) {
         reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
@@ -623,8 +590,7 @@ fn runFsStat(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
     reply(conn_fd, "{{\"type\":\"fs.stat\",\"id\":{d},\"kind\":\"file\",\"size\":{d}}}", .{ id, size });
 }
 
-/// `fs.read`: one positional piece of a file, base64 in the reply. `eof` is
-/// derived from the file's own size, so a cursor and the end cannot disagree.
+/// `fs.read`: one positional piece of a file, base64 in the reply.
 fn runFsRead(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_bytes: usize) void {
     const opened = fsOpen(conn_fd, id, path, 0) orelse return;
     defer _ = linux.close(opened.root);
@@ -660,9 +626,7 @@ fn runFsRead(conn_fd: linux.fd_t, id: i64, path: []const u8, offset: i64, max_by
     );
 }
 
-/// `fs.remove`: one file, or one EMPTY directory. A recursive delete is the
-/// caller's loop, so a mistake here cannot take a tree with it. The kernel says
-/// which it is: `EISDIR` is the answer to "this was a directory after all".
+/// `fs.remove`: one file, or one EMPTY directory.
 fn runFsRemove(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
     if (!relPathOk(path)) {
         reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
@@ -698,9 +662,7 @@ fn runFsRemove(conn_fd: linux.fd_t, id: i64, path: []const u8) void {
     reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"cannot remove\"}}", .{id});
 }
 
-/// Every parent directory a write's path needs, each made under a fd the
-/// kernel already resolved BENEATH the workspace: a symlinked segment is
-/// `EXDEV`, never a directory somewhere else. Returns the deepest parent.
+/// Every parent directory a write's path needs, each made under a fd the kernel already resolved BENEATH the workspace: a symlinked segment is `EXDEV`, never a …
 fn ensureParents(root_fd: linux.fd_t, path: []const u8) ?linux.fd_t {
     var current = root_fd;
     var owned = false;
@@ -723,9 +685,7 @@ fn ensureParents(root_fd: linux.fd_t, path: []const u8) ?linux.fd_t {
     return current;
 }
 
-/// `fs.write`: one positional piece of a file, CREATED by the first piece and
-/// extended by the rest. The bytes are decoded before anything is opened, so a
-/// bad payload cannot leave a truncated file behind.
+/// `fs.write`: one positional piece of a file, CREATED by the first piece and extended by the rest.
 fn runFsWrite(
     conn_fd: linux.fd_t,
     id: i64,
@@ -800,8 +760,7 @@ fn runFsWrite(
     );
 }
 
-/// One directory the walk has still to enter: its workspace-relative path and
-/// how deep it sits. The whole walk's state is this array.
+/// One directory the walk has still to enter: its workspace-relative path and how deep it sits.
 const WalkDir = struct {
     len: usize = 0,
     depth: u32 = 0,
@@ -814,9 +773,7 @@ const WalkDir = struct {
 
 const walk_frame_bytes: usize = wire.max_frame - 8 * 1024;
 
-/// A streamed `fs.walk` reply. Entries are appended until the frame is full or
-/// the per-frame cap is reached, then the frame is written and a fresh one
-/// starts — the last one is the caller's `done`.
+/// A streamed `fs.walk` reply.
 const WalkOut = struct {
     conn_fd: linux.fd_t,
     id: i64,
@@ -891,8 +848,7 @@ fn kindName(dtype: u8) []const u8 {
     };
 }
 
-/// A quoted JSON string, escaped, into `dst` at `off`. False when it does not
-/// fit: the caller then flushes the frame and appends again.
+/// A quoted JSON string, escaped, into `dst` at `off`.
 fn appendJsonString(dst: []u8, off: *usize, text: []const u8) bool {
     if (off.* + 1 > dst.len) return false;
     dst[off.*] = '"';
@@ -932,15 +888,12 @@ fn appendJsonString(dst: []u8, off: *usize, text: []const u8) bool {
     return true;
 }
 
-/// The path an openat2 call is given: the workspace root itself is named "."
-/// on the wire, because an empty path is a missing one to the kernel.
+/// The path an openat2 call is given: the workspace root itself is named "." on the wire, because an empty path is a missing one to the kernel.
 fn walkPathZ(path: []const u8, buf: []u8) ?[*:0]const u8 {
     return cstr(if (path.len == 0) "." else path, buf);
 }
 
-/// `fs.walk`: a bounded, depth-first listing of the workspace beneath `path`,
-/// streamed one frame at a time. Each entry names a path RELATIVE to the
-/// workspace and its kind; a size is what `fs.stat` is for.
+/// `fs.walk`: a bounded, depth-first listing of the workspace beneath `path`, streamed one frame at a time.
 fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max_entries: usize) void {
     if (path.len > 0 and !relPathOk(path)) {
         reply(conn_fd, "{{\"type\":\"fs.error\",\"id\":{d},\"message\":\"path is not relative to the workspace\"}}", .{id});
@@ -952,8 +905,7 @@ fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max
     };
     defer _ = linux.close(root);
 
-    // The starting directory must be one the walk can enter: a file or a
-    // missing path is an error, not an empty listing.
+    // The starting directory must be one the walk can enter: a file or a missing path is an error, not an empty listing.
     {
         var root_rel_buf: [max_fs_path + 1]u8 = undefined;
         const path_z = walkPathZ(path, &root_rel_buf) orelse return;
@@ -981,8 +933,7 @@ fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max
 
     walk: while (top > 0) {
         top -= 1;
-        // The slot just popped is reused by the next push, so the directory
-        // being scanned is copied out of the stack first.
+        // The slot just popped is reused by the next push, so the directory being scanned is copied out of the stack first.
         const current = stack[top];
         const dir_rel = current.path();
         const dir_z = walkPathZ(dir_rel, &scratch) orelse continue;
@@ -1020,16 +971,14 @@ fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max
                 if (!out.append(child, kind)) {
                     out.flush();
                     if (!out.append(child, kind)) {
-                        // A path that cannot fit a frame on its own: drop it
-                        // rather than spin on it forever.
+                        // A path that cannot fit a frame on its own: drop it rather than spin on it forever.
                         continue;
                     }
                 }
                 emitted += 1;
                 if (entry.type == dt_dir and current.depth + 1 < max_depth) {
                     if (top >= stack.len) {
-                        // Depth and stack travel together; this is belt and
-                        // braces so a bad depth cannot write past the array.
+                        // Depth and stack travel together; this is belt and braces so a bad depth cannot write past the array.
                         gave_up = true;
                         break :walk;
                     }
@@ -1047,20 +996,17 @@ fn runFsWalk(conn_fd: linux.fd_t, id: i64, path: []const u8, max_depth: u32, max
 
 // ─── interactive terminals ───────────────────────────────────────────────
 
-/// Every terminal answers on its OWN vsock port: a terminal connection lives as
-/// long as its shell, so it never shares the port a request is dialled on.
+/// Every terminal answers on its OWN vsock port: a terminal connection lives as long as its shell, so it never shares the port a request is dialled on.
 const tty_port_base: u32 = 5100;
 const max_ttys: usize = 8;
 const tty_chunk: usize = 32 * 1024;
-/// `/dev/ptmx` is devtmpfs's node; the slave the kernel allocates appears under
-/// the devpts mount at `/dev/pts/<n>`, owned by whoever opened the master.
+/// `/dev/ptmx` is devtmpfs's node; the slave the kernel allocates appears under the devpts mount at `/dev/pts/<n>`, owned by whoever opened the master.
 const tty_ptmx = "/dev/ptmx";
 const tty_pts_dir = "/dev/pts/";
 const tty_shell = "/bin/sh";
 const tty_cwd = "/workspace";
 
-/// `TIOCSPTLCK` (unlock the slave), `TIOCGPTN` (which slave), `TIOCSCTTY` (this
-/// pty is my controlling terminal), `TIOCSWINSZ` (window size).
+/// `TIOCSPTLCK` (unlock the slave), `TIOCGPTN` (which slave), `TIOCSCTTY` (this pty is my controlling terminal), `TIOCSWINSZ` (window size).
 const tiocsptlck: u32 = 0x40045431;
 const tiocgptn: u32 = 0x80045430;
 const tiocsctty: u32 = 0x540E;
@@ -1068,8 +1014,7 @@ const tiocswinsz: u32 = 0x5414;
 
 const tty_min_dim: u16 = 2;
 const tty_max_dim: u16 = 1000;
-/// A terminal host reports before it serves; this is how long the agent waits
-/// for that report before declaring it dead.
+/// A terminal host reports before it serves; this is how long the agent waits for that report before declaring it dead.
 const tty_report_deadline_ms: u32 = 5_000;
 
 const WinSize = extern struct { rows: u16, cols: u16, xpixel: u16, ypixel: u16 };
@@ -1089,8 +1034,7 @@ const tty_env = [_:null]?[*:0]const u8{
     "ZIG_GLOBAL_CACHE_DIR=/opt/zig-cache",
 };
 
-/// One live terminal: the agent's handle on the process that owns it. The pty
-/// and the shell belong to that process, never to PID 1.
+/// One live terminal: the agent's handle on the process that owns it.
 const TtySlot = struct {
     used: u8 = 0,
     host_pid: i64 = 0,
@@ -1101,8 +1045,7 @@ fn ttyWindowOk(cols: u16, rows: u16) bool {
         rows >= tty_min_dim and rows <= tty_max_dim;
 }
 
-/// A shell may start at `/workspace` or anywhere inside it. No `..` segment,
-/// so nothing resolves above the tenant's own tree.
+/// A shell may start at `/workspace` or anywhere inside it.
 fn ttyCwdOk(cwd: []const u8) bool {
     if (std.mem.eql(u8, cwd, tty_cwd)) return true;
     const prefix = tty_cwd ++ "/";
@@ -1115,8 +1058,7 @@ fn ttyCwdOk(cwd: []const u8) bool {
     return true;
 }
 
-/// Take the lowest free terminal slot. Freeing a dead host's slot here is what
-/// keeps the count honest when the opener is a process that never forked it.
+/// Take the lowest free terminal slot.
 fn ttyClaim() ?usize {
     ttyReleaseDead();
     for (&registry().tty, 0..) |*slot, i| {
@@ -1126,8 +1068,7 @@ fn ttyClaim() ?usize {
     return null;
 }
 
-/// The parent publishes the pid the fork returned; until then the slot is
-/// claimed but nameless, and no release pass may touch it.
+/// The parent publishes the pid the fork returned; until then the slot is claimed but nameless, and no release pass may touch it.
 fn ttyPublish(slot_index: usize, host_pid: i64) void {
     @atomicStore(i64, &registry().tty[slot_index].host_pid, host_pid, .seq_cst);
 }
@@ -1158,8 +1099,7 @@ fn vsockListen(port: u32) ?linux.fd_t {
     };
 }
 
-/// Tell the agent why no terminal exists, then leave. The agent forwards this
-/// frame, so a caller reads the guest's own reason rather than a timeout.
+/// Tell the agent why no terminal exists, then leave.
 fn ttyFail(status_fd: linux.fd_t, message: []const u8) noreturn {
     var buf: [512]u8 = undefined;
     const text = std.fmt.bufPrint(
@@ -1171,8 +1111,7 @@ fn ttyFail(status_fd: linux.fd_t, message: []const u8) noreturn {
     linux.exit(1);
 }
 
-/// The shell side of a terminal: its own session, the pty as its controlling
-/// terminal, the caller's uid — never root — and the workspace as its cwd.
+/// The shell side of a terminal: its own session, the pty as its controlling terminal, the caller's uid — never root — and the workspace as its cwd.
 fn ttyShellChild(slave_number: u32, cwd: []const u8) noreturn {
     var path_buf: [64]u8 = undefined;
     const slave_path = std.fmt.bufPrintZ(&path_buf, "{s}{d}", .{ tty_pts_dir, slave_number }) catch linux.exit(127);
@@ -1199,8 +1138,7 @@ fn ttyShellChild(slave_number: u32, cwd: []const u8) noreturn {
     linux.exit(127);
 }
 
-/// Kill the shell's whole session and wait for it. The shell leads its own
-/// session, so its pid is its process group.
+/// Kill the shell's whole session and wait for it.
 fn ttyKill(master: linux.fd_t, shell_pid: i64) void {
     const group: usize = @bitCast(-@as(isize, @intCast(shell_pid)));
     _ = linux.syscall2(.kill, group, @intFromEnum(linux.SIG.KILL));
@@ -1216,8 +1154,7 @@ fn ttyKill(master: linux.fd_t, shell_pid: i64) void {
     _ = linux.close(master);
 }
 
-/// One `read`: whatever the pty has right now, plus the exit state. Never
-/// blocks — an empty answer is the caller's cue to ask again.
+/// One `read`: whatever the pty has right now, plus the exit state.
 fn ttyReplyRead(conn_fd: linux.fd_t, master: linux.fd_t, shell_pid: i64, max_bytes: usize) void {
     var exited = false;
     var status: u32 = 0;
@@ -1285,8 +1222,7 @@ fn ttyReplyWrite(conn_fd: linux.fd_t, master: linux.fd_t, data_b64: []const u8) 
     reply(conn_fd, "{{\"type\":\"tty.wrote\",\"id\":1,\"bytes\":{d}}}", .{written});
 }
 
-/// One request on a terminal's own port. Returns false when the terminal is
-/// finished and its host should go away.
+/// One request on a terminal's own port.
 fn ttyServeOne(conn_fd: linux.fd_t, master: linux.fd_t, shell_pid: i64) bool {
     var header: [4]u8 = undefined;
     if (!readExact(conn_fd, &header)) return true;
@@ -1338,8 +1274,7 @@ fn ttyServeOne(conn_fd: linux.fd_t, master: linux.fd_t, shell_pid: i64) bool {
     return true;
 }
 
-/// The process that owns one terminal: it creates the pty, forks the shell,
-/// binds the terminal's own vsock port, and serves until the terminal closes.
+/// The process that owns one terminal: it creates the pty, forks the shell, binds the terminal's own vsock port, and serves until the terminal closes.
 fn ttyHost(status_fd: linux.fd_t, request_id: i64, slot: usize, cols: u16, rows: u16, cwd: []const u8) noreturn {
     const master_rc = linux.open(tty_ptmx, .{ .ACCMODE = .RDWR, .NOCTTY = true }, 0);
     if (linux.errno(master_rc) != .SUCCESS) ttyFail(status_fd, "the guest has no usable /dev/ptmx");
@@ -1386,8 +1321,7 @@ fn ttyHost(status_fd: linux.fd_t, request_id: i64, slot: usize, cols: u16, rows:
     }
 }
 
-/// Read the terminal host's report. A host that died without one is a failed
-/// open, never an open the caller has to discover is dead.
+/// Read the terminal host's report.
 fn ttyReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
     var waited: u32 = 0;
     while (waited < tty_report_deadline_ms) : (waited += 20) {
@@ -1404,8 +1338,7 @@ fn ttyReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
     return buf[0..len];
 }
 
-/// `tty open`: fork the terminal host and answer with its pid and port. The
-/// agent itself owns no pty, so a terminal outlives any one connection.
+/// `tty open`: fork the terminal host and answer with its pid and port.
 fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u8) void {
     if (!ttyWindowOk(cols, rows)) {
         reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"cols/rows are out of range\"}}", .{id});
@@ -1464,8 +1397,7 @@ fn runTtyOpen(conn_fd: linux.fd_t, id: i64, cols: u16, rows: u16, cwd: []const u
 const duplex_port_base: u32 = wire.duplex_port_base;
 const max_duplex: usize = wire.max_duplex;
 const duplex_chunk: usize = wire.max_duplex_chunk;
-/// How long one `read` waits inside the guest for a byte before answering
-/// "nothing yet", and how long one `write` waits for the server to drain.
+/// How long one `read` waits inside the guest for a byte before answering "nothing yet", and how long one `write` waits for the server to drain.
 const duplex_read_wait_ms: i32 = 200;
 const duplex_reap_slice_ms: u64 = 10;
 /// How long a read that saw EOF waits for the server's exit code.
@@ -1480,8 +1412,7 @@ const DuplexRequest = struct {
     cwd: []const u8 = tty_cwd,
 };
 
-/// One live duplex: the agent's handle on the process that owns it. The pipes
-/// and the child belong to that process, never to PID 1.
+/// One live duplex: the agent's handle on the process that owns it.
 const DuplexSlot = struct {
     used: u8 = 0,
     host_pid: i64 = 0,
@@ -1525,8 +1456,7 @@ fn duplexFail(status_fd: linux.fd_t, message: []const u8) noreturn {
     linux.exit(1);
 }
 
-/// The server's stdin and stdout are PIPES, never a pty: a pty merges stderr
-/// into stdout and echoes stdin, and either one corrupts MCP framing.
+/// The server's stdin and stdout are PIPES, never a pty: a pty merges stderr into stdout and echoes stdin, and either one corrupts MCP framing.
 fn duplexChild(req: *const DuplexRequest, in_read: linux.fd_t, out_write: linux.fd_t) noreturn {
     var cwd_buf: [1024]u8 = undefined;
     _ = linux.setsid();
@@ -1572,8 +1502,7 @@ fn duplexError(conn_fd: linux.fd_t, message: []const u8) void {
     reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":1,\"message\":\"{s}\"}}", .{message});
 }
 
-/// Whatever the server has written right now, plus its exit state. `eof` is
-/// the read end of a pipe that every writer has closed, never "no data yet".
+/// Whatever the server has written right now, plus its exit state.
 fn duplexReplyRead(conn_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64, max_bytes: usize) void {
     var status: ?u32 = reapWithin(child_pid, 0);
 
@@ -1585,9 +1514,7 @@ fn duplexReplyRead(conn_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64, max_
         if (linux.errno(rc) == .SUCCESS and rc > 0) {
             got = rc;
         } else if (status == null) {
-            // Zero bytes on a readable pipe IS end-of-file, and a server that
-            // closed its output is on its way out: report the code it leaves
-            // behind rather than the zero it has not earned yet.
+            // Zero bytes on a readable pipe IS end-of-file, and a server that closed its output is on its way out: report the code it leaves behind rather than the zero it …
             status = reapWithin(child_pid, duplex_exit_wait_ms);
         }
     }
@@ -1614,8 +1541,7 @@ fn exitCode(status: ?u32) i64 {
     return if (linux.W.IFEXITED(st)) @intCast(linux.W.EXITSTATUS(st)) else -1;
 }
 
-/// Reap the server, giving it at most `budget_ms` to die. The read end of the
-/// pipe goes readable a hair before `wait4` can see the corpse.
+/// Reap the server, giving it at most `budget_ms` to die.
 fn reapWithin(child_pid: i64, budget_ms: u32) ?u32 {
     var waited: u32 = 0;
     while (true) {
@@ -1628,9 +1554,7 @@ fn reapWithin(child_pid: i64, budget_ms: u32) ?u32 {
     }
 }
 
-/// Write one piece to the server's stdin, waiting for space for at most
-/// `duplex_write_wait_ms`. A server that stopped draining must not park this
-/// process for the rest of the workspace's life.
+/// Write one piece to the server's stdin, waiting for space for at most `duplex_write_wait_ms`.
 fn duplexReplyWrite(conn_fd: linux.fd_t, in_fd: linux.fd_t, data_b64: []const u8) void {
     var chunk: [duplex_chunk]u8 = undefined;
     const decoder = std.base64.standard.Decoder;
@@ -1656,8 +1580,7 @@ fn duplexReplyWrite(conn_fd: linux.fd_t, in_fd: linux.fd_t, data_b64: []const u8
     reply(conn_fd, "{{\"type\":\"duplex.wrote\",\"id\":1,\"bytes\":{d}}}", .{off});
 }
 
-/// One request on a duplex's own port. Returns false when the duplex is
-/// finished and its host should go away.
+/// One request on a duplex's own port.
 fn duplexServeOne(conn_fd: linux.fd_t, in_fd: linux.fd_t, out_fd: linux.fd_t, child_pid: i64) bool {
     var header: [4]u8 = undefined;
     if (!readExact(conn_fd, &header)) return true;
@@ -1698,8 +1621,7 @@ fn duplexErrorOrKeep(conn_fd: linux.fd_t, message: []const u8) bool {
     return true;
 }
 
-/// The process that owns one duplex: it creates both pipes, forks the server,
-/// binds the duplex's own vsock port, and serves until the duplex closes.
+/// The process that owns one duplex: it creates both pipes, forks the server, binds the duplex's own vsock port, and serves until the duplex closes.
 fn duplexHost(status_fd: linux.fd_t, request_id: i64, slot: usize, req: *const DuplexRequest) noreturn {
     var in_fds: [2]linux.fd_t = .{ -1, -1 };
     if (!pipePair(&in_fds)) duplexFail(status_fd, "pipe failed");
@@ -1760,8 +1682,7 @@ fn duplexReadReport(status_fd: linux.fd_t, buf: []u8) ?[]const u8 {
     return buf[0..len];
 }
 
-/// `duplex open`: fork the duplex host and answer with its pid and port. The
-/// agent itself owns no pipe, so a server outlives any one connection.
+/// `duplex open`: fork the duplex host and answer with its pid and port.
 fn runDuplexOpen(conn_fd: linux.fd_t, req: *const DuplexRequest) void {
     const slot = duplexClaim() orelse {
         reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"all {d} duplexes are in use\"}}", .{ req.id, max_duplex });
@@ -1927,8 +1848,7 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
     if (std.mem.eql(u8, kind, "tty")) {
         const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
         const op = if (obj.get("op")) |v| (if (v == .string) v.string else "") else "";
-        // Only `open` reaches the agent. A live terminal answers on its own
-        // port, where a tty id names a guest process rather than a request.
+        // Only `open` reaches the agent.
         if (!std.mem.eql(u8, op, "open")) {
             reply(conn_fd, "{{\"type\":\"tty.error\",\"id\":{d},\"message\":\"the agent only opens terminals\"}}", .{id});
             return;
@@ -1942,8 +1862,7 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
     if (std.mem.eql(u8, kind, "duplex")) {
         const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
         const op = if (obj.get("op")) |v| (if (v == .string) v.string else "") else "";
-        // Only `open` reaches the agent: a live duplex answers on its own
-        // port, where a duplex id names a guest process, not a request.
+        // Only `open` reaches the agent: a live duplex answers on its own port, where a duplex id names a guest process, not a request.
         if (!std.mem.eql(u8, op, "open")) {
             reply(conn_fd, "{{\"type\":\"duplex.error\",\"id\":{d},\"message\":\"the agent only opens duplexes\"}}", .{id});
             return;
@@ -2012,8 +1931,7 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
     }
     if (std.mem.eql(u8, kind, "fs.walk")) {
         const id = if (obj.get("id")) |v| asI64(v, 0) else 0;
-        // The workspace root itself is a legal start, so an empty path is not
-        // a missing one here the way it is for a file.
+        // The workspace root itself is a legal start, so an empty path is not a missing one here the way it is for a file.
         const path = if (obj.get("path")) |v| (if (v == .string) v.string else "") else "";
         const asked_depth = if (obj.get("max_depth")) |v| asUsize(v, max_walk_depth) else max_walk_depth;
         const asked_entries = if (obj.get("max_entries")) |v| asUsize(v, max_walk_entries) else max_walk_entries;
@@ -2070,9 +1988,7 @@ fn serveRequest(conn_fd: linux.fd_t, text: []const u8) void {
 
 // ─── the preview tunnel ─────────────────────────────────────────────────
 
-/// One request forwarded to a guest loopback port, answered in pieces. The
-/// guest is the only place a tenant's dev server listens, so this is the only
-/// way a browser reaches it.
+/// One request forwarded to a guest loopback port, answered in pieces.
 fn runPortForward(conn_fd: linux.fd_t, id: i64, port: u16, data_b64: []const u8, max_bytes: usize) void {
     const size = std.base64.standard.Decoder.calcSizeForSlice(data_b64) catch {
         reply(conn_fd, "{{\"type\":\"port.forward.error\",\"id\":{d},\"message\":\"body is not base64\"}}", .{id});
@@ -2128,8 +2044,7 @@ fn runPortForward(conn_fd: linux.fd_t, id: i64, port: u16, data_b64: []const u8,
     });
 }
 
-/// A blocking TCP connect to the guest's own loopback, with deadlines, because
-/// a dev server that never answers must not stall the agent's frame loop.
+/// A blocking TCP connect to the guest's own loopback, with deadlines, because a dev server that never answers must not stall the agent's frame loop.
 fn connectLoopback(port: u16) ?linux.fd_t {
     const rc = linux.socket(af_inet, sock_stream, 0);
     if (linux.errno(rc) != .SUCCESS) return null;
@@ -2144,9 +2059,7 @@ fn connectLoopback(port: u16) ?linux.fd_t {
     return fd;
 }
 
-/// Start the in-guest network forwarder. The image ships it; without it the
-/// tenant has no way out of the VM and no resolver, and that is logged rather
-/// than guessed at.
+/// Start the in-guest network forwarder.
 fn startNetd() void {
     var path_buf: [64]u8 = undefined;
     const path = cstr(netd_path, &path_buf) orelse return;
@@ -2183,16 +2096,13 @@ fn serve(conn_fd: linux.fd_t) void {
     }
 }
 
-/// One connection, served to the end and closed: every request gets its own, so
-/// a turn that does not close leaks a descriptor per command.
+/// One connection, served to the end and closed: every request gets its own, so a turn that does not close leaks a descriptor per command.
 fn serveConnection(conn_fd: linux.fd_t) void {
     serve(conn_fd);
     _ = linux.close(conn_fd);
 }
 
-/// Hand one connection to its own process and come straight back: a long
-/// `exec` must not hold the listener every other caller dials. A fork that
-/// fails serves inline, so a refused fork costs latency, never the listener.
+/// Hand one connection to its own process and come straight back: a long `exec` must not hold the listener every other caller dials.
 fn serveInChild(conn_fd: linux.fd_t, listener_fd: linux.fd_t) i64 {
     _ = registry();
     const fork_rc = linux.fork();
@@ -2210,9 +2120,7 @@ fn serveInChild(conn_fd: linux.fd_t, listener_fd: linux.fd_t) i64 {
     return child_pid;
 }
 
-/// Collect the connection processes that finished. PID 1 forks nothing else
-/// but `netd` and these, so a WNOHANG sweep here reaps only its own children:
-/// a job or a terminal host belongs to the connection process that forked it.
+/// Collect the connection processes that finished.
 fn reapExited() void {
     while (true) {
         var status: u32 = 0;
@@ -2238,9 +2146,7 @@ pub fn main() void {
     };
     logLine("listening on the agent's vsock port");
 
-    // Wait on the listener, never call `accept` bare: a failure that repeats
-    // must cost a tick, not the vCPU — a spinning PID 1 starves every command.
-    // The happy path stays silent: a serial write is a vmexit, a poll is not news.
+    // Wait on the listener, never call `accept` bare: a failure that repeats must cost a tick, not the vCPU — a spinning PID 1 starves every command.
     var failures: u32 = 0;
     while (true) {
         reapExited();
@@ -2256,8 +2162,7 @@ pub fn main() void {
         const conn_rc = linux.accept(listen_fd, @ptrCast(&peer), &peer_len);
         if (linux.errno(conn_rc) != .SUCCESS) {
             failures += 1;
-            // Log the first one and then rarely: a broken listener must be
-            // visible without a line per attempt.
+            // Log the first one and then rarely: a broken listener must be visible without a line per attempt.
             if (failures == 1 or failures % 64 == 0) logLine("MISSING vsock accept; backing off");
             sleepMs(backoff.afterTurn(false, failures));
             continue;
@@ -2269,8 +2174,7 @@ pub fn main() void {
 
 // ─── tests ───────────────────────────────────────────────────────────────
 
-/// Every handler logs to the serial console on fd 1, and under a test runner
-/// fd 1 is the runner's own pipe: point it at /dev/null for the turn.
+/// Every handler logs to the serial console on fd 1, and under a test runner fd 1 is the runner's own pipe: point it at /dev/null for the turn.
 fn muteSerial() ?linux.fd_t {
     const devnull = linux.open("/dev/null", .{ .ACCMODE = .WRONLY }, 0);
     if (linux.errno(devnull) != .SUCCESS) return null;
@@ -2290,8 +2194,7 @@ fn unmuteSerial(saved: ?linux.fd_t) void {
     _ = linux.close(fd);
 }
 
-/// The descriptors 0..255 that are open right now, so a leak test can count a
-/// delta instead of trusting a number.
+/// The descriptors 0..255 that are open right now, so a leak test can count a delta instead of trusting a number.
 fn liveDescriptors() usize {
     var live: usize = 0;
     var fd: i32 = 0;
@@ -2308,8 +2211,7 @@ fn socketPair() ?[2]linux.fd_t {
     return fds;
 }
 
-/// A read that would block forever is a hung test, not a failing one: give the
-/// caller's end a deadline so a missing reply returns null.
+/// A read that would block forever is a hung test, not a failing one: give the caller's end a deadline so a missing reply returns null.
 fn setReceiveTimeout(fd: linux.fd_t, ms: i64) void {
     const tv = linux.timeval{
         .sec = @intCast(@divTrunc(ms, 1000)),
@@ -2352,14 +2254,12 @@ test "a served connection is closed, not left open" {
     var reply_buf: [512]u8 = undefined;
     const answer = readFrame(caller_end, &reply_buf) orelse return error.NoReply;
     try std.testing.expectEqualStrings(hello_json, answer);
-    // The descriptor the agent used is gone: closing it again is EBADF, and no
-    // other call ran in between that could have taken the number back.
+    // The descriptor the agent used is gone: closing it again is EBADF, and no other call ran in between that could have taken the number back.
     try std.testing.expectEqual(linux.E.BADF, linux.errno(linux.close(agent_end)));
 }
 
 test "sixty turns do not grow the descriptor table" {
-    // The regression this pins: one descriptor per command is a workspace that
-    // stops answering after ~1020 of them.
+    // The regression this pins: one descriptor per command is a workspace that stops answering after ~1020 of them.
     const baseline = liveDescriptors();
     var turn: usize = 0;
     while (turn < 60) : (turn += 1) {
@@ -2401,8 +2301,7 @@ test "an oversized frame is refused without a reply, and the connection closes" 
     setReceiveTimeout(caller_end, 2000);
     defer _ = linux.close(caller_end);
 
-    // A length the agent refuses to read at all: it must not wait for a body
-    // that is never coming.
+    // A length the agent refuses to read at all: it must not wait for a body that is never coming.
     var header: [4]u8 = undefined;
     wire.frameHeader(max_frame + 1, &header);
     try std.testing.expect(writeBytes(caller_end, &header));
@@ -2429,8 +2328,7 @@ test "a streamed walk frame and its closer still fit one frame" {
 
 // ── A duplex runs on the host, over pipes: no vsock and no VM needed. ─────
 
-/// Both pipes plus the forked server, so the serving code is exercised exactly
-/// as it runs in the guest.
+/// Both pipes plus the forked server, so the serving code is exercised exactly as it runs in the guest.
 const DuplexFixture = struct {
     in_fd: linux.fd_t,
     out_fd: linux.fd_t,
@@ -2469,8 +2367,7 @@ const DuplexFixture = struct {
     }
 };
 
-/// One request/answer on the duplex, driven through the same `duplexServeOne`
-/// the guest host runs. Returns the reply text, borrowed from `buf`.
+/// One request/answer on the duplex, driven through the same `duplexServeOne` the guest host runs.
 fn duplexAsk(
     host_end: linux.fd_t,
     caller_end: linux.fd_t,
@@ -2546,8 +2443,7 @@ test "duplex close ends the host loop, and the server is gone afterwards" {
     defer _ = linux.close(caller_end);
 
     try std.testing.expect(sendFrame(caller_end, "{\"op\":\"close\"}"));
-    // `false` is what makes `duplexHost` leave its accept loop and kill the
-    // server; a `true` here would keep the process alive forever.
+    // `false` is what makes `duplexHost` leave its accept loop and kill the server; a `true` here would keep the process alive forever.
     try std.testing.expect(!duplexServeOne(host_end, fx.in_fd, fx.out_fd, fx.child_pid));
     var reply_buf: [256]u8 = undefined;
     const closed = readFrame(caller_end, &reply_buf) orelse return error.NoReply;

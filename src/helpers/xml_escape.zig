@@ -11,8 +11,7 @@ pub fn xmlEscape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
             '&' => try result.appendSlice(allocator, "&amp;"),
             '"' => try result.appendSlice(allocator, "&quot;"),
             '\'' => try result.appendSlice(allocator, "&apos;"),
-            // XML 1.0 forbids C0 controls except \t \n \r, plus DEL. Binary
-            // stdout (e.g.
+            // XML 1.0 forbids C0 controls except \t \n \r, plus DEL.
             0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F, 0x7F => try result.appendSlice(allocator, "�"),
             else => try result.append(allocator, c),
         }
@@ -21,8 +20,7 @@ pub fn xmlEscape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     return try result.toOwnedSlice(allocator);
 }
 
-/// Replace bytes that are illegal in both XML 1.0 and JSON strings with
-/// U+FFFD: NUL, C0 controls except \t \n \r, and DEL.
+/// Replace bytes that are illegal in both XML 1.0 and JSON strings with U+FFFD: NUL, C0 controls except \t \n \r, and DEL.
 pub fn sanitizeControlChars(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var result = std.ArrayList(u8).empty;
     errdefer result.deinit(allocator);

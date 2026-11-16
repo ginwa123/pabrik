@@ -23,9 +23,7 @@ describe('workspacesStore.updateDesignElementsGeometryBatch', () => {
     _clearRecentLocalMutationsForTests()
   })
 
-  // Minimal mock — apiFetch calls .text() on non-OK responses and
-  // useNotificationStore() for toast on non-2xx (we don't exercise
-  // error paths here; this is the happy-path spec).
+  // Minimal mock — apiFetch calls .text() on non-OK responses and useNotificationStore() for toast on non-2xx (we don't exercise error paths here; this is the …
   function mockFetchOnce(status: number, body: unknown): void {
     fetchMock.mockResolvedValueOnce({
       ok: status >= 200 && status < 300,
@@ -37,8 +35,7 @@ describe('workspacesStore.updateDesignElementsGeometryBatch', () => {
 
   it('calls the batch API ONCE with all updates (not N per-element PATCHes)', async () => {
     const ws = useWorkspacesStore()
-    // Seed a workspace + item with 3 elements in the local cache so
-    // the store action can mirror the response.
+    // Seed a workspace + item with 3 elements in the local cache so the store action can mirror the response.
     const itemId = 'item_1'
     ws.workspaces.push({
       id: 'ws_1',

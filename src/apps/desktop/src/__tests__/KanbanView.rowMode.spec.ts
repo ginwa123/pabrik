@@ -1,5 +1,4 @@
-/** KanbanView row mode — the URL-backed Columns/Rows layout toggle. Row mode renders the same board
- * as a vertical list grouped by column. */
+/** KanbanView row mode — the URL-backed Columns/Rows layout toggle. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -236,9 +235,7 @@ describe('KanbanView row mode', () => {
     await wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-layout-rows"]`).trigger('click')
     await flushPromises()
 
-    // The ?sorts= watcher can fire in the same tick as the layout switch
-    // (it runs from loadColumnsAndTasks' nextTick). Assert on the LAST
-    // write so we catch a clobber regardless of ordering.
+    // The ?sorts= watcher can fire in the same tick as the layout switch (it runs from loadColumnsAndTasks' nextTick).
     const query = lastQuery(mounted.replaceMock)
     expect(query.sorts).toBe('col_1:name:asc')
     expect(query.layout).toBe('rows')
@@ -408,8 +405,7 @@ describe('KanbanView row mode', () => {
     await wrapper.find('[data-testid="kanban-row-t1-details"]').trigger('click')
     await nextTick()
 
-    // KanbanView consumes viewTaskDetail internally (it owns the panel),
-    // so the observable effect is the panel + the ?detail= push.
+    // KanbanView consumes viewTaskDetail internally (it owns the panel), so the observable effect is the panel + the ?detail= push.
     expect(wrapper.find('[data-testid="kanban-detail-panel"]').exists()).toBe(true)
     const pushCalls = mounted.pushMock.mock.calls
     expect(pushCalls.length).toBeGreaterThan(0)
@@ -456,8 +452,7 @@ describe('KanbanView row mode', () => {
     await wrapper.find('[data-testid="kanban-row-group-col_1-menu-run-all"]').trigger('click')
     await flushPromises()
 
-    // KanbanView consumes requestRunAllAgents internally (it owns the
-    // bulk-run state), so the observable effect is the store call.
+    // KanbanView consumes requestRunAllAgents internally (it owns the bulk-run state), so the observable effect is the store call.
     expect(confirmSpy).toHaveBeenCalled()
     expect(runAllSpy).toHaveBeenCalled()
     expect(runAllSpy.mock.calls[0]![2]).toBe('col_1')
@@ -475,8 +470,7 @@ describe('KanbanView row mode', () => {
     await wrapper.find('[data-testid="kanban-sort-menu-name-asc"]').trigger('click')
     await flushPromises()
 
-    // KanbanView consumes sortChange internally: it fires the per-column
-    // fetch and mirrors the pick into `?sorts=`.
+    // KanbanView consumes sortChange internally: it fires the per-column fetch and mirrors the pick into `?sorts=`.
     const sortedCalls = fetchSpy.mock.calls.filter((c) => c[2] === 'col_1' && c[6] === 'name')
     expect(sortedCalls.length).toBeGreaterThan(0)
     expect(sortedCalls[0]![7]).toBe('asc')
@@ -491,9 +485,7 @@ describe('KanbanView row mode', () => {
     expect(wrapper.findAll('[data-kanban-row-group]')).toHaveLength(0)
   })
 
-  // ─── Row density (comfortable ⇄ compact) ──────────────────────────────── Density is a
-  // localStorage preference, NOT a URL param — it is a legibility trade-off, not a distinct view,
-  // so a deep link should not carry it (same rule as group collapse).
+  // ─── Row density (comfortable ⇄ compact) ────────────────────────────────
   it('hides the density toggle in column mode', () => {
     const mounted = mountKanbanView()
     wrapper = mounted.wrapper

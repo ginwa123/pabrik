@@ -8,13 +8,10 @@ pub const APP_NAME = "pabrik";
 pub const MEMORIES_DIR = "memories";
 
 /// Subdirectory name under the per-project local config folder.
-/// Mirrors `LOCAL_SKILLS_DIR = ".pabrik/skills"` in tools/skills.zig.
 pub const LOCAL_MEMORIES_DIR = ".pabrik/memories";
 
 
 /// Concatenate `dir` and `name` into a forward-slash path and return it.
-/// Cross-platform convention for "config path" helpers across this project:
-/// always use `/` as the separator, regardless of OS.
 fn joinPath(allocator: std.mem.Allocator, dir: []const u8, name: []const u8) ![]u8 {
     if (dir.len == 0) {
         return allocator.dupe(u8, name);
@@ -68,18 +65,14 @@ fn joinPath4(
     return out;
 }
 
-/// Bytes scanned from the start of a memory file when looking for the
-/// title (first H1). First H1s almost always live in the first line, but
-/// we allow a generous buffer for files that put the H1 after some prose.
+/// Bytes scanned from the start of a memory file when looking for the title (first H1).
 const TITLE_SCAN_LIMIT: usize = 4096;
 
-/// One memory file. All string fields are allocator-owned and must be
-/// freed via `freeMemoriesList`.
+/// One memory file.
 pub const MemoryInfo = struct {
     /// Filename including the .md extension (e.g. "user-preferences.md").
     name: []const u8,
-    /// Title extracted from the first H1 line, or the filename stem
-    /// (without .md) if no H1 is present.
+    /// Title extracted from the first H1 line, or the filename stem (without .md) if no H1 is present.
     title: []const u8,
     /// Absolute path to the memory file.
     path: []const u8,
@@ -98,8 +91,6 @@ pub fn get_global_memories_path(
 
     if (environment.get("HOME")) |home| {
         // Linux/macOS: ~/.config/<APP>/<MEMORIES_DIR>.
-        // On macOS the convention is $HOME/Library/Application Support; keep
-        // the Unix-style fallback for now (separate task to detect macOS).
         return joinPath4(allocator, home, ".config", APP_NAME, MEMORIES_DIR) catch null;
     }
 
@@ -112,14 +103,11 @@ pub fn get_local_memories_path_for_dir(
     cwd: []const u8,
 ) ?[]const u8 {
     if (cwd.len == 0) return null;
-    // Note: std.fs.path.join produces OS-native separators (e.g. '\' on
-    // Windows), which breaks string-equality assertions in tests hardcoded
-    // with forward slashes.
+    // Note: std.fs.path.join produces OS-native separators (e.g.
     return joinPath(allocator, cwd, LOCAL_MEMORIES_DIR) catch null;
 }
 
-/// List all .md memory files in the global memories directory. Returns a
-/// slice of `MemoryInfo`.
+/// List all .md memory files in the global memories directory.
 pub fn listAllMemories(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -128,8 +116,7 @@ pub fn listAllMemories(
     const dir_path = get_global_memories_path(allocator, environment) orelse return &.{};
     defer allocator.free(dir_path);
 
-    // Open the memories directory. Missing directory is NOT an error —
-    // it just means the user has not created any memories yet.
+    // Open the memories directory.
     var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch {
         return &.{};
     };
@@ -153,8 +140,7 @@ pub fn listAllMemories(
         // Only consider .md files. Memories are markdown by design.
         if (!std.mem.endsWith(u8, entry.name, ".md")) continue;
 
-        // Build absolute path. Use joinPath for the cross-platform
-        // `/` separator (see joinPath for why).
+        // Build absolute path.
         const full_path = joinPath(allocator, dir_path, entry.name) catch continue;
 
         // Open the file to read metadata and a prefix for the title.
@@ -169,8 +155,7 @@ pub fn listAllMemories(
             continue;
         };
 
-        // Read the full file to scan for the first H1. No size cap — every
-        // memory is loaded in full.
+        // Read the full file to scan for the first H1.
         const content = std.Io.Dir.cwd().readFileAlloc(
             io,
             full_path,
@@ -195,8 +180,7 @@ pub fn listAllMemories(
             continue;
         };
 
-        // Append to the list. On failure, free the strings we just allocated.
-        // `errdefer` on the append block handles the error case cleanly.
+        // Append to the list.
         list.append(allocator, .{
             .name = name_copy,
             .title = title,
@@ -243,9 +227,7 @@ pub fn listMemoriesInDir(
         // Only consider .md files. Memories are markdown by design.
         if (!std.mem.endsWith(u8, entry.name, ".md")) continue;
 
-        // Build full path. Use the cross-platform `/`-separator joinPath
-        // helper rather than std.fs.path.join (which would produce `\`
-        // on Windows and break string-equality tests).
+        // Build full path.
         const full_path = joinPath(allocator, dir_path, entry.name) catch continue;
 
         const file = std.Io.Dir.cwd().openFile(io, full_path, .{}) catch {
@@ -297,8 +279,7 @@ pub fn listMemoriesInDir(
     return list.toOwnedSlice(allocator) catch &.{};
 }
 
-/// Extract the title from memory file content. Strategy: 1. Scan the first
-/// TITLE_SCAN_LIMIT bytes line by line. 2.
+/// Extract the title from memory file content.
 fn extractTitle(
     allocator: std.mem.Allocator,
     filename: []const u8,
@@ -330,8 +311,7 @@ fn extractTitle(
     return allocator.dupe(u8, stem);
 }
 
-/// Free a `MemoryInfo` slice allocated by `listAllMemories`. Frees every
-/// owned string and the backing slice itself. Safe to call on an empty slice.
+/// Free a `MemoryInfo` slice allocated by `listAllMemories`.
 pub fn freeMemoriesList(allocator: std.mem.Allocator, list: []MemoryInfo) void {
     for (list) |item| {
         allocator.free(item.name);
@@ -341,9 +321,7 @@ pub fn freeMemoriesList(allocator: std.mem.Allocator, list: []MemoryInfo) void {
     allocator.free(list);
 }
 
-// -------------------------------------------------------------------------
-// CRUD helpers — used by the settings-menu HTTP handlers (Chunk 3) and
-// eventually by the `read_memory` / `write_memory` agent tools.
+// CRUD helpers — used by the settings-menu HTTP handlers (Chunk 3) and eventually by the `read_memory` / `write_memory` agent tools.
 
 /// Validate a memory filename.
 pub fn isValidMemoryName(name: []const u8) bool {
@@ -355,8 +333,7 @@ pub fn isValidMemoryName(name: []const u8) bool {
     return true;
 }
 
-/// Read a single global memory file by name (e.g. "user-preferences.md").
-/// Returns allocated content the caller owns and must free.
+/// Read a single global memory file by name (e.g.
 pub fn readMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -378,8 +355,7 @@ pub fn readMemoryFile(
     ) catch null;
 }
 
-/// Write content to a global memory file. Creates the parent dir if it is
-/// missing. Overwrites an existing file with the same name.
+/// Write content to a global memory file.
 pub fn writeMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -391,19 +367,16 @@ pub fn writeMemoryFile(
     const dir_path = get_global_memories_path(allocator, environment) orelse return false;
     defer allocator.free(dir_path);
 
-    // Ensure the global memories directory exists. createDirPath is a
-    // no-op if the dir already exists, so it is safe on every call.
+    // Ensure the global memories directory exists. createDirPath is a no-op if the dir already exists, so it is safe on every call.
     std.Io.Dir.cwd().createDirPath(io, dir_path) catch return false;
 
     const full_path = joinPath(allocator, dir_path, name) catch return false;
     defer allocator.free(full_path);
 
-    // `renameAbsolute` below asserts BOTH paths are absolute and ABORTS the
-    // whole process (Debug/ReleaseSafe) when they are not.
+    // `renameAbsolute` below asserts BOTH paths are absolute and ABORTS the whole process (Debug/ReleaseSafe) when they are not.
     if (!std.fs.path.isAbsolute(full_path)) return false;
 
-    // Atomic-ish: write to a temp file then rename. The temp path is
-    // `<dir>/<name>.md.tmp` — an extra `.tmp` suffix on the final filename.
+    // Atomic-ish: write to a temp file then rename.
     const tmp_path = allocator.alloc(u8, full_path.len + 4) catch return false;
     defer allocator.free(tmp_path);
     @memcpy(tmp_path[0..full_path.len], full_path);
@@ -414,15 +387,12 @@ pub fn writeMemoryFile(
         defer std.Io.File.close(file, io);
         std.Io.File.writeStreamingAll(file, io, content) catch return false;
     }
-    // renameAbsolute asserts both paths are absolute. We joined to an
-    // absolute dir_path, so this is safe.
+    // renameAbsolute asserts both paths are absolute.
     std.Io.Dir.renameAbsolute(tmp_path, full_path, io) catch return false;
     return true;
 }
 
-/// Edit = overwrite an existing memory. Returns `false` if the file does not
-/// exist; callers should branch to `writeMemoryFile` for the "create new"
-/// case.
+/// Edit = overwrite an existing memory.
 pub fn editMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -442,9 +412,7 @@ pub fn editMemoryFile(
     return writeMemoryFile(allocator, io, environment, name, content);
 }
 
-/// Delete a global memory file by name. Returns `true` on success OR if the
-/// file did not exist (idempotent delete — caller does not need to
-/// distinguish "was there" from "removed").
+/// Delete a global memory file by name.
 pub fn deleteMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -465,9 +433,7 @@ pub fn deleteMemoryFile(
     return true;
 }
 
-/// Returns `true` if a memory with the given name exists in the global
-/// folder. A validation failure (empty name, no `.md`, path sep, `..`)
-/// also returns `false`.
+/// Returns `true` if a memory with the given name exists in the global folder.
 pub fn memoryExists(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -485,7 +451,6 @@ pub fn memoryExists(
     return true;
 }
 
-// -------------------------------------------------------------------------
 // LOCAL memories — scoped to a per-cwd `.pabrik/memories/` directory.
 
 /// Resolve the local memories path from the process's CWD via `io`.
@@ -501,8 +466,7 @@ pub fn get_local_memories_path_from_io(
     return get_local_memories_path_for_dir(allocator, cwd_buf[0..cwd_len]);
 }
 
-/// Resolve the local memories path for a given name. The caller passes the
-/// full directory path (e.g.
+/// Resolve the local memories path for a given name.
 pub fn get_local_memory_file_path(
     allocator: std.mem.Allocator,
     dir_path: []const u8,
@@ -510,14 +474,11 @@ pub fn get_local_memory_file_path(
 ) ?[]const u8 {
     if (dir_path.len == 0) return null;
     if (!isValidMemoryName(name)) return null;
-    // See get_local_memories_path_for_dir for why we use joinPath instead
-    // of std.fs.path.join.
+    // See get_local_memories_path_for_dir for why we use joinPath instead of std.fs.path.join.
     return joinPath(allocator, dir_path, name) catch null;
 }
 
-/// Read a single local memory file by name. The dir is typically obtained
-/// from `get_local_memories_path_from_io` /
-/// `get_local_memories_path_for_dir`.
+/// Read a single local memory file by name.
 pub fn readLocalMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -535,8 +496,7 @@ pub fn readLocalMemoryFile(
     ) catch null;
 }
 
-/// Write content to a local memory file. Creates the parent `<dir_path>`
-/// (typically `<cwd>/.pabrik/memories/`) if missing.
+/// Write content to a local memory file.
 pub fn writeLocalMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -549,16 +509,13 @@ pub fn writeLocalMemoryFile(
     const full_path = joinPath(allocator, dir_path, name) catch return false;
     defer allocator.free(full_path);
 
-    // `renameAbsolute` below asserts BOTH paths are absolute and ABORTS the
-    // whole process (Debug/ReleaseSafe) when they are not.
+    // `renameAbsolute` below asserts BOTH paths are absolute and ABORTS the whole process (Debug/ReleaseSafe) when they are not.
     if (!std.fs.path.isAbsolute(full_path)) return false;
 
-    // Ensure the local memories directory exists. createDirPath is a
-    // no-op if the dir already exists, so it is safe on every call.
+    // Ensure the local memories directory exists. createDirPath is a no-op if the dir already exists, so it is safe on every call.
     std.Io.Dir.cwd().createDirPath(io, dir_path) catch return false;
 
-    // Atomic-ish: write to a temp file then rename. See writeMemoryFile
-    // for why we use `@memcpy` instead of `path.join(full_path, ".tmp")`.
+    // Atomic-ish: write to a temp file then rename.
     const tmp_path = allocator.alloc(u8, full_path.len + 4) catch return false;
     defer allocator.free(tmp_path);
     @memcpy(tmp_path[0..full_path.len], full_path);
@@ -573,9 +530,7 @@ pub fn writeLocalMemoryFile(
     return true;
 }
 
-/// Delete a local memory file. Idempotent — returns `true` on success
-/// OR if the file was already missing. Returns `false` on validation
-/// error, missing dir_path, or unexpected IO failure.
+/// Delete a local memory file.
 pub fn deleteLocalMemoryFile(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -612,9 +567,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
 
-// -------------------------------------------------------------------------
 // get_local_memories_path_for_dir — pure function tests
-// -------------------------------------------------------------------------
 
 test "get_local_memories_path_for_dir returns <cwd>/.pabrik/memories" {
     const alloc = std.testing.allocator;
@@ -633,9 +586,7 @@ test "get_local_memories_path_for_dir returns null on empty cwd" {
 }
 
 test "get_local_memories_path_for_dir does not resolve relative paths" {
-    // Mirrors get_local_skills_path_for_dir semantics: no realpath
-    // resolution. The caller (buildMessages) is responsible for passing
-    // an absolute cwd, which it does via realPathFileAlloc.
+    // Mirrors get_local_skills_path_for_dir semantics: no realpath resolution.
     const alloc = std.testing.allocator;
     const path = get_local_memories_path_for_dir(alloc, "relative/proj");
     defer if (path) |p| alloc.free(p);
@@ -652,9 +603,7 @@ test "get_local_memories_path_for_dir freed slice does not double-free" {
     alloc.free(path.?);
 }
 
-// -------------------------------------------------------------------------
 // listMemoriesInDir — filesystem integration tests
-// -------------------------------------------------------------------------
 
 test "listMemoriesInDir returns empty slice when dir does not exist" {
     const alloc = std.testing.allocator;
@@ -778,8 +727,7 @@ test "listMemoriesInDir lists multiple .md files with correct titles" {
 
     try std.testing.expectEqual(@as(usize, 2), list.len);
 
-    // We don't assert on order (dir.iterate order is OS-dependent),
-    // just that both files appear with their expected titles.
+    // We don't assert on order (dir.iterate order is OS-dependent), just that both files appear with their expected titles.
     var found_after_fix = false;
     var found_stderr = false;
     for (list) |mem| {
@@ -886,11 +834,9 @@ test "listMemoriesInDir free contract: empty list is safe to free" {
     // No panic — success criterion.
 }
 
-// -------------------------------------------------------------------------
 // CRUD helpers — Chunk 1 of the memories-settings-menu plan.
 
-/// Build a fresh `Environ.Map` with `HOME` set to `home_path`, plus a
-/// per-test scratch dir under `/tmp/`.
+/// Build a fresh `Environ.Map` with `HOME` set to `home_path`, plus a per-test scratch dir under `/tmp/`.
 fn setupMemoryHomeEnv(alloc: std.mem.Allocator, io: std.Io, scratch_name: []const u8) !struct {
     env: std.process.Environ.Map,
     home_path: []u8,
@@ -908,9 +854,7 @@ fn setupMemoryHomeEnv(alloc: std.mem.Allocator, io: std.Io, scratch_name: []cons
     return .{ .env = env, .home_path = home_path };
 }
 
-// -------------------------------------------------------------------------
 // isValidMemoryName — pure validator tests
-// -------------------------------------------------------------------------
 
 test "isValidMemoryName rejects empty, whitespace, no .md, slashes, parent ref" {
     // Reject cases
@@ -948,9 +892,7 @@ test "isValidMemoryName accepts simple, hyphenated, and dotted .md names" {
     }
 }
 
-// -------------------------------------------------------------------------
 // readMemoryFile — invalid name + missing file
-// -------------------------------------------------------------------------
 
 test "readMemoryFile returns null on invalid name" {
     const alloc = std.testing.allocator;
@@ -961,8 +903,7 @@ test "readMemoryFile returns null on invalid name" {
     defer alloc.free(env_or_err.home_path);
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
-    // Invalid names should return null even if the file would otherwise
-    // be readable — validation is the first guard.
+    // Invalid names should return null even if the file would otherwise be readable — validation is the first guard.
     try std.testing.expect(readMemoryFile(alloc, io, &env, "") == null);
     try std.testing.expect(readMemoryFile(alloc, io, &env, "no-extension") == null);
     try std.testing.expect(readMemoryFile(alloc, io, &env, "../escape.md") == null);
@@ -983,9 +924,7 @@ test "readMemoryFile returns null on missing file" {
     try std.testing.expect(result == null);
 }
 
-// -------------------------------------------------------------------------
 // writeMemoryFile — creates parent dir, overwrites
-// -------------------------------------------------------------------------
 
 test "writeMemoryFile creates parent dir if missing" {
     const alloc = std.testing.allocator;
@@ -996,8 +935,7 @@ test "writeMemoryFile creates parent dir if missing" {
     defer alloc.free(env_or_err.home_path);
     defer std.Io.Dir.cwd().deleteTree(io, env_or_err.home_path) catch {};
 
-    // The memories/ subdir does not exist yet. writeMemoryFile must
-    // create it (via createDirPath) before writing the file.
+    // The memories/ subdir does not exist yet. writeMemoryFile must create it (via createDirPath) before writing the file.
     try std.testing.expect(writeMemoryFile(alloc, io, &env, "new.md", "# Hello\n"));
 
     // Read it back to confirm the write actually landed.
@@ -1034,9 +972,7 @@ test "writeMemoryFile overwrites existing file" {
     }
 }
 
-// -------------------------------------------------------------------------
 // memoryExists — stat-based check
-// -------------------------------------------------------------------------
 
 test "memoryExists: false on missing, true after write, false after delete" {
     const alloc = std.testing.allocator;
@@ -1059,9 +995,7 @@ test "memoryExists: false on missing, true after write, false after delete" {
     try std.testing.expect(!memoryExists(alloc, io, &env, "present.md"));
 }
 
-// -------------------------------------------------------------------------
 // deleteMemoryFile — idempotent
-// -------------------------------------------------------------------------
 
 test "deleteMemoryFile is idempotent (returns true on missing)" {
     const alloc = std.testing.allocator;
@@ -1075,16 +1009,12 @@ test "deleteMemoryFile is idempotent (returns true on missing)" {
     // Delete a file that was never written — must return true (idempotent).
     try std.testing.expect(deleteMemoryFile(alloc, io, &env, "never.md"));
 
-    // And on an invalid name — must return false (validation is the
-    // first guard, so an invalid name short-circuits to false before
-    // we even check the FS).
+    // And on an invalid name — must return false (validation is the first guard, so an invalid name short-circuits to false before we even check the FS).
     try std.testing.expect(!deleteMemoryFile(alloc, io, &env, "no-ext"));
     try std.testing.expect(!deleteMemoryFile(alloc, io, &env, "../escape.md"));
 }
 
-// -------------------------------------------------------------------------
 // editMemoryFile — fails on missing
-// -------------------------------------------------------------------------
 
 test "editMemoryFile returns false when target does not exist" {
     const alloc = std.testing.allocator;
@@ -1099,17 +1029,13 @@ test "editMemoryFile returns false when target does not exist" {
     const result = try editMemoryFile(alloc, io, &env, "ghost.md", "replacement");
     try std.testing.expect(!result);
 
-    // And the file must NOT have been created as a side-effect — the
-    // whole point of edit (vs write) is to require pre-existence.
+    // And the file must NOT have been created as a side-effect — the whole point of edit (vs write) is to require pre-existence.
     try std.testing.expect(!memoryExists(alloc, io, &env, "ghost.md"));
 }
 
-// ===========================================================================
-// LOCAL memory helpers — get_local_memories_path_from_io,
-// get_local_memory_file_path, readLocalMemoryFile, writeLocalMemoryFile,
+// LOCAL memory helpers — get_local_memories_path_from_io, get_local_memory_file_path, readLocalMemoryFile, writeLocalMemoryFile,
 
 /// Build a unique empty temp dir and return its absolute path.
-/// Caller owns the returned slice.
 fn setupLocalDir(alloc: std.mem.Allocator, io: std.Io, label: []const u8) ![]u8 {
     const stamp = std.Io.Clock.now(.real, io).toNanoseconds();
     const path = try std.fmt.allocPrint(
@@ -1150,8 +1076,7 @@ test "writeLocalMemoryFile creates the parent dir if missing" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    // Note: the parent dir does NOT exist when we call writeLocalMemoryFile
-    // — the helper is expected to create it (mirrors writeMemoryFile).
+    // Note: the parent dir does NOT exist when we call writeLocalMemoryFile — the helper is expected to create it (mirrors writeMemoryFile).
     const stamp = std.Io.Clock.now(.real, io).toNanoseconds();
     const dir = try std.fmt.allocPrint(
         alloc,
@@ -1173,8 +1098,7 @@ test "writeLocalMemoryFile refuses a relative dir_path instead of aborting" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    // `dir_path` is a request-supplied `cwd` (local_memories_create/update)
-    // that nothing validates as absolute.
+    // `dir_path` is a request-supplied `cwd` (local_memories_create/update) that nothing validates as absolute.
     try std.testing.expect(!writeLocalMemoryFile(alloc, io, "relative/dir", "m.md", "# Hi\n"));
 }
 

@@ -1,14 +1,11 @@
-//! Builds the `## Kanban System Prompt` system-prompt section for sessions
-//! bound to a kanban workspace-item WITH an `agent_kanbans` row (Migration
-//! 081).
+//! Builds the `## Kanban System Prompt` system-prompt section for sessions bound to a kanban workspace-item WITH an `agent_kanbans` row (Migration 081).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_kanban_db = @import("../../../models/agent_kanban.db.zig");
 
-/// Resolve the workspace_item_id for a session. Returns "" when the
-/// session doesn't exist (no workspace_item_tasks row).
+/// Resolve the workspace_item_id for a session.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -27,7 +24,6 @@ fn resolveWorkspaceItemId(
 }
 
 /// Resolve `workspace_item_id` → is-it-a-configured-kanban check.
-/// True only when item_type == 'kanban' AND an agent_kanbans row exists.
 fn isConfiguredKanbanItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -46,8 +42,7 @@ fn isConfiguredKanbanItem(
     return false;
 }
 
-/// Build the `## Kanban System Prompt` system-prompt section. Returns an
-/// owned slice (empty for non-configured-kanban sessions). Caller frees.
+/// Build the `## Kanban System Prompt` system-prompt section.
 pub fn makeAgentKanbanSystemPrompt(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -64,8 +59,7 @@ pub fn makeAgentKanbanSystemPrompt(
         return try allocator.dupe(u8, "");
     }
 
-    // Fetch the prompt rows (position DESC — same ordering convention as
-    // agent_kanban_knowledges).
+    // Fetch the prompt rows (position DESC — same ordering convention as agent_kanban_knowledges).
     const prompts = agent_kanban_db.listSystemPrompts(allocator, .{ .db = db }, workspace_item_id) catch
         return try allocator.dupe(u8, "");
     defer {
@@ -118,8 +112,7 @@ pub fn makeAgentKanbanSystemPrompt(
         try out.appendSlice(allocator, "\n");
     }
 
-    // Every row was whitespace-only → emit nothing (matches the
-    // "no rows" contract instead of a bare header).
+    // Every row was whitespace-only → emit nothing (matches the "no rows" contract instead of a bare header).
     if (std.mem.indexOf(u8, out.items, "### ") == null) {
         out.deinit(allocator);
         return try allocator.dupe(u8, "");
@@ -130,8 +123,7 @@ pub fn makeAgentKanbanSystemPrompt(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;

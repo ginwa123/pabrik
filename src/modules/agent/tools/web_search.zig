@@ -1,5 +1,4 @@
-//! `web_search` — perform a real web search through a user-configured
-//! provider.
+//! `web_search` — perform a real web search through a user-configured provider.
 
 const std = @import("std");
 const json = std.json;
@@ -11,24 +10,18 @@ const config_mod = @import("../../config/Config.zig");
 const curlmod = @import("web_search_curl.zig");
 const reqmod = @import("web_search_request.zig");
 
-/// Host extraction, re-exported so callers do not reach through `reqmod`'s
-/// private import of the parser module.
+/// Host extraction, re-exported so callers do not reach through `reqmod`'s private import of the parser module.
 pub const hostOfUrl = curlmod.hostOfUrl;
 const request = reqmod.BuiltRequest;
 
-/// Cap on the provider's response body. A 10-result page is a few KB; 1 MiB
-/// leaves generous headroom while stopping a runaway response from filling
-/// the model's context. Checked BEFORE parsing, as `generate_image` does.
+/// Cap on the provider's response body.
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
-/// Timeouts. A search API should answer in well under a second; these are
-/// ceilings, not expectations.
+/// Timeouts.
 const CONNECT_TIMEOUT_MS: u32 = 10_000;
 const REQUEST_TIMEOUT_MS: u32 = 30_000;
 
-/// Cap on a provider's `description` as it reaches the model. A user who
-/// pastes a whole docs page here would otherwise inflate every
-/// `list_web_search_providers` result.
+/// Cap on a provider's `description` as it reaches the model.
 pub const MAX_DESCRIPTION_BYTES: usize = 500;
 
 /// Truncation marker for a provider's `description`.
@@ -40,21 +33,17 @@ pub const WebSearchInput = struct {
     curl: []const u8 = "",
 };
 
-/// The set of providers a session may search through. Borrowed from the
-/// per-session resolution — never from `ToolExecContext.config`, which is
-/// the singleton and is empty in `--auth` mode.
+/// The set of providers a session may search through.
 pub const Providers = config_mod.LlmConfig.WebSearchProvidersMap;
 
 /// A provider plus the other enabled entries, for the exhaustion envelope.
-/// `others` borrows `providers`.
 pub const Resolved = struct {
     provider: []const u8,
     entry: config_mod.LlmConfig.WebSearchProviderEntry,
     providers: *const Providers,
     allocator: std.mem.Allocator,
 
-    /// Every enabled, usable provider except the one named. Names and URLs
-    /// only — never a key. Sorted so the envelope is deterministic.
+    /// Every enabled, usable provider except the one named.
     pub fn others(self: Resolved, out: *std.ArrayList(ProviderRef), allocator: std.mem.Allocator) !void {
         var it = self.providers.iterator();
         while (it.next()) |entry| {
@@ -71,9 +60,7 @@ pub const Resolved = struct {
 /// What the exhaustion envelope quotes about an alternative provider.
 pub const ProviderRef = struct { name: []const u8, url: []const u8 };
 
-/// Resolve `name` in `providers`. Returns the entry plus the alternatives, so
-/// an exhaustion error can tell the model who else it could try without the
-/// caller re-resolving.
+/// Resolve `name` in `providers`.
 pub fn resolveProvider(
     allocator: std.mem.Allocator,
     providers: *const Providers,
@@ -110,9 +97,7 @@ pub fn scrubKey(allocator: std.mem.Allocator, body: []const u8, key: ?[]const u8
     return replaceAllPublic(allocator, body, k, "«redacted»");
 }
 
-/// `replaceAllOwned` — same operation as the one in `web_search_request`,
-/// exposed here because D13a needs it too and duplicating the loop is
-/// cheaper than widening that module's surface.
+/// `replaceAllOwned` — same operation as the one in `web_search_request`, exposed here because D13a needs it too and duplicating the loop is cheaper than widening …
 pub fn replaceAllPublic(
     allocator: std.mem.Allocator,
     haystack: []const u8,
@@ -131,14 +116,12 @@ pub fn replaceAllPublic(
     return out.toOwnedSlice(allocator);
 }
 
-/// Classify a provider response. Split out so the envelope rules are
-/// testable without a network.
+/// Classify a provider response.
 pub const Classification = enum {
     ok,
     /// 429, or 401/403 whose body reads as a quota message.
     quota_exhausted,
-    /// 401/403 without quota wording — the credential is wrong, and retrying
-    /// elsewhere would just burn the next provider's quota.
+    /// 401/403 without quota wording — the credential is wrong, and retrying elsewhere would just burn the next provider's quota.
     bad_credential,
     /// Any other >= 400.
     provider_error,
@@ -184,8 +167,7 @@ const JsonBuf = struct {
         try self.buf.append(self.alloc, ':');
     }
 
-    /// Write a JSON-escaped string literal. The quoted form is a temporary
-    /// allocation — the only long-lived one is this buffer.
+    /// Write a JSON-escaped string literal.
     fn str(self: *JsonBuf, v: []const u8) !void {
         const quoted = try json.Stringify.valueAlloc(self.alloc, v, .{});
         defer self.alloc.free(quoted);
@@ -229,9 +211,7 @@ const JsonBuf = struct {
     }
 };
 
-/// Write `"name":url` pairs for each alternative provider — names and URLs
-/// only, never a key. `list` must be sorted by the caller for a stable
-/// envelope.
+/// Write `"name":url` pairs for each alternative provider — names and URLs only, never a key.
 fn writeOtherProviders(j: *JsonBuf, list: []const ProviderRef) !void {
     try j.beginArray();
     for (list) |o| {
@@ -281,9 +261,7 @@ pub fn notConfiguredEnvelope(alloc: std.mem.Allocator) ![]u8 {
     return j.finish();
 }
 
-/// The envelope when the model named a provider that does not exist or is
-/// not dispatchable. Self-correcting: it names the ones that ARE available,
-/// so a model that skipped `list_web_search_providers` recovers in one turn.
+/// The envelope when the model named a provider that does not exist or is not dispatchable.
 pub fn unknownProviderEnvelope(alloc: std.mem.Allocator, providers: *const Providers, name: []const u8) ![]u8 {
     const others = try collectOthers(alloc, providers, name);
     defer alloc.free(others);
@@ -303,8 +281,7 @@ pub fn unknownProviderEnvelope(alloc: std.mem.Allocator, providers: *const Provi
     return j.finish();
 }
 
-/// The host-pin refusal. Built BEFORE any key is read, so nothing in here
-/// can carry the credential.
+/// The host-pin refusal.
 pub fn hostMismatchEnvelope(alloc: std.mem.Allocator, resolved: Resolved, requested: []const u8) ![]u8 {
     var j = JsonBuf.init(alloc);
     errdefer j.buf.deinit(alloc);
@@ -341,8 +318,7 @@ pub fn unsafePinnedEnvelope(alloc: std.mem.Allocator, resolved: Resolved) ![]u8 
     return j.finish();
 }
 
-/// The curl could not be parsed. `why` names the actual problem so the model
-/// can fix its own next call.
+/// The curl could not be parsed.
 pub fn invalidCurlEnvelope(alloc: std.mem.Allocator, resolved: Resolved, err: anyerror) ![]u8 {
     const why: []const u8 = switch (err) {
         error.UnsupportedCommand => "Only a curl request is supported.",
@@ -383,9 +359,7 @@ pub fn keySiteEnvelope(alloc: std.mem.Allocator, resolved: Resolved, err_name: [
     try j.str(why);
     try j.key("provider");
     try j.str(resolved.provider);
-    // A named flag, so the frontend does not have to classify this by
-    // guessing from prose. Without it the renderer falls through to its
-    // residual `transport` label, which is simply wrong here.
+    // A named flag, so the frontend does not have to classify this by guessing from prose.
     try j.key(if (std.mem.eql(u8, err_name, "MissingKeySite")) "missing_key_site" else "unexpected_key_site");
     try j.boolean(true);
     return j.finish();
@@ -417,8 +391,7 @@ pub fn quotaEnvelope(alloc: std.mem.Allocator, resolved: Resolved, status: u16) 
     return j.finish();
 }
 
-/// A wrong credential — deliberately NOT `exhausted`, because retrying
-/// elsewhere would just burn the next provider's quota.
+/// A wrong credential — deliberately NOT `exhausted`, because retrying elsewhere would just burn the next provider's quota.
 pub fn badCredentialEnvelope(alloc: std.mem.Allocator, resolved: Resolved, status: u16) ![]u8 {
     var j = JsonBuf.init(alloc);
     errdefer j.buf.deinit(alloc);
@@ -467,9 +440,7 @@ pub fn transportEnvelope(alloc: std.mem.Allocator, resolved: Resolved) ![]u8 {
     return j.finish();
 }
 
-/// Success. `response` is the provider's JSON, verbatim and UNTOUCHED apart
-/// from D13a's scrub — no normalisation, no typed struct, because a typed
-/// struct silently discards whatever it does not name.
+/// Success.
 pub fn successEnvelope(alloc: std.mem.Allocator, provider: []const u8, status: u16, response: []const u8) ![]u8 {
     var j = JsonBuf.init(alloc);
     errdefer j.buf.deinit(alloc);
@@ -484,7 +455,6 @@ pub fn successEnvelope(alloc: std.mem.Allocator, provider: []const u8, status: u
 }
 
 /// Perform the search and return the JSON envelope to hand back to the model.
-/// The order below IS the security boundary, and it is deliberate: 1.
 pub fn executeWebSearch(
     allocator: std.mem.Allocator,
     resolved: Resolved,
@@ -537,8 +507,7 @@ pub fn executeWebSearch(
     };
     defer response.deinit(allocator);
 
-    // Size cap BEFORE parsing — a runaway response must not fill the model's
-    // context (the same order `generate_image.zig` uses).
+    // Size cap BEFORE parsing — a runaway response must not fill the model's context (the same order `generate_image.zig` uses).
     if (response.body.len > MAX_RESPONSE_BYTES) {
         var j = JsonBuf.init(allocator);
         errdefer j.buf.deinit(allocator);
@@ -620,8 +589,7 @@ pub const web_search_tool = AgentTool{
     },
 };
 
-/// The discovery tool. Takes NO arguments — its whole job is to tell the
-/// model what exists.
+/// The discovery tool.
 pub const list_web_search_providers_tool_system_prompt =
     \\## Listing search providers
     \\Call `list_web_search_providers` when you need to search the internet and
@@ -656,9 +624,7 @@ pub fn truncateDescription(allocator: std.mem.Allocator, text: []const u8) ![]u8
     });
 }
 
-/// Render `list_web_search_providers`' payload from resolved providers. The
-/// output contains `name`, `url`, `description` and `curl` — and never `key`,
-/// not even masked.
+/// Render `list_web_search_providers`' payload from resolved providers.
 pub fn renderProviderList(alloc: std.mem.Allocator, providers: *const Providers) ![]u8 {
     const rows = try collectAll(alloc, providers);
     defer alloc.free(rows);
@@ -804,8 +770,7 @@ test "web_search: rows 54-57 — classification distinguishes the four outcomes"
     // Row 54: a bare 429 is exhaustion regardless of wording.
     try testing.expectEqual(Classification.quota_exhausted, classify(429, ""));
     try testing.expectEqual(Classification.quota_exhausted, classify(429, "slow down"));
-    // Row 55: 401 with no quota wording is a WRONG KEY, not an empty quota —
-    // retrying elsewhere would just burn the next provider's quota.
+    // Row 55: 401 with no quota wording is a WRONG KEY, not an empty quota — retrying elsewhere would just burn the next provider's quota.
     try testing.expectEqual(Classification.bad_credential, classify(401, "unauthorized"));
     try testing.expectEqual(Classification.bad_credential, classify(403, "forbidden"));
     // Row 56: 401 WITH quota wording is exhaustion.
@@ -927,8 +892,7 @@ test "web_search: the provider listing is inert — {key}, never the secret" {
 
     // The placeholder is present — that is what makes the listing usable…
     try testing.expect(std.mem.indexOf(u8, out, "{key}") != null);
-    // …and the credential is not, so the listing can be handed to the model
-    // with no redaction logic at all.
+    // …and the credential is not, so the listing can be handed to the model with no redaction logic at all.
     try testing.expect(std.mem.indexOf(u8, out, "SENTINEL_SECRET_DO_NOT_LEAK") == null);
     try testing.expect(std.mem.indexOf(u8, out, "sk-brave") == null);
 
@@ -989,17 +953,14 @@ test "web_search: the tool schemas are exactly what the plan specifies" {
 }
 
 test "web_search: neither tool's static text leaks a provider or a key" {
-    // The schema ships to EVERY provider's LLM on every request. It must not
-    // enumerate the user's providers.
+    // The schema ships to EVERY provider's LLM on every request.
     try testing.expect(std.mem.indexOf(u8, web_search_tool.function.description, "tinyfish") == null);
     try testing.expect(std.mem.indexOf(u8, web_search_tool.function.description, "brave") == null);
     try testing.expect(std.mem.indexOf(u8, web_search_tool.function.description, "api_key") == null);
     try testing.expect(std.mem.indexOf(u8, list_web_search_providers_tool.function.description, "tinyfish") == null);
 }
 test "web_search: every error envelope carries a named flag" {
-    // The frontend classifies by flag, and a flagless envelope falls through
-    // to its residual `transport` label — which is wrong for anything that
-    // actually reached the provider.
+    // The frontend classifies by flag, and a flagless envelope falls through to its residual `transport` label — which is wrong for anything that actually reached …
     const alloc = testing.allocator;
     var providers = try providersFor(alloc, tinyfish_providers);
     defer freeProviders(&providers, alloc);
@@ -1035,7 +996,6 @@ test "web_search: every error envelope carries a named flag" {
 }
 
 // Exec adapter — merged from `web_search.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1061,8 +1021,7 @@ fn dispatch(
     curl: []const u8,
 ) !ToolExecResult {
     const resolved = resolveProvider(ctx.allocator, providers, provider_name) catch |err| switch (err) {
-        // Self-correcting: the envelope names what IS configured, so a model
-        // that skipped the discovery call recovers in one turn.
+        // Self-correcting: the envelope names what IS configured, so a model that skipped the discovery call recovers in one turn.
         error.UnknownProvider => {
             const inner = unknownProviderEnvelope(ctx.allocator, providers, provider_name) catch return err;
             defer ctx.allocator.free(inner);
@@ -1079,9 +1038,7 @@ fn dispatch(
     };
     defer ctx.allocator.free(inner);
 
-    // An envelope carrying `error` reaches the model as success=false while
-    // still exposing the full JSON, so it can read `host_mismatch`,
-    // `other_providers` and the reason string.
+    // An envelope carrying `error` reaches the model as success=false while still exposing the full JSON, so it can read `host_mismatch`, `other_providers` and the …
     {
         const maybe = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch null;
         defer if (maybe) |*p| p.deinit();
@@ -1090,9 +1047,7 @@ fn dispatch(
             if (value == .object) {
                 if (value.object.get("error")) |e| {
                     if (e == .string) {
-                        // `data` is nulled on the failure path, so the WHOLE
-                        // envelope goes into `error`: the model needs
-                        // `other_providers` / `host_mismatch` / `exhausted`
+                        // `data` is nulled on the failure path, so the WHOLE envelope goes into `error`: the model needs `other_providers` / `host_mismatch` / `exhausted`
                         const output = try wrapToolOutput(
                             ctx.allocator,
                             "web_search",
@@ -1133,9 +1088,7 @@ pub fn execWebSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         );
     }
 
-    // Per-session FIRST — `ctx.config` is the singleton and is empty in
-    // `--auth` mode. The singleton is the documented fallback for exactly the
-    // cases `resolve` returns null for, and it outlives this call.
+    // Per-session FIRST — `ctx.config` is the singleton and is empty in `--auth` mode.
     if (web_search_config.resolve(ctx.allocator, ctx.db, ctx.session_id)) |owned| {
         var map = owned;
         defer exec_config_mod.LlmConfig.freeWebSearchProvidersMap(&map, ctx.allocator);
@@ -1159,8 +1112,7 @@ pub fn execWebSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // ─── the fallback contract (D8) ───────────────────────────────────────────
 
 test "wrapToolOutput discards `data` when success is false — so `error` is the only channel" {
-    // Behavioural, not a source grep. This is the shared helper's actual
-    // contract, and the web_search adapter is written against it.
+    // Behavioural, not a source grep.
     const alloc = exec_testing.allocator;
     const out = try tools.wrapToolOutput(
         alloc,
@@ -1175,9 +1127,7 @@ test "wrapToolOutput discards `data` when success is false — so `error` is the
     // `data` is nulled regardless of what was passed…
     try exec_testing.expect(std.mem.indexOf(u8, out, "\"data\":null") != null);
     try exec_testing.expect(std.mem.indexOf(u8, out, "never") == null);
-    // …so a flag-bearing envelope MUST go through `error`, which is what
-    // the adapter does. D8's fallback depends on it: after a quota error
-    // the model has to be able to read `other_providers` and retry.
+    // …so a flag-bearing envelope MUST go through `error`, which is what the adapter does.
     try exec_testing.expect(std.mem.indexOf(u8, out, "exhausted") != null);
 }
 

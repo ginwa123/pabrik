@@ -1,6 +1,4 @@
-// HTTP/2 cleartext (h2c) end-to-end tests. Zig port of
-// `tests/functional/http2_test.py` (same test names, same order). PYTHON
-// DOCSTRING, PRESERVED: """HTTP/2 cleartext (h2c) end-to-end tests.
+// HTTP/2 cleartext (h2c) end-to-end tests.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,9 +10,7 @@ const io = testing.io;
 
 const Io = std.Io;
 
-// ============================================================================
 // Helpers — curl
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -23,9 +19,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// `_curl()` + `_curl_version_args()`: skip unless curl exists AND speaks
-/// HTTP/2 (nghttp2 / HTTP2 in `curl --version`). Returns the resolved curl
-/// path when usable.
+/// `_curl()` + `_curl_version_args()`: skip unless curl exists AND speaks HTTP/2 (nghttp2 / HTTP2 in `curl --version`).
 fn requireCurlHttp2() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "curl", "--version" },
@@ -70,8 +64,7 @@ const CurlResult = struct {
     }
 };
 
-/// Run curl with the given argv, returning the outcome. NEVER asserts —
-/// several of these tests assert on the exit code itself.
+/// Run curl with the given argv, returning the outcome.
 fn curlRun(args: []const []const u8) !CurlResult {
     const res = std.process.run(gpa, io, .{ .argv = args }) catch |err| {
         std.debug.print("curl did not spawn: {s}\n", .{@errorName(err)});
@@ -80,9 +73,7 @@ fn curlRun(args: []const []const u8) !CurlResult {
     return .{ .exit = exitCode(res.term), .stdout = res.stdout, .stderr = res.stderr };
 }
 
-/// `_curl_http_version(url, extra)` -> `(http_version, body)`. `assert
-/// proc.returncode == 0, f"curl failed: {proc.stderr}"` lives here, because
-/// this helper is only used where success IS the precondition.
+/// `_curl_http_version(url, extra)` -> `(http_version, body)`.
 const Versioned = struct {
     version: []const u8,
     body: []u8,
@@ -112,8 +103,7 @@ fn curlHttpVersion(extra: []const []const u8, url: []const u8) !Versioned {
     return .{ .version = version, .body = r.stdout };
 }
 
-/// Python's `"ok" in body.lower()` — a case-insensitive substring test
-/// with no allocation.
+/// Python's `"ok" in body.lower()` — a case-insensitive substring test with no allocation.
 fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
     if (needle.len > haystack.len) return false;
@@ -126,8 +116,7 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// True iff every byte of `name` is lowercase (ASCII letters or a
-/// non-letter).
+/// True iff every byte of `name` is lowercase (ASCII letters or a non-letter).
 fn isLowercaseName(name: []const u8) bool {
     for (name) |c| {
         if (std.ascii.isUpper(c)) return false;
@@ -147,14 +136,10 @@ fn afterFirstSpace(s: []const u8) []const u8 {
     return s[i + 1 ..];
 }
 
-/// `/dev/null` for curl's `-o`. Python used `os.devnull`, which is the
-/// POSIX spelling; the h2c suite is POSIX-only in practice, and this is
-/// only ever passed to curl, never opened by the test.
+/// `/dev/null` for curl's `-o`.
 const DEV_NULL = "/dev/null";
 
-// ============================================================================
 // Helpers — harness
-// ============================================================================
 
 /// `_h2_harness`: boot with `--http2 h2c` and the Python's 45s budget.
 fn bootH2() !Harness {
@@ -164,9 +149,7 @@ fn bootH2() !Harness {
     });
 }
 
-// ============================================================================
 // Helpers — raw socket (protocol-error probe)
-// ============================================================================
 
 /// The bytes Python's `bogus` variable holds.
 const BOGUS_PREFACE =
@@ -226,9 +209,7 @@ fn rawProbe(port: u16, payload: []const u8) ![]u8 {
     return acc.toOwnedSlice();
 }
 
-// ============================================================================
 // Test 1: prior-knowledge h2c client gets HTTP/2 and the normal body
-// ============================================================================
 
 // A prior-knowledge h2c client gets HTTP/2 and the normal handler body.
 test "h2_prior_knowledge_health" {
@@ -255,9 +236,7 @@ test "h2_prior_knowledge_health" {
     }
 }
 
-// ============================================================================
 // Test 2: h2c is negotiated per connection on the SAME port
-// ============================================================================
 
 // h2c is negotiated per connection: the SAME port still serves HTTP/1.1.
 test "h2_and_h1_share_the_same_port" {
@@ -298,12 +277,9 @@ test "h2_and_h1_share_the_same_port" {
     }
 }
 
-// ============================================================================
 // Test 3: no --http2 flag => h1 only
-// ============================================================================
 
-// With no --http2 flag the server must not accept h2 at all (default
-// off).
+// With no --http2 flag the server must not accept h2 at all (default off).
 test "h1_only_when_flag_absent" {
     try harness.requirePabrikBin(io, gpa);
     try requireCurlHttp2();
@@ -325,8 +301,7 @@ test "h1_only_when_flag_absent" {
         }
     }
 
-    // curl with prior knowledge against an h1-only server fails loudly
-    // (it is the exact probe that established the pre-change behaviour).
+    // curl with prior knowledge against an h1-only server fails loudly (it is the exact probe that established the pre-change behaviour).
     {
         var r = try curlRun(&.{ "curl", "-sS", "-o", DEV_NULL, "--http2-prior-knowledge", url });
         defer r.deinit();
@@ -346,9 +321,7 @@ test "h1_only_when_flag_absent" {
     }
 }
 
-// ============================================================================
 // Test 4: POST body survives the h2 path
-// ============================================================================
 
 // A POST body survives the h2 path and reaches the handler.
 test "h2_post_body_roundtrip" {
@@ -387,9 +360,7 @@ test "h2_post_body_roundtrip" {
     }
 }
 
-// ============================================================================
 // Test 5: unknown route over h2 is 404 on an h2 connection
-// ============================================================================
 
 test "h2_unknown_route_is_404" {
     try harness.requirePabrikBin(io, gpa);
@@ -431,13 +402,9 @@ test "h2_unknown_route_is_404" {
     }
 }
 
-// ============================================================================
 // Test 6: two requests over ONE connection
-// ============================================================================
 
-// Multiplexing/persistence: two URLs over ONE connection. HTTP/1.1 needs a
-// second TCP connection here because every h1 response says `Connection:
-// close`; h2 keeps the connection alive.
+// Multiplexing/persistence: two URLs over ONE connection.
 test "h2_reuses_one_connection_for_two_requests" {
     try harness.requirePabrikBin(io, gpa);
     try requireCurlHttp2();
@@ -464,9 +431,7 @@ test "h2_reuses_one_connection_for_two_requests" {
         return error.TestUnexpectedResult;
     }
 
-    // curl reports num_connects=1 for the first URL and 0 for the second: the
-    // second transfer needed NO new TCP connection. (The h1 baseline is 1 and
-    // 1, because every h1 response says `Connection: close`.)
+    // curl reports num_connects=1 for the first URL and 0 for the second: the second transfer needed NO new TCP connection.
     var got: [2]i64 = undefined;
     var n: usize = 0;
     var it = std.mem.tokenizeAny(u8, r.stdout, " \t\r\n");
@@ -487,9 +452,7 @@ test "h2_reuses_one_connection_for_two_requests" {
     }
 }
 
-// ============================================================================
 // Test 7: a bogus frame is answered with GOAWAY, not a crash
-// ============================================================================
 
 // Protocol errors must be answered with GOAWAY, not a crash.
 test "h2_bogus_preface_gets_goaway_and_server_survives" {
@@ -509,8 +472,7 @@ test "h2_bogus_preface_gets_goaway_and_server_survives" {
         return error.TestUnexpectedResult;
     }
 
-    // The first frame the server sends on a valid preface is SETTINGS (type
-    // 0x4); on a garbage frame it is GOAWAY (type 0x7).
+    // The first frame the server sends on a valid preface is SETTINGS (type 0x4); on a garbage frame it is GOAWAY (type 0x7).
     if (data.len < 4) {
         const shown = try harness.debugString(gpa, data);
         defer gpa.free(shown);
@@ -537,13 +499,9 @@ test "h2_bogus_preface_gets_goaway_and_server_survives" {
     }
 }
 
-// ============================================================================
 // Test 8: response header names are lowercase on the h2 wire
-// ============================================================================
 
-// RFC 9113 section 8.2.1: an uppercase field name must not reach the wire.
-// curl/nghttp2 would reject the response outright, so a 200 here is itself
-// the assertion; we also assert the security headers the h1 path adds are
+// RFC 9113 section 8.2.1: an uppercase field name must not reach the wire. curl/nghttp2 would reject the response outright, so a 200 here is itself the …
 test "h2_response_headers_are_lowercase" {
     try harness.requirePabrikBin(io, gpa);
     try requireCurlHttp2();
@@ -592,9 +550,7 @@ test "h2_response_headers_are_lowercase" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = exitCode;
     _ = requireCurlHttp2;
     _ = firstLine;

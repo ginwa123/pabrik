@@ -8,8 +8,7 @@ import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
 
 const props = defineProps<{
-  /** The workspace in the URL. The parent keys on it, so a switch remounts
-   * this component rather than showing the previous workspace's members. */
+  /** The workspace in the URL. */
   workspaceId: string
 }>()
 
@@ -29,8 +28,7 @@ const formError = ref<string | null>(null)
 const removeTarget = ref<WorkspaceMember | null>(null)
 const revokeTarget = ref<WorkspaceInvitation | null>(null)
 
-/** One banner for both stores: a refused invite and a refused removal are the
- * same kind of answer to the user. */
+/** One banner for both stores: a refused invite and a refused removal are the same kind of answer to the user. */
 const error = computed<string | null>(() => membersStore.error ?? invitationsStore.error)
 
 const ownerCount = computed(
@@ -41,8 +39,7 @@ const canInvite = computed(
   () => emailInput.value.trim().length > 0 && !invitationsStore.saving,
 )
 
-/** The one change the server would refuse anyway. Disabling it here is not a
- * substitute for the 409 — it stops the user walking into it. */
+/** The one change the server would refuse anyway. */
 function isSoleOwner(member: WorkspaceMember): boolean {
   return member.role === 'owner' && ownerCount.value <= 1
 }
@@ -72,8 +69,7 @@ async function handleRoleChange(member: WorkspaceMember, event: Event): Promise<
   const next = (event.target as HTMLSelectElement).value as WorkspaceRole
   if (next === member.role) return
   const ok = await membersStore.setRole(props.workspaceId, member.user_id, next)
-  // A refused change leaves the SELECT showing a role the server never
-  // accepted, so put it back.
+  // A refused change leaves the SELECT showing a role the server never accepted, so put it back.
   if (!ok) (event.target as HTMLSelectElement).value = member.role
 }
 
@@ -113,8 +109,7 @@ function retry(): void {
 }
 
 onMounted(() => {
-  // Clear first: a switch remounts this component, and `loaded` would
-  // otherwise paint the previous workspace's rows while the new list loads.
+  // Clear first: a switch remounts this component, and `loaded` would otherwise paint the previous workspace's rows while the new list loads.
   membersStore.reset()
   invitationsStore.reset()
   retry()

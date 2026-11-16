@@ -4,9 +4,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 106 - create the models.dev model catalog cache. The catalog is
-/// 227 providers / 8,562 models of pure metadata: each model's context
-/// window, output cap, reasoning shape and price.
+/// Migration 106 - create the models.dev model catalog cache.
 pub const Migration106CreateModelCatalog = struct {
     pub const version: u32 = 106;
     pub const name = "create_model_catalog";
@@ -39,8 +37,7 @@ pub const Migration106CreateModelCatalog = struct {
             \\)
         , &[_][]const u8{});
 
-        // A bare model name is resolved by looking up this index, so the
-        // "which providers ship this model id?" question stays cheap.
+        // A bare model name is resolved by looking up this index, so the "which providers ship this model id?" question stays cheap.
         try db.exec(allocator,
             \\CREATE INDEX IF NOT EXISTS idx_model_catalog_models_model
             \\    ON model_catalog_models (model_id)

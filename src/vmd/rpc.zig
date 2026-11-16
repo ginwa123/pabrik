@@ -1,6 +1,4 @@
-//! `pabrik-vmd`'s wire protocol: length-prefixed JSON frames over a unix
-//! socket. A request carries a workspace id, an action and that action's
-//! arguments — never a VM path, a drive plan or a socket location.
+//! `pabrik-vmd`'s wire protocol: length-prefixed JSON frames over a unix socket.
 
 const std = @import("std");
 const policy = @import("policy.zig");
@@ -10,22 +8,17 @@ pub const version = "0.1";
 pub const max_frame: usize = 4 * 1024 * 1024;
 pub const default_timeout_ms: u32 = 10_000;
 pub const default_max_output_bytes: usize = 256 * 1024;
-/// One `log` reply's default and ceiling. A detached job's log is read in
-/// pieces, so the default matches the `process` tool's own read cap.
+/// One `log` reply's default and ceiling.
 pub const default_max_log_bytes: usize = 16 * 1024;
-/// A base64 frame costs 4 bytes per 3, so the reply budget has to stay well
-/// under `max_frame` or a legal command produces an illegal response.
+/// A base64 frame costs 4 bytes per 3, so the reply budget has to stay well under `max_frame` or a legal command produces an illegal response.
 pub const max_output_bytes_limit: usize = 1024 * 1024;
 pub const max_log_bytes_limit: usize = 1024 * 1024;
-/// One `fs.read` reply's default and ceiling. A reply is base64, so the ceiling
-/// is what keeps a legal request from producing an illegal frame.
+/// One `fs.read` reply's default and ceiling.
 pub const default_fs_read_bytes: usize = 64 * 1024;
 pub const max_fs_read_bytes: usize = 1024 * 1024;
-/// A signal number a caller may ask for. SIGKILL and SIGTERM are the two the
-/// tool sends; the range stops a request from naming a real-time signal.
+/// A signal number a caller may ask for.
 pub const max_signal: i64 = 64;
-/// A walk's default and ceiling. Both are the guest's own, so the daemon and
-/// the agent bound the same walk the same way.
+/// A walk's default and ceiling.
 pub const default_walk_depth: u32 = fs_policy.max_walk_depth;
 pub const default_walk_entries: usize = fs_policy.max_walk_entries;
 
@@ -40,9 +33,7 @@ pub const Error = error{
 
 pub const Action = enum { ping, exec, stop, status, resize, spawn, probe, signal, log, fs_stat, fs_read, fs_remove, fs_write, fs_walk, tty, duplex };
 
-/// Whether this action carries work into a workspace's guest: `status` and
-/// `ping` only read the state file, and the console polls them for every
-/// workspace, so counting them as use would pin every VM. `stop` is not use.
+/// Whether this action carries work into a workspace's guest: `status` and `ping` only read the state file, and the console polls them for every workspace, so …
 pub fn carriesWork(action: Action) bool {
     return switch (action) {
         .ping, .status, .stop => false,
@@ -62,12 +53,10 @@ test "a status poll is not work, a command is" {
     try testing.expect(carriesWork(.resize));
 }
 
-/// What a `tty` request does. One action rather than five, because every one of
-/// them carries the same four fields and answers with the same reply shape.
+/// What a `tty` request does.
 pub const TtyOp = enum { open, read, write, resize, close };
 
-/// What a `duplex` request does: a guest process's two byte streams. Same
-/// one-action shape as `TtyOp`, and for the same reason.
+/// What a `duplex` request does: a guest process's two byte streams.
 pub const DuplexOp = enum { open, read, write, close };
 
 pub const Request = struct {
@@ -87,8 +76,7 @@ pub const Request = struct {
     /// `log`: where the caller's cursor is, and how much it will take.
     offset: i64 = 0,
     max_bytes: usize = default_max_log_bytes,
-    /// `fs_*`: the path RELATIVE to the workspace root. Never a host path, and
-    /// never an absolute one — the daemon joins it under `/workspace`.
+    /// `fs_*`: the path RELATIVE to the workspace root.
     path: []const u8 = "",
     /// `fs_write`: the whole body. The daemon pages it to the guest.
     data: []const u8 = "",
@@ -97,23 +85,19 @@ pub const Request = struct {
     /// `fs_walk`: how deep to descend, and how many entries to report.
     max_depth: u32 = default_walk_depth,
     max_entries: usize = default_walk_entries,
-    /// `tty`: which operation, and which guest tty it names. `open` mints the
-    /// id, so it is the one op that ignores `tty_id`.
+    /// `tty`: which operation, and which guest tty it names.
     tty_op: TtyOp = .open,
     tty_id: i64 = -1,
     /// `tty open` and `tty resize`: the window the caller wants.
     cols: u16 = 0,
     rows: u16 = 0,
-    /// `duplex`: which operation, and which guest duplex it names. `open`
-    /// mints the id, so it is the one op that ignores `duplex_id`.
+    /// `duplex`: which operation, and which guest duplex it names.
     duplex_op: DuplexOp = .open,
     duplex_id: i64 = -1,
-    /// `resize`: the size the workspace's VM must boot with next. Firecracker
-    /// fixes both at InstanceStart, so applying them restarts the VM.
+    /// `resize`: the size the workspace's VM must boot with next.
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
-    /// `resize`: how big the workspace's disk image must become. 0 means "leave
-    /// the image alone", which is what a caller that only sizes memory sends.
+    /// `resize`: how big the workspace's disk image must become. 0 means "leave the image alone", which is what a caller that only sizes memory sends.
     disk_mib: u32 = 0,
 };
 
@@ -146,8 +130,7 @@ pub const ExecResult = struct {
     stderr: []const u8,
 };
 
-/// A detached job's identity: the pid the GUEST gave it, and the log the guest
-/// writes. Neither is a host path or a host pid.
+/// A detached job's identity: the pid the GUEST gave it, and the log the guest writes.
 pub const Spawned = struct {
     pid: i64,
     log_path: []const u8,
@@ -157,13 +140,11 @@ pub const Spawned = struct {
 pub const Probe = struct {
     alive: bool,
     state: []const u8,
-    /// The VMM pid of the boot that answered. A different one means the VM was
-    /// restarted, so a job from an earlier boot is gone however the pid reads.
+    /// The VMM pid of the boot that answered.
     boot_pid: i64,
 };
 
-/// One piece of a guest log. `missing` is its own answer: "the command never
-/// started" is not "the command said nothing".
+/// One piece of a guest log.
 pub const LogChunk = struct {
     data: []const u8,
     size: i64,
@@ -178,8 +159,7 @@ pub const FsStat = struct {
     missing: bool,
 };
 
-/// One piece of a guest file. `missing` is its own answer: "the path is not
-/// there" is not "the file is empty".
+/// One piece of a guest file.
 pub const FsChunk = struct {
     data: []const u8,
     size: i64,
@@ -193,16 +173,14 @@ pub const WalkEntry = struct {
     kind: []const u8,
 };
 
-/// A walk's answer. `truncated` is the guest saying the tree was bigger than
-/// the ceilings allowed, which is not the same as a tree that ended.
+/// A walk's answer.
 pub const FsWalk = struct {
     entries: []WalkEntry,
     count: usize,
     truncated: bool,
 };
 
-/// A terminal's answer. `data` is a `read`'s bytes and `` for every other op;
-/// `message` is an `open` the guest refused and `` otherwise.
+/// A terminal's answer.
 pub const TtyReply = struct {
     op: []const u8,
     tty_id: i64,
@@ -215,8 +193,7 @@ pub const TtyReply = struct {
     message: []const u8,
 };
 
-/// A duplex's answer. `data` is a `read`'s bytes and `` for every other op;
-/// `message` is an `open` the guest refused and `` otherwise.
+/// A duplex's answer.
 pub const DuplexReply = struct {
     op: []const u8,
     duplex_id: i64,
@@ -271,8 +248,7 @@ pub fn frameHeader(payload_len: usize, out: *[4]u8) void {
     std.mem.writeInt(u32, out, @intCast(payload_len), .big);
 }
 
-/// A zero-length frame is a peer that wrote nothing meaningful; an oversized
-/// one must be refused BEFORE anything is allocated for it.
+/// A zero-length frame is a peer that wrote nothing meaningful; an oversized one must be refused BEFORE anything is allocated for it.
 pub fn framePayloadLen(header: [4]u8) Error!usize {
     const len = std.mem.readInt(u32, &header, .big);
     if (len == 0) return Error.EmptyFrame;
@@ -329,8 +305,7 @@ const ObjectWriter = struct {
         try self.list.append(allocator, ']');
     }
 
-    /// A byte string as base64. The body of a write is not text, so it does
-    /// not go through `writeQuoted`'s byte-by-byte escaping.
+    /// A byte string as base64.
     fn base64Field(
         self: *ObjectWriter,
         allocator: std.mem.Allocator,
@@ -465,8 +440,7 @@ pub fn encodeRequest(allocator: std.mem.Allocator, request: Request) ![]u8 {
     return out.finish(allocator);
 }
 
-/// Every rejection here is a rejection of something a caller cannot fix by
-/// retrying, so each names the field it refused.
+/// Every rejection here is a rejection of something a caller cannot fix by retrying, so each names the field it refused.
 pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedRequest {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -518,8 +492,7 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
     }
 
     if (action == .resize) {
-        // The size rides in the request: the daemon has no database to look it
-        // up in, and the caller is the one that decided it.
+        // The size rides in the request: the daemon has no database to look it up in, and the caller is the one that decided it.
         const vcpus = integerField(object, "vcpus") orelse return Error.BadRequest;
         const mem_mib = integerField(object, "mem_mib") orelse return Error.BadRequest;
         if (vcpus <= 0 or mem_mib <= 0) return Error.BadRequest;
@@ -565,8 +538,7 @@ pub fn decodeRequest(allocator: std.mem.Allocator, json: []const u8) !OwnedReque
     return .{ .arena = arena, .value = request };
 }
 
-/// The four actions a detached job needs — and nothing about them may name a
-/// path: `log_name` is a token the daemon turns into a path it owns.
+/// The four actions a detached job needs — and nothing about them may name a path: `log_name` is a token the daemon turns into a path it owns.
 fn decodeJobAction(
     object: std.json.ObjectMap,
     allocator: std.mem.Allocator,
@@ -620,9 +592,7 @@ fn decodeJobAction(
     }
 }
 
-/// The three file actions. The path is relative to the workspace and is checked
-/// here as well as in the guest: a refusal the daemon can name beats one the
-/// agent has to spell out.
+/// The three file actions.
 fn decodeFsAction(
     object: std.json.ObjectMap,
     action: Action,
@@ -645,9 +615,7 @@ fn decodeFsAction(
     }
 }
 
-/// The two actions that carry more than a path. A write's body is bounded by
-/// the frame it has to fit, and refused here rather than at the agent, which
-/// would have to spell the same refusal out.
+/// The two actions that carry more than a path.
 fn decodeFsWriteWalk(
     object: std.json.ObjectMap,
     allocator: std.mem.Allocator,
@@ -658,8 +626,7 @@ fn decodeFsWriteWalk(
     request.path = path;
 
     if (action == .fs_walk) {
-        // A walk may start at the workspace root, which is the one path a
-        // file op may not name.
+        // A walk may start at the workspace root, which is the one path a file op may not name.
         if (!fs_policy.dirRelValid(path)) return Error.BadRequest;
         if (integerField(object, "max_depth")) |depth| {
             if (depth <= 0 or depth > fs_policy.max_walk_depth) return Error.BadRequest;
@@ -723,8 +690,7 @@ pub fn encodeStatus(allocator: std.mem.Allocator, id: i64, state: []const u8, pi
     return encodeStatusSized(allocator, id, state, pid, last_error, 0, 0, 0);
 }
 
-/// `encodeStatus` with the size the workspace boots with, so a caller can show
-/// it without a second round trip.
+/// `encodeStatus` with the size the workspace boots with, so a caller can show it without a second round trip.
 pub fn encodeStatusSized(
     allocator: std.mem.Allocator,
     id: i64,
@@ -1062,8 +1028,7 @@ fn decodeBase64Field(
     return out;
 }
 
-/// The terminal action. `open` names a DIRECTORY inside the workspace; every
-/// other op names a tty id the daemon itself minted, never a port or a pid.
+/// The terminal action.
 fn decodeTtyAction(
     object: std.json.ObjectMap,
     allocator: std.mem.Allocator,
@@ -1106,8 +1071,7 @@ fn decodeTtyAction(
     }
 }
 
-/// The duplex action. `open` names an argv the guest runs; every other op
-/// names a duplex id the daemon itself minted, never a port or a pid.
+/// The duplex action.
 fn decodeDuplexAction(
     object: std.json.ObjectMap,
     allocator: std.mem.Allocator,
@@ -1438,8 +1402,7 @@ test "rpc: a spawn, probe and log reply decode to their own shape" {
         else => return error.TestExpectedLogChunk,
     }
 
-    // A missing log is its own answer, and carries no bytes to mistake for
-    // empty output.
+    // A missing log is its own answer, and carries no bytes to mistake for empty output.
     const missing = try encodeLogChunk(allocator, 1, .{
         .data = "",
         .size = 0,
@@ -1704,8 +1667,7 @@ test "a resize request carries the size it asks for" {
 
 test "a resize that only names vCPUs and memory leaves the disk alone" {
     const allocator = testing.allocator;
-    // A caller written before the disk existed sends no `disk_mib` at all; 0 is
-    // the daemon's "do not touch the image".
+    // A caller written before the disk existed sends no `disk_mib` at all; 0 is the daemon's "do not touch the image".
     var decoded = try decodeRequest(allocator,
         \\{"type":"request","action":"resize","id":5,"workspace_id":"ws_1","vcpus":1,"mem_mib":512}
     );
@@ -1891,8 +1853,7 @@ test "fs_read: the reply ceiling is the frame's, and a zero ask is refused" {
     defer allocator.free(zero);
     try testing.expectError(Error.BadRequest, decodeRequest(allocator, zero));
 
-    // A frame that asks for no ceiling at all gets the file default — which is
-    // not the log default, so the two actions cannot silently share one.
+    // A frame that asks for no ceiling at all gets the file default — which is not the log default, so the two actions cannot silently share one.
     var defaulted = try decodeRequest(allocator,
         \\{"action":"fs_read","id":1,"workspace_id":"ws_1","path":"a.txt"}
     );

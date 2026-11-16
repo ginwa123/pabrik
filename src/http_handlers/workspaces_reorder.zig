@@ -6,11 +6,8 @@ const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 
 // ─── Pattern: thin handler + use case in one file ─────────────────────────
-// This file is structured as a teaching example for new HTTP features. The
-// convention is: 1.
 
-/// HTTP handler: POST /api/workspaces/reorder Body: { "ordered_ids": ["id1",
-/// "id2", ..., "idN"] } (top-to-bottom display order).
+/// HTTP handler: POST /api/workspaces/reorder Body: { "ordered_ids": ["id1", "id2", ..., "idN"] } (top-to-bottom display order).
 pub fn workspacesReorderHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -18,8 +15,7 @@ pub fn workspacesReorderHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Step 1: parse the body. Handler is responsible for ALL HTTP
-    // parsing — the use case below trusts its inputs.
+    // Step 1: parse the body.
     const body = req.body;
     if (body.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "body required" }) });
@@ -63,8 +59,6 @@ pub fn workspacesReorderHandler(
 }
 
 // ─── Use case ──────────────────────────────────────────────────────────────
-// Pure business logic: validate, compute positions, write to DB. Returns a
-// typed `ReorderResult`.
 const MAX_REORDER_IDS: usize = 100;
 
 const ReorderResult = struct {
@@ -77,23 +71,19 @@ const ReorderError = error{
     IntegerTooLarge,
 };
 
-// Position formula: the i-th id in the array gets `position = (count - 1 -
-// i)`.
+// Position formula: the i-th id in the array gets `position = (count - 1 -i)`.
 fn reorderWorkspaces(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, ordered_ids: []const []const u8, owner: []const u8) ReorderError!ReorderResult {
     if (ordered_ids.len > MAX_REORDER_IDS) return error.TooManyIds;
 
     const count: i64 = @intCast(ordered_ids.len);
     var updated_count: usize = 0;
 
-    // Stack-allocated int→string buffer. Reused across iterations. 32 bytes
-    // is enough for any i64 (max 20 chars including sign).
+    // Stack-allocated int→string buffer.
     var buf: [32]u8 = undefined;
 
     for (ordered_ids, 0..) |id_str, i| {
         const new_pos: i64 = count - 1 - @as(i64, @intCast(i));
-        // `bufPrint` into a fixed buffer — no heap allocation. Only fails on
-        // actual buffer overflow, which a 32-byte buffer for an i64 cannot
-        // hit. Treat as a programmer error.
+        // `bufPrint` into a fixed buffer — no heap allocation.
         const pos_str = std.fmt.bufPrint(&buf, "{d}", .{new_pos}) catch {
             return error.IntegerTooLarge;
         };

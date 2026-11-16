@@ -6,9 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 114 — the chat's file attachments. `file_attachments` holds the full payload for the
-/// model-facing path; `file_attachments_meta` holds only the metadata, so the read path never
-/// drags the bytes across.
+/// Migration 114 — the chat's file attachments.
 pub const Migration114AddFileAttachments = struct {
     pub const version: u32 = 114;
     pub const name = "add_file_attachments";

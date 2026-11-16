@@ -1,6 +1,4 @@
-// src/apps/desktop_app/tray_linux.zig
-// Linux tray backend: a StatusNotifierItem via libayatana-appindicator (so
-// Wayland-first shells show it), falling back to the GTK3 GtkStatusIcon.
+// src/apps/desktop_app/tray_linux.zig Linux tray backend: a StatusNotifierItem via libayatana-appindicator (so Wayland-first shells show it), falling back to the …
 
 const std = @import("std");
 const tray = @import("tray.zig");
@@ -13,7 +11,6 @@ const app_title = "Pabrik";
 const category_application_status: c_int = 0;
 const status_active: c_int = 1;
 
-// ---------------------------------------------------------------------------
 // C API (GTK3 is already a link-time dependency of pabrik-desktop on Linux)
 
 extern "c" fn gtk_status_icon_new_from_file(filename: [*:0]const u8) ?*GtkStatusIcon;
@@ -46,9 +43,7 @@ fn connectPopupMenu(instance: *anyopaque, handler: PopupMenuFn) void {
     _ = g_signal_connect_data(instance, "popup-menu", @ptrCast(handler), null, null, 0);
 }
 
-// ---------------------------------------------------------------------------
-// AyatanaAppIndicator / AppIndicator, resolved at runtime so the binary does
-// not acquire a hard dependency on a library many distros ship elsewhere.
+// AyatanaAppIndicator / AppIndicator, resolved at runtime so the binary does not acquire a hard dependency on a library many distros ship elsewhere.
 
 const NewWithPathFn = *const fn ([*:0]const u8, [*:0]const u8, c_int, [*:0]const u8) callconv(.c) ?*AppIndicator;
 const SetStatusFn = *const fn (*AppIndicator, c_int) callconv(.c) void;
@@ -70,16 +65,12 @@ const app_indicator_libraries = [_][]const u8{
 
 pub const Kind = enum { app_indicator, status_icon };
 
-/// Which backends to try, best first. AppIndicator covers Wayland and every
-/// shell that speaks StatusNotifierItem; GtkStatusIcon only works where an
-/// XEmbed tray exists, so it is reached only when the library is absent.
+/// Which backends to try, best first.
 pub fn kindOrder(app_indicator_loaded: bool) []const Kind {
     return if (app_indicator_loaded) &.{ .app_indicator, .status_icon } else &.{.status_icon};
 }
 
-/// Where an AppIndicator looks for its icon: the SNI spec resolves
-/// `IconName` inside `IconThemePath`, while hosts that accept a file path
-/// read the absolute name directly — this backend advertises both.
+/// Where an AppIndicator looks for its icon: the SNI spec resolves `IconName` inside `IconThemePath`, while hosts that accept a file path read the absolute name …
 pub const IconRef = struct { name: []const u8, theme_path: []const u8 };
 
 pub fn iconRef(path: []const u8) IconRef {
@@ -91,8 +82,7 @@ pub fn iconRef(path: []const u8) IconRef {
 
 pub const InstallError = error{TrayUnavailable};
 
-/// Menu-item context that lives as long as the process (there is exactly one
-/// tray per process, so a fixed table beats an allocation).
+/// Menu-item context that lives as long as the process (there is exactly one tray per process, so a fixed table beats an allocation).
 const Slot = struct {
     action: tray.Action,
     handler: tray.Handler,

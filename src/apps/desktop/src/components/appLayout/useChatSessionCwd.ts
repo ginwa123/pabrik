@@ -14,8 +14,6 @@ export function useChatSessionCwd(navigationStore: NavigationStore): UseChatSess
   const chatSessionCwd = ref<string>('')
 
   // Session-cwd localStorage cache (replaces the old chatSessionCwd watcher).
-  // Called from fetchChatSessionCwd after every assignment; clearing to ''
-  // needs no cache write (the old watcher only wrote truthy cwds).
   const writeSessionCwdCache = (newCwd: string) => {
     if (newCwd && navigationStore.activeChatId) {
       const sessionId = navigationStore.activeChatId.replace(/^chat-/, '')
@@ -26,9 +24,7 @@ export function useChatSessionCwd(navigationStore: NavigationStore): UseChatSess
   const fetchChatSessionCwd = async (sessionId: string) => {
     chatSessionCwd.value = ''
     try {
-      // Single lightweight detail read (GET /api/llm/session/:id, no message payload). The old
-      // messages?limit=1 fallback is gone: the detail endpoint reads the sessions row directly, so
-      // cwd is present even for zero-message sessions where the messages JOIN yields no rows.
+      // Single lightweight detail read (GET /api/llm/session/:id, no message payload).
       const session = await api.getSession(sessionId)
       if (session && session.cwd) {
         chatSessionCwd.value = session.cwd

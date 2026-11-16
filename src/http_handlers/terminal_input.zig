@@ -1,6 +1,4 @@
-//! `POST /api/terminal/sessions/:id/input` — write keystrokes to a PTY. Body:
-//! `{ data }` (required, non-empty string — raw terminal input, e.g.
-//! `"ls\n"`).
+//! `POST /api/terminal/sessions/:id/input` — write keystrokes to a PTY. Body
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -58,8 +56,7 @@ pub fn terminalInputHandler(
         });
     }
 
-    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is
-    // indistinguishable from a missing one (404, never 403).
+    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is indistinguishable from a missing one (404, never 403).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
     if (terminal_guest.isGuestId(id)) {

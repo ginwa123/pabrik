@@ -1,9 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const schemas = @import("schemas.zig");
-/// The NTSTATUS guard is shared: the LLM controls `path` for EVERY
-/// path-taking tool, not just this one, and on Windows a malformed NT name
-/// panics the process inside std's Io backend rather than failing the call.
+/// The NTSTATUS guard is shared: the LLM controls `path` for EVERY path-taking tool, not just this one, and on Windows a malformed NT name panics the process …
 const path_validate = @import("helpers").path_validate;
 const invalidPathReason = path_validate.invalidPathReason;
 const isSep = path_validate.isSep;
@@ -14,13 +12,11 @@ const AgentTool = schemas.AgentTool;
 
 /// Input structure for remove_file tool
 pub const RemoveFileInput = struct {
-    /// Path to the file or directory to delete. Absolute, or relative to
-    /// `cwd`.
+    /// Path to the file or directory to delete.
     path: []const u8,
     /// If true, recursively delete directory and all contents inside
     recursive: bool = false,
-    /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it.
+    /// REQUIRED on the wire.
     cwd: []const u8 = "",
 };
 
@@ -65,8 +61,7 @@ pub const remove_file_tool = AgentTool{
     },
 };
 
-/// Strip trailing separators so `C:\foo\` never reaches NT as a
-/// trailing-separator name. Never strips the root itself (`X:\`, `\\`, `\`).
+/// Strip trailing separators so `C:\foo\` never reaches NT as a trailing-separator name.
 fn stripTrailingSeps(path: []const u8) []const u8 {
     var end = path.len;
     const floor: usize = floor: {
@@ -78,9 +73,7 @@ fn stripTrailingSeps(path: []const u8) []const u8 {
     return path[0..end];
 }
 
-/// Refusing to delete a filesystem root (`C:\`, `\`, `\\server\share`) with
-/// recursive=true would wipe the drive/share. Fail closed. Windows only;
-/// call with the normalized (trailing-sep-stripped) path.
+/// Refusing to delete a filesystem root (`C:\`, `\`, `\\server\share`) with recursive=true would wipe the drive/share.
 fn isWindowsRoot(norm_path: []const u8) bool {
     var rest: []const u8 = norm_path;
     if (rest.len > 4 and (std.mem.startsWith(u8, rest, "\\\\?\\") or std.mem.startsWith(u8, rest, "\\\\.\\"))) {
@@ -113,15 +106,12 @@ fn isWindowsRoot(norm_path: []const u8) bool {
 }
 
 /// Check if path is a directory.
-/// Callers must validate via invalidPathReason() first: on Windows an
-/// unchecked name panics inside openDir (OBJECT_NAME_INVALID -> ntstatusBug).
 fn isDirectory(io: std.Io, path: []const u8) bool {
     _ = std.Io.Dir.cwd().openDir(io, path, .{}) catch return false;
     return true;
 }
 
-/// Execute the remove_file tool - deletes a file or directory
-/// Returns an XML string with result
+/// Execute the remove_file tool - deletes a file or directory Returns an XML string with result
 pub fn executeRemoveFileToString(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -132,7 +122,6 @@ pub fn executeRemoveFileToString(
     }
 
     // Panic guard: reject malformed NT names BEFORE any syscall.
-    // (Windows Threaded backend turns them into ntstatusBug panics.)
     if (invalidPathReason(input.path)) |reason| {
         return xmlError(allocator, input.path, reason);
     }
@@ -202,9 +191,7 @@ pub fn xmlErrorEmpty(allocator: std.mem.Allocator, error_msg: []const u8) []cons
     , .{error_msg}) catch "<path></path><deleted>false</deleted><error>UnknownError</error>";
 }
 
-// --- Regression tests: malformed names must return error XML, never panic
-// --- (Windows Threaded backend maps OBJECT_NAME_INVALID / INVALID_PARAMETER
-// / OBJECT_PATH_SYNTAX_BAD to ntstatusBug -> process abort.
+// --- Regression tests: malformed names must return error XML, never panic --- (Windows Threaded backend maps OBJECT_NAME_INVALID / INVALID_PARAMETER / …
 
 test "remove_file validator rejects empty and NUL paths on all platforms" {
     try std.testing.expect(invalidPathReason("") != null);
@@ -225,9 +212,7 @@ test "remove_file validator accepts sane paths on all platforms" {
 
 test "remove_file validator rejects Windows-malformed names" {
     if (builtin.os.tag != .windows) return error.SkipZigTest;
-    // NOTE: single-rooted `/unix/style/path` IS valid NT syntax (it resolves
-    // against the current drive root and safely yields FileNotFound), so it
-    // must NOT be rejected — only names that panic NtQueryAttributesFile are.
+    // NOTE: single-rooted `/unix/style/path` IS valid NT syntax (it resolves against the current drive root and safely yields FileNotFound), so it must NOT be …
     try std.testing.expect(invalidPathReason("/unix/style/path") == null);
     // Bare names and drive-relative `C:foo` are not absolute.
     try std.testing.expect(invalidPathReason("relative\\path.txt") != null);
@@ -269,9 +254,7 @@ test "remove_file stripTrailingSeps keeps roots intact" {
 }
 
 test "remove_file execute returns error XML on invalid path without touching FS" {
-    // Empty path and validator/root rejections return before `io` is ever
-    // used, so `undefined` is safe for those. Anything that passes validation
-    // gets a real Io (Threaded) — the point is it must not panic.
+    // Empty path and validator/root rejections return before `io` is ever used, so `undefined` is safe for those.
     const bad_io: std.Io = undefined;
     var buf: [512]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buf);
@@ -292,8 +275,7 @@ test "remove_file execute returns error XML on invalid path without touching FS"
         try std.testing.expect(std.mem.indexOf(u8, out3, "<deleted>false</deleted>") != null);
         try std.testing.expect(std.mem.indexOf(u8, out3, "filesystem root") != null);
 
-        // Valid NT syntax, missing on disk: goes through access() and must
-        // come back as error XML (FileNotFound), NOT an ntstatusBug panic.
+        // Valid NT syntax, missing on disk: goes through access() and must come back as error XML (FileNotFound), NOT an ntstatusBug panic.
         var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
         defer threaded.deinit();
         const io = threaded.io();
@@ -306,7 +288,6 @@ test "remove_file execute returns error XML on invalid path without touching FS"
 }
 
 // Exec adapter — merged from `remove_file.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -318,9 +299,7 @@ const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const workspace_fs = @import("../loop/workspace_fs.zig");
 
-/// Delete in whichever substrate owns the tree. Under `--saas` the guest does
-/// it — and the guest refuses to take the workspace root with it, which the
-/// host's own `deleteTree` has no reason to guard against.
+/// Delete in whichever substrate owns the tree.
 fn removeThrough(ctx: ToolExecContext, input: RemoveFileInput) ![]const u8 {
     const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
     if (guest) |handle| {
@@ -331,9 +310,7 @@ fn removeThrough(ctx: ToolExecContext, input: RemoveFileInput) ![]const u8 {
     return executeRemoveFileToString(ctx.allocator, ctx.io, input);
 }
 
-/// The answers the host path gives, asked of the guest: a directory without
-/// `recursive` is refused with the message that names the fix, and a path that
-/// is not there says so instead of succeeding quietly.
+/// The answers the host path gives, asked of the guest: a directory without `recursive` is refused with the message that names the fix, and a path that is not …
 fn removeInGuest(
     allocator: std.mem.Allocator,
     fs: *workspace_fs.Fs,
@@ -388,9 +365,7 @@ pub fn execRemoveFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
-    // call works in, and the base a relative `path` resolves against. See
-    // helpers/exec_path_validate.zig for the one implementation of that rule.
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this call works in, and the base a relative `path` resolves against.
     exec_path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -400,8 +375,7 @@ pub fn execRemoveFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     const path_abs = try exec_path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
     defer ctx.allocator.free(path_abs);
 
-    // Delete the RESOLVED path — a relative one would otherwise resolve
-    // against the server's directory instead of the model's `cwd`.
+    // Delete the RESOLVED path — a relative one would otherwise resolve against the server's directory instead of the model's `cwd`.
     var input = parsed.value;
     input.path = path_abs;
 

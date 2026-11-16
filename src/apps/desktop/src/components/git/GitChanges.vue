@@ -130,8 +130,6 @@ const loadGitStatus = async () => {
 }
 
 // Cwd sync: load status while bound, clear the lists when unbound.
-// Prev-value guard on update — same body the watcher ran; the mount call
-// covers the initial load (the old `immediate: true`).
 function syncChangesCwd(newCwd: string | undefined) {
   if (newCwd) {
     loadGitStatus()

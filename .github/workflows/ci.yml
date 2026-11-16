@@ -417,17 +417,14 @@ jobs:
           python3 scripts/lint-no-dead-doc-refs.py --selftest
           python3 scripts/lint-no-dead-doc-refs.py
 
-      - name: Kotlin comment blocks are at most two lines
-        # CODING_STANDARDS.md §7: the Android app's half of §4's rule, one
-        # line tighter. The Zig half is `zginlint/max-comment-lines`, the
-        # Vue/TS half is `local/max-comment-lines`; this is the third
-        # language and it had no cap at all.
+      - name: Kotlin comment blocks are at most one line
+        # CODING_STANDARDS.md §7: the Android app's half of §4's rule, at the
+        # same one-line ceiling. The Zig half is `zginlint/max-comment-lines`,
+        # the Vue/TS half is `local/max-comment-lines`.
         #
-        # The tree carries 1,806 over-long blocks, so the rule ships with a
-        # counted per-file pin (`comment-lines-baseline.json`) exactly as
-        # §5 shipped the frontend's. The count may only fall: a file over
-        # its pin fails, and so does a file with findings that is not
-        # pinned. `--strict` asks for zero and is the finish line.
+        # The 1,806 blocks the rule shipped with are converted, so the per-file
+        # pin (`comment-lines-baseline.json`) is empty and the step asks for
+        # zero through `--strict`: a finding is a finding.
         #
         # The selftest covers both halves — the lexer AND the verdict — for
         # the same reason as the two scans above: a gate that has quietly
@@ -440,7 +437,7 @@ jobs:
             exit 1
           }
           python3 scripts/lint-kt-comment-lines.py --selftest
-          python3 scripts/lint-kt-comment-lines.py
+          python3 scripts/lint-kt-comment-lines.py --strict
 
       - name: Kotlin files are at most 1000 code lines
         # CODING_STANDARDS.md §8: the Android app's file-size rule, and the

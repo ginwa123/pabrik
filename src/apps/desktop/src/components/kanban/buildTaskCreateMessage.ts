@@ -32,7 +32,6 @@ export function buildTaskCreateMessage(
       lines.push(`Method: ${method}`)
     }
   }
-  // No `#Skill` line here: the backend appends one per skill from the task's
-  // skill_names, so the agent receives each directive exactly once.
+  // No `#Skill` line here: the backend appends one per skill from the task's skill_names, so the agent receives each directive exactly once.
   return lines.join('\n')
 }

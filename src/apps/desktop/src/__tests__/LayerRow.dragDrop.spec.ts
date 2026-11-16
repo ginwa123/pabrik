@@ -1,5 +1,4 @@
-/** Behavioural tests for `<LayerRow>` drag-and-drop wire (Chunk 4
- * Task 4.1). */
+/** Behavioural tests for `<LayerRow>` drag-and-drop wire (Chunk 4 Task 4.1). */
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -50,8 +49,7 @@ describe('<LayerRow> drag-and-drop', () => {
         collapsedIds: new Set<string>(),
       },
     })
-    // mount(LayerRow) wraps the component in an app root; the
-    // LayerRow's own root is its first child div.
+    // mount(LayerRow) wraps the component in an app root; the LayerRow's own root is its first child div.
     const root = wrapper.find('div').element as HTMLElement
     expect(root.draggable).toBe(true)
   })
@@ -80,8 +78,7 @@ describe('<LayerRow> drag-and-drop', () => {
         collapsedIds: new Set<string>(),
       },
     })
-    // Buttons render as <button>, so attributes('draggable') is fine
-    // for them — but only on the <button>, not the wrapper.
+    // Buttons render as <button>, so attributes('draggable') is fine for them — but only on the <button>, not the wrapper.
     expect(
       (wrapper.find('[data-testid="design-layer-reorder-up-a"]').element as HTMLElement)
         .draggable,

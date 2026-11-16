@@ -32,8 +32,7 @@ describe('officeDocument — body', () => {
   })
 
   it('an empty body is a blank spreadsheet, not an error', () => {
-    // A document created without content is a legitimate starting state: the
-    // editor opens a blank sheet and the first Save writes a real snapshot.
+    // A document created without content is a legitimate starting state: the editor opens a blank sheet and the first Save writes a real snapshot.
     expect(parseOfficeBody('')).toEqual({ kind: DEFAULT_OFFICE_KIND, snapshot: {} })
     expect(parseOfficeBody(null)).toEqual({ kind: DEFAULT_OFFICE_KIND, snapshot: {} })
     expect(parseOfficeBody(undefined)).toEqual({ kind: DEFAULT_OFFICE_KIND, snapshot: {} })
@@ -50,8 +49,7 @@ describe('officeDocument — body', () => {
   })
 
   it('an envelope with an unknown kind is unreadable', () => {
-    // Univer 1.4.0 ships no slides preset, so a slide body must not be opened
-    // as if it were a spreadsheet.
+    // Univer 1.4.0 ships no slides preset, so a slide body must not be opened as if it were a spreadsheet.
     expect(parseOfficeBody('{"kind":"slide","snapshot":{}}')).toBeNull()
   })
 

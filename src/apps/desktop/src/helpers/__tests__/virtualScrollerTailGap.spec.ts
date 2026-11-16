@@ -1,5 +1,4 @@
-/** Tail-gap cap (task_1790236655228_2) — "the gap is too long". The sizer height is a MODEL number
- * (Σ measured/estimated row heights). */
+/** Tail-gap cap (task_1790236655228_2) — "the gap is too long". */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, type ComponentMountingOptions } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -76,8 +75,7 @@ function renderedIndices(el: HTMLElement): number[] {
   )
 }
 
-/** The invariant the cap guarantees: the sizer never reserves more room
- * below the MEASURED content bottom than `maxTailGap`. */
+/** The invariant the cap guarantees: the sizer never reserves more room below the MEASURED content bottom than `maxTailGap`. */
 function expectCapHolds(el: HTMLElement, gap = 100, slack = 2): void {
   const sizer = sizerTotal(el)
   const content = contentEl(el)
@@ -99,8 +97,7 @@ describe('VirtualScroller tail-gap cap', () => {
     vi.useRealTimers()
   })
 
-  /**    * Build the reported state: a tall median learned from the top window, then a tail whose rows the
-   * DOM cannot measure (height 0) — so the model keeps the median estimate for every one of them. */
+  /** Build the reported state: a tall median learned from the top window, then a tail whose rows the DOM cannot measure (height 0) — so the model keeps the median … */
   async function mountOvershootingTail(maxTailGap?: number) {
     const mounted = mountScroller(maxTailGap === undefined ? undefined : { maxTailGap })
     const { wrapper, el } = mounted
@@ -113,8 +110,7 @@ describe('VirtualScroller tail-gap cap', () => {
     await nextTick()
     expect(modelTotalOf(wrapper)).toBe(N * 400)
 
-    // Jump to the tail: rows past the viewport keep the 400px estimate,
-    // most of them unmeasurable (height 0) — the phantom region.
+    // Jump to the tail: rows past the viewport keep the 400px estimate, most of them unmeasurable (height 0) — the phantom region.
     scroll(el, 1e7)
     await nextTick()
     const tailIndices = renderedIndices(el)
@@ -135,8 +131,7 @@ describe('VirtualScroller tail-gap cap', () => {
 
     // The model still reserves the full (over-)estimate…
     expect(modelTotal).toBe(N * 400)
-    // …but the rendered sizer must stop `maxTailGap` past the measured
-    // bottom of the rows actually in the DOM.
+    // …but the rendered sizer must stop `maxTailGap` past the measured bottom of the rows actually in the DOM.
     expect(bottom).toBeGreaterThan(0)
     expect(sizer).toBe(bottom + 100)
     expect(sizer).toBeLessThan(modelTotal)
@@ -161,8 +156,7 @@ describe('VirtualScroller tail-gap cap', () => {
     const { wrapper, el } = await mountOvershootingTail()
     expect(sizerTotal(el)).toBeLessThan(modelTotalOf(wrapper))
 
-    // Scroll back into history: `end < items.length - buffer` → the cap
-    // releases, so rows appended below stay reachable.
+    // Scroll back into history: `end < items.length - buffer` → the cap releases, so rows appended below stay reachable.
     scroll(el, 1000)
     vi.advanceTimersByTime(150)
     await nextTick()
@@ -175,13 +169,9 @@ describe('VirtualScroller tail-gap cap', () => {
     const { wrapper, el } = await mountOvershootingTail()
     const before = tailBottomOf(wrapper)
 
-    // Same tail window, now measurable: the recorded bottom must describe
-    // the rows on screen NOW (measured bottom == window top + real rows),
-    // not the previously recorded window (the PR #355 staleness bug).
+    // Same tail window, now measurable: the recorded bottom must describe the rows on screen NOW (measured bottom == window top + real rows), not the previously …
     mockChildren(el, () => 200)
-    // jsdom has no ResizeObserver (setup.ts installs an inert one), so nothing can notice the new
-    // heights on its own — drive the measure explicitly rather than waiting for an observer that
-    // does not exist here.
+    // jsdom has no ResizeObserver (setup.ts installs an inert one), so nothing can notice the new heights on its own — drive the measure explicitly rather than …
     ;(wrapper.vm as unknown as { remeasure: () => void }).remeasure()
     vi.advanceTimersByTime(150)
     await nextTick()
@@ -203,9 +193,7 @@ describe('VirtualScroller tail-gap cap', () => {
     const { wrapper, el } = await mountOvershootingTail()
     const before = tailBottomOf(wrapper)
 
-    // A window in which nothing has laid out (height 0 everywhere) tells
-    // us nothing about the real bottom: keep the previous measurement
-    // instead of collapsing the sizer to the window top + maxTailGap.
+    // A window in which nothing has laid out (height 0 everywhere) tells us nothing about the real bottom: keep the previous measurement instead of collapsing the …
     mockChildren(el, () => 0)
     vi.advanceTimersByTime(150)
     await nextTick()
@@ -217,9 +205,7 @@ describe('VirtualScroller tail-gap cap', () => {
 
   it('never inflates the sizer above the model total', async () => {
     const { wrapper, el } = await mountOvershootingTail()
-    // Rows taller than the model estimate cannot push the sizer past the
-    // model: the cap is a min(), so the bounce/blow-up failure mode that
-    // forced the PR #355 clamp out is impossible.
+    // Rows taller than the model estimate cannot push the sizer past the model: the cap is a min(), so the bounce/blow-up failure mode that forced the PR #355 clamp …
     mockChildren(el, () => 4000)
     vi.advanceTimersByTime(150)
     await nextTick()

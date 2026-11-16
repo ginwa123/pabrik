@@ -1,5 +1,4 @@
-//! The ONE batch runner for sub-agents: launch N concurrently, collect N
-//! results.
+//! The ONE batch runner for sub-agents: launch N concurrently, collect N results.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,29 +10,23 @@ const logger_mod = pabrikcore.loggermod;
 const llm_history = pabrikcore.llm_history;
 const ai_workflow = @import("workflow.zig");
 const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
-// The main-agent-only membership list is shared with `tool_eligibility.zig`'s
-// strip so the parse-time check here and the strip can never disagree.
+// The main-agent-only membership list is shared with `tool_eligibility.zig`'s strip so the parse-time check here and the strip can never disagree.
 const main_agent_only = @import("main_agent_only.zig");
 const subagent_progress = @import("subagent_progress.zig");
 
 /// Hard ceiling on one batch.
 pub const MaxBatch = 20;
 
-/// One unit of work. Built by the caller as CODE — never parsed out of a
-/// model's JSON — so `tools` is a real allowlist and `instruction` is a real
-/// string.
+/// One unit of work.
 pub const BatchJob = struct {
-    /// The sub-agent's name. Resolved against the active profile by the caller
-    /// when it wants a specific configured agent; otherwise it is only a label.
+    /// The sub-agent's name.
     name: []const u8,
     instruction: []const u8,
     /// REQUIRED, non-empty, never `"all"`, never a main-agent-only tool.
-    /// Enforced by `validateJobs`.
     tools: []const []const u8,
     /// Mode string for parent-history inheritance; empty means none.
     inherited_context: []const u8 = "",
-    /// Resolved sub-agent config overlay. Null means "orchestrator defaults",
-    /// which is what a code-driven fan-out (the judge) wants.
+    /// Resolved sub-agent config overlay.
     overrides: ?ai_workflow.SubAgentOverrides = null,
 };
 
@@ -47,11 +40,9 @@ pub const BatchArgs = struct {
     parent_sess_id: []const u8,
     cwd: []const u8,
     environment: ?*const std.process.Environ.Map,
-    /// Forwarded to the child session row and its LLM resolution, so the child
-    /// uses the parent's profile instead of top-level defaults.
+    /// Forwarded to the child session row and its LLM resolution, so the child uses the parent's profile instead of top-level defaults.
     selected_profile_model: []const u8,
-    /// The parent's tool_call id, so the frontend can route per-agent progress
-    /// into the right card.
+    /// The parent's tool_call id, so the frontend can route per-agent progress into the right card.
     tool_call_id: []const u8,
 };
 
@@ -62,8 +53,7 @@ pub const ThreadResult = struct {
     response: ?[]const u8 = null,
     error_message: ?[]const u8 = null,
     session_id: []const u8 = "",
-    /// True when the requested `name` matched no configured sub-agent and a
-    /// random name was substituted. The frontend shows a "random" badge.
+    /// True when the requested `name` matched no configured sub-agent and a random name was substituted.
     is_random_fallback: bool = false,
 };
 
@@ -102,20 +92,15 @@ pub fn validateJobs(jobs: []const BatchJob) !void {
             if (t.len == 0) return error.InvalidSubAgentsFormat;
             const trimmed = std.mem.trim(u8, t, " \t");
             if (trimmed.len == 0) return error.InvalidSubAgentsFormat;
-            // `"all"` would hand the child the parent's whole toolset, which
-            // includes the tools the allowlist exists to withhold.
+            // `"all"` would hand the child the parent's whole toolset, which includes the tools the allowlist exists to withhold.
             if (std.ascii.eqlIgnoreCase(trimmed, "all")) return error.AllToolsNotAllowed;
-            // Main-agent-only tools are a hard error, not a silent strip:
-            // `run_session` starts a whole new run with no human in the chain
-            // and `run_skill_eval` would recurse eval-of-eval without bound.
+            // Main-agent-only tools are a hard error, not a silent strip
             if (main_agent_only.isMainAgentOnly(trimmed)) return error.MainAgentOnlyToolNotAllowed;
         }
     }
 }
 
 // Heap-allocated per-thread arguments.
-// Heap-allocated rather than a stack value so `group.concurrent` owns a
-// pointer whose lifetime the group, not this frame, bounds.
 const SubAgentThreadArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -134,8 +119,7 @@ const SubAgentThreadArgs = struct {
     selected_profile_model: []const u8 = "",
     tool_call_id: []const u8 = "",
     total_agents: usize = 0,
-    // Wall-clock capture at thread entry so `elapsed_ms` is meaningful
-    // (the frontend renders it as a "running for 12s" chip).
+    // Wall-clock capture at thread entry so `elapsed_ms` is meaningful (the frontend renders it as a "running for 12s" chip).
     thread_start_ns: i128 = 0,
 };
 
@@ -153,8 +137,7 @@ fn elapsedMs(a: *SubAgentThreadArgs) i64 {
     return @intCast(@divTrunc(diff_ns, std.time.ns_per_ms));
 }
 
-/// Record a failure on this thread's slot and emit `failed` so the frontend
-/// row never strands as `running`.
+/// Record a failure on this thread's slot and emit `failed` so the frontend row never strands as `running`.
 fn failSubAgent(a: *SubAgentThreadArgs, err_msg: []const u8, ms: i64) void {
     a.shared_results.results[a.thread_idx].error_message =
         a.allocator.dupe(u8, err_msg) catch null;
@@ -170,8 +153,7 @@ fn failSubAgent(a: *SubAgentThreadArgs, err_msg: []const u8, ms: i64) void {
     });
 }
 
-/// The two "the sub-agent finished but produced nothing" branches. The message
-/// is already on the slot, so only the progress event is emitted.
+/// The two "the sub-agent finished but produced nothing" branches.
 fn failSubAgentAlreadySet(a: *SubAgentThreadArgs, sub_session_id: []const u8, ms: i64) void {
     subagent_progress.emitProgressEvent(.{
         .parent_session_id = a.parent_sess_id,
@@ -190,8 +172,7 @@ fn setError(a: *SubAgentThreadArgs, err_msg: []const u8) void {
         a.allocator.dupe(u8, err_msg) catch null;
 }
 
-// Top-level function required by group.concurrent — takes a single
-// *SubAgentThreadArgs.
+// Top-level function required by group.concurrent — takes a single *SubAgentThreadArgs.
 fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
     args_ptr.logger.debugFmt("Concurrent task started for '{s}'", .{args_ptr.agent_name});
 
@@ -201,27 +182,21 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
 
     defer args_ptr.allocator.destroy(args_ptr);
 
-    // Captured at entry so every emit below reports a real elapsed_ms rather
-    // than a timestamp taken after the work.
+    // Captured at entry so every emit below reports a real elapsed_ms rather than a timestamp taken after the work.
     args_ptr.thread_start_ns = std.Io.Timestamp.now(args_ptr.io, .real).nanoseconds;
 
-    // Propagate the random-name fallback to the shared result so the frontend
-    // can render the "random" badge. Done BEFORE the workflow call so it is
-    // set even when the workflow errors out.
+    // Propagate the random-name fallback to the shared result so the frontend can render the "random" badge.
     if (args_ptr.sub_agent_overrides) |ov| {
         args_ptr.shared_results.results[args_ptr.thread_idx].is_random_fallback = ov.is_random_fallback;
     }
 
-    // The session id embeds the resolved (or requested) sub-agent name, which
-    // is what shows up in the UI's worker list.
+    // The session id embeds the resolved (or requested) sub-agent name, which is what shows up in the UI's worker list.
     const resolved_display_name: []const u8 = if (args_ptr.sub_agent_overrides) |ov|
         ov.resolved_name
     else
         args_ptr.agent_name;
 
-    // 2026-09-04 subagent-peek P0: child session ids embed the agent name
-    // verbatim, so `backend implementer` produced a session id containing a
-    // raw space — which breaks the HTTP request line, and where `/` or `%`
+    // 2026-09-04 subagent-peek P0: child session ids embed the agent name verbatim, so `backend implementer` produced a session id containing a raw space — which …
     const slugged_name = slugifySubAgentName(sub_agent_allocator, resolved_display_name) catch resolved_display_name;
     const sess_id = std.fmt.allocPrint(
         sub_agent_allocator,
@@ -239,8 +214,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
     defer sub_agent_allocator.free(sess_id);
     args_ptr.logger.debugFmt("Session ID created: '{s}'", .{sess_id});
 
-    // Stored in shared results immediately, so the `launched` progress event
-    // below can carry it and the frontend can enable its peek button.
+    // Stored in shared results immediately, so the `launched` progress event below can carry it and the frontend can enable its peek button.
     {
         const session_id_copy = args_ptr.allocator.dupe(u8, sess_id) catch {
             failSubAgent(args_ptr, std.fmt.allocPrint(
@@ -276,8 +250,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         .io = di.io,
         .logger = di.logger,
         .event_bus = di.event_bus,
-        // Live DI handle: re-read inside the workflow loop so PabrikSettings
-        // changes take effect per iteration.
+        // Live DI handle: re-read inside the workflow loop so PabrikSettings changes take effect per iteration.
         .di = di,
         .environment = di.environment,
     }, .{
@@ -287,9 +260,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         .cwd = args_ptr.cwd,
         .body = "",
         .allowed_tools = blk: {
-            // `tools` is required per sub-agent (validateJobs refuses omit /
-            // empty / "all"), so there is no omit-means-all fallback — the CSV
-            // always comes from an explicit list.
+            // `tools` is required per sub-agent (validateJobs refuses omit /empty / "all"), so there is no omit-means-all fallback — the CSV always comes from an explicit …
             var tools_str = std.ArrayList(u8).empty;
             for (args_ptr.tools, 0..) |tool, i| {
                 if (i > 0) tools_str.append(args_ptr.allocator, ',') catch break;
@@ -302,9 +273,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
         .sub_agent_overrides = args_ptr.sub_agent_overrides,
         .selected_profile_model = args_ptr.selected_profile_model,
     }) catch |err| {
-        // Mirror the diagnostic pattern used by workflow.zig so the parent
-        // LLM and the user see an actionable message rather than a bare error
-        // name.
+        // Mirror the diagnostic pattern used by workflow.zig so the parent LLM and the user see an actionable message rather than a bare error name.
         const err_name: []const u8 = @errorName(err);
         const diagnostic: []const u8 = if (std.mem.eql(u8, err_name, "TooManyRetries"))
             std.fmt.allocPrint(args_ptr.allocator,
@@ -322,9 +291,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
                 .{err_name},
             ) catch "Failed to format error message";
         setError(args_ptr, diagnostic);
-        // Also flip the SSE progress event so the chatview row goes
-        // running→failed INSTEAD of stranding until group.await returns.
-        // emitProgressEvent is fire-and-forget; never wrap in catch.
+        // Also flip the SSE progress event so the chatview row goes running→failed INSTEAD of stranding until group.await returns. emitProgressEvent is fire-and-forget …
         subagent_progress.emitProgressEvent(.{
             .parent_session_id = args_ptr.parent_sess_id,
             .tool_call_id = args_ptr.tool_call_id,
@@ -361,8 +328,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
             };
             args_ptr.shared_results.results[args_ptr.thread_idx].response = response_copy;
             args_ptr.shared_results.results[args_ptr.thread_idx].success = true;
-            // `completed` ONLY when the sub-agent produced non-empty text. The
-            // two "finished but empty" branches below emit `failed` instead.
+            // `completed` ONLY when the sub-agent produced non-empty text.
             subagent_progress.emitProgressEvent(.{
                 .parent_session_id = args_ptr.parent_sess_id,
                 .tool_call_id = args_ptr.tool_call_id,
@@ -374,9 +340,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
                 .elapsed_ms = elapsedMs(args_ptr),
             });
         } else {
-            // Finished without producing any assistant text. Treated as a
-            // failure so the row flips from running to failed instead of
-            // hanging as running until the user navigates away.
+            // Finished without producing any assistant text.
             setError(args_ptr, "Agent Pabrik System error, the actual error is ->>>> Sub-agent completed but produced empty response content\n");
             failSubAgentAlreadySet(args_ptr, sess_id, elapsedMs(args_ptr));
         }
@@ -390,9 +354,7 @@ fn runSubAgent(args_ptr: *SubAgentThreadArgs) void {
     _ = args_ptr.shared_results.completed_count.fetchAdd(1, .monotonic);
 }
 
-// 2026-09-04 subagent-peek fix (P0): child session ids embed the agent name
-// verbatim, so `backend implementer` produced `subagent_{ns}_backend
-// implementer` — a raw space in the REST path breaks the HTTP request line
+// 2026-09-04 subagent-peek fix (P0): child session ids embed the agent name verbatim, so `backend implementer` produced `subagent_{ns}_backend implementer` — a …
 pub fn slugifySubAgentName(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     var out = std.ArrayList(u8).empty;
     errdefer out.deinit(allocator);
@@ -410,11 +372,9 @@ pub fn slugifySubAgentName(allocator: std.mem.Allocator, name: []const u8) ![]u8
     return out.toOwnedSlice(allocator);
 }
 
-/// Run `jobs` concurrently and return their results. The caller owns nothing
-/// afterwards: every string in the returned outcome is a fresh allocation.
+/// Run `jobs` concurrently and return their results.
 pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
-    // In the runner, not beside it: a caller that forgets the check cannot
-    // widen the blast radius.
+    // In the runner, not beside it: a caller that forgets the check cannot widen the blast radius.
     try validateJobs(jobs);
 
     const job_count = jobs.len;
@@ -427,9 +387,7 @@ pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
     };
     errdefer args.allocator.free(shared_results.results);
 
-    // Names are DUPED because a job's `name` is borrowed from the caller's
-    // struct and the outcome outlives the call. `response` / `error_message` /
-    // `session_id` are duped by `runSubAgent` for the same reason.
+    // Names are DUPED because a job's `name` is borrowed from the caller's struct and the outcome outlives the call.
     for (shared_results.results, 0..) |*r, i| {
         const owned_name = args.allocator.dupe(u8, jobs[i].name) catch jobs[i].name;
         r.* = .{ .success = false, .name = owned_name };
@@ -438,8 +396,7 @@ pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
     var outcome = BatchOutcome{ .results = shared_results.results, .allocator = args.allocator };
     errdefer outcome.deinit();
 
-    // `concurrent` (not `async`): the agents must genuinely run in parallel,
-    // and `async` on a single-threaded Io can deadlock.
+    // `concurrent` (not `async`): the agents must genuinely run in parallel, and `async` on a single-threaded Io can deadlock.
     var group: std.Io.Group = .init;
     // A launch failure must not leave the already-launched threads un-awaited.
     var launched: usize = 0;
@@ -468,17 +425,14 @@ pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
             .environment = args.environment,
             .inherited_context = job.inherited_context,
             .sub_agent_overrides = job.overrides,
-            // Forward the parent's profile so the child session row carries it
-            // (DB NOT NULL) and its LLM calls resolve the same profile instead
-            // of falling back to top-level defaults.
+            // Forward the parent's profile so the child session row carries it (DB NOT NULL) and its LLM calls resolve the same profile instead of falling back to top-level …
             .selected_profile_model = args.selected_profile_model,
             .tool_call_id = args.tool_call_id,
             .total_agents = job_count,
             // .thread_start_ns is set INSIDE runSubAgent at entry.
         };
 
-        // group.concurrent returns error.ConcurrencyUnavailable if the Io
-        // backend cannot run tasks in parallel (e.g. a bare blocking Io).
+        // group.concurrent returns error.ConcurrencyUnavailable if the Io backend cannot run tasks in parallel (e.g. a bare blocking Io).
         group.concurrent(args.io, runSubAgent, .{targs}) catch |err| {
             // The thread was never scheduled, so nothing will free it.
             args.allocator.destroy(targs);
@@ -498,8 +452,6 @@ pub fn runBatch(args: BatchArgs, jobs: []const BatchJob) !BatchOutcome {
 }
 
 /// Tool front door: parse a `spawn_sub_agent` tool-call payload and run it.
-/// The parse is the only reason a JSON string ever reaches the runner, and it
-/// exists because a tool call IS a JSON string.
 pub fn runBatchFromJson(args: BatchArgs, input_json: []const u8, max_agents: usize) !BatchOutcome {
     const parsed = try spawn_sub_agent_tool.parse_sub_agents(args.allocator, input_json, max_agents);
     defer parsed.deinit(args.allocator);
@@ -512,9 +464,7 @@ pub fn runBatchFromJson(args: BatchArgs, input_json: []const u8, max_agents: usi
             .instruction = sa.instruction,
             .tools = sa.tools,
             .inherited_context = sa.inherited_context orelse "",
-            // Null here: the caller resolves its own overrides and hands them
-            // to `runBatch` (see `execSpawnSubAgent`), because resolving needs
-            // the live LlmConfig and the parent's selected profile.
+            // Null here: the caller resolves its own overrides and hands them to `runBatch` (see `execSpawnSubAgent`), because resolving needs the live LlmConfig and the …
             .overrides = null,
         };
     }
@@ -542,8 +492,7 @@ test "validateJobs refuses a main-agent-only tool in the allowlist" {
     };
     try testing.expectError(error.MainAgentOnlyToolNotAllowed, validateJobs(&jobs));
 
-    // run_skill_eval is the recursion hazard specifically: a judging sub-agent
-    // that could start another eval would fan out without bound.
+    // run_skill_eval is the recursion hazard specifically: a judging sub-agent that could start another eval would fan out without bound.
     const recursive = [_]BatchJob{
         .{ .name = "judge", .instruction = "judge it", .tools = &.{"run_skill_eval"} },
     };
@@ -570,9 +519,7 @@ test "validateJobs accepts a well-formed batch at any size up to the cap" {
 }
 
 test "runBatch enforces the cap before touching the singleton" {
-    // The point of the ordering: policy is checked first, so an oversized
-    // batch fails without ever reaching `pabrikcore.getSingleton()` (which is
-    // `unreachable` in a unit test).
+    // The point of the ordering: policy is checked first, so an oversized batch fails without ever reaching `pabrikcore.getSingleton()` (which is `unreachable` in a …
     const alloc = testing.allocator;
     const jobs = try alloc.alloc(BatchJob, MaxBatch + 1);
     defer alloc.free(jobs);
@@ -584,15 +531,12 @@ test "runBatch enforces the cap before touching the singleton" {
     defer db.deinit();
     try test_db.openMemory(&db, threaded.io());
 
-    // `expectError` cannot be used here: it would still evaluate the call, so
-    // the real assertion is that the oversized batch comes back as an error
-    // rather than crashing on the unreachable singleton.
+    // `expectError` cannot be used here: it would still evaluate the call, so the real assertion is that the oversized batch comes back as an error rather than …
     if (runBatch(.{
         .allocator = alloc,
         .io = threaded.io(),
         .db = &db,
-        // Unused on this path; a null logger would be a lie only if the
-        // policy check did not fire first.
+        // Unused on this path; a null logger would be a lie only if the policy check did not fire first.
         .logger = undefined,
         .parent_sess_id = "sess_1",
         .cwd = "/tmp",
@@ -609,9 +553,7 @@ test "runBatch enforces the cap before touching the singleton" {
 }
 
 test "slugifySubAgentName keeps URL-safe chars, space->underscore" {
-    // 2026-09-04 subagent-peek P0: the child session id must be a single
-    // URL-safe path segment. Raw spaces broke the HTTP request line and '/'
-    // broke router segment matching.
+    // 2026-09-04 subagent-peek P0: the child session id must be a single URL-safe path segment.
     const alloc = testing.allocator;
     const s1 = try slugifySubAgentName(alloc, "backend implementer");
     defer alloc.free(s1);

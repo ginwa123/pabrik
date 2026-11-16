@@ -2,8 +2,7 @@ import { asRecord } from '../toolOutputParser'
 
 export { asRecord }
 
-/**  * Unwrap one level when the input is a full tool envelope (`{tool, parameters, success, data,
- * error, v}` or its JSON string) instead of the bare `data` payload. Otherwise coerce to a record. */
+/** Unwrap one level when the input is a full tool envelope (`{tool, parameters, success, data, error, v}` or its JSON string) instead of the bare `data` payload. */
 export function unwrapDataRecord(data: unknown): Record<string, unknown> {
   const record = asRecord(data)
   if (

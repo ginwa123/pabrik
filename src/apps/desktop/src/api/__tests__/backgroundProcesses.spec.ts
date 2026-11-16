@@ -1,5 +1,4 @@
-/** Tests for the session background-process API fns. Backend: background_processes_list.zig +
- * background_process_log_get.zig (commit b69111f7). */
+/** Tests for the session background-process API fns. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -142,8 +141,7 @@ describe('getBackgroundProcessLog', () => {
       name: 'ApiError',
       status: 404,
     })
-    // ApiError class identity (not just shape) — the component narrows
-    // on `instanceof ApiError` for the 404 message.
+    // ApiError class identity (not just shape) — the component narrows on `instanceof ApiError` for the 404 message.
     await expect(getBackgroundProcessLog('sess_1', 9999)).rejects.toBeInstanceOf(
       ApiError,
     )

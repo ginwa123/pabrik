@@ -11,21 +11,15 @@ const io = testing.io;
 const Io = std.Io;
 
 const SESSION_ID = "sess_command_is_stop_1";
-/// The `tool_call.id` the stub mints for its FIRST scripted round. Asserted
-/// back out of the DB: the row that carries it is the proof the batch was
-/// persisted before the break. Later rounds mint `call_round_<n>`.
+/// The `tool_call.id` the stub mints for its FIRST scripted round.
 const CALL_ID = "call_round_1";
 
-/// Cap on the recorded request head — a runaway client must not grow the
-/// accumulation without bound. Mirrors the auto-name stub.
+/// Cap on the recorded request head — a runaway client must not grow the accumulation without bound.
 const MAX_HEAD_BYTES = 1 << 18;
 
-// ============================================================================
 // Stub upstream
-// ============================================================================
 
-/// An OpenAI-compatible upstream that, on the FIRST agent round, answers with
-/// one `command` tool call; on every later round, with a plain stop.
+/// An OpenAI-compatible upstream that, on the FIRST agent round, answers with one `command` tool call; on every later round, with a plain stop.
 pub const StubRound = struct {
     tool: []const u8,
     args: []const u8,
@@ -40,12 +34,10 @@ const Stub = struct {
     mutex: Io.Mutex = .init,
     /// Absolute `cwd` handed to the tool. The server refuses a relative one.
     cwd: []const u8,
-    /// The scripted turn per agent round. Rounds past the end answer with a
-    /// plain `stop`, which is how every script terminates.
+    /// The scripted turn per agent round.
     rounds: []const StubRound,
     agent_calls: usize = 0,
-    /// Most recent `"pid":<n>` seen in a request body — the model's view of
-    /// "which process am I looking at".
+    /// Most recent `"pid":<n>` seen in a request body — the model's view of "which process am I looking at".
     last_pid: ?u32 = null,
 
     fn start(
@@ -135,9 +127,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     }
     const body = body_acc.written();
 
-    // The session-name request is a separate, earlier call that carries no
-    // `tools` array; answer it so it cannot pollute the counter this test
-    // depends on. (Same classifier the auto-name suite uses.)
+    // The session-name request is a separate, earlier call that carries no `tools` array; answer it so it cannot pollute the counter this test depends on.
     const is_name = std.mem.indexOf(u8, body, "SessionNameGenerator") != null or
         (std.mem.indexOf(u8, body, "\"tools\"") == null and
             std.mem.indexOf(u8, body, "SessionName") != null);
@@ -199,9 +189,7 @@ fn textSse(text: []const u8) ![]u8 {
     );
 }
 
-/// Build a `command` round with `cwd` filled in and `extra` appended verbatim,
-/// so a test states exactly which parameters it exercises — and, just as
-/// importantly, which it OMITS.
+/// Build a `command` round with `cwd` filled in and `extra` appended verbatim, so a test states exactly which parameters it exercises — and, just as importantly …
 pub fn commandRound(allocator: std.mem.Allocator, cwd: []const u8, command: []const u8, extra: []const u8) !StubRound {
     var args_buf: Io.Writer.Allocating = .init(allocator);
     defer args_buf.deinit();
@@ -264,8 +252,7 @@ fn writeJsonString(w: *Io.Writer, s: []const u8) !void {
     try w.writeByte('"');
 }
 
-/// Escape `s` so it can sit INSIDE a JSON string (the SSE `arguments` field is
-/// a string holding JSON). Returns an owned slice.
+/// Escape `s` so it can sit INSIDE a JSON string (the SSE `arguments` field is a string holding JSON).
 fn jsonStringEscape(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
@@ -294,9 +281,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
@@ -395,7 +380,6 @@ fn sqlRun(db_path: []const u8, sql: []const u8) ![]u8 {
 }
 
 /// First column of the first row as an owned string; null when no row.
-/// `sqlite3 -json` prints ZERO BYTES for an empty result set, not `[]`.
 fn firstCell(db_path: []const u8, sql: []const u8) !?[]u8 {
     const out = try sqlRun(db_path, sql);
     defer gpa.free(out);
@@ -430,8 +414,6 @@ fn scalarCount(db_path: []const u8, sql: []const u8) !i64 {
 }
 
 /// Poll until the worker row for the session is gone, or the deadline passes.
-/// `deleteWorker` is the last thing the turn does, so its absence is the
-/// "turn over" signal both tests wait on.
 fn waitForTurnEnd(h: *Harness, db_path: []const u8, timeout_ms: i64) !void {
     const deadline = nowMs() + timeout_ms;
     while (nowMs() < deadline) {
@@ -445,12 +427,9 @@ fn waitForTurnEnd(h: *Harness, db_path: []const u8, timeout_ms: i64) !void {
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // `mode` — the silence contract, over the wire
-// ============================================================================
 
-/// `{pid, kind, status}` for the newest `session_background_process` row of the
-/// session, or null when the run recorded none.
+/// `{pid, kind, status}` for the newest `session_background_process` row of the session, or null when the run recorded none.
 const BgRow = struct {
     pid: u32,
     kind: []u8,
@@ -497,9 +476,7 @@ fn newestBackgroundRow(db_path: []const u8) !?BgRow {
     };
 }
 
-/// How many queue rows mention this PID. The completion envelope carries
-/// `"pid":<n>`, which makes "was the agent told?" answerable without depending
-/// on how the drain leaves the table behind.
+/// How many queue rows mention this PID.
 fn queuedMentions(db_path: []const u8, pid: u32) !i64 {
     const sql = try std.fmt.allocPrint(
         gpa,
@@ -511,9 +488,7 @@ fn queuedMentions(db_path: []const u8, pid: u32) !i64 {
     return scalarCount(db_path, sql);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 test "is_stop ends the turn after one model call, with the batch persisted" {
     try harness.requirePabrikBin(io, gpa);
@@ -541,8 +516,7 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
     defer gpa.free(db_path);
     try waitForTurnEnd(&h, db_path, 60_000);
 
-    // THE ASSERTION THIS FILE EXISTS FOR. The loop broke instead of calling
-    // the model again, so the stub saw exactly one agent round.
+    // THE ASSERTION THIS FILE EXISTS FOR.
     sleepMs(1500);
     const calls = stub.agentCallCount();
     if (calls != 1) {
@@ -550,9 +524,7 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
         return error.TestUnexpectedResult;
     }
 
-    // The provider's own value for that round was `tool_calls`; the loop
-    // overwrites it with `stop`, because `last_finish_reason` answers "is
-    // anything still in flight" and a batch that ended the turn is not.
+    // The provider's own value for that round was `tool_calls`; the loop overwrites it with `stop`, because `last_finish_reason` answers "is anything still in …
     const fr = (try firstCell(db_path, "SELECT COALESCE(last_finish_reason, '') AS fr FROM sessions WHERE id = '" ++ SESSION_ID ++ "';")) orelse {
         std.debug.print("no sessions row for {s} — the run never started\n", .{SESSION_ID});
         return error.TestUnexpectedResult;
@@ -560,9 +532,7 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
     defer gpa.free(fr);
     try testing.expectEqualStrings("stop", fr);
 
-    // The batch was PERSISTED before the break. A `tool_call_id` with no
-    // `role=tool` row is what makes a provider reject the NEXT turn, and the
-    // mid-batch abort this test forbids is exactly how that happens.
+    // The batch was PERSISTED before the break.
     const tool_rows = try scalarCount(
         db_path,
         "SELECT COUNT(*) AS n FROM llm_history WHERE session_id = '" ++ SESSION_ID ++
@@ -570,8 +540,7 @@ test "is_stop ends the turn after one model call, with the batch persisted" {
     );
     try testing.expectEqual(@as(i64, 1), tool_rows);
 
-    // The assistant row keeps `tool_calls` — that IS what the provider
-    // returned, and the transcript has to stay truthful about it.
+    // The assistant row keeps `tool_calls` — that IS what the provider returned, and the transcript has to stay truthful about it.
     const assistant_rows = try scalarCount(
         db_path,
         "SELECT COUNT(*) AS n FROM llm_history WHERE session_id = '" ++ SESSION_ID ++
@@ -608,23 +577,20 @@ test "without is_stop the loop calls the model again (positive control)" {
     defer gpa.free(db_path);
     try waitForTurnEnd(&h, db_path, 60_000);
 
-    // The loop looped BACK: round 1 was the tool call, round 2 the plain
-    // stop. That is the behaviour `is_stop` exists to override.
+    // The loop looped BACK: round 1 was the tool call, round 2 the plain stop.
     const calls = stub.agentCallCount();
     if (calls < 2) {
         std.debug.print("expected the loop to call the model again without is_stop, saw {d} call(s)\n", .{calls});
         return error.TestUnexpectedResult;
     }
 
-    // And the finish reason is the provider's own `stop` from round 2 — the
-    // value `is_stop` has to reproduce deliberately.
+    // And the finish reason is the provider's own `stop` from round 2 — the value `is_stop` has to reproduce deliberately.
     const fr = (try firstCell(db_path, "SELECT COALESCE(last_finish_reason, '') AS fr FROM sessions WHERE id = '" ++ SESSION_ID ++ "';")) orelse
         return error.TestUnexpectedResult;
     defer gpa.free(fr);
     try testing.expectEqualStrings("stop", fr);
 
-    // The tool result is still persisted exactly once — `is_stop` changed
-    // WHEN the loop ends, not whether the batch is written.
+    // The tool result is still persisted exactly once — `is_stop` changed WHEN the loop ends, not whether the batch is written.
     const tool_rows = try scalarCount(
         db_path,
         "SELECT COUNT(*) AS n FROM llm_history WHERE session_id = '" ++ SESSION_ID ++
@@ -634,8 +600,7 @@ test "without is_stop the loop calls the model again (positive control)" {
 }
 
 test "background_persistence queues NOTHING when the service exits" {
-    // THE contract of the third mode: the process detaches, runs, exits — and
-    // the agent is never told.
+    // THE contract of the third mode: the process detaches, runs, exits — and the agent is never told.
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
 
@@ -645,9 +610,7 @@ test "background_persistence queues NOTHING when the service exits" {
     };
 
     var stub: Stub = undefined;
-    // `sleep 1`, not a dev server: the process has to EXIT inside the test for
-    // "no message was queued" to mean anything. A never-exiting server would
-    // satisfy the assertion trivially and prove nothing.
+    // `sleep 1`, not a dev server: the process has to EXIT inside the test for "no message was queued" to mean anything.
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const script = [_]StubRound{
@@ -678,8 +641,7 @@ test "background_persistence queues NOTHING when the service exits" {
     // The mode reached the DB as a kind. `service` is what the cron filters on.
     try testing.expectEqualStrings("service", row.kind);
 
-    // Wait for the process to exit AND for the reaper to notice — the row
-    // flipping to `exited` IS that notice.
+    // Wait for the process to exit AND for the reaper to notice — the row flipping to `exited` IS that notice.
     var exited = false;
     const exit_deadline = nowMs() + 30_000;
     while (nowMs() < exit_deadline) {
@@ -696,13 +658,10 @@ test "background_persistence queues NOTHING when the service exits" {
         return error.TestUnexpectedResult;
     }
 
-    // Give the NOTIFY path every chance to fire before declaring it silent: the
-    // watcher polls on a 2 s clock, so a regression lands well inside this
-    // window.
+    // Give the NOTIFY path every chance to fire before declaring it silent: the watcher polls on a 2 s clock, so a regression lands well inside this window.
     sleepMs(6000);
 
-    // THE assertion, and it is deliberately about the WAKE rather than about
-    // the queue row.
+    // THE assertion, and it is deliberately about the WAKE rather than about the queue row.
     const calls = stub.agentCallCount();
     if (calls != 1) {
         std.debug.print(
@@ -712,8 +671,7 @@ test "background_persistence queues NOTHING when the service exits" {
         return error.TestUnexpectedResult;
     }
 
-    // Corroboration, and honest about its limit: it holds only because nothing
-    // was woken to drain a row.
+    // Corroboration, and honest about its limit: it holds only because nothing was woken to drain a row.
     const mentions = try queuedMentions(db_path, row.pid);
     if (mentions != 0) {
         std.debug.print("background_persistence queued {d} message(s) for pid {d} — it must be silent\n", .{ mentions, row.pid });
@@ -722,9 +680,7 @@ test "background_persistence queues NOTHING when the service exits" {
 }
 
 test "background DOES queue the completion — the control for the test above" {
-    // The same run with the other detached mode. Without this, "no queue
-    // message" would also be satisfied by an execution path that never reaches
-    // the notification code at all.
+    // The same run with the other detached mode.
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
 
@@ -759,9 +715,7 @@ test "background DOES queue the completion — the control for the test above" {
     defer row.deinit();
     try testing.expectEqualStrings("job", row.kind);
 
-    // This is the positive control: the SAME machinery must TALK here. The
-    // observable is the wake — a model call that the is_stop turn did not
-    // make.
+    // This is the positive control: the SAME machinery must TALK here.
     const deadline = nowMs() + 30_000;
     var calls = stub.agentCallCount();
     while (nowMs() < deadline and calls < 2) {
@@ -777,9 +731,7 @@ test "background DOES queue the completion — the control for the test above" {
     }
 }
 
-// ============================================================================
 // `process` — what the agent can see of what it started
-// ============================================================================
 
 /// Every `process` tool result this session persisted, concatenated.
 fn processToolRows(db_path: []const u8) ![]u8 {
@@ -810,8 +762,7 @@ test "process: the agent can see a service it started" {
     const a = arena.allocator();
 
     const script = [_]StubRound{
-        // Start a SERVICE. No `is_stop`: the turn must continue so the next
-        // round runs.
+        // Start a SERVICE.
         try commandRound(
             a,
             h.temp_dir,
@@ -833,9 +784,7 @@ test "process: the agent can see a service it started" {
     const db_path = try dbPath(&h);
     defer gpa.free(db_path);
 
-    // Wait for the RESULT, not for the turn. The result is the claim; whether
-    // the turn has ended is a different question with several legitimate
-    // answers (a queued message, a wake).
+    // Wait for the RESULT, not for the turn.
     var rows = try processToolRows(db_path);
     defer gpa.free(rows);
     const deadline = nowMs() + 60_000;
@@ -849,20 +798,17 @@ test "process: the agent can see a service it started" {
         return error.TestUnexpectedResult;
     }
 
-    // The service's own command text travelled through `list` — this session's
-    // row, read back by the tool. Nothing else could put it in the payload.
+    // The service's own command text travelled through `list` — this session's row, read back by the tool.
     if (std.mem.indexOf(u8, rows, "service-marker") == null) {
         std.debug.print("`process list` did not report the service this session started. rows:\n{s}\n", .{rows});
         return error.TestUnexpectedResult;
     }
-    // ...and `kind` is on the wire, which is what tells the model it will never
-    // be notified about this one.
+    // ...and `kind` is on the wire, which is what tells the model it will never be notified about this one.
     if (std.mem.indexOf(u8, rows, "service") == null) {
         std.debug.print("`process list` did not report the kind. rows:\n{s}\n", .{rows});
         return error.TestUnexpectedResult;
     }
-    // The refusal path did not fire: the tool found a process it owns, so the
-    // session scoping is not hiding this session's own rows.
+    // The refusal path did not fire: the tool found a process it owns, so the session scoping is not hiding this session's own rows.
     if (std.mem.indexOf(u8, rows, "is not a process this session started") != null) {
         std.debug.print("`process` refused its own session's process\n", .{});
         return error.TestUnexpectedResult;

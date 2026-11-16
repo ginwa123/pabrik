@@ -1,6 +1,4 @@
-/** <WorkspaceItemTaskCard> — right-click context menu. The card's hover action strip (pin / rename
- * / details / delete) was replaced by this menu. Every action the buttons performed must still
- * fire, with the SAME emitted payload, or the change silently removed functionality. */
+/** <WorkspaceItemTaskCard> — right-click context menu. */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -11,9 +9,7 @@ import { makeLocalStorageStub } from './helpers'
 
 const ITEM_ID = 'item_1'
 
-// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at,
-// and a plain object literal silently drifts from the interface the component actually receives.
-// Same shape as makeColumn() in KanbanView.rowMode.spec.ts / KanbanRowView.spec.ts.
+// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at, and a plain object literal silently drifts from the interface …
 const makeColumn = (overrides: Partial<KanbanColumn> = {}): KanbanColumn => ({
   id: 'col_todo',
   workspace_item_id: ITEM_ID,
@@ -126,9 +122,7 @@ describe('WorkspaceItemTaskCard — context menu', () => {
   })
 
   it('view details emits viewTaskDetail and does NOT also open the chat', async () => {
-    // The propagation trap: the old info button had to stopPropagation so the card root's @click
-    // didn't fire too. The teleported menu can't bubble to the card, so this asserts the behaviour
-    // survived the rewrite rather than relying on the stopPropagation.
+    // The propagation trap: the old info button had to stopPropagation so the card root's @click didn't fire too.
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)
     await clickItem('kanban-task-context-menu-details')
@@ -139,9 +133,7 @@ describe('WorkspaceItemTaskCard — context menu', () => {
     wrapper.unmount()
   })
 
-  // Regression (task_1791030815108_1): the card used to mount its own ConfirmDialog, which only
-  // forwarded `deleteTask` — the click then reached Sidebar's confirm too, so one "Delete task"
-  // opened TWO stacked dialogs.
+  // Regression (task_1791030815108_1): the card used to mount its own ConfirmDialog, which only forwarded `deleteTask` — the click then reached Sidebar's confirm …
   it('delete emits deleteTask and mounts NO dialog of its own', async () => {
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)
@@ -151,17 +143,13 @@ describe('WorkspaceItemTaskCard — context menu', () => {
     expect(wrapper.emitted('deleteTask')).toHaveLength(1)
     expect(wrapper.emitted('deleteTask')?.[0]).toEqual(['ws_1', 'item_1', 't1'])
 
-    // And zero confirm dialogs in the document: the card contributes
-    // no overlay, so the only confirm the user can see is the one the
-    // delete's real owner opens.
+    // And zero confirm dialogs in the document: the card contributes no overlay, so the only confirm the user can see is the one the delete's real owner opens.
     expect(document.body.querySelectorAll('button')).toHaveLength(0)
 
     wrapper.unmount()
   })
 
-  // "Run agent" is the inverse of "Stop agent": the two rows share one
-  // slot and never render together, so the menu always offers exactly
-  // the agent action that matches the task's current state.
+  // "Run agent" is the inverse of "Stop agent": the two rows share one slot and never render together, so the menu always offers exactly the agent action that …
   it('Run agent emits runAgent with the task id', async () => {
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)
@@ -181,8 +169,7 @@ describe('WorkspaceItemTaskCard — context menu', () => {
     idle.unmount()
     document.body.innerHTML = ''
 
-    // While a worker runs the row flips to Stop — the backend answers
-    // 409 to a second start, so offering Run would be a dead end.
+    // While a worker runs the row flips to Stop — the backend answers 409 to a second start, so offering Run would be a dead end.
     const running = mountCard({ id: 't2', name: 'Beta' }, { processingState: ref({ t2: true }) })
     await openMenu(running)
     expect(q('kanban-task-context-menu-run-agent')).toBeNull()
@@ -192,9 +179,7 @@ describe('WorkspaceItemTaskCard — context menu', () => {
   })
 
   it('Run agent does NOT also open the chat', async () => {
-    // Same propagation contract as View details: the teleported menu
-    // can't bubble to the card root, so picking a row must never also
-    // fire the card's own @click.
+    // Same propagation contract as View details: the teleported menu can't bubble to the card root, so picking a row must never also fire the card's own @click.
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)
     await clickItem('kanban-task-context-menu-run-agent')
@@ -232,9 +217,7 @@ describe('WorkspaceItemTaskCard — context menu', () => {
   })
 
   it('opens from the ContextMenu key, anchored at the card', async () => {
-    // Removing the hover buttons removed the only discoverable route to
-    // rename/delete/move, so the keyboard path is a hard requirement —
-    // without it the change is an accessibility regression.
+    // Removing the hover buttons removed the only discoverable route to rename/delete/move, so the keyboard path is a hard requirement — without it the change is an …
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await wrapper.find('[data-task-card]').trigger('keydown', { key: 'ContextMenu' })
     await nextTick()
@@ -247,8 +230,7 @@ describe('WorkspaceItemTaskCard — context menu', () => {
   })
 
   it('arrow keys walk the rows and ArrowRight opens the submenu', async () => {
-    // Removing the hover buttons removed the only discoverable route to
-    // the menu, so the keyboard path has to work end to end.
+    // Removing the hover buttons removed the only discoverable route to the menu, so the keyboard path has to work end to end.
     const wrapper = mountCard({ id: 't1', name: 'Alpha' })
     await openMenu(wrapper)
 

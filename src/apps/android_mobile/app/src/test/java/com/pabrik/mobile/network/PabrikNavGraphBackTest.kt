@@ -5,21 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The back rule, and the shape of the fix that keeps a blank window unreachable.
- *
- * The hazard is a property of AndroidX Navigation 2.8.5 rather than of any one
- * screen, so it is asserted against that behaviour and not against a rendering:
- * the no-argument `NavController.popBackStack()` pops the current destination
- * *and* stops at the graph, `dispatchOnDestinationChanged()` then drops that
- * graph, and `NavHost` renders nothing at all for the resulting empty back stack.
- * Reading that call's return value cannot catch it, because the queue is already
- * gone by the time it returns `false`.
- *
- * `PabrikNavGraphBackInstrumentedTest` drives the real `NavHost` into the state
- * this rule exists for; this file keeps the rule and the shape of the fix
- * honest on a JVM, where CI can run it without a device.
- */
+/** The back rule, and the shape of the fix that keeps a blank window unreachable. */
 class PabrikNavGraphBackTest {
 
     @Test
@@ -29,20 +15,14 @@ class PabrikNavGraphBackTest {
 
     @Test
     fun `nothing under the current one goes back to the shell instead of popping`() {
-        // The graph alone underneath is what a `pabrik://` link that arrives
-        // without FLAG_ACTIVITY_NEW_TASK leaves behind: `handleDeepLink` navigates
-        // with popUpTo(graph, inclusive = true), so the shell is never pushed and
-        // the deep-linked leaf is the only destination. Popping there is exactly
-        // the call that empties the back stack and blanks the window.
+        // The graph alone underneath is what a `pabrik://` link that arrives without FLAG_ACTIVITY_NEW_TASK leaves behind: `handleDeepLink` navigates with popUpTo(graph …
         assertEquals(BackAction.ReturnToShell, backActionFor(hasDestinationBelow = false))
     }
 
     @Test
     fun `no back affordance pops unconditionally`() {
         val source = navGraphSource()
-        // A bare `navController.popBackStack()` behind a back arrow is the defect
-        // itself; the guarded form inside `goBack` is the fix. This keeps the two
-        // from being confused when the file is next edited.
+        // A bare `navController.popBackStack()` behind a back arrow is the defect itself; the guarded form inside `goBack` is the fix.
         assertEquals(
             "a back affordance must not call the inclusive pop unconditionally: at a " +
                 "one-destination depth it empties the back stack and NavHost then " +
@@ -52,10 +32,7 @@ class PabrikNavGraphBackTest {
                 .findAll(source)
                 .count(),
         )
-        // There is more than one place that pops to the shell now — the chat
-        // route's drawer switches chats in place as well as `goBack` rebuilding
-        // onto it — so the invariant is about how each one pops, not how many
-        // there are. An inclusive pop of the shell is the blank window.
+        // There is more than one place that pops to the shell now — the chat route's drawer switches chats in place as well as `goBack` rebuilding onto it — so the …
         assertEquals(
             "popping the shell inclusively is the blank-screen defect: the shell " +
                 "is the one entry that has to survive",
@@ -81,11 +58,7 @@ class PabrikNavGraphBackTest {
         )
     }
 
-    /**
-     * The module's own source, or null when the test runs from somewhere that
-     * cannot see it. The behavioural tests above stand on their own; only the two
-     * shape assertions need the file.
-     */
+    /** The module's own source, or null when the test runs from somewhere that cannot see it. */
     private fun navGraphSource(): String =
         sequenceOf(
             "src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",

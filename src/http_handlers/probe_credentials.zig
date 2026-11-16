@@ -1,6 +1,4 @@
-//! Credential placeholders in a "Test" probe request body: `{` `{SECRETS:NAME}` `}`
-//! resolved against the workspace's secrets BEFORE the probe leaves the
-//! process, so a saved placeholder is tested the way a run would use it.
+//! Credential placeholders in a "Test" probe request body: `{` `{SECRETS:NAME}` `}` resolved against the workspace's secrets BEFORE the probe leaves the process …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,9 +23,7 @@ pub const Error = error{
     OutOfMemory,
 };
 
-/// What the probe should send instead: `body` owns that document, and
-/// `resolved` names every value inside it so the probe's own output can be
-/// redacted back to the placeholder.
+/// What the probe should send instead: `body` owns that document, and `resolved` names every value inside it so the probe's own output can be redacted back to the …
 pub const Credentials = struct {
     body: []u8,
     resolved: []const secrets_substitution.ResolvedSecret,
@@ -42,9 +38,7 @@ pub const Credentials = struct {
     }
 };
 
-/// Rewrite the ROOT fields of `body` named by `fields` with the values stored
-/// in `workspace_id`, after a membership check. A body with no placeholder
-/// comes back as a copy and reads no secret.
+/// Rewrite the ROOT fields of `body` named by `fields` with the values stored in `workspace_id`, after a membership check.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -62,8 +56,7 @@ pub fn resolve(
     // `out_missing_name` is filled only on UnknownSecretName.
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
 
-    // Membership, not mere visibility: a shared workspace is visible to
-    // everybody and its credentials are not.
+    // Membership, not mere visibility: a shared workspace is visible to everybody and its credentials are not.
     gate.checkRequest(allocator, db, auth_enabled, headers, workspace_id, .read) catch |err| switch (err) {
         error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
         error.WorkspaceNotFound => return error.WorkspaceNotFound,
@@ -139,8 +132,7 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// A cookie-carrying requester, parsed exactly like a real one: the gate sees
-/// header names only.
+/// A cookie-carrying requester, parsed exactly like a real one: the gate sees header names only.
 const Cookie = struct {
     token: []const u8,
 
@@ -150,8 +142,7 @@ const Cookie = struct {
     }
 };
 
-/// No cookie, so identity falls back to the installation owner — the
-/// auth-off deployment these routes also serve.
+/// No cookie, so identity falls back to the installation owner — the auth-off deployment these routes also serve.
 const NoCookie = struct {
     pub fn get(_: @This(), _: []const u8) ?[]const u8 {
         return null;
@@ -251,8 +242,7 @@ test "probe credentials: a stored secret replaces the placeholder before the pro
     try testing.expectEqualStrings("deepseek-v4", parsed.value.object.get("model").?.string);
     try testing.expect(missing == null);
 
-    // The value is named in `resolved`, which is what lets the probe's own
-    // output be redacted back to the placeholder.
+    // The value is named in `resolved`, which is what lets the probe's own output be redacted back to the placeholder.
     try testing.expectEqual(@as(usize, 1), creds.resolved.len);
     try testing.expectEqualStrings("API_KEY", creds.resolved[0].name);
     try testing.expectEqualStrings("sk-live-value", creds.resolved[0].value);
@@ -339,8 +329,7 @@ test "probe credentials: a non-member cannot resolve another workspace's secret"
         resolve(alloc, &ctx.db, true, Cookie{ .token = cookie }, "ws_ben", body, &.{"api_key"}, &missing),
     );
 
-    // Positive control: the same caller DOES resolve in their own workspace,
-    // so the refusal above is membership and not a broken lookup.
+    // Positive control: the same caller DOES resolve in their own workspace, so the refusal above is membership and not a broken lookup.
     try seedSecret(&ctx.db, "ws_amy", "API_KEY", "sk-amy");
     const own = try resolve(alloc, &ctx.db, true, Cookie{ .token = cookie }, "ws_amy", body, &.{"api_key"}, &missing);
     defer own.deinit(alloc);
@@ -391,8 +380,7 @@ test "probe credentials: only the named fields are rewritten, and a stray placeh
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, creds.body, .{});
     defer parsed.deinit();
     try testing.expectEqualStrings("sk-live-value", parsed.value.object.get("api_key").?.string);
-    // `args` is not a credential position, and a run does not resolve it
-    // either: a probe that did would pass where the run fails.
+    // `args` is not a credential position, and a run does not resolve it either: a probe that did would pass where the run fails.
     try testing.expectEqualStrings(key_ph, parsed.value.object.get("args").?.array.items[0].string);
 }
 

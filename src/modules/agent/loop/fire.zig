@@ -70,8 +70,7 @@ pub fn fireWorkspaceRoutine(
     );
 }
 
-/// The workspace item a routine belongs to: what the run session is labelled
-/// with, and the workspace that must own that session.
+/// The workspace item a routine belongs to: what the run session is labelled with, and the workspace that must own that session.
 const RoutineItem = struct {
     name: []u8,
     workspace_id: []u8,
@@ -104,9 +103,7 @@ fn loadRoutineItem(
     };
 }
 
-/// Make the run's chat session real and put it in the routine's workspace:
-/// nothing else writes that row on the fire path, and a session without the
-/// workspace stamp is invisible to the sidebar's scoped list.
+/// Make the run's chat session real and put it in the routine's workspace
 pub fn effectiveCwd(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -127,9 +124,7 @@ pub fn ensureRunSession(
     defer item.deinit(allocator);
     const name = if (item.name.len > 0) item.name else routine.id;
     const cwd = if (routine.cwd.len > 0) routine.cwd else item.path;
-    // Only still-empty columns are filled (a renamed chat survives); `exec`
-    // binds an empty slice as NULL, so each NOT NULL column needs the COALESCE
-    // default — the idiom `model.insertWorkspaceRoutine` already uses.
+    // Only still-empty columns are filled (a renamed chat survives); `exec` binds an empty slice as NULL, so each NOT NULL column needs the COALESCE default — the …
     try db.exec(allocator,
         \\INSERT INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at, selected_profile_model)
         \\VALUES (?, COALESCE(?, ''), 'active', COALESCE(?, ''), COALESCE(?, ''),
@@ -142,8 +137,7 @@ pub fn ensureRunSession(
     , &.{ routine.id, name, cwd, item.workspace_id, routine.selected_profile_model });
 }
 
-/// The two slices are allocator-owned: free them with deinit, or hand them to
-/// the fire — which frees them itself. Never both.
+/// The two slices are allocator-owned: free them with deinit, or hand them to the fire — which frees them itself.
 pub const Payload = struct {
     message: []u8,
     selected_profile_model: []u8,
@@ -261,8 +255,7 @@ pub fn formatSqliteDatetime(allocator: std.mem.Allocator, unix_nanos: i128) ![]u
     });
 }
 
-// ===== Tests merged from fire_test.zig (2026-09-29 flatten) ===== Behavioral
-// tests for `fire.zig` (Task 3 of the workspace-items-routines plan).
+// ===== Tests merged from fire_test.zig (2026-09-29 flatten) =====
 
 const testing = std.testing;
 
@@ -273,8 +266,7 @@ const Migration139AddRoutineCwd = migration.Migration139AddRoutineCwd;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimal parent tables,
-/// then run Migration 084. Mirrors the helper in `model.zig`.
+/// Open a fresh in-memory sqlite DB with the minimal parent tables, then run Migration 084.
 fn setupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -305,8 +297,7 @@ fn setupDb() !struct {
         \\    path TEXT
         \\)
     , &.{});
-    // Only the columns `ensureRunSession` writes and the workspace scope
-    // reads — the real table carries dozens more.
+    // Only the columns `ensureRunSession` writes and the workspace scope reads — the real table carries dozens more.
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
@@ -359,9 +350,7 @@ test "fireWorkspaceRoutine rejects a second concurrent fire (atomic claim)" {
         defer q.deinit();
         const row = (try q.next()) orelse return error.TestFailed;
         defer row.deinit(alloc);
-        // Dup the slice so the test can read it after row.deinit
-        // fires (otherwise row.values[0] becomes a dangling slice
-        // and the expectEqualStrings call below segfaults in debug).
+        // Dup the slice so the test can read it after row.deinit fires (otherwise row.values[0] becomes a dangling slice and the expectEqualStrings call below segfaults …
         break :blk try alloc.dupe(u8, row.values[0]);
     };
     defer alloc.free(status_dup);
@@ -376,8 +365,7 @@ test "fireWorkspaceRoutine on a non-routine id returns NotARoutine" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // `di` is not read on the `NotARoutine` path (the load fails
-    // before the di.group_emit call), so `undefined` is safe.
+    // `di` is not read on the `NotARoutine` path (the load fails before the di.group_emit call), so `undefined` is safe.
     const err = fireWorkspaceRoutine(alloc, &ctx.db, undefined, ctx.threaded.io(), "nope") catch |e| e;
     try testing.expectEqual(FireError.NotARoutine, err);
 }
@@ -400,20 +388,17 @@ test "fireWorkspaceRoutine on a disabled routine returns Disabled" {
         .next_run_at = "2000-01-01 00:00:00",
     });
 
-    // `di` is not read on the `Disabled` path (the disabled check
-    // runs before the claim), so `undefined` is safe.
+    // `di` is not read on the `Disabled` path (the disabled check runs before the claim), so `undefined` is safe.
     const err = fireWorkspaceRoutine(alloc, &ctx.db, undefined, ctx.threaded.io(), "item_1") catch |e| e;
     try testing.expectEqual(FireError.Disabled, err);
 
-    // The row must still be disabled (the disabled check returns
-    // before the claim, so last_status is unchanged).
+    // The row must still be disabled (the disabled check returns before the claim, so last_status is unchanged).
     const enabled_int = blk: {
         var q = try ctx.db.query(alloc, "SELECT enabled FROM workspace_routines WHERE id = 'item_1'", &.{});
         defer q.deinit();
         const row = (try q.next()) orelse return error.TestFailed;
         defer row.deinit(alloc);
-        // The Row's slice is freed by `row.deinit(alloc)` above; parse
-        // it into a value (i64) before the defer fires.
+        // The Row's slice is freed by `row.deinit(alloc)` above; parse it into a value (i64) before the defer fires.
         break :blk try std.fmt.parseInt(i64, row.values[0], 10);
     };
     try testing.expectEqual(@as(i64, 0), enabled_int);
@@ -440,9 +425,7 @@ test "formatRoutineMessage produces a structured metadata header followed by the
 }
 
 test "formatRoutineMessage preserves multi-line and special-char instruction verbatim" {
-    // The `{s}` format specifier embeds the slice bytes literally — the
-    // routine's `instruction` may contain newlines, colons, and other
-    // punctuation that the LLM needs to see unchanged.
+    // The `{s}` format specifier embeds the slice bytes literally — the routine's `instruction` may contain newlines, colons, and other punctuation that the LLM …
     const alloc = testing.allocator;
     const msg = try formatRoutineMessage(
         alloc,
@@ -457,9 +440,7 @@ test "formatRoutineMessage preserves multi-line and special-char instruction ver
 }
 
 test "formatRoutineMessage places metadata header first and instruction last" {
-    // The LLM-friendly property: meta header is the FIRST thing the LLM reads
-    // (sets context), the actual task is the LAST thing (clear instruction
-    // boundary), and they're separated by a blank line.
+    // The LLM-friendly property: meta header is the FIRST thing the LLM reads (sets context), the actual task is the LAST thing (clear instruction boundary), and …
     const alloc = testing.allocator;
     const msg = try formatRoutineMessage(
         alloc,
@@ -652,9 +633,7 @@ test "the run's chat session is listed by the workspace-scoped session list" {
 
     try ensureRunSession(alloc, &ctx.db, routine);
 
-    // The exact resolution the sidebar's `GET /api/llm/session?workspace_id=…`
-    // runs: a session with no task link is only listed when it carries the
-    // workspace stamp, which is what the pre-fix fire never wrote.
+    // The exact resolution the sidebar's `GET /api/llm/session?workspace_id=…` runs: a session with no task link is only listed when it carries the workspace stamp …
     const ids = try pabrikcore.workspace_scope.workspaceSessionIds(alloc, &ctx.db, "ws1");
     defer pabrikcore.workspace_scope.freeSessionIds(alloc, ids);
     try testing.expect(idListContains(ids, "item_1"));

@@ -40,9 +40,7 @@ import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import ToolParameters from './_shared/ToolParameters.vue'
 import { tryUnwrapToolOutput } from '../../helpers/unwrapToolOutput'
 
-// Minimal shape we need from the parent. ChatView.vue defines a LOCAL `Message` interface
-// (different from `api.Message`) so we declare just the fields we read — this keeps the component
-// decoupled from whichever Message type the parent uses.
+// Minimal shape we need from the parent.
 interface ToolMessageLike {
   id?: string
   role?: string
@@ -50,9 +48,7 @@ interface ToolMessageLike {
   tool_name?: string
 }
 
-/**  * One parsed <agent> row. `has*` flags record tag PRESENCE so the tuning grid renders only tags
- * present in the envelope (absent = 'inherits the default', no empty cells). api_key / base_url
- * are deliberately absent — never parsed, never rendered. */
+/** One parsed <agent> row. */
 interface AgentRow {
   name: string
   model: string
@@ -83,15 +79,12 @@ const props = defineProps<{
 
 const isExpanded = ref(false)
 
-/**  * Envelope `<parameters>` for this tool message. `list_agents` takes no input, so this is `{}`
- * on the real wire and <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}'). */
+/** Envelope `<parameters>` for this tool message. */
 const envelopeParams = computed(
   () => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}',
 )
 
-/**  * Unwrap the message content to the inner `data` record. Accepts the full JSON envelope string
- * (normal wire shape) or a bare data-object JSON string (defensive fallback for direct callers).
- * Returns null when the content is not parseable JSON at all. */
+/** Unwrap the message content to the inner `data` record. */
 function innerDataOf(
   content: string,
 ): { data: Record<string, unknown>; error: string | null } | null {

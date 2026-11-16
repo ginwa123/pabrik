@@ -1,6 +1,4 @@
-// Wire-contract test for the native Android sidebar. Zig port of
-// `tests/functional/android_sidebar_contract_test.py` (same test names, same
-// order).
+// Wire-contract test for the native Android sidebar.
 
 const std = @import("std");
 const testing = std.testing;
@@ -31,8 +29,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
 
-    // Creating a workspace is a 201; the harness' default `expect` is
-    // 200, so this must be spelled out.
+    // Creating a workspace is a 201; the harness' default `expect` is 200, so this must be spelled out.
     var r = try h.http(io, .POST, "/api/workspaces", .{ .json_body = body, .expect = &.{201} });
     defer r.deinit();
     var doc = try r.json();
@@ -59,9 +56,7 @@ fn workspacesNoItems(h: *Harness) !harness.Json {
     return doc;
 }
 
-// `is_include_items=false` must still carry id + name per row. The Android
-// dropdown is a two-field view. If either is dropped, the sidebar renders an
-// unnamed, unselectable row.
+// `is_include_items=false` must still carry id + name per row.
 test "workspaces_list_keeps_the_fields_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -69,8 +64,7 @@ test "workspaces_list_keeps_the_fields_the_android_client_reads" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // The id is owned and unused here — free it rather than dropping it
-    // on the floor, which `testing.allocator` reports as a leak.
+    // The id is owned and unused here — free it rather than dropping it on the floor, which `testing.allocator` reports as a leak.
     const created = try createWorkspace(&h, "Android contract workspace");
     defer gpa.free(created);
 
@@ -116,9 +110,7 @@ test "workspaces_list_keeps_the_fields_the_android_client_reads" {
     }
 }
 
-// `is_include_items=false` is an optimisation, not a licence to drop the
-// array. The Kotlin parser tolerates a missing `items` key, but the desktop
-// store does not — so the contract holds both ways.
+// `is_include_items=false` is an optimisation, not a licence to drop the array.
 test "workspaces_list_omits_items_when_asked" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -126,8 +118,7 @@ test "workspaces_list_omits_items_when_asked" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // The Python file got its row from the previous test's module-scoped
-    // harness.
+    // The Python file got its row from the previous test's module-scoped harness.
     const created = try createWorkspace(&h, "Items-omitted workspace");
     defer gpa.free(created);
 
@@ -165,8 +156,6 @@ test "workspaces_list_omits_items_when_asked" {
 }
 
 // The recents list must expose session_id, session_name and the two stamps.
-// `session_id` is the row key, `session_name` is the sidebar title, and the
-// timestamps drive the relative-time pill.
 test "session_list_keeps_the_fields_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -174,8 +163,7 @@ test "session_list_keeps_the_fields_the_android_client_reads" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // One session so the per-row loop is not vacuous. The Python file relied
-    // on the module-scoped harness; a fresh boot has an empty list.
+    // One session so the per-row loop is not vacuous.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{"sess_android_contract_001"});
         defer gpa.free(path);
@@ -235,8 +223,7 @@ test "session_list_keeps_the_fields_the_android_client_reads" {
             std.debug.print("`session_name` must be a string\n", .{});
             return error.TestUnexpectedResult;
         }
-        // Migration 082: the human-touched stamp is "" for legacy rows, never
-        // null — the client's `optString` fallback chain depends on that.
+        // Migration 082: the human-touched stamp is "" for legacy rows, never null — the client's `optString` fallback chain depends on that.
         const touched = obj.get("last_human_touched_at") orelse {
             std.debug.print("session row has no `last_human_touched_at`\n", .{});
             return error.TestUnexpectedResult;
@@ -248,9 +235,7 @@ test "session_list_keeps_the_fields_the_android_client_reads" {
     }
 }
 
-// Timestamps must be `YYYY-MM-DD HH:MM:SS` UTC, not local time or epoch. This
-// is the single highest-risk assumption in the Android client: the Kotlin
-// parser builds a `LocalDateTime` and pins it to `ZoneOffset.UTC`.
+// Timestamps must be `YYYY-MM-DD HH:MM:SS` UTC, not local time or epoch.
 test "session_timestamps_are_sqlite_utc_strings" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -287,8 +272,7 @@ test "session_timestamps_are_sqlite_utc_strings" {
             else => continue,
         };
         for ([_][]const u8{ "created_at", "updated_at", "last_human_touched_at" }) |field| {
-            // `session.get(field, "")`: a missing key is the same as an
-            // empty string for this check.
+            // `session.get(field, "")`: a missing key is the same as an empty string for this check.
             var value: []const u8 = "";
             if (obj.get(field)) |v| {
                 value = switch (v) {
@@ -316,9 +300,7 @@ test "session_timestamps_are_sqlite_utc_strings" {
     }
 }
 
-// A known workspace returns its sessions; an unknown one returns none. The
-// Android client always sends a real `workspace_id`. It must never fall back
-// to the global list, so the fail-closed behaviour is load-bearing.
+// A known workspace returns its sessions; an unknown one returns none.
 test "session_list_scopes_to_a_workspace_and_fails_closed" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -355,8 +337,7 @@ test "session_list_scopes_to_a_workspace_and_fails_closed" {
         var doc = try r.json();
         defer doc.deinit();
         const sessions = doc.array("sessions") orelse return error.TestUnexpectedResult;
-        // Fail-closed: an unknown id must not leak the global session
-        // list.
+        // Fail-closed: an unknown id must not leak the global session list.
         if (sessions.items.len != 0) {
             std.debug.print(
                 "an unknown workspace_id must return zero sessions, got {d}\n",
@@ -367,9 +348,7 @@ test "session_list_scopes_to_a_workspace_and_fails_closed" {
     }
 }
 
-// `/api/session` and `/api/llm/session` are the same handler. The Android
-// client calls `/api/session`; the desktop store calls the `/api/llm/session`
-// alias. They must not drift apart.
+// `/api/session` and `/api/llm/session` are the same handler.
 test "session_list_is_reachable_under_the_aliased_path" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -377,8 +356,7 @@ test "session_list_is_reachable_under_the_aliased_path" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // One session, or both lists are empty and the comparison is
-    // trivially true. See test 3's header for the same reasoning.
+    // One session, or both lists are empty and the comparison is trivially true.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{"sess_android_contract_003"});
         defer gpa.free(path);
@@ -429,8 +407,7 @@ test "session_list_is_reachable_under_the_aliased_path" {
     }
 }
 
-// Body-analysis barrier. An unreferenced function is never type-checked,
-// so a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = isSqliteUtc;
     _ = createWorkspace;

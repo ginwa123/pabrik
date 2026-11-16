@@ -1,6 +1,4 @@
-/** Behavioural tests for the PlantUML block URL builder. The encoder is the contract with the
- * server: `~h` + lowercase hex is PlantUML's UNCOMPRESSED link form, and it is what we send because
- * it needs no compressor in the browser. */
+/** Behavioural tests for the PlantUML block URL builder. */
 import { describe, expect, it } from 'vitest'
 import {
   PLANTUML_DEFAULT_SERVER,

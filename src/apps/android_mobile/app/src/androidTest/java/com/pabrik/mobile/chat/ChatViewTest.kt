@@ -24,27 +24,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * The chat screen, with the virtualizer as the thing under test.
- *
- * The virtualization assertions are the point. "It renders a `LazyColumn`" is
- * not a behaviour — a `LazyColumn` that renders every item, or one that
- * re-keys on every append, satisfies that and still drops frames on a
- * thousand-turn session. What is asserted here is that off-screen rows are
- * genuinely not composed, and that a streamed append does not disturb the rows
- * already on screen.
- */
+/** The chat screen, with the virtualizer as the thing under test. */
 class ChatViewTest {
 
     @get:Rule
     val compose = createComposeRule()
 
-    /**
-     * Layout is computed in sub-pixel floats and rounded per density, so exact
-     * equality on a 12dp padding is a coin flip on a 2.75x screen. Half a dp is
-     * wide enough to absorb the rounding and narrow enough that a bubble's
-     * padding, or the 24dp of it that appears on both sides, still shows.
-     */
+    /** Layout is computed in sub-pixel floats and rounded per density, so exact equality on a 12dp padding is a coin flip on a 2.75x screen. */
     private val TOLERANCE = 0.5f
 
     private fun message(
@@ -65,13 +51,7 @@ class ChatViewTest {
         message("m$index", ChatMessage.ROLE_ASSISTANT, "message number $index")
     }
 
-    /**
-     * Alternating roles, so every turn is its own list item.
-     *
-     * [transcript] is one group, not `count` of them — consecutive same-role
-     * turns collapse — which makes it useless for asserting where the viewport
-     * is. This is the shape a real conversation has.
-     */
+    /** Alternating roles, so every turn is its own list item. */
     private fun conversation(prefix: String, count: Int): List<ChatMessage> = (1..count).map { index ->
         val role = if (index % 2 == 1) ChatMessage.ROLE_USER else ChatMessage.ROLE_ASSISTANT
         message("${prefix}m$index", role, "turn $index of the $prefix transcript")
@@ -80,10 +60,7 @@ class ChatViewTest {
     /** Long enough to overflow a phone viewport several times over. */
     private fun longConversation(prefix: String = "") = conversation(prefix, 80)
 
-    /**
-     * A transcript whose last turn is still streaming, with [lines] of text
-     * already in it.
-     */
+    /** A transcript whose last turn is still streaming, with [lines] of text already in it. */
     private fun streamingTail(prefix: String = "", count: Int = 3, lines: Int = 1): List<ChatMessage> =
         conversation(prefix, count) + message(
             id = "${prefix}stream",
@@ -92,11 +69,7 @@ class ChatViewTest {
             streaming = true,
         )
 
-    /**
-     * Renders a chat the test can re-point at another session, which is the only
-     * way to express "the reader switched chats" — a fresh composition would
-     * reset the scroll state and prove nothing.
-     */
+    /** Renders a chat the test can re-point at another session, which is the only way to express "the reader switched chats" — a fresh composition would reset the … */
     private fun renderSwitchable(initial: ChatUiState): MutableState<ChatUiState> {
         val state = mutableStateOf(initial)
         compose.setContent {
@@ -126,9 +99,7 @@ class ChatViewTest {
                     onStop = onStop,
                     onLoadOlder = onLoadOlder,
                     isRunning = isRunning,
-                    // The transcript tests are not about the drawer, and an
-                    // empty one would still be a real one. `ChatDrawerTest`
-                    // drives this slot with the production sidebar.
+                    // The transcript tests are not about the drawer, and an empty one would still be a real one.
                     drawerContent = { dismissDrawer ->
                         RecentsDrawerContent(
                             workspaces = listOf(WorkspaceOption("workspace-a", "Workspace A")),
@@ -176,9 +147,7 @@ class ChatViewTest {
 
     @Test
     fun onlyViewportRowsAreComposed() {
-        // 200 turns in a phone-sized viewport. If the list rendered everything
-        // eagerly every group would be in the tree; with a real virtualizer only
-        // the handful in view are.
+        // 200 turns in a phone-sized viewport.
         renderList(ChatUiState(sessionId = "s", isLoading = false, messages = transcript(200)))
 
         val composed = compose.onAllNodesWithTag("chat_group_assistant", useUnmergedTree = true)
@@ -224,9 +193,7 @@ class ChatViewTest {
 
     @Test
     fun anAnsweredToolCallDropsItsSummaryLine() {
-        // The reported bug. The card already shows the call's name and its
-        // arguments, so the "1 TOOL" line above it repeated the same two facts
-        // in a separate row — once per step, all the way down the transcript.
+        // The reported bug.
         renderList(
             ChatUiState(
                 sessionId = "s",
@@ -245,9 +212,7 @@ class ChatViewTest {
 
     @Test
     fun anUnansweredToolCallKeepsItsSummaryLine() {
-        // The other half, and the reason the suppression above is safe. While
-        // the result is in flight the header is the only thing on screen naming
-        // the call, so it has to stay.
+        // The other half, and the reason the suppression above is safe.
         renderList(
             ChatUiState(
                 sessionId = "s",
@@ -261,8 +226,7 @@ class ChatViewTest {
 
     @Test
     fun aTwelveStepRunDrawsTwelveCardsAndNoSummaries() {
-        // The whole shape in the screenshot, end to end: no interleaved
-        // "1 TOOL command" rows anywhere in it.
+        // The whole shape in the screenshot, end to end: no interleaved "1 TOOL command" rows anywhere in it.
         val messages = buildList {
             repeat(12) { index ->
                 add(declaration("a$index", "c$index", "command"))
@@ -280,8 +244,7 @@ class ChatViewTest {
 
     @Test
     fun anAssistantAnswerRendersItsMarkdown() {
-        // The other reported bug: the answer arrived wrapped in `<markdown>`
-        // and every heading and `**bold**` on it was drawn literally.
+        // The other reported bug: the answer arrived wrapped in `<markdown>` and every heading and `**bold**` on it was drawn literally.
         renderList(
             ChatUiState(
                 sessionId = "s",
@@ -306,9 +269,7 @@ class ChatViewTest {
 
     @Test
     fun aUsersOwnMarkdownIsNotRewrittenBackAtThem() {
-        // The web draws a user turn as plain text and only `marked.parse`s the
-        // assistant's. A question the reader typed has to come back looking
-        // exactly as they sent it.
+        // The web draws a user turn as plain text and only `marked.parse`s the assistant's.
         renderList(
             ChatUiState(
                 sessionId = "s",
@@ -326,16 +287,13 @@ class ChatViewTest {
 
         compose.onNodeWithTag("chat_message_m1").assertExists()
 
-        // An index key would have re-keyed every row above the append; a
-        // stable key keeps this row addressable by the id it always had.
+        // An index key would have re-keyed every row above the append; a stable key keeps this row addressable by the id it always had.
         compose.onNodeWithTag("chat_message_m1").assertExists()
     }
 
     @Test
     fun theNewestTurnIsReachableWithoutScrolling() {
-        // The auto-scroll must land on the LAST group. An off-by-one against
-        // the "earlier messages" row would park it on the second-to-last and
-        // leave the newest turn below the fold.
+        // The auto-scroll must land on the LAST group.
         renderList(
             ChatUiState(
                 sessionId = "s",
@@ -346,8 +304,7 @@ class ChatViewTest {
         )
 
         compose.onNodeWithTag("chat_message_m80").assertIsDisplayed()
-        // Off-screen rows are not composed at all, so this is a real assertion
-        // about the viewport and not merely about rendering.
+        // Off-screen rows are not composed at all, so this is a real assertion about the viewport and not merely about rendering.
         compose.onNodeWithTag("chat_message_m1").assertDoesNotExist()
     }
 
@@ -361,10 +318,7 @@ class ChatViewTest {
 
     @Test
     fun switchingToAChatOfTheSameLengthStillLandsOnItsNewestTurn() {
-        // The regression. Two chats holding the same number of turns move
-        // neither the group count nor the message count, so a view that only
-        // reacted to counts changing did not react at all: the second chat
-        // opened exactly where the first one was parked.
+        // The regression.
         val state = renderSwitchable(
             ChatUiState(sessionId = "a", isLoading = false, messages = longConversation("a")),
         )
@@ -381,9 +335,7 @@ class ChatViewTest {
 
     @Test
     fun aChatThatOpensEmptyAndLoadsLaterStillLandsOnItsNewestTurn() {
-        // `openSession` paints an empty transcript first when there is no cache,
-        // and the rows land a frame later. The scroll intent has to survive
-        // that empty paint.
+        // `openSession` paints an empty transcript first when there is no cache, and the rows land a frame later.
         val state = renderSwitchable(ChatUiState(sessionId = "s", isLoading = true))
         compose.onNodeWithTag("chat_loading").assertExists()
 
@@ -398,10 +350,7 @@ class ChatViewTest {
 
     @Test
     fun aStreamingAnswerKeepsTheNewestTurnInView() {
-        // A streamed delta replaces the newest message in place: the same id in
-        // the same group, the same number of items, taller by a line. Counted by
-        // items, the list reports no change at all while the answer grows out of
-        // the bottom of the viewport.
+        // A streamed delta replaces the newest message in place: the same id in the same group, the same number of items, taller by a line.
         val state = renderSwitchable(
             ChatUiState(sessionId = "s", isLoading = false, messages = streamingTail()),
         )
@@ -418,26 +367,19 @@ class ChatViewTest {
         }
 
         compose.onNodeWithTag("chat_message_stream").assertIsDisplayed()
-        // Re-pinned to the newest turn, so the top of the transcript is now well
-        // out of view. Left to itself the list would still be showing m1.
+        // Re-pinned to the newest turn, so the top of the transcript is now well out of view.
         compose.onNodeWithTag("chat_message_m1").assertDoesNotExist()
     }
 
     @Test
     fun aTurnThatArrivesWhileTheReaderIsInHistoryDoesNotYankThem() {
-        // Following the tail is a courtesy for a reader who is already there. A
-        // reader who has deliberately scrolled back must not be thrown to the
-        // end by the next turn.
+        // Following the tail is a courtesy for a reader who is already there.
         val state = renderSwitchable(
             ChatUiState(sessionId = "s", isLoading = false, messages = longConversation()),
         )
         compose.onNodeWithTag("chat_message_m80").assertIsDisplayed()
 
-        // `swipeDown`, so the reader actually goes back into history. The old
-        // `swipeUp` here dragged the content up, which a transcript already
-        // parked on its newest turn cannot do — so the reader never left, the
-        // follow flag stayed armed, and this test asserted that a new turn is
-        // not pinned while passing with it very much pinned.
+        // `swipeDown`, so the reader actually goes back into history.
         compose.onNodeWithTag("chat_message_list").performTouchInput { swipeDown() }
         compose.waitForIdle()
         // The precondition, asserted: the newest turn is off screen.
@@ -454,13 +396,7 @@ class ChatViewTest {
         }
         compose.waitForIdle()
 
-        // `brandNew` is a reader turn appended to a transcript ending in an
-        // assistant turn, so it is a group of its own and can only be on screen
-        // if the viewport was moved to it. An assistant turn would have been
-        // folded into m80's group, which sits at the end either way, so that
-        // assertion would have held whether or not anything was pinned — and
-        // `m1`, seventy rows above the reader, is not composed either way and
-        // said nothing at all.
+        // `brandNew` is a reader turn appended to a transcript ending in an assistant turn, so it is a group of its own and can only be on screen if the viewport was …
         compose.onNodeWithTag("chat_message_brandNew").assertDoesNotExist()
     }
 
@@ -474,8 +410,7 @@ class ChatViewTest {
             onDraftChanged = { draft = it },
         )
 
-        // Disabled while empty: a send button that fires with no message is a
-        // button that eats the user's intent.
+        // Disabled while empty: a send button that fires with no message is a button that eats the user's intent.
         compose.onNodeWithTag("chat_send").assertIsNotEnabled()
 
         compose.onNodeWithTag("chat_composer_input").performTextInput("do the thing")
@@ -518,9 +453,7 @@ class ChatViewTest {
 
     @Test
     fun theHeaderSpinnerFollowsWorkerLivenessNotTheDeltaStream() {
-        // The case that matters: a live stream, no chunks between turns. The
-        // agent is mid tool-run and `isStreaming` is false, so the only thing
-        // that can say so is the worker flag.
+        // The case that matters: a live stream, no chunks between turns.
         renderScreen(
             ChatUiState(sessionId = "s", isLoading = false, isLive = true),
             isRunning = true,
@@ -534,13 +467,7 @@ class ChatViewTest {
 
     @Test
     fun aRunningWorkerWithNoChunksStillOffersToStopIt() {
-        // Reversed on purpose. This used to assert that a worker with no deltas
-        // shows *no* stop button, so the spinner could not be mistaken for the
-        // streaming flag. But the reader is not being asked to guess what the
-        // spinner means — they are being offered the one control that ends the
-        // run, and taking it away for the whole of a two-minute tool call makes
-        // it a control that disappears exactly when it is wanted. The header
-        // now answers from both signals; see `ChatStatusTest` for the mapping.
+        // Reversed on purpose.
         renderScreen(
             ChatUiState(sessionId = "s", isLoading = false, isLive = true, isStreaming = false),
             isRunning = true,
@@ -551,9 +478,7 @@ class ChatViewTest {
 
     @Test
     fun aStoppedRunDropsBothTheStopControlAndTheLabel() {
-        // The other end of the same rule, and the one that keeps the control
-        // honest: with neither signal left there is no run to interrupt, so
-        // neither the button nor "Working…" may remain.
+        // The other end of the same rule, and the one that keeps the control honest: with neither signal left there is no run to interrupt, so neither the button nor …
         renderScreen(
             ChatUiState(sessionId = "s", isLoading = false, isLive = true, isStreaming = false),
         )
@@ -563,8 +488,7 @@ class ChatViewTest {
 
     @Test
     fun aWorkingRunSaysSoAndNamesTheQueue() {
-        // A turn that looks like it vanished is usually still queued, and an app
-        // that cannot say so looks broken.
+        // A turn that looks like it vanished is usually still queued, and an app that cannot say so looks broken.
         renderScreen(
             ChatUiState(
                 sessionId = "s",
@@ -635,15 +559,7 @@ class ChatViewTest {
 
     // --- Bubble vs paragraph -----------------------------------------------
 
-    /**
-     * The rules the `chat_message_<id>` assertions above rest on: the tag rides
-     * the reader's bubble AND the assistant's paragraph.
-     *
-     * Splitting the two rows into two composables is exactly the kind of change
-     * that drops a `testTag` on the way through, and the tag is what those
-     * virtualization assertions locate rows by. They would not fail loudly —
-     * they would fail as "node not found", pointing at the virtualizer.
-     */
+    /** The rules the `chat_message_<id>` assertions above rest on: the tag rides the reader's bubble AND the assistant's paragraph. */
     @Test
     fun bothRowsKeepTheirMessageTag() {
         renderList(
@@ -661,16 +577,7 @@ class ChatViewTest {
         compose.onNodeWithTag("chat_message_a1").assertIsDisplayed()
     }
 
-    /**
-     * The assistant's answer fills the measure; a short reader turn does not.
-     *
-     * This is the de-bubbling assertion, stated as geometry because geometry is
-     * what "boxed" means on screen. The reader's column wraps its content under
-     * a 460dp cap, so a three-word question is a narrow slab; the assistant's
-     * paragraph is `fillMaxWidth()` and no `Surface` sits behind it, so it runs
-     * the full width of its group. Before this change both rows were the same
-     * narrow inset slab and this failed on the assistant half.
-     */
+    /** The assistant's answer fills the measure; a short reader turn does not. */
     @Test
     fun anAssistantTurnFillsTheMeasureWhileAReaderTurnStaysABubble() {
         renderList(
@@ -700,17 +607,7 @@ class ChatViewTest {
         )
     }
 
-    /**
-     * The bubble's 12dp inner padding is the visible edge of the box, and only
-     * the reader's row has it.
-     *
-     * Two ways to de-bubble and this catches both: a row drawn without the
-     * `Surface` has nothing to inset, and one that kept a `Surface` but
-     * cleared its fill and border would still show the padding as a dead 12dp
-     * gutter. The reader's row is the control — if the padding assertion ever
-     * stops holding there, this test is measuring the wrong thing rather than
-     * reporting a real regression.
-     */
+    /** The bubble's 12dp inner padding is the visible edge of the box, and only the reader's row has it. */
     @Test
     fun onlyTheReaderRowCarriesBubblePadding() {
         renderList(
@@ -741,14 +638,7 @@ class ChatViewTest {
         )
     }
 
-    /**
-     * The two rows anchor to opposite edges: a reader turn belongs under the
-     * reader's thumb, an assistant answer belongs to the left margin.
-     *
-     * Straightening the assistant's alignment — a `fillMaxWidth` column that
-     * somehow still measured against the trailing edge — is invisible in a
-     * width assertion alone.
-     */
+    /** The two rows anchor to opposite edges: a reader turn belongs under the reader's thumb, an assistant answer belongs to the left margin. */
     @Test
     fun theTwoRowsAnchorToOppositeEdges() {
         renderList(
@@ -775,25 +665,14 @@ class ChatViewTest {
 
     // --- The jump back to the newest turn -----------------------------------
 
-    /**
-     * An answer long enough to fill several viewports on its own.
-     *
-     * The shape that breaks an index-based version of the control: this is one
-     * list item, so it is the *last visible item* the whole time the reader is
-     * anywhere inside it, and "is the newest turn on screen" answers yes for a
-     * reader who has scrolled most of the way up it.
-     */
+    /** An answer long enough to fill several viewports on its own. */
     private fun oneTallAnswer(lines: Int = 300): List<ChatMessage> = listOf(
         message("tall", ChatMessage.ROLE_ASSISTANT, (1..lines).joinToString("\n") { "line $it" }),
     )
 
     @Test
     fun noJumpIsOfferedWhileTheTranscriptSitsOnItsNewestTurn() {
-        // A control that is always on screen is a control that does nothing, and
-        // a reader who has learned to distrust it will not tap it when it
-        // matters. `assertDoesNotExist` rather than "is not displayed": the
-        // control is not composed at all while hidden, so a reader's touch can
-        // never land on it.
+        // A control that is always on screen is a control that does nothing, and a reader who has learned to distrust it will not tap it when it matters.
         renderList(ChatUiState(sessionId = "s", isLoading = false, messages = longConversation()))
 
         compose.onNodeWithTag("chat_jump_to_newest").assertDoesNotExist()
@@ -801,8 +680,7 @@ class ChatViewTest {
 
     @Test
     fun noJumpIsOfferedOnATranscriptThatFitsTheViewport() {
-        // Nothing is below the fold, so there is nowhere to jump to. Offering it
-        // would be an affordance for scrolling that no scroll can do.
+        // Nothing is below the fold, so there is nowhere to jump to.
         renderList(
             ChatUiState(
                 sessionId = "s",
@@ -819,9 +697,7 @@ class ChatViewTest {
 
     @Test
     fun noJumpIsOfferedOnAnEmptyOrLoadingTranscript() {
-        // No rows means no measured layout, which is *unknown* rather than
-        // "far from the end". Reading it as far puts a jump control over the
-        // "No messages yet" placeholder.
+        // No rows means no measured layout, which is *unknown* rather than "far from the end".
         renderList(ChatUiState(sessionId = "s", isLoading = true))
         compose.onNodeWithTag("chat_jump_to_newest").assertDoesNotExist()
 
@@ -840,27 +716,16 @@ class ChatViewTest {
 
     @Test
     fun aJumpAppearsInsideASingleAnswerTallerThanTheScreen() {
-        // The case the pixel measurement exists for. One list item, so the
-        // newest turn is on screen for the whole time the reader is inside it —
-        // an index rule would keep the control hidden from the reader who wants
-        // it most.
+        // The case the pixel measurement exists for.
         renderList(ChatUiState(sessionId = "s", isLoading = false, messages = oneTallAnswer()))
 
-        // No gesture needed, and none possible: this is a single list item
-        // already at scroll position 0, so there is no "back into history" to
-        // perform. Opening the chat parks the reader at the top of the answer
-        // with all of it below them, which is precisely the reading an
-        // index-based rule would have called "at the bottom".
+        // No gesture needed, and none possible: this is a single list item already at scroll position 0, so there is no "back into history" to perform.
         compose.onNodeWithTag("chat_jump_to_newest").assertIsDisplayed()
     }
 
     @Test
     fun pressingTheJumpInsideAnAnswerTallerThanTheScreenReachesItsEnd() {
-        // The one thing `scrollToNewestEdge` exists to do, and the reason it is
-        // not the auto-scroll's `scrollToItem`: landing on a turn taller than the
-        // screen leaves the reader at its *top*, so a jump that reused it would
-        // be a visible no-op. The control withdrawing is the observable proof
-        // that the viewport reached the end rather than staying where it was.
+        // The one thing `scrollToNewestEdge` exists to do, and the reason it is not the auto-scroll's `scrollToItem`: landing on a turn taller than the screen leaves the …
         renderList(ChatUiState(sessionId = "s", isLoading = false, messages = oneTallAnswer()))
         compose.onNodeWithTag("chat_jump_to_newest").assertIsDisplayed()
 
@@ -876,34 +741,21 @@ class ChatViewTest {
         compose.onNodeWithTag("chat_message_m80").assertIsDisplayed()
 
         intoHistory()
-        // The precondition, asserted: the reader really is in history, so the
-        // jump below has somewhere to travel from.
+        // The precondition, asserted: the reader really is in history, so the jump below has somewhere to travel from.
         compose.onNodeWithTag("chat_message_m80").assertDoesNotExist()
         compose.onNodeWithTag("chat_jump_to_newest").assertIsDisplayed().performClick()
         compose.waitForIdle()
 
-        // A real arrival, not a render: m80 is composed and m1 is not, so the
-        // viewport genuinely moved rather than merely being repainted.
+        // A real arrival, not a render: m80 is composed and m1 is not, so the viewport genuinely moved rather than merely being repainted.
         compose.onNodeWithTag("chat_message_m80").assertIsDisplayed()
         compose.onNodeWithTag("chat_message_m1").assertDoesNotExist()
-        // And the control withdraws once the reader is where it said it would
-        // take them, rather than sitting there offering the same jump again.
+        // And the control withdraws once the reader is where it said it would take them, rather than sitting there offering the same jump again.
         compose.onNodeWithTag("chat_jump_to_newest").assertDoesNotExist()
     }
 
     @Test
     fun aTurnThatArrivesAfterAJumpStillFollowsTheReader() {
-        // The reason the jump goes through the scroll policy rather than
-        // straight to `scrollToItem`. A scroll that did not re-arm the follow
-        // flag would look like it worked, and then the next streamed delta would
-        // find the flag still false and leave the new turn off screen.
-        //
-        // The new turn is a *reader* turn on purpose. An assistant turn
-        // appended to a transcript that ends in an assistant turn is folded
-        // into the same group, and that group is on screen at the end of the
-        // transcript whether or not anything was pinned — so the assertion would
-        // hold even with the follow flag left `false`. A reader turn is its own
-        // group, so it can only be on screen because the viewport was moved.
+        // The reason the jump goes through the scroll policy rather than straight to `scrollToItem`.
         val state = renderSwitchable(
             ChatUiState(sessionId = "s", isLoading = false, messages = longConversation()),
         )
@@ -925,26 +777,13 @@ class ChatViewTest {
         compose.onNodeWithTag("chat_message_afterJump").assertIsDisplayed()
     }
 
-    /**
-     * Puts the reader a long way into history, and waits for the fling to land.
-     *
-     * **`swipeDown`, not `swipeUp`.** The names describe the finger, not the
-     * list: `swipeUp` drags the content *up*, which scrolls a `LazyColumn`
-     * forward toward the newest turn — and a transcript already parked on its
-     * newest turn cannot move that way at all, so a "scroll into history"
-     * written as `swipeUp()` silently does nothing and every assertion after it
-     * passes for the wrong reason. `swipeDown` drags the content down, which is
-     * what actually walks a reader back through the transcript.
-     */
+    /** Puts the reader a long way into history, and waits for the fling to land. */
     private fun intoHistory() {
         compose.onNodeWithTag("chat_message_list").performTouchInput { swipeDown() }
         compose.waitForIdle()
     }
 
     // --- Geometry helpers ---------------------------------------------------
-    // Unclipped bounds, because the thing under test is the box itself: a
-    // clipped assertion cannot tell "the row is narrow" from "the row is wide
-    // and the viewport is not", which is the whole difference on the reader side.
 
     private fun bounds(tag: String) = compose
         .onNodeWithTag(tag, useUnmergedTree = true)

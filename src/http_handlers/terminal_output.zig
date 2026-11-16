@@ -1,6 +1,4 @@
-//! `GET /api/terminal/sessions/:id/output?cursor=N` — poll terminal output since
-//! the absolute `cursor`. A `gterm-` id is a shell inside a workspace VM whose
-//! bytes come from the guest; every other id is a host pty.
+//! `GET /api/terminal/sessions/:id/output?cursor=N` — poll terminal output since the absolute `cursor`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -48,8 +46,7 @@ pub fn terminalOutputHandler(
     const id = req.params.get("id") orelse return missingId(allocator, res);
     if (id.len == 0) return missingId(allocator, res);
 
-    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is
-    // indistinguishable from a missing one (404, never 403).
+    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is indistinguishable from a missing one (404, never 403).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
     const cursor = terminal_session.parseCursor(req.query.get("cursor"));
@@ -57,9 +54,7 @@ pub fn terminalOutputHandler(
     if (terminal_guest.isGuestId(id)) return guestOutput(allocator, res, id, owner, cursor);
 
     const session = terminal_session.getSessionForOwner(id, owner) orelse return notFound(allocator, res);
-    // Owned copy under the session lock: no borrow into the live ring
-    // buffer survives the unlock, so a concurrent drain realloc can
-    // never free memory we still read (heap UAF -> remap abort).
+    // Owned copy under the session lock: no borrow into the live ring buffer survives the unlock, so a concurrent drain realloc can never free memory we still read …
     const owned = terminal_session.readOutputAlloc(allocator, session, cursor) catch
         return outOfMemory(allocator, res);
     defer allocator.free(owned.data);

@@ -1,6 +1,4 @@
-//! The agent's `document_markdown` create / edit must persist the BODY, which
-//! lives in the object store (Migration 144 dropped the column). Drives the
-//! real binary through the agent loop's own dispatch, then reads back over HTTP.
+//! The agent's `document_markdown` create / edit must persist the BODY, which lives in the object store (Migration 144 dropped the column).
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,9 +10,7 @@ const io = testing.io;
 const BODY_V1 = "# Release plan\n\n- ship the object store\n- keep the body\n";
 const BODY_V2 = "# Release plan v2\n\n- the body survives an edit\n";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
@@ -58,9 +54,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST .../kanban/tasks` with `mode: "create_session"` — the plain "Create
-/// task" button. The task id IS the session id, which is what resolves the
-/// workspace for the document tools.
+/// `POST .../kanban/tasks` with `mode: "create_session"` — the plain "Create task" button.
 fn createTask(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .mode = "create_session",
@@ -189,9 +183,7 @@ fn httpBody(h: *Harness, workspace_id: []const u8, document_id: []const u8) ![]u
     return gpa.dupe(u8, content);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 test "agent document_markdown create persists the body and every read path returns it" {
     try harness.requirePabrikBin(io, gpa);
@@ -292,9 +284,7 @@ test "agent document_markdown create refuses a body it cannot store instead of w
     const session = try createTask(&h, ws, kanban, "no store");
     defer gpa.free(session);
 
-    // A session that resolves to no workspace is the one refusal this CLI can
-    // reach without breaking the object store: the tool must fail loudly and
-    // write nothing, never return a document whose body is empty.
+    // A session that resolves to no workspace is the one refusal this CLI can reach without breaking the object store: the tool must fail loudly and write nothing …
     var refused = try documents(&h, &.{
         "doc-add", "--session", "sess_not_a_workspace", "--title", "Nowhere", "--content", BODY_V1,
     }, false);
@@ -329,8 +319,7 @@ comptime {
     _ = BODY_V2;
 }
 
-// The `document` tool's half of the CLI: read a body at a byte position,
-// find a row by search, and prove the writer's delete takes the row away.
+// The `document` tool's half of the CLI: read a body at a byte position, find a row by search, and prove the writer's delete takes the row away.
 test "the document tool reads a slice at a byte offset, searches, and reads an html page" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -385,8 +374,7 @@ test "the document tool reads a slice at a byte offset, searches, and reads an h
     try testing.expectEqual(@as(usize, 1), rows.len);
     try testing.expectEqualStrings(doc_id, try stringField(&rows[0], "id"));
 
-    // One reader, every format: the html tool's page source reads through the
-    // same action.
+    // One reader, every format: the html tool's page source reads through the same action.
     var add_html = try documents(&h, &.{
         "doc-html-add", "--session", session, "--title", "Page", "--content", "<!doctype html><html><body><p>page</p></body></html>",
     }, true);

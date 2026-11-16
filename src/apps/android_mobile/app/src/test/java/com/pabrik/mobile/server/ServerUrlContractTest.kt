@@ -6,28 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The two cleartext lists have to be the same list.
- *
- * The store decides what a person may type and the **platform** decides what
- * the app is actually allowed to open, and those are two different files in two
- * different languages: `ServerUrl.kt` and
- * `src/debug/res/xml/network_security_config.xml`. Nothing in the build makes
- * them agree.
- *
- * When they disagree the failure is not a crash — it is worse than that. A store
- * that accepts `http://server.lan` while the platform refuses cleartext to
- * `server.lan` gives the person a setting that saves, shows the new host, and
- * then fails every request with a connect error they cannot interpret and have
- * no way to change. The symptom would land somewhere else entirely, a day later,
- * on a device that is not the developer's.
- *
- * So the lists are pinned to each other here. This is the same source-contract
- * shape `AuthConfigContractTest` uses for the build script, for the same
- * reason: Compose can report a rendered pixel and Robolectric can report a
- * preference write, and neither can read a policy out of an XML file this test
- * did not open itself.
- */
+/** The two cleartext lists have to be the same list. */
 class ServerUrlContractTest {
 
     @Test
@@ -51,9 +30,6 @@ class ServerUrlContractTest {
     @Test
     fun `this variant's permitted cleartext hosts follow the build flag`() {
         // The two states the list can be in, and which one this variant is in.
-        // The release half cannot be observed from here — unit tests only ever
-        // run under debug — which is exactly why the build-script assertions
-        // below exist.
         val expected = if (BuildConfig.ALLOW_INSECURE_HTTP) LOOPBACK_HOSTS else emptySet()
 
         assertEquals(expected, CLEAR_TEXT_HOSTS)
@@ -67,9 +43,7 @@ class ServerUrlContractTest {
             "the release build type must declare ALLOW_INSECURE_HTTP = false:\n$release",
             release.contains("ALLOW_INSECURE_HTTP\", \"false\""),
         )
-        // The *interpolation*, not the identifier: the release block's own
-        // comment names the debug value in prose to explain why it is absent,
-        // and a check on the bare word would fail on its own explanation.
+        // The *interpolation*, not the identifier: the release block's own comment names the debug value in prose to explain why it is absent, and a check on the bare …
         assertTrue("release must wire the production url", release.contains("\$productionBaseUrl"))
         assertTrue("release must not wire the debug base url", !release.contains("\$debugBaseUrl"))
     }
@@ -94,9 +68,7 @@ class ServerUrlContractTest {
 
     @Test
     fun `no release source set ships a cleartext allowance`() {
-        // A network security config in `src/release` would lift the manifest's
-        // cleartext refusal in the one build that must never have it lifted,
-        // and the store's own set would still say "HTTPS only".
+        // A network security config in `src/release` would lift the manifest's cleartext refusal in the one build that must never have it lifted, and the store's own set …
         for (relative in RELEASE_SOURCES) {
             assertTrue(
                 "$relative must not exist — release stays HTTPS-only",
@@ -107,11 +79,7 @@ class ServerUrlContractTest {
 
     @Test
     fun `the debug config still refuses cleartext by default`() {
-        // The domain-config half of the pin. `CLEAR_TEXT_HOSTS` is only the
-        // exception list; the base refusal is what makes the exception list mean
-        // anything, and a future edit that replaced it with a `base-config` of
-        // `true` would turn the narrow allowance into a general one while every
-        // assertion above still passed.
+        // The domain-config half of the pin.
         val xml = readOrFail(
             "src/debug/res/xml/network_security_config.xml",
             "app/src/debug/res/xml/network_security_config.xml",

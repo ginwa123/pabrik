@@ -1,6 +1,4 @@
-// =============================================================================
 // CORE — Base rules inherited by all agents
-// =============================================================================
 
 pub const UniversalRules =
     \\## Universal Rules
@@ -178,7 +176,6 @@ pub const SkillWriteToolRule =
     \\**Self-check:** did this task teach something a future session would otherwise have to rediscover — and did you write it down before answering? If yes and no, `add_skill` now.
 ;
 
-// ---------------------------------------------------------------------------
 // Session VCS binding — a git worktree, a pull request.
 
 pub const GitWorktreeToolRule =

@@ -1,5 +1,4 @@
 //! The SQL that differs between the two backends `-Ddb_used` can compile in.
-//! Everything here is comptime: one build is one backend, so a branch costs nothing at runtime.
 
 const std = @import("std");
 const databases = @import("databases");
@@ -16,36 +15,28 @@ pub const now_epoch: []const u8 = if (is_postgres)
 else
     "CAST(strftime('%s','now') AS INTEGER)";
 
-/// A `YYYY-MM-DD HH:MM:SS` string in UTC — the format sqlite's `datetime()`
-/// returns, so stored text and `since`/`until` comparisons stay identical.
+/// A `YYYY-MM-DD HH:MM:SS` string in UTC — the format sqlite's `datetime()` returns, so stored text and `since`/`until` comparisons stay identical.
 pub const now_text: []const u8 = if (is_postgres)
     "to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')"
 else
     "datetime('now')";
 
-/// A value for a column of type `TIMESTAMP`. Both engines spell it the same,
-/// and postgres compares it against its own `now()` rather than a parsed string.
+/// A value for a column of type `TIMESTAMP`.
 pub const now_stamp: []const u8 = "CURRENT_TIMESTAMP";
 
-/// "Now" as a UTC `TIMESTAMP` on both engines, so the value does not depend on
-/// the connection's `TimeZone`. Usable as a value and on the right of a
-/// comparison against a `TIMESTAMP` column.
+/// "Now" as a UTC `TIMESTAMP` on both engines, so the value does not depend on the connection's `TimeZone`.
 pub const now_stamp_utc: []const u8 = if (is_postgres)
     "(now() AT TIME ZONE 'UTC')"
 else
     "datetime('now')";
 
-/// Column type for an epoch-seconds column: postgres `INTEGER` is 32-bit and
-/// would overflow in 2038, so it gets `BIGINT`.
+/// Column type for an epoch-seconds column: postgres `INTEGER` is 32-bit and would overflow in 2038, so it gets `BIGINT`.
 pub const epoch_type: []const u8 = if (is_postgres) "BIGINT" else "INTEGER";
 
-/// A column definition suffix for an epoch-seconds column that defaults to now:
-/// `BIGINT DEFAULT (CAST(EXTRACT(EPOCH FROM now()) AS BIGINT))` and the sqlite
-/// spelling of the same thing.
+/// A column definition suffix for an epoch-seconds column that defaults to now
 pub const epoch_default: []const u8 = epoch_type ++ " DEFAULT (" ++ now_epoch ++ ")";
 
-/// `created_iso`-style text formatting of `expr`, a SQL expression that holds
-/// unix epoch seconds as text. `expr` must be a SQL expression, not a bind.
+/// `created_iso`-style text formatting of `expr`, a SQL expression that holds unix epoch seconds as text.
 pub fn epochToText(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
     if (is_postgres) {
         return std.fmt.allocPrint(
@@ -57,66 +48,50 @@ pub fn epochToText(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "datetime(CAST({s} AS INTEGER), 'unixepoch')", .{expr});
 }
 
-/// A `TIMESTAMP` column rendered as `YYYY-MM-DD HH24:MI:SS` text, so a read
-/// that returns it to Zig gets the same string from either engine. `column` is
-/// a column name, never a bind, so the fragment is fixed at compile time.
+/// A `TIMESTAMP` column rendered as `YYYY-MM-DD HH24:MI:SS` text, so a read that returns it to Zig gets the same string from either engine.
 pub fn timestampText(comptime column: []const u8) []const u8 {
     if (is_postgres) return std.fmt.comptimePrint("to_char({s}, 'YYYY-MM-DD HH24:MI:SS')", .{column});
     return column;
 }
 
-/// Columns a table's metadata can be read from: sqlite's `sqlite_master` and
-/// postgres' catalogue expose `type`/`name`, so one predicate reads both.
+/// Columns a table's metadata can be read from: sqlite's `sqlite_master` and postgres' catalogue expose `type`/`name`, so one predicate reads both.
 pub const tables_source: []const u8 = if (is_postgres)
     "(SELECT 'table'::text AS type, table_name::text AS name FROM information_schema.tables WHERE table_schema = current_schema())"
 else
     "sqlite_master";
 
-/// A single-row upsert's verb: sqlite replaces the conflicting row, postgres
-/// needs `ON CONFLICT (…) DO UPDATE SET …` appended instead.
+/// A single-row upsert's verb: sqlite replaces the conflicting row, postgres needs `ON CONFLICT (…) DO UPDATE SET …` appended instead.
 pub const upsert_verb: []const u8 = if (is_postgres) "INSERT" else "INSERT OR REPLACE";
 
-/// An `INSERT` that must land once and silently skip a duplicate: sqlite
-/// spells it `INSERT OR IGNORE`, postgres puts `conflict_ignore` at the end.
-/// Both halves are needed — sqlite cannot parse `ON CONFLICT` after a SELECT.
+/// An `INSERT` that must land once and silently skip a duplicate: sqlite spells it `INSERT OR IGNORE`, postgres puts `conflict_ignore` at the end.
 pub const insert_ignore_prefix: []const u8 = if (is_postgres) "INSERT" else "INSERT OR IGNORE";
 pub const conflict_ignore: []const u8 = if (is_postgres) " ON CONFLICT DO NOTHING" else "";
 
-/// The `BEGIN` a two-statement write opens with: sqlite's `IMMEDIATE` takes
-/// the write lock up front, postgres has no equivalent and rejects the word.
+/// The `BEGIN` a two-statement write opens with: sqlite's `IMMEDIATE` takes the write lock up front, postgres has no equivalent and rejects the word.
 pub const begin_write: []const u8 = if (is_postgres) "BEGIN" else "BEGIN IMMEDIATE";
 
-/// A drop that leaves dependants behind needs `CASCADE` where the foreign keys
-/// are enforced, and `CASCADE` is a syntax error on sqlite.
+/// A drop that leaves dependants behind needs `CASCADE` where the foreign keys are enforced, and `CASCADE` is a syntax error on sqlite.
 pub const drop_cascade: []const u8 = if (is_postgres) " CASCADE" else "";
 
-/// Foreign keys are per CONNECTION on sqlite and there is no postgres pragma:
-/// `MigrationManager.runMigrations` runs this once, after the chain, so every
-/// statement a process issues afterwards is checked.
+/// Foreign keys are per CONNECTION on sqlite and there is no postgres pragma
 pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA foreign_keys = ON";
 
-/// Whether this backend can spell `MATCH`/`snippet()`/`rank` — the FTS5
-/// surface. Postgres reaches full text search through `tsvector` instead.
+/// Whether this backend can spell `MATCH`/`snippet()`/`rank` — the FTS5 surface.
 pub const has_fts5: bool = !is_postgres;
 
-/// The `to_tsvector` postgres matches and ranks `expr` with, rewritten to the
-/// token boundaries FTS5 uses — FTS5 splits `SPEC.md`, postgres' `simple` does not.
+/// The `to_tsvector` postgres matches and ranks `expr` with, rewritten to the token boundaries FTS5 uses — FTS5 splits `SPEC.md`, postgres' `simple` does not.
 pub fn tsVectorText(comptime expr: []const u8) []const u8 {
     return "to_tsvector('simple'::regconfig, regexp_replace(" ++ expr ++ ", '[^[:alnum:]_]+', ' ', 'g'))";
 }
 
-/// Index rows: `name`, plus the `tbl_name`/`type` a `sqlite_master` predicate
-/// filters on. Postgres keeps the same three facts in `pg_indexes`, so a test
-/// that asks "does index X exist on table Y" reads the same either way.
+/// Index rows: `name`, plus the `tbl_name`/`type` a `sqlite_master` predicate filters on.
 pub const indexes_source: []const u8 = if (is_postgres)
     "(SELECT 'index'::text AS type, indexname::text AS name, tablename::text AS tbl_name, " ++
         "indexdef::text AS sql FROM pg_indexes WHERE schemaname = current_schema())"
 else
     "sqlite_master";
 
-/// sqlite's `pragma_table_info` question — `name`, `cid`, `type`, `notnull`,
-/// `dflt_value`, `pk`, `hidden` — answered from `information_schema`, whose
-/// spellings differ on every one.
+/// sqlite's `pragma_table_info` question — `name`, `cid`, `type`, `notnull`, `dflt_value`, `pk`, `hidden` — answered from `information_schema`, whose spellings …
 pub fn tableColumns(comptime table: []const u8) []const u8 {
     if (is_postgres) return
     "(SELECT c.column_name::text AS name, c.ordinal_position AS cid, " ++
@@ -136,16 +111,13 @@ pub fn tableColumns(comptime table: []const u8) []const u8 {
     return "pragma_table_info('" ++ table ++ "')";
 }
 
-/// `tableColumns` plus `hidden` — `pragma_table_xinfo`'s extra column, which
-/// postgres does not distinguish (a column is either stored or it is not).
+/// `tableColumns` plus `hidden` — `pragma_table_xinfo`'s extra column, which postgres does not distinguish (a column is either stored or it is not).
 pub fn tableColumnsWithHidden(comptime table: []const u8) []const u8 {
     if (is_postgres) return tableColumns(table);
     return "pragma_table_xinfo('" ++ table ++ "')";
 }
 
-/// Columns of the table NAMED BY A BIND, for the callers that only learn the
-/// table at run time: same `name`/`cid`/`type` shape as `tableColumns`, keyed
-/// by one `?`.
+/// Columns of the table NAMED BY A BIND, for the callers that only learn the table at run time: same `name`/`cid`/`type` shape as `tableColumns`, keyed by one `?`.
 pub const table_columns_of_bound_table: []const u8 = if (is_postgres)
     "(SELECT column_name::text AS name, ordinal_position AS cid, " ++
         "upper(CASE WHEN data_type IN ('character varying', 'character', 'text') THEN 'text' " ++
@@ -154,16 +126,12 @@ pub const table_columns_of_bound_table: []const u8 = if (is_postgres)
 else
     "pragma_table_info(?)";
 
-/// The FK clause a CREATE TABLE declares: sqlite honours it as written, and
-/// postgres gets the same constraint from `Migration136EnforceForeignKeys` once
-/// the chain has run, because there a child may precede its parent.
+/// The FK clause a CREATE TABLE declares: sqlite honours it as written, and postgres gets the same constraint from `Migration136EnforceForeignKeys` once the chain …
 pub fn foreignKey(comptime clause: []const u8) []const u8 {
     return if (is_postgres) "CHECK (1 = 1)" else clause;
 }
 
-/// Postgres spellings of sqlite's two time functions: ~260 statements say
-/// `datetime('now')` or `strftime('%s', x)` and mean "now"/"epoch", not a
-/// dialect choice. Empty on sqlite, which has them already.
+/// Postgres spellings of sqlite's two time functions: ~260 statements say `datetime('now')` or `strftime('%s', x)` and mean "now"/"epoch", not a dialect choice.
 pub const sqlite_time_functions = if (is_postgres) [_][]const u8{
     \\CREATE OR REPLACE FUNCTION datetime(ts text) RETURNS timestamp
     \\LANGUAGE sql STABLE AS $fn$
@@ -242,8 +210,7 @@ pub fn tableExists(db: DbOrTx, allocator: std.mem.Allocator, table: []const u8) 
     return (try count(db, allocator, sql, &.{table})) > 0;
 }
 
-/// How many tables the current schema holds — the "is this a fresh database"
-/// probe several migrations open with.
+/// How many tables the current schema holds — the "is this a fresh database" probe several migrations open with.
 pub fn tableCount(db: DbOrTx, allocator: std.mem.Allocator) !i64 {
     return count(db, allocator, "SELECT COUNT(*) FROM " ++ tables_source ++ " WHERE type = 'table'", &.{});
 }

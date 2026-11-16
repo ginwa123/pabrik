@@ -1,35 +1,6 @@
 package com.pabrik.mobile.functional
 
-/**
- * The ids `tests/functional_android/` seeds and the scenarios in this package
- * open.
- *
- * ### Why the message ids are written down twice
- *
- * Every scenario asserts on a test tag built from a message id — `chat_message_<id>`,
- * `chat_tool_<id>`, `chat_reasoning_<id>` — and a generated id is one the
- * instrumented side has no way to know. Passing twenty of them in
- * `androidTest` arguments would work and would put the ids in the Gradle
- * invocation, where nobody would ever read them; declaring them here puts them
- * next to the assertions that use them.
- *
- * So the seeders name their rows, and both sides name the same rows. The lists
- * are deliberately duplicated rather than shared, because a contract that
- * cannot drift cannot fail: `tests/functional_android/scenarios.py` holds the
- * same ids, and `drift_test.py` fails when the two sets disagree.
- *
- * ### Why the ids are ordered by construction
- *
- * The phone sorts the transcript by `id` (`ChatApi.messagesPath`, which chooses
- * `id` over `created_at` because `id` is the only key consistent across pages),
- * so `sess_fn_exchange_0002` must sort after `sess_fn_exchange_0001` or the
- * conversation renders backwards. A zero-padded suffix makes insertion order
- * and id order the same thing. A generated nanosecond id would too — which is
- * what `DbSeed` now produces by default — but it would not be nameable here.
- *
- * `drift_test.py` asserts both properties: that the two sides agree, and that
- * every id sorts after the one before it.
- */
+/** The ids `tests/functional_android/` seeds and the scenarios in this package open. */
 object FunctionalScenario {
 
     // ─── session ids ───────────────────────────────────────────────────────
@@ -88,14 +59,7 @@ object FunctionalScenario {
     const val PRESENT_FILES_ASSISTANT = "sess_fn_presentfiles_0002"
     const val PRESENT_FILES_TOOL = "sess_fn_presentfiles_0003"
 
-    /**
-     * Every declared message id, in one list.
-     *
-     * Exists so `drift_test.py` and this object cannot disagree about what has
-     * been declared: the test reads this property's initialiser as text, and a
-     * name that is added to the suite but forgotten here is a scenario whose
-     * assertions silently stop naming anything.
-     */
+    /** Every declared message id, in one list. */
     val messageIds = listOf(
         EXCHANGE_USER, EXCHANGE_ASSISTANT,
         *MULTITURN_IDS.toTypedArray(),

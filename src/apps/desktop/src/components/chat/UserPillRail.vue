@@ -30,9 +30,7 @@ const emit = defineEmits<{
   jump: [groupIndex: number, key: string]
 }>()
 
-// Which pill's message box is open. Keyed by the pill's STABLE key (not its index) so an SSE append
-// that shifts positions cannot leave the box hanging off the wrong pill — the same reason
-// `jumpToUserGroup` resolves by key at click time.
+// Which pill's message box is open.
 const openKey = ref<string | null>(null)
 
 const open = (key: string): void => {
@@ -40,22 +38,17 @@ const open = (key: string): void => {
 }
 
 const close = (key: string): void => {
-  // Guard on the key: `mouseleave` from the pill being LEFT can arrive
-  // after `mouseenter` on the next one, and an unguarded close would
-  // blank the box the user just moved to.
+  // Guard on the key: `mouseleave` from the pill being LEFT can arrive after `mouseenter` on the next one, and an unguarded close would blank the box the user just …
   if (openKey.value === key) openKey.value = null
 }
 
-// The pill the box belongs to, so the template can read its text without
-// a second lookup. Null when nothing is open.
+// The pill the box belongs to, so the template can read its text without a second lookup.
 const openPill = computed((): UserPill | null => {
   if (openKey.value === null) return null
   return props.pills.find((p) => p.key === openKey.value) ?? null
 })
 
-// The open pill's position in the stack. The rail is a UNIFORM vertical
-// stack (see the style block), so the index is enough to place the box
-// level with its pill — no measurement, no layout thrash. -1 when closed.
+// The open pill's position in the stack.
 const openPillIndex = computed((): number => {
   if (openKey.value === null) return -1
   return props.pills.findIndex((p) => p.key === openKey.value)

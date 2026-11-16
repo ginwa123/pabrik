@@ -1,19 +1,14 @@
-//! The guest has no network device, so netd's loopback proxy is the only way
-//! out — and nothing takes it unless it is told. main.zig's exec/tty env and
-//! netd's login-shell profile both come from here.
+//! The guest has no network device, so netd's loopback proxy is the only way out — and nothing takes it unless it is told. main.zig's exec/tty env and netd's …
 
 const std = @import("std");
 const builtin = @import("builtin");
 
 /// netd's proxy: absolute-form for `http://`, `CONNECT` for `https://`.
 pub const proxy_url = "http://127.0.0.1:3128";
-/// Loopback is the guest itself — netd's own listeners and a workspace's dev
-/// servers, which the preview tunnel fronts. Proxying those would loop.
+/// Loopback is the guest itself — netd's own listeners and a workspace's dev servers, which the preview tunnel fronts.
 pub const no_proxy_value = "localhost,127.0.0.1,::1";
 
-/// Both spellings, because clients disagree: git, curl and python read the
-/// lower-case names, wget and npm read the upper-case ones, and a client that
-/// reads both must not see two different answers.
+/// Both spellings, because clients disagree: git, curl and python read the lower-case names, wget and npm read the upper-case ones, and a client that reads both …
 pub const http_proxy = "http_proxy=" ++ proxy_url;
 pub const https_proxy = "https_proxy=" ++ proxy_url;
 pub const http_proxy_upper = "HTTP_PROXY=" ++ proxy_url;
@@ -21,8 +16,7 @@ pub const https_proxy_upper = "HTTPS_PROXY=" ++ proxy_url;
 pub const no_proxy = "no_proxy=" ++ no_proxy_value;
 pub const no_proxy_upper = "NO_PROXY=" ++ no_proxy_value;
 
-/// A login shell sources this, so `sh -l`, the terminal tab and anything a
-/// workload re-execs through a login shell all inherit the same egress.
+/// A login shell sources this, so `sh -l`, the terminal tab and anything a workload re-execs through a login shell all inherit the same egress.
 pub const profile_path = "/etc/profile.d/pabrik-egress.sh";
 
 pub const profile_script =

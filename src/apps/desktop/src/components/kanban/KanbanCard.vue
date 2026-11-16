@@ -39,17 +39,11 @@ const props = withDefaults(
     task: Task
     workspaceId: string
     itemId: string
-    // Optional: the parent WorkspaceItem (for forwarded events from <WorkspaceItemTaskCard> that
-    // need the full item context — currently unused, but accepted for forward compatibility if a
-    // future routine-task action needs the item.path).
+    // Optional: the parent WorkspaceItem (for forwarded events from <WorkspaceItemTaskCard> that need the full item context — currently unused, but accepted for …
     item?: WorkspaceItem
-    // Absolute path used as the root for `@`-trigger file pickers in the descendant
-    // <WorkspaceItemTaskCard>'s description preview + any future editor embedded directly on the
-    // card.
+    // Absolute path used as the root for `@`-trigger file pickers in the descendant <WorkspaceItemTaskCard>'s description preview + any future editor embedded …
     cwd?: string
-    // The board's columns + the card's own column, threaded down to the card's context menu for the
-    // "Move to column" submenu. The menu emits the destination only; the append position is
-    // resolved one level up in <KanbanColumn>, which can see the whole board.
+    // The board's columns + the card's own column, threaded down to the card's context menu for the "Move to column" submenu.
     columns?: KanbanColumn[]
     currentColumnId?: string | null
   }>(),
@@ -70,22 +64,16 @@ const emit = defineEmits<{
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
-  // Open the per-task detail dialog (kanban-task-detail-dialog
-  // feature). Re-emitted verbatim from <WorkspaceItemTaskCard>.
+  // Open the per-task detail dialog (kanban-task-detail-dialog feature).
   viewTaskDetail: [taskId: string]
-  // Context-menu "Move to column". Re-emitted verbatim from
-  // <WorkspaceItemTaskCard> so <KanbanColumn> can resolve the position.
+  // Context-menu "Move to column".
   moveTaskToColumn: [payload: { taskId: string; columnId: string }]
-  // Context-menu "Run agent". Re-emitted verbatim — the card adds no
-  // context of its own, and <KanbanView> is the first ancestor that
-  // holds the workspace/item ids the endpoint path needs.
+  // Context-menu "Run agent".
   runAgent: [payload: { taskId: string }]
 }>()
 
 const handleDragStart = (event: DragEvent) => {
-  // Set a dedicated MIME type so the drop handler in KanbanColumn can read it back without
-  // colliding with the sidebar's other DnD payloads. `effectAllowed = 'move'` gives the cursor the
-  // move-hint arrow during drag.
+  // Set a dedicated MIME type so the drop handler in KanbanColumn can read it back without colliding with the sidebar's other DnD payloads.
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('application/x-kanban-task-id', props.task.id)

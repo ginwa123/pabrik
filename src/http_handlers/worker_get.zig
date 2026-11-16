@@ -1,6 +1,4 @@
-//! `GET /api/workers/:session_id` — fetch a worker by session_id. Layered as
-//! `useCase` (resolve singleton + DB query) and a thin handler that maps the
-//! outcome + errors to status codes / JSON.
+//! `GET /api/workers/:session_id` — fetch a worker by session_id.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,9 +16,7 @@ pub const WorkerGetResult = union(enum) {
     not_found,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -37,9 +33,7 @@ fn useCase(
     return .not_found;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workerGetHandler(
     ctx: gserverz.HttpContext,

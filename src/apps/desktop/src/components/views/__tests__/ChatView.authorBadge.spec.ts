@@ -1,6 +1,4 @@
-/** The author badge on a reply (PR #1168's `.msg-author`): a group thread names
- * every reply, and a one-agent chat takes the session's agent — the name the
- * composer chip shows. The presenter decides both, so both are asserted here. */
+/** The author badge on a reply (PR #1168's `.msg-author`): a group thread names every reply, and a one-agent chat takes the session's agent — the name the … */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -37,8 +35,7 @@ function groupsFor(messages: Message[], authorLabel?: () => string): MessageGrou
     mode: () => 'comfortable' as any,
     authorLabel,
   })
-  // The component's first render is an empty transcript, and that pass is what
-  // resolves the `messageGroups` ↔ `groupToolNames` cycle. Mirror it here.
+  // The component's first render is an empty transcript, and that pass is what resolves the `messageGroups` ↔ `groupToolNames` cycle.
   void messageGroups.value
   messagesRef.value = messages
   return messageGroups.value
@@ -144,8 +141,7 @@ describe('the badge markup reads the presenter’s decision', () => {
   })
 
   it('styles the badge in the component that renders it', () => {
-    // `chatView.css` is `<style scoped>` in ChatView.vue, and a parent's scope id
-    // never reaches a child's inner elements — rules there render as bare text.
+    // `chatView.css` is `<style scoped>` in ChatView.vue, and a parent's scope id never reaches a child's inner elements — rules there render as bare text.
     expect(template).toMatch(/\.msg-author-avatar\s*\{/)
     const shared = readFileSync(path.join(CHAT_VIEW, 'chatView.css'), 'utf8')
     expect(shared).not.toMatch(/\.msg-author-avatar\s*\{/)

@@ -1,5 +1,4 @@
-/** Tests for ListSearchProviders.vue — the tool-output card for the `list_web_search_providers`
- * agent tool. */
+/** Tests for ListSearchProviders.vue — the tool-output card for the `list_web_search_providers` agent tool. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -42,8 +41,7 @@ describe('ListSearchProviders', () => {
     expect(curls).toHaveLength(2)
     expect(curls[0]).toContain('key={key}')
     expect(curls[1]).toContain('X-Subscription-Token: {key}')
-    // The caption names what the placeholder is for, so a user reading the
-    // card does not think a field is missing.
+    // The caption names what the placeholder is for, so a user reading the card does not think a field is missing.
     expect(wrapper.text()).toContain('put the key where {key} is')
   })
 

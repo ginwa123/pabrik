@@ -1,6 +1,4 @@
-/** Unit tests for the LOCAL memories API client (listLocalMemories, getLocalMemoryDetail,
- * createLocalMemory, updateLocalMemory, deleteLocalMemory). Mocks global.fetch to assert URL,
- * method, body shape, and the cwd query/body parameter handling without hitting the network. */
+/** Unit tests for the LOCAL memories API client (listLocalMemories, getLocalMemoryDetail, createLocalMemory, updateLocalMemory, deleteLocalMemory). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

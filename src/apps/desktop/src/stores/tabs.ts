@@ -97,8 +97,7 @@ export const useTabsStore = defineStore('tabs', () => {
     persist()
   }
 
-  /**    * The session's row, created by the surface that shows it: the anchor first, and focused when it
-   * is new. ChatView calls this on mount, so a deep link into a file still has a way back. */
+  /** The session's row, created by the surface that shows it: the anchor first, and focused when it is new. */
   function ensureRow(owner: string): void {
     if (!owner) return
     const before = stripOf(owner).length
@@ -179,15 +178,12 @@ export const useTabsStore = defineStore('tabs', () => {
       ...(owner ? { owner } : {}),
       // A session's own tab is the row's anchor: first, and never closable.
       ...(owner && kind === 'chat' ? { pinned: true } : {}),
-      // Identity decided without knowing the item type (cold boot): the tab may
-      // be adopted once the type arrives, instead of being duplicated.
+      // Identity decided without knowing the item type (cold boot): the tab may be adopted once the type arrives, instead of being duplicated.
       ...(hasChatSuffix && !input.itemType ? { provisional: true } : {}),
     }
   }
 
-  /**    * Re-key a tab in place. Used when the same target turns out to have a different canonical
-   * identity than the one it was created with (the item type was not known yet, or a session id was
-   * renamed). */
+  /** Re-key a tab in place. */
   function rekeyTab(id: string, key: string, query: TabQuery): void {
     let touched = false
     tabs.value = tabs.value.map((tab) => {
@@ -200,9 +196,7 @@ export const useTabsStore = defineStore('tabs', () => {
     if (touched) persist()
   }
 
-  /** Find the tab this target already has **in this row**: the canonical key first, then the other
-   * readings of the same URL. A file's unresolved spelling is provably the same file; a workspace
-   * URL's other reading is only adopted by a tab that is still provisional. */
+  /** Find the tab this target already has **in this row**: the canonical key first, then the other readings of the same URL. */
   function findExisting(variants: string[], owner: string): Tab | null {
     const canonical = variants[0]
     if (canonical) {
@@ -256,14 +250,12 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  /** Open (or focus) a target **inside one session's row**. The owner is explicit so a caller can
-   * never accidentally drop an artifact into the window's row. */
+  /** Open (or focus) a target **inside one session's row**. */
   function openInSession(owner: string, input: Omit<OpenTabInput, 'owner'>): Tab {
     return open({ ...input, owner })
   }
 
-  /** Open without leaving the current tab (`Ctrl/Cmd+click`). The URL is
-   * deliberately untouched — the target is only remembered. */
+  /** Open without leaving the current tab (`Ctrl/Cmd+click`). */
   function openInBackground(input: OpenTabInput): Tab {
     const path = input.path || '/app'
     const query = tabQueryOf(input.query)
@@ -297,8 +289,7 @@ export const useTabsStore = defineStore('tabs', () => {
     return activate(tab.id)
   }
 
-  /**    * Close `id` and report which tab should be activated next (the right neighbour, else the left —
-   * the browser rule). The caller decides whether to navigate; `null` means the id was unknown. */
+  /** Close `id` and report which tab should be activated next (the right neighbour, else the left — the browser rule). */
   function close(id: string): Tab | null {
     const tab = byId(id)
     if (!tab) return null
@@ -421,9 +412,7 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  /**    * The funnel. Returns the navigation to apply for the current URL: create a tab, focus an
-   * existing one, honour a `?tab=` that names exactly this target, or (when disabled / an overlay)
-   * leave the target alone. */
+  /** The funnel. */
   const syncFromTarget = createFunnel({
     enabled: () => enabled.value,
     byId,
@@ -461,9 +450,7 @@ export const useTabsStore = defineStore('tabs', () => {
     })
   }
 
-  /**    * Live tab titles. The backend already announces renames on the `session` channel (`SessionEvent
-   * { action, id, name }`), so a chat tab keeps up with the auto-rename-on-first-message cascade
-   * without polling. Guarded because the bus is not installed until App.vue mounts. */
+  /** Live tab titles. */
   const titles = createTitles({ tabs, activeTabId, persist, byKey })
   const { initTitleFeed, disposeTitleFeed, renameChatTab, setChatTitle, setTabTitle } = titles
 

@@ -42,9 +42,7 @@ const ITEM = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
-/** jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture` / `hasPointerCapture`
- * on HTMLElement. The native browser equivalents require a real pointer-id-to-element binding that
- * jsdom can't model. */
+/** jsdom 29 doesn't implement `setPointerCapture` / `releasePointerCapture` / `hasPointerCapture` on HTMLElement. */
 function stubPointerCapture(el: HTMLElement): void {
   el.setPointerCapture = () => {}
   el.releasePointerCapture = () => {}
@@ -55,8 +53,7 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    // Reset the persisted zoom between tests so a prior test's 200%
-    // doesn't bleed into the next test's "zoom in" assertion.
+    // Reset the persisted zoom between tests so a prior test's 200% doesn't bleed into the next test's "zoom in" assertion.
     if (typeof localStorage !== 'undefined') localStorage.clear()
   })
 
@@ -162,9 +159,7 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(container)
 
-      // Two pointerdowns with pointerType='mouse' should NOT trigger any zoom — there's no third
-      // finger, just a single mouse button doing double duty. (Real mice can't pinch; this guards
-      // against accidentally firing the handler on a phantom 2nd mouse click.)
+      // Two pointerdowns with pointerType='mouse' should NOT trigger any zoom — there's no third finger, just a single mouse button doing double duty.
       container.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 1, pointerType: 'mouse',
         clientX: 200, clientY: 200, bubbles: true,
@@ -222,9 +217,7 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         .element as HTMLElement
       stubPointerCapture(elementEl)
 
-      // Dispatch on the element so the bubbling pointerdown reaches the container with
-      // `event.target === elementEl`. The handler walks `target.closest('[data-design-element]')` →
-      // matches → bails before adding the pointer to pinchPointers.
+      // Dispatch on the element so the bubbling pointerdown reaches the container with `event.target === elementEl`.
       elementEl.dispatchEvent(new PointerEvent('pointerdown', {
         pointerId: 10, pointerType: 'touch',
         clientX: 150, clientY: 150, bubbles: true,
@@ -233,9 +226,7 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
         pointerId: 11, pointerType: 'touch',
         clientX: 350, clientY: 350, bubbles: true,
       }))
-      // Even if the container's pointermove saw both pointers, the
-      // pinchPointers Map is empty (handler bailed on pointerdown) so
-      // nothing happens. Verify by widening them — no zoom change.
+      // Even if the container's pointermove saw both pointers, the pinchPointers Map is empty (handler bailed on pointerdown) so nothing happens.
       container.dispatchEvent(new PointerEvent('pointermove', {
         pointerId: 10, pointerType: 'touch',
         clientX: 100, clientY: 100, bubbles: true,
@@ -248,8 +239,7 @@ describe('DesignView pinch-to-zoom (Pointer Events)', () => {
 
       const resetBtn = wrapper.find('[data-testid="design-zoom-reset"]')
       const pct = parseInt(resetBtn.text() ?? '0', 10)
-      // Pinch starting on a design element must not zoom the canvas —
-      // the element's own drag handler absorbs the gesture.
+      // Pinch starting on a design element must not zoom the canvas — the element's own drag handler absorbs the gesture.
       expect(pct).toBe(100)
     } finally {
       wrapper.unmount()

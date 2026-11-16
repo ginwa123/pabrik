@@ -1,6 +1,4 @@
-//! `PATCH
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/geometry`.
-//! ⚠️ DEPRECATED — replaced by two distinct endpoints: - `POST
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/geometry`. ⚠️ DEPRECATED — replaced by two distinct endpoints: - …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -17,28 +15,21 @@ const UpdateGeometryBody = struct {
     rotation: ?f64 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches.
+/// Domain-level error set for `useCase`.
 pub const DesignElementGeometryUpdateError = error{
     /// `:element_id` path param was missing or empty.
     ElementIdRequired,
-    /// No geometry fields were provided in the body — would result
-    /// in a no-op UPDATE. Maps to 400 so the frontend gets explicit
-    /// feedback (instead of silently succeeding).
+    /// No geometry fields were provided in the body — would result in a no-op UPDATE.
     NoChanges,
     /// `design_model.updateElement` returned `ElementNotFound`.
     ElementNotFound,
     /// `updateElement` failed for some other DB reason.
     DbError,
-    /// Update succeeded but the element wasn't visible in the
-    /// subsequent `getElement`.
+    /// Update succeeded but the element wasn't visible in the subsequent `getElement`.
     ElementNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
-    // Note: `FileWriteFailed` is NOT in this set — geometry updates never
-    // rewrite the HTML file, so the model layer cannot surface that error
-    // here.
+    // Note: `FileWriteFailed` is NOT in this set — geometry updates never rewrite the HTML file, so the model layer cannot surface that error here.
 };
 
 /// Output of the update-geometry use-case.
@@ -47,9 +38,7 @@ pub const UpdateGeometryOutput = struct {
     element: design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -87,9 +76,7 @@ fn useCase(
     return .{ .element = element };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designElementsGeometryUpdateHandler(
     ctx: gserverz.HttpContext,

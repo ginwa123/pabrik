@@ -1,6 +1,4 @@
-// Wire-contract test for the native Android chat event stream. Zig port of
-// `tests/functional/android_chat_sse_contract_test.py` (same test names, same
-// order).
+// Wire-contract test for the native Android chat event stream.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,14 +8,10 @@ const gpa = testing.allocator;
 const io = testing.io;
 const Io = std.Io;
 
-/// `SseChannels.eventsPath()`, minus the `/api/events?` prefix. Spelled out
-/// rather than imported, because the point is to fail when one side moves and
-/// the other does not.
+/// `SseChannels.eventsPath()`, minus the `/api/events?` prefix.
 const chat_channels = "llm,queue,sessions,workers";
 
-/// The names `decodeChatFrameUnsafe` has a branch for on these channels. A
-/// frame outside this set lands on its `else -> null` and is dropped in
-/// silence — the exact failure this file exists to make visible.
+/// The names `decodeChatFrameUnsafe` has a branch for on these channels.
 const known_events = [_][]const u8{
     "connected",
     "llm_chunk",
@@ -29,15 +23,13 @@ const known_events = [_][]const u8{
     "queue_queued",
     "queue_deleted",
     "queue_unknown",
-    // The app's single socket also carries the workers channel (see
-    // `chat_channels` above), and a real turn upserts a worker.
+    // The app's single socket also carries the workers channel (see `chat_channels` above), and a real turn upserts a worker.
     "worker_created",
     "worker_updated",
     "worker_deleted",
 };
 
-/// The keys the Kotlin row mapper reads off an `llm_full`. All of them are
-/// present on every real row, including the ones that are empty.
+/// The keys the Kotlin row mapper reads off an `llm_full`.
 const full_row_keys = [_][]const u8{
     "id",
     "index",
@@ -57,19 +49,15 @@ const full_row_keys = [_][]const u8{
     "is_error",
 };
 
-/// Reused by the emitter-driven cases. The emitter takes the session id in
-/// the body, so no real row has to exist for it.
+/// Reused by the emitter-driven cases.
 const session_id_const = "sess_android_chat_sse_contract";
 
-// ============================================================================
 // SSE client
-// ============================================================================
 
 /// bytes, so 8 KiB is generous.
 const transfer_buffer_len = 8 * 1024;
 
-/// Monotonic milliseconds (`.awake` is monotonic — an NTP step must not
-/// stretch or shrink a deadline).
+/// Monotonic milliseconds (`.awake` is monotonic — an NTP step must not stretch or shrink a deadline).
 fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
@@ -87,13 +75,10 @@ const SseEvent = struct {
 };
 
 /// An open SSE connection plus the state the reader thread fills in.
-///
-/// The test thread owns the pointer; the reader thread writes into it.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its address
-    /// outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *Io.Reader = undefined,
@@ -123,8 +108,7 @@ const SseStream = struct {
         gpa.destroy(self);
     }
 
-    /// A DEEP COPY of the frames collected so far. Caller owns the slice
-    /// (free it with `freeSnapshot`).
+    /// A DEEP COPY of the frames collected so far.
     fn snapshot(self: *SseStream) ![]SseEvent {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -148,8 +132,7 @@ const SseStream = struct {
         gpa.free(frames);
     }
 
-    /// Pop the FIRST frame named `want`, discarding everything before it,
-    /// and RETURN it (ownership passes to the caller).
+    /// Pop the FIRST frame named `want`, discarding everything before it, and RETURN it (ownership passes to the caller).
     fn drainUntilMatchingKeep(self: *SseStream, want: []const u8, timeout_ms: i64) ?SseEvent {
         const deadline = nowMs() + timeout_ms;
         while (true) {
@@ -171,14 +154,11 @@ const SseStream = struct {
 };
 
 /// Open `GET /api/events?channels=<channels>` and capture the response head.
-/// The caller owns the returned pointer and must `deinit` it.
 fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers, and an uninitialised
-    // `Io.Mutex` is not a lock at all.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers, and an uninitialised `Io.Mutex` is not a lock at all.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(
@@ -207,8 +187,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     var resp = try s.req.receiveHead(&.{});
     s.status = @intFromEnum(resp.head.status);
 
-    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so
-    // touching `head` afterwards is a use-after-free.
+    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so touching `head` afterwards is a use-after-free.
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -228,9 +207,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
-/// occurs. Runs on its own thread. The SSE grammar: event: <name>\n data:
-/// <line>\n \n <- blank line dispatches the frame
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -297,21 +274,17 @@ fn readEvents(s: *SseStream) void {
                 continue;
             };
         }
-        // `:` comment lines and unknown fields are ignored, matching both
-        // the browser EventSource parser and the Python reader.
+        // `:` comment lines and unknown fields are ignored, matching both the browser EventSource parser and the Python reader.
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side. Without
-/// this the reader thread parks in `readv` forever on an SSE stream that
-/// never ends.
+/// Release a blocked `readEvents` by shutting the socket's read side.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Python `_collect(events_q, seconds)`: let the pump run for the whole
-/// window so a slow frame is not a failure, then take everything it saw.
+/// Python `_collect(events_q, seconds)`: let the pump run for the whole window so a slow frame is not a failure, then take everything it saw.
 fn collectFrames(s: *SseStream, window_ms: i64) ![]SseEvent {
     const deadline = nowMs() + window_ms;
     while (nowMs() < deadline and !s.done.load(.acquire)) {
@@ -320,8 +293,7 @@ fn collectFrames(s: *SseStream, window_ms: i64) ![]SseEvent {
     return s.snapshot();
 }
 
-/// Open the chat SSE channel, spawn the reader, run `body`, then release +
-/// join + free the stream, and return whatever the body produced.
+/// Open the chat SSE channel, spawn the reader, run `body`, then release + join + free the stream, and return whatever the body produced.
 fn withChatStream(
     comptime T: type,
     h: *Harness,
@@ -339,9 +311,7 @@ fn withChatStream(
     return body(h, s);
 }
 
-// ============================================================================
 // Frame helpers
-// ============================================================================
 
 /// One SSE frame whose `data:` payload parsed as JSON. Owns everything.
 const OwnedFrame = struct {
@@ -358,8 +328,6 @@ const OwnedFrame = struct {
 };
 
 /// Pop frames named `want` until one parses as JSON AND `pred` accepts it.
-/// Anything else (wrong name, unparseable, predicate miss) is discarded —
-/// Python's `_drain_until(events_q, predicate, timeout)`.
 fn drainWhere(
     comptime Ctx: type,
     s: *SseStream,
@@ -446,7 +414,6 @@ fn isKnownEvent(name: []const u8) bool {
 }
 
 /// Queue a turn on the stub profile and return the session it created.
-/// Caller owns the returned slice.
 fn runATurn(h: *Harness) ![]u8 {
     const req_body = try std.json.Stringify.valueAlloc(gpa, .{
         .queue_message = "android chat sse contract",
@@ -470,8 +437,7 @@ fn runATurn(h: *Harness) ![]u8 {
     return try gpa.dupe(u8, sid);
 }
 
-/// POST `inner` (a JSON object literal) to the test-only emitter with
-/// `session_id` merged in.
+/// POST `inner` (a JSON object literal) to the test-only emitter with `session_id` merged in.
 fn emit(h: *Harness, sid: []const u8, inner: []const u8) !void {
     // `inner` starts with `{`; splice the session id in after it.
     const req_body = try std.fmt.allocPrint(gpa, "{{\"session_id\":\"{s}\",{s}", .{ sid, inner[1..] });
@@ -484,17 +450,11 @@ fn emit(h: *Harness, sid: []const u8, inner: []const u8) !void {
     defer r.deinit();
 }
 
-// The test-only emitter gate (`PABRIK_TEST_SSE_EMIT=1`) reaches the child via
-// `BootOptions.extra_env` — never via the parent process env, which `boot`
-// must leave untouched so one suite cannot leak a gate into the next.
+// The test-only emitter gate (`PABRIK_TEST_SSE_EMIT=1`) reaches the child via `BootOptions.extra_env` — never via the parent process env, which `boot` must leave …
 
-// ============================================================================
 // The subscription itself
-// ============================================================================
 
 // The app's one channel set returns 200 SSE, not a terminated stream.
-// `parseChannels` rejects an unknown token and the handler's only response to
-// that is to close the stream — a 200 that never emits `connected`.
 test "the_chat_channel_set_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -512,8 +472,7 @@ test "the_chat_channel_set_is_accepted" {
     }
 }
 
-// `event: connected` is the only liveness signal the server offers. The web's
-// `SseClient` stays in `connecting` without it.
+// `event: connected` is the only liveness signal the server offers.
 test "the_chat_stream_handshakes" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -553,8 +512,7 @@ test "the_chat_stream_handshakes" {
     });
 }
 
-// `Transfer-Encoding: chunked`, because the body never ends. The reader has
-// to see frames as the server writes them.
+// `Transfer-Encoding: chunked`, because the body never ends.
 test "the_stream_is_chunked_with_no_content_length" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -577,9 +535,7 @@ test "the_stream_is_chunked_with_no_content_length" {
     }
 }
 
-// ============================================================================
 // A real turn
-// ============================================================================
 
 // Every frame a turn produces is one `decodeChatFrame` has a branch for.
 test "a_real_turn_emits_only_frames_the_client_decodes" {
@@ -712,9 +668,7 @@ test "a_null_finish_reason_reaches_the_wire_as_the_string_null" {
     }
 }
 
-// A real row spans several `data:` lines, and the client rejoins them. The
-// server serialises with `.whitespace = .indent_4` and then prefixes *each*
-// resulting line.
+// A real row spans several `data:` lines, and the client rejoins them.
 test "every_llm_full_row_is_pretty_printed_across_data_lines" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -735,9 +689,7 @@ test "every_llm_full_row_is_pretty_printed_across_data_lines" {
     };
     defer frame.deinit();
 
-    // The reader only produces a parsed document when the whole payload was
-    // rejoined and parsed, so reaching here at all is the assertion — and the
-    // newline pins the pretty-printing explicitly rather than incidentally.
+    // The reader only produces a parsed document when the whole payload was rejoined and parsed, so reaching here at all is the assertion — and the newline pins the …
     switch (frame.doc.value().*) {
         .object => {},
         else => {
@@ -784,17 +736,13 @@ test "a_turn_announces_its_session_and_its_queue" {
     };
     defer queued.deinit();
     try testing.expectEqualStrings(sid, queued.doc.str("session_id") orelse "");
-    // The decoder derives the action from the event name, so the payload's
-    // own copy is informational; a disagreement means one side is guessing.
+    // The decoder derives the action from the event name, so the payload's own copy is informational; a disagreement means one side is guessing.
     try testing.expectEqualStrings("queued", queued.doc.str("action") orelse "");
 }
 
-// ============================================================================
 // llm_chunk, through the test-only emitter
-// ============================================================================
 
-// `type: "chunk"` + `content` + `session_id` + `index`. The backend sends
-// *raw provider deltas*, so the client appends rather than replaces.
+// `type: "chunk"` + `content` + `session_id` + `index`.
 test "a_chunk_frame_carries_the_fields_the_phone_appends" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });
@@ -831,9 +779,7 @@ test "a_chunk_frame_carries_the_fields_the_phone_appends" {
     }
 }
 
-// A chunk with empty `content` is a chunk, not something to discard. The
-// decoder drops a frame only when BOTH `content` and `reasoning_content` are
-// absent.
+// A chunk with empty `content` is a chunk, not something to discard.
 test "an_empty_delta_still_carries_the_content_key" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });
@@ -869,9 +815,7 @@ test "an_empty_delta_still_carries_the_content_key" {
     });
 }
 
-// `type: "chunk_final"` ends the turn; `type: "chunk"` continues it. The
-// ViewModel calls `finishStreaming()` on the former and appends a delta on
-// the latter.
+// `type: "chunk_final"` ends the turn; `type: "chunk"` continues it.
 test "a_chunk_final_frame_is_distinguishable_from_a_chunk" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });
@@ -900,15 +844,12 @@ test "a_chunk_final_frame_is_distinguishable_from_a_chunk" {
 
     try testing.expectEqualStrings("chunk_final", frame.doc.str("type") orelse "");
     try testing.expectEqualStrings(session_id_const, frame.doc.str("session_id") orelse "");
-    // The client reads finish_reason off a chunk_final; a real run's frame
-    // carries the token counts nested under `usage`, never at the top level.
+    // The client reads finish_reason off a chunk_final; a real run's frame carries the token counts nested under `usage`, never at the top level.
     if (frame.doc.get("finish_reason") == null) {
         std.debug.print("chunk_final has no finish_reason: {s}\n", .{frame.data});
         return error.TestUnexpectedResult;
     }
-    // `usage` is a nullable nested object on the real wire. Absent or null
-    // are both fine — the client reports no token count — but a *top-level*
-    // `total_tokens` would be the bug that `optNullableObject` exists to fix.
+    // `usage` is a nullable nested object on the real wire.
     if (frame.doc.get("total_tokens")) |tt| switch (tt) {
         .null => {},
         else => {
@@ -923,8 +864,7 @@ test "a_chunk_final_frame_is_distinguishable_from_a_chunk" {
     };
 }
 
-// `is_error: true` has to survive the trip, or a retry notice is a turn. The
-// client renders a diagnostic as an error card and never persists it.
+// `is_error: true` has to survive the trip, or a retry notice is a turn.
 test "a_diagnostic_delta_is_flagged_is_error" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true, .extra_env = &.{.{ "PABRIK_TEST_SSE_EMIT", "1" }} });

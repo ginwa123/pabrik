@@ -6,9 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Folders for workspace documents: one new table plus one nullable column on
-/// `documents`. A folder's parent is another folder; `parent_id IS NULL` is the
-/// root, so "top level" needs no sentinel row.
+/// Folders for workspace documents: one new table plus one nullable column on `documents`.
 pub const Migration140AddDocumentFolders = struct {
     pub const version: u32 = 140;
     pub const name = "add_document_folders";
@@ -27,13 +25,10 @@ pub const Migration140AddDocumentFolders = struct {
             \\)
         , &[_][]const u8{});
 
-        // One level is one ordered read: the list route fetches every folder of
-        // the workspace and the client assembles the tree.
+        // One level is one ordered read: the list route fetches every folder of the workspace and the client assembles the tree.
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_document_folders_workspace_parent ON document_folders(workspace_id, parent_id, position)", &[_][]const u8{});
 
-        // Nullable on purpose: every document that already exists stays at the
-        // root, and a document whose folder disappears lands back there rather
-        // than being deleted with it.
+        // Nullable on purpose: every document that already exists stays at the root, and a document whose folder disappears lands back there rather than being deleted …
         try addColumnIfMissing(
             .{ .db = db },
             allocator,

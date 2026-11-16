@@ -12,71 +12,26 @@ data class WorkspaceOption(
         get() = name.trim().ifEmpty { "Untitled workspace" }
 }
 
-/**
- * One recents row, carrying **two** timestamps because the sidebar needs two
- * different questions answered and they do not have the same answer.
- *
- * The desktop sidebar keeps them apart too (`ChatsList.vue` `toNavItem`):
- *
- * - [updatedAtEpochMillis] — the **order** key. The wire's `updated_at`, bumped
- *   by everything, so a session the agent is actively working floats to the top
- *   of Recent. This is the same value the server sorted the page by
- *   (`sort_by=updated_at&direction=desc`), which is what makes paging and
- *   local re-sorting agree.
- * - [lastHumanTouchedAtEpochMillis] — the **label** key. When the human last
- *   saw the chat, falling back to `updated_at` then `created_at`. A row must
- *   not claim "2m" just because the agent is mid-run and keeps touching
- *   `updated_at` — the human has not been there for an hour.
- *
- * Conflating them is not a simplification, it is a bug with a visible
- * symptom: sorted by the label key, a running session sinks below every chat
- * the human touched earlier and can never reach the top of the list.
- */
+/** One recents row, carrying **two** timestamps because the sidebar needs two different questions answered and they do not have the same answer. */
 data class ChatSummary(
     val id: String,
     val workspaceId: String,
     val title: String,
     val updatedAtEpochMillis: Long,
-    /**
-     * Defaults to the order key so a row built without a human-touch stamp
-     * degrades to the desktop's own fallback (`last_human_touched_at ||
-     * updated_at`) rather than to "no label at all".
-     */
+    /** Defaults to the order key so a row built without a human-touch stamp degrades to the desktop's own fallback (`last_human_touched_at || updated_at`) rather than … */
     val lastHumanTouchedAtEpochMillis: Long = updatedAtEpochMillis,
-    /**
-     * The project this chat belongs to, or null when it is in none.
-     *
-     * Read from `workspace_item_id` on `GET /api/session`. The endpoint
-     * scopes its list by `workspace_id`, which the server resolves down to a
-     * set of *task ids* — so before this field existed the phone could see a
-     * chat was running but not which project it belonged to, and the Projects
-     * section had to load every project's chats to find out.
-     *
-     * Null rather than "" so "the server told us nothing" and "the server said
-     * no project" stay the same honest answer here: both mean this row cannot
-     * light a project spinner, and neither is worth guessing at.
-     */
+    /** The project this chat belongs to, or null when it is in none. */
     val projectId: String? = null,
 ) {
     val displayTitle: String
         get() = title.trim().ifEmpty { "New Chat" }
 
-    /**
-     * False when the backend sent no parseable timestamp at all (a legacy
-     * session whose `created_at`/`updated_at` are empty strings). The row is
-     * still shown, just without a relative label — rendering the epoch instead
-     * would claim the chat is decades old. Read from the label key, because
-     * the label is the only thing [hasTimestamp] gates.
-     */
+    /** False when the backend sent no parseable timestamp at all (a legacy session whose `created_at`/`updated_at` are empty strings). */
     val hasTimestamp: Boolean
         get() = lastHumanTouchedAtEpochMillis > 0L
 }
 
-/**
- * One page of recents, plus the fields the sidebar's scroll needs to decide
- * whether to ask for another one. See [RecentsApi.parseChatsPage] for why
- * [hasMore] — and not [nextCursor] — is the terminator.
- */
+/** One page of recents, plus the fields the sidebar's scroll needs to decide whether to ask for another one. */
 data class ChatsPage(
     val chats: List<ChatSummary>,
     val hasMore: Boolean,
@@ -86,15 +41,7 @@ data class ChatsPage(
     val total: Int,
 )
 
-/**
- * Newest-activity first, workspace-scoped.
- *
- * Sorts on the **order** key ([ChatSummary.updatedAtEpochMillis]), never on the
- * human-touch label. That is what puts a session the agent is currently
- * working on at the top of the list, and it is the same order the server
- * paged in (`sort_by=updated_at&direction=desc`) — so appending a later page
- * and re-sorting the merged list cannot reshuffle rows the user already read.
- */
+/** Newest-activity first, workspace-scoped. */
 fun recentChatsForWorkspace(
     chats: List<ChatSummary>,
     workspaceId: String,

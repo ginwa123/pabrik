@@ -1,5 +1,4 @@
-/** P1 performance helpers for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller
- * more smooth"). */
+/** P1 performance helpers for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller more smooth"). */
 export function quantizePx(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 1
   return Math.round(value)
@@ -23,8 +22,7 @@ export class AdaptiveItemHeightEstimator {
     this.maxSamples = Number.isFinite(m) && (m as number) > 0 ? Math.floor(m as number) : 64
   }
 
-  /**    * Record one real measured height. Invalid values (non-finite, non-positive) are ignored silently
-   * — callers already filter most of these; double-filtering keeps the sample set clean regardless. */
+  /** Record one real measured height. */
   observe(heightPx: number): void {
     if (!Number.isFinite(heightPx) || heightPx <= 0) return
     const h = quantizePx(heightPx)
@@ -50,9 +48,7 @@ export class AdaptiveItemHeightEstimator {
     }
   }
 
-  /**    * How many observations are currently held (0..`maxSamples`). Used by the scroller to decide when
-   * the estimate is well-founded enough to freeze — freezing the moment the window is full means
-   * the frozen value IS the live median at that instant, so freezing itself moves nothing. */
+  /** How many observations are currently held (0..`maxSamples`). */
   get sampleCount(): number {
     return this.samples.length
   }
@@ -62,9 +58,7 @@ export class AdaptiveItemHeightEstimator {
     return this.frozen !== null
   }
 
-  /** Stop `estimate()` from moving. The current value is kept forever (until `reset()`), even as
-   * `observe()` keeps recording samples. Call this once the estimate is well-founded — see the
-   * class docstring for the scroll jump a moving placeholder causes. */
+  /** Stop `estimate()` from moving. */
   freeze(): void {
     if (this.frozen !== null) return
     this.frozen = this.estimate()
@@ -82,8 +76,7 @@ export class AdaptiveItemHeightEstimator {
     return Math.round((a + b) / 2)
   }
 
-  /**    * Forget everything — back to the seed (e.g. on items list swap). Also unfreezes: a different
-   * list is a different height profile, and it must be free to learn one before it freezes again. */
+  /** Forget everything — back to the seed (e.g. on items list swap). */
   reset(): void {
     this.samples = []
     this.order = []

@@ -1,5 +1,4 @@
-// Wire-level regression tests for system-folder path validation. Zig port of
-// `tests/functional/system_folder_path_validation_test.py` (same test name).
+// Wire-level regression tests for system-folder path validation.
 
 const std = @import("std");
 const testing = std.testing;
@@ -15,9 +14,7 @@ const FOLDER_ROUTE = "/api/system/folder";
 
 const HEX = "0123456789ABCDEF";
 
-/// Percent-encode the query-shape characters of `s` into a fresh
-/// allocation. See the header for why this is narrower than
-/// `urlencode`.
+/// Percent-encode the query-shape characters of `s` into a fresh allocation.
 fn encodeQueryValue(s: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
@@ -50,17 +47,14 @@ fn folderTarget(params: []const Param) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-/// GET the folder route with `params` and return the response with the
-/// status already asserted against `expect`.
+/// GET the folder route with `params` and return the response with the status already asserted against `expect`.
 fn folderGet(h: *Harness, params: []const Param, expect: []const u16) !harness.Response {
     const target = try folderTarget(params);
     defer gpa.free(target);
     return h.http(io, .GET, target, .{ .expect = expect });
 }
 
-/// Assert the server is still up. Python spelled this `assert
-/// harness.health()`, and the failure message named the offending
-/// params — keep that.
+/// Assert the server is still up.
 fn expectAlive(h: *Harness, context: []const u8) !void {
     if (h.health(io)) return;
     std.debug.print("server died after {s}\n", .{context});
@@ -142,8 +136,7 @@ test "relative_base_path_returns_400_without_killing_server" {
         try expectAlive(&h, c.label);
     }
 
-    // An EMPTY search path is rejected earlier, by the action's own
-    // "path required" guard rather than the shared InvalidPath guard.
+    // An EMPTY search path is rejected earlier, by the action's own "path required" guard rather than the shared InvalidPath guard.
     {
         var r = try folderGet(&h, &.{
             .{ .name = "action", .value = "search" },
@@ -163,8 +156,7 @@ test "relative_base_path_returns_400_without_killing_server" {
         try expectAlive(&h, "rejecting an empty search path");
     }
 
-    // A DRIVE-RELATIVE file (`C:foo` — resolved against the process CWD, not
-    // the base) must be refused, not opened.
+    // A DRIVE-RELATIVE file (`C:foo` — resolved against the process CWD, not the base) must be refused, not opened.
     const pid: u32 = if (h.pid) |p| p else 0;
     const foreign_file = try std.fmt.allocPrint(gpa, "C:pabrik-relative-{d}.txt", .{pid});
     defer gpa.free(foreign_file);

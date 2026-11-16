@@ -5,11 +5,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Grouping is what makes the transcript genuinely virtualized: a long tool run
- * is dozens of rows that would otherwise be dozens of `LazyColumn` items, each
- * forcing its own measure and compose.
- */
+/** Grouping is what makes the transcript genuinely virtualized: a long tool run is dozens of rows that would otherwise be dozens of `LazyColumn` items, each … */
 class GroupMessagesTest {
 
     private fun message(
@@ -58,9 +54,7 @@ class GroupMessagesTest {
 
     @Test
     fun `the group key is the first message id, never the index`() {
-        // An index key re-keys every row above an append, which throws away
-        // per-item state — expanded tool cards, for one — and re-composes the
-        // whole list on every streamed delta.
+        // An index key re-keys every row above an append, which throws away per-item state — expanded tool cards, for one — and re-composes the whole list on every …
         val before = groupMessages(
             listOf(
                 message("a", ChatMessage.ROLE_USER),
@@ -76,8 +70,7 @@ class GroupMessagesTest {
         )
 
         assertEquals(listOf("a", "b"), before.map { it.key })
-        // The append adds a group; it does not renumber the ones above it,
-        // which is exactly what an index key would do.
+        // The append adds a group; it does not renumber the ones above it, which is exactly what an index key would do.
         assertEquals(listOf("a", "b"), after.take(before.size).map { it.key })
         assertEquals(3, after.size)
     }
@@ -96,9 +89,7 @@ class GroupMessagesTest {
 
     @Test
     fun `a group with nothing to draw is dropped before the list sees it`() {
-        // An item with no content still occupies the virtualizer's height
-        // estimate, so leaving one in leaves a blank band in the viewport and
-        // the auto-scroll lands short of the last message.
+        // An item with no content still occupies the virtualizer's height estimate, so leaving one in leaves a blank band in the viewport and the auto-scroll lands short …
         val groups = groupMessages(
             listOf(
                 message("visible", content = "here"),
@@ -130,8 +121,7 @@ class GroupMessagesTest {
             ),
         )
 
-        // Its own key, its own item, so the growing text does not re-key the
-        // user's message above it.
+        // Its own key, its own item, so the growing text does not re-key the user's message above it.
         val streamingGroups = groups.filter { group -> group.messages.any { it.isStreaming } }
         assertEquals(2, streamingGroups.size)
         assertNotEquals(groups.first().key, streamingGroups.first().key)

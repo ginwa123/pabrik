@@ -8,38 +8,23 @@ export interface PabrikAgent {
   temperature?: string
   url_style?: string
   api_key?: string
-  /** The agent's persona. Injected into a spawned child's system prompt as its
-   * `## Your Active Agent Configuration` block. */
+  /** The agent's persona. */
   system_prompt?: string
-  /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local
-   * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
-   * auth via `opencode login`). Mirrors the backend's `LlmProfile.backend`. */
+  /** Which TRANSPORT runs this profile's calls: `"http"` (default), `"claude-code"` (the local `claude` CLI, subscription auth via `claude login`), or `"opencode"` … */
   backend?: string
-  /**    * Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. Two profiles pointing at two
-   * directories are two different `claude login` sessions — the way per-profile identity works when
-   * there is no API key. Mirrors `LlmProfile.config_dir`. Null = CLI default (`~/.claude`). */
+  /** Claude Code only: `CLAUDE_CONFIG_DIR` for this profile. */
   config_dir?: string | null
-  /** Claude Code only: agentic turn ceiling passed as `--max-turns`.
-   * Mirrors `LlmProfile.max_turns`. Null = the CLI's own default. */
+  /** Claude Code only: agentic turn ceiling passed as `--max-turns`. */
   max_turns?: number | null
-  /** Optional override for this profile's context window (in tokens). When null (or omitted), the
-   * backend's built-in per-model default is used (e.g. 200_000 for MiniMax-M2.7, 500_000 for
-   * MiniMax-M3, 200_000 fallback). Useful for self-hosted models with a non-standard window. */
+  /** Optional override for this profile's context window (in tokens). */
   max_capacity_tokens?: number | null
-  /** Compaction threshold as a percentage (0-100) of this profile's context window. When null (or
-   * omitted), defaults to 80. Out-of-range values are rejected by the backend with
-   * `error.InvalidThresholdPercent`. */
+  /** Compaction threshold as a percentage (0-100) of this profile's context window. */
   compaction_threshold_percent?: number | null
-  /** Anthropic-only override for `thinking.budget_tokens`. Plan 2026-08-23-model-thinking. Mirrors
-   * `LlmProfile.thinking_budget_tokens`. Hidden when `thinking === "off"`. Range (0, 2_000_000]
-   * enforced server-side. */
+  /** Anthropic-only override for `thinking.budget_tokens`. */
   thinking_budget_tokens?: number | null
-  /**    * OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). Plan 2026-08-23-model-thinking.
-   * Mirrors `LlmProfile.reasoning_effort`. Hidden when `thinking === "off"`. Server-side validation
-   * via `parse_thinking.parseReasoningEffort` (low|medium|high|auto). */
+  /** OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). */
   reasoning_effort?: 'low' | 'medium' | 'high' | 'auto' | null
-  /** False = the agent is switched off: `list_agents` does not offer it, `spawn_sub_agent` cannot
-   * run it, and the agent pickers hide it. Absent/true = enabled (every old config keeps working). */
+  /** False = the agent is switched off: `list_agents` does not offer it, `spawn_sub_agent` cannot run it, and the agent pickers hide it. */
   enabled?: boolean
 }
 
@@ -50,52 +35,39 @@ export interface McpHeader {
 
 export interface McpServer {
   name: string
-  /**    * Transport discriminator. Defaults to 'http' on legacy entries that predate this field. Mutually
-   * exclusive with itself — a server is either HTTP or stdio, never both. */
+  /** Transport discriminator. */
   transport?: 'http' | 'stdio'
   /** HTTP transport — required when transport === 'http'. */
   url?: string
   /** Optional list of HTTP headers to send with MCP requests (e.g. API keys). */
   headers?: McpHeader[]
-  /**    * stdio transport — required when transport === 'stdio'. The command (executable name or absolute
-   * path) the agent will spawn as a child process and talk MCP JSON-RPC to. */
+  /** stdio transport — required when transport === 'stdio'. */
   command?: string
   /** stdio transport — argv (excluding argv[0]). One entry per line in the UI. */
   args?: string[]
-  /**    * stdio transport — "KEY=VALUE" per line, ADDED on top of inherited env. v1 limitation: Zig
-   * 0.16's std.process.Child has no clean .env_map setter, so a custom env requires a
-   * pre-fork+execve helper — not in v1. The UI exposes this for documentation + forward-compat. */
+  /** stdio transport — "KEY=VALUE" per line, ADDED on top of inherited env. v1 limitation: Zig 0.16's std.process.Child has no clean .env_map setter, so a custom … */
   env?: string[]
   /** stdio transport — optional child working directory (absolute path). */
   cwd?: string
-  /**    * When false the agent skips this server (no tools listed, no calls). Missing/undefined renders
-   * as enabled. Omitted on the wire when enabled so legacy configs stay clean. */
+  /** When false the agent skips this server (no tools listed, no calls). */
   enabled?: boolean
 }
 
-/** One entry of the top-level `web_search` map in `config.json` — the wire shape of a single
- * web-search provider. The map key is the provider name the agent passes to `web_search`; the agent
- * discovers the names through `list_web_search_providers`. */
+/** One entry of the top-level `web_search` map in `config.json` — the wire shape of a single web-search provider. */
 export interface PabrikWebSearchProvider {
-  /** Host pin. The ONLY host whose requests may carry `key`. Must be
-   *  `https` and must not name a loopback, private or link-local host. */
+  /** Host pin. */
   url: string
-  /** Credential, stored separately from `curl` so nothing derived from
-   *  the template can leak it. Optional. */
+  /** Credential, stored separately from `curl` so nothing derived from the template can leak it. */
   key?: string
-  /**    * Request template copied from the provider's docs, carrying the literal text `{key}` where the
-   * credential goes. Must contain `{key}` when the provider declares a `key`, and must NOT when it
-   * does not. */
+  /** Request template copied from the provider's docs, carrying the literal text `{key}` where the credential goes. */
   curl: string
   /** Free-text note about when to prefer this provider. Optional. */
   description?: string
-  /** Defaults to true. `false` keeps the provider configured but hides
-   *  it from `list_web_search_providers`. */
+  /** Defaults to true. */
   enabled?: boolean
 }
 
-/** The Skill Evals block of `config.json`, as the wire carries it (snake_case, matching
- * `SkillEvalsJson` in `Config.zig`). `enabled` is the master switch the Settings toggle writes. */
+/** The Skill Evals block of `config.json`, as the wire carries it (snake_case, matching `SkillEvalsJson` in `Config.zig`). */
 export interface PabrikSkillEvalsConfig {
   enabled?: boolean
   max_skills_per_run?: number
@@ -107,70 +79,42 @@ export interface PabrikSkillEvalsConfig {
 }
 
 export interface PabrikConfig {
-  // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM defaults
-  // (api_endpoint/api_key/model/url_style/temperature/max_tokens/system_prompt) were REMOVED from
-  // config.json.
+  // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM defaults (api_endpoint/api_key/model/url_style/temperature/max_tokens/system_prompt) were …
   profiles?: Record<string, PabrikAgent>
   active_profile?: string
-  /** Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url":
-   * "...", "headers": {...}}` shape used by the LLM config. Sent verbatim to the backend on save. */
+  /** Map of MCP server name to its raw JSON config (snake_case). Each value follows the `{"url" */
   mcp_servers?: Record<
     string,
     | { url: string; headers?: Record<string, string>; enabled?: boolean }
     | { command: string; args?: string[]; env?: string[]; cwd?: string; enabled?: boolean }
   >
-  /**    * Default tool checklist (Tools tab). `null` / absent = the key is not in config.json — the
-   * backend treats those as "no change" on PUT and the built-in defaults apply. An array (including
-   * `[]`) replaces the whole list. */
+  /** Default tool checklist (Tools tab). */
   tools?: string[] | null
-  /** Map of web-search provider name to its configuration — the top-level `web_search` key in
-   * config.json. Keys of this map are the names the agent passes to `web_search`'s `provider`
-   * argument; the agent discovers them through `list_web_search_providers`. */
+  /** Map of web-search provider name to its configuration — the top-level `web_search` key in config.json. */
   web_search?: Record<string, PabrikWebSearchProvider> | null
-  /**    * Opt-in OS notification flag. When true, the backend fires `notify-send` / osascript /
-   * PowerShell when an LLM response completes with `finish_reason === 'stop'`. Defaults to `false`
-   * when absent (matches the `LlmConfigJson` default in `Config.zig`). */
+  /** Opt-in OS notification flag. */
   notify_on_complete?: boolean
-  /** Plan 2026-08-25-notify-on-error — opt-in OS notification flag for the error path. When true,
-   * the backend fires a desktop notification when the workflow hits a transport error, exhausts
-   * retries (TooManyRetries), or fails the outer agentic loop. */
+  /** Plan 2026-08-25-notify-on-error — opt-in OS notification flag for the error path. */
   notify_on_error?: boolean
-  /** Skill Evals block — the master switch for the `run_skill_eval` tool and the budget knobs
-   * around it. */
+  /** Skill Evals block — the master switch for the `run_skill_eval` tool and the budget knobs around it. */
   skill_evals?: PabrikSkillEvalsConfig
-  /**    * Compaction threshold in KB. Sessions whose DB-stored token estimate exceeds this value trigger
-   * context compaction. Defaults to `100` when absent. Not exposed in the UI — power users can edit
-   * `config.json` directly. */
+  /** Compaction threshold in KB. */
   model_compaction_size_kb?: number
-  /** Optional top-level override for the model's context window (in tokens). `null` = fall through
-   * to per-profile override, then built-in default. Restored in plan 2026-07-07-compaction-inline
-   * so the Defaults tab can show + edit the top-level compaction defaults. */
+  /** Optional top-level override for the model's context window (in tokens). */
   max_capacity_token_model?: number | null
-  /**    * Optional top-level compaction threshold as a percentage (0-100). `null` = fall through to
-   * per-profile override, then built-in 80. Mirrors `LlmConfig.compaction_threshold_percent`. */
+  /** Optional top-level compaction threshold as a percentage (0-100). */
   compaction_threshold_percent?: number | null
-  /**    * Whether the AGENT may compact its own context through `compaction`. Workspace-scoped
-   * (Runtime tab); `null`/absent = enabled. Off does NOT stop the threshold trigger or the
-   * manual Compact button. Mirrors `LlmConfig.agent_auto_compaction`. */
+  /** Whether the AGENT may compact its own context through `compaction`. */
   agent_auto_compaction?: boolean | null
-  /** Delay in milliseconds before the workflow retries a failed `callDynamicAgentNew` call. 0 = no
-   * delay (current behavior, the retry fires immediately on the next loop iteration). Range: 0–60
-   * 000. The backend clamps values > 60 000 to 60 000. */
+  /** Delay in milliseconds before the workflow retries a failed `callDynamicAgentNew` call. 0 = no delay (current behavior, the retry fires immediately on the next … */
   retry_delay_ms?: number
-  /** Overall deadline in milliseconds for ONE streaming LLM call (response head to last chunk).
-   * Range: 1 000–1 800 000. The backend clamps outside that window. Defaults to 900 000 (15
-   * minutes) when absent — a design turn's 100k-token prompt needs more than the old 5. */
+  /** Overall deadline in milliseconds for ONE streaming LLM call (response head to last chunk). */
   llm_read_timeout_ms?: number
-  /** Plan 2026-09-10-web-launch-toggle — browser-mode flag. When true, the settings General tab
-   * advertises the same UI in the system browser (URL pill + auto-open) and the server defaults to
-   * a random local port at startup. Defaults to `false` when absent (matches `LlmConfigJson`). */
+  /** Plan 2026-09-10-web-launch-toggle — browser-mode flag. */
   web_launch_enabled?: boolean
-  /** How the chat draws tool calls: "dev" keeps a card per call, "compact" folds a run of calls
-   * into one card. Defaults to "dev" when absent (matches `LlmConfigJson`). */
+  /** How the chat draws tool calls: "dev" keeps a card per call, "compact" folds a run of calls into one card. */
   chat_view?: 'dev' | 'compact'
-  // Per-profile compaction overrides (`max_capacity_tokens` /
-  // `compaction_threshold_percent`) live on `PabrikAgent` (Chunk
-  // 7.6) and remain there. Both layers coexist.
+  // Per-profile compaction overrides (`max_capacity_tokens` /`compaction_threshold_percent`) live on `PabrikAgent` (Chunk 7.6) and remain there.
 }
 
 export async function getPabrikConfig(): Promise<PabrikConfig> {
@@ -188,8 +132,7 @@ export async function savePabrikConfig(config: PabrikConfig): Promise<{ success:
   })
 }
 
-// ─── Per-workspace config overlay (Migration 105) ──────────────────────── The workspace-scope
-// twin of the pair above.
+// ─── Per-workspace config overlay (Migration 105) ────────────────────────
 export async function getWorkspaceConfig(workspaceId: string): Promise<PabrikConfig> {
   return await apiFetch<PabrikConfig>(`/workspaces/${encodeURIComponent(workspaceId)}/config`)
 }
@@ -204,9 +147,7 @@ export async function saveWorkspaceConfig(
   )
 }
 
-/** Plan 2026-09-10-web-launch-toggle — browser-mode status. `GET /api/web/status` is read-only
- * (lifecycle A: no server-side start/stop). `url` is always the live bound port
- * (`http://127.0.0.1:<port>/`, loopback-only). */
+/** Plan 2026-09-10-web-launch-toggle — browser-mode status. */
 export interface WebStatus {
   enabled: boolean
   running: boolean
@@ -222,9 +163,7 @@ export async function getWebStatus(): Promise<WebStatus | null> {
   }
 }
 
-/** Response shape from `DELETE /api/config/pabrik/profiles/:name`. `active_profile_was_cleared` is
- * `true` when the deleted profile was the active one (the backend also cleared `active_profile` on
- * disk). */
+/** Response shape from `DELETE /api/config/pabrik/profiles/:name`. */
 export interface AgentDeleteResponse {
   success: boolean
   profile_name: string
@@ -232,9 +171,7 @@ export interface AgentDeleteResponse {
   error_message?: string
 }
 
-/** Running sessions bound to an agent profile — the rename guard. `running > 0` means a worker
- * is mid-run on this agent, so renaming it would leave that session pinned to a name that no
- * longer exists. GET /api/agent-profiles/:name/in-use */
+/** Running sessions bound to an agent profile — the rename guard. */
 export interface AgentProfileInUse {
   name: string
   running: number
@@ -245,9 +182,7 @@ export async function getAgentProfileInUse(name: string): Promise<AgentProfileIn
   return await apiFetch<AgentProfileInUse>(`/agent-profiles/${encodeURIComponent(name)}/in-use`)
 }
 
-/**  * DELETE /api/config/pabrik/profiles/:name Removes a profile from `config.json` and live-reloads
- * the backend's in-memory LLM config. Throws an Error (with the HTTP status) on non-2xx responses;
- * the composable wraps this for UI concerns (optimistic update, rollback, notification). */
+/** DELETE /api/config/pabrik/profiles/:name Removes a profile from `config.json` and live-reloads the backend's in-memory LLM config. */
 export async function deleteAgent(name: string): Promise<AgentDeleteResponse> {
   return await apiFetch<AgentDeleteResponse>(
     `/config/pabrik/profiles/${encodeURIComponent(name)}`,
@@ -255,9 +190,7 @@ export async function deleteAgent(name: string): Promise<AgentDeleteResponse> {
   )
 }
 
-/**  * `DELETE /api/workspaces/:workspace_id/config/profiles/:name` Removes the profile from THIS
- * workspace's own settings. The user-scope config is never touched: a workspace starts with no
- * profiles of its own, so there is nothing to inherit back. */
+/** `DELETE /api/workspaces/:workspace_id/config/profiles/:name` Removes the profile from THIS workspace's own settings. */
 export async function deleteWorkspaceAgent(
   workspaceId: string,
   name: string,
@@ -268,8 +201,7 @@ export async function deleteWorkspaceAgent(
   )
 }
 
-// ─── MCP server test probe ────────────────────────────────────────────────── Wire shape mirrors
-// the backend `POST /api/mcp/test` handler in src/ai_workflow/tui/http_handlers/mcp_test.zig.
+// ─── MCP server test probe ──────────────────────────────────────────────────
 export interface McpToolPreview {
   name: string
   description: string
@@ -286,13 +218,10 @@ export async function testMcpServer(body: {
   cwd?: string
   url?: string
   headers?: Record<string, string>
-  /** The workspace whose secrets the headers/env may reference. Without it a
-   * placeholder cannot be resolved and the backend refuses the probe. */
+  /** The workspace whose secrets the headers/env may reference. */
   workspace_id?: string
 }): Promise<McpTestResult> {
-  // We deliberately DON'T use the shared `apiFetch` wrapper here because (a) the endpoint always
-  // returns HTTP 200 with a payload that may carry `{ ok: false, ... }`, and (b) we want the
-  // modal's inline result panel to render the error message rather than firing a toast.
+  // We deliberately DON'T use the shared `apiFetch` wrapper here because (a) the endpoint always returns HTTP 200 with a payload that may carry `{ ok: false, ... …
   const res = await fetch(`${API_BASE}/mcp/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -315,15 +244,13 @@ export async function testMcpServer(body: {
   }
 }
 
-// ─── LLM profile test probe ───────────────────────────────────────────────── Wire shape mirrors
-// the backend `POST /api/llm/test` handler in src/http_handlers/llm_test.zig.
+// ─── LLM profile test probe ─────────────────────────────────────────────────
 export interface LlmTestRequest {
   model: string
   base_url: string
   api_key: string
   url_style: string
-  /** The workspace whose secrets `api_key` may reference. Without it a
-   * placeholder cannot be resolved and the backend refuses the probe. */
+  /** The workspace whose secrets `api_key` may reference. */
   workspace_id?: string
 }
 export type LlmTestResult =
@@ -331,9 +258,7 @@ export type LlmTestResult =
   | { ok: false; error: string; details?: string }
 
 export async function testLlmProfile(body: LlmTestRequest): Promise<LlmTestResult> {
-  // Deliberately NOT the shared `apiFetch` wrapper (same reason as `testMcpServer` above): the
-  // endpoint always returns HTTP 200 with a payload that may carry `{ ok: false, ... }`, and we
-  // want the modal's inline result panel to render the error rather than firing a toast.
+  // Deliberately NOT the shared `apiFetch` wrapper (same reason as `testMcpServer` above): the endpoint always returns HTTP 200 with a payload that may carry `{ …
   const res = await fetch(`${API_BASE}/llm/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

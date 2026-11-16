@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// The rotate modal, teleported to <body> so it is not clipped by the settings
-// pane. The typed value lives here and is dropped as soon as it is emitted: the
-// parent passes a NEW key per target, so a remount is what clears the field.
+// The rotate modal, teleported to <body> so it is not clipped by the settings pane.
 import { ref } from 'vue'
 
 const props = defineProps<{

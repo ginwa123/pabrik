@@ -1,6 +1,4 @@
-// AppLayout — kanban task chat as a <main> view (its own tab). When the user opens a kanban task
-// (URL `?view=workspace&...&itemId=Y/chat/task_<id>`, or by clicking a card) the stores hold
-// `activeTask` + `activeTaskWorkspaceItemId`.
+// AppLayout — kanban task chat as a <main> view (its own tab).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -95,13 +93,10 @@ function mountAppLayout(): VueWrapper {
         SkillDetail: true,
         SettingsView: true,
         CodeEditor: true,
-        // A marker stub so the spec can prove the board is NOT rendered
-        // alongside the chat.
+        // A marker stub so the spec can prove the board is NOT rendered alongside the chat.
         KanbanView: { template: `<div data-testid="kanban-view-stub" />` },
         DesignView: { template: `<div data-testid="design-view-stub" />` },
-        // ChatView renders the chat name into its own header (the ✕ lives
-        // there too), so the spec asserts the props it is handed rather than
-        // re-testing ChatView's header markup.
+        // ChatView renders the chat name into its own header (the ✕ lives there too), so the spec asserts the props it is handed rather than re-testing ChatView's header …
         ChatView: {
           template:
             '<div data-testid="kanban-chat-body" :data-chat-id="chatId" :data-chat-name="chatName" :data-show-header="String(showHeader)" />',
@@ -132,9 +127,7 @@ describe('AppLayout — kanban task chat as its own view', () => {
       configurable: true,
     })
     installBusForTests()
-    // Stub the workspace-store API calls fired by AppLayout's onMounted →
-    // initializeFromSystemFolder → init(). Without them jsdom's fetch throws ERR_INVALID_URL (no
-    // test server); AppLayout catches it, but it floods the output.
+    // Stub the workspace-store API calls fired by AppLayout's onMounted → initializeFromSystemFolder → init().
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -158,11 +151,8 @@ describe('AppLayout — kanban task chat as its own view', () => {
     document.body.innerHTML = ''
   })
 
-  // init() overwrites workspaces.value with the API response, so the mocks must
-  // echo the per-test fixture set immediately before mount.
+  // init() overwrites workspaces.value with the API response, so the mocks must echo the per-test fixture set immediately before mount.
   function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
-    // Snapshot the fixture tree NOW (JSON): lazy init() replaces `workspaces.value` with
-    // empty-items rows BEFORE calling getWorkspacesItems, so a live read would see the wiped tree.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const snapshot = JSON.parse(JSON.stringify(store.workspaces)) as any[]
     vi.spyOn(api, 'getWorkspaces').mockImplementation(async () => {
@@ -203,8 +193,7 @@ describe('AppLayout — kanban task chat as its own view', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
     store.setActiveWorkspaceItem(KANBAN_ITEM_ID)
-    // init() replaces workspaces.value with the API response, so without this
-    // the fixture (and therefore the active item) is wiped on mount.
+    // init() replaces workspaces.value with the API response, so without this the fixture (and therefore the active item) is wiped on mount.
     rewireApiForFixture(store)
     wrapper = mountAppLayout()
     await flushPromises()
@@ -240,8 +229,7 @@ describe('AppLayout — kanban task chat as its own view', () => {
     // Migration 052 invariant: the chat session id IS the task id.
     expect(chat.attributes('data-chat-id')).toBe(TASK_ID)
     expect(chat.attributes('data-chat-name')).toBe('Hello Task')
-    // The in-chat header (task name + ✕) is what keeps the chat closable with
-    // tab mode off; ChatView renders it only when this prop is true.
+    // The in-chat header (task name + ✕) is what keeps the chat closable with tab mode off; ChatView renders it only when this prop is true.
     expect(chat.attributes('data-show-header')).toBe('true')
     // THE chain assertion: the board must not render alongside the chat.
     expect(wrapper.find(BOARD).exists()).toBe(false)
@@ -272,8 +260,7 @@ describe('AppLayout — kanban task chat as its own view', () => {
     await flushPromises()
     expect(wrapper.find(CHAT_BODY).attributes('data-chat-id')).toBe(TASK_ID)
 
-    // `:key="'kanban-chat-' + activeTask.id"` forces a fresh mount, which is
-    // what preserves useChatScrollRestore's per-session scroll contract.
+    // `:key="'kanban-chat-' + activeTask.id"` forces a fresh mount, which is what preserves useChatScrollRestore's per-session scroll contract.
     store.setActiveTask(TASK_ID_2)
     await flushPromises()
     expect(wrapper.find(CHAT_BODY).attributes('data-chat-id')).toBe(TASK_ID_2)
@@ -295,18 +282,14 @@ describe('AppLayout — kanban task chat as its own view', () => {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
-    // Task first, item second: setActiveTask re-parents to the design item, so
-    // the kanban has to be re-selected afterwards to create the mismatch (this
-    // is the "clicked a card, then switched the active item" shape).
+    // Task first, item second: setActiveTask re-parents to the design item, so the kanban has to be re-selected afterwards to create the mismatch (this is the …
     store.setActiveTask(TASK_ID)
     store.setActiveWorkspaceItem(KANBAN_ITEM_ID)
     rewireApiForFixture(store)
     wrapper = mountAppLayout()
     await flushPromises()
 
-    // `activeTaskWorkspaceItemId === activeWorkspaceItem.id` is false, so the
-    // chat branch is skipped and the board renders — never a chat for a task
-    // that belongs to a different item.
+    // `activeTaskWorkspaceItemId === activeWorkspaceItem.id` is false, so the chat branch is skipped and the board renders — never a chat for a task that belongs to …
     expect(wrapper.find(CHAT_BODY).exists()).toBe(false)
     expect(wrapper.find(BOARD).exists()).toBe(true)
   })
@@ -327,8 +310,7 @@ describe('AppLayout — kanban task chat as its own view', () => {
     wrapper = mountAppLayout()
     await flushPromises()
 
-    // Design keeps its canvas + DesignChatDialog; the kanban chat branch is
-    // gated on `item_type === 'kanban'` and must not claim a design item.
+    // Design keeps its canvas + DesignChatDialog; the kanban chat branch is gated on `item_type === 'kanban'` and must not claim a design item.
     expect(wrapper.find(CHAT_BODY).exists()).toBe(false)
     expect(wrapper.find(BOARD).exists()).toBe(false)
   })

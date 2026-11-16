@@ -9,9 +9,7 @@ export function buildDraftKey(
   return `diff-comment:${cwd}:${filePath}:${startLine}-${endLine}`
 }
 
-/** Same `## Code Review` markdown shape the sidebar mini-chat used to
- * send to the LLM — now built locally so the comment can be saved or
- * copied without ever touching the chat session. */
+/** Same `## Code Review` markdown shape the sidebar mini-chat used to send to the LLM — now built locally so the comment can be saved or copied without ever … */
 export function formatReviewComment(
   filePath: string,
   startLine: number,
@@ -59,9 +57,7 @@ export interface SavedComment {
   context: string
 }
 
-/** Scan localStorage for saved review comments on a file. Skips entries
- * with empty messages and tolerates legacy raw-string values. Never
- * throws — storage may be unavailable. */
+/** Scan localStorage for saved review comments on a file. */
 export function listSavedComments(cwd: string, filePath: string): SavedComment[] {
   const out: SavedComment[] = []
   try {
@@ -235,9 +231,7 @@ async function onCopy(): Promise<void> {
 }
 
 onMounted(loadDraft)
-// Reload the draft when the line anchor changes (the key is derived from
-// cwd + path + lines). Prev-value guard on update — same load the watcher
-// did; mount is covered by onMounted above.
+// Reload the draft when the line anchor changes (the key is derived from cwd + path + lines).
 let prevDraftKey = draftKey.value
 onUpdated(() => {
   if (draftKey.value === prevDraftKey) return

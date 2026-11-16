@@ -1,5 +1,4 @@
-//! Cronjob — delete stale rows from `session_background_process` whose PID is
-//! no longer alive.
+//! Cronjob — delete stale rows from `session_background_process` whose PID is no longer alive.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,14 +8,11 @@ const database = pabrikcore.database;
 const process_status = @import("helpers").process_status;
 const logger_mod = pabrikcore.loggermod;
 const event_bus_mod = pabrikcore.event_bus;
-// Route the bg-completion helpers + queue insert through `pabrikcore` (the
-// `root` module) instead of @import'ing the agentic_loop files directly —
-// same pattern as cleanup_stale_worker.zig's
+// Route the bg-completion helpers + queue insert through `pabrikcore` (the `root` module) instead of @import'ing the agentic_loop files directly — same pattern …
 const bg_proc = pabrikcore.ai_mod.background_process;
 const ai_workflow = pabrikcore.ai_mod.ai_workflow;
 const guest_jobs = pabrikcore.ai_mod.guest_jobs;
-// `migration.zig` lives in `src/migrations/` — one `..` up from
-// `src/schedulers/`.
+// `migration.zig` lives in `src/migrations/` — one `..` up from `src/schedulers/`.
 const migration = @import("../migrations/migration.zig");
 const testing = std.testing;
 
@@ -33,19 +29,16 @@ pub const CleanupResult = struct {
     kept_count: usize = 0,
     notified_count: usize = 0,
     deleted_count: usize = 0,
-    /// Deduped session_ids that were successfully notified this tick (one
-    /// entry per session, even if several of its PIDs completed).
+    /// Deduped session_ids that were successfully notified this tick (one entry per session, even if several of its PIDs completed).
     notified_sessions: [][]const u8 = &.{},
 };
 
-/// Pure seam for the Task 3 wake decision: wake the session iff no worker is
-/// currently running on it.
+/// Pure seam for the Task 3 wake decision: wake the session iff no worker is currently running on it.
 pub fn shouldWake(is_running: bool) bool {
     return !is_running;
 }
 
 /// Release `result.notified_sessions` (each sid + the outer slice).
-/// No-op when empty. Idempotent — resets the field to `&.{}`.
 pub fn freeNotifiedSessions(allocator: std.mem.Allocator, result: *CleanupResult) void {
     for (result.notified_sessions) |sid| allocator.free(sid);
     if (result.notified_sessions.len > 0) allocator.free(result.notified_sessions);
@@ -53,10 +46,8 @@ pub fn freeNotifiedSessions(allocator: std.mem.Allocator, result: *CleanupResult
 }
 
 // ─── Production helper ────────────────────────────────────────────────────
-// Three-phase notify-then-delete.
 
-/// Args for `notifySingleBackgroundCompletion` — one dead (session_id, pid)
-/// pair plus the shared request-scoped handles.
+/// Args for `notifySingleBackgroundCompletion` — one dead (session_id, pid) pair plus the shared request-scoped handles.
 pub const NotifySingleBackgroundCompletionArgs = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -68,8 +59,7 @@ pub const NotifySingleBackgroundCompletionArgs = struct {
     pid_str: []const u8,
     command: []const u8,
     log_path: []const u8,
-    /// Bytes the CALLER already fetched, for a log the host cannot open (a
-    /// guest job's log lives inside its VM). Null keeps the host read.
+    /// Bytes the CALLER already fetched, for a log the host cannot open (a guest job's log lives inside its VM).
     log_content: ?[]const u8 = null,
     /// That log's full size, so truncation is reported the same way.
     log_total_bytes: ?usize = null,
@@ -79,8 +69,7 @@ pub const NotifySingleBackgroundCompletionArgs = struct {
     note: []const u8 = "",
 };
 
-/// Notify one dead background pair: read the log (capped), build the
-/// completion envelope, queue it with `is_emit_sse=true`.
+/// Notify one dead background pair: read the log (capped), build the completion envelope, queue it with `is_emit_sse=true`.
 pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionArgs) bool {
     const allocator = args.allocator;
     const io = args.io;
@@ -88,9 +77,7 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
     const logger = args.logger;
     const event_bus = args.event_bus;
 
-    // Read the log head. FileNotFound → not-found marker (still
-    // notify + delete). Any OTHER read error → skip notify for
-    // this pair; it stays for the next tick to retry.
+    // Read the log head.
     var log_content: []const u8 = "";
     var was_truncated: bool = false;
     var total_bytes: usize = 0;
@@ -170,8 +157,7 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
         return false;
     };
 
-    // Push the list change so the frontend drops its 5s poll and relies on
-    // SSE.
+    // Push the list change so the frontend drops its 5s poll and relies on SSE.
     pabrikcore.ai_mod.background_process_events.emitCompleted(
         allocator,
         event_bus,
@@ -183,17 +169,14 @@ pub fn notifySingleBackgroundCompletion(args: NotifySingleBackgroundCompletionAr
     return true;
 }
 
-/// Wake one notified session: if no worker is running on it, resolve the
-/// session row (safe defaults on miss) and kick an agent run via
-/// `emit_run_agent` with `skip_initial_queue_message=true` so the run drains
+/// Wake one notified session: if no worker is running on it, resolve the session row (safe defaults on miss) and kick an agent run via `emit_run_agent` with …
 pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocator, sid: []const u8) void {
     const logger = di.logger;
 
     const running = ai_workflow.isWorkerRunning(allocator, di.db, sid);
     if (!shouldWake(running)) return;
 
-    // Resolve the session row for the emit fields (same shape as
-    // `startAgentUseCase` step 3).
+    // Resolve the session row for the emit fields (same shape as `startAgentUseCase` step 3).
     var sname: []const u8 = "";
     var scwd: []const u8 = "";
     var sprofile: []const u8 = "";
@@ -213,8 +196,7 @@ pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocato
             }
         }
     } else |_| {
-        // Query failed (e.g. transient DB blip) — fall through with
-        // defaults; the emit below still wakes the worker.
+        // Query failed (e.g. transient DB blip) — fall through with defaults; the emit below still wakes the worker.
     }
 
     di.emit_run_agent(.{
@@ -228,8 +210,7 @@ pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocato
         .selected_profile_model = sprofile,
         .is_auto_retry_until_stop = sretry,
         .skip_initial_queue_message = true,
-        // Preserve the session's owner so the worker's upsert keeps the
-        // row owned under `--auth` (plan 2026-09-25).
+        // Preserve the session's owner so the worker's upsert keeps the row owned under `--auth` (plan 2026-09-25).
         .user_id = sowner,
     }) catch |err| {
         logger.errFmt(
@@ -241,7 +222,6 @@ pub fn wakeSessionForCompletion(di: *pabrikcore.App, allocator: std.mem.Allocato
 }
 
 /// Max (session_id, pid) pairs per single DELETE statement.
-/// `SQLITE_MAX_VARIABLE_NUMBER` defaults to 999; each pair = 2 params.
 const max_pairs_per_stmt: usize = 499;
 
 pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput) anyerror!CleanupResult {
@@ -259,8 +239,6 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     const a = arena.allocator();
 
     // Pass 1: SELECT every (session_id, pid, command, log_path) row.
-    // For each row, ask the OS whether the process is alive. Dead rows
-    // get collected for the notify + batch DELETE in passes 1.5 / 2.
     const DeadPair = struct {
         session_id: []const u8,
         pid: []const u8,
@@ -276,8 +254,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
     var dead: std.ArrayList(DeadPair) = .empty;
     defer dead.deinit(a);
 
-    // `kind = 'job'` is not an optimization — it is the OTHER HALF of
-    // `mode="background_persistence"`'s contract.
+    // `kind = 'job'` is not an optimization — it is the OTHER HALF of `mode="background_persistence"`'s contract.
     const select_sql =
         \\SELECT session_id, pid, command, log_path, COALESCE(CAST(vm_id AS TEXT), ''), COALESCE(guest_pid, 0)
         \\FROM session_background_process
@@ -304,7 +281,6 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         result.checked_count += 1;
 
         // Defensive: skip rows with malformed PIDs rather than panic.
-        // A row with a non-numeric PID is unrecoverable corruption.
         const pid = std.fmt.parseInt(i32, pid_str, 10) catch continue;
 
         var home = bg_proc.JobHome.host();
@@ -313,9 +289,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         var log_total: ?usize = null;
 
         if (vm_id.len > 0) {
-            // A guest row's pid is the GUEST's: asking this host about it would
-            // answer a different question, and the log is not on this host at
-            // all.
+            // A guest row's pid is the GUEST's: asking this host about it would answer a different question, and the log is not on this host at all.
             home = bg_proc.JobHome.guest(vm_id, guest_pid);
             const job = guest_jobs.GuestJob{ .vm_id = vm_id, .guest_pid = guest_pid };
             const reading = guest_jobs.probe(a, job, null);
@@ -330,14 +304,11 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
             } else |_| {}
         } else if (process_status.isProcessRunning(pid)) {
             // The single source of truth: is the process actually alive?
-            // Cross-platform — uses kill(pid, 0) on POSIX, OpenProcess
-            // with QUERY_LIMITED on Windows.
             result.kept_count += 1;
             continue;
         }
 
-        // Process is dead — collect the row for the notify (pass 1.5) + batch
-        // DELETE (pass 2).
+        // Process is dead — collect the row for the notify (pass 1.5) + batch DELETE (pass 2).
         const sid_copy = a.dupe(u8, session_id) catch |err| {
             if (logger) |log| {
                 log.errFmt(
@@ -397,8 +368,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
 
     if (dead.items.len == 0) return result;
 
-    // Pass 1.5 (notify): for each dead pair, read the log + queue the
-    // completion message.
+    // Pass 1.5 (notify): for each dead pair, read the log + queue the completion message.
     for (dead.items) |*pair| {
         if (notifySingleBackgroundCompletion(.{
             .allocator = a,
@@ -421,8 +391,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         }
     }
 
-    // Task 3: expose the deduped notified session_ids for the wake loop in
-    // `handle()`.
+    // Task 3: expose the deduped notified session_ids for the wake loop in `handle()`.
     {
         var uniq: std.ArrayList([]const u8) = .empty;
         defer uniq.deinit(allocator);
@@ -444,9 +413,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
                     );
                 }
                 freeNotifiedSessions(allocator, &result);
-                // `uniq` holds caller-owned dupes not yet moved into the
-                // result — free them here (result was just reset to empty
-                // so the helper above did NOT touch them).
+                // `uniq` holds caller-owned dupes not yet moved into the result — free them here (result was just reset to empty so the helper above did NOT touch them).
                 for (uniq.items) |sid| allocator.free(sid);
                 return result;
             };
@@ -477,8 +444,7 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
         }
     }
 
-    // Collect only the notified pairs for the DELETE. Failed-notify
-    // pairs stay in the table for the next tick to retry.
+    // Collect only the notified pairs for the DELETE.
     var doomed: std.ArrayList(DeadPair) = .empty;
     defer doomed.deinit(a);
     for (dead.items) |pair| {
@@ -496,17 +462,13 @@ pub fn cleanupStaleBackgroundProcesses(input: CleanupStaleBackgroundProcessInput
 
     if (doomed.items.len == 0) return result;
 
-    // Pass 2: batch DELETE all successfully-notified rows in chunks. Each
-    // chunk builds ONE statement of the form DELETE FROM
-    // session_background_process WHERE (session_id = ?
+    // Pass 2: batch DELETE all successfully-notified rows in chunks.
     var chunk_start: usize = 0;
     while (chunk_start < doomed.items.len) {
         const chunk_end = @min(chunk_start + max_pairs_per_stmt, doomed.items.len);
         const chunk = doomed.items[chunk_start..chunk_end];
 
-        // Build SQL + params in the arena — both are scoped to this
-        // chunk iteration so the arena frees them when chunk_start
-        // advances.
+        // Build SQL + params in the arena — both are scoped to this chunk iteration so the arena frees them when chunk_start advances.
         var sql_buf: std.ArrayList(u8) = .empty;
         defer sql_buf.deinit(a);
         sql_buf.appendSlice(a, "DELETE FROM session_background_process WHERE ") catch continue;
@@ -571,9 +533,7 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
     const allocator = di.allocator;
     const logger = di.logger;
 
-    // Per-tick arena — all SQL string allocations live for the duration of
-    // the cleanupStaleBackgroundProcesses call. Cheaper than per-row
-    // alloc/free and the arena frees them in one shot when this scope exits.
+    // Per-tick arena — all SQL string allocations live for the duration of the cleanupStaleBackgroundProcesses call.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -589,8 +549,7 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
         return;
     };
 
-    // Task 3: wake idle workers so the queued completion actually triggers an
-    // agent run.
+    // Task 3: wake idle workers so the queued completion actually triggers an agent run.
     var woken_count: usize = 0;
     for (result.notified_sessions) |sid| {
         const running = ai_workflow.isWorkerRunning(a, di.db, sid);
@@ -606,8 +565,6 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
-// Inline tests, matching the project convention for files that have impl +
-// tests (delete_worker.zig, cleanup_stale_worker.zig).
 
 const TestCtx = struct {
     db: database.Db,
@@ -641,8 +598,7 @@ fn setupCtx() !TestCtx {
     };
 }
 
-/// Insert a background-process row. `pid` is passed as an `i64` so SQLite can
-/// coerce it to INTEGER (matching the production column type).
+/// Insert a background-process row.
 fn seedRow(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -660,9 +616,7 @@ fn seedRow(
     try db.exec(alloc, sql, &.{ session_id, pid_str, status });
 }
 
-/// Insert a background-process row with an explicit command + log_path (for
-/// the notify-then-delete tests, which need a real temp log file or a
-/// deliberately missing path).
+/// Insert a background-process row with an explicit command + log_path (for the notify-then-delete tests, which need a real temp log file or a deliberately …
 fn seedRowFull(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -682,8 +636,7 @@ fn seedRowFull(
     try db.exec(alloc, sql, &.{ session_id, pid_str, command, log_path, status });
 }
 
-/// Fetch the single queue message for a session. Errors with
-/// `error.RowMissing` when the notify step never queued one.
+/// Fetch the single queue message for a session.
 fn queueMessageForSession(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -933,8 +886,7 @@ test "cleanupStaleBackgroundProcesses keeps a row whose PID is running even with
     defer ctx.deinit();
 
     const self_pid = process_status.getCurrentProcessIdInt();
-    // 'banana' is a garbage status value — but since we ignore status entirely,
-    // the row is kept as long as the PID is alive.
+    // 'banana' is a garbage status value — but since we ignore status entirely, the row is kept as long as the PID is alive.
     try seedRow(&ctx.db, testing.allocator, "s_alive_garbage_status", @intCast(self_pid), "banana");
 
     var result = try cleanupStaleBackgroundProcesses(.{
@@ -952,9 +904,7 @@ test "cleanupStaleBackgroundProcesses keeps a row whose PID is running even with
 }
 
 test "cleanupStaleBackgroundProcesses returns the DB error when the session_background_process table is missing" {
-    // Build a DB WITHOUT the table — the helper must propagate the
-    // error rather than panic. The cron wrapper (handle) is responsible
-    // for catching + logging.
+    // Build a DB WITHOUT the table — the helper must propagate the error rather than panic.
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
@@ -973,9 +923,7 @@ test "cleanupStaleBackgroundProcesses returns the DB error when the session_back
         .event_bus = null,
     });
 
-    // The error variant is the backend's own affair: sqlite reports a missing
-    // table at prepare, postgres at execute, so accept either.
-    // The behaviour is "reported, not swallowed".
+    // The error variant is the backend's own affair: sqlite reports a missing table at prepare, postgres at execute, so accept either.
     if (result) |_| {
         return error.ExpectedMissingTableError;
     } else |err| switch (err) {
@@ -998,9 +946,7 @@ test "cleanupStaleBackgroundProcesses batch-chunks deletes when more than max_pa
         try seedRow(&ctx.db, testing.allocator, "s_dead", 999_999_990 + i, "running");
     }
 
-    // 2 live rows under different session_ids (composite PK is
-    // (session_id, pid); the same PID CAN appear under multiple
-    // sessions, so this is a valid setup).
+    // 2 live rows under different session_ids (composite PK is (session_id, pid); the same PID CAN appear under multiple sessions, so this is a valid setup).
     try seedRow(&ctx.db, testing.allocator, "s_alive_a", @intCast(self_pid), "running");
     try seedRow(&ctx.db, testing.allocator, "s_alive_b", @intCast(self_pid), "running");
 
@@ -1037,8 +983,6 @@ test "cleanupStaleBackgroundProcesses batch-chunks deletes when more than max_pa
 }
 
 // ─── Task 3: notified_sessions + shouldWake ───────────────────────────────
-// The wake loop in `handle()` needs the deduped session_ids that were
-// notified this tick.
 
 test "shouldWake wakes idle sessions and skips running ones" {
     try testing.expect(shouldWake(false));
@@ -1049,8 +993,7 @@ test "cleanupStaleBackgroundProcesses exposes each notified session once (dedupe
     var ctx = try setupCtx();
     defer ctx.deinit();
 
-    // Two dead PIDs under the SAME session + one dead PID under another.
-    // 999_999_99x PIDs are virtually guaranteed to NOT exist.
+    // Two dead PIDs under the SAME session + one dead PID under another. 999_999_99x PIDs are virtually guaranteed to NOT exist.
     try seedRow(&ctx.db, testing.allocator, "s_dup", 999_999_991, "running");
     try seedRow(&ctx.db, testing.allocator, "s_dup", 999_999_992, "running");
     try seedRow(&ctx.db, testing.allocator, "s_other", 999_999_993, "running");

@@ -1,5 +1,4 @@
-// Functional test: the SQLite connection policy, and the fate of the endpoint
-// the original contention test wrote through.
+// Functional test: the SQLite connection policy, and the fate of the endpoint the original contention test wrote through.
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,9 +10,7 @@ const io = testing.io;
 
 const LOG_MESSAGE = "functional-sqlite-write-lock-probe";
 
-// POST /api/logs is DISABLED (#839): the desktop log client spammed it, so
-// the route is unregistered and POST is 404. GET stays as a read-only debug
-// endpoint.
+// POST /api/logs is DISABLED (#839): the desktop log client spammed it, so the route is unregistered and POST is 404.
 test "log_post_is_disabled_while_get_stays_read_only" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -74,9 +71,7 @@ test "boot_logs_the_connection_pragma_policy" {
         std.debug.print("busy_timeout not the configured value:\n{s}\n", .{log});
         return error.TestUnexpectedResult;
     }
-    // `synchronous=FULL` (2), not WAL's usual NORMAL (1):
-    // `src/boot/db_config.zig` pays one fsync per commit so a returned
-    // success survives a power cut.
+    // `synchronous=FULL` (2), not WAL's usual NORMAL (1)
     const sync_ok = std.mem.indexOf(u8, log, "synchronous=2 ") != null or
         std.mem.endsWith(u8, std.mem.trimEnd(u8, log, "\r\n"), "synchronous=2");
     if (!sync_ok) {

@@ -1,14 +1,11 @@
-//! Graceful-shutdown state for the server process (Ctrl+C / SIGTERM). The
-//! handler runs IN SIGNAL CONTEXT: it only stores a bool and calls
-//! `GinwaServer.shutdown()` (async-signal-safe).
+//! Graceful-shutdown state for the server process (Ctrl+C / SIGTERM).
 
 const std = @import("std");
 const database = @import("databases").database;
 const gserverz = @import("kabelweb").server;
 const db_config = @import("db_config.zig");
 
-// Live server pointer the signal handler closes. Set once after
-// `GinwaServer.init`; the handler is process-lifetime so it is never cleared.
+// Live server pointer the signal handler closes.
 var shutdown_server: ?*gserverz.GinwaServer = null;
 var shutdown_requested: std.atomic.Value(bool) = .init(false);
 
@@ -32,9 +29,7 @@ pub fn isRequested() bool {
     return shutdown_requested.load(.seq_cst);
 }
 
-/// Log the live SQLite connection's settings at boot, so a future
-/// "database is locked" report carries the ACTUAL configuration.
-/// No-op on a postgres build (that backend has no pragmas to read back).
+/// Log the live SQLite connection's settings at boot, so a future "database is locked" report carries the ACTUAL configuration.
 pub fn logSqliteConfig(allocator: std.mem.Allocator, db: *database.Db) void {
     if (comptime database.backend_is_postgres) {
         std.log.info("postgres: backend=PgConnPool (conninfo in the boot line above)", .{});

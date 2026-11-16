@@ -18,9 +18,7 @@ interface TaskEditParams {
 export function createTaskEdit(p: TaskEditParams) {
   const { workspaces, activeTaskId, cacheTaskMutation } = p
 
-  /** Pin or unpin a task and persist the change via `POST /api/.../tasks/:task_id/pin`. Optimistic:
-   * the local task's `is_pinned` flag is flipped immediately and the `pinned_position` is bumped to
-   * MAX+1 (matching the backend's behavior). */
+  /** Pin or unpin a task and persist the change via `POST /api/.../tasks/:task_id/pin`. Optimistic */
   async function pinTask(
     workspaceId: string,
     itemId: string,
@@ -38,9 +36,7 @@ export function createTaskEdit(p: TaskEditParams) {
     const previousIsPinned = task.is_pinned ?? false
     const previousPinnedPosition = task.pinned_position ?? 0
 
-    // Compute the optimistic pinned_position. When pinning, bump to MAX+1 across the item's
-    // currently-pinned tasks (excluding the row being pinned — its current value would otherwise be
-    // the new MAX). When unpinning, reset to 0 (the value is irrelevant for unpinned rows).
+    // Compute the optimistic pinned_position.
     let optimisticPosition = previousPinnedPosition
     if (isPinned) {
       const maxPinned = item.tasks.reduce<number>((acc, t) => {
@@ -56,8 +52,7 @@ export function createTaskEdit(p: TaskEditParams) {
 
     try {
       const result = await api.pinTask(workspaceId, itemId, taskId, isPinned)
-      // The backend may assign a different pinned_position if a
-      // concurrent pin raced with ours. Echo the backend's value.
+      // The backend may assign a different pinned_position if a concurrent pin raced with ours.
       if (result.pinned_position !== undefined) {
         task.pinned_position = result.pinned_position
       }
@@ -71,9 +66,7 @@ export function createTaskEdit(p: TaskEditParams) {
     }
   }
 
-  /** Reorder the pinned subset of a single workspace item and persist the new order via `POST
-   * /api/.../tasks/reorder_pinned`. Optimistic: the item's pinned tasks are reordered in the local
-   * array immediately so the UI snaps on drop. */
+  /** Reorder the pinned subset of a single workspace item and persist the new order via `POST /api/.../tasks/reorder_pinned`. */
   async function reorderPinnedTasks(workspaceId: string, itemId: string, orderedIds: string[]) {
     const workspace = workspaces.value.find((w) => w.id === workspaceId)
     if (!workspace) return
@@ -93,18 +86,14 @@ export function createTaskEdit(p: TaskEditParams) {
     // Snapshot for rollback.
     const previousOrder = item.tasks.slice()
 
-    // Optimistic local reorder: rebuild the tasks array as [ordered pinned rows in the new order,
-    // ...unpinned rows]. Unpinned rows keep their existing relative order (the unpinned-region
-    // ORDER BY is unchanged by the reorder).
+    // Optimistic local reorder: rebuild the tasks array as [ordered pinned rows in the new order, ...unpinned rows].
     const pinnedById = new Map(currentPinned.map((t) => [t.id, t]))
     const reorderedPinned: Task[] = []
     for (const id of orderedIds) {
       const t = pinnedById.get(id)
       if (t) reorderedPinned.push(t)
     }
-    // Defensive: any pinned rows missed in the payload are
-    // appended at the end (should not happen given the length
-    // check).
+    // Defensive: any pinned rows missed in the payload are appended at the end (should not happen given the length check).
     for (const t of currentPinned) {
       if (!orderedIds.includes(t.id)) reorderedPinned.push(t)
     }
@@ -122,9 +111,7 @@ export function createTaskEdit(p: TaskEditParams) {
     }
   }
 
-  // Rename a task. Cascades to the linked session via the backend (`updateTaskName` in
-  // llm_history.zig, then onEventSendSessions SSE broadcast) so the ChatsList picks up the new
-  // name. Mirrors the optimistic-update + rollback pattern from `renameWorkspace`.
+  // Rename a task.
   async function renameTask(workspaceId: string, itemId: string, taskId: string, newName: string) {
     const workspace = workspaces.value.find((ws) => ws.id === workspaceId)
     if (!workspace) return
@@ -140,16 +127,13 @@ export function createTaskEdit(p: TaskEditParams) {
     // Optimistic update
     task.name = trimmed
 
-    // Keep the chat-view / chat-list header in sync if this is the
-    // active task.
+    // Keep the chat-view / chat-list header in sync if this is the active task.
     const wasActive = activeTaskId.value === taskId
     if (wasActive) {
       useNavigationStore().setActiveChatName(trimmed)
     }
 
-    // Sync with API. The backend PUT /api/workspaces/tasks/:task_id
-    // cascades the rename to the linked session row and broadcasts
-    // a session.updated SSE event (see backend tasks_update.zig).
+    // Sync with API.
     try {
       await api.updateTaskSimple(taskId, { name: trimmed })
       await cacheTaskMutation(workspaceId, itemId, task, task.kanban_column_id ?? undefined)
@@ -163,9 +147,7 @@ export function createTaskEdit(p: TaskEditParams) {
     }
   }
 
-  // Update a task's name AND/OR description in a single round-trip (kanban-task-detail-dialog plan,
-  // Chunk 2). Mirrors the optimistic-update + rollback pattern from `renameTask`. The patch object
-  // only includes fields the caller actually sent — missing fields are left unchanged server-side.
+  // Update a task's name AND/OR description in a single round-trip (kanban-task-detail-dialog plan, Chunk 2).
   async function updateTaskDetails(
     workspaceId: string,
     itemId: string,
@@ -176,11 +158,9 @@ export function createTaskEdit(p: TaskEditParams) {
       tags?: string[]
       // NEW (kanban task dependencies). Replace-all edit: `[]` clears all; undefined = leave untouched.
       depends_on?: string[]
-      // NEW (Migration 069 — kanban image urls column). Empty array = clear all images; undefined =
-      // leave unchanged.
+      // NEW (Migration 069 — kanban image urls column).
       imageUrls?: string[]
-      // NEW (Migration 090 — kanban video urls column). Same
-      // contract as imageUrls.
+      // NEW (Migration 090 — kanban video urls column).
       videoUrls?: string[]
     },
   ) {
@@ -192,8 +172,6 @@ export function createTaskEdit(p: TaskEditParams) {
     if (!task) return
 
     // Build the patch — only include fields the caller actually sent.
-    // A no-op patch (all undefined) is rejected early so we don't
-    // burn an API call.
     const patch: {
       name?: string
       description?: string
@@ -210,9 +188,7 @@ export function createTaskEdit(p: TaskEditParams) {
     if (fields.description !== undefined) {
       patch.description = fields.description
     }
-    // Migration 067 — kanban task tags. Empty array = clear all tags; undefined = leave unchanged.
-    // The api.updateTaskSimple helper detects `tags !== undefined` and JSON-encodes the array for
-    // the wire; the backend validates + persists.
+    // Migration 067 — kanban task tags.
     if (fields.tags !== undefined) {
       patch.tags = fields.tags
     }
@@ -220,9 +196,7 @@ export function createTaskEdit(p: TaskEditParams) {
     if (fields.depends_on !== undefined) {
       patch.depends_on = fields.depends_on
     }
-    // Migration 069 — kanban image urls. Empty array = clear all
-    // images; undefined = leave unchanged. The api.updateTaskSimple
-    // helper `||`-joins the array for the wire.
+    // Migration 069 — kanban image urls.
     if (fields.imageUrls !== undefined) {
       patch.imageUrls = fields.imageUrls
     }
@@ -252,8 +226,7 @@ export function createTaskEdit(p: TaskEditParams) {
       task.is_have_video = patch.videoUrls.length > 0
     }
 
-    // Keep the chat-view / chat-list header in sync if this is the
-    // active task and a name change is part of the patch.
+    // Keep the chat-view / chat-list header in sync if this is the active task and a name change is part of the patch.
     const wasActive = activeTaskId.value === taskId
     if (wasActive && patch.name !== undefined) {
       useNavigationStore().setActiveChatName(patch.name)
@@ -273,9 +246,7 @@ export function createTaskEdit(p: TaskEditParams) {
       if (wasActive) {
         useNavigationStore().setActiveChatName(previousName)
       }
-      // Rethrow so the dialog can show a retry option. Mirrors the
-      // renameTask contract — the dialog (Chunk 3) catches this in
-      // its own Save handler.
+      // Rethrow so the dialog can show a retry option.
       throw err
     }
     await cacheTaskMutation(workspaceId, itemId, task, task.kanban_column_id ?? undefined)
@@ -286,9 +257,7 @@ export function createTaskEdit(p: TaskEditParams) {
     try {
       const fetched = await api.getTask(workspaceId, itemId, taskId)
       if (!fetched) return
-      // Migration 067 — normalize tags from wire string to in-memory
-      // string[] (also folds in image_urls splitting) before splicing
-      // into the store.
+      // Migration 067 — normalize tags from wire string to in-memory string[] (also folds in image_urls splitting) before splicing into the store.
       const freshTask = normalizeTaskTags(fetched)
       for (const ws of workspaces.value) {
         if (ws.id !== workspaceId) continue
@@ -297,9 +266,7 @@ export function createTaskEdit(p: TaskEditParams) {
           if (!item.tasks) continue
           const idx = item.tasks.findIndex((t) => t.id === taskId)
           if (idx === -1) continue
-          // Replace the cached task object entirely. The Task interface is loose enough (mostly
-          // optional fields) that this preserves all caller state. The dialog re-derives its local
-          // form state from the new task via its watcher.
+          // Replace the cached task object entirely.
           item.tasks.splice(idx, 1, freshTask)
           await cacheTaskMutation(
             workspaceId,
@@ -319,12 +286,9 @@ export function createTaskEdit(p: TaskEditParams) {
     pinTask,
     reorderPinnedTasks,
     renameTask,
-    // NEW (kanban-task-detail-dialog plan, Chunk 2). Edit a task's name and/or description in one
-    // API call from the detail dialog. Uses the same PUT /api/workspaces/tasks/:task_id endpoint as
-    // renameTask — only the body shape is wider.
+    // NEW (kanban-task-detail-dialog plan, Chunk 2).
     updateTaskDetails,
-    // NEW (auto-retry-until-stop fix): re-fetch a single task from the server (with the JOINed
-    // is_auto_retry_until_stop column) and patch the in-store copy.
+    // NEW (auto-retry-until-stop fix): re-fetch a single task from the server (with the JOINed is_auto_retry_until_stop column) and patch the in-store copy.
     refreshTask,
   }
 }

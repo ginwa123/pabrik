@@ -49,8 +49,7 @@ const stats = ref({ added: 0, removed: 0 })
 // DiffLine is the shared ParsedDiffLine (see parseUnifiedDiff module).
 const diffLines = ref<DiffLine[]>([])
 
-// Token spans per diff row, computed once per diff (not per render). The
-// row keeps its red/green background; only the code inside is colored.
+// Token spans per diff row, computed once per diff (not per render).
 const diffTokens = computed(() =>
   highlightLinesForFile(
     diffLines.value.map((line) => line.content),
@@ -112,22 +111,17 @@ const closeMiniChat = () => {
 }
 
 const handleCommentSave = (payload: DiffCommentSavePayload) => {
-  // The comment box owns persistence (localStorage draft + Saved
-  // feedback). Keep the popup open showing the saved state and bubble
-  // the structured payload upward. Nothing here sends to the LLM.
+  // The comment box owns persistence (localStorage draft + Saved feedback).
   emit('commentSaved', payload)
 }
-// Diff parsing delegates to the shared pure module (also used by the
-// ChatView-embedded sidebar) — behaviour unchanged.
+// Diff parsing delegates to the shared pure module (also used by the ChatView-embedded sidebar) — behaviour unchanged.
 const applyParsedDiff = (diffText: string) => {
   const parsed = parseUnifiedDiff(diffText)
   diffLines.value = parsed.lines
   stats.value = { added: parsed.added, removed: parsed.removed }
 }
 
-// Diff parsing delegates to the shared pure module; token coloring comes
-// from the shared highlighter, so this viewer matches the diff review.
-// Load diff data
+// Diff parsing delegates to the shared pure module; token coloring comes from the shared highlighter, so this viewer matches the diff review.
 const loadDiff = async () => {
   if (!props.cwd || !props.filePath) return
 
@@ -135,9 +129,7 @@ const loadDiff = async () => {
   error.value = null
 
   try {
-    // Folder mode, via the shared snapshot: the diff panel primes this cache for the whole repo, so
-    // opening a file it already listed costs ZERO requests. On a miss this is ONE folder request
-    // (deduped across every reader for this cwd), not a per-file one.
+    // Folder mode, via the shared snapshot: the diff panel primes this cache for the whole repo, so opening a file it already listed costs ZERO requests.
     diff.value = await fetchFolderDiff(props.cwd, props.filePath, props.staged)
 
     // Parse the unified diff
@@ -150,8 +142,7 @@ const loadDiff = async () => {
   }
 }
 
-// Reload on binding change (prev-value guard on update — same load the
-// watcher did; mount is covered below).
+// Reload on binding change (prev-value guard on update — same load the watcher did; mount is covered below).
 let prevDiffCwd = props.cwd
 let prevDiffFilePath = props.filePath
 let prevDiffStaged = props.staged

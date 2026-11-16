@@ -1,6 +1,4 @@
-/** workspacesStore — wire→in-memory date normalization for tasks. Bug: the backend's `GET
- * .../tasks` returns `updated_at` and `created_at` as snake_case UTC strings (e.g. "2026-08-05
- * 04:24:56"). */
+/** workspacesStore — wire→in-memory date normalization for tasks. */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
@@ -15,9 +13,7 @@ vi.mock('../api', async (importOriginal) => {
   }
 })
 
-/** The actual fixtures need to round-trip through the store. We use a minimal stub of
- * `useWorkspacesStore.normalizeTaskTags` — but the helper is module-private. So we test it
- * indirectly via the store's public action surface (`fetchKanbanTasks` + `init`) which calls it. */
+/** The actual fixtures need to round-trip through the store. */
 describe('normalizeTaskTags — wire→in-memory date mapping', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -67,7 +63,6 @@ describe('normalizeTaskTags — wire→in-memory date mapping', () => {
 
     const task = store.workspaces[0]!.items[0]!.tasks![0]!
     // The fixture shape returned by the wire uses snake_case strings.
-    // After normalization, the camelCase Date fields should be set.
     expect(task.updatedAt).toBeInstanceOf(Date)
     expect(task.createdAt).toBeInstanceOf(Date)
     // The parsed values match the wire strings (treated as UTC).
@@ -119,8 +114,7 @@ describe('normalizeTaskTags — wire→in-memory date mapping', () => {
   })
 
   it('keeps an already-set updatedAt Date instead of the wire string', () => {
-    // The rule the store relies on: normalization FILLS a missing Date, it never overwrites one. An
-    // optimistic local write therefore survives any later normalization of the same task.
+    // The rule the store relies on: normalization FILLS a missing Date, it never overwrites one.
     const freshDate = new Date('2026-08-06T10:00:00Z')
     const task = normalizeTaskTags({
       id: 'task_existing',

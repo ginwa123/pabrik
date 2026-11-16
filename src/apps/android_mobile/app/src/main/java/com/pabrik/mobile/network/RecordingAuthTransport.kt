@@ -7,18 +7,11 @@ import com.pabrik.mobile.http.HttpHeader
 import com.pabrik.mobile.http.HttpsHttpExchange
 import java.io.IOException
 
-/**
- * Wraps the auth transport so every call the app makes shows up in the network
- * inspector. The captured request mirrors what [HttpsHttpExchange] actually put
- * on the wire, including the `Accept` default, so a replayed record is honest.
- */
+/** Wraps the auth transport so every call the app makes shows up in the network inspector. */
 class RecordingAuthTransport(
     private val delegate: AuthTransport,
     private val store: NetworkLogStore = NetworkLogStore.default,
-    // Read per record rather than captured, so the inspector shows the host the
-    // call actually went to. A server the reader has since changed would
-    // otherwise be logged under the previous one, which is precisely the moment
-    // the inspector is most worth having.
+    // Read per record rather than captured, so the inspector shows the host the call actually went to.
     private val baseUrlProvider: () -> String = { AuthConfig.BASE_URL },
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val nanoTime: () -> Long = System::nanoTime,

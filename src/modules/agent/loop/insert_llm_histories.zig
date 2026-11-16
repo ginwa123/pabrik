@@ -27,9 +27,7 @@ pub const InsertLLMHistoriesInput = struct {
     cwd: []const u8,
     entity: LLMHistory,
     is_skip_db: bool = false,
-    /// True when this insert is an agentic-loop diagnostic (retry attempt or
-    /// TooManyRetries bail) — forwarded to the SSE payload so the frontend
-    /// renders it in a dedicated AgentErrorCard.
+    /// True when this insert is an agentic-loop diagnostic (retry attempt or TooManyRetries bail) — forwarded to the SSE payload so the frontend renders it in a …
     is_error: bool = false,
 };
 
@@ -60,8 +58,7 @@ pub fn inserLLMHistories(
     const created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     defer allocator.free(created_at);
 
-    // Compute `created_iso` for the `since`/`until` filters. Mirrors the
-    // conversion in `llm_history.saveMessage`.
+    // Compute `created_iso` for the `since`/`until` filters.
     const created_iso = try helpers.currentTimeIsoLocal(allocator, io);
     defer allocator.free(created_iso);
 
@@ -71,17 +68,13 @@ pub fn inserLLMHistories(
     const reasoningStr = input.reasoning_content orelse "";
     const agentStr = input.agent;
 
-    // Option A envelopes: user rows always carry {user,name,msg}; non-empty
-    // assistant text carries {agent,msg} even when tool_calls_json is present
-    // (screenshot case).
+    // Option A envelopes: user rows always carry {user,name,msg}; non-empty assistant text carries {agent,msg} even when tool_calls_json is present (screenshot case).
     var enveloped_owned: ?[]u8 = null;
     defer if (enveloped_owned) |e| allocator.free(e);
     var effective_content: []const u8 = contentStr;
     if (contentStr.len > 0 and !parsing.isChatEnvelope(allocator, contentStr)) {
         if (std.mem.eql(u8, roleStr, "user")) {
-            // Logged-in identity when the session has an owner; legacy
-            // defaults otherwise (auth off). Lookup failures never block
-            // the insert.
+            // Logged-in identity when the session has an owner; legacy defaults otherwise (auth off).
             var ident = parsing.resolveChatUser(allocator, db, session_id) catch null;
             defer if (ident) |*ci| ci.deinit(allocator);
             const uid: []const u8 = if (ident) |*ci| ci.user_id else "";
@@ -104,8 +97,7 @@ pub fn inserLLMHistories(
     const is_emit_sse = obj.is_emit_sse;
     const is_skip_db = obj.is_skip_db;
 
-    // tool_calls_json holds ONLY the serialized tool_calls array (assistant
-    // message wire format).
+    // tool_calls_json holds ONLY the serialized tool_calls array (assistant message wire format).
     const toolCallsOwned = input.tool_calls_json;
 
     const sql =
@@ -154,15 +146,12 @@ pub fn inserLLMHistories(
 
     const copy_session_id = try allocator.dupe(u8, input.session_id);
     defer allocator.free(copy_session_id);
-    // The GUARDED model, not the raw one: a blank model reaches the
-    // `llm_history_ai_model_not_empty` backstop, whose repair UPDATE aborts
-    // the INSERT instead of repairing it (see migration 101).
+    // The GUARDED model, not the raw one: a blank model reaches the `llm_history_ai_model_not_empty` backstop, whose repair UPDATE aborts the INSERT instead of …
     const copy_model = try allocator.dupe(u8, model);
     defer allocator.free(copy_model);
     const copy_content = try allocator.dupe(u8, effective_content);
     defer allocator.free(copy_content);
-    // Wire compat: SSE + HTTP carry plain `.msg` so current frontend bubbles
-    // keep rendering. DB keeps the envelope; unwrap here for the live event.
+    // Wire compat: SSE + HTTP carry plain `.msg` so current frontend bubbles keep rendering.
     const sse_content_owned = try parsing.unwrapChatContent(allocator, effective_content);
     defer allocator.free(sse_content_owned);
     const copy_finish_reason = try allocator.dupe(u8, finishReasonStr);
@@ -305,9 +294,7 @@ pub fn inserLLMHistories(
 
 const testing = std.testing;
 
-/// A replica of the history table's FTS5 mirror, the triggers that keep it
-/// in sync, and the backstop that repairs a blank model with an UPDATE —
-/// which re-enters the mirror, so FTS5 refuses it.
+/// A replica of the history table's FTS5 mirror, the triggers that keep it in sync, and the backstop that repairs a blank model with an UPDATE — which re-enters …
 fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});

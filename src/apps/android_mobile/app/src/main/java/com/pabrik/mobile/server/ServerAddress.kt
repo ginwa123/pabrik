@@ -34,15 +34,7 @@ import com.pabrik.mobile.ui.PabrikField
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * The server this app talks to, and the one control that changes it.
- *
- * On both auth screens rather than on the login screen only, because the screen
- * a wrong address actually lands on is the *restore* screen: with no cookie the
- * app asks the server it cannot reach, fails, and offers "Try again" and
- * "Sign in" — and "Sign in" leads to a login form against the same wrong host.
- * Offering the fix only at the end of that would be offering it one tap too late.
- */
+/** The server this app talks to, and the one control that changes it. */
 @Composable
 fun ServerAddressRow(
     baseUrl: String,
@@ -63,9 +55,7 @@ fun ServerAddressRow(
                 color = PabrikMuted,
             )
             Text(
-                // The host and nothing else. A self-hoster has to be able to
-                // confirm at a glance that the app is pointed at *their*
-                // deployment, and `https://` is noise in that confirmation.
+                // The host and nothing else.
                 text = hostLabelFor(baseUrl),
                 modifier = Modifier.testTag("server_address_host"),
                 style = MaterialTheme.typography.bodyMedium,
@@ -81,43 +71,20 @@ fun ServerAddressRow(
     }
 }
 
-/**
- * The host, with the scheme and any trailing path left off.
- *
- * A display concern, so it lives next to the row that displays it rather than
- * in the auth package next to a function whose job is to *build* a URL. The
- * result is still a valid host label for anything `normalizeBaseUrl` accepts,
- * which is the only thing that can reach it.
- */
+/** The host, with the scheme and any trailing path left off. */
 internal fun hostLabelFor(baseUrl: String): String {
     val withoutScheme = baseUrl.substringAfter("://", baseUrl)
     val authority = withoutScheme.substringBefore('/')
     return authority.ifBlank { baseUrl }
 }
 
-/**
- * "Point the app somewhere else."
- *
- * The field takes the raw text and hands the **raw text** back, deliberately:
- * validation is one function owned by the auth package, and the caller is the
- * only one that can persist the result and report back. Running the rule here
- * as well would be a second implementation of it, and the two would disagree
- * about exactly one case — a scheme-less `example.com`, which is valid and
- * would be reported as a missing domain.
- */
+/** "Point the app somewhere else." The field takes the raw text and hands the **raw text** back, deliberately: validation is one function owned by the auth … */
 @Composable
 fun ServerAddressDialog(
     currentBaseUrl: String,
     defaultBaseUrl: String,
     onSave: (String) -> ServerChange,
-    /**
-     * A separate callback rather than an empty string down [onSave].
-     *
-     * `""` is a *rejected* value with a reason — "Enter your server address." —
-     * so routing "go back to the default" through it would show a complaint
-     * about a field the person never filled in. One action, one callback, and
-     * no sentinel value that means two things.
-     */
+    /** A separate callback rather than an empty string down [onSave]. */
     onUseDefault: () -> ServerChange,
     onDismiss: () -> Unit,
 ) {
@@ -127,9 +94,7 @@ fun ServerAddressDialog(
     fun report(change: ServerChange) {
         when (change) {
             is ServerChange.Applied -> onDismiss()
-            // The store's own sentence, verbatim. The value was refused by the
-            // same rule a transport would refuse it with, so showing anything
-            // else here would promise a fix the app cannot make.
+            // The store's own sentence, verbatim.
             is ServerChange.Rejected -> error = change.reason
         }
     }

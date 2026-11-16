@@ -1,5 +1,4 @@
-/** Behavioural tests for the SINGLE-element drag wire.The wire is: 1. User pointerdown on a
- * single (non-group) element body. 2. */
+/** Behavioural tests for the SINGLE-element drag wire.The wire is: 1. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -76,8 +75,7 @@ describe('DesignView single-element drag → translate emit', () => {
       }))
       await flushPromises()
 
-      // 2. simulate the pointermove + pointerup that DesignElement's
-      // `startDrag` registers on the element's addEventListener.
+      // 2. simulate the pointermove + pointerup that DesignElement's `startDrag` registers on the element's addEventListener.
       let moveHandler: ((e: PointerEvent) => void) | null = null
       let upHandler: ((e: PointerEvent) => void) | null = null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -104,8 +102,7 @@ describe('DesignView single-element drag → translate emit', () => {
       upHandler!(new PointerEvent('pointerup', { pointerId: 1 }))
       await flushPromises()
 
-      // 3. expect the `translateElement` emit to have fired with
-      //    (el_1, 50, 30) — the delta in design-px (zoom=1.0).
+      // 3. expect the `translateElement` emit to have fired with (el_1, 50, 30) — the delta in design-px (zoom=1.0).
       const translates = wrapper.emitted('translateElement') ?? []
       const last = translates[translates.length - 1]
       expect(last).toBeDefined()
@@ -115,9 +112,7 @@ describe('DesignView single-element drag → translate emit', () => {
     }
   })
 
-  /** REGRESSION (2026-08-06, design-mode-cannot-move bug): the single-element drag wire previously
-   * bailed with `selectedIds.value.size !== 1` — if the user had a stale multi- select from earlier
-   * (e.g. multi-clicked to deselect, or never reset), the drag silently no-op'd. */
+  /** REGRESSION (2026-08-06, design-mode-cannot-move bug): the single-element drag wire previously bailed with `selectedIds.value.size !== 1` — if the user had a … */
   it('sends translate emit even when selectedIds is empty (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
@@ -132,15 +127,11 @@ describe('DesignView single-element drag → translate emit', () => {
     try {
       await flushPromises()
 
-      // Force the designLogger on so the warn log we expect shows up
-      // in test output (the spec is most useful when it surfaces
-      // those warns in a future regression hunt).
+      // Force the designLogger on so the warn log we expect shows up in test output (the spec is most useful when it surfaces those warns in a future regression hunt).
       const { setDesignLoggerEnabled } = await import('../../../helpers/designLogger')
        
       setDesignLoggerEnabled(true)
 
-      // Simulate the bug condition: wipe the local selection so the
-      // OLD wire would have bailed with selectedIds.size === 0.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(wrapper.vm as any).selectedIds = new Set<string>()
 
@@ -161,8 +152,7 @@ describe('DesignView single-element drag → translate emit', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(elementEl as any).removeEventListener = () => {}
 
-      // pointerdown — fires emit('select', ...) which replaces
-      // selectedIds with {el_1}, then enters single-element drag path.
+      // pointerdown — fires emit('select', ...) which replaces selectedIds with {el_1}, then enters single-element drag path.
       elementEl.dispatchEvent(new PointerEvent('pointerdown', {
         button: 0, pointerId: 1, clientX: 100, clientY: 100, bubbles: true,
       }))
@@ -178,9 +168,7 @@ describe('DesignView single-element drag → translate emit', () => {
       upHandler!(new PointerEvent('pointerup', { pointerId: 1 }))
       await flushPromises()
 
-      // EXPECT: the drag still calls the store action even though we
-      // wiped selectedIds before the gesture started. The wire must
-      // rely on the event-carried elementId, not on selectedIds state.
+      // EXPECT: the drag still calls the store action even though we wiped selectedIds before the gesture started.
       const translates = wrapper.emitted('translateElement') ?? []
       expect(translates.length).toBeGreaterThan(0)
       const last = translates[translates.length - 1]
@@ -190,14 +178,11 @@ describe('DesignView single-element drag → translate emit', () => {
     }
   })
 
-  /** Regression: the OLD wire bailed when selectedIds had 2+ elements (the old assumption was
-   * "single-element drag ⇒ exactly one selected"); the NEW wire still fires because the `translate`
-   * event carries the elementId directly. */
+  /** Regression: the OLD wire bailed when selectedIds had 2+ elements (the old assumption was "single-element drag ⇒ exactly one selected"); the NEW wire still … */
   it('still fires translate when selectedIds has multiple ids (drag source carries elementId)', async () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
 
-    // Add a second element so the multi-select is real.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const other: any = {
       ...ELEMENT,
@@ -221,7 +206,6 @@ describe('DesignView single-element drag → translate emit', () => {
       const { setDesignLoggerEnabled } = await import('../../../helpers/designLogger')
       setDesignLoggerEnabled(true)
 
-      // OLD wire would have bailed here (size === 2).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(wrapper.vm as any).selectedIds = new Set<string>(['el_1', 'el_2'])
 
@@ -258,8 +242,7 @@ describe('DesignView single-element drag → translate emit', () => {
       const translates = wrapper.emitted('translateElement') ?? []
       expect(translates.length).toBeGreaterThan(0)
       const last = translates[translates.length - 1]
-      // The dragged element is el_1 (the one we dispatched on), even
-      // though el_2 was also selected.
+      // The dragged element is el_1 (the one we dispatched on), even though el_2 was also selected.
       expect(last).toEqual(['el_1', 10, 5])
     } finally {
       wrapper.unmount()

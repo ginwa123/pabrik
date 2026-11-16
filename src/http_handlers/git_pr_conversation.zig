@@ -1,5 +1,4 @@
-//! `GET /api/git/pr/conversation` — the change request's body, its comments
-//! and its review verdicts, read through the forge CLI.
+//! `GET /api/git/pr/conversation` — the change request's body, its comments and its review verdicts, read through the forge CLI.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -7,9 +6,7 @@ const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
-// The repo gate, the provider resolution and the stderr policy are shared with
-// the status endpoint: two endpoints that disagreed about which forge a repo
-// is on would read two different conversations.
+// The repo gate, the provider resolution and the stderr policy are shared with the status endpoint: two endpoints that disagreed about which forge a repo is on …
 const pr_status = @import("git_pr_status.zig");
 
 /// One forge read, like the status read.
@@ -28,8 +25,7 @@ const ConversationError = error{
     OutOfMemory,
 };
 
-/// The forge binaries. Injectable so the tests can point the whole path at
-/// fixture scripts instead of real, authenticated CLIs.
+/// The forge binaries.
 pub const Programs = struct {
     gh: []const u8 = "gh",
     glab: []const u8 = "glab",
@@ -71,8 +67,7 @@ const GhConversation = struct {
     number: i64 = 0,
     url: []const u8 = "",
     createdAt: []const u8 = "",
-    /// APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge
-    /// has no verdict to give.
+    /// APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge has no verdict to give.
     reviewDecision: []const u8 = "",
     author: GhAuthor = .{},
     comments: []GhComment = &.{},
@@ -80,8 +75,6 @@ const GhConversation = struct {
 };
 
 // ─── GitLab's payload ──────────────────────────────────────────────────────
-// Read through `std.json.Value`: glab renames its fields between releases,
-// and a rename must cost one missing comment, never a 502 for the whole tab.
 
 fn valueString(v: std.json.Value) []const u8 {
     return switch (v) {
@@ -151,7 +144,6 @@ fn noteCreatedAt(note: std.json.Value) []const u8 {
 }
 
 /// A system note is the forge talking to itself ("changed the description").
-/// It is not a comment from a person, so the thread leaves it out.
 fn noteIsSystem(note: std.json.Value) bool {
     const obj = switch (note) {
         .object => |o| o,
@@ -210,8 +202,7 @@ fn buildGithubResponse(
     trimmed: []const u8,
     fetch_detail: *?[]u8,
 ) ConversationError!http_response.GitPrConversationResponse {
-    // Not the leaky parse: a body with an escaped newline makes the scanner
-    // allocate, and the leaky variant never gives that memory back.
+    // Not the leaky parse: a body with an escaped newline makes the scanner allocate, and the leaky variant never gives that memory back.
     var parsed = std.json.parseFromSlice(GhConversation, allocator, trimmed, .{ .ignore_unknown_fields = true }) catch {
         pr_status.setFetchDetail(allocator, fetch_detail, "invalid JSON from gh pr view (the conversation read)");
         return error.FetchFailed;
@@ -307,8 +298,7 @@ fn buildGlabResponse(
         .comments = comments,
         .reviews = &.{},
         .comment_count = @intCast(comments.len),
-        // An empty note list and a missing one read the same, so the honest
-        // note is about the CLI, not about the merge request.
+        // An empty note list and a missing one read the same, so the honest note is about the CLI, not about the merge request.
         .detail = if (notes == null) "this CLI's JSON output carries the description, not the merge request notes" else "",
     };
 }
@@ -363,7 +353,6 @@ pub fn gitPrConversationHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReq
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitPrConversationResponse(allocator, result) });
 }
 
-// ============================================================================
 // Behavioural tests: the conversation read, against a fixture CLI.
 
 const testing = std.testing;
@@ -375,8 +364,7 @@ const CONVERSATION_JSON =
     \\{"body":"## What\n\nThe panel shows the title now.","title":"fix(url): the settings URL names the workspace","number":1010,"url":"https://github.com/acme/app/pull/1010","author":{"login":"gilang"},"createdAt":"2026-10-20T19:26:21Z","reviewDecision":"CHANGES_REQUESTED","comments":[{"author":{"login":"reviewer"},"body":"One spec still assumes the old shape.","createdAt":"2026-10-20T20:00:00Z","url":"https://github.com/acme/app/pull/1010#issue-1"}],"reviews":[{"author":{"login":"reviewer"},"state":"CHANGES_REQUESTED","body":"Two specs still assume the old URL shape.","submittedAt":"2026-10-20T20:05:00Z","url":"https://github.com/acme/app/pull/1010#pullrequestreview-1"}]}
 ;
 
-/// A `glab mr view --comments --output json` payload: the description, the
-/// notes, and no reviews.
+/// A `glab mr view --comments --output json` payload: the description, the notes, and no reviews.
 const GLAB_CONVERSATION_JSON =
     \\{"iid":7,"title":"Add GitLab support","description":"The body of the merge request.","state":"opened","created_at":"2026-09-28T10:00:00.000Z","author":{"username":"gilang","name":"Gilang"},"notes":[{"body":"A note from a reviewer.","author":{"username":"reviewer"},"created_at":"2026-09-28T11:00:00.000Z"}]}
 ;
@@ -563,9 +551,7 @@ test "a path that is not a work tree is refused before the CLI runs" {
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    // A directory under /tmp, not the fixture's own root: the fixture lives
-    // under the repository's .zig-cache, and git walks UP into the
-    // repository from there, so the fixture root IS a work tree.
+    // A directory under /tmp, not the fixture's own root: the fixture lives under the repository's .zig-cache, and git walks UP into the repository from there, so …
     const not_repo = try pr_status.makeNonRepoDir(a);
     defer pr_status.removeNonRepoDir(a, not_repo);
     if (pr_status.gitProbeIsEnvHijacked(a, not_repo)) return error.SkipZigTest;

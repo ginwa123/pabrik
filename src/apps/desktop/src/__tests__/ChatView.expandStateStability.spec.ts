@@ -1,5 +1,4 @@
-/** Regression tests for the 2026-08-23 "auto-collapse on SSE" bug. Background: the chatview used
- * positional expand keys (`${groupIndex}-${idx}`) into the `messageGroups` computed. */
+/** Regression tests for the 2026-08-23 "auto-collapse on SSE" bug. */
 import { describe, it, expect } from 'vitest'
 import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
@@ -24,25 +23,20 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
     const source = await readChatViewSource()
     // The ref MUST be a Set<string> (we key by string ids, not positions).
     expect(source).toMatch(/const expandedToolIds = ref<Set<string>>\(new Set\(\)\)/)
-    // The comment MUST mention the auto-collapse fix so future maintainers
-    // understand why this isn't a positional key.
+    // The comment MUST mention the auto-collapse fix so future maintainers understand why this isn't a positional key.
     expect(source).toMatch(/auto-collapse fix/)
   })
 
   it('toggleToolExpanded takes a single string key argument', async () => {
     const source = await readChatViewSource()
-    // Old signature was `toggleToolExpanded(groupIndex: number, msgIndex: number)`
-    // — positional. New signature is `toggleToolExpanded(msgId: string)` —
-    // stable per-message.
+    // Old signature was `toggleToolExpanded(groupIndex: number, msgIndex: number)` — positional.
     expect(source).toMatch(/const toggleToolExpanded = \(msgId: string\) =>/)
     expect(source).not.toMatch(/toggleToolExpanded = \(groupIndex: number, msgIndex: number\)/)
   })
 
   it('declares a toolExpandKey helper that prefers msg.id over position', async () => {
     const source = await readPresentationSource()
-    // The helper MUST exist and prioritise msg.id (stable), then
-    // tool_call_id (stable across the turn), then a positional
-    // fallback (last resort for legacy rows with no id).
+    // The helper MUST exist and prioritise msg.id (stable), then tool_call_id (stable across the turn), then a positional fallback (last resort for legacy rows with …
     expect(source).toMatch(
       /const toolExpandKey = \(msg: Message, groupIndex: number, idx: number\): string =>/,
     )
@@ -53,9 +47,7 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
 
   it('all usages of expandedToolIds route through toolExpandKey', async () => {
     const source = await readPresentationSource()
-    // Find every read of `expandedToolIds`. None of them may use the old
-    // positional `${groupIndex}-${idx}` template literal — every read must route through the
-    // helper.
+    // Find every read of `expandedToolIds`.
     const hasUsages = source.match(/expandedToolIds(?:\.value)?\.has\([^)]*\)/g) ?? []
     expect(hasUsages.length).toBeGreaterThan(0)
     for (const usage of hasUsages) {
@@ -66,9 +58,7 @@ describe('expandedToolIds — stable per-message keys (source contract)', () => 
 
   it('tool-group v-for keys by message id, not array index', async () => {
     const source = await readChatViewSource()
-    // The tool group MUST v-for with a stable key. The cards carry the
-    // per-message key the helper built, so the key is the message id (or the
-    // tool_call_id) and never the array index.
+    // The tool group MUST v-for with a stable key.
     expect(source).toMatch(/v-for="\(card, idx\) in toolCardsFor\(group, groupIndex\)"/)
     const presentation = await readPresentationSource()
     expect(presentation).toMatch(/expandKey: toolExpandKey\(msg, groupIndex, idx\)/)

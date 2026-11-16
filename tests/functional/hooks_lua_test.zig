@@ -1,6 +1,4 @@
-// ! Functional service-level verification for single-file Lua hooks. Branch:
-// ! worktree/hook2312maspodmp2131 (plan
-// !).
+// ! Functional service-level verification for single-file Lua hooks. Branch
 
 const std = @import("std");
 const testing = std.testing;
@@ -14,8 +12,7 @@ const builtin = @import("builtin");
 /// The shipped example, relative to the repo root.
 const EXAMPLE_HOOK_REL = "examples/hooks/register_hook.lua";
 
-/// A hook that denies EVERY `pre_tool_use`. Installed to prove that a
-/// hook wrapping tool dispatch cannot reach the non-tool paths.
+/// A hook that denies EVERY `pre_tool_use`.
 const DENY_ALL_HOOK =
     \\function init(event, data)
     \\  if event == 'pre_tool_use' then
@@ -26,13 +23,10 @@ const DENY_ALL_HOOK =
     \\
 ;
 
-/// Deliberately unparseable Lua: `function init(((` never closes. The
-/// BOOT-SAFE point is that a file the Lua runtime cannot even compile must
-/// not stop the SERVICE from serving.
+/// Deliberately unparseable Lua: `function init(((` never closes.
 const BROKEN_HOOK = "function init(((\n";
 
-/// Mirror the binary's `getDefaultConfigDir` per OS (see
-/// `config_simplify_test.py::_platform_config_dir`).
+/// Mirror the binary's `getDefaultConfigDir` per OS (see `config_simplify_test.py::_platform_config_dir`).
 fn configDir(temp_dir: []const u8) ![]u8 {
     const parts: []const []const u8 = switch (builtin.os.tag) {
         .macos => &.{ "Library", "Application Support", "pabrik" },
@@ -52,8 +46,7 @@ fn hooksDir(temp_dir: []const u8) ![]u8 {
     return dir;
 }
 
-/// `_write_hook` — `<config>/hooks/register_hook.lua`. Returns its path,
-/// owned.
+/// `_write_hook` — `<config>/hooks/register_hook.lua`.
 fn writeHook(temp_dir: []const u8, content: []const u8) ![]u8 {
     const dir = try hooksDir(temp_dir);
     defer gpa.free(dir);
@@ -65,8 +58,7 @@ fn writeHook(temp_dir: []const u8, content: []const u8) ![]u8 {
     return path;
 }
 
-/// The header's PATH CONVENTION claim, asserted rather than assumed:
-/// the file really does land where the loader looks for it.
+/// The header's PATH CONVENTION claim, asserted rather than assumed
 fn assertHookPathConvention(temp_dir: []const u8, hook_path: []const u8) !void {
     const cfg = try configDir(temp_dir);
     defer gpa.free(cfg);
@@ -81,8 +73,7 @@ fn assertHookPathConvention(temp_dir: []const u8, hook_path: []const u8) !void {
     }
 }
 
-/// `_service_healthy` — `/health` says ok AND the tool registry has at
-/// least one tool.
+/// `_service_healthy` — `/health` says ok AND the tool registry has at least one tool.
 fn serviceHealthy(h: *Harness) !void {
     if (!h.health(io)) {
         const tail = try h.tailLog(io, gpa, 30);
@@ -104,8 +95,7 @@ fn serviceHealthy(h: *Harness) !void {
     }
 }
 
-/// Render `s` as a Lua SHORT-STRING literal (double-quoted), for
-/// embedding a filesystem path in the `-e` driver below.
+/// Render `s` as a Lua SHORT-STRING literal (double-quoted), for embedding a filesystem path in the `-e` driver below.
 fn luaString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
@@ -194,8 +184,7 @@ test "service_healthy_without_hook" {
     try serviceHealthy(&h);
 }
 
-// Deny-all hook installed, but workspace/agent creation (which runs
-// no tools) must still succeed — hooks wrap dispatch only.
+// Deny-all hook installed, but workspace/agent creation (which runs no tools) must still succeed — hooks wrap dispatch only.
 test "non_tool_paths_unaffected_by_deny_all_hook" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -246,9 +235,7 @@ test "non_tool_paths_unaffected_by_deny_all_hook" {
 
 // The shipped example must parse. Needs a system lua; skipped without.
 test "example_hook_is_valid_lua" {
-    // Python asserted the file exists BEFORE looking for an
-    // interpreter: a missing example is a repo regression, not a
-    // reason to skip.
+    // Python asserted the file exists BEFORE looking for an interpreter: a missing example is a repo regression, not a reason to skip.
     const hook = try repoFileAbs(EXAMPLE_HOOK_REL);
     defer gpa.free(hook);
 
@@ -286,14 +273,11 @@ test "example_hook_is_valid_lua" {
     if (code == null or code.? != 0) return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Lifecycle events, end to end: a real server, a real turn, a real hook.
-// ============================================================================
 
 const LIFECYCLE_SESSION_ID = "sess_hook_lifecycle_1";
 
 /// An OpenAI-compatible upstream that always answers with a plain `stop`.
-/// Enough to make the loop reach `finish_reason` and end the turn.
 const Stub = struct {
     port: u16,
     server: std.Io.net.Server,
@@ -438,8 +422,6 @@ fn sendTurn(h: *Harness, message: []const u8, profile: []const u8) !void {
 }
 
 /// Poll the hook's own log until `session_end` lands, or the deadline passes.
-/// The hook writes that line from the run's `defer`, so its presence IS the
-/// "the run finished" signal — no database needed.
 fn waitForSessionEnd(log_path: []const u8, timeout_ms: i64) ![]u8 {
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + timeout_ms;
     while (std.Io.Timestamp.now(io, .awake).toMilliseconds() < deadline) {
@@ -595,9 +577,7 @@ test "lifecycle: a python hook sees the same three events in the same order" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never
-    // type-checked, so a stdlib rename inside one would stay invisible
-    // until some caller appeared.
+    // Body-analysis barrier: an unreferenced function is never type-checked, so a stdlib rename inside one would stay invisible until some caller appeared.
     _ = configDir;
     _ = hooksDir;
     _ = writeHook;

@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import UsedTools from '../UsedTools.vue'
 
-// ────────────────────────────────────────────────────────────────────────
 // Helpers
-// ────────────────────────────────────────────────────────────────────────
 const tool = (name: string, description = `${name} description.`): Record<string, unknown> => ({
   name,
   description,
@@ -48,9 +46,7 @@ async function mountExpanded(content: string) {
   return wrapper
 }
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('UsedTools.vue — populated', () => {
   it('header chip shows the tool name and the tool count', () => {
     const wrapper = mount(UsedTools, { props: { message: { content: POPULATED } } })

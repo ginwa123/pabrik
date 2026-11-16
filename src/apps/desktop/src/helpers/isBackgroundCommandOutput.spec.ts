@@ -52,8 +52,7 @@ describe('isBackgroundCommandOutput (JSON envelope)', () => {
   })
 
   it('keeps quotes and backslashes verbatim (JSON escaping, no entity layer)', () => {
-    // The XML shape needed an entity layer for exactly this content; JSON does
-    // not, so the card must show the real characters.
+    // The XML shape needed an entity layer for exactly this content; JSON does not, so the card must show the real characters.
     const content = jsonEnvelope(9, "echo \"a<b>&c\"", 'it\'s "done" & <not> a tag')
     const parsed = parseBackgroundCommandOutput(content)
     expect(parsed).not.toBeNull()
@@ -67,9 +66,7 @@ describe('isBackgroundCommandOutput (JSON envelope)', () => {
   })
 
   it('detects the JSON envelope but returns null when it is not one of ours', () => {
-    // Same contract as a malformed `<background_command>` block: the PREDICATE says "this is an
-    // envelope" (so the bubble is not rendered as prose) and the PARSER says "I cannot shape it"
-    // (so no card). A JSON object with no `pid` is somebody else's data.
+    // Same contract as a malformed `<background_command>` block: the PREDICATE says "this is an envelope" (so the bubble is not rendered as prose) and the PARSER …
     const content = '{"pid":'
     expect(isBackgroundCommandOutput(content)).toBe(true)
     expect(parseBackgroundCommandOutput(content)).toBeNull()

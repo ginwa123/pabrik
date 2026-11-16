@@ -21,20 +21,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The composer's model picker, from the wire up.
- *
- * The rule worth testing here is the one that is easy to get wrong and
- * invisible when wrong: the chip's label is a **cascade**, and the middle step
- * of it — the account-wide active profile — is invisible in the raw
- * `selected_profile_model` column. A client that reads only the column shows
- * "Default" on a chat the server is running on a named profile, and the
- * reader's first reaction to that is that the picker is broken.
- *
- * The second rule is about *when* the chip changes. It is not optimistic:
- * a chip that names a profile the next turn does not use is worse than a chip
- * that lags, because it is the one the reader trusts.
- */
+/** The composer's model picker, from the wire up. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatProfilePickerTest {
 
@@ -69,14 +56,7 @@ class ChatProfilePickerTest {
     }
 
 
-    /**
-     * Answers `GET /api/config/pabrik` and `PUT /api/llm/session/{id}`, and
-     * refuses to guess at anything else.
-     *
-     * The PUT's reply echoes the stored column, because that is what the real
-     * handler does (`session_update.zig:134`) and the ViewModel trusts that
-     * echo as the authority.
-     */
+    /** Answers `GET /api/config/pabrik` and `PUT /api/llm/session/{id}`, and refuses to guess at anything else. */
     private class ProfileTransport(
         private val configBody: String = CONFIGS,
         private val configStatus: Int = 200,
@@ -126,9 +106,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun anEmptyPerSessionValueFallsThroughToTheActiveProfile() {
-        // The regression this whole file exists for. `""` is what a chat
-        // nobody has picked a profile for carries — it is not "unset" in the
-        // null sense, so a `?:`-only check stops here and reports Default.
+        // The regression this whole file exists for.
         assertEquals("free tier", effectiveProfileName("", "free tier"))
     }
 
@@ -139,8 +117,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun withNeitherThereIsNoEffectiveProfile() {
-        // Null, not "Default": the caller decides how to word an absent
-        // profile, and two callers word it differently.
+        // Null, not "Default": the caller decides how to word an absent profile, and two callers word it differently.
         assertNull(effectiveProfileName("", null))
     }
 
@@ -166,15 +143,13 @@ class ChatProfilePickerTest {
 
     @Test
     fun anUnsetActiveProfileArrivesAsNullNotEmptyString() {
-        // `""` here would make the cascade read as "there is an active profile
-        // called nothing" rather than "there is none".
+        // `""` here would make the cascade read as "there is an active profile called nothing" rather than "there is none".
         assertNull(ChatApi.parseProfiles("""{"profiles":{},"active_profile":""}""").activeProfile)
     }
 
     @Test
     fun aProfileWithNoUrlStillSaysSomething() {
-        // Joining blindly would leave a dangling separator, which reads as a
-        // rendering bug rather than as a missing value.
+        // Joining blindly would leave a dangling separator, which reads as a rendering bug rather than as a missing value.
         val page = ChatApi.parseProfiles("""{"profiles":{"bare":{"model":"gpt-5"}}}""")
         assertEquals("gpt-5", page.profiles.single().detail)
     }
@@ -193,7 +168,6 @@ class ChatProfilePickerTest {
         )
         assertEquals("space bunny free", body.optString("selected_profile_model"))
         // Both present and empty, which the backend reads as "leave alone".
-        // Omitting them would make the request depend on a struct default.
         assertTrue(body.has("name"))
         assertEquals("", body.optString("name"))
         assertTrue(body.has("is_auto_retry_until_stop"))
@@ -201,9 +175,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun clearingTheProfileIsAnEmptyValueNotAnAbsentField() {
-        // `session_update.zig:84` writes the column unconditionally precisely
-        // so this can be expressed. Dropping the key would silently mean
-        // "keep whatever was there".
+        // `session_update.zig:84` writes the column unconditionally precisely so this can be expressed.
         val body = org.json.JSONObject(ChatApi.updateSessionBody(selectedProfileModel = ""))
         assertTrue(body.has("selected_profile_model"))
         assertEquals("", body.optString("selected_profile_model"))
@@ -240,9 +212,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun aRejectedSaveSaysSoRatherThanFailing() {
-        // 4xx means the request itself was wrong, so the message is about the
-        // choice, not the network — the reader can fix this one by picking
-        // something else.
+        // 4xx means the request itself was wrong, so the message is about the choice, not the network — the reader can fix this one by picking something else.
         val client = ChatClient(
             MemorySessionStore(),
             httpTransport = ProfileTransport(putStatus = 400),
@@ -269,12 +239,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun aFailedProfileFetchLeavesTheChatAlone() = profileTest { s ->
-        // A dropdown that cannot load must not blank a transcript that loaded
-        // perfectly well. The chip degrades to the label it used to be.
-        //
-        // Only the *config* call fails here: an offline transport would take
-        // the transcript down with it, and then there would be nothing left to
-        // prove the point — the assertion would pass for the wrong reason.
+        // A dropdown that cannot load must not blank a transcript that loaded perfectly well.
         val model = model(s.ioDispatcher, ProfileTransport(configStatus = 500))
         model.openSession("sess_1")
         s.drain()
@@ -304,8 +269,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun aFailedPickLeavesTheChipWhereItWas() = profileTest { s ->
-        // The whole reason this is not optimistic: a chip that names a profile
-        // the next turn does not use is the one thing the reader cannot check.
+        // The whole reason this is not optimistic: a chip that names a profile the next turn does not use is the one thing the reader cannot check.
         val model = model(s.ioDispatcher, ProfileTransport(putStatus = 500))
         model.openSession("sess_1")
         s.drain()
@@ -321,8 +285,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun aSecondPickIsRefusedWhileTheFirstIsSaving() = profileTest { s ->
-        // Two in-flight PUTs make the last *response* the winner rather than
-        // the last tap, which is a different and much more confusing order.
+        // Two in-flight PUTs make the last *response* the winner rather than the last tap, which is a different and much more confusing order.
         val transport = ProfileTransport()
         val model = model(s.ioDispatcher, transport)
         model.openSession("sess_1")
@@ -339,8 +302,7 @@ class ChatProfilePickerTest {
 
     @Test
     fun aChipWithNothingToPickIsNotAControl() {
-        // A menu that opens onto an empty list teaches the reader the footer
-        // is decoration, which is worse than the label this used to be.
+        // A menu that opens onto an empty list teaches the reader the footer is decoration, which is worse than the label this used to be.
         val state = ChatUiState(selectedProfileModel = "", availableProfiles = emptyList())
         assertFalse(state.canPickProfile)
     }
@@ -362,10 +324,7 @@ class ChatProfilePickerTest {
     }
 
     private companion object {
-        /**
-         * Shaped like the real `GET /api/config/pabrik`: `profiles` is an
-         * object keyed by name, and `active_profile` is a bare name.
-         */
+        /** Shaped like the real `GET /api/config/pabrik`: `profiles` is an object keyed by name, and `active_profile` is a bare name. */
         val CONFIGS = """
             {
               "profiles": {

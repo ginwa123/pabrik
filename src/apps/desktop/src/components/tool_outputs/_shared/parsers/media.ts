@@ -1,8 +1,6 @@
 import { asRecord, numOrNullField, strField, strOrNullField, unwrapDataRecord } from './internal'
 
-// ─── generate_image ──────────────────────────────────────────────────────── Parses the JSON
-// `data` payload produced by `execute_generate_image` in
-// `src/modules/agent/tools/generate_image.zig`:.
+// ─── generate_image ────────────────────────────────────────────────────────
 export interface ParsedGenerateImage {
   status: string | null
   count: number | null
@@ -53,9 +51,7 @@ export function parseGenerateImage(data: unknown): ParsedGenerateImage {
   }
 }
 
-// ─── present_files ───────────────────────────────────────────────────────── Parses the JSON
-// `data` payload produced by `executePresentFilesToString` in
-// `src/modules/agent/tools/present_files.zig`: {"status":"presented","count":2,"files":[.
+// ─── present_files ─────────────────────────────────────────────────────────
 export interface ParsedPresentFile {
   path: string
   bytes: number

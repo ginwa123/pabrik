@@ -10,14 +10,10 @@ const llm_history = pabrikcore.llm_history;
 pub const SessionGetError = error{
     QueryFailed,
     /// `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
-    /// Unreachable on the per-request arena, but the type system
-    /// requires the variant.
     OutOfMemory,
 };
 
-/// Wire shape of the detail response. Field names mirror the session list
-/// (`session_id`, not `id`) so clients read both endpoints the same way; the
-/// full row is included so a detail fetch never needs a second round-trip.
+/// Wire shape of the detail response.
 pub const SessionDetailJson = struct {
     session_id: []const u8,
     name: []const u8,
@@ -33,34 +29,25 @@ pub const SessionDetailJson = struct {
     pr_provider: []const u8,
     sub_agent_name: []const u8,
     parent_session_id: []const u8,
-    /// Owning workspace id, or null when the session is outside
-    /// every workspace (or the session itself is unknown — the
-    /// useCase returns null and the handler answers 404).
+    /// Owning workspace id, or null when the session is outside every workspace (or the session itself is unknown — the useCase returns null and the handler answers …
     workspace_id: ?[]const u8 = null,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Read the session row and resolve its workspace.
-/// Returns null for an unknown session id (handler → 404).
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     session_id: []const u8,
 ) SessionGetError!?[]const u8 {
-    // Empty id: fail closed without touching the resolver (it also guards
-    // this, but there is no row to find either). getSession binds the id in a
-    // SELECT — a probe for "" simply matches nothing; it is never written
+    // Empty id: fail closed without touching the resolver (it also guards this, but there is no row to find either). getSession binds the id in a SELECT — a probe …
     if (session_id.len == 0) return null;
 
     const session = (llm_history.getSession(allocator, db, session_id) catch return error.QueryFailed) orelse return null;
     defer session.deinit(allocator);
 
-    // Workspace resolution is auxiliary data: a resolver failure
-    // degrades to workspace_id=null instead of failing the whole
-    // detail read.
+    // Workspace resolution is auxiliary data: a resolver failure degrades to workspace_id=null instead of failing the whole detail read.
     const workspace_id = pabrikcore.workspace_scope.resolveWorkspaceId(allocator, db, session_id) catch |err| blk: {
         std.log.warn(
             "session_get: workspace resolution failed (non-fatal, workspace_id=null): {s}",
@@ -77,9 +64,7 @@ fn useCase(
         .cwd = session.cwd,
         .created_at = session.created_at,
         .updated_at = session.updated_at,
-        // Already-corrupted rows (0xAA poison) are invalid UTF-8, which
-        // std.json would emit as a byte array ([170, ...]). Fall back to
-        // empty (Default chip) so the wire never carries garbage.
+        // Already-corrupted rows (0xAA poison) are invalid UTF-8, which std.json would emit as a byte array ([170, ...]).
         .selected_profile_model = if (std.unicode.utf8ValidateSlice(session.selected_profile_model))
             session.selected_profile_model
         else
@@ -95,9 +80,7 @@ fn useCase(
     }, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// GET /api/llm/session/:session_id
 pub fn sessionGetHandler(
@@ -148,9 +131,7 @@ pub fn sessionGetHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = json });
 }
 
-// =====================================================================
 // Tests — workspace_id resolution through the useCase (in-memory DB)
-// =====================================================================
 
 const testing = std.testing;
 
@@ -168,8 +149,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Full column set so llm_history.getSession's primary SELECT
-    // succeeds (no legacy fallback).
+    // Full column set so llm_history.getSession's primary SELECT succeeds (no legacy fallback).
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,

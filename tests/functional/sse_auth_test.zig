@@ -1,5 +1,4 @@
-// SSE auth-rejection must terminate the stream, never hang it. Zig port of
-// `tests/functional/sse_auth_test.py` (same test names, same order).
+// SSE auth-rejection must terminate the stream, never hang it.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,8 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Python `_read_sse(..., timeout_s=10.0)` — the unauth + unknown-channel
-/// budgets.
+/// Python `_read_sse(..., timeout_s=10.0)` — the unauth + unknown-channel budgets.
 const reject_timeout_ms: i64 = 10_000;
 /// Python `_read_sse(..., timeout_s=8.0)` — the authed happy path.
 const authed_timeout_ms: i64 = 8_000;
@@ -35,20 +33,16 @@ const SseEvent = struct {
     }
 };
 
-/// An open SSE connection plus the state the reader thread fills in. The test
-/// thread owns the pointer; the reader thread writes into it. `stop` / `done`
-/// are the cross-thread handshake — see `readEvents`.
+/// An open SSE connection plus the state the reader thread fills in.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its
-    /// address outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *std.Io.Reader = undefined,
     status: u16 = 0,
-    /// Duplicated from the response head (which `resp.reader()`
-    /// invalidates).
+    /// Duplicated from the response head (which `resp.reader()` invalidates).
     content_type: []u8 = "",
     /// Set by the test thread to release the reader.
     stop: std.atomic.Value(bool) = .init(false),
@@ -57,12 +51,9 @@ const SseStream = struct {
     /// Frames parsed so far.
     mutex: std.Io.Mutex = .init,
     events: std.ArrayList(SseEvent) = .empty,
-    /// Set by the reader thread when the stream ended cleanly. This is
-    /// the assertion every test here makes — a rejected stream must
-    /// CLOSE, not merely stop emitting.
+    /// Set by the reader thread when the stream ended cleanly.
     eof: bool = false,
-    /// Set by the reader thread when the stream errored or ended for a
-    /// reason other than EOF.
+    /// Set by the reader thread when the stream errored or ended for a reason other than EOF.
     read_error: ?[]u8 = null,
 
     fn deinit(self: *SseStream) void {
@@ -76,21 +67,18 @@ const SseStream = struct {
     }
 };
 
-/// Open `GET /api/events?channels=<channels>` and capture the response
-/// head. Caller owns the returned pointer and must `deinit` it.
+/// Open `GET /api/events?channels=<channels>` and capture the response head.
 fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
     defer gpa.free(url);
 
-    // `extra_headers` borrows the array for the duration of the request, so
-    // the array must stay alive until `receiveHead` returns.
+    // `extra_headers` borrows the array for the duration of the request, so the array must stay alive until `receiveHead` returns.
     var extra: [2]std.http.Header = undefined;
     extra[0] = .{ .name = "Accept", .value = "text/event-stream" };
     const header_count: usize = if (cookie) |c| blk: {
@@ -114,9 +102,7 @@ fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*SseStream {
     var resp = try s.req.receiveHead(&.{});
     s.status = @intFromEnum(resp.head.status);
 
-    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`,
-    // so touching `head` afterwards is a use-after-free (a general
-    // protection fault inside `mem.eqlBytes`).
+    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so touching `head` afterwards is a use-after-free (a general protection fault inside …
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -131,8 +117,7 @@ fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
-/// occurs. Runs on its own thread.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -148,8 +133,7 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // ONE LINE, not the whole stream: this is what makes the read
-        // incremental.
+        // ONE LINE, not the whole stream: this is what makes the read incremental.
         const maybe_line = reader.takeDelimiter('\n') catch |err| {
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
@@ -161,8 +145,7 @@ fn readEvents(s: *SseStream) void {
             s.mutex.unlock(io);
             return;
         } orelse {
-            // `null` == the server closed the stream cleanly. This is
-            // the EOF every assertion in this suite is about.
+            // `null` == the server closed the stream cleanly.
             s.mutex.lockUncancelable(io);
             s.eof = true;
             s.read_error = gpa.dupe(u8, "stream ended") catch null;
@@ -174,9 +157,7 @@ fn readEvents(s: *SseStream) void {
         if (line.len == 0) {
             // Blank line → dispatch whatever we accumulated.
             if (current_name) |name| {
-                // `std.mem.join` allocates an owned buffer but types it
-                // `[]const u8`; the constCast is sound because the
-                // buffer is ours to hand to `gpa.free`.
+                // `std.mem.join` allocates an owned buffer but types it `[]const u8`; the constCast is sound because the buffer is ours to hand to `gpa.free`.
                 const joined = std.mem.join(gpa, "\n", data_lines.items) catch "";
                 const data: []u8 = @constCast(joined);
                 s.mutex.lockUncancelable(io);
@@ -206,13 +187,11 @@ fn readEvents(s: *SseStream) void {
                 continue;
             };
         }
-        // `:` comment lines and unknown fields are ignored, matching
-        // both the browser EventSource parser and the Python reader.
+        // `:` comment lines and unknown fields are ignored, matching both the browser EventSource parser and the Python reader.
     }
 }
 
-/// Spawn the reader thread and register the defer that makes every
-/// early-return path safe.
+/// Spawn the reader thread and register the defer that makes every early-return path safe.
 fn spawnReader(s: *SseStream) !std.Thread {
     const t = try std.Thread.spawn(.{}, readEvents, .{s});
     errdefer t.join();
@@ -220,15 +199,12 @@ fn spawnReader(s: *SseStream) !std.Thread {
 }
 
 /// Release a blocked `readEvents` by shutting the socket's read side.
-/// `shutdown(SHUT_RD)` makes the pending `readv` return 0, which the net
-/// layer reports as `error.EndOfStream`, and the reader exits.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Wait until an event named `want` is in `s.events`, or the deadline
-/// passes. Returns true iff the event was seen.
+/// Wait until an event named `want` is in `s.events`, or the deadline passes.
 fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -251,7 +227,6 @@ fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
 }
 
 /// Wait until the reader thread stops (EOF, error, or deadline).
-/// Returns true iff the stream finished before the deadline.
 fn waitForEnd(s: *SseStream, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -325,8 +300,7 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         std.debug.print("login sent no pabrik_session cookie: {s}\n", .{set_cookie});
         return error.TestUnexpectedResult;
     }
-    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is
-    // the text BETWEEN the name and the next `;`.
+    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is the text BETWEEN the name and the next `;`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const raw_token = harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -346,8 +320,7 @@ test "unauth_sse_terminates_with_auth_error" {
     const s = try openSse(h.port, "workers", null);
     defer s.deinit();
 
-    // The headers are sent before the handler runs, so even a rejection
-    // arrives as a 200 `text/event-stream`.
+    // The headers are sent before the handler runs, so even a rejection arrives as a 200 `text/event-stream`.
     if (s.status != 200 or std.mem.indexOf(u8, s.content_type, "text/event-stream") == null) {
         std.debug.print("expected an SSE 200 handshake, got {d} {s}\n", .{ s.status, s.content_type });
         return error.TestUnexpectedResult;
@@ -359,9 +332,7 @@ test "unauth_sse_terminates_with_auth_error" {
         reader.join();
     }
 
-    // Wait for the STREAM to end rather than for a single event: the
-    // contract is "auth_error, then EOF", and a stream that emits
-    // auth_error and then keeps pinging is exactly the regression.
+    // Wait for the STREAM to end rather than for a single event: the contract is "auth_error, then EOF", and a stream that emits auth_error and then keeps pinging is …
     const ended = waitForEnd(s, reject_timeout_ms);
 
     if (!sawEvent(s, "auth_error")) {

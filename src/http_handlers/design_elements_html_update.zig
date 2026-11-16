@@ -1,5 +1,4 @@
-//! `PATCH
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,15 +6,12 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const design_model = @import("../modules/agent/loop/design_model.zig");
 
-/// HTTP request body for HTML-update. The only required field is
-/// `html` (the new body).
+/// HTTP request body for HTML-update.
 const UpdateHtmlBody = struct {
     html: []const u8,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code + message via two exhaustive
-/// switches.
+/// Domain-level error set for `useCase`.
 pub const DesignElementHtmlUpdateError = error{
     /// `:element_id` path param was missing or empty.
     ElementIdRequired,
@@ -23,13 +19,11 @@ pub const DesignElementHtmlUpdateError = error{
     HtmlRequired,
     /// `design_model.updateElement` returned `ElementNotFound`.
     ElementNotFound,
-    /// `updateElement` returned `FileWriteFailed` (atomic rename
-    /// of the on-disk HTML file failed).
+    /// `updateElement` returned `FileWriteFailed` (atomic rename of the on-disk HTML file failed).
     FileWriteFailed,
     /// `updateElement` failed for some other DB reason.
     DbError,
-    /// Update succeeded but the element wasn't visible in the
-    /// subsequent `getElement` (consistency violation).
+    /// Update succeeded but the element wasn't visible in the subsequent `getElement` (consistency violation).
     ElementNotVisible,
     /// `allocator.dupe` failed while building the output struct.
     OutOfMemory,
@@ -41,9 +35,7 @@ pub const UpdateHtmlOutput = struct {
     element: design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -70,9 +62,7 @@ fn useCase(
     return .{ .element = element };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designElementsHtmlUpdateHandler(
     ctx: gserverz.HttpContext,
@@ -143,8 +133,7 @@ pub fn designElementsHtmlUpdateHandler(
     // Free the useCase's heap-owned element slices (no-op on arena).
     defer design_model.freeElement(allocator, output.element);
 
-    // 4. Build the success response (200 OK — PATCH that updates
-    //    an existing resource).
+    // 4.
     return res.jsonResponse(.{
         .status_code = 200,
         .data = try std.json.Stringify.valueAlloc(

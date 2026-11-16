@@ -1,6 +1,4 @@
-// src/apps/desktop/src/__tests__/fakes/fakeTabChannel.ts In-process stand-in for
-// `BroadcastChannel`, so several "tabs" can be simulated inside one vitest worker: * instances
-// created with the same name see each other's messages, * the sender never receives its own.
+// src/apps/desktop/src/__tests__/fakes/fakeTabChannel.ts In-process stand-in for `BroadcastChannel`, so several "tabs" can be simulated inside one vitest worker …
 import type { TabChannelLike } from '../../helpers/sseTabChannel'
 
 type MessageListener = (event: { data: unknown }) => void
@@ -113,8 +111,7 @@ export async function waitFor(pred: () => boolean, timeoutMs = 600): Promise<voi
   while (!pred() && Date.now() - start < timeoutMs) await settle(5)
 }
 
-/**  * A minimal "another tab is already leading" participant: answers `who` with `here` and emits
- * periodic `beat`s, so the tab under test stays a follower. Returns a stop function. */
+/** A minimal "another tab is already leading" participant: answers `who` with `here` and emits periodic `beat`s, so the tab under test stays a follower. */
 export function fakeForeignLeader(
   hub: FakeTabChannelHub,
   channelName: string,

@@ -1,6 +1,4 @@
-// Functional wire tests for `POST /api/git/commit/create`. The Files tab's
-// commit box (SidebarDiffPanel) talks to exactly one endpoint and this file
-// proves the exact wire payloads: 1.
+// Functional wire tests for `POST /api/git/commit/create`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Run `git` with a fixed identity so the fixture never depends on the
-/// machine's global git config (which CI does not set).
+/// Run `git` with a fixed identity so the fixture never depends on the machine's global git config (which CI does not set).
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -49,9 +44,7 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Percent-encode a query component the way `encodeURIComponent` does
-/// for the characters this suite sends (space, quotes, `&`, `=`, `%`).
-/// Unreserved bytes pass through untouched.
+/// Percent-encode a query component the way `encodeURIComponent` does for the characters this suite sends (space, quotes, `&`, `=`, `%`).
 fn encodeComponent(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     const hex = "0123456789ABCDEF";
     var out: std.ArrayList(u8) = .empty;
@@ -68,8 +61,7 @@ fn encodeComponent(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     return out.toOwnedSlice(alloc);
 }
 
-/// Build the `commit-proj` fixture: one commit ("first") plus one staged
-/// (uncommitted) change to `a.txt`. Returns the owned repo path.
+/// Build the `commit-proj` fixture: one commit ("first") plus one staged (uncommitted) change to `a.txt`.
 fn buildCommitRepo(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "commit-proj" });
     errdefer gpa.free(repo);
@@ -80,9 +72,7 @@ fn buildCommitRepo(scratch: []const u8) ![]u8 {
 
     try git(scratch, &.{ "init", "--initial-branch=main", "--quiet", repo });
 
-    // Repo-local identity: the server commits as the repo's configured user
-    // (it must not invent one), so the fixture provides it — the same three
-    // writes the unit-test fixture in git_commit.zig makes.
+    // Repo-local identity: the server commits as the repo's configured user (it must not invent one), so the fixture provides it — the same three writes the …
     try git(repo, &.{ "config", "user.email", "t@t" });
     try git(repo, &.{ "config", "user.name", "Test Author" });
     try git(repo, &.{ "config", "commit.gpgsign", "false" });
@@ -98,8 +88,7 @@ fn buildCommitRepo(scratch: []const u8) ![]u8 {
     return repo;
 }
 
-/// Boot a harness plus a fixture repo, with both cleaned up on the way
-/// out. `*h`, `*scratch` and `*repo` are for the caller's `defer`s.
+/// Boot a harness plus a fixture repo, with both cleaned up on the way out.
 fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -115,8 +104,7 @@ fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
     };
 }
 
-/// Boot a harness plus a bare scratch dir (no repo). For the
-/// param-validation cases.
+/// Boot a harness plus a bare scratch dir (no repo).
 fn bootWithScratch(h: *Harness, scratch: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -126,8 +114,7 @@ fn bootWithScratch(h: *Harness, scratch: *[]u8) !void {
     };
 }
 
-/// POST /api/git/commit/create?path=<repo>&message=<msg>. Caller owns
-/// the Response. `expect` selects the accepted status codes.
+/// POST /api/git/commit/create?path=<repo>&message=<msg>.
 fn postCommit(h: *Harness, repo: ?[]const u8, message: ?[]const u8, expect: []const u16) !harness.Response {
     var url: []u8 = undefined;
     if (repo) |r| {
@@ -180,9 +167,7 @@ fn newestSubject(h: *Harness, repo: []const u8) ![]u8 {
     return gpa.dupe(u8, subject);
 }
 
-// ============================================================================
 // Test 1: happy path — staged change commits, SHA answers, history shows it
-// ============================================================================
 
 // POST commits the staged index and the new commit leads history.
 test "commit_create_happy_path" {
@@ -220,9 +205,7 @@ test "commit_create_happy_path" {
     try testing.expectEqualStrings("second via wire", subject);
 }
 
-// ============================================================================
 // Test 2: empty message is a 400, never a git subprocess
-// ============================================================================
 
 // An empty (or whitespace-only) message is rejected before git spawns.
 test "commit_create_empty_message_is_400" {
@@ -251,9 +234,7 @@ test "commit_create_empty_message_is_400" {
     try testing.expectEqualStrings("first", subject);
 }
 
-// ============================================================================
 // Test 3: missing params are 400s
-// ============================================================================
 
 // Missing path / missing message are 400s.
 test "commit_create_missing_params_are_400" {
@@ -279,12 +260,9 @@ test "commit_create_missing_params_are_400" {
     }
 }
 
-// ============================================================================
 // Test 4: clean tree is a 400 carrying git's own words
-// ============================================================================
 
-// Nothing staged: the endpoint surfaces git's "nothing to commit"
-// instead of a canned string.
+// Nothing staged: the endpoint surfaces git's "nothing to commit" instead of a canned string.
 test "commit_create_clean_tree_is_400" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;
@@ -311,12 +289,9 @@ test "commit_create_clean_tree_is_400" {
     }
 }
 
-// ============================================================================
 // Test 5: a flag-shaped message commits literally (no flag injection)
-// ============================================================================
 
-// `--help` as the message must commit with subject `--help`, not print
-// git usage: the message travels as the VALUE of `-m` over argv.
+// `--help` as the message must commit with subject `--help`, not print git usage: the message travels as the VALUE of `-m` over argv.
 test "commit_create_flag_like_message_commits_literally" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;

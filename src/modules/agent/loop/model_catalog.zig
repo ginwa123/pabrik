@@ -1,6 +1,4 @@
 //! `model_catalog` — the ONE owner of "what do we know about this model?".
-//! Source of truth: <https://models.dev/api.json> (227 providers / 8,562
-//! models when this was written).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -8,13 +6,10 @@ const Allocator = std.mem.Allocator;
 /// Where the catalog comes from. Shown in the UI next to any resolved number.
 pub const SOURCE_URL = "https://models.dev/api.json";
 
-/// Bumped when the cache shape changes. A cache written by another schema is
-/// rejected (loaded as an error) rather than mis-parsed.
+/// Bumped when the cache shape changes.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// The `reasoning_effort` values pabrik can actually put on the wire
-/// (`parse_thinking.parseReasoningEffort`). models.dev advertises
-/// model-specific sets — DeepSeek V4.1 Flash offers `low | high | max` — so
+/// The `reasoning_effort` values pabrik can actually put on the wire (`parse_thinking.parseReasoningEffort`). models.dev advertises model-specific sets — DeepSeek …
 pub const SENDABLE_EFFORT_VALUES = [_][]const u8{ "low", "medium", "high", "auto" };
 
 /// What kind of extended-reasoning control a model exposes.
@@ -44,14 +39,11 @@ pub const Cost = struct { input: f64 = 0, output: f64 = 0 };
 pub const ProviderInfo = struct {
     id: []const u8,
     name: []const u8,
-    /// models.dev `provider.api`. EMPTY for 25 of 227 providers — `anthropic`
-    /// is one of them — so an empty base URL is a real state, not a bug.
+    /// models.dev `provider.api`.
     base_url: []const u8 = "",
-    /// Derived from `provider.npm`: `anthropic` iff the npm package is
-    /// Anthropic's (or the Vertex-Anthropic alias), else `openai`.
+    /// Derived from `provider.npm`: `anthropic` iff the npm package is Anthropic's (or the Vertex-Anthropic alias), else `openai`.
     url_style: []const u8 = "openai",
-    /// models.dev `provider.env`, e.g. `{"DEEPSEEK_API_KEY"}`. Documentation
-    /// for the key field; pabrik never reads the environment for it.
+    /// models.dev `provider.env`, e.g. `{"DEEPSEEK_API_KEY"}`.
     env: []const []const u8 = &.{},
 };
 
@@ -76,24 +68,16 @@ pub const ModelFacts = struct {
     cost: ?Cost = null,
 };
 
-// ============================================================================
 // models.dev's own payload shape — only the fields pabrik consumes.
 
-/// ONE `reasoning_options` entry. Every field below is deliberately LOOSE: a
-/// strict reading rejected the whole 5.7 MB payload over one hostile row, and an
-/// absent catalog is worse than a slightly incomplete fact about it.
+/// ONE `reasoning_options` entry.
 pub const RawReasoningOption = struct {
     @"type": ?[]const u8 = null,
-    /// SIGNED on purpose: models.dev writes `-1` for "no minimum" (nvidia
-    /// nemotron-3-nano-omni). Read as `u32` this ONE row failed the whole parse;
-    /// `budgetMinRaw` turns a non-positive minimum into "no minimum".
+    /// SIGNED on purpose: models.dev writes `-1` for "no minimum" (nvidia nemotron-3-nano-omni).
     min: ?i64 = null,
-    /// `null` ENTRIES occur, not just a null ARRAY: `sarvam-30b` ships
-    /// `[null,"low","medium","high"]`, which `[]const []const u8` cannot hold.
-    /// The trim skips the nulls instead of failing the parse.
+    /// `null` ENTRIES occur, not just a null ARRAY: `sarvam-30b` ships `[null,"low","medium","high"]`, which `[]const []const u8` cannot hold.
     values: ?[]const ?[]const u8 = null,
-    // models.dev also sends a `max` (the ceiling, e.g. 32768); pabrik has no use
-    // for it, and `ignore_unknown_fields` drops it.
+    // models.dev also sends a `max` (the ceiling, e.g. 32768); pabrik has no use for it, and `ignore_unknown_fields` drops it.
 };
 
 pub const RawLimit = struct { context: ?u32 = null, output: ?u32 = null };
@@ -126,9 +110,7 @@ pub const RawProvider = struct {
 
 pub const RawPayload = std.json.ArrayHashMap(RawProvider);
 
-// ============================================================================
 // The cache file's own shape (ours, not models.dev's).
-// ============================================================================
 
 pub const CacheCost = struct { input: ?f64 = null, output: ?f64 = null };
 
@@ -158,9 +140,7 @@ pub const CacheFile = struct {
     providers: ?std.json.ArrayHashMap(CacheProvider) = null,
 };
 
-// ============================================================================
 // Catalog
-// ============================================================================
 
 pub const CatalogError = error{
     /// The cache exists but is not our JSON at all.
@@ -170,8 +150,7 @@ pub const CatalogError = error{
     OutOfMemory,
 };
 
-/// A loaded catalog. Owns every string it hands out — `deinit` frees them all
-/// through one arena.
+/// A loaded catalog.
 pub const Catalog = struct {
     arena: std.heap.ArenaAllocator,
     fetched_at_ms: i64 = 0,
@@ -192,9 +171,7 @@ pub const Catalog = struct {
         self.* = undefined;
     }
 
-    /// Where every string this catalog hands out lives. Public because the
-    /// DB store builds a Catalog row by row and must not duplicate the
-    /// indexing rules in `putProvider` / `putModel`.
+    /// Where every string this catalog hands out lives.
     pub fn allocator(self: *Catalog) Allocator {
         return self.arena.allocator();
     }
@@ -213,8 +190,7 @@ pub const Catalog = struct {
         return self.providers.get(key);
     }
 
-    /// Add one provider. Strings are duped into the catalog's arena, so the
-    /// caller keeps ownership of what it passed in.
+    /// Add one provider.
     pub fn putProvider(self: *Catalog, info: ProviderInfo) !void {
         const a = self.allocator();
         const id = try lowerAlloc(a, info.id);
@@ -228,8 +204,7 @@ pub const Catalog = struct {
         try self.providers.put(a, id, stored);
     }
 
-    /// Add one model and index it under `provider/model` AND under its bare
-    /// name.
+    /// Add one model and index it under `provider/model` AND under its bare name.
     pub fn putModel(self: *Catalog, facts: ModelFacts) !void {
         const a = self.allocator();
         const model_id = try lowerAlloc(a, facts.model_id);
@@ -264,9 +239,7 @@ pub const Catalog = struct {
         self.source = try a.dupe(u8, source);
     }
 
-    /// Resolve one model. `provider_or_null` is the provider id from the
-    /// catalog; pass `null`/`""` when the user typed a bare model name.
-    /// Returns `null` for anything unknown — never a fabricated window.
+    /// Resolve one model.
     pub fn lookup(self: *const Catalog, provider_or_null: ?[]const u8, model: []const u8) ?*const ModelFacts {
         if (model.len == 0) return null;
 
@@ -279,9 +252,7 @@ pub const Catalog = struct {
                         if (self.lookupQualified(pl, ml)) |facts| return facts;
                     }
                 }
-                // A named provider that does not carry this model must NOT fall
-                // through to a different provider's copy — that would silently
-                // answer for the wrong endpoint.
+                // A named provider that does not carry this model must NOT fall through to a different provider's copy — that would silently answer for the wrong endpoint.
                 if (self.providers.contains(lowerInto(&pbuf, p) orelse return null)) return null;
             }
         }
@@ -361,13 +332,9 @@ pub const Catalog = struct {
     }
 };
 
-// ============================================================================
 // Trim — models.dev's payload -> our shape
-// ============================================================================
 
-/// models.dev's payload -> our compact shape. `ignore_unknown_fields` is what
-/// makes this a trim: the raw document is ~5.45 MB and carries ~20 fields per
-/// model, of which pabrik consumes seven.
+/// models.dev's payload -> our compact shape.
 pub fn trimRawPayload(alloc: Allocator, body: []const u8, fetched_at_ms: i64) ![]u8 {
     var parsed = std.json.parseFromSlice(RawPayload, alloc, body, .{
         .ignore_unknown_fields = true,
@@ -399,8 +366,7 @@ pub fn trimRawPayload(alloc: Allocator, body: []const u8, fetched_at_ms: i64) ![
         try w.writeAll(":{\"name\":");
         try std.json.Stringify.encodeJsonString(rp.name orelse pid, .{}, w);
 
-        // Only emit `base_url` when the provider actually has one — 25 of 227
-        // do not, and an absent key is the honest encoding of that.
+        // Only emit `base_url` when the provider actually has one — 25 of 227 do not, and an absent key is the honest encoding of that.
         if (rp.api) |api| {
             if (api.len > 0) {
                 try w.writeAll(",\"base_url\":");
@@ -449,8 +415,7 @@ pub fn trimRawPayload(alloc: Allocator, body: []const u8, fetched_at_ms: i64) ![
                 try std.json.Stringify.encodeJsonString(reasoningKindName(kind), .{}, w);
 
                 if (effortValuesRaw(rm)) |vals| {
-                    // Null entries are dropped, not encoded: a `null` is not an
-                    // effort level and the cache's own shape is `[]const []const u8`.
+                    // Null entries are dropped, not encoded: a `null` is not an effort level and the cache's own shape is `[]const []const u8`.
                     var kept: usize = 0;
                     for (vals) |maybe| {
                         if (maybe != null) kept += 1;
@@ -491,9 +456,7 @@ pub fn trimRawPayload(alloc: Allocator, body: []const u8, fetched_at_ms: i64) ![
     return aw.toOwnedSlice();
 }
 
-/// models.dev's `reasoning_options` -> our `ReasoningKind`. A model can declare
-/// both an effort control and a token budget; `reasoning: true` with no options
-/// at all is a plain on/off toggle.
+/// models.dev's `reasoning_options` -> our `ReasoningKind`.
 fn reasoningFromRaw(m: RawModel) ReasoningKind {
     const opts = m.reasoning_options orelse &.{};
     var has_effort = false;
@@ -510,8 +473,7 @@ fn reasoningFromRaw(m: RawModel) ReasoningKind {
     return .none;
 }
 
-/// The model's advertised effort values, nulls included: models.dev puts a bare
-/// `null` in this array (`sarvam/sarvam-30b`), and the caller drops it.
+/// The model's advertised effort values, nulls included: models.dev puts a bare `null` in this array (`sarvam/sarvam-30b`), and the caller drops it.
 fn effortValuesRaw(m: RawModel) ?[]const ?[]const u8 {
     const opts = m.reasoning_options orelse return null;
     for (opts) |o| {
@@ -521,9 +483,7 @@ fn effortValuesRaw(m: RawModel) ?[]const ?[]const u8 {
     return null;
 }
 
-/// The model's budget floor. models.dev types this SIGNED and uses `-1` for
-/// "none" (nvidia nemotron); anything that cannot be a token floor becomes
-/// `null` — "the catalog does not know" — never a clamped lie.
+/// The model's budget floor. models.dev types this SIGNED and uses `-1` for "none" (nvidia nemotron); anything that cannot be a token floor becomes `null` — "the …
 fn budgetMinRaw(m: RawModel) ?u32 {
     const opts = m.reasoning_options orelse return null;
     for (opts) |o| {
@@ -536,9 +496,7 @@ fn budgetMinRaw(m: RawModel) ?u32 {
     return null;
 }
 
-// ============================================================================
 // helpers
-// ============================================================================
 
 /// Stored tag name -> kind. Public because the DB store round-trips it.
 pub fn parseReasoningKind(raw: ?[]const u8) ReasoningKind {
@@ -554,9 +512,7 @@ pub fn reasoningKindName(k: ReasoningKind) []const u8 {
     return @tagName(k);
 }
 
-/// ASCII-lowercase `src` into `buf`. `null` when it does not fit — callers
-/// treat that as "no match" rather than allocating, so lookups stay allocation
-/// free.
+/// ASCII-lowercase `src` into `buf`.
 fn lowerInto(buf: []u8, src: []const u8) ?[]u8 {
     if (src.len > buf.len) return null;
     for (src, 0..) |c, i| buf[i] = std.ascii.toLower(c);
@@ -594,7 +550,6 @@ fn dupeStrings(a: Allocator, src: ?[]const []const u8) ![]const []const u8 {
 }
 
 /// The model's advertised effort values, filtered to the ones pabrik can send.
-/// Order follows the model's own list, so the UI can name them in that order.
 fn intersectSendable(a: Allocator, values: []const []const u8) ![]const []const u8 {
     var n: usize = 0;
     for (values) |v| {
@@ -620,23 +575,17 @@ fn intersectSendable(a: Allocator, values: []const []const u8) ![]const []const 
     return out;
 }
 
-// ============================================================================
 // Trim + cache file
-// ============================================================================
 
 pub fn freeCatalog(backing: Allocator, cat: *Catalog) void {
     cat.deinit();
     backing.destroy(cat);
 }
 
-// ============================================================================
-// Process-wide holder The compaction decision is made deep inside the
-// workflow loop, which has no request context to thread a catalog through.
+// Process-wide holder The compaction decision is made deep inside the workflow loop, which has no request context to thread a catalog through.
 
 var singleton: ?*Catalog = null;
-/// Retired catalogs are deliberately NOT freed on swap: a refresh handler
-/// swaps the pointer while a workflow thread may still be reading through the
-/// old one, and a use-after-free is not worth a bounded-memory win.
+/// Retired catalogs are deliberately NOT freed on swap: a refresh handler swaps the pointer while a workflow thread may still be reading through the old one, and …
 var retired: std.ArrayList(*Catalog) = .empty;
 var retired_owner: ?Allocator = null;
 
@@ -644,8 +593,7 @@ pub fn getSingleton() ?*const Catalog {
     return singleton;
 }
 
-/// Install `cat` (may be null). Any previously installed catalog is retired,
-/// never freed — see the note above.
+/// Install `cat` (may be null).
 pub fn setSingleton(cat: ?*Catalog, owner: Allocator) void {
     if (singleton) |old| {
         retired.append(owner, old) catch {};
@@ -658,8 +606,7 @@ pub fn retireCount() usize {
     return retired.items.len;
 }
 
-/// Tear the holder down. For tests and process shutdown only — never called
-/// from a request path.
+/// Tear the holder down.
 pub fn deinitSingleton(owner: Allocator) void {
     if (singleton) |cur| freeCatalog(owner, cur);
     singleton = null;
@@ -676,14 +623,11 @@ pub fn urlStyleForNpm(npm: ?[]const u8) []const u8 {
     return "openai";
 }
 
-// ============================================================================
 // Tests These exercise the PURE half only — parse + lookup.
 
 const testing = std.testing;
 
-/// Shaped exactly like a real cache file. `deepseek-flash` deliberately appears
-/// under TWO providers with the same window, and `anthropic` deliberately has
-/// no `base_url` — both states occur in the real catalog.
+/// Shaped exactly like a real cache file.
 const FIXTURE =
     \\{
     \\  "schema": 1,
@@ -778,12 +722,10 @@ test "ModelCatalog: a KNOWN provider that lacks the model does not fall through"
     var cat = try Catalog.fromCacheJson(testing.allocator, FIXTURE);
     defer cat.deinit();
 
-    // `anthropic` exists but ships no `deepseek-flash`. Answering with
-    // DeepSeek's copy would silently describe the wrong endpoint.
+    // `anthropic` exists but ships no `deepseek-flash`.
     try testing.expect(cat.lookup("anthropic", "deepseek-flash") == null);
 
-    // An UNKNOWN provider id is a different case: the user typed a custom
-    // provider, so the bare-name match is the best available answer.
+    // An UNKNOWN provider id is a different case: the user typed a custom provider, so the bare-name match is the best available answer.
     const via_unknown = cat.lookup("my-self-hosted", "deepseek-flash") orelse return error.TestUnexpectedResult;
     try testing.expectEqualStrings("deepseek", via_unknown.provider_id);
 }
@@ -837,8 +779,7 @@ test "ModelCatalog: effort values are intersected with what pabrik can send" {
     try testing.expect(m.reasoning.hasEffort());
     try testing.expect(!m.reasoning.hasBudget());
 
-    // The model advertises three; pabrik speaks four. `max` is not one of them,
-    // so it is reported to the user but never offered for sending.
+    // The model advertises three; pabrik speaks four.
     try testing.expectEqual(@as(usize, 3), m.effort_values.len);
     try testing.expectEqualStrings("max", m.effort_values[2]);
     try testing.expectEqual(@as(usize, 2), m.effort_values_sendable.len);
@@ -877,8 +818,7 @@ test "ModelCatalog: an empty provider map is a VALID empty catalog" {
     try testing.expect(cat.lookup(null, "anything") == null);
 }
 
-/// Shaped like models.dev's OWN api.json — deliberately carrying the fields
-/// pabrik drops, so the trim test can prove they are dropped.
+/// Shaped like models.dev's OWN api.json — deliberately carrying the fields pabrik drops, so the trim test can prove they are dropped.
 const RAW_FIXTURE =
     \\{
     \\  "deepseek": {
@@ -945,8 +885,7 @@ test "ModelCatalog: trim keeps the seven fields pabrik acts on and drops the res
     const trimmed = try trimRawPayload(alloc, RAW_FIXTURE, 1_760_000_000_000);
     defer alloc.free(trimmed);
 
-    // Fields pabrik never reads must not survive the trim — that is the whole
-    // point of shipping a 2.3 MB cache instead of a 5.45 MB payload.
+    // Fields pabrik never reads must not survive the trim — that is the whole point of shipping a 2.3 MB cache instead of a 5.45 MB payload.
     for ([_][]const u8{
         "deprecated",   "canonical_model_id", "modalities",
         "open_weights", "knowledge",          "release_date",
@@ -992,8 +931,7 @@ test "ModelCatalog: trim infers the reasoning shape, including a bare toggle" {
     try testing.expectEqual(ReasoningKind.none, p.reasoning);
     try testing.expectEqual(@as(u32, 8000), p.context_window.?);
 
-    // Effort + toggle together is still an effort control: the toggle is
-    // pabrik's own `thinking` field, which the effort dropdown does not replace.
+    // Effort + toggle together is still an effort control: the toggle is pabrik's own `thinking` field, which the effort dropdown does not replace.
     const d = cat.lookup("deepseek", "deepseek-flash") orelse return error.TestUnexpectedResult;
     try testing.expectEqual(ReasoningKind.effort, d.reasoning);
 }
@@ -1005,9 +943,7 @@ test "ModelCatalog: trim rejects a payload that is not models.dev JSON" {
     try testing.expectError(error.InvalidPayloadJson, trimRawPayload(testing.allocator, "{\"deepseek\":{\"models\":", 0));
 }
 
-/// Two REAL models.dev rows, copied verbatim from the 2026-10-16 payload, that
-/// used to reject the whole document. `raw` stays a string literal so the exact
-/// bytes under test are visible in the test.
+/// Two REAL models.dev rows, copied verbatim from the 2026-10-16 payload, that used to reject the whole document.
 const RAW_HOSTILE_FIXTURE =
     \\{
     \\  "sarvam": {
@@ -1041,8 +977,7 @@ const RAW_HOSTILE_FIXTURE =
 test "ModelCatalog: trim survives the two real rows that used to blank the catalog" {
     const alloc = testing.allocator;
 
-    // WHY (2026-10-16): these two rows failed the ENTIRE payload's parse, which
-    // is why the DB stayed empty and every agent answered "no catalog yet".
+    // WHY (2026-10-16): these two rows failed the ENTIRE payload's parse, which is why the DB stayed empty and every agent answered "no catalog yet".
     const trimmed = try trimRawPayload(alloc, RAW_HOSTILE_FIXTURE, 0);
     defer alloc.free(trimmed);
 
@@ -1062,8 +997,7 @@ test "ModelCatalog: trim survives the two real rows that used to blank the catal
     try testing.expectEqualStrings("high", sarvam.effort_values[2]);
     try testing.expectEqual(@as(u32, 131_072), sarvam.context_window.?);
 
-    // A non-positive floor is "the catalog does not know a floor" — not a parse
-    // failure, and not a clamped `1` either.
+    // A non-positive floor is "the catalog does not know a floor" — not a parse failure, and not a clamped `1` either.
     const nvidia = cat.lookup("nvidia", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning") orelse
         return error.TestUnexpectedResult;
     try testing.expectEqual(ReasoningKind.budget_tokens, nvidia.reasoning);
@@ -1087,8 +1021,7 @@ test "ModelCatalog: installing a catalog retires the previous one instead of fre
     try testing.expect(getSingleton().?.lookup("deepseek", "deepseek-flash") != null);
 
     setSingleton(second, alloc);
-    // The swap is visible AND the old catalog was retired, not freed — a
-    // workflow thread may still be reading through it.
+    // The swap is visible AND the old catalog was retired, not freed — a workflow thread may still be reading through it.
     try testing.expectEqual(@as(usize, before + 1), retireCount());
     try testing.expect(getSingleton().? == second);
 

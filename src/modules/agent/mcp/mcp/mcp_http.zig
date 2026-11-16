@@ -1,6 +1,4 @@
-//! MCP Streamable HTTP transport for the agent AI (Zig client). This file
-//! contains everything HTTP-specific for the agent's MCP client, mirroring
-//! the stdio transport's `mcp_stdio.zig`: 1.
+//! MCP Streamable HTTP transport for the agent AI (Zig client).
 
 const std = @import("std");
 const mcp_scope = @import("mcp_scope.zig");
@@ -9,16 +7,12 @@ const mcp_types = @import("mcp_types.zig");
 const mcp_oauth = @import("mcp_oauth.zig");
 const custom_http_client_mod = @import("kabelweb").client;
 
-// ============================================================================
 // SECTION A — MCP spec constants (pub so the registry in Section D can read)
-// ============================================================================
 
 /// Current Streamable HTTP protocol revision we implement.
 pub const PROTOCOL_VERSION: []const u8 = "2025-11-25";
 
 /// Spec-mandated Accept header value (comma-separated, no spaces).
-/// Every request must include this so the server knows we handle BOTH
-/// `application/json` and `text/event-stream` responses.
 pub const ACCEPT_HEADER: []const u8 = "application/json, text/event-stream";
 
 pub const HttpError = error{
@@ -31,12 +25,9 @@ pub const HttpError = error{
     Unauthorized,              // 401 — the caller must run the OAuth flow
 };
 
-// ============================================================================
 // SECTION B — SSE event parser (private to this file)
-// ============================================================================
 
-/// One parsed SSE event. All fields are freshly allocated slices owned by the
-/// caller (free with `allocator.free`).
+/// One parsed SSE event.
 pub const SseEvent = struct {
     event: []const u8 = "",
     data: []const u8 = "",
@@ -44,12 +35,9 @@ pub const SseEvent = struct {
     retry_ms: ?u64 = null,
 };
 
-/// Read one SSE event from a line-buffered reader. Returns null on EOF (clean
-/// stream end).
+/// Read one SSE event from a line-buffered reader.
 fn readSseEvent(allocator: std.mem.Allocator, reader: anytype) !?SseEvent {
-    // Per-event accumulators. Reset on every event boundary (blank line). On
-    // EOF, if we have any partial event (a `data:` line in flight), we flush
-    // it; otherwise we return null to signal clean stream end.
+    // Per-event accumulators.
     var event_buf = std.ArrayList(u8).empty;
     var id_buf = std.ArrayList(u8).empty;
     var data_buf = std.ArrayList(u8).empty;
@@ -80,9 +68,7 @@ fn readSseEvent(allocator: std.mem.Allocator, reader: anytype) !?SseEvent {
                         .retry_ms = retry_ms,
                     };
                 }
-                // No data: this was a comment-only event. Per SSE spec,
-                // clients should still process id/retry but we don't
-                // have anything to return. Continue.
+                // No data: this was a comment-only event.
                 event_buf.clearRetainingCapacity();
                 id_buf.clearRetainingCapacity();
                 data_buf.clearRetainingCapacity();
@@ -97,12 +83,10 @@ fn readSseEvent(allocator: std.mem.Allocator, reader: anytype) !?SseEvent {
 
         in_event = true;
 
-        // Dispatch on the first colon. Field names are case-insensitive
-        // per the SSE spec — use std.ascii.startsWithIgnoreCase.
+        // Dispatch on the first colon.
         if (std.ascii.startsWithIgnoreCase(line, "data:")) {
             saw_data = true;
-            // Per SSE spec, the value is everything after the first
-            // colon minus a single leading space (if present).
+            // Per SSE spec, the value is everything after the first colon minus a single leading space (if present).
             var value = line["data:".len..];
             if (value.len > 0 and value[0] == ' ') value = value[1..];
             if (data_buf.items.len > 0) try data_buf.append(allocator, '\n');
@@ -137,9 +121,7 @@ fn readSseEvent(allocator: std.mem.Allocator, reader: anytype) !?SseEvent {
     return null;
 }
 
-// ============================================================================
 // SECTION C — MCP request-header builder (private to this file)
-// ============================================================================
 
 /// Returns true iff every byte of `s` is in the ASCII range (0..127).
 fn isAllAscii(s: []const u8) bool {
@@ -149,17 +131,14 @@ fn isAllAscii(s: []const u8) bool {
     return true;
 }
 
-/// Build the request headers for an MCP Streamable HTTP POST. `tool_name` is
-/// only used for `tools/call` — pass "" for methods that don't take a name
-/// (initialize, ping, tools/list, etc.).
+/// Build the request headers for an MCP Streamable HTTP POST.
 fn buildMcpHeaders(
     allocator: std.mem.Allocator,
     method: []const u8,
     tool_name: []const u8,
     custom_headers: []const custom_http_client_mod.Header,
 ) ![]custom_http_client_mod.Header {
-    // 4 spec headers always present. We MAY add a 5th (Mcp-Name) if tool_name
-    // is non-empty AND ASCII.
+    // 4 spec headers always present.
     const include_name = tool_name.len > 0 and isAllAscii(tool_name);
     const spec_count: usize = if (include_name) 5 else 4;
     const total = spec_count + custom_headers.len;
@@ -177,8 +156,6 @@ fn buildMcpHeaders(
     }
 
     // User-supplied custom headers (LAST in the slice, after the spec ones).
-    // Note we don't dedupe — libcurl's first-match-wins handles duplicates.
-    // The spec headers above will always be the values the server sees.
     for (custom_headers, 0..) |h, i| {
         out[spec_count + i] = h;
     }
@@ -211,19 +188,14 @@ fn buildMcpHeadersWithAuth(
     return out;
 }
 
-// ============================================================================
 // SECTION D — HttpClient + HttpRegistry (arrives in Task 3)
-// ============================================================================
 
-/// One MCP Streamable HTTP client. Owns the base URL, the cached custom
-/// headers, and a `custom_http_client.Client` for connection pooling.
+/// One MCP Streamable HTTP client.
 pub const HttpClient = struct {
     allocator: std.mem.Allocator,
     url: []const u8,
     custom_headers: []const custom_http_client_mod.Header,
-    /// Lazily-initialised on first callTool/listTools. Owned by the
-    /// client; freed by deinit. NOT thread-safe; the HttpRegistry
-    /// provides the mutex.
+    /// Lazily-initialised on first callTool/listTools.
     http: custom_http_client_mod.Client,
     token_provider: ?TokenProvider = null,
     last_challenge: ?mcp_oauth.BearerChallenge = null,
@@ -265,19 +237,15 @@ pub const HttpClient = struct {
         }
     }
 
-    /// Send a `tools/call` JSON-RPC request and return the raw JSON-RPC
-    /// response body (freshly allocated; caller owns).
+    /// Send a `tools/call` JSON-RPC request and return the raw JSON-RPC response body (freshly allocated; caller owns).
     pub fn callTool(self: *Self, tool_name: []const u8, arguments_json: []const u8) ![]u8 {
-        // Minimal JSON-RPC body (NO `_meta` envelope): servers on protocol
-        // revision 2026-07-28 (e.g. context7) return `400 Invalid _meta
-        // envelope ... clientCapabilities: missing` for a 2025-11-25-shaped
+        // Minimal JSON-RPC body (NO `_meta` envelope): servers on protocol revision 2026-07-28 (e.g. context7) return `400 Invalid _meta envelope ... clientCapabilities …
         const body = try std.fmt.allocPrint(self.allocator,
             \\{{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{{"name":"{s}","arguments":{s}}}}}
         , .{ tool_name, arguments_json });
         defer self.allocator.free(body);
 
-        // Build the spec-mandated headers + per-method Mcp-Name, merged
-        // with the user's custom_headers (spec headers win).
+        // Build the spec-mandated headers + per-method Mcp-Name, merged with the user's custom_headers (spec headers win).
         const authorization = try self.authorizationHeader();
         defer if (authorization) |v| self.allocator.free(v);
         const headers = try buildMcpHeadersWithAuth(self.allocator, "tools/call", tool_name, self.custom_headers, authorization);
@@ -305,12 +273,9 @@ pub const HttpClient = struct {
         };
     }
 
-    /// Internal: dispatch on Content-Type to extract the final JSON-RPC body
-    /// from a 200 response. Both `application/json` (single object) and
-    /// `text/event-stream` (SSE stream — last event's data) are supported.
+    /// Internal: dispatch on Content-Type to extract the final JSON-RPC body from a 200 response.
     fn parseResponseBody(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
-        // Heuristic: SSE bodies start with "event:" or "data:". JSON bodies
-        // start with "{".
+        // Heuristic: SSE bodies start with "event:" or "data:".
         const trimmed = std.mem.trim(u8, body, " \r\n");
         if (std.mem.startsWith(u8, trimmed, "event:") or std.mem.startsWith(u8, trimmed, "data:")) {
             // SSE: walk events, take the last one with a data: field.
@@ -321,13 +286,9 @@ pub const HttpClient = struct {
     }
 };
 
-/// Walk an SSE response body and return the data of the LAST event
-/// that has at least one `data:` line. Multi-`data:` lines are joined
-/// with `\n` per the SSE spec.
+/// Walk an SSE response body and return the data of the LAST event that has at least one `data:` line.
 fn parseLastSseData(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
-    // NOTE: `data_lines` is per-event scratch freed at the end of each
-    // iteration, so `last_data` must NOT point into it (use-after-free: the
-    // final `dupe` can reuse the freed address and trip `@memcpy arguments
+    // NOTE: `data_lines` is per-event scratch freed at the end of each iteration, so `last_data` must NOT point into it (use-after-free: the final `dupe` can reuse …
     var last_owned: ?[]u8 = null;
     defer if (last_owned) |b| allocator.free(b);
     var blocks = std.mem.splitSequence(u8, body, "\n\n");
@@ -352,21 +313,17 @@ fn parseLastSseData(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
         }
     }
     if (last_owned) |owned| {
-        // Transfer ownership to the caller; null out so the defer
-        // above does not free it.
+        // Transfer ownership to the caller; null out so the defer above does not free it.
         last_owned = null;
         return owned;
     }
     return error.InvalidSseEvent;
 }
 
-/// Process-global cache of `HttpClient` instances, one per (tenant scope,
-/// server name). Mirrors `mcp_stdio.StdioRegistry`'s shape — lazy init, clean
-/// shutdown.
+/// Process-global cache of `HttpClient` instances, one per (tenant scope, server name).
 pub const HttpRegistry = struct {
     allocator: std.mem.Allocator,
-    /// Keys (scoped server names) and values are both allocated from the
-    /// registry's arena — they're freed when the arena deinits.
+    /// Keys (scoped server names) and values are both allocated from the registry's arena — they're freed when the arena deinits.
     arena: std.heap.ArenaAllocator,
     threaded: ?*std.Io.Threaded = null,
     entries: std.StringHashMap(Cached),
@@ -423,8 +380,7 @@ pub const HttpRegistry = struct {
         return client;
     }
 
-    /// Get the cached client for this tenant's `name`, or build a new one and
-    /// cache it. Threadsafe.
+    /// Get the cached client for this tenant's `name`, or build a new one and cache it.
     pub fn getOrConnect(
         self: *HttpRegistry,
         name: []const u8,
@@ -453,8 +409,6 @@ pub const HttpRegistry = struct {
     }
 
     /// Evict one cached client by server name (plan: mcp-fetch-once-cache).
-    /// HTTP equivalent of `StdioRegistry.markStale`: the next `getOrConnect`
-    /// rebuilds the client with the new URL/headers.
     pub fn evictName(self: *HttpRegistry, name: []const u8) void {
         mutexLock(&self.mutex);
         defer self.mutex.unlock();
@@ -479,15 +433,11 @@ pub const HttpRegistry = struct {
         defer self.mutex.unlock();
         if (self.entries.fetchRemove(name)) |kv| {
             kv.value.client.deinit();
-            // NOTE: key + client backing memory lives in the registry
-            // arena and is reclaimed at `deinit` — same as before, no
-            // per-evict free. Entries map removal is the correctness fix.
+            // NOTE: key + client backing memory lives in the registry arena and is reclaimed at `deinit` — same as before, no per-evict free.
         }
     }
 
-    // Process-global singleton. Mirrors `mcp_stdio.StdioRegistry.global`.
-    // Lives for the whole pabrik process; cleaned up via the shutdown
-    // hook in main.zig (deinitGlobal).
+    // Process-global singleton.
     var global_registry: ?HttpRegistry = null;
     var global_init_mutex: std.atomic.Mutex = .unlocked;
 
@@ -512,37 +462,28 @@ pub const HttpRegistry = struct {
     }
 };
 
-/// Spinlock helper (Zig 0.16 removed std.Thread.Mutex; use
-/// std.atomic.Mutex + spinloop — same pattern as
-/// `mcp_stdio.StdioRegistry`).
+/// Spinlock helper (Zig 0.16 removed std.Thread.Mutex; use std.atomic.Mutex + spinloop — same pattern as `mcp_stdio.StdioRegistry`).
 fn mutexLock(m: *std.atomic.Mutex) void {
     while (!m.tryLock()) std.atomic.spinLoopHint();
 }
 
-// ============================================================================
 // SECTION E — ListTools helper
-// ============================================================================
 
-/// Send a `tools/list` request to `client`, return the parsed `McpTool[]`
-/// from `result.tools`.
+/// Send a `tools/list` request to `client`, return the parsed `McpTool[]` from `result.tools`.
 pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types.McpTool {
-    // Minimal body (NO `_meta` envelope — same 2026-07-28 strictness
-    // reason as `callTool` above: a bare body gets the lenient 200).
+    // Minimal body (NO `_meta` envelope — same 2026-07-28 strictness reason as `callTool` above: a bare body gets the lenient 200).
     const body = try std.fmt.allocPrint(allocator,
         \\{{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{{}}}}
     , .{});
     defer allocator.free(body);
 
-    // Headers: same spec-mandated set as callTool, minus the
-    // Mcp-Name (tools/list doesn't take a name).
+    // Headers: same spec-mandated set as callTool, minus the Mcp-Name (tools/list doesn't take a name).
     const authorization = try client.authorizationHeader();
     defer if (authorization) |v| allocator.free(v);
     const headers = try buildMcpHeadersWithAuth(allocator, "tools/list", "", client.custom_headers, authorization);
     defer allocator.free(headers);
 
-    // POST. Response memory belongs to the client's registry arena
-    // (perform allocates from client.http.allocator), NOT the caller's
-    // run arena — free with client.allocator or the arenas mismatch.
+    // POST.
     const result = custom_http_client_mod.post(
         &client.http,
         client.url,
@@ -557,9 +498,7 @@ pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types
         return &[_]mcp_types.McpTool{};
     }
 
-    // Parse the response: unwrap SSE framing first (real servers like
-    // context7 answer `200 text/event-stream` with `event: message\ndata:
-    // {...}`), then extract `result.tools[]`.
+    // Parse the response: unwrap SSE framing first (real servers like context7 answer `200 text/event-stream` with `event: message\ndata: {...}`), then extract …
     const trimmed_body = std.mem.trim(u8, result.body, " \r\n");
     const json_text: []u8 = if (std.mem.startsWith(u8, trimmed_body, "event:") or std.mem.startsWith(u8, trimmed_body, "data:"))
         parseLastSseData(allocator, result.body) catch return &[_]mcp_types.McpTool{}
@@ -569,9 +508,7 @@ pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types
     return parseToolsList(allocator, json_text) catch &[_]mcp_types.McpTool{};
 }
 
-/// Internal: parse a tools/list response body into a McpTool slice. Each
-/// tool's owned strings (name, description, inputSchema) are freshly
-/// allocated via `allocator`.
+/// Internal: parse a tools/list response body into a McpTool slice.
 fn parseToolsList(allocator: std.mem.Allocator, body: []const u8) ![]mcp_types.McpTool {
     var parse_arena = std.heap.ArenaAllocator.init(allocator);
     defer parse_arena.deinit();
@@ -580,9 +517,7 @@ fn parseToolsList(allocator: std.mem.Allocator, body: []const u8) ![]mcp_types.M
         return try allocator.alloc(mcp_types.McpTool, 0);
     };
 
-    // Switch-based (never direct `.object` / `.array` access): an error
-    // envelope like `{"error":{...}}` or a bare array must yield an
-    // empty slice, not a panic.
+    // Switch-based (never direct `.object` / `.array` access): an error envelope like `{"error":{...}}` or a bare array must yield an empty slice, not a panic.
     const root = switch (parsed.value) {
         .object => |obj| obj,
         else => return try allocator.alloc(mcp_types.McpTool, 0),
@@ -631,16 +566,13 @@ fn parseToolsList(allocator: std.mem.Allocator, body: []const u8) ![]mcp_types.M
     return out;
 }
 
-// ============================================================================
 // SECTION F — Tests
-// ============================================================================
 
 const testing = std.testing;
 
 // ── Mock line reader for SSE parser tests ──────────────────────────────
 
-/// In-memory line reader for `readSseEvent` tests. Holds a list of lines
-/// (without trailing `\n`); `next()` returns them one at a time then null.
+/// In-memory line reader for `readSseEvent` tests.
 const MockLineReader = struct {
     lines: []const []const u8,
     index: usize = 0,
@@ -655,8 +587,7 @@ const MockLineReader = struct {
 
 // ── readSseEvent tests (8 tests) ───────────────────────────────────────
 
-/// All readSseEvent tests must free ALL three freshly-allocated fields of the
-/// returned event (event / data / id).
+/// All readSseEvent tests must free ALL three freshly-allocated fields of the returned event (event / data / id).
 const testing_allocator = testing.allocator;
 
 test "readSseEvent: single data-only event" {
@@ -689,8 +620,7 @@ test "readSseEvent: event + data" {
 }
 
 test "readSseEvent: multi-data concatenation with \\n" {
-    // Per SSE spec, multi-`data:` lines are concatenated with a single
-    // \n character between them (NOT stripped, NOT removed).
+    // Per SSE spec, multi-`data:` lines are concatenated with a single \n character between them (NOT stripped, NOT removed).
     var reader = MockLineReader{ .lines = &.{
         "data: line1",
         "data: line2",
@@ -750,9 +680,7 @@ test "readSseEvent: id field captured" {
 }
 
 test "readSseEvent: blank line mid-stream resets to a new event" {
-    // Two events in one stream: first carries "first", second carries
-    // "second". A blank line (`""` in our mock = event boundary) resets
-    // the per-event accumulators.
+    // Two events in one stream: first carries "first", second carries "second".
     var reader = MockLineReader{ .lines = &.{
         "data: first",
         "", // event boundary
@@ -776,8 +704,7 @@ test "readSseEvent: blank line mid-stream resets to a new event" {
 }
 
 test "readSseEvent: case-insensitive field names" {
-    // Per SSE spec, field names are case-insensitive. "DATA:" must be
-    // treated the same as "data:".
+    // Per SSE spec, field names are case-insensitive.
     var reader = MockLineReader{ .lines = &.{ "DATA: upper" } };
     const ev = (try readSseEvent(testing_allocator, &reader)) orelse unreachable;
     defer {
@@ -798,11 +725,9 @@ test "buildMcpHeaders: required headers always present for tools/call" {
         &[_]custom_http_client_mod.Header{},
     );
     defer testing.allocator.free(hdrs);
-    // 4 spec headers (Accept, Content-Type, MCP-Protocol-Version,
-    // Mcp-Method) + 1 per-method (Mcp-Name) = 5 total.
+    // 4 spec headers (Accept, Content-Type, MCP-Protocol-Version, Mcp-Method) + 1 per-method (Mcp-Name) = 5 total.
     try testing.expectEqual(@as(usize, 5), hdrs.len);
-    // Spot-check the values. Order isn't asserted here (libcurl
-    // uses first-match, not order).
+    // Spot-check the values.
     var found_accept = false;
     var found_content_type = false;
     var found_protocol = false;
@@ -849,9 +774,7 @@ test "buildMcpHeaders: no Mcp-Name for initialize" {
 }
 
 test "buildMcpHeaders: Mcp-Name omitted for non-ASCII tool names" {
-    // Spec says Mcp-Name MUST be ASCII-safe (with a Base64-sentinel
-    // fallback for non-ASCII values, which we don't implement in v1).
-    // For v1 we just SKIP the header when the value isn't ASCII.
+    // Spec says Mcp-Name MUST be ASCII-safe (with a Base64-sentinel fallback for non-ASCII values, which we don't implement in v1).
     const hdrs = try buildMcpHeaders(
         testing.allocator,
         "tools/call",
@@ -866,8 +789,7 @@ test "buildMcpHeaders: Mcp-Name omitted for non-ASCII tool names" {
 }
 
 test "buildMcpHeaders: custom headers merged; spec headers win on conflict" {
-    // A custom `MCP-Protocol-Version: 1999-01-01` must NOT override the spec
-    // value `2025-11-25`.
+    // A custom `MCP-Protocol-Version: 1999-01-01` must NOT override the spec value `2025-11-25`.
     const custom = [_]custom_http_client_mod.Header{
         .{ .name = "X-Trace-Id", .value = "abc" },
         .{ .name = "MCP-Protocol-Version", .value = "1999-01-01" },
@@ -881,9 +803,7 @@ test "buildMcpHeaders: custom headers merged; spec headers win on conflict" {
     defer testing.allocator.free(hdrs);
     // Total: 4 spec + 1 Mcp-Name + 2 custom = 7.
     try testing.expectEqual(@as(usize, 7), hdrs.len);
-    // The FIRST MCP-Protocol-Version in the slice must be the spec
-    // value (so libcurl uses it). The custom 1999-01-01 should appear
-    // LATER in the slice.
+    // The FIRST MCP-Protocol-Version in the slice must be the spec value (so libcurl uses it).
     var first_protocol: ?[]const u8 = null;
     var found_1999 = false;
     var found_2025 = false;
@@ -909,7 +829,6 @@ test "buildMcpHeaders: custom headers merged; spec headers win on conflict" {
 }
 
 // ── HttpClient + HttpRegistry tests (6 tests) ───────────────────────────
-// These are pure in-memory tests (no network, no subprocess).
 
 test "HttpClient.init: stores URL and custom headers" {
     const url = "http://127.0.0.1:1234/mcp";
@@ -1022,13 +941,11 @@ test "HttpRegistry: deinit cleans up registered clients without leaking" {
     _ = try reg.getOrConnect("b", "http://127.0.0.1:2/mcp", &.{}, .{});
     _ = try reg.getOrConnect("c", "http://127.0.0.1:3/mcp", &.{}, .{});
     reg.deinit();
-    // No assertion needed — the test passes if no leak is reported
-    // by zig's DebugAllocator (this is the default in debug builds).
+    // No assertion needed — the test passes if no leak is reported by zig's DebugAllocator (this is the default in debug builds).
 }
 
 test "listTools: returns an empty slice for a stubbed client (signature test)" {
-    // The full listTools behavior is covered by the functional test
-    // (tests/functional/mcp_http_test.py uses the real binary).
+    // The full listTools behavior is covered by the functional test (tests/functional/mcp_http_test.py uses the real binary).
     var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
     defer client.deinit();
     const tools = try listTools(testing.allocator, &client);
@@ -1037,9 +954,7 @@ test "listTools: returns an empty slice for a stubbed client (signature test)" {
 }
 
 test "parseLastSseData: single event returns its data (no alias panic)" {
-    // Regression: the old impl stored `last_data = data_lines.items` (freed
-    // at end of iteration) then `dupe`d it — the allocator reuses the freed
-    // address so src == dst and Debug panics with `@memcpy arguments alias`.
+    // Regression: the old impl stored `last_data = data_lines.items` (freed at end of iteration) then `dupe`d it — the allocator reuses the freed address so src == …
     const body = "event: message\ndata: {\"hello\":1}\n\n";
     const out = try parseLastSseData(testing.allocator, body);
     defer testing.allocator.free(out);
@@ -1047,9 +962,7 @@ test "parseLastSseData: single event returns its data (no alias panic)" {
 }
 
 test "parseLastSseData: last event wins across progress + result events" {
-    // Real servers (e.g. context7) stream progress notifications then
-    // the final JSON-RPC result. The parser must return the LAST
-    // data payload, not the first, and must not alias freed memory.
+    // Real servers (e.g. context7) stream progress notifications then the final JSON-RPC result.
     const body =
         "event: message\ndata: {\"progress\":50}\n\n" ++
         "event: message\ndata: {\"result\":{\"tools\":[]}}\n\n";

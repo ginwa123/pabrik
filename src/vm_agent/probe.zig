@@ -1,5 +1,4 @@
-//! Static multicall fixture for the guest image: the protocol tests need
-//! *something* to exec, and the product image ships a busybox instead.
+//! Static multicall fixture for the guest image: the protocol tests need *something* to exec, and the product image ships a busybox instead.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -101,8 +100,7 @@ pub fn main() u8 {
         defer _ = linux.close(fd);
         write(fd, rest[1]);
         write(fd, "\n");
-        // Without this the guest's writeback can still be in VM page cache when
-        // the VM is stopped, and the image on the host would not have the file.
+        // Without this the guest's writeback can still be in VM page cache when the VM is stopped, and the image on the host would not have the file.
         _ = linux.fsync(fd);
         var buf: [256]u8 = undefined;
         write(1, std.fmt.bufPrint(&buf, "wrote {s}\n", .{rest[0]}) catch "wrote\n");

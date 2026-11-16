@@ -5,9 +5,7 @@ import EmptyState from './EmptyState.vue'
 import SettingsSkeleton from './SettingsSkeleton.vue'
 import type { PabrikAgent } from '../../api'
 
-/** One row in the Agents tab. The backend stores agents as `Record<name, PabrikAgent>` (name
- * is the map key, not a field on the agent object). The orchestrator flattens this into an array
- * of `AgentRow` with the name attached so the UI can iterate cleanly. */
+/** One row in the Agents tab. */
 export interface AgentRow extends PabrikAgent {
   name: string
 }
@@ -21,9 +19,7 @@ defineProps<{
 
 const emit = defineEmits<{
   setActive: [name: string]
-  // Reset the active agent to "no active" — emitted when the user clicks the Reset button next to
-  // the active pill. Parent saves `active_profile: null` to config.json; the backend cascade then
-  // falls through to top-level config for every new chat / task.
+  // Reset the active agent to "no active" — emitted when the user clicks the Reset button next to the active pill.
   clearActive: []
   edit: [agent: AgentRow]
   delete: [name: string]
@@ -32,9 +28,7 @@ const emit = defineEmits<{
   toggleEnabled: [name: string, enabled: boolean]
 }>()
 
-// Track explicit collapses so every agent starts expanded. Using the
-// absence of a key as the expanded state also keeps newly added agents
-// expanded without watching the prop list.
+// Track explicit collapses so every agent starts expanded.
 const collapsed = ref<Set<string>>(new Set())
 
 function agentExpansionKey(name: string): string {

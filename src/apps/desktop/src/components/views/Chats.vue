@@ -18,8 +18,7 @@ async function handleCreateWorkspace() {
   try {
     const workspaceId = await workspacesStore.addWorkspace(name)
     workspaceName.value = ''
-    // Path form (no trailing slash) — the `/app/:workspaceId` route
-    // is registered by the router; components only navigate.
+    // Path form (no trailing slash) — the `/app/:workspaceId` route is registered by the router; components only navigate.
     await router.push('/app/' + workspaceId)
   } finally {
     isCreating.value = false

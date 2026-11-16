@@ -1,5 +1,4 @@
-/** Tests for ReadCompactedMessages.vue — the chat-bubble renderer for the
- * `<read_compacted_messages>` envelope returned by the `read_compacted_messages` tool. */
+/** Tests for ReadCompactedMessages.vue — the chat-bubble renderer for the `<read_compacted_messages>` envelope returned by the `read_compacted_messages` tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -84,8 +83,7 @@ describe('ReadCompactedMessages', () => {
     wrapper = mount(ReadCompactedMessages, {
       props: { content: FULL_INDEX_ENVELOPE },
     })
-    // Collapsed by default: entries are not yet rendered (v-if on the
-    // wrapper that contains the entries list).
+    // Collapsed by default: entries are not yet rendered (v-if on the wrapper that contains the entries list).
     expect(wrapper.find('[data-testid="rcm-entries"]').exists()).toBe(false)
 
     // Click the header to expand.

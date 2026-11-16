@@ -1,6 +1,4 @@
-//! `PATCH /api/agents/:agent_id/system_prompt/:prompt_id`. Updates title
-//! and/or content of an existing system-prompt entry. Body: `{title?,
-//! content?}` (both optional; at least one required).
+//! `PATCH /api/agents/:agent_id/system_prompt/:prompt_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,9 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body. Decoupled from the domain `SystemPromptUpdateInput`
-/// so the wire format can evolve independently without touching the
-/// use-case.
+/// HTTP request body.
 const UpdateSystemPromptBody = struct {
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
@@ -33,8 +29,6 @@ pub const SystemPromptUpdateError = error{
     /// Refetched row vanished (should be impossible — surfaces as 404).
     RowNotFound,
     /// `allocator.alloc` failed while building the dynamic SQL.
-    /// Unreachable under arena allocator but the type system requires
-    /// the variant so `try` propagates a typed error.
     OutOfMemory,
 };
 
@@ -46,19 +40,14 @@ pub const SystemPromptUpdateInput = struct {
     content: ?[]const u8,
 };
 
-/// Output of the system-prompt-update use-case. `system_prompt` is owned by
-/// the caller (lifetime = request arena).
+/// Output of the system-prompt-update use-case.
 pub const SystemPromptUpdateOutput = struct {
     system_prompt: SystemPrompt,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Update an existing system-prompt row. Validates that at least one of
-/// `title` / `content` is provided, then UPDATE-with-dynamic-SQL the
-/// requested fields and SELECT-refetch the row.
+/// Update an existing system-prompt row.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -86,13 +75,9 @@ fn useCase(
     return .{ .system_prompt = system_prompt };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentSystemPromptUpdateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -146,8 +131,6 @@ pub fn agentSystemPromptUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). Behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -167,16 +150,13 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try Migration116.up(&db, testing.allocator);
-    // Production DBs run every migration in order — the harness must
-    // mirror that, or the agent_system_prompt table (Migration 080) is
-    // missing.
+    // Production DBs run every migration in order — the harness must mirror that, or the agent_system_prompt table (Migration 080) is missing.
 
     // Seed: 1 agent + 1 system-prompt row.
     try db.exec(testing.allocator,
@@ -291,9 +271,7 @@ test "useCase: PATCH with empty-string content is legal (COALESCE binds '' not N
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Regression: Backend.exec binds "" as SQL NULL, which would
-    // trip content's NOT NULL constraint without the COALESCE(CAST(? AS TEXT), '')
-    // wrapper in the UPDATE SET clause.
+    // Regression: Backend.exec binds "" as SQL NULL, which would trip content's NOT NULL constraint without the COALESCE(CAST(?
     const output = try useCase(alloc, &ctx.db, .{
         .agent_id = "ws_item_1",
         .prompt_id = "asp_1",

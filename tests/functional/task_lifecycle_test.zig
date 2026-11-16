@@ -1,5 +1,4 @@
-// Functional tests for task lifecycle (Tier 1.2). Zig port of
-// `tests/functional/task_lifecycle_test.py` (same test names, same order).
+// Functional tests for task lifecycle (Tier 1.2).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // JSON accessors shared by every test
-// ============================================================================
 
 /// The root object of a parsed document, or a test failure.
 fn rootObj(doc: *const harness.Json, ctx: []const u8) !std.json.ObjectMap {
@@ -23,8 +20,7 @@ fn rootObj(doc: *const harness.Json, ctx: []const u8) !std.json.ObjectMap {
     };
 }
 
-/// `obj[key]` as a string. Mirrors Python's `task["name"]`, which raises
-/// when the key is missing or is not a string.
+/// `obj[key]` as a string.
 fn strAt(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) ![]const u8 {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: missing `{s}`\n", .{ ctx, key });
@@ -54,9 +50,7 @@ fn boolAt(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !bool {
     };
 }
 
-/// Python `obj.get(key) is None`: the key is ABSENT or explicitly
-/// `null`. Both spellings satisfy it, and the ported server may pick
-/// either, so both pass.
+/// Python `obj.get(key) is None`: the key is ABSENT or explicitly `null`.
 fn expectNullOrAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse return;
     switch (v) {
@@ -68,8 +62,7 @@ fn expectNullOrAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8)
     }
 }
 
-/// Python `assert "error" in body` followed by a substring assertion on
-/// `body["error"]`, case-insensitively: any ONE of `needles` must appear.
+/// Python `assert "error" in body` followed by a substring assertion on `body["error"]`, case-insensitively: any ONE of `needles` must appear.
 fn expectErrorContains(body: []const u8, needles: []const []const u8, ctx: []const u8) !void {
     var doc: harness.Json = .{ .parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -90,12 +83,9 @@ fn expectErrorContains(body: []const u8, needles: []const []const u8, ctx: []con
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Owned-document plumbing
-// ============================================================================
 
-/// An owned response body PLUS its parse, so a helper can hand a
-/// document to its caller without the body dying underneath it.
+/// An owned response body PLUS its parse, so a helper can hand a document to its caller without the body dying underneath it.
 const OwnedDoc = struct {
     bytes: []u8,
     doc: harness.Json,
@@ -121,17 +111,13 @@ fn parseOwned(bytes: []u8) !OwnedDoc {
 }
 
 /// Issue a request and hand back an owned, self-contained document.
-/// `.alloc_always` is what makes this legal: no string in the returned tree
-/// borrows `r.body`, which is freed before the caller ever sees it.
 fn requestDoc(h: *Harness, method: harness.HttpMethod, path: []const u8, opts: harness.Harness.HttpOptions) !OwnedDoc {
     var r = try h.http(io, method, path, opts);
     defer r.deinit();
     return parseOwned(try gpa.dupe(u8, r.body));
 }
 
-// ============================================================================
 // Fixtures (mirror the Python module-level helpers)
-// ============================================================================
 
 /// Python `_create_workspace` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -154,9 +140,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Python `_create_chat_item` → the new item's id. Owned. The `path` is
-/// derived from the harness tempdir, never a literal `/tmp` (see the file
-/// header).
+/// Python `_create_chat_item` → the new item's id.
 fn createChatItem(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const path = try harness.harnessPath(gpa, h.temp_dir, &.{"task-lc"});
     defer gpa.free(path);
@@ -284,8 +268,6 @@ fn listTasks(h: *Harness, ws_id: []const u8, item_id: []const u8) !OwnedDoc {
 }
 
 /// Python `body.get("tasks", body if isinstance(body, list) else [])`.
-///
-/// Borrows `listed`, which the caller owns.
 fn tasksArray(listed: *const harness.Json, ctx: []const u8) !std.json.Array {
     return switch (listed.value().*) {
         .array => |a| a,
@@ -304,8 +286,6 @@ fn tasksArray(listed: *const harness.Json, ctx: []const u8) !std.json.Array {
 }
 
 /// Python `next((t for t in listed if t["id"] == task_id), None)`.
-///
-/// Borrows `tasks`.
 fn findTaskById(tasks: std.json.Array, task_id: []const u8) ?std.json.ObjectMap {
     for (tasks.items) |entry| {
         const obj = switch (entry) {
@@ -337,9 +317,7 @@ fn pinTask(h: *Harness, ws_id: []const u8, item_id: []const u8, task_id: []const
     defer r.deinit();
 }
 
-// ============================================================================
 // Test 1: kanban /kanban/tasks endpoint — create mode
-// ============================================================================
 
 // POST /kanban/tasks with mode='create' returns the wrapped envelope.
 test "kanban_tasks_endpoint_create_mode" {
@@ -380,9 +358,7 @@ test "kanban_tasks_endpoint_create_mode" {
     try expectNullOrAbsent(task_obj, "description", "create envelope task");
     try testing.expectEqual(false, try boolAt(task_obj, "completed", "create envelope task"));
 
-    // The task is visible via the list endpoint (the list returns the
-    // fuller shape — useful for catching drift between the kanban-scoped
-    // response and the list view).
+    // The task is visible via the list endpoint (the list returns the fuller shape — useful for catching drift between the kanban-scoped response and the list view).
     var listed = try listTasks(&h, ws_id, kanban_id);
     defer listed.deinit();
 
@@ -397,13 +373,9 @@ test "kanban_tasks_endpoint_create_mode" {
     try testing.expectEqualStrings(kanban_id, try strAt(found, "workspace_item_id", "listed task"));
 }
 
-// ============================================================================
 // Test 2: kanban /kanban/tasks endpoint — create_and_run mode
-// ============================================================================
 
-// mode='create_and_run' requires queue_message + creates a session row. The
-// response carries `session: {id, name, status: 'send'}` — the session_id ==
-// task_id per the project's convention.
+// mode='create_and_run' requires queue_message + creates a session row.
 test "kanban_tasks_endpoint_create_and_run_returns_session" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -437,8 +409,7 @@ test "kanban_tasks_endpoint_create_and_run_returns_session" {
     };
     const task_id = try strAt(task_obj, "id", "create_and_run envelope task");
 
-    // `assert body.get("session") is not None` — this time it must be
-    // PRESENT, which is the whole point of the mode discriminator.
+    // `assert body.get("session") is not None` — this time it must be PRESENT, which is the whole point of the mode discriminator.
     const session_v = root.get("session") orelse {
         std.debug.print(
             "mode='create_and_run' should populate session, got null: {s}\n",
@@ -466,9 +437,7 @@ test "kanban_tasks_endpoint_create_and_run_returns_session" {
     try testing.expectEqualStrings("send", try strAt(session, "status", "session"));
 }
 
-// ============================================================================
 // Test 3: /kanban/tasks rejects create_and_run without queue_message
-// ============================================================================
 
 // mode='create_and_run' without queue_message returns 400.
 test "kanban_tasks_endpoint_create_and_run_requires_queue_message" {
@@ -503,9 +472,7 @@ test "kanban_tasks_endpoint_create_and_run_requires_queue_message" {
     try expectErrorContains(r.body, &.{"queue_message"}, "create_and_run without queue_message");
 }
 
-// ============================================================================
 // Test 4: /kanban/tasks rejects unknown mode
-// ============================================================================
 
 // POST /kanban/tasks with mode='garbage' returns 400.
 test "kanban_tasks_endpoint_rejects_unknown_mode" {
@@ -539,12 +506,9 @@ test "kanban_tasks_endpoint_rejects_unknown_mode" {
     try expectErrorContains(r.body, &.{"mode"}, "unknown mode");
 }
 
-// ============================================================================
 // Test 5: /kanban/tasks on non-kanban parent returns 404
-// ============================================================================
 
-// POST /kanban/tasks against a chat parent returns 404. The handler validates
-// the parent's item_type='kanban' before creating the task.
+// POST /kanban/tasks against a chat parent returns 404.
 test "kanban_tasks_endpoint_rejects_non_kanban_parent" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -576,13 +540,9 @@ test "kanban_tasks_endpoint_rejects_non_kanban_parent" {
     try expectErrorContains(r.body, &.{ "not found", "not a kanban" }, "non-kanban parent");
 }
 
-// ============================================================================
 // Test 6: PUT task renames + persists across GET
-// ============================================================================
 
-// PUT /tasks/:task_id {name: ...} → list shows the new name. task_update.zig
-// returns `{success, id}`; the rename is verified by re-fetching via the list
-// endpoint.
+// PUT /tasks/:task_id {name: ...} → list shows the new name. task_update.zig returns `{success, id}`; the rename is verified by re-fetching via the list endpoint.
 test "put_task_rename_round_trips" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -632,13 +592,9 @@ test "put_task_rename_round_trips" {
     }
 }
 
-// ============================================================================
 // Test 7: PUT task by-id path (no workspace in URL)
-// ============================================================================
 
-// PUT /api/workspaces/tasks/:task_id (without workspace_id/item_id path
-// params) also succeeds — same handler as the path-param variant.
-// task_update.zig::tasksUpdateByIdHandler delegates to the same useCase; this
+// PUT /api/workspaces/tasks/:task_id (without workspace_id/item_id path params) also succeeds — same handler as the path-param variant. …
 test "put_task_by_id_path_also_works" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -678,21 +634,13 @@ test "put_task_by_id_path_also_works" {
     try testing.expectEqualStrings("name-2", try strAt(found, "name", "renamed task"));
 }
 
-// ============================================================================
-// Test 8: DELETED (Migration 084) ==========================================
-// PUT task with routine fields no longer creates a routines row — the
+// Test 8: DELETED (Migration 084) ========================================== PUT task with routine fields no longer creates a routines row — the
 
-// ============================================================================
-// Test 9: DELETED (Migration 084) ==========================================
-// PUT task no longer validates cron — routine fields are ignored.
+// Test 9: DELETED (Migration 084) ========================================== PUT task no longer validates cron — routine fields are ignored.
 
-// ============================================================================
 // Test 10: DELETE task removes it from the list
-// ============================================================================
 
-// DELETE /tasks/:task_id → list no longer contains it. Response shape is
-// `{id, success: true}` (the `WorkspaceItemResponse` shape from
-// http_response.zig).
+// DELETE /tasks/:task_id → list no longer contains it.
 test "delete_task_removes_from_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -745,9 +693,7 @@ test "delete_task_removes_from_list" {
     }
 }
 
-// ============================================================================
 // Test 11: DELETE task 404 for nonexistent
-// ============================================================================
 
 // DELETE /tasks/task_nope is idempotent + returns 200.
 test "delete_task_404_for_nonexistent" {
@@ -762,9 +708,7 @@ test "delete_task_404_for_nonexistent" {
     const chat_id = try createChatItem(&h, ws_id, "404-host");
     defer gpa.free(chat_id);
 
-    // Note: the response is 200 (idempotent), not 404. This test
-    // documents that contract — flip to expect=404 if the handler is
-    // ever updated to refuse deletes on missing rows.
+    // Note: the response is 200 (idempotent), not 404.
     const url = try std.fmt.allocPrint(
         gpa,
         "/api/workspaces/{s}/items/{s}/tasks/task_nope",
@@ -780,13 +724,9 @@ test "delete_task_404_for_nonexistent" {
     try testing.expectEqualStrings("task_nope", d.str("id").?);
 }
 
-// ============================================================================
 // Test 12: PUT /touched stamps the timestamp
-// ============================================================================
 
-// PUT /tasks/:task_id/touched returns 200 with {success, task_id}. The stamp
-// itself is verified via DB observation: re-PUT after a short delay should
-// produce a NEW `last_human_touched_at` row.
+// PUT /tasks/:task_id/touched returns 200 with {success, task_id}.
 test "put_touched_stamps_human_touched_at" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -829,12 +769,9 @@ test "put_touched_stamps_human_touched_at" {
     try testing.expectEqualStrings(task_id, d2.str("task_id").?);
 }
 
-// ============================================================================
 // Test 13: POST /reorder_pinned reorders pinned subset
-// ============================================================================
 
-// POST /tasks/reorder_pinned with [t1, t2, t3] places t1 first in the pinned
-// block. Non-pinned tasks are unaffected.
+// POST /tasks/reorder_pinned with [t1, t2, t3] places t1 first in the pinned block.
 test "reorder_pinned_reorders_only_pinned_subset" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -891,20 +828,13 @@ test "reorder_pinned_reorders_only_pinned_subset" {
     try testing.expectEqual(@as(i64, 2), count);
 }
 
-// ============================================================================
-// Test 14: DELETED (Migration 084) ==========================================
-// POST /tasks/:id/run is gone (404 route, not a handler 404).
+// Test 14: DELETED (Migration 084) ========================================== POST /tasks/:id/run is gone (404 route, not a handler 404).
 
-// ============================================================================
-// Test 15: DELETED (Migration 084) ==========================================
-// Per-task routine creation is rejected with 400 RoutineTasksRemoved.
+// Test 15: DELETED (Migration 084) ========================================== Per-task routine creation is rejected with 400 RoutineTasksRemoved.
 
-// ============================================================================
 // Test 16: /start_agent succeeds on existing task (no worker running)
-// ============================================================================
 
-// POST /tasks/:task_id/start_agent on an idle task → 200. Returns `{success,
-// session_id, status: 'triggered'}`.
+// POST /tasks/:task_id/start_agent on an idle task → 200.
 test "start_agent_succeeds_on_idle_task" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -937,12 +867,9 @@ test "start_agent_succeeds_on_idle_task" {
     try testing.expectEqualStrings("triggered", d.str("status").?);
 }
 
-// ============================================================================
 // Test 17: /start_agent 404 for nonexistent task
-// ============================================================================
 
-// POST /tasks/task_nope/start_agent → 404 with `{"error": "task not
-// found"}`.
+// POST /tasks/task_nope/start_agent → 404 with `{"error": "task not found"}`.
 test "start_agent_404_for_nonexistent_task" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -968,13 +895,9 @@ test "start_agent_404_for_nonexistent_task" {
     try expectErrorContains(r.body, &.{"task not found"}, "start_agent 404");
 }
 
-// ============================================================================
 // Test 18: image_urls round-trips via POST /tasks
-// ============================================================================
 
-// POST /tasks with image_urls='data:image/png;base64,...' persists +
-// round-trips via the list endpoint. The `image_urls` field is the ||-joined
-// wire format (Migration 069).
+// POST /tasks with image_urls='data:image/png;base64,...' persists + round-trips via the list endpoint.
 test "task_create_accepts_image_urls" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1004,9 +927,7 @@ test "task_create_accepts_image_urls" {
         std.debug.print("image task '{s}' not in list: {s}\n", .{ task_id, listed.bytes });
         return error.TestUnexpectedResult;
     };
-    // The image_urls field should round-trip (handlers may carry it
-    // verbatim; some response shapes omit it — assert it's present OR
-    // absent but never garbled).
+    // The image_urls field should round-trip (handlers may carry it verbatim; some response shapes omit it — assert it's present OR absent but never garbled).
     if (found.get("image_urls")) |v| {
         const got = switch (v) {
             .string => |s| s,
@@ -1022,9 +943,7 @@ test "task_create_accepts_image_urls" {
     }
 }
 
-// ============================================================================
 // Test 19: invalid image_urls prefix returns 400
-// ============================================================================
 
 // image_urls='not-a-data-uri' returns 400 InvalidImageUrls.
 test "task_create_rejects_malformed_image_urls" {
@@ -1058,13 +977,9 @@ test "task_create_rejects_malformed_image_urls" {
     try expectErrorContains(r.body, &.{ "image", "data:image" }, "malformed image_urls");
 }
 
-// ============================================================================
 // Test 20: relative cwd returns 400
-// ============================================================================
 
-// cwd='relative/path' returns 400 CwdNotAbsolute.
-//
-// task_create.zig:457 rejects paths that don't start with '/'.
+// cwd='relative/path' returns 400 CwdNotAbsolute. task_create.zig:457 rejects paths that don't start with '/'.
 test "task_create_rejects_relative_cwd" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1096,13 +1011,9 @@ test "task_create_rejects_relative_cwd" {
     try expectErrorContains(r.body, &.{ "absolute", "cwd" }, "relative cwd");
 }
 
-// ============================================================================
 // Test 21: is_auto_retry_until_stop="1" is persisted (no crash)
-// ============================================================================
 
-// POST /tasks with is_auto_retry_until_stop='1' returns 201. The handler
-// inserts an `INSERT OR IGNORE INTO sessions` row keyed by task.id (Migration
-// 062 + the kanban-task-name-match plan).
+// POST /tasks with is_auto_retry_until_stop='1' returns 201.
 test "task_create_with_unattended_flag_does_not_crash" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -1136,13 +1047,10 @@ test "task_create_with_unattended_flag_does_not_crash" {
     }
 }
 
-// ============================================================================
 // Body-analysis barrier
-// ============================================================================
 
 comptime {
-    // A function body is only type-checked once something calls it, so
-    // an unreferenced helper can hide a stdlib rename. Reference them all.
+    // A function body is only type-checked once something calls it, so an unreferenced helper can hide a stdlib rename.
     _ = rootObj;
     _ = strAt;
     _ = boolAt;

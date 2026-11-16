@@ -15,14 +15,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The Projects section, as drawn.
- *
- * These assert *gestures*, because that is where the contract lives and a unit
- * test cannot reach it: which taps leave the drawer and which do not. The
- * behavioural rules they pin are the ones in `README.md` §Drawer — a filter
- * reshapes the list in place, a destination leaves.
- */
+/** The Projects section, as drawn. */
 @RunWith(AndroidJUnit4::class)
 class ProjectsSectionTest {
     @get:Rule
@@ -71,8 +64,7 @@ class ProjectsSectionTest {
         composeTestRule.onNodeWithTag("sidebar_open_menu").performClick()
         composeTestRule.waitForIdle()
 
-        // A project is a filter, so the drawer stays open. This mirrors
-        // `RecentsSidebarTest.workspaceSelectionScopesRecentsAndKeepsTheDrawerOpen`.
+        // A project is a filter, so the drawer stays open.
         composeTestRule.onNodeWithTag("sidebar_sheet").assertIsDisplayed()
         composeTestRule.onNodeWithTag("project_chat_row_pc-item-a-1").assertIsDisplayed()
         // Expanding is a filter, so it must not have navigated.
@@ -93,10 +85,8 @@ class ProjectsSectionTest {
         composeTestRule.waitForIdle()
 
         // A chat is a destination: the drawer must close for it.
-        // The task id is the session id, so the row hands it over verbatim.
         assert("pc-item-a-1" == selected) { "expected the task id, got $selected" }
-        // A closed ModalDrawerSheet is still in the semantics tree, so this is
-        // "not displayed", never "does not exist" — see RecentsSidebarTest:441.
+        // A closed ModalDrawerSheet is still in the semantics tree, so this is "not displayed", never "does not exist" — see RecentsSidebarTest:441.
         composeTestRule.onNodeWithTag("sidebar_sheet").assertIsNotDisplayed()
     }
 
@@ -119,8 +109,7 @@ class ProjectsSectionTest {
 
     @Test
     fun theDrawerShowsNoSeeAllButtonWhenItAlreadyShowsEveryChat() {
-        // A project with three chats needs no detour to a screen showing those
-        // same three. The button is a promise that there is more.
+        // A project with three chats needs no detour to a screen showing those same three.
         showDrawer(
             expandedItemIds = setOf("item-a"),
             chats = mapOf("item-a" to projectChats("item-a", 3)),
@@ -150,8 +139,7 @@ class ProjectsSectionTest {
 
     @Test
     fun thePreviewStopsAtFiveRowsEvenWhenTheProjectHasMore() {
-        // A 390dp drawer cannot host a second scroller under a project, and
-        // growing without bound would push the See all row off the bottom.
+        // A 390dp drawer cannot host a second scroller under a project, and growing without bound would push the See all row off the bottom.
         showDrawer(
             expandedItemIds = setOf("item-a"),
             chats = mapOf("item-a" to projectChats("item-a", 12)),
@@ -177,8 +165,7 @@ class ProjectsSectionTest {
 
     @Test
     fun everyProjectTypeRendersANamedRow() {
-        // A type the backend ships tomorrow must render as *some* row, never as
-        // a blank line the reader cannot tap.
+        // A type the backend ships tomorrow must render as *some* row, never as a blank line the reader cannot tap.
         val everyType = listOf(
             ProjectSummary("k", "workspace-a", ProjectTypes.KANBAN, "a kanban"),
             ProjectSummary("ag", "workspace-a", ProjectTypes.AGENT, "an agent"),
@@ -200,8 +187,7 @@ class ProjectsSectionTest {
 
     @Test
     fun aFailedProjectsFetchKeepsTheRecentListWorking() {
-        // A stale project list is worth showing, and it must not be allowed to
-        // take the chat list down with it.
+        // A stale project list is worth showing, and it must not be allowed to take the chat list down with it.
         showDrawer(
             expandedItemIds = emptySet(),
             chats = emptyMap(),

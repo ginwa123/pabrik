@@ -51,13 +51,11 @@ pub const ContentPart = struct {
     text: ?[]const u8 = null,
     image_url: ?ImageUrl = null,
     video_url: ?VideoUrl = null,
-    /// A document the model reads as a file. The wire shape differs per
-    /// provider, so every request builder maps this part itself.
+    /// A document the model reads as a file.
     file: ?FilePart = null,
 };
 
 /// A document the model reads as a file: a PDF, or a rich binary document.
-/// The bytes ride as base64 in `b64` (no data-URL prefix).
 pub const FilePart = struct {
     filename: []const u8,
     mime: []const u8,
@@ -69,8 +67,7 @@ pub const FilePart = struct {
     }
 };
 
-/// The Chat Completions wire shape of a content part. A file rides as
-/// `{"type":"file","file":{"filename":…,"file_data":"data:…;base64,…"}}`.
+/// The Chat Completions wire shape of a content part.
 const ChatContentPart = struct {
     part_type: []const u8,
     text: ?[]const u8 = null,
@@ -102,17 +99,14 @@ const ChatContentPart = struct {
     }
 };
 
-/// Map a file part to the Chat Completions wire shape. Chat Completions
-/// takes a PDF only, so a rich binary document is a hard error here —
-/// never a silently dropped attachment.
+/// Map a file part to the Chat Completions wire shape.
 fn chatFilePart(allocator: std.mem.Allocator, file: FilePart) !OpenAiFile {
     const kind = file_attachments.classify(file.filename, file.mime);
     if (!file_attachments.styleCarriesFile("openai", kind)) return error.UnsupportedFileType;
     return .{ .filename = file.filename, .file_data = try file.dataUrl(allocator) };
 }
 
-/// The OpenAI Chat Completions shape of a file part:
-/// `{"type":"file","file":{"filename":…,"file_data":"data:…;base64,…"}}`.
+/// The OpenAI Chat Completions shape of a file part
 pub const OpenAiFile = struct {
     filename: []const u8,
     file_data: []const u8,
@@ -127,8 +121,7 @@ pub const OpenAiFile = struct {
     }
 };
 
-/// The Anthropic shape of a document part:
-/// `{"type":"document","source":{"type":"base64","media_type":…,"data":…}}`.
+/// The Anthropic shape of a document part
 pub const AnthropicDocument = struct {
     media_type: []const u8,
     data: []const u8,
@@ -178,9 +171,7 @@ pub const VideoUrl = struct {
     }
 };
 
-/// Allowlisted video MIME suffixes (after `data:video/`). Locked 2026-09-18:
-/// full video/* v1 = mp4, webm, quicktime (mov), x-msvideo (avi), x-matroska
-/// (mkv).
+/// Allowlisted video MIME suffixes (after `data:video/`). Locked 2026-09-18
 pub fn isSupportedVideoMime(mime: []const u8) bool {
     if (std.mem.eql(u8, mime, "video/mp4")) return true;
     if (std.mem.eql(u8, mime, "video/webm")) return true;
@@ -191,7 +182,6 @@ pub fn isSupportedVideoMime(mime: []const u8) bool {
 }
 
 /// Extract the `video/<suffix>` mime from a `data:video/...;base64,...` URL.
-/// Returns null when the URL is not a video data URL.
 pub fn videoMimeFromDataUrl(url: []const u8) ?[]const u8 {
     const prefix = "data:video/";
     if (!std.mem.startsWith(u8, url, prefix)) return null;
@@ -221,8 +211,7 @@ pub const FinishReason = enum {
     tool,
     null,
     assistant,
-    /// Not a provider value: persisted by the agentic loop when the
-    /// assistant message ended with an `ask_user` block.
+    /// Not a provider value: persisted by the agentic loop when the assistant message ended with an `ask_user` block.
     awaiting_user,
 
     pub fn from_str(s: ?[]const u8) ?FinishReason {
@@ -348,14 +337,10 @@ const JsonRequest = struct {
     tools: ?[]const JsonTool = null,
     tool_choice: ?[]const u8 = null,
 
-    /// Optional end-user identifier. Omitted from the JSON body when null
-    /// or empty. Maps to OpenAI's `user` request-body parameter. See
-    /// https://platform.openai.com/docs/api-reference/chat/create.
+    /// Optional end-user identifier.
     user: ?[]const u8 = null,
 
-    /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1). One of
-    /// "low" | "medium" | "high" | "auto". Mirrors the
-    /// `Agent.reasoningEffort` field directly.
+    /// OpenAI-style reasoning effort (o1 / o3 / GPT-5 / DeepSeek-R1).
     reasoning_effort: ?[]const u8 = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
@@ -451,16 +436,11 @@ const AnthropicContentBlock = struct {
 };
 
 const AnthropicImage = struct {
-    /// Either "url" (for an `https://` URL or a `data:` URL) or
-    /// "base64" (for a broken-out `media_type` + `data` payload).
-    /// Matches Anthropic's `image.source.type` enum.
+    /// Either "url" (for an `https://` URL or a `data:` URL) or "base64" (for a broken-out `media_type` + `data` payload).
     source_type: []const u8,
-    /// For `source_type = "url"`, the full URL or `data:` URI. For
-    /// `source_type = "base64"`, the raw base64 payload.
+    /// For `source_type = "url"`, the full URL or `data:` URI.
     url_or_data: []const u8,
     /// Only populated when `source_type = "base64"`, e.g. "image/png".
-    /// Null for `url` sources (Anthropic's strict API infers media_type
-    /// from the URL extension; OpenAI-compatible relays don't care).
     media_type: ?[]const u8 = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
@@ -480,8 +460,7 @@ const AnthropicImage = struct {
     }
 };
 
-/// Anthropic video source. Same `url` vs `base64` split as AnthropicImage,
-/// but defaults to `video/mp4` and carries video mimes.
+/// Anthropic video source.
 const AnthropicVideo = struct {
     source_type: []const u8,
     url_or_data: []const u8,
@@ -544,8 +523,7 @@ const AnthropicMessage = struct {
 };
 
 const AnthropicThinking = struct {
-    /// "enabled" (with budget_tokens) or "adaptive" (Anthropic picks its own
-    /// budget — recommended for Sonnet 4.5+).
+    /// "enabled" (with budget_tokens) or "adaptive" (Anthropic picks its own budget — recommended for Sonnet 4.5+).
     type: []const u8,
     /// Required only when `type == "enabled"`.
     budget_tokens: ?usize = null,
@@ -605,9 +583,7 @@ const AnthropicTool = struct {
     }
 };
 
-/// Anthropic `metadata` block. Currently only `user_id` is supported —
-/// Anthropic's Messages API accepts arbitrary key/value metadata but
-/// pabrik only uses `user_id` for the LLM-API end-user identifier.
+/// Anthropic `metadata` block.
 const AnthropicMetadata = struct {
     user_id: []const u8,
 
@@ -627,22 +603,17 @@ const AnthropicRequest = struct {
     tools: ?[]const AnthropicTool = null,
     thinking: ?AnthropicThinking = null,
     temperature: ?f32 = null,
-    /// Top-level system prompt. Anthropic rejects `role: "system"` inside
-    /// `messages` (400s) — system instructions belong here.
+    /// Top-level system prompt.
     system: ?[]const u8 = null,
 
-    /// Optional metadata block. Currently emits `{"user_id": "..."}`
-    /// from `Agent.userIdentifier`. See
-    /// https://docs.claude.com/en/api/messages.
+    /// Optional metadata block.
     metadata: ?AnthropicMetadata = null,
 
     pub fn jsonStringify(self: @This(), stringify: *std.json.Stringify) !void {
         try stringify.beginObject();
         try stringify.objectField("model");
         try stringify.write(self.model);
-        // Anthropic accepts `system` as a plain string or as an array
-        // of content blocks; a string is sufficient for the
-        // `role == .system` join the builder does today.
+        // Anthropic accepts `system` as a plain string or as an array of content blocks; a string is sufficient for the `role == .system` join the builder does today.
         if (self.system) |s| {
             try stringify.objectField("system");
             try stringify.write(s);
@@ -677,8 +648,6 @@ const AnthropicRequest = struct {
 };
 
 /// --- OpenAI Responses API (url_style = "openai-response") -----------------
-/// Request shape for POST /v1/responses
-/// (https://developers.openai.com/api/reference/resources/responses) Mirrors
 const ResponsesInputContent = struct {
     /// "input_text" | "input_image" | "input_video" | "input_file"
     content_type: []const u8,
@@ -977,9 +946,7 @@ pub const Role = enum {
 };
 
 pub const AgentMessage = struct {
-    /// DB primary key from `llm_history.id` (19-digit timestamp string). NULL
-    /// for messages synthesized in-memory (e.g. system prompts at
-    /// workflow.zig:1046-1064).
+    /// DB primary key from `llm_history.id` (19-digit timestamp string).
     id: ?[]const u8 = null,
     role: Role,
     content: ?[]const u8,
@@ -1031,16 +998,12 @@ pub const Usage = struct {
     completion_tokens: usize = 0,
     total_tokens: usize = 0,
     /// Tokens spent writing a cache entry, billed at ~1.25× the input rate.
-    /// Anthropic only; elsewhere 0 means "not reported", never "no write".
     cache_creation_input_tokens: usize = 0,
     /// Tokens served from a provider cache on this call, for every wire style.
-    /// The `prompt_tokens` beside it ALWAYS includes them (Anthropic's parser
-    /// adds them in), so cache_read / prompt_tokens is the rate, max 100%.
     cache_read_input_tokens: usize = 0,
 };
 
-/// The `usage` object as the wire declares it: one struct for all three styles,
-/// where a field a style omits stays null and unknown fields are dropped.
+/// The `usage` object as the wire declares it: one struct for all three styles, where a field a style omits stays null and unknown fields are dropped.
 const WireUsage = struct {
     prompt_tokens: ?i64 = null,
     completion_tokens: ?i64 = null,
@@ -1060,8 +1023,7 @@ const WireUsage = struct {
         return json.parseFromValueLeaky(WireUsage, arena, value, options) catch null;
     }
 
-    /// The total is never derived from the parts: a provider that omits it
-    /// reports 0, not an invented sum.
+    /// The total is never derived from the parts: a provider that omits it reports 0, not an invented sum.
     fn toChatCompletionsUsage(self: WireUsage) Usage {
         return .{
             .prompt_tokens = count(self.prompt_tokens),
@@ -1086,8 +1048,7 @@ const WireUsage = struct {
         };
     }
 
-    /// Whichever spelling the provider used; 0 when it reported none. Each is a
-    /// subset of the prompt, so this is never an addend to a total.
+    /// Whichever spelling the provider used; 0 when it reported none.
     fn cacheRead(self: WireUsage) u32 {
         const reported = [_]?i64{
             if (self.prompt_tokens_details) |details| details.cached_tokens else null,
@@ -1110,12 +1071,9 @@ const WireUsage = struct {
     }
 };
 
-/// One `chat.completion.chunk` SSE payload, declared so the parser maps fields
-/// instead of probing a Value tree. A chunk carries either a `delta` or a full
-/// `message`, and `content` may be text or an array of parts.
+/// One `chat.completion.chunk` SSE payload, declared so the parser maps fields instead of probing a Value tree.
 const WireChatChunk = struct {
-    /// Optional, never a defaulted slice: a provider that spells an empty list
-    /// as `null` must not cost the chunk its body.
+    /// Optional, never a defaulted slice: a provider that spells an empty list as `null` must not cost the chunk its body.
     choices: ?[]const WireChoice = null,
     usage: ?json.Value = null,
 
@@ -1128,8 +1086,7 @@ const WireChatChunk = struct {
     const WireMessage = struct {
         content: ?json.Value = null,
         reasoning_content: ?[]const u8 = null,
-        /// DeepSeek sends `"tool_calls":null` on every content delta, and a
-        /// failed parse here discards that delta's content with it.
+        /// DeepSeek sends `"tool_calls":null` on every content delta, and a failed parse here discards that delta's content with it.
         tool_calls: ?[]const WireToolCall = null,
     };
 
@@ -1142,8 +1099,7 @@ const WireChatChunk = struct {
     const WireFunction = struct { name: ?[]const u8 = null, arguments: ?[]const u8 = null };
 };
 
-/// Providers use "" and an absent field interchangeably, and neither may
-/// overwrite a real delta.
+/// Providers use "" and an absent field interchangeably, and neither may overwrite a real delta.
 fn nonEmpty(maybe: ?[]const u8) ?[]const u8 {
     const text = maybe orelse return null;
     return if (text.len > 0) text else null;
@@ -1211,8 +1167,7 @@ pub const StreamingAggregator = struct {
             try self.content.appendSlice(self.allocator, c);
         }
         if (chunk.reasoning_content) |rc| {
-            // Terminal chunks (finish_reason or reasoning_id present) carry
-            // summary[] as fallback — only use if no delta reasoning arrived.
+            // Terminal chunks (finish_reason or reasoning_id present) carry summary[] as fallback — only use if no delta reasoning arrived.
             const is_terminal = chunk.finish_reason != null or chunk.reasoning_id != null or chunk.reasoning_encrypted_content != null;
             if (is_terminal) {
                 if (self.reasoning_content.items.len == 0 and rc.len > 0) {
@@ -1277,8 +1232,7 @@ pub const StreamingAggregator = struct {
         }
         std.sort.pdq(usize, sorted_indices.items, {}, std.sort.asc(usize));
 
-        // Allocate the final `[]ToolCall` slice ONCE on `self.allocator` (the
-        // caller's arena) and copy each inner slice header into it.
+        // Allocate the final `[]ToolCall` slice ONCE on `self.allocator` (the caller's arena) and copy each inner slice header into it.
         var tool_calls_out: ?[]ToolCall = null;
         if (sorted_indices.items.len > 0) {
             const count = sorted_indices.items.len;
@@ -1343,11 +1297,8 @@ pub const AgentCall = struct {
 
 pub const HttpOptions = struct {
     /// Overall deadline for the entire streaming read (response head + body).
-    /// Triggers `error.StreamTimeout` if exceeded. Default 15 minutes: a
-    /// 100k-token prompt plus a 7k-token answer needs more than 5.
     read_timeout_ms: u32 = 900_000,
-    /// Idle window: if no new bytes arrive for this long after readSliceShort
-    /// returns, the stream is considered hung.
+    /// Idle window: if no new bytes arrive for this long after readSliceShort returns, the stream is considered hung.
     idle_timeout_ms: u32 = 180_000,
     /// Buffer size for reading HTTP response body
     response_buffer_size: usize = 256 * 1024,
@@ -1364,9 +1315,7 @@ pub const CallResponse = struct {
     reasoning_id: ?[]const u8 = null,
     reasoning_encrypted_content: ?[]const u8 = null,
     usage: Usage = .{},
-    /// Steps a CLI backend ran with its OWN tools. pabrik never executes these;
-    /// the workflow writes them into the transcript so the user can see what
-    /// happened between the prompt and the answer.
+    /// Steps a CLI backend ran with its OWN tools. pabrik never executes these; the workflow writes them into the transcript so the user can see what happened between …
     cli_tool_calls: ?[]CliToolCall = null,
 
     pub fn deinit(self: *const CallResponse) void {
@@ -1394,8 +1343,7 @@ pub const CallResponse = struct {
     }
 };
 
-/// Writes the UrlStyle-specific auth headers for one streaming request into
-/// `out` and returns how many it wrote.
+/// Writes the UrlStyle-specific auth headers for one streaming request into `out` and returns how many it wrote.
 pub fn authHeaders(
     allocator: std.mem.Allocator,
     style: []const u8,
@@ -1429,54 +1377,38 @@ pub const Agent = struct {
     client: custom_http_client.Client,
     io: std.Io,
     thinkingEnabled: bool = true,
-    /// Anthropic-only: override for `thinking.budget_tokens`. When set,
-    /// `buildJsonAnthropicRequest` uses it directly (clamped to >=1024 and
-    /// <max_tokens).
+    /// Anthropic-only: override for `thinking.budget_tokens`.
     thinkingBudgetTokens: ?u32 = null,
-    /// Anthropic-only: when true AND `thinkingBudgetTokens` is null,
-    /// `buildJsonAnthropicRequest` emits `thinking: {type: "adaptive"}`
-    /// instead of the 50%-of-max heuristic.
+    /// Anthropic-only: when true AND `thinkingBudgetTokens` is null, `buildJsonAnthropicRequest` emits `thinking: {type: "adaptive"}` instead of the 50%-of-max …
     thinkingAdaptive: bool = false,
     /// OpenAI-style reasoning effort knob (o1 / o3 / GPT-5 / DeepSeek-R1).
-    /// One of "low" | "medium" | "high" | "auto".
     reasoningEffort: ?[]const u8 = null,
     allocator: std.mem.Allocator,
     httpOptions: HttpOptions = .{},
     UrlStyle: []const u8 = "openai",
-    /// Which TRANSPORT this call uses: `"http"` (default) | `"claude-code"` |
-    /// `"opencode"`. Deliberately NOT a `UrlStyle` value.
+    /// Which TRANSPORT this call uses: `"http"` (default) | `"claude-code"` | `"opencode"`.
     backend: []const u8 = "http",
-    /// OpenCode CLI only: which of the CLI's own agents runs the turn
-    /// (`--agent`). Null = the CLI's default agent.
+    /// OpenCode CLI only: which of the CLI's own agents runs the turn (`--agent`).
     opencode_agent: ?[]const u8 = null,
-    /// OpenCode CLI only: whether to pass `--auto`. Null means on — a headless
-    /// run that stops to ask a permission question can never finish.
+    /// OpenCode CLI only: whether to pass `--auto`.
     opencode_auto: ?bool = null,
     /// OpenCode CLI only: the binary to execute. Empty = `opencode` on PATH.
     opencode_binary: []const u8 = "",
-    /// OpenCode CLI only: the directory the CLI runs in, so its file tools
-    /// operate on the session's project. Empty = the server's cwd.
+    /// OpenCode CLI only: the directory the CLI runs in, so its file tools operate on the session's project.
     opencode_cwd: []const u8 = "",
     userIdentifier: []const u8 = "AnakMagang",
-    /// Stable per-conversation session id for OpenCode Go / Zen routing. Sent
-    /// as the `x-opencode-session` HTTP header on every LLM request when
-    /// non-empty.
+    /// Stable per-conversation session id for OpenCode Go / Zen routing.
     sessionId: []const u8 = "",
-    /// Most recent server/transporter error detail (e.g. the JSON error body
-    /// the LLM provider returned for HTTP >=400, or a synthesized reason for
-    /// mid-stream failures like scanner errors / missing finish_reason).
+    /// Most recent server/transporter error detail (e.g. the JSON error body the LLM provider returned for HTTP >=400, or a synthesized reason for mid-stream failures …
     last_error_message: ?[]const u8 = null,
 
     /// Anthropic-only: cached input_tokens from the `message_start` event.
     _anthropic_input_tokens: u32 = 0,
-    /// Anthropic-only: guard so the cached input_tokens are sent exactly
-    /// once per call (on the first delta). Reset to false at the top of
-    /// every `callStreaming` invocation.
+    /// Anthropic-only: guard so the cached input_tokens are sent exactly once per call (on the first delta).
     _anthropic_usage_emitted: bool = false,
     /// Anthropic-only: cached `cache_read_input_tokens` from message_start.
     _anthropic_cache_read_tokens: u32 = 0,
-    /// Anthropic-only: cached `cache_creation_input_tokens` from
-    /// message_start.
+    /// Anthropic-only: cached `cache_creation_input_tokens` from message_start.
     _anthropic_cache_creation_tokens: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) Agent {
@@ -1559,9 +1491,7 @@ pub const Agent = struct {
             }
             if (msg.role == .assistant and msg.tool_calls != null) {
                 var content_blocks: []AnthropicContentBlock = &.{};
-                // NOTE: content_blocks is stored into
-                // json_messages[json_message_count].content below and must
-                // stay alive until the whole request has been serialized by
+                // NOTE: content_blocks is stored into json_messages[json_message_count].content below and must stay alive until the whole request has been serialized by
 
                 if (msg.reasoning_content) |rc| {
                     content_blocks = try arena_alloc.realloc(content_blocks, content_blocks.len + 1);
@@ -1611,22 +1541,19 @@ pub const Agent = struct {
                     .content = .{ .array = tool_content },
                 };
             } else {
-                // User messages (or any role whose `content_parts` carries
-                // multimodal content, e.g. an attached image).
+                // User messages (or any role whose `content_parts` carries multimodal content, e.g. an attached image).
                 const parts = msg.content_parts;
                 const has_parts = parts != null and parts.?.len > 0;
                 if (has_parts) {
                     var non_assistant_blocks: []AnthropicContentBlock = &.{};
-                    // Contents live until `defer arena.deinit()` (top of fn)
-                    // — same lifetime as the assistant branch's blocks.
+                    // Contents live until `defer arena.deinit()` (top of fn) — same lifetime as the assistant branch's blocks.
                     const part_count = parts.?.len;
                     non_assistant_blocks = try arena_alloc.alloc(
                         AnthropicContentBlock,
                         part_count,
                     );
                     for (parts.?, 0..) |part, j| {
-                        // CRITICAL: explicitly set ALL optional fields (see
-                        // comment above about 0xAA arena poison → SEGV).
+                        // CRITICAL: explicitly set ALL optional fields (see comment above about 0xAA arena poison → SEGV).
                         non_assistant_blocks[j] = .{
                             .text = null,
                             .tool_use = null,
@@ -1666,9 +1593,7 @@ pub const Agent = struct {
                         } else if (part.text) |t| {
                             non_assistant_blocks[j].text = t;
                         } else {
-                            // Hard error: never silently drop an unknown part
-                            // (locked 2026-09-18). A video part from a future
-                            // mime or a malformed part must surface, not coerce to "".
+                            // Hard error: never silently drop an unknown part (locked 2026-09-18).
                             return error.UnsupportedContentPart;
                         }
                     }
@@ -1709,8 +1634,7 @@ pub const Agent = struct {
 
         const resolved_max_tokens: usize = params.max_tokens orelse self.maxTokens;
 
-        // Anthropic requires `budget_tokens` to be >= 1024 AND strictly less
-        // than `max_tokens`.
+        // Anthropic requires `budget_tokens` to be >= 1024 AND strictly less than `max_tokens`.
         const thinking_on: bool = blk: {
             if (!self.thinkingEnabled) break :blk false;
             if (resolved_max_tokens < 1025) {
@@ -1722,9 +1646,7 @@ pub const Agent = struct {
 
         const thinking_budget: ?usize = blk: {
             if (!thinking_on) break :blk null;
-            // Three sources, in priority order (plan
-            // 2026-08-23-model-thinking): 1. Explicit
-            // `Agent.thinkingBudgetTokens` override.
+            // Three sources, in priority order (plan 2026-08-23-model-thinking): 1.
             if (self.thinkingBudgetTokens) |explicit| {
                 const floor_constrained: usize = if (explicit < 1024) 1024 else explicit;
                 const ceiling: usize = resolved_max_tokens -| 1;
@@ -1739,8 +1661,7 @@ pub const Agent = struct {
             break :blk if (floor_constrained < ceiling) floor_constrained else ceiling;
         };
 
-        // Anthropic requires `temperature` to be omitted (or exactly 1) when
-        // `thinking.type == "enabled"`.
+        // Anthropic requires `temperature` to be omitted (or exactly 1) when `thinking.type == "enabled"`.
         if (thinking_on) {
             if (params.temperature) |t| {
                 if (t != 1.0) {}
@@ -1751,8 +1672,6 @@ pub const Agent = struct {
             if (!thinking_on) break :blk null;
             if (thinking_budget) |bt| break :blk .{ .type = "enabled", .budget_tokens = bt };
             // Adaptive mode — Anthropic picks the budget itself.
-            // Triggered by profile.thinking == "auto" with no
-            // explicit budget override.
             break :blk .{ .type = "adaptive" };
         };
 
@@ -1792,9 +1711,7 @@ pub const Agent = struct {
         for (params.tools) |tool| {
             total_props += tool.function.parameters.properties.len;
         }
-        // Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style
-        // providers in thinking mode REQUIRE every assistant message to carry
-        // `reasoning_content` ("must be passed back to the API").
+        // Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style providers in thinking mode REQUIRE every assistant message to carry `reasoning_content` ("must …
         const history_has_reasoning = blk: {
             for (params.messages) |m| {
                 if (m.reasoning_content != null) break :blk true;
@@ -1809,9 +1726,7 @@ pub const Agent = struct {
             if (msg.tool_calls) |tcs| {
                 const tc_slice = try arena_alloc.alloc(JsonToolCall, tcs.len);
                 for (tcs, 0..) |tc, j| {
-                    // Repair before falling back to "{}": a Windows path
-                    // written with raw backslashes is invalid JSON, and
-                    // substituting "{}" here would both hide that and echo
+                    // Repair before falling back to "{}": a Windows path written with raw backslashes is invalid JSON, and substituting "{}" here would both hide that and echo
                     const normalized_args = blk: {
                         const raw = tc.function.arguments;
                         if (raw.len == 0) break :blk "{}";
@@ -1851,9 +1766,7 @@ pub const Agent = struct {
                 .content_parts = json_content_parts,
                 .tool_calls = json_tool_calls,
                 .tool_call_id = msg.tool_call_id,
-                // See backfill comment above: null → "" for assistant
-                // messages in thinking conversations (satisfies the
-                // provider's echo validator); null stays null otherwise so
+                // See backfill comment above: null → "" for assistant messages in thinking conversations (satisfies the provider's echo validator); null stays null otherwise so
                 .reasoning_content = msg.reasoning_content orelse (if (backfill_empty_reasoning and msg.role == .assistant) "" else null),
             };
         }
@@ -1892,8 +1805,6 @@ pub const Agent = struct {
             .tool_choice = if (json_tools != null) "auto" else null,
             .user = if (self.userIdentifier.len > 0) self.userIdentifier else null,
             // OpenAI reasoning effort (plan 2026-08-23-model-thinking).
-            // Borrowed from Agent.reasoningEffort (lifetime tied to the
-            // workflow's LlmConfig singleton).
             .reasoning_effort = self.reasoningEffort,
         };
 
@@ -1902,8 +1813,7 @@ pub const Agent = struct {
         return aw.toOwnedSlice();
     }
 
-    /// Build JSON body for OpenAI Responses API (`url_style =
-    /// "openai-response"`).
+    /// Build JSON body for OpenAI Responses API (`url_style = "openai-response"`).
     pub fn buildJsonResponsesRequest(self: Agent, params: AgentCall, stream: bool) ![]u8 {
         const allocator = self.allocator;
         var arena = std.heap.ArenaAllocator.init(allocator);
@@ -1995,8 +1905,7 @@ pub const Agent = struct {
                 }
                 input_count += 1;
             } else if (msg.role == .assistant) {
-                // Responses reasoning is a separate top-level `type:"reasoning"`
-                // item, NOT merged into the assistant `type:"message"` content.
+                // Responses reasoning is a separate top-level `type:"reasoning"` item, NOT merged into the assistant `type:"message"` content.
                 const has_tool_calls = msg.tool_calls != null and msg.tool_calls.?.len > 0;
                 const c = msg.content;
                 const rc = msg.reasoning_content;
@@ -2006,8 +1915,7 @@ pub const Agent = struct {
                 const has_enc = msg.reasoning_encrypted_content != null and msg.reasoning_encrypted_content.?.len > 0;
                 const has_reasoning = has_rc or has_rid or has_enc;
                 if (has_reasoning) {
-                    // Provider (Console Go → upstream) requires `summary` to
-                    // be present on every `type:"reasoning"` item.
+                    // Provider (Console Go → upstream) requires `summary` to be present on every `type:"reasoning"` item.
                     var summary: ?[]const ResponsesReasoningSummary = null;
                     if (has_rc) {
                         var s = try arena_alloc.alloc(ResponsesReasoningSummary, 1);
@@ -2056,19 +1964,15 @@ pub const Agent = struct {
                     }
                 }
             } else if (msg.role == .tool) {
-                // Gateway (Console Go → upstream,
-                // url_style="openai-response") validates
-                // `function_call_output` strictly: it rejects the request
+                // Gateway (Console Go → upstream, url_style="openai-response") validates `function_call_output` strictly: it rejects the request
                 const raw_output = msg.content orelse "";
                 const clean_output = helpers.sanitize.sanitizeUtf8(arena_alloc, raw_output) catch raw_output;
-                // Bound oversize outputs (ls -R + binary dumps). Cap is
-                // approximate: 20k content bytes + short marker suffix.
+                // Bound oversize outputs (ls -R + binary dumps).
                 const max_tool_output_len: usize = 20_000;
                 var final_output = clean_output;
                 if (clean_output.len > max_tool_output_len) {
                     var keep: usize = max_tool_output_len;
-                    // Back off to a UTF-8 char boundary (clean_output is
-                    // valid UTF-8 here, so a start byte is always found).
+                    // Back off to a UTF-8 char boundary (clean_output is valid UTF-8 here, so a start byte is always found).
                     while (keep > 0 and clean_output[keep] & 0xC0 == 0x80) keep -= 1;
                     const dropped = clean_output.len - keep;
                     const suffix = std.fmt.allocPrint(arena_alloc, "\n...[truncated {d} of {d} bytes]", .{ dropped, clean_output.len }) catch "";
@@ -2076,8 +1980,7 @@ pub const Agent = struct {
                 }
                 const cid = msg.tool_call_id orelse "";
                 if (cid.len == 0) {
-                    // An empty call_id can never pair with a function_call —
-                    // emitting it poisons the whole request, so skip + log.
+                    // An empty call_id can never pair with a function_call — emitting it poisons the whole request, so skip + log.
                     self.log_fmt(.err, "[RESPONSES] skipping function_call_output with empty call_id (output len={d})", .{final_output.len});
                     continue;
                 }
@@ -2159,8 +2062,6 @@ pub const Agent = struct {
         /// Overall read deadline (HttpOptions.read_timeout_ms) was exceeded.
         StreamTimeout,
         /// No new bytes for HttpOptions.idle_timeout_ms after readSliceShort returned.
-        /// With TCP keepalive, this fires after keepalive detects the dead connection
-        /// (~25s) and readSliceShort returns an error, then the idle check triggers.
         StreamIdleTimeout,
         /// Mid-stream transport error (e.g. ConnectionResetByPeer from keepalive).
         StreamInterrupted,
@@ -2177,8 +2078,7 @@ pub const Agent = struct {
     }
 
     pub fn parse_stream_chunk(self: *Agent, data: []const u8, arena: std.mem.Allocator) ?StreamChunk {
-        // Anthropic uses a different SSE event shape (`event:` + `data:`
-        // pairs with a `type` field, not `choices[0].delta`).
+        // Anthropic uses a different SSE event shape (`event:` + `data:` pairs with a `type` field, not `choices[0].delta`).
         if (std.mem.eql(u8, self.UrlStyle, "openai-response")) {
             return self.parse_responses_stream_chunk(data, arena);
         }
@@ -2228,8 +2128,7 @@ pub const Agent = struct {
             }
         }
 
-        // `usage` stays a Value so a malformed counter costs the call its
-        // usage, not its content; the typed struct reads it below.
+        // `usage` stays a Value so a malformed counter costs the call its usage, not its content; the typed struct reads it below.
         if (wire.usage) |usage_value| {
             if (WireUsage.fromValue(arena, usage_value)) |usage| chunk.usage = usage.toChatCompletionsUsage();
         }
@@ -2237,9 +2136,7 @@ pub const Agent = struct {
         return chunk;
     }
 
-    /// Anthropic streaming-SSE → StreamChunk mapper. Anthropic's /v1/messages
-    /// streams `event:` + `data:` pairs (the wire shape the OpenAI parser
-    /// doesn't understand).
+    /// Anthropic streaming-SSE → StreamChunk mapper.
     fn parse_anthropic_stream_chunk(
         self: *Agent,
         data: []const u8,
@@ -2265,7 +2162,6 @@ pub const Agent = struct {
 
         if (std.mem.eql(u8, event_type, "message_start")) {
             // Cache input_tokens from message.message.usage.input_tokens.
-            // Emit no chunk — the first delta will carry the usage.
             const message = root.object.get("message") orelse return null;
             if (message != .object) return null;
             const usage = message.object.get("usage") orelse return null;
@@ -2273,9 +2169,7 @@ pub const Agent = struct {
             if (usage.object.get("input_tokens")) |it| {
                 if (it == .integer) self._anthropic_input_tokens = @intCast(it.integer);
             }
-            // Cache the cache-shaped fields too — some relays send them at
-            // message_start but not at message_delta, and the first-delta
-            // usage chunk below folds both into prompt_tokens.
+            // Cache the cache-shaped fields too — some relays send them at message_start but not at message_delta, and the first-delta usage chunk below folds both into …
             if (usage.object.get("cache_read_input_tokens")) |cr| {
                 if (cr == .integer) self._anthropic_cache_read_tokens = @intCast(cr.integer);
             }
@@ -2293,8 +2187,7 @@ pub const Agent = struct {
             if (index != .integer or cb != .object) return null;
             const cb_type = cb.object.get("type") orelse return null;
             if (cb_type != .string) return null;
-            // Only tool_use blocks need a tool_calls_delta here (text /
-            // thinking blocks just carry content deltas — handled below).
+            // Only tool_use blocks need a tool_calls_delta here (text /thinking blocks just carry content deltas — handled below).
             if (!std.mem.eql(u8, cb_type.string, "tool_use")) return null;
 
             const id_val = cb.object.get("id") orelse return null;
@@ -2338,8 +2231,7 @@ pub const Agent = struct {
                 return null; // unknown delta.type — ignore
             }
 
-            // Emit a usage chunk on the FIRST delta so the aggregator sees
-            // the cached input_tokens count.
+            // Emit a usage chunk on the FIRST delta so the aggregator sees the cached input_tokens count.
             if (self._anthropic_input_tokens > 0 and !self._anthropic_usage_emitted) {
                 const cached_creation = self._anthropic_cache_creation_tokens;
                 const cached_read = self._anthropic_cache_read_tokens;
@@ -2361,8 +2253,7 @@ pub const Agent = struct {
                     chunk.finish_reason = FinishReason.from_str(map_anthropic_stop_reason(sr.string));
                 }
             }
-            // Anthropic's `message_delta.usage` carries the AUTHORITATIVE
-            // token counts for the call.
+            // Anthropic's `message_delta.usage` carries the AUTHORITATIVE token counts for the call.
             if (root.object.get("usage")) |usage_val| {
                 if (usage_val == .object) {
                     var input_tokens: u32 = self._anthropic_input_tokens;
@@ -2471,16 +2362,14 @@ pub const Agent = struct {
         if (std.mem.eql(u8, event_type, "response.reasoning_text.done") or
             std.mem.eql(u8, event_type, "response.reasoning_summary_text.done"))
         {
-            // `done` carries the final `text` for the part — use it as
-            // fallback when deltas were not emitted or were dropped.
+            // `done` carries the final `text` for the part — use it as fallback when deltas were not emitted or were dropped.
             const text = root.object.get("text") orelse return null;
             if (text != .string) return null;
             if (text.string.len == 0) return null;
             chunk.reasoning_content = text.string;
             return chunk;
         }
-        // Reasoning summary part boundaries — `added`/`done` carry `part`
-        // with `{type:"summary_text", text:"..."}`.
+        // Reasoning summary part boundaries — `added`/`done` carry `part` with `{type:"summary_text", text:"..."}`.
         if (std.mem.eql(u8, event_type, "response.reasoning_summary_part.added") or
             std.mem.eql(u8, event_type, "response.reasoning_summary_part.done"))
         {
@@ -2537,9 +2426,7 @@ pub const Agent = struct {
             // Final arguments already assembled via deltas; emit one more delta with full arguments so aggregator finalizes
             const args = root.object.get("arguments") orelse return null;
             if (args != .string) return null;
-            // If we already streamed deltas, this is duplicate;aggregator appends, so only emit if non-empty and not already covered
-            // We emit as a final chunk only if the string is non-empty and we haven't already emitted same length via deltas
-            // For safety, return null to avoid double-append — the deltas already built the full JSON.
+            // If we already streamed deltas, this is duplicate;aggregator appends, so only emit if non-empty and not already covered We emit as a final chunk only if the …
             return null;
         }
         // Custom tool deltas (future proof)
@@ -2555,8 +2442,7 @@ pub const Agent = struct {
             chunk.tool_calls_delta = slice;
             return chunk;
         }
-        // Reasoning item done — the per-item finalization carries the
-        // complete summary + id + encrypted_content for that reasoning item.
+        // Reasoning item done — the per-item finalization carries the complete summary + id + encrypted_content for that reasoning item.
         if (std.mem.eql(u8, event_type, "response.output_item.done")) {
             const item = root.object.get("item") orelse return null;
             if (item != .object) return null;
@@ -2583,8 +2469,7 @@ pub const Agent = struct {
             if (item.object.get("encrypted_content")) |ev| {
                 if (ev == .string and ev.string.len > 0) chunk.reasoning_encrypted_content = ev.string;
             }
-            // Don't return yet if only id/enc without summary — let it
-            // flow as terminal-like chunk so aggregator captures id/enc.
+            // Don't return yet if only id/enc without summary — let it flow as terminal-like chunk so aggregator captures id/enc.
             if (chunk.reasoning_content != null or chunk.reasoning_id != null or chunk.reasoning_encrypted_content != null) return chunk;
             return null;
         }
@@ -2624,9 +2509,7 @@ pub const Agent = struct {
                 chunk.finish_reason = .stop;
             }
 
-            // FIX: The Responses API has NO distinct terminal status for tool
-            // calls — `status` stays "completed" even when the model emitted
-            // one or more function_call items.
+            // FIX: The Responses API has NO distinct terminal status for tool calls — `status` stays "completed" even when the model emitted one or more function_call items.
             if (response.object.get("output")) |output_val| {
                 if (output_val == .array) {
                     for (output_val.array.items) |item| {
@@ -2641,8 +2524,7 @@ pub const Agent = struct {
                 }
             }
 
-            // Capture reasoning metadata from terminal output: id,
-            // encrypted_content, and summary[] fallback for reasoning_content.
+            // Capture reasoning metadata from terminal output: id, encrypted_content, and summary[] fallback for reasoning_content.
             if (response.object.get("output")) |output_val| {
                 if (output_val == .array) {
                     var first_reasoning_id: ?[]const u8 = null;
@@ -2701,8 +2583,7 @@ pub const Agent = struct {
             if (chunk.finish_reason == null) chunk.finish_reason = .stop;
             return chunk;
         }
-        // Ignored lifecycle events: response.created, response.in_progress, response.queued,
-        // response.content_part.added/done, response.output_item.done, response.output_text.annotation.*
+        // Ignored lifecycle events: response.created, response.in_progress, response.queued, response.content_part.added/done, response.output_item.done …
         return null;
     }
     pub fn callStreaming(
@@ -2734,9 +2615,7 @@ pub const Agent = struct {
             return self.callOpencodeCli(params, ctx, callback);
         }
 
-        // Reset per-call Anthropic parser scratch state. The Agent is reused
-        // across many calls; without this reset, the second call would see
-        // stale input_tokens + a stuck `_usage_emitted` flag.
+        // Reset per-call Anthropic parser scratch state.
         self._anthropic_input_tokens = 0;
         self._anthropic_usage_emitted = false;
         self._anthropic_cache_read_tokens = 0;
@@ -2775,18 +2654,14 @@ pub const Agent = struct {
         const json_ellipsis = if (json_body.len > 500) "..." else "";
         self.log_fmt(.debug, "[STREAM REQUEST] JSON body ({} bytes): {s}{s}", .{ json_body.len, json_body[0..json_preview_len], json_ellipsis });
 
-        // 2. Compose URL: baseUrl + endpoint. Anthropic's correct API path is
-        // /v1/messages. const endpoint = if (std.mem.eql(u8, self.UrlStyle,
-        // "anthropic")) "/v1/messages" else "/chat/completions";
+        // 2.
         const uri_str = std.mem.concat(self.allocator, u8, &.{self.baseUrl}) catch |err| {
             self.log_error("concat URI", err, null);
             return error.OutOfMemory;
         };
         defer self.allocator.free(uri_str);
 
-        // Validate the URL scheme BEFORE handing it to libcurl. libcurl
-        // returns CURLE_UNSUPPORTED_PROTOCOL (LocalError.UnsupportedProtocol)
-        // for any URL it can't parse a scheme out of — which surfaces to the
+        // Validate the URL scheme BEFORE handing it to libcurl. libcurl returns CURLE_UNSUPPORTED_PROTOCOL (LocalError.UnsupportedProtocol) for any URL it can't parse a …
         const has_http_scheme = std.mem.startsWith(u8, uri_str, "http://") or
             std.mem.startsWith(u8, uri_str, "https://");
         if (!has_http_scheme) {
@@ -2803,9 +2678,7 @@ pub const Agent = struct {
             return error.InvalidUri;
         }
 
-        // 3. Compose auth headers per UrlStyle. `authHeaders` owns the
-        // anthropic-vs-Bearer split and is pinned by tests against the
-        // header list it emits, not by a grep of this file.
+        // 3.
         var auth_value: ?[]u8 = null;
         defer if (auth_value) |v| self.allocator.free(v);
 
@@ -2859,9 +2732,7 @@ pub const Agent = struct {
 
         if (status >= 400) {
             self.log_fmt(.err, "[STREAM] HTTP error status: {d}", .{status});
-            // Drain the error body so the workflow catch block can log the
-            // server's actual reason (rate limit, auth, model not found,
-            // context length, etc.) instead of just `error.ApiError`.
+            // Drain the error body so the workflow catch block can log the server's actual reason (rate limit, auth, model not found, context length, etc.) instead of just …
             var body_buf: std.ArrayList(u8) = .empty;
             defer body_buf.deinit(self.allocator);
             const max_body_len: usize = 4096;
@@ -2911,8 +2782,7 @@ pub const Agent = struct {
         // 9. SSE loop.
         var scanner_null_count: u32 = 0;
         while (true) {
-            // Cancellation check — the only place a MID-stream stop can be
-            // observed.
+            // Cancellation check — the only place a MID-stream stop can be observed.
             if (params.cancel_fn) |should_cancel| {
                 if (should_cancel()) {
                     stream.cancel();
@@ -2930,9 +2800,7 @@ pub const Agent = struct {
                     }
                 }
                 self.log_fmt(.err, "[STREAM] scanner.next failed: {s}", .{@errorName(err)});
-                // Surface the underlying scanner error name to the workflow
-                // catch block so it can tell apart a parse failure from a
-                // network drop from an EOF mid-line, instead of all
+                // Surface the underlying scanner error name to the workflow catch block so it can tell apart a parse failure from a network drop from an EOF mid-line, instead of …
                 const detail: ?[]u8 = if (err == error.UnsupportedProtocol and
                     std.mem.startsWith(u8, uri_str, "https://"))
                     std.fmt.allocPrint(
@@ -2963,17 +2831,14 @@ pub const Agent = struct {
                         aggregator.process_chunk(chunk) catch {};
                     } else {
                         self.log_fmt(.err, "[STREAM] parse_stream_chunk returned null for: {s}", .{data});
-                        // Capture the raw SSE data line for the final-error
-                        // message — only while chunk_count == 0 (i.e. the
-                        // server's first lines are still unparsed).
+                        // Capture the raw SSE data line for the final-error message — only while chunk_count == 0 (i.e. the server's first lines are still unparsed).
                         if (chunk_count == 0 and raw_sse_sample.items.len < max_raw_sse_sample_len) {
                             raw_sse_sample.appendSlice(self.allocator, data) catch {};
                             raw_sse_sample.append(self.allocator, '\n') catch {};
                         }
                     }
                 } else {
-                    // parse_sse_line returned null: this line isn't a `data:
-                    // …` payload.
+                    // parse_sse_line returned null: this line isn't a `data
                     if (chunk_count == 0 and raw_sse_sample.items.len < max_raw_sse_sample_len) {
                         raw_sse_sample.appendSlice(self.allocator, line) catch {};
                         raw_sse_sample.append(self.allocator, '\n') catch {};
@@ -2981,15 +2846,12 @@ pub const Agent = struct {
                 }
                 continue;
             }
-            // next() returned null. The worker MIGHT have finished (clean
-            // EOF) OR the polling budget might have elapsed (worker still
-            // going).
+            // next() returned null.
             scanner_null_count += 1;
             if (scanner_null_count >= 2) break;
         }
 
-        // A cancel can also land in the window between the final chunk and
-        // the loop exit above.
+        // A cancel can also land in the window between the final chunk and the loop exit above.
         if (params.cancel_fn) |should_cancel| {
             if (should_cancel()) {
                 stream.cancel();
@@ -2997,14 +2859,10 @@ pub const Agent = struct {
             }
         }
 
-        // 10. The scanner returned null twice in a row, which means
-        // the worker has definitively finished (clean EOF) without
-        // sending a finish_reason chunk. Treat as a mid-stream death.
+        // 10.
         if (aggregator.finish_reason == null) {
             self.log_fmt(.err, "[STREAM] stream ended without finish_reason (chunks={})", .{chunk_count});
-            // Tell the workflow catch block HOW the stream died and roughly
-            // how far it got, so the user can distinguish "the server cut us
-            // off after a few tokens" from "it never started streaming at
+            // Tell the workflow catch block HOW the stream died and roughly how far it got, so the user can distinguish "the server cut us off after a few tokens" from "it …
             const sample_truncated = raw_sse_sample.items.len >= max_raw_sse_sample_len;
             const sample_for_msg: []const u8 = if (raw_sse_sample.items.len > 0)
                 if (sample_truncated)
@@ -3020,9 +2878,7 @@ pub const Agent = struct {
                     .{
                         chunk_count,
                         sample_for_msg,
-                        // Console Go gateway error when `x-opencode-session`
-                        // was missing. Point at the fix instead of leaving
-                        // the user to decode the raw JSON envelope.
+                        // Console Go gateway error when `x-opencode-session` was missing.
                         if (std.mem.indexOf(u8, sample_for_msg, "MissingSessionID") != null)
                             " [hint: provider requires x-opencode-session header — Agent.sessionId was empty or not sent; see https://opencode.ai/docs/go/#where-can-i-use-it]"
                         else
@@ -3338,8 +3194,7 @@ test "AnthropicContentBlock video serializes type video" {
 // ===== Tests merged from agent_request_user_id_test.zig (2026-09-29 flatten) =====
 const testing = std.testing;
 
-/// Hardcoded identifier — the value that every Anthropic + OpenAI call
-/// from this fork of pabrik sends. See `Agent.userIdentifier` default.
+/// Hardcoded identifier — the value that every Anthropic + OpenAI call from this fork of pabrik sends.
 const HARDCODED_USER_ID = "AnakMagang";
 
 fn makeAgentUserId(user_id: []const u8) Agent {
@@ -3422,9 +3277,7 @@ test "buildJsonAnthropicRequest omits metadata entirely when userIdentifier is e
     try testing.expect(std.mem.indexOf(u8, body, "\"metadata\"") == null);
 }
 
-// ===== Tests merged from anthropic_adaptive_test.zig (2026-09-29 flatten)
-// ===== Tests for the new Anthropic `thinking_budget_tokens` override +
-// `type: "adaptive"` mode in `buildJsonAnthropicRequest`.
+// ===== Tests merged from anthropic_adaptive_test.zig (2026-09-29 flatten) ===== Tests for the new Anthropic `thinking_budget_tokens` override + `type …
 
 const AnthropicAdaptiveMakeOpts = struct {
     thinkingEnabled: bool = true,
@@ -3461,9 +3314,7 @@ fn emptyToolsAnthropicAdaptive() []const AgentTool {
 }
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens honored as exact budget" {
-    // 16384 / 2 = 8192 (the heuristic). User wants 2048.
-    // With override, the request body MUST carry budget_tokens=2048
-    // and MUST emit type:enabled (not adaptive).
+    // 16384 / 2 = 8192 (the heuristic).
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = 2048 });
     defer a.deinit();
 
@@ -3482,7 +3333,6 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens honored as exact budget" {
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens below floor clamps to 1024" {
     // max_tokens=8192, override=512 (below the 1024 floor).
-    // Anthropic requires budget_tokens >= 1024, so we MUST clamp.
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = 512, .maxTokens = 8192 });
     defer a.deinit();
 
@@ -3499,8 +3349,6 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens below floor clamps to 1024
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens above ceiling clamps to max_tokens - 1" {
     // max_tokens=2048, override=4096 (way above max_tokens).
-    // Anthropic requires budget_tokens < max_tokens strictly, so
-    // we MUST clamp to 2047.
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = 4096, .maxTokens = 2048 });
     defer a.deinit();
 
@@ -3516,8 +3364,7 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens above ceiling clamps to ma
 }
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens=null + thinkingAdaptive=true emits type:adaptive" {
-    // User picked "auto" in the UI → workflow sets thinkingAdaptive=true and
-    // leaves thinkingBudgetTokens=null.
+    // User picked "auto" in the UI → workflow sets thinkingAdaptive=true and leaves thinkingBudgetTokens=null.
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = null, .thinkingAdaptive = true });
     defer a.deinit();
 
@@ -3535,8 +3382,6 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens=null + thinkingAdaptive=tr
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens=null + thinkingAdaptive=false falls back to 50% heuristic" {
     // User picked "on" in the UI → workflow sets thinkingAdaptive=false.
-    // The request body MUST emit type:enabled with budget_tokens =
-    // half of max_tokens (the existing 50%-of-max heuristic).
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = null, .thinkingAdaptive = false, .maxTokens = 8192 });
     defer a.deinit();
 
@@ -3554,9 +3399,7 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens=null + thinkingAdaptive=fa
 }
 
 test "buildJsonAnthropicRequest: thinkingEnabled=false omits thinking entirely (override is ignored)" {
-    // thinkingEnabled is the master gate — even with
-    // thinkingBudgetTokens set, the entire `thinking` block is
-    // omitted from the request body.
+    // thinkingEnabled is the master gate — even with thinkingBudgetTokens set, the entire `thinking` block is omitted from the request body.
     var a = makeAgentAnthropicAdaptive(.{ .thinkingEnabled = false, .thinkingBudgetTokens = 4096 });
     defer a.deinit();
 
@@ -3573,9 +3416,7 @@ test "buildJsonAnthropicRequest: thinkingEnabled=false omits thinking entirely (
 }
 
 test "buildJsonAnthropicRequest: thinkingBudgetTokens wins over thinkingAdaptive (precedence)" {
-    // When both are set (which shouldn't happen in production but
-    // could via a misconfigured profile), the explicit budget
-    // wins. The adaptive flag is only consulted when budget is null.
+    // When both are set (which shouldn't happen in production but could via a misconfigured profile), the explicit budget wins.
     var a = makeAgentAnthropicAdaptive(.{ .thinkingBudgetTokens = 3000, .thinkingAdaptive = true });
     defer a.deinit();
 
@@ -3592,9 +3433,7 @@ test "buildJsonAnthropicRequest: thinkingBudgetTokens wins over thinkingAdaptive
     try testing.expect(std.mem.indexOf(u8, body, "\"type\":\"adaptive\"") == null);
 }
 
-// ===== Tests merged from anthropic_request_test.zig (2026-09-29 flatten)
-// ===== Regression tests for the Anthropic request-builder bugs documented in
-// `docs/superpowers/plans/<anthropic-request-fixes>.md`.
+// ===== Tests merged from anthropic_request_test.zig (2026-09-29 flatten) ===== Regression tests for the Anthropic request-builder bugs documented in …
 
 fn makeAgentAnthropicRequest(opts: struct {
     model: []const u8 = "claude-test",
@@ -3668,9 +3507,7 @@ fn freeBodyAnthropicRequest(body: ParsedBodyAnthropicRequest) void {
     body.parsed.deinit();
 }
 
-// ============================================================================
 // Bug 1 — system messages go to top-level "system" field
-// ============================================================================
 
 test "buildJsonAnthropicRequest: system message moves to top-level 'system' field, not into messages" {
     var a = makeAgentAnthropicRequest(.{});
@@ -3690,8 +3527,7 @@ test "buildJsonAnthropicRequest: system message moves to top-level 'system' fiel
     try testing.expect(system_str == .string);
     try testing.expectEqualStrings("You are a helpful assistant.", system_str.string);
 
-    // No message inside `messages` should have role == "system" — the
-    // only message remaining should be the user one.
+    // No message inside `messages` should have role == "system" — the only message remaining should be the user one.
     try testing.expect(body.parsed.value.object.get("messages") != null);
     const messages_arr = body.parsed.value.object.get("messages").?;
     try testing.expect(messages_arr == .array);
@@ -3734,15 +3570,11 @@ test "buildJsonAnthropicRequest: no system message → top-level 'system' field 
     var body = try buildAndParseAnthropicRequest(&a, &messages, null, null);
     defer freeBodyAnthropicRequest(body);
 
-    // Top-level "system" field must be omitted entirely (not null, not
-    // empty string — Anthropic only has a system prompt when we send
-    // one).
+    // Top-level "system" field must be omitted entirely (not null, not empty string — Anthropic only has a system prompt when we send one).
     try testing.expect(body.parsed.value.object.get("system") == null);
 }
 
-// ============================================================================
 // Bug 2 — thinking.enabled must include budget_tokens
-// ============================================================================
 
 test "buildJsonAnthropicRequest: thinkingEnabled emits budget_tokens (>=1024 and <max_tokens)" {
     // Default Agent.maxTokens is 4096 → budget should be min(2048, 4095) = 2048.
@@ -3755,8 +3587,7 @@ test "buildJsonAnthropicRequest: thinkingEnabled emits budget_tokens (>=1024 and
 
     // Substring match on raw body — robust to JSON key order + whitespace.
     try testing.expect(std.mem.indexOf(u8, raw, "\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":") != null);
-    // Also check the value is exactly 2048 (50% of 4096 with the >=
-    // 1024 floor satisfied and < max_tokens satisfied trivially).
+    // Also check the value is exactly 2048 (50% of 4096 with the >= 1024 floor satisfied and < max_tokens satisfied trivially).
     try testing.expect(std.mem.indexOf(u8, raw, "\"budget_tokens\":2048") != null);
 }
 
@@ -3783,13 +3614,10 @@ test "buildJsonAnthropicRequest: thinkingEnabled=false omits thinking field enti
     try testing.expect(std.mem.indexOf(u8, raw, "\"thinking\"") == null);
 }
 
-// ============================================================================
 // Bug 2 — small-max_tokens guard
-// ============================================================================
 
 test "buildJsonAnthropicRequest: thinkingEnabled=true with max_tokens<1025 forces thinking off (no budget that violates the floor)" {
-    // max_tokens=1024 → can't be thinking-enabled: floor would be 1024,
-    // but must be < max_tokens. Expect thinking omitted from output.
+    // max_tokens=1024 → can't be thinking-enabled: floor would be 1024, but must be < max_tokens.
     var a = makeAgentAnthropicRequest(.{ .maxTokens = 1024 });
     defer a.deinit();
 
@@ -3800,9 +3628,7 @@ test "buildJsonAnthropicRequest: thinkingEnabled=true with max_tokens<1025 force
     try testing.expect(std.mem.indexOf(u8, raw, "\"thinking\"") == null);
 }
 
-// ============================================================================
 // Bug 3 — temperature must not be sent alongside thinking.enabled
-// ============================================================================
 
 test "buildJsonAnthropicRequest: temperature is omitted when thinkingEnabled=true (even if caller set it)" {
     var a = makeAgentAnthropicRequest(.{ .thinkingEnabled = true });
@@ -3836,9 +3662,7 @@ test "buildJsonAnthropicRequest: temperature is emitted when thinkingEnabled=fal
     try testing.expect(temp_value_ok);
 }
 
-// ============================================================================
 // Bug 4 — Anthropic doesn't accept stream_options
-// ============================================================================
 
 test "buildJsonAnthropicRequest: stream=true emits 'stream':true and does NOT emit 'stream_options'" {
     var a = makeAgentAnthropicRequest(.{});
@@ -3856,9 +3680,7 @@ test "buildJsonAnthropicRequest: stream=true emits 'stream':true and does NOT em
     try testing.expect(std.mem.indexOf(u8, raw, "\"stream_options\"") == null);
 }
 
-// ============================================================================
 // Regression: OpenAI path is unaffected
-// ============================================================================
 
 test "regression: buildJsonOpenAIRequest keeps 'stream_options.include_usage' verbatim" {
     var a = makeAgentAnthropicRequest(.{});
@@ -3877,14 +3699,10 @@ test "regression: buildJsonOpenAIRequest keeps 'stream_options.include_usage' ve
     try testing.expect(std.mem.indexOf(u8, body, "\"stream_options\":{\"include_usage\":true}") != null);
 }
 
-// ============================================================================
 // Regression: callStreaming auth headers per UrlStyle
-// ============================================================================
 
 test "callStreaming: anthropic style sends x-api-key + anthropic-version (not only Bearer)" {
-    // Regression for `AuthError: Missing API key` on anthropic-style chat
-    // (e.g. opencode.ai/zen/go/v1/messages): callStreaming sent only
-    // `Authorization: Bearer`, which Anthropic-style upstreams ignore.
+    // Regression for `AuthError: Missing API key` on anthropic-style chat (e.g. opencode.ai/zen/go/v1/messages): callStreaming sent only `Authorization: Bearer` …
     var buf: [4]custom_http_client.Header = undefined;
     var auth_value: ?[]u8 = null;
     defer if (auth_value) |v| testing.allocator.free(v);
@@ -3923,15 +3741,12 @@ test "callStreaming: an anthropic request with no key omits x-api-key but keeps 
 }
 
 // ===== Tests merged from call_streaming_test.zig (2026-09-29 flatten) =====
-// Regression tests for `Agent.callStreaming` deadline / error-propagation
-// behavior.
 
 const posix = std.posix;
 const linux = std.posix.system;
 const builtin = @import("builtin");
 
-// Platform socket constants. Mirrors http_server.zig to keep this test
-// self-contained (no cross-module dependency).
+// Platform socket constants.
 const AF_INET = if (builtin.os.tag == .windows) @as(u32, 2) else posix.AF.INET;
 const SOCK_STREAM = if (builtin.os.tag == .windows) @as(u32, 1) else posix.SOCK.STREAM;
 const IPPROTO_TCP = if (builtin.os.tag == .windows) @as(u32, 6) else posix.IPPROTO.TCP;
@@ -3944,9 +3759,7 @@ const expectErrorCallStreaming = std.testing.expectError;
 const expectEqualStringsCallStreaming = std.testing.expectEqualStrings;
 const testing_allocatorCallStreaming = std.testing.allocator;
 
-// ============================================================================
-// Structural tests — pin the new error variants and HttpOptions field so the
-// fix can't be silently removed by a future refactor.
+// Structural tests — pin the new error variants and HttpOptions field so the fix can't be silently removed by a future refactor.
 
 test "CallError has the four new streaming variants" {
     // Compile-time + runtime check: each new error must be assignable to CallError.
@@ -3965,14 +3778,11 @@ test "CallError has the four new streaming variants" {
     try expectEqualStringsCallStreaming("StreamEmpty", @errorName(d));
 }
 
-// Pinned 2026-06-28 when idle_timeout_ms was raised from 60_000 to 180_000 to
-// support reasoning models.
+// Pinned 2026-06-28 when idle_timeout_ms was raised from 60_000 to 180_000 to support reasoning models.
 test "HttpOptions.idle_timeout_ms default stays above TCP keepalive window" {
     const defaults = HttpOptions{};
     try expectCallStreaming(defaults.idle_timeout_ms >= 30_000);
-    // Also pin the actual current value so a future bump (or accidental
-    // revert to 60_000) shows up as a clear test failure, not a silent
-    // behavioral change.
+    // Also pin the actual current value so a future bump (or accidental revert to 60_000) shows up as a clear test failure, not a silent behavioral change.
     try expectEqualCallStreaming(@as(u32, 180_000), defaults.idle_timeout_ms);
 }
 
@@ -4179,17 +3989,13 @@ test "callStreaming ignores a claude-code UrlStyle when backend is http" {
     a.apiKey = "k";
     a.UrlStyle = "claude-code";
     const result = a.callStreaming(makeCall(), null, noopCallback);
-    // Empty base_url has no scheme → the HTTP path's InvalidUri, not the
-    // CLI guard.
+    // Empty base_url has no scheme → the HTTP path's InvalidUri, not the CLI guard.
     try expectErrorCallStreaming(error.InvalidUri, result);
 }
 
-// A PORTABLE fake HTTP server (std.Io.net, so it runs on Windows too): the
-// streaming tests point the agent at it, and its behaviours cover the three
-// ways a server can leave a stream for dead.
+// A PORTABLE fake HTTP server (std.Io.net, so it runs on Windows too): the streaming tests point the agent at it, and its behaviours cover the three ways a …
 
-/// How the fixture answers a connection. Every behaviour either finishes its
-/// response or holds the socket open until the test stops the fixture.
+/// How the fixture answers a connection.
 const ServerBehavior = enum {
     /// Send the HTTP head, then hold the socket open with no body at all.
     head_only_then_stall,
@@ -4197,22 +4003,18 @@ const ServerBehavior = enum {
     one_chunk_then_stall,
     /// Send the head, then close at once (FIN with no body byte).
     head_then_close,
-    /// Send a complete chunked SSE body that ends in a finish_reason, then hold
-    /// the socket open. The one behaviour `callStreaming` can SUCCEED against.
+    /// Send a complete chunked SSE body that ends in a finish_reason, then hold the socket open.
     complete_chunked_response,
 };
 
-/// A one-listener HTTP fixture on every host. It replaced one that drove
-/// `std.os.linux` raw sockets — Linux-only, and it closed fds behind std.Io's
-/// back, which hung `std.Io.Threaded.closeFd` on teardown.
+/// A one-listener HTTP fixture on every host.
 const FakeServer = struct {
     allocator: std.mem.Allocator,
     listener: std.Io.net.Server,
     port: u16,
     behavior: ServerBehavior,
     stop: std.atomic.Value(bool),
-    /// Set by the worker once a connection has been accepted, so a test can
-    /// avoid racing the accept loop's first scheduling.
+    /// Set by the worker once a connection has been accepted, so a test can avoid racing the accept loop's first scheduling.
     connection_seen: std.atomic.Value(bool),
     thread: std.Thread,
 
@@ -4226,8 +4028,7 @@ const FakeServer = struct {
         self.* = .{
             .allocator = allocator,
             .listener = listener,
-            // Port 0 above asked the OS to pick; the resolved value only lands
-            // in the socket AFTER listen() runs.
+            // Port 0 above asked the OS to pick; the resolved value only lands in the socket AFTER listen() runs.
             .port = listener.socket.address.getPort(),
             .behavior = behavior,
             .stop = std.atomic.Value(bool).init(false),
@@ -4238,8 +4039,7 @@ const FakeServer = struct {
         return self;
     }
 
-    /// Stop the worker, close the listener, free the fixture. Safe while the
-    /// worker is parked in accept OR holding a stalled connection open.
+    /// Stop the worker, close the listener, free the fixture.
     fn deinit(self: *FakeServer) void {
         const io = std.testing.io;
         self.stop.store(true, .release);
@@ -4259,9 +4059,7 @@ const FakeServer = struct {
     }
 };
 
-/// One throwaway connection, opened only to unpark a worker sitting in
-/// `accept`. A failure means the worker was not parked after all, so the error
-/// is deliberately ignored.
+/// One throwaway connection, opened only to unpark a worker sitting in `accept`.
 fn wakeAccept(port: u16) void {
     const io = std.testing.io;
     const address = std.Io.net.IpAddress.parseIp4("127.0.0.1", port) catch return;
@@ -4282,9 +4080,7 @@ const sse_head =
 const sse_delta_chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
 const sse_finish_chunk = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n";
 
-/// Worker: accept, answer per `behavior`, repeat until `stop` is published, so
-/// the leak tests can drive several calls against ONE port. A stall behaviour
-/// holds its socket, so only `head_then_close` serves call after call.
+/// Worker: accept, answer per `behavior`, repeat until `stop` is published, so the leak tests can drive several calls against ONE port.
 fn serve(self: *FakeServer) void {
     const io = std.testing.io;
     while (true) {
@@ -4313,17 +4109,14 @@ fn serveConnection(
         .complete_chunked_response => {
             try writeSseChunk(&writer.interface, sse_delta_chunk);
             try writeSseChunk(&writer.interface, sse_finish_chunk);
-            // The zero-length chunk ends the body: a complete SSE response,
-            // which the client may finish without ever seeing a FIN.
+            // The zero-length chunk ends the body: a complete SSE response, which the client may finish without ever seeing a FIN.
             try writer.interface.writeAll("0\r\n\r\n");
         },
         .head_only_then_stall, .head_then_close => {},
     }
     try writer.interface.flush();
 
-    // Hold the socket open instead of closing it: a FIN raced against the
-    // head is what a stall looks like, and for the complete response the
-    // chunked terminator is already the end of the body.
+    // Hold the socket open instead of closing it: a FIN raced against the head is what a stall looks like, and for the complete response the chunked terminator is …
     switch (behavior) {
         .head_then_close => {},
         .head_only_then_stall, .one_chunk_then_stall, .complete_chunked_response => sleepUntilStop(stop, 60_000),
@@ -4361,8 +4154,7 @@ fn makeBaseUrl(allocator: std.mem.Allocator, port: u16) ![]u8 {
     return std.fmt.allocPrint(allocator, "http://127.0.0.1:{d}", .{port});
 }
 
-/// Counting callback: how many stream chunks reached the caller, so a test can
-/// tell "the server never sent a body" from "it sent one and then died".
+/// Counting callback: how many stream chunks reached the caller, so a test can tell "the server never sent a body" from "it sent one and then died".
 const ChunkCounter = struct {
     seen: usize = 0,
 
@@ -4372,9 +4164,7 @@ const ChunkCounter = struct {
     }
 };
 
-/// Run callStreaming against a fake server with custom timeouts; returns the
-/// outcome and the elapsed wall-clock ms. The agent runs on an arena because
-/// `callStreaming` is arena-scoped, so the helper only serves FAILING calls.
+/// Run callStreaming against a fake server with custom timeouts; returns the outcome and the elapsed wall-clock ms.
 fn runStreamingWithTimeout(
     port: u16,
     idle_timeout_ms: u32,
@@ -4404,9 +4194,7 @@ fn runStreamingWithTimeout(
     return .{ .result = result, .elapsed_ms = elapsed_ms };
 }
 
-// These tests assert error.StreamTimeout: the transport exposes only
-// CURLOPT_TIMEOUT_MS (fed from read_timeout_ms), so a stall that outlives the
-// deadline is a deadline expiry, not a transient interruption.
+// These tests assert error.StreamTimeout: the transport exposes only CURLOPT_TIMEOUT_MS (fed from read_timeout_ms), so a stall that outlives the deadline is a …
 
 test "callStreaming bounds a server that stalls after the head by read_timeout_ms" {
     const server = try FakeServer.start(testing_allocatorCallStreaming, .head_only_then_stall);
@@ -4420,8 +4208,7 @@ test "callStreaming bounds a server that stalls after the head by read_timeout_m
 
     // Head only, so the body never delivered a single chunk to the callback.
     try expectEqualCallStreaming(0, chunks.seen);
-    // The call ended at its configured stream deadline, within one poll cycle
-    // of slack — a hang would never reach the next line.
+    // The call ended at its configured stream deadline, within one poll cycle of slack — a hang would never reach the next line.
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
     try expectErrorCallStreaming(error.StreamTimeout, outcome.result);
@@ -4437,8 +4224,7 @@ test "callStreaming bounds a server that stalls after one chunk by read_timeout_
     const read_ms: u32 = 2_000;
     const outcome = try runStreamingWithTimeout(server.port, idle_ms, read_ms, &chunks);
 
-    // The delta chunk DID arrive and reach the caller before the stall — which
-    // is what separates this case from the head-only one above.
+    // The delta chunk DID arrive and reach the caller before the stall — which is what separates this case from the head-only one above.
     try expectEqualCallStreaming(1, chunks.seen);
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
@@ -4446,9 +4232,7 @@ test "callStreaming bounds a server that stalls after one chunk by read_timeout_
 }
 
 test "callStreaming bounds a silent server by read_timeout_ms, not by the idle window" {
-    // idle_timeout_ms sits far below read_timeout_ms: the call must still be
-    // bounded by the READ deadline. What this rejects is a stream outliving
-    // its deadline, or returning anything but a retryable stream error.
+    // idle_timeout_ms sits far below read_timeout_ms: the call must still be bounded by the READ deadline.
     const server = try FakeServer.start(testing_allocatorCallStreaming, .head_only_then_stall);
     defer server.deinit();
     server.waitForConnection();
@@ -4462,9 +4246,7 @@ test "callStreaming bounds a silent server by read_timeout_ms, not by the idle w
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
     try expectErrorCallStreaming(error.StreamTimeout, outcome.result);
 }
-/// Portable fixture for the cancellation test: a listener that accepts ONE
-/// connection, answers with an HTTP/1.1 SSE head plus a single `data:` chunk,
-/// then holds the connection open without sending anything else.
+/// Portable fixture for the cancellation test: a listener that accepts ONE connection, answers with an HTTP/1.1 SSE head plus a single `data:` chunk, then holds …
 const StallServer = struct {
     allocator: std.mem.Allocator,
     listener: std.Io.net.Server,
@@ -4482,8 +4264,7 @@ const StallServer = struct {
         self.* = .{
             .allocator = allocator,
             .listener = listener,
-            // Port 0 above means "OS picks"; the resolved value only lands in
-            // the socket AFTER listen() runs.
+            // Port 0 above means "OS picks"; the resolved value only lands in the socket AFTER listen() runs.
             .port = listener.socket.address.getPort(),
             .thread = undefined,
             .stop = std.atomic.Value(bool).init(false),
@@ -4508,15 +4289,13 @@ const StallServer = struct {
         var framed_buf: [160]u8 = undefined;
         const framed = std.fmt.bufPrint(&framed_buf, "{x}\r\n{s}\r\n", .{ body.len, body }) catch return;
 
-        // Written BEFORE the client can cancel, so this never races a closed
-        // peer (no SIGPIPE on POSIX).
+        // Written BEFORE the client can cancel, so this never races a closed peer (no SIGPIPE on POSIX).
         var writer = conn.writer(io, &.{});
         writer.interface.writeAll(head) catch return;
         writer.interface.writeAll(framed) catch return;
         writer.interface.flush() catch return;
 
-        // Hold the connection open with no further bytes — exactly the state a
-        // user is in when they press Stop mid-stream.
+        // Hold the connection open with no further bytes — exactly the state a user is in when they press Stop mid-stream.
         while (!self.stop.load(.acquire)) {
             std.Io.sleep(io, .{ .nanoseconds = 20 * std.time.ns_per_ms }, .real) catch return;
         }
@@ -4532,15 +4311,11 @@ const StallServer = struct {
 };
 
 test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a retryable error" {
-    // The workflow treats EVERY non-Cancelled error as a transient failure:
-    // it increments retry_count, saves a retry diagnostic to history, sleeps,
-    // and re-issues the request (workflow.zig, the callDynamicAgentNew
+    // The workflow treats EVERY non-Cancelled error as a transient failure
     var server = try StallServer.start(testing_allocatorCallStreaming);
     defer server.deinit();
 
-    // `callStreaming` is arena-scoped BY CONTRACT:
-    // `StreamingAggregator.deinit` is a documented no-op because production
-    // hands it the per-iteration arena (see `workflow.zig`'s loop), so its
+    // `callStreaming` is arena-scoped BY CONTRACT
     var arena = std.heap.ArenaAllocator.init(testing_allocatorCallStreaming);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -4555,12 +4330,9 @@ test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a r
     CancelState.polls = 0;
 
     var a = Agent.init_with_options(alloc, std.testing.io, .{
-        // Large, so a correct implementation cannot be "saved" by the idle
-        // watchdog firing first.
+        // Large, so a correct implementation cannot be "saved" by the idle watchdog firing first.
         .idle_timeout_ms = 60_000,
-        // Small: after the cancel the deferred `stream.deinit()` join still
-        // waits for the parked worker (no bytes are arriving — see the
-        // kabelweb `openStream` comment on XFERINFOFUNCTION), and this bounds
+        // Small: after the cancel the deferred `stream.deinit()` join still waits for the parked worker (no bytes are arriving — see the kabelweb `openStream` comment on …
         .read_timeout_ms = 1_500,
     });
     defer a.deinit();
@@ -4581,17 +4353,13 @@ test "callStreaming reports a mid-stream cancel as error.Cancelled, never as a r
     try expectErrorCallStreaming(error.Cancelled, result);
     // Bounded by read_timeout_ms, not by the 60s idle window.
     try expectCallStreaming(elapsed_ms < 10_000);
-    // The thunk must actually have been consulted — guards against a
-    // `cancel_fn` that is silently never called.
+    // The thunk must actually have been consulted — guards against a `cancel_fn` that is silently never called.
     try expectCallStreaming(CancelState.polls >= 2);
 }
 
-// FD-leak regression tests. `countPipes` is the Linux metric; the host table
-// `helpers.open_descriptors.count()` counts the same thing on Windows (open
-// HANDLES), so these tests assert on every host.
+// FD-leak regression tests.
 
 /// Count anonymous pipes currently open in the test process via /proc/self/fd.
-/// Returns 0 on non-Linux (the leak is Linux-only) and on any proc access error.
 fn countPipes() usize {
     if (builtin.os.tag != .linux) return 0;
 
@@ -4619,8 +4387,7 @@ fn countPipes() usize {
         const target_len_signed = std.c.readlink(link_path_z, &buf, buf.len);
         if (target_len_signed > 0) {
             const target = buf[0..@intCast(target_len_signed)];
-            // Anonymous pipes show as "pipe:[N]" in /proc. AF_UNIX sockets
-            // show as "socket:[N]" — we only count pipes here.
+            // Anonymous pipes show as "pipe:[N]" in /proc.
             if (target.len >= 5 and std.mem.eql(u8, target[0..5], "pipe:")) {
                 pipes += 1;
             }
@@ -4628,9 +4395,7 @@ fn countPipes() usize {
     }
     return pipes;
 }
-/// Linux-only sanity input: a runner holding most of its 1024 soft FD limit
-/// must not have its absolute pipe count read as a leak signal. The assertions
-/// below are baseline-independent, so this reports instead of skipping.
+/// Linux-only sanity input: a runner holding most of its 1024 soft FD limit must not have its absolute pipe count read as a leak signal.
 fn reportCrowdedPipeTable(baseline_pipes: usize) void {
     if (baseline_pipes > 800) {
         std.debug.print(
@@ -4641,8 +4406,7 @@ fn reportCrowdedPipeTable(baseline_pipes: usize) void {
     }
 }
 
-/// The agent the leak tests drive: same shape every time, only the allocator
-/// and the port differ. A test that will feed real SSE must pass an arena.
+/// The agent the leak tests drive: same shape every time, only the allocator and the port differ.
 fn initLeakTestAgent(allocator: std.mem.Allocator, base_url: []const u8) !Agent {
     var a = Agent.init_with_options(allocator, std.testing.io, .{
         .idle_timeout_ms = 2_000,
@@ -4665,17 +4429,14 @@ test "callStreaming does not leak pipe FDs across many failed calls (TDD: RED �
     var a = try initLeakTestAgent(testing_allocatorCallStreaming, base_url);
     defer a.deinit();
 
-    // Warmup: one call absorbs what the FIRST request allocates once (client
-    // pool init, curl's own state), so what follows is per-call steady state
-    // and not setup cost.
+    // Warmup: one call absorbs what the FIRST request allocates once (client pool init, curl's own state), so what follows is per-call steady state and not setup …
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
 
     const pipes_before = countPipes();
     reportCrowdedPipeTable(pipes_before);
     const handles_before = try helpers.open_descriptors.count();
 
-    // A server that closes right after the head is the path that historically
-    // leaked ~100 pipes per call, so N=3 is enough to see one per call.
+    // A server that closes right after the head is the path that historically leaked ~100 pipes per call, so N=3 is enough to see one per call.
     const N: usize = 3;
     var i: usize = 0;
     while (i < N) : (i += 1) {
@@ -4690,15 +4451,13 @@ test "callStreaming does not leak pipe FDs across many failed calls (TDD: RED �
             .{ N, pipes_growth, pipes_before, countPipes(), handles_growth, handles_before, try helpers.open_descriptors.count() },
         );
     }
-    // ONE leaked descriptor per call is N growth, so N is the threshold that
-    // catches it; the pre-fix leak was ~100x that.
+    // ONE leaked descriptor per call is N growth, so N is the threshold that catches it; the pre-fix leak was ~100x that.
     try expectCallStreaming(pipes_growth < N);
     try expectCallStreaming(handles_growth < N);
 }
 
 test "callStreaming zero-pipe-budget: even one failed call must not grow pipes" {
-    // Stronger than the N-call test above: a SINGLE failed call must grow
-    // neither the pipe count (Linux) nor the handle count (every host) at all.
+    // Stronger than the N-call test above: a SINGLE failed call must grow neither the pipe count (Linux) nor the handle count (every host) at all.
     const server = try FakeServer.start(testing_allocatorCallStreaming, .head_then_close);
     defer server.deinit();
     server.waitForConnection();
@@ -4718,16 +4477,13 @@ test "callStreaming zero-pipe-budget: even one failed call must not grow pipes" 
 
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
 
-    // STRICT: zero growth. A leak test that allows one descriptor per call is
-    // the bug this budget exists to prevent.
+    // STRICT: zero growth.
     try expectEqualCallStreaming(pipes_before, countPipes());
     try expectEqualCallStreaming(handles_before, try helpers.open_descriptors.count());
 }
 
 test "callStreaming recovers cleanly after a failed call (success path)" {
-    // Regression guard: rejected calls must leave the agent usable, and a
-    // COMPLETE SSE body from a healthy server must still come back as a real
-    // response with content.
+    // Regression guard: rejected calls must leave the agent usable, and a COMPLETE SSE body from a healthy server must still come back as a real response with …
     const dead = try FakeServer.start(testing_allocatorCallStreaming, .head_then_close);
     defer dead.deinit();
     const healthy = try FakeServer.start(testing_allocatorCallStreaming, .complete_chunked_response);
@@ -4739,37 +4495,31 @@ test "callStreaming recovers cleanly after a failed call (success path)" {
     const healthy_url = try makeBaseUrl(testing_allocatorCallStreaming, healthy.port);
     defer testing_allocatorCallStreaming.free(healthy_url);
 
-    // The success path really does deliver a chunk, so the agent runs on an
-    // arena for the reason `runStreamingWithTimeout` documents.
+    // The success path really does deliver a chunk, so the agent runs on an arena for the reason `runStreamingWithTimeout` documents.
     var arena = std.heap.ArenaAllocator.init(testing_allocatorCallStreaming);
     defer arena.deinit();
     var a = try initLeakTestAgent(arena.allocator(), dead_url);
     defer a.deinit();
 
-    // Warmup against the dead server only: the FIRST request to a host pays a
-    // one-time cost that must not be read as a per-call leak, and the healthy
-    // fixture below serves exactly one connection.
+    // Warmup against the dead server only: the FIRST request to a host pays a one-time cost that must not be read as a per-call leak, and the healthy fixture below …
     _ = a.callStreaming(makeCall(), null, noopCallback) catch {};
 
     const pipes_before = countPipes();
     reportCrowdedPipeTable(pipes_before);
     const handles_before = try helpers.open_descriptors.count();
 
-    // Neither failed call may crash, hang, or come back as a success it did
-    // not get. (Pre-fix, the runner died of ProcessFdQuotaExceeded here.)
+    // Neither failed call may crash, hang, or come back as a success it did not get.
     const failures: usize = 2;
     var attempt: usize = 0;
     while (attempt < failures) : (attempt += 1) {
         const failed = a.callStreaming(makeCall(), null, noopCallback);
         if (failed) |_| return error.TestUnexpectedResult else |_| {}
     }
-    // One leaked descriptor per call would be `failures` growth, so that is
-    // the threshold — the same shape the N-call test uses.
+    // One leaked descriptor per call would be `failures` growth, so that is the threshold — the same shape the N-call test uses.
     try expectCallStreaming(countPipes() -| pipes_before < failures);
     try expectCallStreaming((try helpers.open_descriptors.count()) -| handles_before < failures);
 
-    // The agent is still able to complete a real turn — and it is a real one:
-    // the SSE delta arrived as content, with a finish_reason to end it.
+    // The agent is still able to complete a real turn — and it is a real one
     a.baseUrl = healthy_url;
     var ok = try a.callStreaming(makeCall(), null, noopCallback);
     defer ok.deinit();
@@ -4899,8 +4649,7 @@ test "AgentMessage deinit handles content_parts correctly" {
 }
 
 test "ContentPart - base64 image URL format validation" {
-    // Test that we can create ContentPart with proper base64 data URL format
-    // as expected by OpenAI API
+    // Test that we can create ContentPart with proper base64 data URL format as expected by OpenAI API
     const base64_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     const url = try std.fmt.allocPrint(std.testing.allocator, "data:image/png;base64,{s}", .{base64_data});
 
@@ -4939,9 +4688,7 @@ test "AgentMessage - legacy content field still works" {
     try expectEqualImageContent(@as(?[]const ContentPart, null), msg.content_parts);
 }
 
-// ===== Tests merged from openai_reasoning_test.zig (2026-09-29 flatten)
-// ===== Tests for the new OpenAI `reasoning_effort` field on the request body
-// built by `buildJsonOpenAIRequest`. Plan 2026-08-23-model-thinking.
+// ===== Tests merged from openai_reasoning_test.zig (2026-09-29 flatten) ===== Tests for the new OpenAI `reasoning_effort` field on the request body built by …
 
 const OpenaiReasoningMakeOpts = struct {
     reasoningEffort: ?[]const u8 = null,
@@ -4994,9 +4741,7 @@ test "buildJsonOpenAIRequest: reasoningEffort null omits reasoning_effort field"
 }
 
 test "buildJsonOpenAIRequest: reasoningEffort empty string omits field" {
-    // The frontend uses "" for "auto" / null. The Agent field is
-    // ?[]const u8 so an empty slice is a valid-but-meaningless
-    // value — we treat it the same as null (omit).
+    // The frontend uses "" for "auto" / null.
     var a = makeAgentOpenaiReasoning(.{ .reasoningEffort = "" });
 
     const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
@@ -5007,8 +4752,7 @@ test "buildJsonOpenAIRequest: reasoningEffort empty string omits field" {
 }
 
 test "buildJsonOpenAIRequest: reasoning_effort coexists with tools + temperature" {
-    // o1 supports tool calls (function calling); the reasoning_effort
-    // field must coexist with tools and not be silenced by them.
+    // o1 supports tool calls (function calling); the reasoning_effort field must coexist with tools and not be silenced by them.
     var a = makeAgentOpenaiReasoning(.{ .reasoningEffort = "medium" });
 
     const tool: AgentTool = .{
@@ -5035,16 +4779,13 @@ test "buildJsonOpenAIRequest: reasoning_effort coexists with tools + temperature
     defer testing.allocator.free(body);
 
     try testing.expect(std.mem.indexOf(u8, body, "\"reasoning_effort\":\"medium\"") != null);
-    // temperature is serialized as a JSON float — Zig emits e.g.
-    // "0.699999988079071" for 0.7, so we only check the field name exists,
-    // not the exact value.
+    // temperature is serialized as a JSON float — Zig emits e.g. "0.699999988079071" for 0.7, so we only check the field name exists, not the exact value.
     try testing.expect(std.mem.indexOf(u8, body, "\"temperature\":") != null);
     try testing.expect(std.mem.indexOf(u8, body, "\"get_weather\"") != null);
 }
 
 test "buildJsonOpenAIRequest: each reasoning_effort value passes through verbatim" {
-    // Parametric sweep over the 4 canonical values. Backend is a
-    // dumb pipe — the server validates per-model compatibility.
+    // Parametric sweep over the 4 canonical values.
     const values = [_][]const u8{ "low", "medium", "high", "auto" };
     for (values) |v| {
         var a = makeAgentOpenaiReasoning(.{ .reasoningEffort = v });
@@ -5058,17 +4799,13 @@ test "buildJsonOpenAIRequest: each reasoning_effort value passes through verbati
     }
 }
 
-// Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style providers in
-// thinking mode reject replays where an assistant message lacks
-// `reasoning_content`.
+// Reasoning-echo backfill (task_1789091513563_0): DeepSeek-style providers in thinking mode reject replays where an assistant message lacks `reasoning_content`.
 
 fn assistantMsgNoReasoningOpenaiReasoning(text: ?[]const u8) AgentMessage {
     return .{ .role = .assistant, .content = text };
 }
 
-// ============================================================================
-// Regression: the openai chat-completions body must NOT carry the
-// non-standard `thinking` / `enable_thinking` params.
+// Regression: the openai chat-completions body must NOT carry the non-standard `thinking` / `enable_thinking` params.
 
 test "buildJsonOpenAIRequest: thinking off emits NEITHER thinking NOR enable_thinking" {
     var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false });
@@ -5081,8 +4818,7 @@ test "buildJsonOpenAIRequest: thinking off emits NEITHER thinking NOR enable_thi
 }
 
 test "buildJsonOpenAIRequest: thinking on emits NEITHER thinking NOR enable_thinking" {
-    // The positive control for the absence assertions above: the fields
-    // are gone for BOTH states, so this cannot pass vacuously.
+    // The positive control for the absence assertions above: the fields are gone for BOTH states, so this cannot pass vacuously.
     var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = true });
     const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
     const body = try a.buildJsonOpenAIRequest(params, true);
@@ -5093,8 +4829,7 @@ test "buildJsonOpenAIRequest: thinking on emits NEITHER thinking NOR enable_thin
 }
 
 test "buildJsonOpenAIRequest: reasoning_effort still round-trips after the thinking fields were dropped" {
-    // Proves the fix removed ONLY the two vendor params — the real
-    // thinking knob on this body shape is untouched.
+    // Proves the fix removed ONLY the two vendor params — the real thinking knob on this body shape is untouched.
     var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false, .reasoningEffort = "high" });
     const params = AgentCall{ .tools = emptyToolsOpenaiReasoning(), .messages = emptyMessagesOpenaiReasoning() };
     const body = try a.buildJsonOpenAIRequest(params, true);
@@ -5151,9 +4886,7 @@ test "buildJsonOpenAIRequest: thinking off + all-null history omits reasoning_co
 }
 
 test "buildJsonOpenAIRequest: thinking off but history has reasoning backfills null assistant" {
-    // Mid-session thinking toggle-off: older turns carry reasoning, a
-    // newer turn has none. The null one gets "" (echo validator sees
-    // the field on every assistant message); the real one is verbatim.
+    // Mid-session thinking toggle-off: older turns carry reasoning, a newer turn has none.
     var a = makeAgentOpenaiReasoning(.{ .thinkingEnabled = false });
     const msgs = [_]AgentMessage{
         .{ .role = .assistant, .content = "first", .reasoning_content = "real-thinking" },
@@ -5190,13 +4923,9 @@ test "buildJsonOpenAIRequest: assistant with reasoning keeps verbatim value" {
     try testing.expect(std.mem.indexOf(u8, body, "\"reasoning_content\":\"model's reasoning...\"") != null);
 }
 
-// ===== Tests merged from openai_responses_test.zig (2026-09-29 flatten)
-// ===== Behavioural tests for OpenAI Responses API (url_style =
-// "openai-response").
+// ===== Tests merged from openai_responses_test.zig (2026-09-29 flatten) ===== Behavioural tests for OpenAI Responses API (url_style = "openai-response").
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 fn makeResponsesAgentOpenaiResponses(opts: struct {
     reasoningEffort: ?[]const u8 = null,
@@ -5320,9 +5049,7 @@ fn sampleToolOpenaiResponses() AgentTool {
     };
 }
 
-// ---------------------------------------------------------------------------
 // Builder: instructions from system messages
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: single system message becomes instructions" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5377,9 +5104,7 @@ test "buildJsonResponsesRequest: no system message omits instructions field" {
     try testing.expect(std.mem.indexOf(u8, body.raw, "\"instructions\"") == null);
 }
 
-// ---------------------------------------------------------------------------
 // Builder: input[] with input_text / input_image
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: user plain text becomes input message with input_text" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5451,9 +5176,7 @@ test "buildJsonResponsesRequest: user content_parts image with explicit detail p
     try testing.expectEqualStrings("high", content.items[0].object.get("detail").?.string);
 }
 
-// ---------------------------------------------------------------------------
 // Builder: assistant output_text (content + reasoning_content)
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: assistant with content and reasoning_content emits separate reasoning and message items" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5624,9 +5347,7 @@ test "buildJsonResponsesRequest: empty assistant without tools emits output_text
     try testing.expectEqualStrings("", content2.items[0].object.get("text").?.string);
 }
 
-// ---------------------------------------------------------------------------
 // Builder: function_call + function_call_output for tools
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: assistant tool_calls become function_call items" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5708,9 +5429,7 @@ test "buildJsonResponsesRequest: tool role becomes function_call_output" {
     try testing.expectEqualStrings("tool result", fco.object.get("output").?.string);
 }
 
-// ---------------------------------------------------------------------------
 // Builder: temperature, max_output_tokens, store, stream, user, tools
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: temperature is emitted" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5808,9 +5527,7 @@ test "buildJsonResponsesRequest: tools absent omits tools and tool_choice" {
     try testing.expect(std.mem.indexOf(u8, body.raw, "\"tool_choice\"") == null);
 }
 
-// ---------------------------------------------------------------------------
 // Builder: reasoning.effort
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: reasoningEffort set emits reasoning.effort" {
     var a = makeResponsesAgentOpenaiResponses(.{ .reasoningEffort = "high" });
@@ -5881,9 +5598,7 @@ test "buildJsonResponsesRequest: reasoningEffort null + thinkingEnabled false om
     try testing.expect(body.parsed.value.object.get("reasoning") == null);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: response.output_text.delta -> content
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: response.output_text.delta populates content" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5910,9 +5625,7 @@ test "parse_responses_stream_chunk: response.output_text.delta empty string retu
     try testing.expect(chunk == null);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: reasoning deltas -> reasoning_content
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: response.reasoning_text.delta populates reasoning_content" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -5950,9 +5663,7 @@ test "parse_responses_stream_chunk: response.reasoning.delta populates reasoning
     try testing.expectEqualStrings("reasoning chunk", chunk.?.reasoning_content.?);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: tool call deltas
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: response.output_item.added function_call emits tool_calls_delta with id+name" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6008,9 +5719,7 @@ test "parse_responses_stream_chunk: response.function_call_arguments.delta with 
     try testing.expectEqual(@as(usize, 1), chunk.?.tool_calls_delta.?[0].index);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: terminal events — finish_reason + usage + tool_calls override
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: response.completed without function_call => finish_reason stop" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6123,9 +5832,7 @@ test "parse_responses_stream_chunk: response.incomplete without max_output_token
     try testing.expectEqual(@as(?FinishReason, .stop), chunk.?.finish_reason);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: ignored lifecycle events return null
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: ignored events return null" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6162,9 +5869,7 @@ test "parse_responses_stream_chunk: response.refusal.delta populates content" {
     try testing.expectEqualStrings("I cannot do that", chunk.?.content.?);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: dispatch via UrlStyle
-// ---------------------------------------------------------------------------
 
 test "parse_stream_chunk dispatches to Responses parser when UrlStyle is openai-response" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6199,9 +5904,7 @@ test "parse_stream_chunk (openai): records the cache-read count a chat-completio
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    // The documented OpenAI chat-completions shape: cached tokens are a SUBSET
-    // of prompt_tokens (2006 = 1920 cached + 86 fresh), which is exactly what
-    // makes them a rate rather than an extra charge.
+    // The documented OpenAI chat-completions shape: cached tokens are a SUBSET of prompt_tokens (2006 = 1920 cached + 86 fresh), which is exactly what makes them a …
     const data =
         "{\"id\":\"chatcmpl-x\",\"object\":\"chat.completion.chunk\",\"choices\":[]," ++
         "\"usage\":{\"prompt_tokens\":2006,\"completion_tokens\":300,\"total_tokens\":2306," ++
@@ -6241,8 +5944,7 @@ test "parse_stream_chunk (openai): records no cache read when the provider repor
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    // 0 here is "the provider said nothing", which the usage endpoints render
-    // as a dash. It must never be read as a measured 0% hit rate.
+    // 0 here is "the provider said nothing", which the usage endpoints render as a dash.
     const data =
         "{\"id\":\"chatcmpl-x\",\"choices\":[]," ++
         "\"usage\":{\"prompt_tokens\":2006,\"completion_tokens\":300,\"total_tokens\":2306}}";
@@ -6358,9 +6060,7 @@ test "parse_stream_chunk (openai): choices null yields a usage-only chunk, not a
     try testing.expectEqual(@as(usize, 10), usage.prompt_tokens);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: a null where a provider spells an empty list or object
-// ---------------------------------------------------------------------------
 
 test "parse_stream_chunk (anthropic): a text delta carrying nulls still yields its text" {
     var a = Agent.init(testing.allocator, std.testing.io);
@@ -6423,8 +6123,7 @@ test "parse_stream_chunk (openai-response): terminal usage tolerates null detail
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    // WireUsage declares every counter optional, so a null detail object costs
-    // the call none of its usage — the total is derived from the parts.
+    // WireUsage declares every counter optional, so a null detail object costs the call none of its usage — the total is derived from the parts.
     const data =
         "{\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]," ++
         "\"usage\":{\"input_tokens\":100,\"output_tokens\":20,\"total_tokens\":null," ++
@@ -6439,9 +6138,7 @@ test "parse_stream_chunk (openai-response): terminal usage tolerates null detail
     try testing.expectEqual(@as(usize, 0), usage.cache_read_input_tokens);
 }
 
-// ---------------------------------------------------------------------------
 // Parser: terminal reasoning metadata (Task 4)
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: response.completed with reasoning item captures id/summary/encrypted_content" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6517,9 +6214,7 @@ test "parse_responses_stream_chunk: response.completed reasoning item with empty
     try testing.expect(chunk.?.reasoning_content == null);
 }
 
-// ---------------------------------------------------------------------------
 // Aggregator: reasoning metadata via terminal chunk
-// ---------------------------------------------------------------------------
 
 test "StreamingAggregator: terminal reasoning chunk populates reasoning_id and encrypted_content" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -6580,9 +6275,7 @@ test "StreamingAggregator: no reasoning stays null" {
     try testing.expect(res.reasoning_encrypted_content == null);
 }
 
-// ---------------------------------------------------------------------------
 // Task 6: Multi-turn replay — builder ordering with reasoning metadata
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: multi-turn replay preserves ordering reasoning before assistant per turn" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6693,9 +6386,7 @@ test "buildJsonResponsesRequest: multi-turn replay ids preserved per turn" {
     try testing.expect(!std.mem.eql(u8, input.items[4].object.get("id").?.string, "rs_alpha"));
 }
 
-// ---------------------------------------------------------------------------
 // Task 7: Tool-call replay — reasoning separate from function_call
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: tool-call replay reasoning separate from function_call" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -6856,9 +6547,7 @@ test "buildJsonResponsesRequest: tool-call replay final answer separate from rea
     try testing.expect(!std.mem.eql(u8, last.object.get("content").?.array.items[0].object.get("text").?.string, "reasoning after tool"));
 }
 
-// ---------------------------------------------------------------------------
 // Task 8: End-to-end — mock SSE stream through StreamingAggregator
-// ---------------------------------------------------------------------------
 
 test "StreamingAggregator: end-to-end reasoning delta + output delta + terminal completed with reasoning output" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -7011,9 +6700,7 @@ test "StreamingAggregator: end-to-end DB round-trip simulation via builder repla
 }
 
 test "buildJsonResponsesRequest: regression task_1788204837101_1 — reasoning_id+encrypted persisted even when reasoning_content is NULL" {
-    // Real DB row from task_1788204837101_1 (2026-09-01 03:17:31): assistant:
-    // content="Reasoning ID saved but content empty — tracing the summary
-    // extraction." tool_calls=[bash call_01a05af8ce...],
+    // Real DB row from task_1788204837101_1 (2026-09-01 03:17:31): assistant
     var a = makeResponsesAgentOpenaiResponses(.{});
     defer a.deinit();
 
@@ -7069,8 +6756,7 @@ test "buildJsonResponsesRequest: regression task_1788204837101_1 — reasoning_i
     try testing.expectEqualStrings("reasoning", reasoning.object.get("type").?.string);
     try testing.expectEqualStrings("rs_6a9643abdb33701b240b4ff4:rs_01a05af855327e6083af347abb5c682e", reasoning.object.get("id").?.string);
     try testing.expectEqualStrings("Q-PaDgH1f_g4UMio3N6QC9OP42jJO2-WMTCEw6alywPh84L9_64jRusfZspFIeQI7UiYTDzLT6yAPOOfM_e-dMhNZtGD0rjNmMB8DnDBCRxws-8fYmo0BJf8oKM4ze5", reasoning.object.get("encrypted_content").?.string);
-    // summary must be present as empty array when reasoning_content is NULL —
-    // the upstream schema requires the field (omitting it → `missing required field summary`)
+    // summary must be present as empty array when reasoning_content is NULL — the upstream schema requires the field (omitting it → `missing required field summary`)
     try testing.expect(reasoning.object.get("summary") != null);
     try testing.expectEqual(@as(usize, 0), reasoning.object.get("summary").?.array.items.len);
 
@@ -7159,9 +6845,7 @@ test "parse_responses_stream_chunk: response.output_item.done reasoning without 
     try testing.expect(chunk.?.reasoning_content == null);
 }
 
-// ---------------------------------------------------------------------------
 // Spec cases from OpenAI JSON response — output[] handling (user-provided)
-// ---------------------------------------------------------------------------
 
 test "parse_responses_stream_chunk: case 1 normal answer — no reasoning item" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -7312,9 +6996,7 @@ test "buildJsonResponsesRequest: iterates output — not output[0] reasoning ass
     try testing.expect(found_message);
 }
 
-// ---------------------------------------------------------------------------
 // Builder: function_call_output sanitization (input[N].output[M] rejection)
-// ---------------------------------------------------------------------------
 
 test "buildJsonResponsesRequest: tool output with invalid UTF-8 is sanitized" {
     var a = makeResponsesAgentOpenaiResponses(.{});
@@ -7388,9 +7070,7 @@ test "buildJsonResponsesRequest: oversize tool output is truncated with marker" 
     try testing.expect(found);
 }
 
-// ===== Tests merged from parse_anthropic_sse_test.zig (2026-09-29 flatten)
-// ===== Tests for the Anthropic /v1/messages SSE parser + the raw-SSE sample
-// capture added to Agent.callStreaming.
+// ===== Tests merged from parse_anthropic_sse_test.zig (2026-09-29 flatten) ===== Tests for the Anthropic /v1/messages SSE parser + the raw-SSE sample capture …
 
 const expectParseAnthropicSse = std.testing.expect;
 const expectEqualParseAnthropicSse = std.testing.expectEqual;
@@ -7398,9 +7078,7 @@ const expectErrorParseAnthropicSse = std.testing.expectError;
 const expectEqualStringsParseAnthropicSse = std.testing.expectEqualStrings;
 const testing_allocatorParseAnthropicSse = std.testing.allocator;
 
-// ===== Regression test for 2026-08-15 "bash tool leak" =============== The
-// user posted a leaked tool_call record with a bash `arguments` payload of
-// literally `$'\xaa\xaa\xaa...'` (22 bytes of 0xAA — Zig's DebugAllocator
+// ===== Regression test for 2026-08-15 "bash tool leak" ===============
 test "CallResponse arena ownership: tool_call.function.arguments points at caller's arena (no .deinit needed)" {
     var arena = std.heap.ArenaAllocator.init(testing_allocatorParseAnthropicSse);
     defer arena.deinit();
@@ -7418,8 +7096,7 @@ test "CallResponse arena ownership: tool_call.function.arguments points at calle
         }},
     });
 
-    // Stage 2: two input_json_delta chunks concatenate to the bash arguments
-    // JSON.
+    // Stage 2: two input_json_delta chunks concatenate to the bash arguments JSON.
     const args_payload =
         \\{"command":"cd /tmp && echo hello","cwd":"/tmp"}
     ;
@@ -7445,21 +7122,16 @@ test "CallResponse arena ownership: tool_call.function.arguments points at calle
     try expectEqualStringsParseAnthropicSse("toolu_leak_test", tc.id);
     try expectEqualStringsParseAnthropicSse("bash", tc.function.name);
 
-    // CRITICAL: `tc.function.arguments` points at the same arena memory the
-    // aggregator's internal `arguments` ArrayList holds.
+    // CRITICAL: `tc.function.arguments` points at the same arena memory the aggregator's internal `arguments` ArrayList holds.
     try expectEqualStringsParseAnthropicSse(args_payload, tc.function.arguments);
 
-    // Belt-and-suspenders: pin the contract by asserting no
-    // `0xAA` byte appears in the returned slice. Legitimate
-    // ASCII/UTF-8/JSON cannot contain this byte.
+    // Belt-and-suspenders: pin the contract by asserting no `0xAA` byte appears in the returned slice.
     try expectParseAnthropicSse(std.mem.indexOfScalar(u8, tc.function.arguments, 0xAA) == null);
 }
 
 // ===================================================================
 
-// ============================================================================
 // Part B — parse_stream_chunk for Anthropic SSE
-// ============================================================================
 
 test "parse_stream_chunk (anthropic): message_start caches input_tokens, emits no chunk" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -7712,9 +7384,7 @@ test "parse_stream_chunk (anthropic): usage emitted exactly once across multiple
     try expectParseAnthropicSse(c2.?.usage == null);
 }
 
-// ============================================================================
-// Anthropic usage handling — make total_tokens match OpenAI's semantic
-// (prompt_tokens + completion_tokens) so llm_history / compaction code that
+// Anthropic usage handling — make total_tokens match OpenAI's semantic (prompt_tokens + completion_tokens) so llm_history / compaction code that
 
 test "parse_stream_chunk (anthropic): message_delta usage emits total = input + output (strict API shape — no input in message_delta)" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -7731,9 +7401,7 @@ test "parse_stream_chunk (anthropic): message_delta usage emits total = input + 
         _ = a.parse_stream_chunk(start_data, arena.allocator());
     }
 
-    // message_delta with ONLY output_tokens (strict Anthropic API doesn't
-    // repeat input_tokens here). prompt must stay 42 (from message_start),
-    // total = 42 + 7.
+    // message_delta with ONLY output_tokens (strict Anthropic API doesn't repeat input_tokens here). prompt must stay 42 (from message_start), total = 42 + 7.
     var arena = std.heap.ArenaAllocator.init(testing_allocatorParseAnthropicSse);
     defer arena.deinit();
     const data =
@@ -7763,7 +7431,6 @@ test "parse_stream_chunk (anthropic): message_delta input_tokens OVERRIDES messa
     }
 
     // message_delta with the AUTHORITATIVE input_tokens=54 (this relay).
-    // The handler must prefer this over the cached 0 from message_start.
     var arena = std.heap.ArenaAllocator.init(testing_allocatorParseAnthropicSse);
     defer arena.deinit();
     const data =
@@ -7792,8 +7459,7 @@ test "parse_stream_chunk (anthropic): message_delta includes cache_creation_inpu
         _ = a.parse_stream_chunk(start_data, arena.allocator());
     }
 
-    // message_delta: cache_creation_input_tokens=5 (a cache write — billable).
-    // billable total = 10 (input) + 5 (cache_creation) + 8 (output) = 23.
+    // message_delta: cache_creation_input_tokens=5 (a cache write — billable). billable total = 10 (input) + 5 (cache_creation) + 8 (output) = 23.
     var arena = std.heap.ArenaAllocator.init(testing_allocatorParseAnthropicSse);
     defer arena.deinit();
     const data =
@@ -7808,9 +7474,7 @@ test "parse_stream_chunk (anthropic): message_delta includes cache_creation_inpu
 }
 
 test "parse_stream_chunk (anthropic): cache_read_input_tokens IS added to prompt + total (cache reads ARE tokens processed)" {
-    // Mirrors the spec TL;DR: cache_read counts as tokens the model
-    // processed, so prompt = input + cache_read and total = prompt +
-    // completion.
+    // Mirrors the spec TL;DR: cache_read counts as tokens the model processed, so prompt = input + cache_read and total = prompt + completion.
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
     defer a.deinit();
     a.UrlStyle = "anthropic";
@@ -7825,9 +7489,7 @@ test "parse_stream_chunk (anthropic): cache_read_input_tokens IS added to prompt
         _ = a.parse_stream_chunk(start_data, arena.allocator());
     }
 
-    // message_delta: input_tokens=54 + cache_creation=0 + cache_read=128
-    // (uses cached message_start value because delta omits it)
-    // + output_tokens=23.
+    // message_delta: input_tokens=54 + cache_creation=0 + cache_read=128 (uses cached message_start value because delta omits it) + output_tokens=23.
     var arena = std.heap.ArenaAllocator.init(testing_allocatorParseAnthropicSse);
     defer arena.deinit();
     const data =
@@ -7843,7 +7505,6 @@ test "parse_stream_chunk (anthropic): cache_read_input_tokens IS added to prompt
     try expectEqualParseAnthropicSse(@as(usize, 128), chunk.?.usage.?.cache_read_input_tokens);
 }
 
-// ============================================================================
 // Task 1 contract — Agent.Usage struct surface area.
 
 test "Agent.Usage struct has cache_creation_input_tokens + cache_read_input_tokens fields (structural contract)" {
@@ -7858,8 +7519,7 @@ test "Agent.Usage struct has cache_creation_input_tokens + cache_read_input_toke
 }
 
 test "Agent.Usage can be constructed with explicit cache values" {
-    // Mirrors what parse_anthropic_stream_chunk emits at message_delta
-    // when both cache fields are non-zero.
+    // Mirrors what parse_anthropic_stream_chunk emits at message_delta when both cache fields are non-zero.
     const u: Usage = .{
         .prompt_tokens = 6500,
         .completion_tokens = 1000,
@@ -7907,8 +7567,6 @@ test "parse_stream_chunk (anthropic): message_delta includes BOTH cache_creation
 
 test "parse_stream_chunk (anthropic): cache_read_only is included in prompt + total" {
     // Cache reads ONLY (no cache writes) — prompt = input + cache_read.
-    // Pre-fix this would have been `prompt = input = 10`, dropping the
-    // 128 cached-read tokens on the floor.
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
     defer a.deinit();
     a.UrlStyle = "anthropic";
@@ -7938,9 +7596,7 @@ test "parse_stream_chunk (anthropic): cache_read_only is included in prompt + to
 }
 
 test "parse_stream_chunk (anthropic): cache_read from message_start is preserved on first-delta usage chunk" {
-    // Some relays send cache_read_input_tokens at message_start but not at
-    // message_delta. The first-delta usage chunk needs to fold that into
-    // prompt_tokens, mirroring how message_delta folds it later.
+    // Some relays send cache_read_input_tokens at message_start but not at message_delta.
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
     defer a.deinit();
     a.UrlStyle = "anthropic";
@@ -7972,9 +7628,7 @@ test "parse_stream_chunk (anthropic): cache_read from message_start is preserved
 }
 
 test "Agent.Usage can be constructed with explicit cache values (regression pin at end-of-file)" {
-    // Pinned at the END of the test file (in addition to the canonical
-    // assertion at L436) so the contract surfaces under `rg` near any
-    // future Anthropic-Usage changes. Both must pass.
+    // Pinned at the END of the test file (in addition to the canonical assertion at L436) so the contract surfaces under `rg` near any future Anthropic-Usage changes.
     const u: Usage = .{
         .prompt_tokens = 6500,
         .completion_tokens = 1000,
@@ -7989,9 +7643,7 @@ test "Agent.Usage can be constructed with explicit cache values (regression pin 
     try expectEqualParseAnthropicSse(@as(usize, 5000), u.cache_read_input_tokens);
 }
 
-// ============================================================================
-// Regression test — reproduce the iter-2 SEGV in buildJsonAnthropicRequest
-// (the slice-header 0xAA-poisoning crash seen when an Anthropic chat hits
+// Regression test — reproduce the iter-2 SEGV in buildJsonAnthropicRequest (the slice-header 0xAA-poisoning crash seen when an Anthropic chat hits
 
 test "buildJsonAnthropicRequest: assistant message with tool_calls + null reasoning_content survives" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -8001,9 +7653,7 @@ test "buildJsonAnthropicRequest: assistant message with tool_calls + null reason
     a.thinkingEnabled = true;
     a.userIdentifier = "test-user";
 
-    // Simulate the DB-loaded shape for an assistant message that emitted
-    // tool_calls in the previous iteration: reasoning_content is null,
-    // content is empty, tool_calls_json has 1 tool call with id+name+args.
+    // Simulate the DB-loaded shape for an assistant message that emitted tool_calls in the previous iteration: reasoning_content is null, content is empty …
     const tc_args_json = "{\"query\":\"recent\"}";
     const tc_id_dup = try testing_allocatorParseAnthropicSse.dupe(u8, "toolu_test_123");
     defer testing_allocatorParseAnthropicSse.free(tc_id_dup);
@@ -8022,8 +7672,6 @@ test "buildJsonAnthropicRequest: assistant message with tool_calls + null reason
     };
 
     // 3 messages: system + user + assistant-with-tool-calls.
-    // Mirrors what workflow.zig's buildMessages produces for the second
-    // iteration of an Anthropic chat that emitted tool_calls in iter 1.
     const system_content = try testing_allocatorParseAnthropicSse.dupe(u8, "You are a coding agent.");
     defer testing_allocatorParseAnthropicSse.free(system_content);
     const user_content = try testing_allocatorParseAnthropicSse.dupe(u8, "please look up memory");
@@ -8044,15 +7692,12 @@ test "buildJsonAnthropicRequest: assistant message with tool_calls + null reason
     const body = try a.buildJsonAnthropicRequest(params, true);
     defer testing_allocatorParseAnthropicSse.free(body);
 
-    // If we got here without a SEGV, the slice-pointer corruption didn't
-    // happen for this synthetic input.
+    // If we got here without a SEGV, the slice-pointer corruption didn't happen for this synthetic input.
     try expectParseAnthropicSse(body.len > 100);
     try expectParseAnthropicSse(std.mem.startsWith(u8, body, "{"));
 }
 
-// ============================================================================
-// Part C — Anthropic request body preserves `image_url` content_parts (smoke
-// test 2026-08-13: "i cannot send image" with profile `url_style:
+// Part C — Anthropic request body preserves `image_url` content_parts (smoke test 2026-08-13: "i cannot send image" with profile `url_style
 
 test "buildJsonAnthropicRequest: user message with image content_parts preserves the image URL" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
@@ -8062,9 +7707,7 @@ test "buildJsonAnthropicRequest: user message with image content_parts preserves
     a.thinkingEnabled = false;
     a.userIdentifier = "test-user";
 
-    // Synthetic data: text + 1 image, mirroring what
-    // `transformLLMHistoryToAgentMessage` produces from a DB row with
-    // `image_urls` populated.
+    // Synthetic data: text + 1 image, mirroring what `transformLLMHistoryToAgentMessage` produces from a DB row with `image_urls` populated.
     const text_dup = try testing_allocatorParseAnthropicSse.dupe(u8, "ini gambar apa ?");
     defer testing_allocatorParseAnthropicSse.free(text_dup);
     const url_dup = try testing_allocatorParseAnthropicSse.dupe(
@@ -8099,15 +7742,12 @@ test "buildJsonAnthropicRequest: user message with image content_parts preserves
     const body = try a.buildJsonAnthropicRequest(params, true);
     defer testing_allocatorParseAnthropicSse.free(body);
 
-    // The body MUST include the user-attached image (otherwise the LLM — and
-    // `api.minimax.io/anthropic` — sees an empty user message and replies "i
-    // don't see an image").
+    // The body MUST include the user-attached image (otherwise the LLM — and `api.minimax.io/anthropic` — sees an empty user message and replies "i don't see an …
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image\"") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, url_dup) != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, text_dup) != null);
 
-    // Sanity: the body's still valid JSON with the user message
-    // emitted as `role: "user"`.
+    // Sanity: the body's still valid JSON with the user message emitted as `role: "user"`.
     try expectParseAnthropicSse(std.mem.startsWith(u8, body, "{"));
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"role\":\"user\"") != null);
 }
@@ -8173,16 +7813,13 @@ test "buildJsonAnthropicRequest: user message with plain text (no image) still e
     const body = try a.buildJsonAnthropicRequest(params, true);
     defer testing_allocatorParseAnthropicSse.free(body);
 
-    // No images: `content` MUST serialize as a top-level string (the legacy
-    // shape Anthropic accepts), not as an array.
+    // No images: `content` MUST serialize as a top-level string (the legacy shape Anthropic accepts), not as an array.
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"content\":\"halo dunia\"") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image\"") == null);
 }
 
 test "buildJsonAnthropicRequest: image content uses Anthropic-native source.url wrapper" {
-    // The OpenAI wire format puts the data URL straight under `image_url: {
-    // url: "data:..." }`; Anthropic wraps it under `source: { type: "url",
-    // url: "data:..." }` inside an `image`-typed content block.
+    // The OpenAI wire format puts the data URL straight under `image_url: { url: "data:..." }`; Anthropic wraps it under `source: { type: "url", url: "data:..." }` …
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);
     defer a.deinit();
     a.model = "claude-test";
@@ -8210,8 +7847,7 @@ test "buildJsonAnthropicRequest: image content uses Anthropic-native source.url 
     const body = try a.buildJsonAnthropicRequest(params, true);
     defer testing_allocatorParseAnthropicSse.free(body);
 
-    // The Anthropic-native wrapper: `"image"` block + `"source"` with
-    // `"type":"url"`.
+    // The Anthropic-native wrapper: `"image"` block + `"source"` with `"type":"url"`.
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image\"") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"source\":{") != null);
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"url\"") != null);
@@ -8222,9 +7858,7 @@ test "buildJsonAnthropicRequest: image content uses Anthropic-native source.url 
     try expectParseAnthropicSse(std.mem.indexOf(u8, body, "\"type\":\"image_url\"") == null);
 }
 
-// ============================================================================
 // Part B — OpenAI parser is NOT affected by the dispatch (regression check)
-// ============================================================================
 
 test "parse_stream_chunk (openai): OpenAI-shaped data still parses as before" {
     var a: Agent = .init(testing_allocatorParseAnthropicSse, std.testing.io);

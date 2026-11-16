@@ -1,6 +1,4 @@
-/** The merge box's state machine and its method vocabulary. Two jobs, one table each, for the
- * reason `forgeWording.ts` exists: three components each hardcoding prose is how the
- * `<pr-url>/conflicts` 404 happened. */
+/** The merge box's state machine and its method vocabulary. */
 import type { ForgeWording } from './forgeWording'
 
 export type MergeBoxState = 'ready' | 'caution' | 'blocked' | 'pending' | 'merged' | 'closed'
@@ -195,8 +193,7 @@ export function mergeWording(s: MergeSignals): MergeWording {
 // ── The method menu ───────────────────────────────────────────────────────
 export type MergeMethod = 'merge' | 'squash' | 'rebase'
 
-/**  * The three methods both CLIs expose. `gh pr merge` needs exactly one of them — with no strategy
- * flag it prompts, and a non-tty child cannot answer. Order is GitHub's. */
+/** The three methods both CLIs expose. */
 export const MERGE_METHODS: readonly MergeMethod[] = ['merge', 'squash', 'rebase'] as const
 
 export function methodLabel(m: MergeMethod): string {
@@ -213,9 +210,7 @@ export function methodDetail(m: MergeMethod, target: string): string {
 
 const METHOD_KEY = 'pabrik-pr-merge-method'
 
-/** A stable key for "this repository": everything between the host and the change request, e.g.
- * `ginwa123/pabrik` on GitHub and `g/sub/repo` on GitLab (a GitLab project path keeps its nested
- * namespace). The same repo reached through two worktrees therefore remembers ONE method choice. */
+/** A stable key for "this repository": everything between the host and the change request, e.g. `ginwa123/pabrik` on GitHub and `g/sub/repo` on GitLab (a GitLab … */
 export function repoKeyFor(prUrl: string, fallback: string): string {
   const m = /^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?(?:pull|merge_requests)\/\d+/.exec(
     (prUrl || '').trim(),
@@ -224,9 +219,7 @@ export function repoKeyFor(prUrl: string, fallback: string): string {
   return path ? path.replace(/\.git$/, '') : fallback
 }
 
-/** The last method used for this repo, or `squash`. Squash is the default because it is what this
- * project actually does: every merged PR in this repo so far was squashed, so a merge commit as the
- * default would be wrong more often than right. */
+/** The last method used for this repo, or `squash`. */
 export function rememberedMethod(key: string): MergeMethod {
   try {
     if (typeof localStorage === 'undefined') return 'squash'

@@ -8,9 +8,7 @@ const testing = std.testing;
 
 pub fn isSessionKanban(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !bool {
     var is_kanban: bool = false;
-    // Filter on `wit.id` (the canonical session id for kanban / routine tasks
-    // per Migration 052's `task.id == session.id` convention), not on
-    // `session_id` — that column was dropped by Migration 052 and would
+    // Filter on `wit.id` (the canonical session id for kanban / routine tasks per Migration 052's `task.id == session.id` convention), not on `session_id` — that …
     const sql =
         \\
         \\SELECT 1 FROM workspace_item_tasks wit
@@ -30,7 +28,6 @@ pub fn isSessionKanban(allocator: std.mem.Allocator, db: *database.Db, session_i
 }
 
 /// Open a fresh in-memory sqlite DB with `test_db.openMemory(&db, io)`.
-/// Tests call `s.db.exec(...)` to lay down their own schema.
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -44,9 +41,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Lay down the two tables `isTaskKanban` joins on. No `session_id` column —
-/// the schema matches post-Migration 052 production. The function filters on
-/// `wit.id` which doubles as the session id for kanban / routine tasks.
+/// Lay down the two tables `isTaskKanban` joins on.
 fn seedSchema(alloc: std.mem.Allocator, db: *database.Db) !void {
     try db.exec(alloc, "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT)", &.{});
     try db.exec(alloc,
@@ -66,9 +61,7 @@ test "isTaskKanban returns true when the session_id maps to a kanban task" {
 
     try seedSchema(alloc, &s.db);
     try s.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_k1', 'ws_1', 'kanban')", &.{});
-    // Per Migration 052: `task.id == session.id`. The kanban task
-    // was created for a chat whose session id is 'session_abc', so
-    // the task row carries that id directly.
+    // Per Migration 052: `task.id == session.id`.
     try s.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) " ++
         "VALUES ('session_abc', 'plan sprint', 'item_k1')", &.{});
 
@@ -136,8 +129,6 @@ test "isTaskKanban returns false when kanban items exist but no tasks" {
 }
 
 // ─── Test: mixed kanban + chat in the same DB ─────────────────────────────
-// Regression guard for the JOIN semantics: a session_id bound to a non-kanban
-// task must NOT be reported as a kanban even when other kanban tasks exist in
 
 test "isTaskKanban returns false for a session_id bound to a non-kanban task" {
     const alloc = testing.allocator;

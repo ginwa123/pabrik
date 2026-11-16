@@ -1,5 +1,4 @@
-/** MergeBox — the merge button's own contract. Two rules this file exists to protect: 1. A state
- * that may not merge must SAY WHY, visibly. */
+/** MergeBox — the merge button's own contract. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import MergeBox from '../components/views/chat_right_sidebar/MergeBox.vue'
@@ -63,14 +62,11 @@ const state = (over: Partial<Record<string, unknown>> = {}) =>
     baseRef: (over.baseRef as string) ?? 'main',
   })
 
-// jsdom in this vitest does not provide localStorage cleanly — `window.localStorage` is undefined
-// even at a valid origin. That is a known quirk of this suite, worked around in exactly this way by
-// navigation.spec.ts.
+// jsdom in this vitest does not provide localStorage cleanly — `window.localStorage` is undefined even at a valid origin.
 beforeEach(() => {
   mergePrMock.mockReset()
   getPrStatusMock.mockReset()
-  // The shared PR-status cache is module-level, and the merge test below
-  // primes it — reset so no test inherits another's entry.
+  // The shared PR-status cache is module-level, and the merge test below primes it — reset so no test inherits another's entry.
   clearPrStatusCache()
   if (typeof localStorage === 'undefined' || typeof localStorage.clear !== 'function') {
     const store: Record<string, string> = {}
@@ -142,8 +138,7 @@ describe('mergeWording', () => {
   })
 
   it('a vocabulary word we do not know is pending, never ready', () => {
-    // The honest failure direction: a forge that adds a state must not be able
-    // to turn a disabled button into a merge.
+    // The honest failure direction: a forge that adds a state must not be able to turn a disabled button into a merge.
     expect(state({ mergeState: 'SOMETHING_NEW' }).state).toBe('pending')
     expect(state({ mergeState: 'SOMETHING_NEW' }).canMerge).toBe(false)
     expect(state({ mergeState: '' }).state).toBe('pending')
@@ -278,9 +273,7 @@ describe('MergeBox', () => {
     await flushPromises()
 
     expect(mergePrMock).toHaveBeenCalledTimes(1)
-    // Assert the whole call in one shot: the endpoint, the change request, and
-    // the body. `toHaveBeenCalledWith` also keeps this type-safe (an indexed
-    // `mock.calls[0]` is `possibly undefined` under this tsconfig).
+    // Assert the whole call in one shot: the endpoint, the change request, and the body.
     expect(mergePrMock).toHaveBeenCalledWith(
       '/tmp/repo',
       props.prUrl,
@@ -297,9 +290,7 @@ describe('MergeBox', () => {
   })
 
   it('drops the shared PR-status cache for the head branch, so the badges re-read', async () => {
-    // The bug this asserts against: the sidebar RECENT icon and the kanban card
-    // badge read the shared 60s cache, so after a merge from this box they kept
-    // the `open` green they had fetched before the click.
+    // The bug this asserts against: the sidebar RECENT icon and the kanban card badge read the shared 60s cache, so after a merge from this box they kept the `open` …
     getPrStatusMock.mockResolvedValue({ status: 'open', state: 'OPEN' })
     await expect(fetchPrStatusCached(props.cwd, 'worktree/add-a-button')).resolves.toBe('open')
     expect(getPrStatusMock).toHaveBeenCalledTimes(1)

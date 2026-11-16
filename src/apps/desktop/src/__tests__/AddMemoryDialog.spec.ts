@@ -1,13 +1,10 @@
-/** Tests for AddMemoryDialog — the modal that creates a new LOCAL memory file (at
- * `<cwd>/.pabrik/memories/<name>.md`). */
+/** Tests for AddMemoryDialog — the modal that creates a new LOCAL memory file (at `<cwd>/.pabrik/memories/<name>.md`). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import AddMemoryDialog from '../components/dialogs/AddMemoryDialog.vue'
 
-// Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
-// picker behavior is tested in FilePickerDialog.spec.ts. The stub mirrors the picker's public API:
-// v-model:show (modelValue + update:modelValue) and @select(path).
+// Stub the FilePickerDialog — we only care that the parent wires up the picker's events.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -57,9 +54,7 @@ function clickInDom(selector: string) {
 }
 
 function mountDialog(initialShow = true, cwd = TEST_CWD) {
-  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
-  // each mount, and these accumulate in jsdom even after wrapper.unmount() (the divs persist as
-  // empty containers).
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for each mount, and these accumulate in jsdom even after …
   document.body.innerHTML = ''
   return mount(AddMemoryDialog, {
     attachTo: document.body,
@@ -285,8 +280,7 @@ describe('AddMemoryDialog — create event', () => {
     wrapper = mountDialog(true)
     await flushPromises()
 
-    // Set name and content (content is the default '# New Memory\n\n...'
-    // — overwritten below so the assertion has a known value).
+    // Set name and content (content is the default '# New Memory\n\n...' — overwritten below so the assertion has a known value).
     const nameInput = findInDom<HTMLInputElement>(
       '[data-testid="add-memory-name"]',
     )!
@@ -304,9 +298,7 @@ describe('AddMemoryDialog — create event', () => {
     clickInDom('[data-testid="add-memory-submit"]')
     await flushPromises()
 
-    // The dialog always emits 3 args: (name, content, path) so the parent can choose to use any
-    // subset. The standalone (default) flow doesn't need content (it just called the API itself),
-    // but the tuple shape is uniform across modes.
+    // The dialog always emits 3 args: (name, content, path) so the parent can choose to use any subset.
     expect(wrapper.emitted('create')?.[0]).toEqual([
       'foo.md',
       'My memory body',
@@ -454,8 +446,7 @@ describe('AddMemoryDialog — folder picker', () => {
     await flushPromises()
 
     expect(mockCreate).toHaveBeenCalledTimes(1)
-    // The cwd passed to createLocalMemory is the user-picked folder,
-    // NOT the initial prop value.
+    // The cwd passed to createLocalMemory is the user-picked folder, NOT the initial prop value.
     expect(mockCreate).toHaveBeenCalledWith(
       'foo.md',
       expect.any(String),
@@ -483,7 +474,6 @@ describe('AddMemoryDialog — folder picker', () => {
 
   it('resets cwd to the prop value on reopen', async () => {
     // Open with cwd A, pick folder B, close, reopen with cwd A.
-    // The local cwd should reset to A (NOT retain B).
     wrapper = mountDialog(true, '/initial')
     await flushPromises()
 

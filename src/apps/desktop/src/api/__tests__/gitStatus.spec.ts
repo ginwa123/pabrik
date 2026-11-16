@@ -1,5 +1,4 @@
-/** Tests for getGitStatus's cache-first contract. Contract: 1. A successful fetch writes the
- * response to the per-cwd cache (so the NEXT init can paint it before the network round-trip). 2. */
+/** Tests for getGitStatus's cache-first contract. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getGitStatus, type GitStatus } from '@/api/index'
@@ -23,8 +22,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-// jsdom here does not reliably provide localStorage — same guard as
-// the helper's own spec.
+// jsdom here does not reliably provide localStorage — same guard as the helper's own spec.
 function ensureLocalStorage(): void {
   if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
     const store: Record<string, string> = {}
@@ -49,9 +47,7 @@ describe('getGitStatus caching', () => {
   beforeEach(() => {
     ensureLocalStorage()
     localStorage.clear()
-    // Silence the error-toast path (apiFetch → notifyError) in the
-    // failure tests; the notifications store needs no pinia here but
-    // the console noise obscures real failures.
+    // Silence the error-toast path (apiFetch → notifyError) in the failure tests; the notifications store needs no pinia here but the console noise obscures real …
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
@@ -107,8 +103,7 @@ describe('getGitStatus caching', () => {
       current: '',
       status: 'error',
     })
-    // The synthetic fallback must NOT poison the cache — otherwise the
-    // next init would paint `status:'error'` over a real branch.
+    // The synthetic fallback must NOT poison the cache — otherwise the next init would paint `status:'error'` over a real branch.
     expect(readGitStatusCache(CWD)).toBeNull()
   })
 

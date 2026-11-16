@@ -1,6 +1,4 @@
-//! Data model for the `session_background_process` entity table. Tracks
-//! long-lived background processes (dev servers, file watchers, build
-//! daemons) spawned by the bash tool.
+//! Data model for the `session_background_process` entity table.
 
 const std = @import("std");
 
@@ -13,13 +11,11 @@ session_id: []u8,
 pid: i64,
 /// The full command string the bash tool spawned.
 command: []u8,
-/// Absolute path to the log file the bash tool redirected stdout
-/// + stderr into. Read by the chat header's "view output" link.
+/// Absolute path to the log file the bash tool redirected stdout + stderr into.
 log_path: []u8,
 /// Unix-seconds timestamp of the spawn event.
 started_at: i64,
-/// One of `"running"` | `"stopped"` | `"failed"`. The DB column
-/// has no CHECK constraint.
+/// One of `"running"` | `"stopped"` | `"failed"`.
 status: []u8,
 
 const Self = @This();

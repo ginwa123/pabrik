@@ -1,5 +1,4 @@
-/** Phase 3 stacked center diff (3.2): ChatView renders ALL changed files stacked vertically — one
- * lazily-mounted CenterDiffSection per file — instead of a single SidebarDiffView. */
+/** Phase 3 stacked center diff (3.2): ChatView renders ALL changed files stacked vertically — one lazily-mounted CenterDiffSection per file — instead of a single … */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -132,9 +131,7 @@ describe('ChatView stacked center render', () => {
   })
 
   it('opens only on explicit selection — list loads never auto-open', () => {
-    // Refresh must land on chat even when the PR/diff fetch succeeds:
-    // the gate ignores the preloaded list, and the list handler has no
-    // first-file auto-select branch.
+    // Refresh must land on chat even when the PR/diff fetch succeeds
     expect(chatViewSrc).toMatch(
       /const showCenterDiff = computed\(\(\) => centerDiff\.value !== null\)/,
     )

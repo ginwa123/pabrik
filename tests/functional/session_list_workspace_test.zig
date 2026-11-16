@@ -1,6 +1,4 @@
-// Workspace-scoped session list + session-detail workspace_id (wire). Zig
-// port of `tests/functional/session_list_workspace_test.py` (same test names,
-// same order).
+// Workspace-scoped session list + session-detail workspace_id (wire).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,15 +7,12 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step
-/// must not extend a poll deadline).
+/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step must not extend a poll deadline).
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-// ============================================================================
 // Helpers (mirror agent_workspace_history_test.zig)
-// ============================================================================
 
 /// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -38,8 +33,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     });
 }
 
-/// Kanban item WITH a `path` — the path is what the cwd-matching scope
-/// resolver prefix-matches plain-chat cwds against.
+/// Kanban item WITH a `path` — the path is what the cwd-matching scope resolver prefix-matches plain-chat cwds against.
 fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8, path: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .name = name,
@@ -71,8 +65,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8, path: [
     });
 }
 
-/// POST mode='create_session' — session.id == task.id (the exact
-/// task→session→workspace join the scope resolver reads).
+/// POST mode='create_session' — session.id == task.id (the exact task→session→workspace join the scope resolver reads).
 fn createTask(
     h: *Harness,
     workspace_id: []const u8,
@@ -115,9 +108,7 @@ fn createTask(
     });
 }
 
-/// Poll `GET /api/llm/session/:id` until the row exists (200). Also exercises
-/// the detail route on every seed: 404 while the async insert is still in
-/// flight, 200 once landed.
+/// Poll `GET /api/llm/session/:id` until the row exists (200).
 fn waitForSession(h: *Harness, session_id: []const u8, timeout_ms: i64) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -151,19 +142,14 @@ fn waitForSession(h: *Harness, session_id: []const u8, timeout_ms: i64) !void {
     return error.TestUnexpectedResult;
 }
 
-/// Plain chat via POST /api/llm/session. `cwd_session` is the body field
-/// `session_create.zig` reads for the working directory.
+/// Plain chat via POST /api/llm/session.
 fn createPlainSession(h: *Harness, name: []const u8, cwd: []const u8) ![]u8 {
     const suffix = try harness.randomSuffix(gpa);
     defer gpa.free(suffix);
-    // `randomSuffix` formats a u64 with `{x}`, which DROPS leading zeros,
-    // so the result is 1..16 hex characters rather than always 16. Truncating
-    // with a constant slice therefore panics on roughly 1-in-16 runs.
+    // `randomSuffix` formats a u64 with `{x}`, which DROPS leading zeros, so the result is 1..16 hex characters rather than always 16.
     const hex = suffix[0..@min(16, suffix.len)];
     const sid = try std.fmt.allocPrint(gpa, "sess_test_{s}", .{hex});
-    // `errdefer`, NOT `defer`: this slice IS the return value, so a plain
-    // `defer` frees it before the caller ever reads it (and `Seed.deinit`
-    // then frees it a second time).
+    // `errdefer`, NOT `defer`: this slice IS the return value, so a plain `defer` frees it before the caller ever reads it (and `Seed.deinit` then frees it a second …
     errdefer gpa.free(sid);
 
     const body = try std.json.Stringify.valueAlloc(gpa, .{
@@ -173,9 +159,7 @@ fn createPlainSession(h: *Harness, name: []const u8, cwd: []const u8) ![]u8 {
     }, .{});
     defer gpa.free(body);
 
-    // Strict 201, as the Python original: the response is inspected
-    // immediately below, so a 500 would fail anyway — and failing at the
-    // status check names the status rather than the echo mismatch.
+    // Strict 201, as the Python original: the response is inspected immediately below, so a 500 would fail anyway — and failing at the status check names the status …
     var r = try h.http(io, .POST, "/api/llm/session", .{
         .json_body = body,
         .expect = &.{201},
@@ -198,14 +182,12 @@ fn createPlainSession(h: *Harness, name: []const u8, cwd: []const u8) ![]u8 {
     return sid;
 }
 
-/// `GET /api/llm/session` with `params`. The caller owns the
-/// `Response` and MUST keep it alive for any `Json` parsed from it.
+/// `GET /api/llm/session` with `params`.
 fn listSessions(h: *Harness, params: []const harness.Harness.Param) !harness.Response {
     return h.http(io, .GET, "/api/llm/session", .{ .params = params, .expect = &.{200} });
 }
 
-/// The `session_id` of every row in `sessions[]`, as OWNED strings. Borrowed
-/// JSON cannot outlive the `Response` it was parsed from, so this duplicates.
+/// The `session_id` of every row in `sessions[]`, as OWNED strings.
 fn collectSessionIds(doc: *const harness.Json) ![][]u8 {
     const sessions = doc.array("sessions") orelse {
         std.debug.print("session list has no `sessions` array\n", .{});
@@ -269,8 +251,7 @@ fn renderIds(ids: []const []u8) ![]u8 {
     return buf.toOwnedSlice();
 }
 
-/// Assert the Python `_list_sessions` shape: `sessions` is a list and
-/// `total` is an int.
+/// Assert the Python `_list_sessions` shape: `sessions` is a list and `total` is an int.
 fn listShapeIsSane(doc: *const harness.Json) !void {
     if (doc.array("sessions") == null) {
         std.debug.print("bad list shape: `sessions` is not an array\n", .{});
@@ -302,9 +283,7 @@ const Seed = struct {
     }
 };
 
-/// Two workspaces with disjoint sessions: A: task_a1 + task_a2 (task-linked)
-/// + plain_a (cwd under A's item path) -> 3 sessions B: task_b1 (task-linked)
-/// -> 1 session The item paths are derived from `h.temp_dir`; see the header
+/// Two workspaces with disjoint sessions: A: task_a1 + task_a2 (task-linked) + plain_a (cwd under A's item path) -> 3 sessions B: task_b1 (task-linked) -> 1 …
 fn seed(h: *Harness) !Seed {
     const proj_a = try harness.harnessPath(gpa, h.temp_dir, &.{"proj/a"});
     defer gpa.free(proj_a);
@@ -338,13 +317,9 @@ fn seed(h: *Harness) !Seed {
     return out;
 }
 
-// ============================================================================
 // Tests: GET /api/llm/session?workspace_id=...
-// ============================================================================
 
-// Leak test: workspace_id=A returns A's 2 task sessions + the
-// cwd-matched plain chat, never B's id, and total == 3 (the count query
-// must carry the same filter — total must NOT stay global).
+// Leak test: workspace_id=A returns A's 2 task sessions + the cwd-matched plain chat, never B's id, and total == 3 (the count query must carry the same filter — …
 test "workspace_a_scope_includes_tasks_and_cwd_chat_excludes_b" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -459,9 +434,7 @@ test "unknown_workspace_id_fails_closed" {
     }
 }
 
-// `workspace_id=` (present but empty) must NOT behave like the param
-// being absent — fail closed instead of leaking the global list (guards
-// the `IN ()` / empty-bind bug classes).
+// `workspace_id=` (present but empty) must NOT behave like the param being absent — fail closed instead of leaking the global list (guards the `IN ()` / …
 test "empty_workspace_id_fails_closed" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -527,12 +500,9 @@ test "absent_workspace_id_returns_all_sessions" {
     }
 }
 
-// ============================================================================
 // Tests: GET /api/llm/session/:session_id -> workspace_id
-// ============================================================================
 
-// Detail workspace_id: task-linked session -> A, cwd-matched plain
-// chat -> A, session outside every workspace -> null.
+// Detail workspace_id: task-linked session -> A, cwd-matched plain chat -> A, session outside every workspace -> null.
 test "session_detail_returns_owning_workspace_id" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -585,8 +555,7 @@ test "session_detail_returns_owning_workspace_id" {
         }
     }
 
-    // Outside every workspace -> JSON null, NOT the empty string and NOT
-    // a missing key.
+    // Outside every workspace -> JSON null, NOT the empty string and NOT a missing key.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{outside});
         defer gpa.free(path);
@@ -623,12 +592,9 @@ test "session_detail_returns_owning_workspace_id" {
     }
 }
 
-// ============================================================================
 // Test: GET /api/workspaces -> items_count
-// ============================================================================
 
-/// `items_count` of the workspace row with `id == ws_id`. Borrowed from
-/// `doc`.
+/// `items_count` of the workspace row with `id == ws_id`.
 fn workspaceItemsCount(doc: *const harness.Json, ws_id: []const u8) !i64 {
     const arr = doc.array("workspaces") orelse {
         std.debug.print("workspace list has no `workspaces` array\n", .{});
@@ -644,9 +610,7 @@ fn workspaceItemsCount(doc: *const harness.Json, ws_id: []const u8) !i64 {
             else => continue,
         };
         if (!std.mem.eql(u8, id, ws_id)) continue;
-        // The `orelse { ... }.integer` spelling does not parse — a block
-        // expression followed by a field access needs its own parens, and
-        // the switch form reads better anyway.
+        // The `orelse { ... }.integer` spelling does not parse — a block expression followed by a field access needs its own parens, and the switch form reads better …
         return switch (o.get("items_count") orelse {
             std.debug.print("workspace {s} has no `items_count`\n", .{ws_id});
             return error.TestUnexpectedResult;
@@ -662,9 +626,7 @@ fn workspaceItemsCount(doc: *const harness.Json, ws_id: []const u8) !i64 {
     return error.TestUnexpectedResult;
 }
 
-/// Cross-check the badge against the authoritative list rather than trusting
-/// it: `GET /api/workspaces/<id>/items` must report the same `count`, and
-/// exactly one of its rows must be the system default (`is_default == 1`,
+/// Cross-check the badge against the authoritative list rather than trusting it: `GET /api/workspaces/<id>/items` must report the same `count`, and exactly one of …
 fn assertWorkspaceItems(h: *Harness, ws_id: []const u8, expected: i64) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items", .{ws_id});
     defer gpa.free(path);
@@ -693,8 +655,7 @@ fn assertWorkspaceItems(h: *Harness, ws_id: []const u8, expected: i64) !void {
             .object => |m| m,
             else => continue,
         };
-        // `is_default` is 0/1 on the wire, not a JSON boolean — the
-        // same contract `default_workspace_provisioning_test.zig` pins.
+        // `is_default` is 0/1 on the wire, not a JSON boolean — the same contract `default_workspace_provisioning_test.zig` pins.
         const is_default = switch (o.get("is_default") orelse continue) {
             .integer => |i| i,
             else => continue,
@@ -722,8 +683,7 @@ fn assertWorkspaceItems(h: *Harness, ws_id: []const u8, expected: i64) !void {
     }
 }
 
-// Every workspace row carries `items_count` (its workspace_items row count),
-// whether or not is_include_items fetches the rows.
+// Every workspace row carries `items_count` (its workspace_items row count), whether or not is_include_items fetches the rows.
 test "workspaces_list_carries_items_count" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -768,9 +728,7 @@ test "workspaces_list_carries_items_count" {
         }
     }
 
-    // Cross-check against the authoritative list rather than trusting the
-    // badge: the count and the rows must agree, and there must be
-    // exactly one default among them.
+    // Cross-check against the authoritative list rather than trusting the badge: the count and the rows must agree, and there must be exactly one default among them.
     try assertWorkspaceItems(&h, ids.ws_a, expected);
     try assertWorkspaceItems(&h, ids.ws_b, expected);
     try assertWorkspaceItems(&h, empty_ws, expected_empty);
@@ -833,8 +791,7 @@ test "workspaces_list_carries_items_count" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = nowMs;
     _ = createWorkspace;

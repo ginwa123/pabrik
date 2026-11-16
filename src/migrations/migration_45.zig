@@ -12,8 +12,7 @@ pub const Migration045AddPositionToWorkspaceItems = struct {
     pub const name = "add_position_to_workspace_items";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Mirror of Migration043AddPositionToWorkspaces but scoped to a
-        // single workspace's items.
+        // Mirror of Migration043AddPositionToWorkspaces but scoped to a single workspace's items.
         try db.exec(allocator, "ALTER TABLE workspace_items ADD COLUMN position INTEGER NOT NULL DEFAULT 0", &[_][]const u8{});
 
         // Backfill.
@@ -28,13 +27,10 @@ pub const Migration045AddPositionToWorkspaceItems = struct {
             \\)
         , &[_][]const u8{});
 
-        // Index on (workspace_id, position DESC) so the per-workspace
-        // item list query uses an index even with hundreds of items
-        // per workspace.
+        // Index on (workspace_id, position DESC) so the per-workspace item list query uses an index even with hundreds of items per workspace.
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_items_workspace_position ON workspace_items(workspace_id, position DESC)", &[_][]const u8{});
 
-        // Refresh query-planner stats (mirrors Migration043/044
-        // pattern) so the new index is picked on pre-existing DBs.
+        // Refresh query-planner stats (mirrors Migration043/044 pattern) so the new index is picked on pre-existing DBs.
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

@@ -1,6 +1,4 @@
-//! SQL layer for the `agents` entity family. Every statement that touches
-//! `agents`, `agent_knowledge`, `agent_tools` or `agent_system_prompt` lives
-//! here.
+//! SQL layer for the `agents` entity family.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -139,8 +137,7 @@ fn readSystemPromptRow(allocator: std.mem.Allocator, r: anytype) !SystemPromptRo
 pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8) bool {
     var q = db.query(allocator, "SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'agent'", &.{agent_id}) catch return false;
     defer q.deinit();
-    // The row owns its values[] buffer — release it, or the caller's
-    // allocator leaks one allocation per exists() call.
+    // The row owns its values[] buffer — release it, or the caller's allocator leaks one allocation per exists() call.
     if (q.next() catch null) |row| {
         row.deinit(allocator);
         return true;
@@ -169,8 +166,7 @@ pub fn updateDescription(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []c
     return getById(allocator, db, agent_id);
 }
 
-/// Insert an `agents` row. `id` and `workspace_item_id` are the same
-/// string per spec D3 (1-1 enforced by `UNIQUE(workspace_item_id)`).
+/// Insert an `agents` row.
 pub fn insert(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspace_item_id: []const u8) !void {
     try db.exec(allocator,
         "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'agent')",
@@ -203,8 +199,6 @@ pub fn listKnowledge(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const
 }
 
 /// Insert a knowledge row at `MAX(position) + 1` and return it.
-/// `file_path` / `label` / `content` may be empty — the COALESCE
-/// wrappers keep the empty-slice-as-NULL bind from tripping NOT NULL.
 pub fn insertKnowledge(
     allocator: std.mem.Allocator,
     db: DbOrTx,
@@ -276,8 +270,6 @@ pub fn deleteKnowledge(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: [
 }
 
 /// Rewrite every knowledge row's position inside one transaction.
-/// `ordered_ids[0]` becomes the highest position (`len - 1`), the last
-/// id becomes 0 — so a 1-row ordering lands at 0, not 1.
 pub fn reorderKnowledge(allocator: std.mem.Allocator, db: *database.Db, agent_id: []const u8, ordered_ids: []const []const u8) !void {
     var tx = db.begin() catch return error.TransactionFailed;
     defer tx.commitOrRollback() catch {};
@@ -338,8 +330,7 @@ pub fn listTools(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8)
     return try list.toOwnedSlice(allocator);
 }
 
-/// Insert a tool row. Returns null on a UNIQUE violation (the agent
-/// already has this tool) so the caller can answer 409.
+/// Insert a tool row.
 pub fn insertTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8, tool_name: []const u8) !?ToolRow {
     const ts = helpers.unixTimestampNanos();
     const id = try std.fmt.allocPrint(allocator, "at_{d}", .{ts});
@@ -352,8 +343,7 @@ pub fn insertTool(allocator: std.mem.Allocator, db: DbOrTx, agent_id: []const u8
     return getToolById(allocator, db, id);
 }
 
-/// Insert a tool row, ignoring a UNIQUE conflict. Used by the default
-/// seeding path, which is idempotent by design.
+/// Insert a tool row, ignoring a UNIQUE conflict.
 pub fn insertToolIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, agent_id: []const u8, tool_name: []const u8) !void {
     try db.exec(allocator,
         "INSERT INTO agent_config_tools (id, config_id, tool_name, enabled, created_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT DO NOTHING",
@@ -431,9 +421,7 @@ pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: 
     return try readSystemPromptRow(allocator, r);
 }
 
-/// Patch the provided fields of a system-prompt row and return the
-/// refetched row. Both text columns use COALESCE so an empty string
-/// clears the column instead of binding NULL.
+/// Patch the provided fields of a system-prompt row and return the refetched row.
 pub fn updateSystemPrompt(
     allocator: std.mem.Allocator,
     db: DbOrTx,
@@ -469,7 +457,6 @@ pub fn deleteSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: [
 }
 
 /// Rewrite every system-prompt row's position inside one transaction.
-/// Same ordering contract as `reorderKnowledge`.
 pub fn reorderSystemPrompts(allocator: std.mem.Allocator, db: *database.Db, agent_id: []const u8, ordered_ids: []const []const u8) !void {
     var tx = db.begin() catch return error.TransactionFailed;
     defer tx.commitOrRollback() catch {};

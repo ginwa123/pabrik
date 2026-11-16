@@ -180,9 +180,7 @@ const ResolvedBlock = struct {
     answer: []const u8 = "",
 };
 
-/// The resolved shape of the same `<ask_user>` marker: `detect` parses the
-/// question the model writes, this parses the block the answer endpoint
-/// rewrites in place.
+/// The resolved shape of the same `<ask_user>` marker: `detect` parses the question the model writes, this parses the block the answer endpoint rewrites in place.
 pub const Resolution = struct {
     parsed: std.json.Parsed(ResolvedBlock),
 
@@ -221,8 +219,7 @@ pub fn resolution(allocator: std.mem.Allocator, content: []const u8) ?Resolution
     return .{ .parsed = parsed };
 }
 
-/// Without this turn the transcript ends on the model's own assistant message,
-/// and the provider continues that message instead of starting a new one.
+/// Without this turn the transcript ends on the model's own assistant message, and the provider continues that message instead of starting a new one.
 pub fn resolvedTurn(allocator: std.mem.Allocator, res: Resolution) ![]u8 {
     return switch (res.status()) {
         .answered => if (res.question().len > 0)

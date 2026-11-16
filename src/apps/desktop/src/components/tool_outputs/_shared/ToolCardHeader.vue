@@ -2,8 +2,7 @@
 import { computed } from 'vue'
 import { useInjectOpenInCodeEditor } from '@/composables/useCodeEditor'
 
-/** Shared chrome for tool-output cards (read_file, write_file, text_replace, etc.). Presentational
- * only — the caller parses the tool's content and passes resolved props. */
+/** Shared chrome for tool-output cards (read_file, write_file, text_replace, etc.). */
 interface Props {
   /** Tool name shown in the violet pill (e.g. "read_file") */
   toolName: string
@@ -33,8 +32,7 @@ interface Props {
   inlineTagClass?: string | undefined
   /** Small text shown after the primary field (e.g. "12L", "3 matches"). */
   rightMeta?: string | null | undefined
-  /** In-progress tool call (envelope still empty). Shows a yellow
-   *  "running…" badge next to the status. Default: false. */
+  /** In-progress tool call (envelope still empty). */
   running?: boolean
 }
 

@@ -1,6 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent`. Body:
-//! `{description}`. Updates the description of the agent bound to this
-//! workspace_item.
+//! `PATCH /api/workspaces/:workspace_id/items/:item_id/agent`. Body
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,15 +7,12 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for agent-update. Decoupled from the `AgentUpdateInput`
-/// domain struct so the wire format can evolve independently (e.g. adding `?`
-/// optional fields) without touching the use-case.
+/// HTTP request body for agent-update.
 const UpdateAgentBody = struct {
     description: []const u8 = "",
 };
 
-/// Subset of the agents row returned by the use-case. Field strings
-/// are owned by the caller (lifetime = request arena).
+/// Subset of the agents row returned by the use-case.
 pub const Agent = agent_db.AgentRow;
 
 /// Domain-level error set for `useCase`.
@@ -36,9 +31,7 @@ pub const AgentUpdateError = error{
     RefetchFailed,
     /// Refetched row vanished (should be impossible — surfaces as 500).
     RowVanished,
-    /// `allocator.dupe` failed while copying slice fields. Unreachable
-    /// under arena allocator (test builds can hit it), but the
-    /// type system requires the variant so `try` propagates.
+    /// `allocator.dupe` failed while copying slice fields.
     OutOfMemory,
 };
 
@@ -49,18 +42,14 @@ pub const AgentUpdateInput = struct {
     description: []const u8,
 };
 
-/// Output of the agent-update use-case. `agent` is owned by the
-/// caller (lifetime = request arena).
+/// Output of the agent-update use-case.
 pub const AgentUpdateOutput = struct {
     agent: Agent,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Update an agent's description. Validates that the workspace_item exists
-/// and is of type `'agent'`.
+/// Update an agent's description.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -89,13 +78,9 @@ fn useCase(
     return .{ .agent = agent };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentsUpdateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -159,8 +144,6 @@ pub fn agentsUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -180,9 +163,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},

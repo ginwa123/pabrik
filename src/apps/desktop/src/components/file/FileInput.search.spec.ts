@@ -38,9 +38,7 @@ async function mountInput(propsOverride: Record<string, unknown> = {}) {
   return wrapper
 }
 
-/**  * Set the textarea value, park the cursor at the end, dispatch `input` so `autoResize` updates
- * `cursorPos`, then wait out BOTH debounces (100ms trigger-detect + 100ms server-search) plus
- * promise flushes. */
+/** Set the textarea value, park the cursor at the end, dispatch `input` so `autoResize` updates `cursorPos`, then wait out BOTH debounces (100ms trigger-detect + … */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -202,8 +200,7 @@ describe('FileInput — /files- picker server search + caps (Task 2)', () => {
   })
 
   it('a longer query keeps the rows on screen instead of blanking to Searching…', async () => {
-    // `comp` answers at once; `compo` stays in flight so the in-between frame
-    // is observable.
+    // `comp` answers at once; `compo` stays in flight so the in-between frame is observable.
     let release: ((v: { entries: ServerEntry[] }) => void) | null = null
     const pending = new Promise<{ entries: ServerEntry[] }>((resolve) => {
       release = resolve
@@ -267,8 +264,7 @@ describe('FileInput — /files- picker server search + caps (Task 2)', () => {
     await flushPromises()
     expect(wrapper.find('.file-picker-list').exists()).toBe(false)
 
-    // Same query, fresh session: the cache from the closed picker is gone, so
-    // a file created meanwhile is not hidden behind a stale answer.
+    // Same query, fresh session: the cache from the closed picker is gone, so a file created meanwhile is not hidden behind a stale answer.
     await typeInTextarea(textarea, '/files-comp')
     expect(searchFilesMock).toHaveBeenCalledTimes(2)
   })

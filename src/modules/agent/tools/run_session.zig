@@ -11,24 +11,20 @@ const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
 const is_worker_running = @import("../loop/is_worker_running.zig");
 
-/// Input for run_session. This tool ATTACHES to a session — it never creates
-/// one — so `session_id` is the load-bearing field.
+/// Input for run_session.
 pub const RunSessionInput = struct {
     /// The session whose agent loop to start. Required.
     session_id: []const u8 = "",
-    /// Queue this message onto the session before starting the loop. Omitted,
-    /// the loop resumes with the conversation the session already has.
+    /// Queue this message onto the session before starting the loop.
     message: []const u8 = "",
 };
 
 /// Which of the two behaviors the plan implements.
 pub const RunMode = enum { sent, resumed };
 
-/// Every way a call can be refused. Each one is a state the caller can act
-/// on; none of them starts a half-configured run.
+/// Every way a call can be refused.
 pub const RunSessionError = error{
-    /// No `session_id`. This tool attaches to a session; it has nothing to
-    /// attach to otherwise, and it does not create one.
+    /// No `session_id`.
     SessionIdRequired,
     SessionNotFound,
     /// A run is already executing on that session.
@@ -37,8 +33,7 @@ pub const RunSessionError = error{
     CrossWorkspaceForbidden,
 };
 
-/// A validated, ready-to-emit run. `queue_message` borrows the caller's
-/// input; everything else is the SESSION's own row, copied.
+/// A validated, ready-to-emit run.
 pub const RunPlan = struct {
     mode: RunMode,
     session_id: []u8,
@@ -127,8 +122,7 @@ fn workspaceName(allocator: std.mem.Allocator, db: *database.Db, workspace_id: [
     return allocator.dupe(u8, "");
 }
 
-/// Validate the call and resolve everything `App.emit_run_agent` needs. Reads
-/// only: nothing here writes a row, so a refusal cannot leave state behind.
+/// Validate the call and resolve everything `App.emit_run_agent` needs.
 pub fn planRunSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -138,8 +132,7 @@ pub fn planRunSession(
     if (input.session_id.len == 0) return error.SessionIdRequired;
     if (!try sessionExists(allocator, db, input.session_id)) return error.SessionNotFound;
     if (is_worker_running.isWorkerRunning(allocator, db, input.session_id)) return error.WorkerAlreadyRunning;
-    // The same gate `read_workspace_session` uses. Fail CLOSED — an
-    // unresolvable pair (a caller with no workspace) is not "same".
+    // The same gate `read_workspace_session` uses.
     if (!try workspace_scope.isSameWorkspace(allocator, db, caller_session_id, input.session_id)) {
         return error.CrossWorkspaceForbidden;
     }
@@ -251,9 +244,7 @@ pub fn execRunSession(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
         return refused(ctx, tc, "server_not_initialized");
     };
 
-    // Attaching to an existing session: the row already exists, so
-    // `insert_worker`'s INSERT OR IGNORE is a no-op and every column —
-    // workspace included — stays exactly as the session had it.
+    // Attaching to an existing session: the row already exists, so `insert_worker`'s INSERT OR IGNORE is a no-op and every column — workspace included — stays …
     di.emit_run_agent(.{
         .session_id = plan.session_id,
         .session_name = plan.session_name,
@@ -360,8 +351,7 @@ fn setupDb() !TestCtx {
         \\VALUES ('item_a', 'ws_a', 'agent', 'Project Default', '/repos/alpha', 1, 1),
         \\       ('item_b', 'ws_b', 'agent', 'Project Default', '/repos/kabelweb', 1, 1)
     , &.{});
-    // `caller` is a task chat in ws_a (its session id IS the task id);
-    // `mate` and `peer` are sessions in the caller's workspace and another one.
+    // `caller` is a task chat in ws_a (its session id IS the task id); `mate` and `peer` are sessions in the caller's workspace and another one.
     try db.exec(alloc,
         \\INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('caller', 'Fix the login bug', 'item_a')
     , &.{});
@@ -449,8 +439,7 @@ test "run_session: a busy worker is refused instead of silently queueing" {
     try testing.expectError(error.WorkerAlreadyRunning, planRunSession(alloc, &s.db, "caller", .{
         .session_id = "mate",
     }));
-    // SENDING to a busy session is refused too — the loop would swallow the
-    // message into `session_queue_messages` and report nothing.
+    // SENDING to a busy session is refused too — the loop would swallow the message into `session_queue_messages` and report nothing.
     try testing.expectError(error.WorkerAlreadyRunning, planRunSession(alloc, &s.db, "caller", .{
         .session_id = "mate",
         .message = "x",
@@ -494,8 +483,7 @@ test "run_session: a session may start its OWN loop" {
     defer teardown(&s);
     const alloc = testing.allocator;
 
-    // Self-targeting is the one case that needs no workspace to compare: a
-    // session is always in its own workspace.
+    // Self-targeting is the one case that needs no workspace to compare: a session is always in its own workspace.
     var plan = try planRunSession(alloc, &s.db, "caller", .{ .session_id = "caller" });
     defer plan.deinit(alloc);
     try testing.expectEqual(RunMode.resumed, plan.mode);
@@ -520,8 +508,7 @@ test "run_session: the schema requires a session_id and takes nothing else" {
     try testing.expect(std.mem.indexOf(u8, tool.description, "MAIN-AGENT-ONLY") != null);
     try testing.expect(std.mem.indexOf(u8, run_session_tool_system_prompt, "It never creates a session") != null);
 
-    // Exactly two parameters, and no workspace selector: the workspace comes
-    // from the session.
+    // Exactly two parameters, and no workspace selector: the workspace comes from the session.
     const expected = [_][]const u8{ "session_id", "message" };
     try testing.expectEqual(expected.len, tool.parameters.properties.len);
     for (tool.parameters.properties, 0..) |p, i| {
@@ -533,7 +520,6 @@ test "run_session: the schema requires a session_id and takes nothing else" {
     try testing.expectEqual(@as(usize, 1), tool.parameters.required.len);
     try testing.expectEqualStrings("session_id", tool.parameters.required[0]);
 
-    // A budget on the tool-level text, which the model pays for on EVERY
-    // request: it was rewritten once already for being too long.
+    // A budget on the tool-level text, which the model pays for on EVERY request: it was rewritten once already for being too long.
     try testing.expect(tool.description.len <= 900);
 }

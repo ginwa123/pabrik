@@ -1,6 +1,4 @@
-/** Behavioural tests for `workspacesStore.translateDesignElement` and
- * `workspacesStore.resizeDesignElement`. These exercise the new single-element endpoints that
- * replace the conflated PATCH /geometry. */
+/** Behavioural tests for `workspacesStore.translateDesignElement` and `workspacesStore.resizeDesignElement`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

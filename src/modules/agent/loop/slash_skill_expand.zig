@@ -18,16 +18,12 @@ const skill_tools = pabrikcore.skill_tools;
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 
-/// A token character is exactly the skill-name alphabet minus the dot
-/// rules: `isValidSkillName` owns the final verdict (leading/trailing
-/// dots, length), the scanner just finds candidate extents.
+/// A token character is exactly the skill-name alphabet minus the dot rules: `isValidSkillName` owns the final verdict (leading/trailing dots, length), the …
 fn isTokenChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '.' or c == '_' or c == '-';
 }
 
-/// Map one raw `/`-token to the skill name it means, or null when the token
-/// is not a skill reference. `/skill-<rest>` strips the prefix; a bare
-/// `/<tok>` keeps it.
+/// Map one raw `/`-token to the skill name it means, or null when the token is not a skill reference.
 fn nameFromToken(tok: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, tok, "skill")) return null;
     const name = if (std.mem.startsWith(u8, tok, "skill-")) tok["skill-".len..] else tok;
@@ -36,8 +32,7 @@ fn nameFromToken(tok: []const u8) ?[]const u8 {
     return name;
 }
 
-/// Distinct skill names referenced by `/`-tokens in `message`, in first-
-/// appearance order.
+/// Distinct skill names referenced by `/`-tokens in `message`, in first-appearance order.
 pub fn extractSkillTokens(allocator: std.mem.Allocator, message: []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -69,9 +64,7 @@ pub fn extractSkillTokens(allocator: std.mem.Allocator, message: []const u8) ![]
     return out.toOwnedSlice(allocator);
 }
 
-/// The outcome of `expandSlashSkills`. `message` is the send text: the
-/// original verbatim when nothing loaded, otherwise the original plus a
-/// trailing `<slash_skills>` block.
+/// The outcome of `expandSlashSkills`.
 pub const ExpandResult = struct {
     message: []const u8,
     unknown: [][]const u8,
@@ -87,8 +80,7 @@ pub const ExpandResult = struct {
     }
 };
 
-/// Resolve every `/`-token in `message` against the calling session's
-/// workspace and rewrite the text with the loaded bodies appended.
+/// Resolve every `/`-token in `message` against the calling session's workspace and rewrite the text with the loaded bodies appended.
 pub fn expandSlashSkills(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -109,8 +101,7 @@ pub fn expandSlashSkills(
         };
     }
 
-    // `names` borrows from `tokens`; `contents` is duped out of each
-    // loader response before that response is freed.
+    // `names` borrows from `tokens`; `contents` is duped out of each loader response before that response is freed.
     var names: std.ArrayList([]const u8) = .empty;
     defer names.deinit(allocator);
     var contents: std.ArrayList([]const u8) = .empty;
@@ -133,8 +124,7 @@ pub fn expandSlashSkills(
             try unknown.append(allocator, try allocator.dupe(u8, name));
             continue;
         };
-        // Loop-body scope: runs at the end of each iteration, after the
-        // dupe below has taken its own copy for the block.
+        // Loop-body scope: runs at the end of each iteration, after the dupe below has taken its own copy for the block.
         defer allocator.free(body);
         try names.append(allocator, name);
         try contents.append(allocator, try allocator.dupe(u8, body));
@@ -199,8 +189,7 @@ fn loadOne(
     return try allocator.dupe(u8, parsed.value.content);
 }
 
-/// Record a loaded skill in `session_skills` so later turns keep the context
-/// without re-expanding.
+/// Record a loaded skill in `session_skills` so later turns keep the context without re-expanding.
 fn persistSkill(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -218,18 +207,14 @@ fn persistSkill(
     };
 }
 
-// ===================================================================== Tests
-// — behaviour only: tokenize the string, expand against a real in-memory
-// workspace, read back real rows.
+// ===================================================================== Tests — behaviour only: tokenize the string, expand against a real in-memory workspace …
 
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
 };
 
-/// Real skills tables (Migration 102) plus the three tables
-/// `workspace_scope.resolveWorkspaceId` reads and the `session_skills` table
-/// the expansion persists into, so a test hands over a `caller_session_id`
+/// Real skills tables (Migration 102) plus the three tables `workspace_scope.resolveWorkspaceId` reads and the `session_skills` table the expansion persists into …
 fn setupSlashDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});

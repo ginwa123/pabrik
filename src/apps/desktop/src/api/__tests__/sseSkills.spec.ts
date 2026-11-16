@@ -1,5 +1,4 @@
-/** Task 2 — SseEvent carries live session_skills. Backend: sse_on_event_send_llm_history.zig:45
- * (SseEventLLMHistory.session_skills, next to is_error). */
+/** Task 2 — SseEvent carries live session_skills. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

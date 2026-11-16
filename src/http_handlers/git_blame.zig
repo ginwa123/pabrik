@@ -5,7 +5,6 @@ const gserverz = pabrik_core.gserverz;
 const git_route = @import("git_route.zig");
 
 /// Max blamed lines per response — bounds the payload on huge files.
-/// The parser stops emitting after this many lines (never a partial line).
 pub const MAX_BLAME_LINES: usize = 10000;
 
 /// One blamed final-file line.
@@ -66,8 +65,7 @@ pub fn parseBlamePorcelain(allocator: std.mem.Allocator, output: []const u8, max
     return try out.toOwnedSlice(allocator);
 }
 
-/// Minimal JSON string escaper for blame fields (author names and
-/// summaries are free text and may hold quotes or backslashes).
+/// Minimal JSON string escaper for blame fields (author names and summaries are free text and may hold quotes or backslashes).
 pub fn escapeJsonString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var buf = std.ArrayList(u8).empty;
     for (s) |c| {
@@ -110,9 +108,7 @@ fn makeBlameResponse(allocator: std.mem.Allocator, is_repo: bool, lines: []const
     return try buf.toOwnedSlice(allocator);
 }
 
-/// Git blame endpoint — per-line author + time for one file, backing the
-/// CodeEditor's inline blame annotation (`You, 2 hours ago`). `GET
-/// /api/git/blame?path=<cwd>&file=<repo-relative path>`.
+/// Git blame endpoint — per-line author + time for one file, backing the CodeEditor's inline blame annotation (`You, 2 hours ago`).
 pub fn gitBlameHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;

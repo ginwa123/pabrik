@@ -1,6 +1,4 @@
-/**
- * Transcript width preference — module state, three presets, remembered per browser.
- */
+/** Transcript width preference — module state, three presets, remembered per browser. */
 import { computed, ref } from 'vue'
 
 export type ChatContentWidth = 'comfortable' | 'wide' | 'full'
@@ -26,9 +24,7 @@ const CYCLE: ChatContentWidth[] = ['comfortable', 'wide', 'full']
 const isPreset = (value: unknown): value is ChatContentWidth =>
   value === 'comfortable' || value === 'wide' || value === 'full'
 
-// jsdom dropped localStorage from its default globals and Node's own is absent
-// without --localstorage-file, so every access goes through this guard: a missing
-// store means "no preference", never a crash at import time.
+// jsdom dropped localStorage from its default globals and Node's own is absent without --localstorage-file, so every access goes through this guard: a missing …
 const store = (): Storage | undefined => {
   if (typeof window === 'undefined') return undefined
   return (window as { localStorage?: Storage }).localStorage
@@ -39,8 +35,7 @@ const read = (): ChatContentWidth => {
   return isPreset(saved) ? saved : 'full'
 }
 
-// Module scope, not a pinia store: ChatAppBar.vue is mounted bare in specs and
-// rendered by three different chat hosts, and all of them must share one value.
+// Module scope, not a pinia store: ChatAppBar.vue is mounted bare in specs and rendered by three different chat hosts, and all of them must share one value.
 const width = ref<ChatContentWidth>(read())
 
 const setWidth = (next: ChatContentWidth): void => {

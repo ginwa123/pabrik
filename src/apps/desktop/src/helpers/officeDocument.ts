@@ -26,9 +26,7 @@ export function serializeOfficeBody(kind: OfficeKind, snapshot: unknown): string
   return JSON.stringify({ kind, snapshot })
 }
 
-/**
- * The office body a stored document holds; `null` when the body is not an envelope.
- */
+/** The office body a stored document holds; `null` when the body is not an envelope. */
 export function parseOfficeBody(body: string | null | undefined): OfficeBody | null {
   if (!body) return { kind: DEFAULT_OFFICE_KIND, snapshot: {} }
 

@@ -1,15 +1,11 @@
 const std = @import("std");
 
-/// `pabrik-admin` — the admin console as a program of its own:
-/// `zig build run -- --db ~/.config/pabrik/agent.db`. It links the SQLite and
-/// HTTP-server packages only, so it builds in seconds.
+/// `pabrik-admin` — the admin console as a program of its own
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Same switch and same values as the server's `-Ddb_used`: `sqlite` (the
-    // default) links no libpq, `sqlite,postgres` compiles the postgres backend
-    // in and makes it the one this binary opens.
+    // Same switch and same values as the server's `-Ddb_used`: `sqlite` (the default) links no libpq, `sqlite,postgres` compiles the postgres backend in and makes it …
     const db_used = b.option(
         []const u8,
         "db_used",
@@ -27,8 +23,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const databases_mod = databases_dep.module("databases");
-    // The SQL that differs between the two backends. Shared with the server, so
-    // the console and pabrik spell `datetime('now')`/`sqlite_master` the same way.
+    // The SQL that differs between the two backends.
     const dialect_mod = b.createModule(.{
         .root_source_file = b.path("../../dialect.zig"),
         .target = target,
@@ -37,9 +32,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "databases", .module = databases_mod },
         },
     });
-    // The session/password primitives are shared with the server, so they
-    // live in `src/http_handlers/auth_core.zig`; a module may be rooted
-    // outside this folder, an `@import` path may not.
+    // The session/password primitives are shared with the server, so they live in `src/http_handlers/auth_core.zig`; a module may be rooted outside this folder, an …
     const auth_core_mod = b.createModule(.{
         .root_source_file = b.path("../../http_handlers/auth_core.zig"),
         .target = target,
@@ -49,9 +42,7 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // The manager face: a client for `pabrik-vmd`'s socket plus the limits a
-    // resize may ask for. Rooted in `src/vmd/` so it can reach its own files;
-    // on a host that is not Linux it compiles to "not supported" instead.
+    // The manager face: a client for `pabrik-vmd`'s socket plus the limits a resize may ask for.
     const manager_mod = b.createModule(.{
         .root_source_file = b.path("../../vmd/manager.zig"),
         .target = target,

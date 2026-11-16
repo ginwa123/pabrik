@@ -1,6 +1,4 @@
-//! Wire test: `pabrik headless documents …` drives the real folder backend with
-//! no port of its own. The workspace comes from HTTP, then every op runs through
-//! the binary against the same isolated HOME.
+//! Wire test: `pabrik headless documents …` drives the real folder backend with no port of its own.
 
 const std = @import("std");
 const testing = std.testing;
@@ -29,8 +27,7 @@ const Run = struct {
     result: harness.RunResult,
     parsed: ?std.json.Parsed(std.json.Value) = null,
 
-    /// The single JSON object the command printed. Parsed once, freed in
-    /// `deinit`.
+    /// The single JSON object the command printed.
     fn json(self: *Run) !*const std.json.Value {
         if (self.parsed == null) {
             self.parsed = try std.json.parseFromSlice(std.json.Value, gpa, self.result.stdout, .{});
@@ -115,8 +112,7 @@ test "headless documents: a folder tree round-trips, and deleting a folder keeps
     try testing.expectEqual(@as(i64, 1), try intField(list_doc, "document_count"));
     try testing.expectEqualStrings(child_id, try stringField(&list_doc.object.get("documents").?.array.items[0], "folder_id"));
 
-    // 5. Delete the child folder: the document survives, one level up (its
-    //    grandparent is the root folder, not the root of the sidebar).
+    // 5.
     var del_run = try documents(&h, &.{ "folder-delete", "--workspace", ws, "--folder", child_id }, true);
     defer del_run.deinit();
     const del_doc = try del_run.json();
@@ -131,9 +127,7 @@ test "headless documents: a folder tree round-trips, and deleting a folder keeps
     try testing.expectEqual(@as(usize, 1), documents_json.items.len);
     try testing.expectEqualStrings(root_id, try stringField(&documents_json.items[0], "folder_id"));
 
-    // 6. A folder cannot be moved inside itself. The refusal is a non-zero
-    //    exit with NOTHING on stdout: a machine caller must never read a
-    //    half-written object, and nothing may be written to the row.
+    // 6.
     var refused = try documents(&h, &.{
         "folder-move", "--workspace", ws, "--folder", root_id, "--parent", root_id,
     }, false);
@@ -179,8 +173,7 @@ test "headless documents: doc-create --format office stores a spreadsheet, and a
     try testing.expectEqual(@as(usize, 1), rows.items.len);
     try testing.expectEqualStrings("office", try stringField(&rows.items[0], "format"));
 
-    // A format the UI cannot render is a non-zero exit with nothing on stdout,
-    // and it writes no row.
+    // A format the UI cannot render is a non-zero exit with nothing on stdout, and it writes no row.
     var refused = try documents(&h, &.{
         "doc-create", "--workspace", ws, "--title", "Slides", "--format", "slides",
     }, false);
@@ -203,8 +196,7 @@ test "headless documents: export writes one document as a file and several as on
     const ws = try createWorkspace(&h, "export-headless");
     defer gpa.free(ws);
 
-    // 1. A markdown document and an office document, so the two export formats
-    //    are both exercised.
+    // 1.
     var md_run = try documents(&h, &.{
         "doc-create", "--workspace", ws, "--title", "Release plan", "--content", "# v1\n\nship it",
     }, true);
@@ -222,8 +214,7 @@ test "headless documents: export writes one document as a file and several as on
     const sheet_id = try gpa.dupe(u8, try stringField(sheet_doc, "id"));
     defer gpa.free(sheet_id);
 
-    // 2. One document exports as its own body, under a name derived from the
-    //    title and the format.
+    // 2.
     const one_path = try harness.harnessPath(gpa, h.temp_dir, &.{"export-one.md"});
     defer gpa.free(one_path);
 
@@ -241,8 +232,7 @@ test "headless documents: export writes one document as a file and several as on
     defer gpa.free(one_bytes);
     try testing.expectEqualStrings("# v1\n\nship it", one_bytes);
 
-    // 3. Several documents export as one zip holding both, with the office
-    //    document keeping its .json extension.
+    // 3.
     const zip_path = try harness.harnessPath(gpa, h.temp_dir, &.{"export-all.zip"});
     defer gpa.free(zip_path);
 
@@ -265,8 +255,7 @@ test "headless documents: export writes one document as a file and several as on
     try testing.expect(std.mem.indexOf(u8, zip_bytes, "Budget.json") != null);
     try testing.expect(std.mem.indexOf(u8, zip_bytes, "# v1\n\nship it") != null);
 
-    // 4. An id that does not exist is a non-zero exit with nothing on stdout —
-    //    a machine caller must never read a half-written object.
+    // 4.
     var refused = try documents(&h, &.{
         "export", "--workspace", ws, "--document", "doc_missing", "--out", one_path,
     }, false);

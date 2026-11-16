@@ -2,9 +2,7 @@ import { ref } from 'vue'
 import type { FolderEntry } from '../api'
 import type { OpenInCodeEditorOptions } from './useCodeEditor'
 
-// Single source of truth for the in-app code editor's open-file session. Previously this state
-// lived as five loosely-coupled refs in AppLayout (file / content / loading / error /
-// requestedLine) plus ad-hoc `btoa`/`atob` calls at the open and restore sites.
+// Single source of truth for the in-app code editor's open-file session.
 export function isAbsolutePath(p: string): boolean {
   if (!p) return false
   if (p.startsWith('/')) return true
@@ -30,9 +28,7 @@ export function parseRequestedLine(param: unknown): number | null {
   return Number.isFinite(n) && (n as number) > 0 ? (n as number) : null
 }
 
-// URL-safe file-path encoding: UTF-8 bytes → base64url (no padding). UTF-8 matters because raw
-// `btoa` throws on non-latin1 paths (e.g. Cyrillic filenames); base64url matters because `+/=` are
-// reserved in query strings.
+// URL-safe file-path encoding: UTF-8 bytes → base64url (no padding).
 export function encodeFilePath(path: string): string {
   const bytes = new TextEncoder().encode(path)
   let bin = ''
@@ -42,9 +38,7 @@ export function encodeFilePath(path: string): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-// Inverse of encodeFilePath. Also accepts legacy raw-`btoa` links
-// (with `+/=` and padding) so existing bookmarks keep working.
-// Throws Error('invalid file link') when nothing decodes.
+// Inverse of encodeFilePath.
 export function decodeFilePath(encoded: string): string {
   const cleaned = (encoded || '').trim()
   if (!cleaned) throw new Error('invalid file link')
@@ -67,8 +61,7 @@ export function decodeFilePath(encoded: string): string {
   }
 }
 
-// New editor links carry the plain path (`?file=src/foo.ts`) so URLs stay readable and
-// hand-editable. Links written before the readable migration carry base64/base64url instead.
+// New editor links carry the plain path (`?file=src/foo.ts`) so URLs stay readable and hand-editable.
 function isLegacyFileLink(value: string): boolean {
   if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(value)) return false
   let decoded: string
@@ -81,9 +74,7 @@ function isLegacyFileLink(value: string): boolean {
   return norm(encodeFilePath(decoded)) === norm(value)
 }
 
-// Resolve the `file` query value to a real path: legacy links decode,
-// everything else passes through verbatim. Throws
-// Error('invalid file link') on empty input, matching decodeFilePath.
+// Resolve the `file` query value to a real path: legacy links decode, everything else passes through verbatim.
 export function resolveFileParam(raw: string): string {
   const value = (raw || '').trim()
   if (!value) throw new Error('invalid file link')
@@ -127,13 +118,9 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
   // WHICH changes: a commit sha (`?rev=`) or a pull request URL (`?pr=`). Empty means the worktree.
   const rev = ref('')
   const pr = ref('')
-  // The cwd the file was opened with, stored explicitly. Reads always
-  // use this — never a recomputed sidebar value that may have changed
-  // or resolved to '' since the file was opened.
+  // The cwd the file was opened with, stored explicitly.
   const cwd = ref<string>('')
-  // Key of the last fully-resolved session (load or error). Guards
-  // the open → router.replace → watcher → restore echo so one user
-  // click costs exactly one fetch.
+  // Key of the last fully-resolved session (load or error).
   const loadedKey = ref<string | null>(null)
 
   const sessionKey = (path: string, dir: string, line: number | null): string =>
@@ -212,9 +199,7 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
     }
   }
 
-  // Rebuilds the session from the URL query (reload, Back/Forward,
-  // shared link). Never leaves a silent blank: every failure sets
-  // an explicit error state.
+  // Rebuilds the session from the URL query (reload, Back/Forward, shared link).
   async function restoreFromUrl(args: RestoreArgs): Promise<void> {
     const line = parseRequestedLine(args.lineParam)
     diff.value = args.modeParam === 'diff'

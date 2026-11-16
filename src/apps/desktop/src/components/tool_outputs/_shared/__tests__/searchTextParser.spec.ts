@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseSearch } from '../toolOutputParser'
 
-/** `parseSearch` against the tool's DEFAULT output format: `rg -n` text bytes arrive as `_raw`,
- *  which the card used to render as "0 files, 0 matches". */
+/** `parseSearch` against the tool's DEFAULT output format: `rg -n` text bytes arrive as `_raw`, which the card used to render as "0 files, 0 matches". */
 describe("parseSearch — the tool's default text payload", () => {
   it('reads the default text payload: path:line:text rows become file results', () => {
     const r = parseSearch({ _raw: '/a.ts:10:hello\n/a.ts:20:again\n/b.ts:5:world' })

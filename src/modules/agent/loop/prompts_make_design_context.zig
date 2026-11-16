@@ -10,9 +10,7 @@ const MAX_DESIGN_PAGES: u32 = 10;
 
 
 
-/// Render the "Design Canvas" markdown block — workflow expectations for the
-/// LLM when the session's parent item is a design canvas (`item_type ===
-/// 'design'`).
+/// Render the "Design Canvas" markdown block — workflow expectations for the LLM when the session's parent item is a design canvas (`item_type === 'design'`).
 pub fn buildDesignCanvasPrompt(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -263,9 +261,7 @@ pub fn buildDesignCanvasPrompt(
             try out.appendSlice(allocator, h_str);
             try out.appendSlice(allocator, pos_str);
 
-            // List visible elements on this page (cap: 8) so the LLM
-            // has spatial context without re-querying. Errors degrade
-            // gracefully — skip the element list when the DB read fails.
+            // List visible elements on this page (cap: 8) so the LLM has spatial context without re-querying.
             const elements = design_model.listElements(allocator, db, p.id) catch |err| {
                 std.log.warn("BuildDesignCanvasPrompt: listElements failed for page {s}: {}", .{ p.id, err });
                 continue;
@@ -282,9 +278,7 @@ pub fn buildDesignCanvasPrompt(
                     try out.appendSlice(allocator, e.elem_type);
                     try out.appendSlice(allocator, ", id ");
                     try out.appendSlice(allocator, e.id);
-                    // Include parent_id so the LLM can see the existing
-                    // hierarchy at a glance ("top-level" vs nested under
-                    // which container). Empty parent_id = "(top-level)".
+                    // Include parent_id so the LLM can see the existing hierarchy at a glance ("top-level" vs nested under which container).
                     if (e.parent_id.len > 0) {
                         try out.appendSlice(allocator, ", parent=");
                         try out.appendSlice(allocator, e.parent_id);

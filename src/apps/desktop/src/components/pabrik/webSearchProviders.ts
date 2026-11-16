@@ -1,13 +1,10 @@
-/** webSearchProviders — the parser/serializer pair for the top-level `web_search` key in
- * config.json. The wire shape is a map of provider name to `PabrikWebSearchProvider` (see
- * `api/index.ts`). */
+/** webSearchProviders — the parser/serializer pair for the top-level `web_search` key in config.json. */
 import type { PabrikWebSearchProvider } from '../../api'
 
 /** The literal placeholder `curl` must contain when a key is set. */
 export const KEY_PLACEHOLDER = '{key}'
 
-/** Editable row model for one provider. `id` is stable UI identity and is NEVER written to
- * config.json — the map key is `name`. */
+/** Editable row model for one provider. */
 export interface WebSearchProviderRow {
   /** Stable per-row identity (Vue `:key`, error lookup). Not on the wire. */
   id: string
@@ -25,9 +22,7 @@ export interface WebSearchProviderRow {
   enabled: boolean
 }
 
-// Monotonic counter for rows the user adds in the UI. Parsed rows take
-// their id from the map key they were stored under, so the `new-` prefix
-// keeps the two namespaces from ever colliding.
+// Monotonic counter for rows the user adds in the UI.
 let newRowSeq = 0
 
 /** A blank row for the "+ Add provider" button. */
@@ -44,8 +39,7 @@ export function createWebSearchProviderRow(): WebSearchProviderRow {
   }
 }
 
-/** Hydrate the editable list from the config's `web_search` map.
- * `null`/absent yields `[]` — same contract as `parseMcpServers`. */
+/** Hydrate the editable list from the config's `web_search` map. */
 export function parseWebSearchProviders(
   raw: Record<string, PabrikWebSearchProvider> | null | undefined,
 ): WebSearchProviderRow[] {
@@ -57,13 +51,11 @@ export function parseWebSearchProviders(
       id: name,
       name,
       url: typeof provider.url === 'string' ? provider.url : '',
-      // The backend masks this on GET. Whatever arrives is what gets
-      // sent back — see property 2 in the module header.
+      // The backend masks this on GET.
       key: typeof provider.key === 'string' ? provider.key : '',
       curl: typeof provider.curl === 'string' ? provider.curl : '',
       description: typeof provider.description === 'string' ? provider.description : '',
-      // Missing means enabled, matching `WebSearchProviderEntry.enabled`
-      // defaulting to true.
+      // Missing means enabled, matching `WebSearchProviderEntry.enabled` defaulting to true.
       enabled: provider.enabled !== false,
     })
   }
@@ -71,9 +63,7 @@ export function parseWebSearchProviders(
   return out
 }
 
-/**  * Write the editable list back to the config's `web_search` map. `undefined` means "omit the key
- * entirely" — the same signal the sibling `serializeMcpServers` uses, and the one
- * `usePabrikConfig`'s diff reads as "no change". */
+/** Write the editable list back to the config's `web_search` map. */
 export function serializeWebSearchProviders(
   rows: WebSearchProviderRow[],
 ): Record<string, PabrikWebSearchProvider> | undefined {
@@ -81,9 +71,7 @@ export function serializeWebSearchProviders(
   for (const row of rows) {
     const name = row.name.trim()
     if (!name) continue
-    // Duplicate names would collapse into one map key. The backend's
-    // parser keeps the FIRST entry on a collision, so mirror that rather
-    // than letting the last row silently win.
+    // Duplicate names would collapse into one map key.
     if (Object.hasOwn(out, name)) continue
     const key = row.key.trim()
     const description = row.description.trim()
@@ -98,9 +86,7 @@ export function serializeWebSearchProviders(
   return Object.keys(out).length ? out : undefined
 }
 
-// ─── Host pin checks ──────────────────────────────────────────────────────── A TS port of
-// `hostOfUrl` / `isNonPublicHost` / `checkHostPolicy` from
-// `src/modules/agent/tools/web_search_curl.zig`.
+// ─── Host pin checks ────────────────────────────────────────────────────────
 function hostOfUrl(url: string): string {
   const schemeEnd = url.indexOf('://')
   let rest = schemeEnd >= 0 ? url.slice(schemeEnd + 3) : url
@@ -116,8 +102,7 @@ function endsWithIgnoreCase(haystack: string, needle: string): boolean {
   return haystack.slice(-needle.length).toLowerCase() === needle.toLowerCase()
 }
 
-/**  * True when `host` names a loopback, link-local, private or otherwise non-public address — a cloud
- * metadata endpoint, most of all, since a key sent to `169.254.169.254` is a stolen key. */
+/** True when `host` names a loopback, link-local, private or otherwise non-public address — a cloud metadata endpoint, most of all, since a key sent to … */
 export function isNonPublicHost(host: string): boolean {
   let h = host
   if (h.startsWith('[')) {
@@ -127,8 +112,7 @@ export function isNonPublicHost(host: string): boolean {
   }
   const colon = h.lastIndexOf(':')
   if (colon >= 0) {
-    // More than one colon and no brackets is a bare IPv6 literal, which
-    // an https URL must bracket.
+    // More than one colon and no brackets is a bare IPv6 literal, which an https URL must bracket.
     if (h.split(':').length - 1 > 1) return true
     h = h.slice(0, colon)
   }
@@ -141,8 +125,7 @@ export function isNonPublicHost(host: string): boolean {
 
   if (h === '::1' || h === '::') return true
 
-  // IPv4 dotted quad. Anything that is not four decimal octets is a
-  // hostname, which is not decidable here.
+  // IPv4 dotted quad.
   const quad = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
   if (!quad) return false
   const a = Number(quad[1])
@@ -190,8 +173,7 @@ export function validateWebSearchRows(rows: WebSearchProviderRow[]): Record<stri
 }
 
 function validateWebSearchRow(row: WebSearchProviderRow): string | null {
-  // A row the user added and never filled in is not an error: it has no name, so
-  // `serializeWebSearchProviders` drops it and it never reaches the wire.
+  // A row the user added and never filled in is not an error: it has no name, so `serializeWebSearchProviders` drops it and it never reaches the wire.
   const untouched =
     !row.name.trim() &&
     !row.url.trim() &&
@@ -215,8 +197,7 @@ function validateWebSearchRow(row: WebSearchProviderRow): string | null {
   return null
 }
 
-/** Route a rejected-save message onto the row it names. The settings save is one PUT of the whole
- * config, so a provider the backend refuses comes back as a single string. */
+/** Route a rejected-save message onto the row it names. */
 export function webSearchRowErrorsFromMessage(
   message: string,
   rows: WebSearchProviderRow[],

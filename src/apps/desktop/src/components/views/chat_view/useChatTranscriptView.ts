@@ -36,8 +36,7 @@ export interface ChatTranscriptViewDeps {
   sessionCwd: Ref<string>
   /** The session's agent name, which labels a thread that has a single author. */
   authorLabel: () => string
-  /** True when `name` is an agent this workspace still configures. A row that
-   * names a profile the config no longer has is not an author worth a badge. */
+  /** True when `name` is an agent this workspace still configures. */
   isKnownAgent: (name: string) => boolean
   effectiveCwd: ComputedRef<string>
   isLastGroup: (index: number) => boolean
@@ -49,9 +48,7 @@ export interface ChatTranscriptViewDeps {
   maybeLoadOlder: (trigger: 'edge' | 'manual') => void
 }
 
-/** The transcript's own view state: skills popup, tool expansion, sub-agent progress, agent
- * error, image preview, the git-status poller, and the presentation helpers plus the
- * `statesProps`/`rowProps` bags the template renders from. */
+/** The transcript's own view state: skills popup, tool expansion, sub-agent progress, agent error, image preview, the git-status poller, and the presentation … */
 export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
   const {
     authorLabel,
@@ -84,25 +81,21 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
   const sessionSkills = ref<api.SkillInfo[]>([])
   const showSkillsPopup = ref(false)
 
-  // Track which tool items are expanded. 2026-08-23 auto-collapse fix — keys are STABLE per-message
-  // ids, NOT positional `${groupIndex}-${idx}` pairs.
+  // Track which tool items are expanded. 2026-08-23 auto-collapse fix — keys are STABLE per-message ids, NOT positional `${groupIndex}-${idx}` pairs.
   const expandedToolIds = ref<Set<string>>(new Set())
 
   const subAgentProgressMap = ref<SubAgentProgressMap>({})
 
   const agentErrorStore = useAgentErrorStore()
   const chatView = useChatViewStore()
-  // Per-session derived read. Reads from the store (keyed by sessionId) so the card survives ChatView
-  // remounts caused by AppLayout's :key="activeChatId" or StandardTaskChatView's
-  // :key="chat-${task.id}" on session/task switches.
+  // Per-session derived read.
   const agentError = computed<AgentErrorEntry | null>(() => agentErrorStore.errorFor(sessionId.value))
 
   // Image preview state
   const previewImageUrl = ref<string | null>(null)
 
   const openImagePreview = (url: string) => {
-    // A blank URL must never open the lightbox — the overlay would then render
-    // its own broken `<img>` on top of a full-screen backdrop.
+    // A blank URL must never open the lightbox — the overlay would then render its own broken `<img>` on top of a full-screen backdrop.
     if (!url || url.trim().length === 0) return
     previewImageUrl.value = url
   }
@@ -111,9 +104,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     previewImageUrl.value = null
   }
 
-  // Toggle expanded state for a tool item. Keyed by the message's stable
-  // id (see expandedToolIds above) — never by position, which shifts on
-  // every SSE-driven recompute of messageGroups.
+  // Toggle expanded state for a tool item.
   const toggleToolExpanded = (msgId: string) => {
     const newSet = new Set(expandedToolIds.value)
     if (newSet.has(msgId)) {
@@ -124,14 +115,10 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     expandedToolIds.value = newSet
   }
 
-  // Code-editor wiring for the fallback `<DiffView>` rendered for tools that don't have a dedicated
-  // component (e.g. legacy tools). When the user clicks a line number in the fallback diff we forward
-  // to the in-app editor — but only when we know the target file path.
+  // Code-editor wiring for the fallback `<DiffView>` rendered for tools that don't have a dedicated component (e.g. legacy tools).
   const fallbackOpenInEditor = useInjectOpenInCodeEditor()
   const handleFallbackJumpToLine = (line: number) => {
-    // No-op: we don't have a target file path in the fallback context. The click affordance still
-    // works (hover/cursor change), but won't open the editor. Hook retained for future enhancement
-    // when we add a generic tool→path lookup.
+    // No-op: we don't have a target file path in the fallback context.
     void fallbackOpenInEditor
     void line
   }
@@ -140,9 +127,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
   const gitStatus = ref<api.GitStatus | null>(null)
   let gitStatusSeq = 0
   let gitStatusPollInterval: ReturnType<typeof setInterval> | null = null
-  // cwd the current `gitStatus` was fetched/painted for — gates the
-  // cache-first paint so a 30s poll tick never repaints the localStorage
-  // copy over a fresher in-memory value (only init / cwd switches do).
+  // cwd the current `gitStatus` was fetched/painted for — gates the cache-first paint so a 30s poll tick never repaints the localStorage copy over a fresher …
   let gitStatusCwd = ''
 
   const checkGitStatus = async () => {
@@ -151,14 +136,10 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
       gitStatusCwd = ''
       return
     }
-    // Stale-response guard: the worktree binding can flip twice in quick succession (session cwd →
-    // worktree A → worktree B). Without the seq check, the slower fetch for A resolves last and the
-    // bottom chip shows A's branch while the sidebar already follows B.
+    // Stale-response guard: the worktree binding can flip twice in quick succession (session cwd → worktree A → worktree B).
     const seq = ++gitStatusSeq
     const cwd = effectiveCwd.value
-    // Cache-first paint: on init or a cwd switch, synchronously show the last-known status from
-    // localStorage so the chip has a branch to render while the remote fetch below revalidates it in
-    // the background (stale-while-revalidate).
+    // Cache-first paint: on init or a cwd switch, synchronously show the last-known status from localStorage so the chip has a branch to render while the remote …
     if (gitStatusCwd !== cwd) {
       gitStatusCwd = cwd
       const cached = readGitStatusCache(cwd)
@@ -229,8 +210,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     maybeLoadOlder,
   }))
 
-  /** One prop bag per rendered row: the presentation helpers are stable functions, the mode and the
-   * chain map are read here so the child re-renders with them. */
+  /** One prop bag per rendered row: the presentation helpers are stable functions, the mode and the chain map are read here so the child re-renders with them. */
   const rowProps = (group: MessageGroup, groupIndex: number) => ({
     group,
     groupIndex,
@@ -257,24 +237,18 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     renderMessageHtml,
   })
 
-  // Last pill the user jumped to (highlight). Also driven by scroll (see
-  // the realtime update at the end of handleVirtualScroll) so the rail
-  // lights up while reading, not just after a click-jump.
+  // Last pill the user jumped to (highlight).
   const activePillGroupIndex = ref<number | null>(null)
 
-  // Must mirror the `:buffer` prop on the <VirtualScroller> below: the
-  // scroller renders this many extra items on EACH side of the viewport,
-  // so the active-pill anchor compensates by it (see estimateViewportEnd).
+  // Must mirror the `:buffer` prop on the <VirtualScroller> below: the scroller renders this many extra items on EACH side of the viewport, so the active-pill …
   const CHAT_SCROLL_BUFFER = 30
 
   const jumpToUserGroup = (groupIndex: number, key: string) => {
-    // Resolve the index by stable groupKey at click time: SSE appends
-    // between render and click can shift positional indices.
+    // Resolve the index by stable groupKey at click time: SSE appends between render and click can shift positional indices.
     const current = messageGroups.value.findIndex((g) => groupKey(g) === key)
     const target = current !== -1 ? current : groupIndex
     activePillGroupIndex.value = target
-    // Mark programmatic BEFORE the write so handleVirtualScroll doesn't
-    // misread the jump as a user scroll-up (same pattern as scrollToBottom).
+    // Mark programmatic BEFORE the write so handleVirtualScroll doesn't misread the jump as a user scroll-up (same pattern as scrollToBottom).
     logger().markProgrammatic()
     virtualScrollerRef.value?.scrollToItem(target, 'smooth')
     // Flash-highlight the bubble so the eye finds it after the scroll.

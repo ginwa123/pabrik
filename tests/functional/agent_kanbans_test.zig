@@ -1,5 +1,4 @@
-// Functional tests for the Agent-Kanbans mirror (Migration 081). Zig port of
-// `tests/functional/agent_kanbans_test.py` (same test names, same order).
+// Functional tests for the Agent-Kanbans mirror (Migration 081).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Expected tool list — mirrors tests/functional/default_tools.py
-// ============================================================================
 
-/// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is born
-/// with: `DEFAULT_AGENT_TOOLS` PLUS the kanban pair, sorted ASC.
+/// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is born with: `DEFAULT_AGENT_TOOLS` PLUS the kanban pair, sorted ASC.
 const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "add_skill",
     "command",
@@ -54,9 +50,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "write_file",
 };
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -76,8 +70,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/kanban {"name": ...}` → the kanban
-/// item's id. Owned.
+/// `POST /api/workspaces/<ws>/items/kanban {"name": ...}` → the kanban item's id.
 fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -94,8 +87,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return itemId(&doc, r.body);
 }
 
-/// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent
-/// item's id. Owned.
+/// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent item's id.
 fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-kanbans-test"});
     defer gpa.free(agent_path);
@@ -136,9 +128,7 @@ fn itemId(doc: *const harness.Json, body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/workspaces/<ws>/items/<item>/agent_kanban` — the response
-/// body as OWNED bytes. A `harness.Json` aliases the `Response` body,
-/// so the helper cannot return one; the caller parses.
+/// `GET /api/workspaces/<ws>/items/<item>/agent_kanban` — the response body as OWNED bytes.
 fn getBundle(h: *Harness, workspace_id: []const u8, item_id: []const u8, expect: []const u16) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items/{s}/agent_kanban", .{ workspace_id, item_id });
     defer gpa.free(path);
@@ -153,8 +143,7 @@ fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
 
-/// `POST /api/agent-kanbans/<kanban>/knowledge` with an explicit body,
-/// returning the response body as OWNED bytes.
+/// `POST /api/agent-kanbans/<kanban>/knowledge` with an explicit body, returning the response body as OWNED bytes.
 fn postKnowledge(h: *Harness, kanban_id: []const u8, json_body: []const u8, expect: []const u16) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/agent-kanbans/{s}/knowledge", .{kanban_id});
     defer gpa.free(path);
@@ -203,9 +192,7 @@ fn renderStrings(items: []const std.json.Value) ![]u8 {
     return std.mem.join(gpa, ", ", out.items);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // BUNDLE GET — fresh kanban is born configured with default tools.
 test "bundle_get_fresh_returns_defaults" {
@@ -259,9 +246,7 @@ test "bundle_get_agent_type_returns_400" {
     }
 }
 
-// PATCH /agent_kanban with empty description persists as ''
-// (empty-slice-as-NULL regression). PORTED VERBATIM, INCLUDING THE MISSING
-// ASSERTION.
+// PATCH /agent_kanban with empty description persists as '' (empty-slice-as-NULL regression).
 test "bundle_update_description_round_trips_empty" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -275,9 +260,7 @@ test "bundle_update_description_round_trips_empty" {
     const kanban_id = try createKanban(&h, ws_id, "kanban");
     defer gpa.free(kanban_id);
 
-    // The Python body makes no request beyond these two creates. Its
-    // follow-up ("PATCH against an unconfigured kanban should return
-    // 404") was never written, so there is nothing to replay here.
+    // The Python body makes no request beyond these two creates.
 }
 
 // KNOWLEDGE POST — file_path='' + content set → row persists with empty file_path.
@@ -294,9 +277,7 @@ test "knowledge_create_with_inline_content" {
     const kanban_id = try createKanban(&h, ws_id, "kanban");
     defer gpa.free(kanban_id);
 
-    // Seed an extra tool (fresh kanbans seed the defaults, so use
-    // preview_design_page — in UNIFIED_TOOL_REGISTRY but never a default
-    // — for a clean 201).
+    // Seed an extra tool (fresh kanbans seed the defaults, so use preview_design_page — in UNIFIED_TOOL_REGISTRY but never a default — for a clean 201).
     try postTool(&h, kanban_id, "preview_design_page", &.{201});
 
     // Now create an inline-content knowledge row.
@@ -348,8 +329,7 @@ test "knowledge_reorder_reaches_reorder_handler" {
     const id_b = try createKnowledgeRow(&h, kanban_id, b_path, "B");
     defer gpa.free(id_b);
 
-    // Reorder — if route shadowing bites, this returns 404 "knowledge row
-    // not found" (captured by :knowledge_id="reorder") instead of {ok:true}.
+    // Reorder — if route shadowing bites, this returns 404 "knowledge row not found" (captured by :knowledge_id="reorder") instead of {ok:true}.
     {
         const reorder_body = try std.json.Stringify.valueAlloc(gpa, .{
             .ordered_ids = &[_][]const u8{ id_b, id_a },
@@ -399,8 +379,7 @@ test "tools_duplicate_returns_409" {
     const kanban_id = try createKanban(&h, ws_id, "kanban");
     defer gpa.free(kanban_id);
 
-    // Fresh kanbans seed the defaults — use preview_design_page (never a
-    // default) for a clean first 201.
+    // Fresh kanbans seed the defaults — use preview_design_page (never a default) for a clean first 201.
     try postTool(&h, kanban_id, "preview_design_page", &.{201});
 
     // Second POST with the same tool → 409.
@@ -422,7 +401,6 @@ test "tools_unknown_returns_400" {
     defer gpa.free(kanban_id);
 
     // Fresh kanbans are born configured — no seed POST needed.
-    // Try an unknown tool → 400.
     try postTool(&h, kanban_id, "totally_made_up_tool_xyz", &.{400});
 }
 
@@ -485,9 +463,7 @@ test "system_prompt_empty_content_returns_400" {
     r.deinit();
 }
 
-// ============================================================================
 // Assertion + fixture helpers used above
-// ============================================================================
 
 fn postTool(h: *Harness, kanban_id: []const u8, tool_name: []const u8, expect: []const u16) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .tool_name = tool_name }, .{});
@@ -522,8 +498,7 @@ fn createKnowledgeRow(h: *Harness, kanban_id: []const u8, file_path: []const u8,
     return gpa.dupe(u8, id);
 }
 
-/// The knowledge rows' ids, comma-joined. Borrowed from the live
-/// document; freed by the caller.
+/// The knowledge rows' ids, comma-joined.
 fn knowledgeIds(knowledges: std.json.Array) ![]u8 {
     var out: std.ArrayList([]const u8) = .empty;
     defer out.deinit(gpa);
@@ -573,8 +548,7 @@ fn expectEqualInt(doc: *const harness.Json, key: []const u8, want: i64) !void {
 }
 
 comptime {
-    // Body-analysis barrier — an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one stays invisible.
+    // Body-analysis barrier — an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible.
     _ = createWorkspace;
     _ = createKanban;
     _ = createAgent;

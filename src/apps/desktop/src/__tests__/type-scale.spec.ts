@@ -1,6 +1,4 @@
-/** The app-wide type contract. The complaint that produced this file: font sizes had drifted into
- * nine hand-rolled arbitrary values plus Tailwind's own ladder, with one visual size spelled four
- * different ways. */
+/** The app-wide type contract. */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -8,8 +6,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/**  * The scale, and the pixels behind it. This list is the SPEC; style.css is the implementation. If
- * someone retunes a step, this assertion is the one place that has to be updated in step with it. */
+/** The scale, and the pixels behind it. */
 const SCALE: Record<string, string> = {
   '--text-micro': '10px',
   '--text-meta': '11px',
@@ -56,9 +53,7 @@ function walk(dir: string, out: string[] = []): string[] {
 const COMPONENT_FILES = walk(SRC).filter((p) => !p.endsWith('.spec.ts'))
 const CSS = readFileSync(join(SRC, 'style.css'), 'utf8')
 
-/**  * Only the TEMPLATE and the class strings of a component are under contract — a spec file
- * legitimately contains `text-xs` inside the regex that hunts for banned classes, and this file's
- * own doc comment names the old spellings. So specs are excluded from the scan. */
+/** Only the TEMPLATE and the class strings of a component are under contract — a spec file legitimately contains `text-xs` inside the regex that hunts for banned … */
 function collect(pick: (line: string) => string | null): Record<string, string[]> {
   const found: Record<string, string[]> = {}
   for (const file of COMPONENT_FILES) {
@@ -83,8 +78,7 @@ describe('type scale', () => {
   })
 
   it('keeps the ramp strictly increasing, so a step means a magnitude', () => {
-    // A scale where two steps share a pixel value is a scale with two
-    // names for one thing — the exact ambiguity this file exists to stop.
+    // A scale where two steps share a pixel value is a scale with two names for one thing — the exact ambiguity this file exists to stop.
     const px = Object.values(SCALE).map((v) => parseInt(v, 10))
     const ordered = [...px].sort((a, b) => a - b)
     expect({ duplicates: px.filter((v, i) => px.indexOf(v) !== i), isRamp: px }).toEqual({
@@ -102,8 +96,7 @@ describe('type scale', () => {
   })
 
   it('has no bare Tailwind size class in any component', () => {
-    // `text-xs` reads as a size but bypasses the scale: change the ramp
-    // and this element silently keeps the old pixel value.
+    // `text-xs` reads as a size but bypasses the scale: change the ramp and this element silently keeps the old pixel value.
     const found = collect((line) => {
       const m = BANNED_SIZE_RE.exec(line)
       return m ? `${m[0]} — use text-<step> from the scale` : null
@@ -125,9 +118,7 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size in CSS except the relative one', () => {
-    // `.markdown-content code` is `0.875em` on purpose: inline code has
-    // to shrink with whatever it is nested inside, which a px step or a
-    // rem step cannot do. Everything else resolves off the scale.
+    // `.markdown-content code` is `0.875em` on purpose: inline code has to shrink with whatever it is nested inside, which a px step or a rem step cannot do.
     const raw = CSS.split('\n')
       .map((text, i) => ({ n: i + 1, text }))
       .filter(({ text }) => /^\s*font-size:/.test(text))
@@ -137,13 +128,9 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size inside a component <style> block', () => {
-    // The hole that let 96 off-scale values survive the class migration: `collect()` reads every
-    // line of every component, but it only looks for Tailwind CLASSES. A `font-size: 0.8125rem`
-    // inside a .vue <style> block is not a class, so nothing here saw it.
+    // The hole that let 96 off-scale values survive the class migration: `collect()` reads every line of every component, but it only looks for Tailwind CLASSES.
     const RAW_CSS_SIZE_RE = /font-size:\s*[0-9.]+(?:px|rem)/g
-    // A block tag must be ALONE on its line. WorkspaceItemTaskCard.vue:591 carries a comment
-    // reading "…lives in the scoped <style> block" and KanbanView.vue:1641 one reading "<script
-    // setup>.
+    // A block tag must be ALONE on its line.
     const blockTag = (tag: string, closing: boolean) =>
       new RegExp(`^\\s*${closing ? '</' : '<'}${tag}\\b[^>]*>\\s*$`)
 
@@ -165,8 +152,7 @@ describe('type scale', () => {
             bad.push(`line ${i + 1}: ${m[0]} — pick a step off the scale`)
           }
         })
-      // An unbalanced file means the tracker lost sync and the scan above
-      // covered the wrong lines — that must fail, not pass quietly.
+      // An unbalanced file means the tracker lost sync and the scan above covered the wrong lines — that must fail, not pass quietly.
       expect({
         file: relative(SRC, file),
         balanced: !inStyle && !inScript,
@@ -177,9 +163,7 @@ describe('type scale', () => {
   })
 
   it('writes no raw font-size in a template style="" attribute', () => {
-    // The same hole by the other door: an inline `style="font-size: 8px"` carries its size
-    // mid-line, so neither the class scan nor the whole-line CSS scan can see it. Two sibling task
-    // components shipped the same warning glyph at 8px and 10px for exactly this reason.
+    // The same hole by the other door: an inline `style="font-size: 8px"` carries its size mid-line, so neither the class scan nor the whole-line CSS scan can see it.
     const INLINE_RAW_RE = /style="[^"]*font-size:\s*[0-9.]+(px|rem)/
     const blockTag = (tag: string, closing: boolean) =>
       new RegExp(`^\\s*${closing ? '</' : '<'}${tag}\\b[^>]*>\\s*$`)
@@ -205,8 +189,7 @@ describe('type scale', () => {
   })
 
   it('resolves at least one component onto the scale (smoke)', () => {
-    // Guards against the scan silently matching nothing — a regex that
-    // stopped matching would turn every other test here vacuous.
+    // Guards against the scan silently matching nothing — a regex that stopped matching would turn every other test here vacuous.
     const used = collect((line) => (SIZE_CLASS_RE.test(line) ? 'x' : null))
     expect(Object.keys(used).length).toBeGreaterThan(20)
   })

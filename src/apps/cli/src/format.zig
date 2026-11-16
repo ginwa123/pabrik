@@ -24,9 +24,7 @@ test "prettyJson: encodes a struct" {
 }
 
 test "prettyJson: encodes a std.json.Value" {
-    // `parseFromSliceLeaky` leaks the inner strings/slices — the test would
-    // crash the debug allocator. Switch to `parseFromSlice` + an arena so we
-    // can free everything in one shot via `Parsed.deinit`.
+    // `parseFromSliceLeaky` leaks the inner strings/slices — the test would crash the debug allocator.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const parsed = try std.json.parseFromSlice(

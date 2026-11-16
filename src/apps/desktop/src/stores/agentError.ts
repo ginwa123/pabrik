@@ -16,15 +16,12 @@ export const useAgentErrorStore = defineStore('agentError', () => {
       id: id ?? `agent-error-${Date.now()}`,
       content,
     }
-    // Spread-then-assign (NEVER mutate in place) so Vue 3's reactive
-    // proxy treats this as a new object reference and consumers
-    // (ChatView's `store.bySession[sessionId]` watcher) re-render.
+    // Spread-then-assign (NEVER mutate in place) so Vue 3's reactive proxy treats this as a new object reference and consumers (ChatView's …
     bySession.value = { ...bySession.value, [sessionId]: entry }
   }
 
   function clearForSession(sessionId: string): void {
-    // Idempotent: only spread when the key actually exists, so we don't
-    // churn the reactive proxy for sessions we've never errored on.
+    // Idempotent: only spread when the key actually exists, so we don't churn the reactive proxy for sessions we've never errored on.
     if (!(sessionId in bySession.value)) return
     const next = { ...bySession.value }
     delete next[sessionId]

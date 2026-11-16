@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** DiagramViewer — the one full-screen diagram inspector, shared by the mermaid, PlantUML and D2
- * blocks. A diagram too wide for the transcript column is unreadable in place, so this is where a
- * reader gets to look at it properly: fit, zoom around the cursor, drag, keyboard. */
+/** DiagramViewer — the one full-screen diagram inspector, shared by the mermaid, PlantUML and D2 blocks. */
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import {
   KEYBOARD_PAN_PX,

@@ -46,24 +46,17 @@ const props = defineProps<{
   chatName: string
   type?: 'chat' | 'task'
   cwd?: string
-  /**    * When true, render the shared chat app bar (ChatAppBar.vue — chat name + `◫` sidebar toggle +
-   * `✕` close) above the messages. Every chat host sets this so all modes get the identical bar.
-   * Defaults to `false`. */
+  /** When true, render the shared chat app bar (ChatAppBar.vue — chat name + `◫` sidebar toggle + `✕` close) above the messages. */
   showHeader?: boolean
-  /**    * Embedded mode for SubAgentPeekPanel: hides ChatView's own header (the peek panel renders its
-   * own). ChatView still owns fetch + SSE for `chatId`. Defaults to `false`. */
+  /** Embedded mode for SubAgentPeekPanel: hides ChatView's own header (the peek panel renders its own). */
   embedded?: boolean
-  /**    * Hide the composer footer (FileInput + status bar). The peek panel passes this so the sub-agent
-   * view is read-only — sending into a sub-agent session from the peek would fork its tool loop
-   * mid-run. */
+  /** Hide the composer footer (FileInput + status bar). */
   hideInput?: boolean
 }>()
 
 const emit = defineEmits<{
   'update-chat-id': [oldId: string, newId: string]
-  /**    * Emitted when the user clicks the ✕ close button. The host (AppLayout) clears the active task
-   * and optionally navigates back. ChatView does NOT call router directly — layout composition
-   * stays the host's concern. */
+  /** Emitted when the user clicks the ✕ close button. */
   close: []
 }>()
 
@@ -83,9 +76,7 @@ const copyCodeContent = async (codeContent: string) => {
   }
 }
 
-// Persisted review comments (agnostic comment-box path). Saved to localStorage instead of sent to
-// the LLM — the diff comment box owns per-line draft persistence; ChatView keeps the appended list
-// (capped at 200 entries).
+// Persisted review comments (agnostic comment-box path).
 const REVIEW_COMMENTS_KEY = 'diff-review-comments'
 
 function loadSavedReviewComments(): SavedReviewComment[] {
@@ -113,12 +104,8 @@ function persistSavedReviewComments(comments: SavedReviewComment[]): void {
 const sessionId = ref('')
 
 // ── The session's own tab strip ────────────────────────────────────────────
-// The strip belongs to THIS session: its owner is the session id the URL carries, so switching
-// sessions swaps the whole row instead of appending to a shared one.
 const tabsStore = useTabsStore()
-// The session owns its row, and this surface is what creates it — the URL funnel names artefacts
-// only. `rowOwner` is who this chat is; `stripOwner` is who owns a row worth drawing (a 36px bar
-// with no title would be worse than the app bar it replaced).
+// The session owns its row, and this surface is what creates it — the URL funnel names artefacts only.
 const rowOwner = computed(() => {
   if (!tabsStore.enabled) return ''
   return sessionId.value || props.chatId.replace(/^chat-/, '')
@@ -129,9 +116,7 @@ const stripOwner = computed(() => {
 })
 onMounted(() => tabsStore.ensureRow(rowOwner.value))
 
-// The chat's roster of agents. A session with members is a group: the loop
-// takes each turn's speaker from it, so an `@` mention addresses a member
-// instead of switching the whole session's agent.
+// The chat's roster of agents.
 const {
   members: groupMembers,
   lead: groupLead,
@@ -160,31 +145,22 @@ const handleSelectAgent = (name: string): void => {
 
 // State
 const messages = ref<Message[]>([])
-// The grouped transcript and the raw table are two views of the same rows; the
-// app bar's toggle flips this and the template picks the child.
+// The grouped transcript and the raw table are two views of the same rows; the app bar's toggle flips this and the template picks the child.
 const chatView = useChatViewStore()
 
 const virtualScrollerRef = ref<VirtualScrollerExposed | null>(null)
 
-// Composer input ref — re-focus after the async mount chain (history + stream snapshot + queued
-// messages) so the cursor lands in the box on every session switch, even if the child's own
-// mount-focus raced the history render.
+// Composer input ref — re-focus after the async mount chain (history + stream snapshot + queued messages) so the cursor lands in the box on every session switch …
 const fileInputRef = ref<{ focusInput?: () => void } | null>(null)
 
-// Persist chat scroll position per-task across mount/unmount. The composable attaches its own
-// scroll/scrollend listeners to the VirtualScroller's container ref (via the computed
-// `scrollerContainerRef` below) and flushes pending writes on unmount.
+// Persist chat scroll position per-task across mount/unmount.
 const scrollerContainerRef = computed<HTMLElement | null>(
   () => virtualScrollerRef.value?.containerRef ?? null,
 )
-// Stable accessor for ChatScrollSlider: the scroller's containerRef
-// resolves after mount and swaps on chat switch, so the slider takes
-// a function (re-resolved on its interval) instead of a raw element.
+// Stable accessor for ChatScrollSlider: the scroller's containerRef resolves after mount and swaps on chat switch, so the slider takes a function (re-resolved on …
 const getChatScrollContainer = (): HTMLElement | null => scrollerContainerRef.value
 const chatScrollStorageKey = computed(() => `chat-scroll-${props.chatId.replace(/^chat-/, '')}`)
-// The restore composable's "is the saved position still at the bottom?" test has to use the SAME
-// bottom edge the auto-stick uses, or a position saved while the reader sat on the last message
-// (which lives at the real content bottom, up to `maxTailGap` above the DOM edge) reads as.
+// The restore composable's "is the saved position still at the bottom?" test has to use the SAME bottom edge the auto-stick uses, or a position saved while the …
 const chatScrollRestore = useChatScrollRestore(
   scrollerContainerRef,
   chatScrollStorageKey,
@@ -194,9 +170,7 @@ const chatScrollRestore = useChatScrollRestore(
 // Ref to the outer flex wrapper around the VirtualScroller.
 const messagesWrapperRef = ref<HTMLElement | null>(null)
 
-// Stacked center diff: every changed file renders as its own lazily-mounted section so long lists
-// scroll fast. centerDiff stays as the compat "current selection" (back-button + single-file
-// wiring).
+// Stacked center diff: every changed file renders as its own lazily-mounted section so long lists scroll fast. centerDiff stays as the compat "current selection" …
 const centerDiff = ref<DiffSelection | null>(null)
 const centerFiles = ref<DiffSelection[]>([])
 const currentPath = ref<string | null>(null)
@@ -204,13 +178,10 @@ const centerDiffScrollRef = ref<HTMLElement | null>(null)
 
 const showCenterDiff = computed(() => centerDiff.value !== null)
 
-// "The server has answered, and the answer was: zero messages." The empty state must be gated on
-// this, not on `messageGroups.length === 0` alone.
+// "The server has answered, and the answer was: zero messages." The empty state must be gated on this, not on `messageGroups.length === 0` alone.
 const historyConfirmed = ref(false)
 
-// Chat-owned git-diff sidebar (git-diff-only scope). ChatView passes its already-owned effectiveCwd
-// + sessionId down, so each chat shows its own working tree without AppLayout-level cwd plumbing.
-// Hidden in embedded/peek mode — the peek panel owns the right edge there.
+// Chat-owned git-diff sidebar (git-diff-only scope).
 const chatSidebar = useChatRightSidebar(props.type ?? 'chat')
 const chatSidebarRef = ref<InstanceType<typeof ChatRightSidebar> | null>(null)
 
@@ -310,8 +281,7 @@ const {
   chatSidebarRef,
 })
 
-// Sidebar file-row click (or header Open button): open the file in the in-app code browser, which
-// also updates the app URL (view=code-editor).
+// Sidebar file-row click (or header Open button): open the file in the in-app code browser, which also updates the app URL (view=code-editor).
 const openInEditor = useInjectOpenInCodeEditor()
 function onChatSidebarOpenFile(payload: { path: string; line?: number }) {
   if (!openInEditor || !effectiveCwd.value) return
@@ -336,18 +306,14 @@ async function refreshWorktreeBinding() {
   }
 }
 
-// SSE hook: a completed set_git_worktree tool call means the binding
-// just changed (bound or cleared) — re-sync so effectiveCwd (and the
-// sidebar's cwd prop) follows the worktree immediately.
+// SSE hook: a completed set_git_worktree tool call means the binding just changed (bound or cleared) — re-sync so effectiveCwd (and the sidebar's cwd prop) …
 function maybeRefreshWorktreeBinding(role: string, toolName?: string) {
   if (role === 'tool' && (toolName === 'set_git_worktree' || toolName === 'set_pull_request'))
     void refreshWorktreeBinding()
 }
 
 async function onChatSidebarRefresh() {
-  // Sidebar ↻ clicked: re-sync the binding FIRST (it may have changed since mount), then reload the
-  // panel. The panel's cwd watcher reloads automatically when the binding actually changed; the
-  // explicit refresh covers the unchanged-cwd case.
+  // Sidebar ↻ clicked: re-sync the binding FIRST (it may have changed since mount), then reload the panel.
   await refreshWorktreeBinding()
   chatSidebarRef.value?.refresh()
 }

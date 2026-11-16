@@ -1,5 +1,4 @@
-//! `PATCH /api/agent-routines/:routine_id/knowledge/:knowledge_id`. Updates
-//! file_path / label / content of an existing knowledge entry.
+//! `PATCH /api/agent-routines/:routine_id/knowledge/:knowledge_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,15 +17,13 @@ const UpdateKnowledgeBody = struct {
 /// Subset of the knowledge row returned by the use-case.
 pub const Knowledge = agent_routine_db.KnowledgeRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const KnowledgeUpdateError = error{
     /// `routine_id` or `knowledge_id` path param was missing or empty.
     IdsRequired,
     /// Body had none of file_path / label / content (nothing to update).
     NothingToUpdate,
-    /// `file_path` provided but not absolute (empty string is legal —
-    /// it means "clear the column").
+    /// `file_path` provided but not absolute (empty string is legal — it means "clear the column").
     NotAbsolutePath,
     /// `db.exec` failed on the UPDATE.
     UpdateFailed,
@@ -52,9 +49,7 @@ pub const KnowledgeUpdateOutput = struct {
     knowledge: Knowledge,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Update an existing knowledge row.
 pub fn useCase(
@@ -69,8 +64,7 @@ pub fn useCase(
         return error.NothingToUpdate;
     }
     if (input.file_path) |fp| {
-        // Empty string = clear the column (mode switch). Only NON-empty
-        // paths must be absolute.
+        // Empty string = clear the column (mode switch).
         if (fp.len > 0 and !std.fs.path.isAbsolute(fp)) return error.NotAbsolutePath;
     }
 
@@ -90,9 +84,7 @@ pub fn useCase(
     return .{ .knowledge = knowledge };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentRoutineKnowledgeUpdateHandler(
@@ -151,7 +143,6 @@ pub fn agentRoutineKnowledgeUpdateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

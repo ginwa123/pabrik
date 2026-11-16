@@ -16,15 +16,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The composer, rendered.
- *
- * The layout questions — is the strip above the text, is there one stop rather
- * than a stop and a send, does the paperclip go quiet at the cap — are
- * questions about a rendered tree, and a tree is what
- * `createComposeRule` under Robolectric gives us on a box with no device
- * attached. This is the same trick `PabrikNavGraphLaunchGateTest` uses.
- */
+/** The composer, rendered. */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w390dp-h844dp")
 class ChatComposerTest {
@@ -132,8 +124,7 @@ class ChatComposerTest {
 
     @Test
     fun aRunReplacesTheSendWithTheStop() {
-        // One slot, two controls. Both on screen at once tells the reader the
-        // app does not know whether a run is going.
+        // One slot, two controls.
         render(draft = "hello", isWorking = true)
 
         compose.onNodeWithTag("chat_stop").assertIsDisplayed()
@@ -157,9 +148,7 @@ class ChatComposerTest {
 
     @Test
     fun aRunWithSomethingTypedOffersAQueueBesideTheStop() {
-        // The gap this closes. Before it, a reader watching a three-minute
-        // tool call had exactly one way to act on a follow-up thought: stop the
-        // run and throw the work away.
+        // The gap this closes.
         render(draft = "and then open a PR", isWorking = true)
 
         compose.onNodeWithTag("chat_queue").assertIsDisplayed()
@@ -170,10 +159,7 @@ class ChatComposerTest {
 
     @Test
     fun theQueueSendsTheTurnRatherThanStoppingTheRun() {
-        // Same callback as the send button, because the server decides: a live
-        // worker takes the message into `session_queue_messages`
-        // (`workflow.zig:688`) and drains it when it finishes. A separate
-        // "queue" endpoint would be a second wire contract for one action.
+        // Same callback as the send button, because the server decides: a live worker takes the message into `session_queue_messages` (`workflow.zig:688`) and drains it …
         var sent = 0
         var stopped = 0
         render(
@@ -192,9 +178,7 @@ class ChatComposerTest {
 
     @Test
     fun anIdleChatHasNoQueueButton() {
-        // With no run in progress the same tap starts a turn, and the send
-        // button already says exactly that. Two controls for one action is a
-        // control the reader has to think about.
+        // With no run in progress the same tap starts a turn, and the send button already says exactly that.
         render(draft = "hello", isWorking = false)
 
         compose.onNodeWithTag("chat_queue").assertDoesNotExist()
@@ -203,9 +187,7 @@ class ChatComposerTest {
 
     @Test
     fun thereIsNoQueueButtonOverAnEmptyBox() {
-        // A queue button that cannot do anything teaches the reader the
-        // composer is decoration. This is the same rule the model chip and the
-        // cwd expander are held to.
+        // A queue button that cannot do anything teaches the reader the composer is decoration.
         render(draft = "", isWorking = true)
 
         compose.onNodeWithTag("chat_queue").assertDoesNotExist()
@@ -227,9 +209,7 @@ class ChatComposerTest {
 
     @Test
     fun anEmptyQueueDrawsNoStrip() {
-        // The reader is in this state on almost every turn, and a permanent
-        // "0 queued" would be telling them there is nothing on the one row
-        // where something else might be.
+        // The reader is in this state on almost every turn, and a permanent "0 queued" would be telling them there is nothing on the one row where something else might …
         render(isWorking = true)
 
         compose.onNodeWithTag("chat_queued_strip").assertDoesNotExist()
@@ -264,10 +244,7 @@ class ChatComposerTest {
 
     @Test
     fun openingTheListReReadsTheServer() {
-        // The rows on screen are built from SSE frames the reader can watch
-        // arrive; one that was drained while the socket was down would still be
-        // listed, and tapping it would have them compose a duplicate of a turn
-        // the agent is already answering.
+        // The rows on screen are built from SSE frames the reader can watch arrive; one that was drained while the socket was down would still be listed, and tapping it …
         var refreshed = 0
         render(
             isWorking = true,
@@ -321,9 +298,7 @@ class ChatComposerTest {
 
     @Test
     fun aQueuedTurnWithNoTextStillHasSomethingOnItsRow() {
-        // The client sends `image_urls` on the same POST as `queue_message`,
-        // and Migration 054 made the column nullable so those rows exist. A
-        // blank row is a row the reader cannot aim at.
+        // The client sends `image_urls` on the same POST as `queue_message`, and Migration 054 made the column nullable so those rows exist.
         render(
             isWorking = true,
             queuedMessages = listOf(QueuedChatMessage("q1", "")),
@@ -337,8 +312,7 @@ class ChatComposerTest {
 
     @Test
     fun theCountIsSingularForOne() {
-        // Split out of the composable so the plural has a rule with a test
-        // rather than an inline `if` nobody re-runs.
+        // Split out of the composable so the plural has a rule with a test rather than an inline `if` nobody re-runs.
         assertEquals("1 queued", queuedLabel(1))
         assertEquals("0 queued", queuedLabel(0))
         assertEquals("3 queued", queuedLabel(3))
@@ -387,8 +361,7 @@ class ChatComposerTest {
 
     @Test
     fun thePaperclipIsRefusedWhileADecodeIsRunning() {
-        // Without this the reader taps it a second time on a quarter-second
-        // delay and picks the same photo twice.
+        // Without this the reader taps it a second time on a quarter-second delay and picks the same photo twice.
         var opened = 0
         render(isAttaching = true, onAttach = { opened++ })
 
@@ -420,10 +393,7 @@ class ChatComposerTest {
 
     @Test
     fun aFactWithNoValueIsNotRendered() {
-        // A footer showing "Model" with nothing after it is a label for a
-        // control that is not there. `activeModel` is nulled too: the chip
-        // falls back to the account default, so leaving it set would render a
-        // model this test is specifically saying should not be there.
+        // A footer showing "Model" with nothing after it is a label for a control that is not there.
         render(model = "", activeModel = null, cwd = "")
 
         compose.onNodeWithTag("chat_footer_model").assertDoesNotExist()
@@ -432,8 +402,7 @@ class ChatComposerTest {
 
     @Test
     fun thereIsNoExpanderWhenThereIsNothingToExpand() {
-        // A chevron that toggles one line when both lines already show is a
-        // control that does nothing.
+        // A chevron that toggles one line when both lines already show is a control that does nothing.
         render(cwd = "")
 
         compose.onNodeWithTag("chat_footer_expand").assertDoesNotExist()
@@ -450,8 +419,7 @@ class ChatComposerTest {
 
     @Test
     fun tappingTheModelOpensThePicker() {
-        // The whole point of the change: the `Model` fact used to be text, and
-        // tapping it did nothing at all.
+        // The whole point of the change: the `Model` fact used to be text, and tapping it did nothing at all.
         render(modelProfiles = listOf(profile("space bunny free", "gpt-5")))
 
         compose.onNodeWithTag("chat_model_menu").assertDoesNotExist()
@@ -496,8 +464,7 @@ class ChatComposerTest {
 
     @Test
     fun theDefaultRowSendsEmptyToClearTheOverride() {
-        // The same encoding the `PUT` uses. Anything else would make "Default"
-        // mean "the profile called Default".
+        // The same encoding the `PUT` uses.
         var picked: String? = null
         render(
             model = "space bunny free",
@@ -515,8 +482,7 @@ class ChatComposerTest {
 
     @Test
     fun aPickClosesTheMenu() {
-        // A menu left open over the transcript after the choice landed is the
-        // same menu the reader has to dismiss before reading the answer.
+        // A menu left open over the transcript after the choice landed is the same menu the reader has to dismiss before reading the answer.
         render(modelProfiles = listOf(profile("space bunny free"), profile("work key")))
 
         compose.onNodeWithTag("chat_footer_model").performClick()
@@ -529,8 +495,7 @@ class ChatComposerTest {
 
     @Test
     fun theChipIsInertWhileASaveIsInFlight() {
-        // A second pick would race the first, and the winner would be
-        // whichever response landed last rather than whichever was tapped.
+        // A second pick would race the first, and the winner would be whichever response landed last rather than whichever was tapped.
         var picked: String? = null
         render(
             modelProfiles = listOf(profile("space bunny free"), profile("work key")),
@@ -548,9 +513,7 @@ class ChatComposerTest {
 
     @Test
     fun withNoProfilesTheChipIsALabelAndOpensNothing() {
-        // A menu that opens onto an empty list is a control that teaches the
-        // reader the footer is decoration. This is the one case that reaches
-        // it: a name to show (the account default) but nothing to choose.
+        // A menu that opens onto an empty list is a control that teaches the reader the footer is decoration.
         render(model = "", activeModel = "space bunny free", modelProfiles = emptyList())
 
         compose.onNodeWithTag("chat_footer_model").assertIsDisplayed()
@@ -562,8 +525,7 @@ class ChatComposerTest {
 
     @Test
     fun aChatWithNoProfileAtAllShowsNoModelFact() {
-        // No per-session choice and no active default is genuinely nothing to
-        // say — a "Model" label with no value is a label for a missing control.
+        // No per-session choice and no active default is genuinely nothing to say — a "Model" label with no value is a label for a missing control.
         render(model = "", activeModel = null, cwd = "/home/ginwa/ginwaaitoolbox")
 
         compose.onNodeWithTag("chat_footer_model").assertDoesNotExist()
@@ -572,8 +534,7 @@ class ChatComposerTest {
 
     @Test
     fun aChatWithNoOverrideShowsTheAccountsActiveProfile() {
-        // The regression the chip exists to prevent: the raw column is `""`
-        // here, but the server will run this chat on the active profile.
+        // The regression the chip exists to prevent: the raw column is `""` here, but the server will run this chat on the active profile.
         render(model = "", activeModel = "space bunny free")
 
         compose.onNodeWithTag("chat_footer_model").assertIsDisplayed()
@@ -589,8 +550,7 @@ class ChatComposerTest {
         id = id,
         mimeType = ChatAttachments.STORED_MIME,
         byteCount = 64,
-        // Not a decodable image on purpose: this file is about the composer's
-        // rules, and a real thumbnail would make every test a bitmap decode.
+        // Not a decodable image on purpose: this file is about the composer's rules, and a real thumbnail would make every test a bitmap decode.
         dataUrl = ChatAttachments.dataUrl(ChatAttachments.STORED_MIME, ByteArray(64) { 1 }),
     )
 }

@@ -1,5 +1,4 @@
-/** frontendLogClient.ts Captures browser-side errors and ships them to the backend `POST /api/logs`
- * endpoint for the frontend-error-logs feature. */
+/** frontendLogClient.ts Captures browser-side errors and ships them to the backend `POST /api/logs` endpoint for the frontend-error-logs feature. */
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug'
 export type LogKind =
   | 'window_error'
@@ -39,9 +38,7 @@ const MAX_QUEUE_SIZE = 50
 const MAX_QUEUE_DROP = 25
 const DEBOUNCE_MS = 250
 
-// `Window` in the DOM lib does NOT expose `console` (it's a separate global). The install function
-// accesses `target.console.*` to patch and restore it, so widen the local `target` type to include
-// `console`. Zero runtime cost — pure compile-time widening.
+// `Window` in the DOM lib does NOT expose `console` (it's a separate global).
 type TargetWithConsole = Window & { console: Console }
 
 export function installFrontendLogClient(

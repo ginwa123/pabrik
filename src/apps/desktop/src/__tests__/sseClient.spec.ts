@@ -1,6 +1,4 @@
-/** sseClient.spec.ts Unit tests for `helpers/sseClient.ts`. Uses a controllable mock `EventSource`
- * (no real network) and vitest fake timers for deterministic backoff assertions. Coverage (matches
- * the 9 tests): 1. */
+/** sseClient.spec.ts Unit tests for `helpers/sseClient.ts`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSseClient, type SseState } from '../helpers/sseClient'
@@ -29,8 +27,7 @@ describe('createSseClient', () => {
       EventSourceCtor: ctor,
       visibilityTarget: visTarget,
       onlineTarget: onlineTarget,
-      // Deterministic random: returns the midpoint (0.5) so jitter
-      // is always 0.75 of the exponential value.
+      // Deterministic random: returns the midpoint (0.5) so jitter is always 0.75 of the exponential value.
       random: () => 0.5,
       pauseWhenHidden: false,
       baseDelayMs: 1_000,
@@ -38,8 +35,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     // First instance: open it, then error it 5 times.
     instances[0]!.simulateOpen()
@@ -81,8 +77,7 @@ describe('createSseClient', () => {
 
   // 2. Jitter range
   it('jitter scales delay between 0.5×exp and 1.0×exp', () => {
-    // With random=0, the actual delay is exp * 0.5. We assert by checking that the timer is
-    // scheduled with the expected delay using `vi.getTimerCount()` / next fire time.
+    // With random=0, the actual delay is exp * 0.5.
     const seenDelays: number[] = []
 
     // ── random=0: min jitter ──
@@ -107,8 +102,7 @@ describe('createSseClient', () => {
         },
       })
 
-      // Flush the deferred start() — createSseClient schedules start() on the next
-      // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+      // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
       vi.advanceTimersByTime(0)
       instances[0]!.simulateOpen()
       instances[0]!.emit('error')
@@ -140,8 +134,7 @@ describe('createSseClient', () => {
         },
       })
 
-      // Flush the deferred start() — createSseClient schedules start() on the next
-      // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+      // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
       vi.advanceTimersByTime(0)
       instances[0]!.simulateOpen()
       instances[0]!.emit('error')
@@ -164,15 +157,12 @@ describe('createSseClient', () => {
       onlineTarget: onlineTarget,
       random: () => 0.5,
       pauseWhenHidden: false,
-      // Stall recovery would fire during the 10s idle below and create
-      // a 4th instance — disable it so this test isolates the
-      // "open cancels retry" path (stall covered in sseStallRecovery.spec).
+      // Stall recovery would fire during the 10s idle below and create a 4th instance — disable it so this test isolates the "open cancels retry" path (stall covered …
       stallRecovery: false,
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     instances[0]!.simulateOpen()
     instances[0]!.emit('error')
@@ -180,31 +170,23 @@ describe('createSseClient', () => {
     expect(client.getState()).toBe('reconnecting')
     expect(instances.length).toBe(1)
 
-    // Now open a second instance (simulating the SseClient's internal start() during retry) and
-    // emit 'open' for it. We need to advance the timer for start() to fire, then open the new
-    // instance.
+    // Now open a second instance (simulating the SseClient's internal start() during retry) and emit 'open' for it.
     vi.advanceTimersByTime(750)
     expect(instances.length).toBe(2)
-    // Even though the retry fired, no new error yet — the open
-    // event will reset the attempt counter and put us in 'open'.
+    // Even though the retry fired, no new error yet — the open event will reset the attempt counter and put us in 'open'.
     instances[1]!.simulateOpen()
     expect(client.getState()).toBe('open')
 
-    // Trigger another error, then call open again before the
-    // retry timer fires. The new open should cancel the timer.
+    // Trigger another error, then call open again before the retry timer fires.
     instances[1]!.emit('error')
     expect(client.getState()).toBe('reconnecting')
-    // Force the next attempt manually via the public API to
-    // simulate "open arrives first". This is the "open cancels
-    // retry" case.
+    // Force the next attempt manually via the public API to simulate "open arrives first".
     client.reconnect()
-    // reconnect() closes the dead ES, so emit 'open' on the
-    // freshly-created third instance.
+    // reconnect() closes the dead ES, so emit 'open' on the freshly-created third instance.
     expect(instances.length).toBe(3)
     instances[2]!.simulateOpen()
     expect(client.getState()).toBe('open')
-    // Advance well past the original retry window — no extra
-    // instance should be created.
+    // Advance well past the original retry window — no extra instance should be created.
     vi.advanceTimersByTime(10_000)
     expect(instances.length).toBe(3)
 
@@ -226,8 +208,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     // No 'open' — emit error straight away.
     instances[0]!.emit('error')
@@ -258,8 +239,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     expect(client.getState()).toBe('failed')
     client.close()
@@ -281,8 +261,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     instances[0]!.simulateOpen()
     expect(client.getState()).toBe('open')
@@ -311,8 +290,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     // attempt 1: open then error → reconnecting (attempt 1)
     instances[0]!.simulateOpen()
@@ -322,13 +300,10 @@ describe('createSseClient', () => {
     // attempt 2: open then error → reconnecting (attempt 2)
     instances[1]!.simulateOpen()
     instances[1]!.emit('error')
-    // Advance to fire retry. The retry creates a third EventSource and bumps `attempt` to 3, but
-    // the connection is not yet `failed` — `failed` is only emitted by `handleError` when the new
-    // instance errors and `attempt > maxAttempts`.
+    // Advance to fire retry.
     vi.advanceTimersByTime(60_000)
     expect(instances.length).toBe(3)
-    // Open + error the 3rd instance. attempt=3 > maxAttempts=2
-    // → state goes to 'failed' (terminal).
+    // Open + error the 3rd instance. attempt=3 > maxAttempts=2 → state goes to 'failed' (terminal).
     instances[2]!.simulateOpen()
     instances[2]!.emit('error')
     expect(client.getState()).toBe('failed')
@@ -351,8 +326,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     // Open then error while hidden.
     instances[0]!.simulateOpen()
@@ -389,8 +363,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     instances[0]!.simulateOpen()
     instances[0]!.emit('error')
@@ -421,14 +394,12 @@ describe('createSseClient', () => {
       onStateChange: (s) => states.push(s),
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     instances[0]!.simulateOpen()
     client.close()
     expect(client.getState()).toBe('closed')
-    // After close, more events on the dead instance must not
-    // change state.
+    // After close, more events on the dead instance must not change state.
     instances[0]!.emit('error')
     expect(client.getState()).toBe('closed')
     // online + visibility must not retry.
@@ -453,8 +424,7 @@ describe('createSseClient', () => {
       onEvent: () => {},
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
     client.close()
     client.close()
@@ -483,12 +453,9 @@ describe('createSseClient', () => {
       connectedTimeoutMs: 120_000,
     })
 
-    // Flush the deferred start() — createSseClient schedules start() on the next
-    // macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
+    // Flush the deferred start() — createSseClient schedules start() on the next macrotask so the SSE setup is fully async (see helpers/sseClient.ts).
     vi.advanceTimersByTime(0)
-    // Walk: construct → connecting, then open → open, then error
-    // → reconnecting, then retry fires → connecting, then open
-    // → open.
+    // Walk: construct → connecting, then open → open, then error → reconnecting, then retry fires → connecting, then open → open.
     expect(states[0]).toBe('connecting')
     instances[0]!.simulateOpen()
     expect(states[1]).toBe('open')

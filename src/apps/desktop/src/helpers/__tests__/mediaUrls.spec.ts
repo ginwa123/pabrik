@@ -30,9 +30,7 @@ describe('joinMediaUrlsWire', () => {
 
 describe('splitMediaUrlsWire', () => {
   it('decodes the ||-joined string the llm_history encoder writes', () => {
-    // THE regression. A plain `split('|')` on this input returns three
-    // entries — the middle one the empty string — and the renderer turns it
-    // into a broken <img>.
+    // THE regression.
     expect(splitMediaUrlsWire(`${PNG_A}||${PNG_B}`)).toEqual([PNG_A, PNG_B])
     expect(splitMediaUrlsWire(`${PNG_A}||${PNG_B}||${JPEG_C}`)).toEqual([PNG_A, PNG_B, JPEG_C])
   })
@@ -52,9 +50,7 @@ describe('splitMediaUrlsWire', () => {
   })
 
   it('still decodes a single-pipe value left behind by an older client', () => {
-    // session_queue_messages.image_url predates the || convention for
-    // anything an older build wrote, and `queue_queued` re-emits that raw
-    // string. Both spellings must produce the same array.
+    // session_queue_messages.image_url predates the || convention for anything an older build wrote, and `queue_queued` re-emits that raw string.
     expect(splitMediaUrlsWire(`${PNG_A}|${PNG_B}`)).toEqual([PNG_A, PNG_B])
     expect(splitMediaUrlsWire(`${PNG_A}|${PNG_B}`)).toEqual(
       splitMediaUrlsWire(`${PNG_A}||${PNG_B}`),
@@ -71,7 +67,6 @@ describe('splitMediaUrlsWire', () => {
 
   it('returns undefined — not [] — when there is nothing to render', () => {
     // `v-if="image_urls?.length > 0"` hides the attachment row on undefined.
-    // An empty array would render an empty flex row instead.
     expect(splitMediaUrlsWire(undefined)).toBeUndefined()
     expect(splitMediaUrlsWire(null)).toBeUndefined()
     expect(splitMediaUrlsWire('')).toBeUndefined()
@@ -89,9 +84,7 @@ describe('splitMediaUrlsWire', () => {
 
 describe('renderableMediaUrls', () => {
   it('drops blanks from an array that did not come from splitMediaUrlsWire', () => {
-    // The renderer guard. A message can reach the template from a path this module does not own (a
-    // persisted SSE row replayed from the local chat cache, a future wire field), and `v-for` over
-    // a blank entry binds :src="".
+    // The renderer guard.
     expect(renderableMediaUrls([PNG_A, '', PNG_B])).toEqual([PNG_A, PNG_B])
     expect(renderableMediaUrls(['   ', PNG_A])).toEqual([PNG_A])
   })

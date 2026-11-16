@@ -1,6 +1,4 @@
-//! `PATCH /api/agents/:agent_id/knowledge/reorder`. Body: `{ordered_ids:
-//! string[]}`. Reorders the agent's knowledge rows to match the supplied
-//! order.
+//! `PATCH /api/agents/:agent_id/knowledge/reorder`. Body: `{ordered_ids
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -32,12 +30,9 @@ pub const KnowledgeReorderInput = struct {
     ordered_ids: []const []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Reorder knowledge rows for the given agent. All updates happen inside a
-/// single tx — all UPDATEs finalize together via tx.commit().
+/// Reorder knowledge rows for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -53,13 +48,9 @@ fn useCase(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentKnowledgeReorderHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -112,8 +103,6 @@ pub fn agentKnowledgeReorderHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -133,9 +122,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
@@ -212,8 +199,7 @@ test "useCase: ordered_ids[0] gets highest position (len - 1)" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Reverse the order: know_3 first (should land at position 2),
-    // then know_2 (position 1), then know_1 (position 0).
+    // Reverse the order: know_3 first (should land at position 2), then know_2 (position 1), then know_1 (position 0).
     try useCase(alloc, &ctx.db, .{
         .agent_id = "ws_item_1",
         .ordered_ids = &.{ "know_3", "know_2", "know_1" },
@@ -230,9 +216,7 @@ test "useCase: 1-row ordering lands at position 0 (not 1)" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Just 1 id. `len - i` = `1 - 0` = 1, so it would land at
-    // position 1. We use `len - 1 - i` = `1 - 1 - 0` = 0 instead.
-    // Contract: 1-row orderings get position 0, not position 1.
+    // Just 1 id.
     try useCase(alloc, &ctx.db, .{
         .agent_id = "ws_item_1",
         .ordered_ids = &.{"know_2"},

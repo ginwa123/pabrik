@@ -1,5 +1,4 @@
-//! The `skill_evals` SSE channel: the backend telling the UI that an eval
-//! finished, so the Evals tab can refresh without polling.
+//! The `skill_evals` SSE channel: the backend telling the UI that an eval finished, so the Evals tab can refresh without polling.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,8 +6,7 @@ const SseEvent = @import("sse.zig").SseEvent;
 
 const event_bus_mod = pabrikcore.event_bus;
 
-/// The central routing key. The frontend subscribes with the `skill_evals`
-/// channel token, which `parseChannels` maps to this key.
+/// The central routing key.
 pub const RoutingKey = "skill_evals";
 
 pub const SkillEvalEventInput = struct {
@@ -24,8 +22,7 @@ pub const SkillEvalEventInput = struct {
     result_id: []const u8 = "",
 };
 
-/// Emit one skill-eval lifecycle event. No-op when `event_bus` is null (unit
-/// tests, and any caller that has no bus).
+/// Emit one skill-eval lifecycle event.
 pub fn emitSkillEvalEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -91,9 +88,7 @@ test "each action maps to its own granular wire name" {
         captured = null;
         defer alloc.free(ev.data);
         try testing.expectEqualStrings(c.want, ev.event_type orelse "");
-        // The event carries the SESSION id (so a listener can filter), while
-        // the routing key is the central `skill_evals` one — that is what
-        // `bus.subscribe(SseEvent, RoutingKey, ...)` above proves.
+        // The event carries the SESSION id (so a listener can filter), while the routing key is the central `skill_evals` one — that is what `bus.subscribe(SseEvent …
         try testing.expectEqualStrings("sess_1", ev.session_id);
     }
 }
@@ -116,8 +111,7 @@ test "the payload carries the run, session and count" {
 
     try testing.expect(captured != null);
     const data = captured.?.data;
-    // `parsed` borrows slices into `data`, so it must be deinit'd BEFORE the
-    // buffer is freed — the other order is a use-after-free.
+    // `parsed` borrows slices into `data`, so it must be deinit'd BEFORE the buffer is freed — the other order is a use-after-free.
     {
         const parsed = try std.json.parseFromSlice(std.json.Value, alloc, data, .{});
         defer parsed.deinit();

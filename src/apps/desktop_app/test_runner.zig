@@ -1,5 +1,4 @@
-// src/apps/desktop_app/test_runner.zig Test discovery for the desktop-app
-// test step.
+// src/apps/desktop_app/test_runner.zig Test discovery for the desktop-app test step.
 
 test {
     _ = @import("port.zig");

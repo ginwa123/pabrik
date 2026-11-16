@@ -1,6 +1,4 @@
-/** Surgical stage/unstage — the `+` / `−` buttons must NOT re-fetch the git-status list. Before
- * this, `stageFile` / `unstageFile` answered with `await loadGitStatus()` — a full `git status
- * --porcelain -uall` plus untracked-directory expansion, then a second folder-wide diff request. */
+/** Surgical stage/unstage — the `+` / `−` buttons must NOT re-fetch the git-status list. */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -116,8 +114,7 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
       message: 'ok',
       commit_sha: 'abc123def456abc123def456abc123def456abc12',
     })
-    // The panel subscribes in onMounted; `installSseBus` with tab sharing off
-    // opens no EventSource, so no network happens in the test.
+    // The panel subscribes in onMounted; `installSseBus` with tab sharing off opens no EventSource, so no network happens in the test.
     installSseBus(undefined, { tabSharing: 'off' })
   })
 
@@ -148,8 +145,7 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
     // The row moved.
     expect(rowExists(wrapper, 'sidebar-diff-file-staged-dirty.txt')).toBe(true)
     expect(rowExists(wrapper, 'sidebar-diff-file-unstaged-dirty.txt')).toBe(false)
-    // …and the section header count followed it. An emptied section is
-    // hidden outright rather than rendered as "(0)".
+    // …and the section header count followed it.
     expect(sectionHeaders(wrapper)).toEqual(['Staged Changes (2)', 'Untracked (1)'])
   })
 
@@ -214,8 +210,7 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
   })
 
   it('an SSE event from ANOTHER tab staging the same file still moves the row', async () => {
-    // The channel is central: any client that staged a file in THIS cwd must
-    // update every panel bound to it, not just the one that clicked.
+    // The channel is central: any client that staged a file in THIS cwd must update every panel bound to it, not just the one that clicked.
     const wrapper = mountPanel()
     await flushPromises()
 
@@ -262,8 +257,7 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
     await plusButton(wrapper, 'both.txt').trigger('click')
     await flushPromises()
 
-    // `git add` folded the worktree change into the index: the Changes row is
-    // genuinely gone, and exactly one Staged row survives (no duplicate).
+    // `git add` folded the worktree change into the index: the Changes row is genuinely gone, and exactly one Staged row survives (no duplicate).
     expect(getGitChangesMock).toHaveBeenCalledTimes(1)
     expect(rowExists(wrapper, 'sidebar-diff-file-unstaged-both.txt')).toBe(false)
     expect(wrapper.findAll('[data-testid="sidebar-diff-file-staged-both.txt"]')).toHaveLength(1)
@@ -282,8 +276,7 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
     await minusButton(wrapper, 'both.txt').trigger('click')
     await flushPromises()
 
-    // `git restore --staged` reverts the index only, so the worktree change
-    // is still there — the Changes row must survive, exactly once.
+    // `git restore --staged` reverts the index only, so the worktree change is still there — the Changes row must survive, exactly once.
     expect(rowExists(wrapper, 'sidebar-diff-file-staged-both.txt')).toBe(false)
     expect(wrapper.findAll('[data-testid="sidebar-diff-file-unstaged-both.txt"]')).toHaveLength(1)
   })
@@ -294,8 +287,7 @@ describe('SidebarDiffPanel surgical stage/unstage', () => {
 
     await plusButton(wrapper, 'dirty.txt').trigger('click')
     await flushPromises()
-    // The bus also delivered the same event; the second application must be a
-    // no-op rather than appending a second Staged row for the same path.
+    // The bus also delivered the same event; the second application must be a no-op rather than appending a second Staged row for the same path.
     __dispatchSseBus('gitFileStage', {
       action: 'staged',
       path: 'dirty.txt',

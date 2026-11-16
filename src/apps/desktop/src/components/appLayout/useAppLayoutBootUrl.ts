@@ -25,8 +25,7 @@ type BootUrlDeps = {
 
 export type UseAppLayoutBootUrlReturn = { handleBootUrl: () => Promise<void> }
 
-/** Boot URL handling (plan: 2026-09-22-revamp-ui-chats). Canonical paths boot directly from the
- * path (workspace/chat/project restore below). */
+/** Boot URL handling (plan: 2026-09-22-revamp-ui-chats). */
 export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlReturn {
   const { router, route, workspacesStore, navigationStore, codeEditorSession } = deps
 
@@ -60,9 +59,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
       return
     }
 
-    // 3. Legacy ?view= query URLs on /app → sync rewrite, then fall
-    // through to the canonical boot below with the new values (the
-    // replace does not remount us, so we continue manually).
+    // 3.
     if (normalizeAppPath(path) === '/app' && query.view) {
       const rewritten = rewriteLegacyQuery(query)
       if (rewritten) {
@@ -73,8 +70,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
         await bootLegacyChat(query.session, keepTabParam(query))
         return
       }
-      // Unknown ?view= values (gitfile/skill/code-editor overlays):
-      // leave the URL alone, boot normally below.
+      // Unknown ?view= values (gitfile/skill/code-editor overlays)
     }
 
     // 4. Canonical boot from the (possibly rewritten) path.
@@ -86,9 +82,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
     } else if (parsed.kind === 'projectChat') {
       workspacesStore.setActiveTask(parsed.chatTaskId)
     } else if (parsed.kind === 'doc') {
-      // A document is its own page: drop any chat/project selection so the
-      // sidebar's single-active-row contract holds and the document does
-      // not look like it is "inside" a chat that is no longer on screen.
+      // A document is its own page: drop any chat/project selection so the sidebar's single-active-row contract holds and the document does not look like it is …
       workspacesStore.setActiveWorkspaceItem(null)
       workspacesStore.setActiveTask(null)
       navigationStore.setActiveChat('', navigationStore.activeChatName)
@@ -101,9 +95,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
       )
     }
 
-    // Prefer the workspace encoded by a workspace/project deep link. A fresh tab may otherwise boot
-    // with the persisted/default workspace, leave the URL-restored item inactive, and render a blank
-    // main view.
+    // Prefer the workspace encoded by a workspace/project deep link.
     const preferredWorkspaceId =
       parsed.kind === 'workspace' ||
       parsed.kind === 'project' ||
@@ -115,9 +107,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
         : undefined
     workspacesStore.initializeFromSystemFolder(preferredWorkspaceId)
 
-    // 5. Overlay restore for deep links. The path boot above adopted the workspace/chat context;
-    // reopen the editor so a reload or shared link lands back on the file instead of silently
-    // dropping it.
+    // 5.
     if (query.view === 'code-editor' && query.file) {
       if (parsed.kind === 'chat') {
         await deps.fetchChatSessionCwd(parsed.sessionId)
@@ -132,20 +122,15 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
     }
   }
 
-  // The `tab` param is client-only (names the browser tab) — carry it
-  // across boot rewrites so a background tab doesn't lose its name.
+  // The `tab` param is client-only (names the browser tab) — carry it across boot rewrites so a background tab doesn't lose its name.
   function keepTabParam(query: Record<string, string>): Record<string, string> {
     return query.tab ? { tab: query.tab } : {}
   }
 
-  // Legacy standalone chat (path or ?view=chat): resolve the owning
-  // workspace via the session-detail endpoint, then boot the chat under
-  // its path. Unresolvable → `/app` (fail-closed).
+  // Legacy standalone chat (path or ?view=chat): resolve the owning workspace via the session-detail endpoint, then boot the chat under its path.
   async function bootLegacyChat(sessionId: string, keep: Record<string, string>): Promise<void> {
     const wsId = await api.getSessionWorkspaceId(sessionId)
-    // The URL points to a chat: clear any workspace-item active state
-    // in BOTH branches (unresolvable sessions fail closed to `/app`,
-    // but the stale item must still go — same as the old boot branch).
+    // The URL points to a chat: clear any workspace-item active state in BOTH branches (unresolvable sessions fail closed to `/app`, but the stale item must still go …
     workspacesStore.setActiveWorkspaceItem(null)
     navigationStore.setActiveChat(sessionId, navigationStore.activeChatName)
     deps.fetchChatSessionCwd(sessionId)
@@ -158,9 +143,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
     await workspacesStore.initializeFromSystemFolder()
   }
 
-  // Legacy task link (/app/task/:tid): resolve the workspace via the session detail (task id ==
-  // session id), then locate the parent item in the loaded tree. Parent found → full project-chat
-  // path; parent unknown (deleted task) → workspace path (fail-closed, no dialog).
+  // Legacy task link (/app/task/:tid): resolve the workspace via the session detail (task id == session id), then locate the parent item in the loaded tree.
   async function bootLegacyTask(taskId: string, keep: Record<string, string>): Promise<void> {
     const wsId = await api.getSessionWorkspaceId(taskId)
     if (!wsId) {
@@ -187,9 +170,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
     }
   }
 
-  // Sync rewrite for legacy query URLs whose target is fully described
-  // by the query itself (no server lookup needed). Returns null when the
-  // query needs async resolution (?view=chat) or is not legacy at all.
+  // Sync rewrite for legacy query URLs whose target is fully described by the query itself (no server lookup needed).
   function rewriteLegacyQuery(query: Record<string, string>): AppUrlLocation | null {
     const keepTab = keepTabParam(query)
     if (query.view === 'task' && query.task) {
@@ -213,8 +194,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
       if (query.pageId) sub.pageId = query.pageId
       if (query.sorts) sub.sorts = query.sorts
       if (query.detail) sub.detail = query.detail
-      // Kanban layout (columns | rows). Without this the boot rewrite drops
-      // `?layout=rows` and a shared link / second machine loses row mode.
+      // Kanban layout (columns | rows).
       if (query.layout) sub.layout = query.layout
       if (parsed.itemId) {
         return buildAppUrl({

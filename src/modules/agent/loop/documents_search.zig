@@ -5,22 +5,17 @@ const testing = std.testing;
 const progressive_regex = @import("progressive_regex.zig");
 const documents_store = @import("documents_store.zig");
 
-/// Smaller than `skills_search`'s 40/200: a document excerpt is ~240 bytes
-/// against a skill row's ~80, so the same page size costs several times more
-/// context for a catalog where a single page is usually already the whole
+/// Smaller than `skills_search`'s 40/200: a document excerpt is ~240 bytes against a skill row's ~80, so the same page size costs several times more context for a …
 pub const DEFAULT_SEARCH_LIMIT: usize = 20;
 pub const MAX_SEARCH_LIMIT: usize = 100;
 
-/// Longest `excerpt` a row may carry. Bounded because the excerpt exists
-/// to disambiguate rows, not to be the body — a caller that needs the body
-/// asks for `include_content` and gets a deliberate, accounted-for cost.
+/// Longest `excerpt` a row may carry.
 pub const EXCERPT_MAX_BYTES: usize = 240;
 
 /// Characters that give a pattern meaning in `progressive_regex`.
 pub const REGEX_METACHARS = ".^$*+?()[]{}|\\";
 
-/// The needle to hand `documents_store.searchDocuments`, or `null` when SQL
-/// must NOT be allowed to narrow the candidate set.
+/// The needle to hand `documents_store.searchDocuments`, or `null` when SQL must NOT be allowed to narrow the candidate set.
 pub fn literalPrefilter(query: []const u8, literal: bool) ?[]const u8 {
     if (query.len == 0) return null;
     if (literal) return query;
@@ -28,9 +23,7 @@ pub fn literalPrefilter(query: []const u8, literal: bool) ?[]const u8 {
     return null;
 }
 
-/// How a query was interpreted. Identical vocabulary to `QueryMode` in
-/// `skills_search.zig`; the strings are the same on the wire so a model
-/// that has read one `pattern_mode` has read all three.
+/// How a query was interpreted.
 pub const QueryMode = enum {
     /// No query given: every document (newest-updated first).
     all,
@@ -38,8 +31,7 @@ pub const QueryMode = enum {
     regex,
     /// `literal: true` was passed: case-insensitive substring.
     literal,
-    /// The query did not compile as a regex and was matched as a literal
-    /// substring instead. `QueryResult.warning` says why.
+    /// The query did not compile as a regex and was matched as a literal substring instead.
     regex_fallback,
 };
 
@@ -52,30 +44,21 @@ fn modeStr(mode: QueryMode) []const u8 {
     };
 }
 
-/// One matching document. Every string field BORROWSS from the
-/// `documents_store.DocumentRow` the matcher was handed — the slice must
-/// outlive these.
+/// One matching document.
 pub const Hit = struct {
     id: []const u8,
     title: []const u8,
     format: []const u8,
     updated_at: []const u8,
-    /// Borrowed, NOT copied. The renderer slices a window out of it for
-    /// the excerpt and only reads the whole of it when `include_content`
-    /// was asked for.
+    /// Borrowed, NOT copied.
     content: []const u8,
-    /// What the excerpt is cut from: the body when the row carries one,
-    /// otherwise the `preview`. Separate from `content` so `include_content`
-    /// never returns a preview dressed up as a body.
+    /// What the excerpt is cut from: the body when the row carries one, otherwise the `preview`.
     excerpt_source: []const u8,
-    /// Byte length of the body. Reported so the model can tell a 40-byte
-    /// stub from a 4 MiB document before deciding to ask for the body.
+    /// Byte length of the body.
     content_length: usize,
     /// Byte offset into `content` of the first hit, when it could be located.
     content_anchor: ?usize,
-    /// True when the TITLE matched. The renderer excerpts the title in
-    /// that case — it is short, it is what the model searched for, and it
-    /// is the label the human will recognise in the sidebar.
+    /// True when the TITLE matched.
     title_matched: bool,
 };
 
@@ -87,9 +70,7 @@ pub const MatchOptions = struct {
 pub const QueryResult = struct {
     hits: []const Hit,
     mode: QueryMode,
-    /// Non-empty only when the query was reinterpreted or the match ran out
-    /// of budget. Rendered as `pattern_warning`. Always a STATIC string, so
-    /// no result owns an allocation the caller can leak.
+    /// Non-empty only when the query was reinterpreted or the match ran out of budget.
     warning: []const u8 = "",
 };
 
@@ -110,9 +91,7 @@ fn exhaustedWarning() []const u8 {
     return "the pattern was too expensive to finish matching, so some documents were skipped — anchor it with '^' or pass literal:true";
 }
 
-/// The text a query is matched against and excerpted from. The body when the
-/// row still carries one; otherwise the `preview`, which is all SQL keeps once
-/// the body moves to the object store.
+/// The text a query is matched against and excerpted from.
 pub fn searchableText(row: documents_store.DocumentRow) []const u8 {
     return if (row.content.len > 0) row.content else row.preview;
 }
@@ -134,7 +113,6 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
 }
 
 /// First case-insensitive occurrence of `needle`, for the excerpt anchor.
-/// Null when absent or longer than the haystack.
 fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len == 0) return null;
     if (needle.len > haystack.len) return null;
@@ -145,9 +123,7 @@ fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
     return null;
 }
 
-/// Match rows by `query`, a case-insensitive unanchored REGEX over each
-/// document's TITLE and CONTENT — the same contract `search_tool` uses, so
-/// the model needs only one mental model for "search a catalog".
+/// Match rows by `query`, a case-insensitive unanchored REGEX over each document's TITLE and CONTENT — the same contract `search_tool` uses, so the model needs …
 pub fn matchQuery(
     allocator: std.mem.Allocator,
     rows: []const documents_store.DocumentRow,
@@ -168,8 +144,7 @@ pub fn matchQuery(
     var mode: QueryMode = .literal;
     var warning: []const u8 = "";
 
-    // A compiled pattern made only of literals matches exactly the strings
-    // containing it, so the hit can be located for the excerpt.
+    // A compiled pattern made only of literals matches exactly the strings containing it, so the hit can be located for the excerpt.
     const anchorable = std.mem.indexOfAny(u8, query, REGEX_METACHARS) == null;
 
     if (!opts.literal) {
@@ -188,8 +163,7 @@ pub fn matchQuery(
             const in_title = re.isMatch(row.title);
             const in_content = re.isMatch(text);
             if (!in_title and !in_content) continue;
-            // A pattern with no metacharacters IS a substring, so the hit can
-            // be located and the excerpt centred on it.
+            // A pattern with no metacharacters IS a substring, so the hit can be located and the excerpt centred on it.
             const anchor = if (anchorable) indexOfIgnoreCase(text, query) else null;
             try matched.append(allocator, hitOf(row, anchor, in_title));
         } else {
@@ -211,8 +185,7 @@ pub fn matchQuery(
     };
 }
 
-/// Build a `Hit` that borrows every string from `row`. `anchor` may be null
-/// when the matcher knows only THAT the row matched.
+/// Build a `Hit` that borrows every string from `row`.
 fn hitOf(
     row: documents_store.DocumentRow,
     anchor: ?usize,
@@ -231,8 +204,7 @@ fn hitOf(
     };
 }
 
-/// The `offset`/`limit` window of `hits`. Paging is applied HERE rather than
-/// in `matchQuery` so the pre-page `total` stays available to the renderer.
+/// The `offset`/`limit` window of `hits`.
 pub fn pageSlice(hits: []const Hit, offset: usize, limit: usize) []const Hit {
     if (offset >= hits.len or limit == 0) return &.{};
     const end = if (limit > hits.len - offset) hits.len else offset + limit;
@@ -268,15 +240,12 @@ fn alignBackToUtf8(text: []const u8, i: usize) usize {
     return j;
 }
 
-/// A bounded window of `text` centred on `anchor`, with `…` where text was
-/// cut. Always returns `text.len <= EXCERPT_MAX_BYTES` worth of payload.
+/// A bounded window of `text` centred on `anchor`, with `…` where text was cut.
 fn excerptOf(allocator: std.mem.Allocator, text: []const u8, anchor: ?usize) ![]const u8 {
     if (text.len == 0) return "";
 
     const centre = anchor orelse 0;
-    // Put the hit roughly a third in, so the model sees what follows it —
-    // "release" in the middle of a sentence tells it more than the sentence
-    // start does.
+    // Put the hit roughly a third in, so the model sees what follows it — "release" in the middle of a sentence tells it more than the sentence start does.
     const lead = EXCERPT_MAX_BYTES / 3;
     var start = if (centre > lead) centre - lead else 0;
     var end = @min(start + EXCERPT_MAX_BYTES, text.len);
@@ -299,9 +268,7 @@ const DocumentRowJson = struct {
     content: ?[]const u8,
 };
 
-/// `search` result: `{"query","pattern_mode","pattern_warning",
-/// "count","total","offset","limit","documents","truncated","next_offset",
-/// "hint"}`.
+/// `search` result: `{"query","pattern_mode","pattern_warning", "count","total","offset","limit","documents","truncated","next_offset", "hint"}`.
 pub fn renderSearchResult(
     allocator: std.mem.Allocator,
     page: []const Hit,
@@ -311,8 +278,7 @@ pub fn renderSearchResult(
     const rows = try allocator.alloc(DocumentRowJson, shown);
     defer allocator.free(rows);
 
-    // Each excerpt is freed after the JSON is built, so a page of 100 rows
-    // costs 100 short-lived allocations rather than 100 survivors.
+    // Each excerpt is freed after the JSON is built, so a page of 100 rows costs 100 short-lived allocations rather than 100 survivors.
     const excerpts = try allocator.alloc([]const u8, shown);
     defer {
         for (excerpts) |e| allocator.free(e);
@@ -320,8 +286,7 @@ pub fn renderSearchResult(
     }
 
     for (page[0..shown], 0..) |hit, i| {
-        // Where the excerpt comes from, in order: - the TITLE matched: show
-        // the title.
+        // Where the excerpt comes from, in order: - the TITLE matched: show the title.
         const source: []const u8 = if (hit.title_matched)
             hit.title
         else if (hit.excerpt_source.len > 0)
@@ -400,8 +365,7 @@ fn parseRendered(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(Ren
     return try std.json.parseFromSlice(RenderedSearch, alloc, out, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
 }
 
-/// A `DocumentRow` whose strings live for the whole test (they are comptime
-/// literals), so the borrow the matcher hands out stays valid.
+/// A `DocumentRow` whose strings live for the whole test (they are comptime literals), so the borrow the matcher hands out stays valid.
 fn testRow(
     id: []const u8,
     title: []const u8,
@@ -431,8 +395,7 @@ const test_rows = [_]documents_store.DocumentRow{
 // ─── literalPrefilter: the soundness guard ──────────────────────────────
 
 test "literalPrefilter: a metacharacter-free query narrows in SQL" {
-    // Sound: the pattern is a run of literals, so LIKE '%x%' returns exactly
-    // the rows the regex matches.
+    // Sound: the pattern is a run of literals, so LIKE '%x%' returns exactly the rows the regex matches.
     try testing.expectEqualStrings("release", literalPrefilter("release", false).?);
     try testing.expectEqualStrings("Release Plan v2", literalPrefilter("Release Plan v2", false).?);
     // Digits, spaces and dashes are not metacharacters.
@@ -446,16 +409,14 @@ test "literalPrefilter: every metacharacter disables the SQL narrowing" {
             literalPrefilter(&q, false) == null,
         );
     }
-    // `.` is the quiet one: `foo.bar` as a regex matches `fooXbar`, and a
-    // LIKE prefilter would keep only the literal `foo.bar`.
+    // `.` is the quiet one: `foo.bar` as a regex matches `fooXbar`, and a LIKE prefilter would keep only the literal `foo.bar`.
     try testing.expect(literalPrefilter("foo.bar", false) == null);
     try testing.expect(literalPrefilter("^Q3", false) == null);
     try testing.expect(literalPrefilter("release|launch", false) == null);
 }
 
 test "literalPrefilter: literal:true narrows even with metacharacters" {
-    // The model TOLD us it means literal text, so substring semantics are
-    // what it asked for and LIKE agrees with them exactly.
+    // The model TOLD us it means literal text, so substring semantics are what it asked for and LIKE agrees with them exactly.
     try testing.expectEqualStrings("*.zig", literalPrefilter("*.zig", true).?);
     try testing.expectEqualStrings("fn(", literalPrefilter("fn(", true).?);
 }
@@ -507,8 +468,7 @@ test "matchQuery: an empty body is matchable by title and never crashes" {
     try testing.expectEqual(@as(usize, 1), by_title.hits.len);
     try testing.expectEqual(@as(usize, 0), by_title.hits[0].content_length);
 
-    // A body query that genuinely appears nowhere must not pick doc_4 up
-    // just because its content is empty.
+    // A body query that genuinely appears nowhere must not pick doc_4 up just because its content is empty.
     const nothing = try matchQuery(alloc, &test_rows, "hippopotamus", .{});
     defer alloc.free(nothing.hits);
     try testing.expectEqual(@as(usize, 0), nothing.hits.len);
@@ -523,8 +483,7 @@ test "matchQuery literal:true treats metacharacters verbatim" {
     try testing.expectEqual(QueryMode.regex, as_regex.mode);
     try testing.expectEqual(@as(usize, 1), as_regex.hits.len);
 
-    // As a LITERAL it is the 8-character text `release.`, which no row
-    // carries. The flag is the only thing making those two answers differ.
+    // As a LITERAL it is the 8-character text `release.`, which no row carries.
     const as_literal = try matchQuery(alloc, &test_rows, "release.", .{ .literal = true });
     defer alloc.free(as_literal.hits);
     try testing.expectEqual(QueryMode.literal, as_literal.mode);
@@ -559,16 +518,13 @@ test "matchQuery: literal mode locates the hit, and so does a metachar-free rege
     try testing.expectEqualStrings("doc_2", lit.hits[0].id);
     try testing.expect(lit.hits[0].content_anchor != null);
 
-    // A metacharacter-free query in REGEX mode takes the same path, because
-    // it compiles to exactly "the substring budget" — the common case must
-    // still show the model WHERE it matched.
+    // A metacharacter-free query in REGEX mode takes the same path, because it compiles to exactly "the substring budget" — the common case must still show the model …
     const re = try matchQuery(alloc, &test_rows, "budget", .{});
     defer alloc.free(re.hits);
     try testing.expectEqualStrings("doc_2", re.hits[0].id);
     try testing.expect(re.hits[0].content_anchor != null);
 
-    // With a real metacharacter the engine only reports WHETHER, so no
-    // anchor — and the renderer must not invent one.
+    // With a real metacharacter the engine only reports WHETHER, so no anchor — and the renderer must not invent one.
     const anchored = try matchQuery(alloc, &test_rows, "budget|plan", .{});
     defer alloc.free(anchored.hits);
     try testing.expectEqual(@as(usize, 2), anchored.hits.len);
@@ -586,8 +542,7 @@ test "matchQuery: no matches is an empty list, never an error" {
 
 test "matchQuery: a query longer than the body never matches and never reads past the end" {
     const alloc = testing.allocator;
-    // Longer than every test body, so the substring scan must bail on the
-    // length check rather than walk off the end of a slice.
+    // Longer than every test body, so the substring scan must bail on the length check rather than walk off the end of a slice.
     const long_needle = "a" ** 1000;
     const res = try matchQuery(alloc, &test_rows, long_needle, .{ .literal = true });
     defer alloc.free(res.hits);
@@ -650,8 +605,7 @@ test "excerptOf: an empty body yields an empty string, not a slice error" {
 
 test "excerptOf: window edges never split a multi-byte codepoint" {
     const alloc = testing.allocator;
-    // "é" is two bytes; repeat it so the window lands mid-character no matter
-    // where EXCERPT_MAX_BYTES happens to fall.
+    // "é" is two bytes; repeat it so the window lands mid-character no matter where EXCERPT_MAX_BYTES happens to fall.
     var body: [1200]u8 = undefined;
     for (0..600) |i| {
         body[i * 2] = 0xC3;
@@ -691,8 +645,7 @@ test "renderSearchResult carries id + excerpt on every row and reports the pre-p
     try testing.expectEqualStrings("all", parsed.value.pattern_mode);
     try testing.expect(parsed.value.pattern_warning == null);
     try testing.expectEqual(@as(usize, 2), parsed.value.documents.len);
-    // Rows arrive in store order (test_rows is doc_1..doc_4), so the first
-    // page is doc_1 and doc_2 — not "the last two".
+    // Rows arrive in store order (test_rows is doc_1..doc_4), so the first page is doc_1 and doc_2 — not "the last two".
     try testing.expectEqualStrings("doc_1", parsed.value.documents[0].id);
     try testing.expect(parsed.value.documents[0].content == null);
     // The hint names the exact continuing offset.
@@ -734,8 +687,7 @@ test "renderSearchResult: content is opt-in and absent means NOT REQUESTED" {
     const p_without = try parseRendered(alloc, without);
     defer p_without.deinit();
     try testing.expect(p_without.value.documents[0].content == null);
-    // The excerpt still shows the hit — that is its job — but it is bounded,
-    // so a 4 MiB body never rides along inside the excerpt.
+    // The excerpt still shows the hit — that is its job — but it is bounded, so a 4 MiB body never rides along inside the excerpt.
     const ex = p_without.value.documents[0].excerpt;
     try testing.expect(std.mem.indexOf(u8, ex, "Budget") != null);
     try testing.expect(ex.len <= EXCERPT_MAX_BYTES + 8);
@@ -840,8 +792,7 @@ test "renderSearchResult: a title hit excerpts the title, a body hit excerpts th
 
 // ─── Search without the body ────────────────────────────────────────────
 
-/// A row whose body has moved to the object store: `content` is empty and only
-/// `preview` is left in SQL.
+/// A row whose body has moved to the object store: `content` is empty and only `preview` is left in SQL.
 fn movedRow(
     id: []const u8,
     title: []const u8,
@@ -894,8 +845,7 @@ test "matchQuery finds a hit in the preview when the body is gone" {
     try testing.expectEqualStrings("doc_moved", res.hits[0].id);
     // The excerpt is cut from the preview, and the anchor points into it.
     try testing.expect(res.hits[0].content_anchor != null);
-    // `content` stays empty: `include_content` must not return a preview
-    // dressed up as a body.
+    // `content` stays empty: `include_content` must not return a preview dressed up as a body.
     try testing.expectEqualStrings("", res.hits[0].content);
     // The model still learns the real size.
     try testing.expectEqual(@as(usize, 4096), res.hits[0].content_length);

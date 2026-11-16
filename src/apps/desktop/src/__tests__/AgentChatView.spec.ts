@@ -7,8 +7,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import AgentChatView from '../components/views/AgentChatView.vue'
 import ChatAppBar from '../components/views/ChatAppBar.vue'
 
-// Stub ChatView — it transitively pulls in many Pinia stores (useNavigationStore,
-// useWorkspacesStore, etc.) and a real SSE bus instance, none of which we need to exercise here.
+// Stub ChatView — it transitively pulls in many Pinia stores (useNavigationStore, useWorkspacesStore, etc.) and a real SSE bus instance, none of which we need to …
 const ChatViewStub = defineComponent({
   name: 'ChatView',
   props: ['chatId', 'chatName', 'type', 'cwd', 'showHeader', 'embedded'],
@@ -63,8 +62,7 @@ describe('AgentChatView', () => {
   it('uses the shared ChatAppBar instead of a bespoke header', async () => {
     mountChatView()
     await nextTick()
-    // One bar, the shared one — the same element kanban and standard
-    // mode render (see ChatAppBarParity.spec.ts).
+    // One bar, the shared one — the same element kanban and standard mode render (see ChatAppBarParity.spec.ts).
     const bars = document.querySelectorAll('[data-testid="chat-app-bar"]')
     expect(bars.length).toBe(1)
     // No leftover bespoke header / text "Close" button.

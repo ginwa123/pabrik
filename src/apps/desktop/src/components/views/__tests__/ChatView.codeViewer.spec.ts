@@ -1,5 +1,4 @@
-/** Where the code viewer renders — ChatView's center column instead of a full-surface overlay
- * (kanban task_1790594549955_1, follow-up: "the right sidebar should be visible"). */
+/** Where the code viewer renders — ChatView's center column instead of a full-surface overlay (kanban task_1790594549955_1, follow-up: "the right sidebar should … */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -21,8 +20,7 @@ describe('ChatView — code viewer in the center column', () => {
   })
 
   it('renders the stage in the center slot, beside the sidebar', () => {
-    // The stage sits INSIDE the center column (the same parent as the
-    // stacked diff and the messages), and the sidebar stays a sibling.
+    // The stage sits INSIDE the center column (the same parent as the stacked diff and the messages), and the sidebar stays a sibling.
     const stageAt = chatViewSrc.indexOf('data-testid="chat-center-code"')
     const sidebarAt = chatViewSrc.indexOf('<ChatRightSidebar')
     expect(stageAt).toBeGreaterThan(-1)
@@ -31,8 +29,7 @@ describe('ChatView — code viewer in the center column', () => {
   })
 
   it('hides messages and the composer while the viewer is up', () => {
-    // One gate for both center stages — the composer can never float
-    // over the file (the "composer visible under the viewer" report).
+    // One gate for both center stages — the composer can never float over the file (the "composer visible under the viewer" report).
     expect(chatViewSrc).toMatch(
       /const showCenterStage = computed\(\(\) => showCenterDiff\.value \|\| showCodeViewer\.value\)/,
     )
@@ -72,8 +69,7 @@ describe('AppLayout — the overlay is only a fallback', () => {
     expect(appLayoutSrc).toMatch(
       /if \(codeEditorFile\.value && !chatSurfaceActive\.value\) return 'code-editor'/,
     )
-    // The predicate is the union of the chain's three chat branches and
-    // excludes the design dialog + the chats list.
+    // The predicate is the union of the chain's three chat branches and excludes the design dialog + the chats list.
     expect(appLayoutSrc).toMatch(/const chatSurfaceActive = computed\(\(\) => \{/)
     expect(appLayoutSrc).toMatch(/if \(item\?\.item_type === 'design'\) return false/)
     expect(appLayoutSrc).toMatch(

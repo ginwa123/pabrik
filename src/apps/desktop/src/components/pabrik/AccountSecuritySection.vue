@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** AccountSecuritySection — Settings → User → Security. Lets the signed-in
- * user rotate their own password, with the current one as proof of ownership
- * and an honest account of which other devices the change signs out. */
+/** AccountSecuritySection — Settings → User → Security. */
 import { computed, onMounted, ref } from 'vue'
 import { Cause, Effect, Exit, Option } from 'effect'
 import {
@@ -100,8 +98,7 @@ async function submit(): Promise<void> {
   if (!canSubmit.value) return
   busy.value = true
   serverError.value = null
-  // The failure rides the Effect's error channel as the sentence to show, so
-  // "could not change it" cannot be mistaken for a success anywhere below.
+  // The failure rides the Effect's error channel as the sentence to show, so "could not change it" cannot be mistaken for a success anywhere below.
   const exit = await runEffectExit(
     Effect.tryPromise({
       try: () =>

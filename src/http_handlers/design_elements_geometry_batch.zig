@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/geometry-batch`.
-//! ⚠️ DEPRECATED — replaced by `POST .../elements/move-batch` (server- side
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/geometry-batch`. ⚠️ DEPRECATED — replaced by `POST .../elements/move-batch` …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,9 +8,7 @@ const database = pabrikcore.database;
 const gserverz = pabrikcore.gserverz;
 const design_model = @import("../modules/agent/loop/design_model.zig");
 
-/// HTTP request body for batch-geometry-update. Each `updates[i]` is a
-/// partial geometry patch — only the listed fields are SET in the SQL UPDATE;
-/// null fields are left unchanged.
+/// HTTP request body for batch-geometry-update.
 const BatchBody = struct {
     updates: []const SingleUpdate = &.{},
 };
@@ -26,38 +22,26 @@ const SingleUpdate = struct {
     rotation: ?f64 = null,
 };
 
-/// Domain-level error set for `useCase`. The handler maps each
-/// variant to an HTTP status code via a single exhaustive switch.
+/// Domain-level error set for `useCase`.
 pub const DesignElementGeometryBatchError = error{
     /// `updates` array was empty — would result in a no-op transaction.
-    /// Maps to 400.
     EmptyUpdates,
-    /// `design_model.updateElementsBatch` returned `PageNotFound` —
-    /// the `:page_id` path param doesn't resolve.
-    /// Maps to 404.
+    /// `design_model.updateElementsBatch` returned `PageNotFound` — the `:page_id` path param doesn't resolve.
     PageNotFound,
     /// One or more `element_id` values didn't resolve on the page.
-    /// Whole batch is rejected — no partial writes.
-    /// Maps to 404.
     ElementNotFound,
-    /// Any DB-level failure (PrepareFailed, ExecuteFailed, BindFailed,
-    /// QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.).
-    /// Maps to 500.
+    /// Any DB-level failure (PrepareFailed, ExecuteFailed, BindFailed, QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.).
     DbError,
-    /// `allocator.dupe` / `std.json.Stringify.valueAlloc` failed while
-    /// building the response body. Maps to 500.
+    /// `allocator.dupe` / `std.json.Stringify.valueAlloc` failed while building the response body.
     OutOfMemory,
 };
 
-/// Output of the batch-geometry-update use-case. Heap-owned; caller
-/// releases `updated` via `freeElements(allocator, updated)`.
+/// Output of the batch-geometry-update use-case.
 pub const UpdateGeometryBatchOutput = struct {
     updated: []design_model.DesignElement,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub const UseCaseInput = struct {
     page_id: []const u8,
@@ -84,9 +68,7 @@ pub fn useCase(
     return .{ .updated = updated };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designElementsGeometryBatchHandler(
     ctx: gserverz.HttpContext,
@@ -127,15 +109,11 @@ pub fn designElementsGeometryBatchHandler(
         });
     };
 
-    // 3. Translate the wire body's `SingleUpdate[]` into
-    //    `design_model.UpdateElementInput[]`. Reuse the model struct so
-    //    the use-case layer doesn't have to invent its own.
+    // 3.
     var inputs_buf: std.ArrayList(design_model.UpdateElementInput) = .empty;
     defer inputs_buf.deinit(allocator);
     for (parsed.updates) |u| {
-        // Empty element_id → 400 with an explicit message (the model
-        // would also reject these as ElementNotFound, but a clearer
-        // 400 here helps the frontend debug its batch construction).
+        // Empty element_id → 400 with an explicit message (the model would also reject these as ElementNotFound, but a clearer 400 here helps the frontend debug its …
         if (u.element_id.len == 0) {
             return res.jsonResponse(.{
                 .status_code = 400,
@@ -192,9 +170,7 @@ pub fn designElementsGeometryBatchHandler(
     });
 }
 
-// Local helper — mirrors `http_response.makeErrorResponse` but avoids
-// the cross-import. The handler is the only caller; the helper is here
-// so the response-building block stays small.
+// Local helper — mirrors `http_response.makeErrorResponse` but avoids the cross-import.
 fn makeErrorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     return try std.json.Stringify.valueAlloc(
         allocator,

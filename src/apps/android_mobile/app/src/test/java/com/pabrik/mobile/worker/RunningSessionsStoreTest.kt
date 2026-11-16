@@ -7,11 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The store is what every spinner on every screen reads, so its transitions are
- * the whole feature: a session that is lit when it should be dark, or dark when
- * it should be lit, is the bug the user sees.
- */
+/** The store is what every spinner on every screen reads, so its transitions are the whole feature: a session that is lit when it should be dark, or dark when it … */
 class RunningSessionsStoreTest {
     private val store = RunningSessionsStore()
 
@@ -48,12 +44,7 @@ class RunningSessionsStoreTest {
 
     @Test
     fun `a heartbeat after a delete puts the spinner back`() {
-        // Counter-intuitive, and deliberate. The backend's `updateWorker` is an
-        // unconditional `INSERT ... ON CONFLICT(id) DO UPDATE`, so a heartbeat
-        // that lands after the delete has *re-created* the row — the server
-        // really does consider this session running again. Suppressing the
-        // re-add to defend against a stop/heartbeat race would report a live
-        // agent as idle, and there is no later event to correct it.
+        // Counter-intuitive, and deliberate.
         store.apply(RunningSessionsStore.ACTION_CREATED, "task_1")
         store.apply(RunningSessionsStore.ACTION_DELETED, "task_1")
         store.apply(RunningSessionsStore.ACTION_UPDATED, "task_1")
@@ -63,9 +54,7 @@ class RunningSessionsStoreTest {
 
     @Test
     fun `an action this app does not know counts as running, not idle`() {
-        // `worker_unknown` is a real event name on the wire for an unclassified
-        // action. Reporting such a session as idle is the one guess that can
-        // make the app tell the user a live agent has stopped.
+        // `worker_unknown` is a real event name on the wire for an unclassified action.
         store.apply("reordered", "task_1")
 
         assertTrue(store.isRunning("task_1"))
@@ -96,9 +85,7 @@ class RunningSessionsStoreTest {
 
     @Test
     fun `replace drops a session that stopped while the socket was down`() {
-        // The resync is the only repair available: the server keeps no replay
-        // buffer, so a `deleted` that happened mid-outage was never sent. A
-        // merge would keep this spinner lit until the next sign-out.
+        // The resync is the only repair available: the server keeps no replay buffer, so a `deleted` that happened mid-outage was never sent.
         store.replace(setOf("task_1", "task_2"))
         store.replace(setOf("task_1"))
 
@@ -123,9 +110,7 @@ class RunningSessionsStoreTest {
 
     @Test
     fun `a no-op transition does not re-emit the same set`() {
-        // StateFlow conflates by equality, so emitting an equal set re-runs no
-        // collector and costs a comparison. What it must never do is emit a
-        // *different* object with the same contents from a mutation path.
+        // StateFlow conflates by equality, so emitting an equal set re-runs no collector and costs a comparison.
         store.apply(RunningSessionsStore.ACTION_CREATED, "task_1")
         val afterCreate = store.runningSessionIds.value
 

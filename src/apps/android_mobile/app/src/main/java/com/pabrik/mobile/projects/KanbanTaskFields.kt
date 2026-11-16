@@ -1,7 +1,6 @@
 package com.pabrik.mobile.projects
 
-// Kanban task field helpers. Pure logic so they are unit-testable without a
-// ViewModel or a network.
+// Kanban task field helpers.
 object KanbanTaskFields {
 
     fun isValidTitle(title: String): Boolean = title.trim().isNotEmpty()

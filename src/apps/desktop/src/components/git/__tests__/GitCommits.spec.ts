@@ -170,20 +170,17 @@ describe('GitCommits', () => {
       'const',
       'const',
     ])
-    // This surface never painted a +/- sign (the commit diff shows the
-    // lines themselves); the change direction comes from diffLineStyle.
+    // This surface never painted a +/- sign (the commit diff shows the lines themselves); the change direction comes from diffLineStyle.
     expect(wrapper.text()).toContain('const added = 3')
 
-    // Every line states its own text colour: `.tok-plain` inherits, and the
-    // fallback must not be the initial black on the dark panel.
+    // Every line states its own text colour: `.tok-plain` inherits, and the fallback must not be the initial black on the dark panel.
     const lineStyles = wrapper
       .findAll('div.px-2.whitespace-pre')
       .map((d) => d.attributes('style') ?? '')
     expect(lineStyles.length).toBeGreaterThan(0)
     for (const style of lineStyles) expect(style).toContain('color:')
 
-    // A hunk header is diff METADATA — the row keeps its own hunk colour
-    // instead of having `.tok-number` painted over it.
+    // A hunk header is diff METADATA — the row keeps its own hunk colour instead of having `.tok-number` painted over it.
     const hunkRow = wrapper
       .findAll('div.px-2.whitespace-pre')
       .find((d) => (d.attributes('style') ?? '').includes('--color-aqua'))

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** CompactToolRow — one tool call as ONE line: the tool, the argument that
- * identifies it, and how it ended. */
+/** CompactToolRow — one tool call as ONE line: the tool, the argument that identifies it, and how it ended. */
 import { computed } from 'vue'
 
 import { summarizeToolCall } from '../_shared/toolSummary'

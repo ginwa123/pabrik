@@ -1,6 +1,4 @@
-//! Builds the object store the environment asks for, and owns it for the life
-//! of the process. `null` means "no object store configured", which keeps every
-//! body in the `documents.content` column.
+//! Builds the object store the environment asks for, and owns it for the life of the process.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -28,9 +26,7 @@ pub fn resolveBackend(
     return error.UnknownBackend;
 }
 
-/// The backend to use when nothing is configured: the supervised rustfs when
-/// its binary is there, the filesystem otherwise. An explicit `rustfs` with no
-/// binary is an error, never a silent downgrade.
+/// The backend to use when nothing is configured: the supervised rustfs when its binary is there, the filesystem otherwise.
 pub fn chooseBackend(
     environment: *const std.process.Environ.Map,
     rustfs_available: bool,
@@ -46,8 +42,7 @@ pub fn chooseBackend(
     return error.UnknownBackend;
 }
 
-/// `$PABRIK_DATA_DIR`, then `$XDG_DATA_HOME/pabrik`, then
-/// `$HOME/.local/share/pabrik`.
+/// `$PABRIK_DATA_DIR`, then `$XDG_DATA_HOME/pabrik`, then `$HOME/.local/share/pabrik`.
 pub fn resolveDataDir(
     allocator: std.mem.Allocator,
     environment: *const std.process.Environ.Map,
@@ -55,9 +50,7 @@ pub fn resolveDataDir(
     if (environment.get("PABRIK_DATA_DIR")) |dir| {
         if (dir.len > 0) return allocator.dupe(u8, dir);
     }
-    // Windows has no HOME: a native pabrik.exe launched from cmd or PowerShell
-    // sees only USERPROFILE/LOCALAPPDATA, and the rest of the app already keeps
-    // its state under %LOCALAPPDATA%\pabrik (the webapp, the TLS cert).
+    // Windows has no HOME: a native pabrik.exe launched from cmd or PowerShell sees only USERPROFILE/LOCALAPPDATA, and the rest of the app already keeps its state …
     if (comptime builtin.os.tag == .windows) {
         const base = environment.get("LOCALAPPDATA") orelse return error.RootRequired;
         if (base.len > 0) return std.fs.path.join(allocator, &.{ base, "pabrik" });
@@ -69,8 +62,7 @@ pub fn resolveDataDir(
     return std.fs.path.join(allocator, &.{ home, ".local", "share", "pabrik" });
 }
 
-/// `PABRIK_RUSTFS_PORT`, else a free loopback port so two pabrik instances
-/// never fight over 9000.
+/// `PABRIK_RUSTFS_PORT`, else a free loopback port so two pabrik instances never fight over 9000.
 pub fn pickPort(io: std.Io, environment: *const std.process.Environ.Map) !u16 {
     if (environment.get("PABRIK_RUSTFS_PORT")) |raw| {
         if (std.fmt.parseInt(u16, raw, 10)) |port| {
@@ -87,8 +79,7 @@ fn freeLoopbackPort(io: std.Io) !u16 {
     return server.socket.address.getPort();
 }
 
-/// rustfs answers HTTP before its IAM and storage quorum are up, and returns
-/// 503 until they are. Retry the bucket probe until it stops saying so.
+/// rustfs answers HTTP before its IAM and storage quorum are up, and returns 503 until they are.
 fn waitUntilServing(io: std.Io, store: *s3_backend.S3Storage) !void {
     var waited: u32 = 0;
     while (waited < rustfs_mod.READY_TIMEOUT_MS) : (waited += rustfs_mod.READY_POLL_MS) {
@@ -121,8 +112,7 @@ pub fn resolveRoot(
     if (environment.get("PABRIK_STORAGE_ROOT")) |root| {
         if (root.len > 0) return allocator.dupe(u8, root);
     }
-    // Same Windows reason as `resolveDataDir`: no HOME, so the filesystem
-    // store would be disabled and every document body would be dropped.
+    // Same Windows reason as `resolveDataDir`: no HOME, so the filesystem store would be disabled and every document body would be dropped.
     if (comptime builtin.os.tag == .windows) {
         const base = environment.get("LOCALAPPDATA") orelse return error.RootRequired;
         if (base.len > 0) return std.fs.path.join(allocator, &.{ base, "pabrik", "objects" });
@@ -131,8 +121,7 @@ pub fn resolveRoot(
     return std.fs.path.join(allocator, &.{ home, DEFAULT_ROOT_SUFFIX });
 }
 
-/// S3 settings from the environment. Every slice borrows from `environment`,
-/// which outlives the store.
+/// S3 settings from the environment.
 pub fn resolveS3Config(environment: *const std.process.Environ.Map) !s3_backend.Config {
     return .{
         .endpoint = environment.get("PABRIK_S3_ENDPOINT") orelse return error.S3EndpointRequired,
@@ -148,8 +137,7 @@ pub const Credentials = struct {
     secret_key: []u8,
 };
 
-/// Start a supervised rustfs. Credentials are generated once and kept in the
-/// data dir, so a restart keeps the same bucket owner.
+/// Start a supervised rustfs.
 pub fn startRustfs(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -198,8 +186,7 @@ fn dirExists(io: std.Io, path: []const u8) bool {
     return true;
 }
 
-/// Move a filesystem-store root into the object store, once. The key is the
-/// path under the root, which is exactly what the fs backend used.
+/// Move a filesystem-store root into the object store, once.
 fn migrateFsRoot(io: std.Io, allocator: std.mem.Allocator, fs_root: []const u8, store: storage.Storage) void {
     var dir = std.Io.Dir.cwd().openDir(io, fs_root, .{ .iterate = true }) catch return;
     defer dir.close(io);
@@ -234,8 +221,7 @@ fn keyFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return key;
 }
 
-/// `PABRIK_RUSTFS_ACCESS_KEY`/`_SECRET_KEY`, else the pair persisted in the
-/// data dir, else a fresh random pair written there.
+/// `PABRIK_RUSTFS_ACCESS_KEY`/`_SECRET_KEY`, else the pair persisted in the data dir, else a fresh random pair written there.
 pub fn resolveRustfsCredentials(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -288,8 +274,7 @@ pub fn resolveRustfsCredentials(
     return .{ .access_key = access, .secret_key = secret };
 }
 
-/// A live backend. Heap-allocated because the `Storage` handle points INTO it,
-/// so it must not move after construction.
+/// A live backend.
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
     kind: Kind,
@@ -305,17 +290,14 @@ pub const Runtime = struct {
         store: s3_backend.S3Storage,
     };
 
-    /// A rustfs this process started and owns. The supervisor is a pointer so
-    /// the S3 store's transport back-pointer stays valid.
+    /// A rustfs this process started and owns.
     pub const Rustfs = struct {
         supervisor: *rustfs_mod.Supervisor,
         http: http_transport.HttpTransport,
         store: s3_backend.S3Storage,
     };
 
-    /// Build the store the environment asks for. With nothing configured the
-    /// supervised rustfs wins when its binary is installed, and the filesystem
-    /// store is the fallback.
+    /// Build the store the environment asks for.
     pub fn fromEnvironment(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -353,8 +335,7 @@ pub const Runtime = struct {
                         .store = undefined,
                     } },
                 };
-                // Wired AFTER the runtime is in its final heap slot, so the
-                // transport's back-pointer stays valid.
+                // Wired AFTER the runtime is in its final heap slot, so the transport's back-pointer stays valid.
                 runtime.kind.s3.store = s3_backend.S3Storage.init(
                     allocator,
                     io,
@@ -363,9 +344,7 @@ pub const Runtime = struct {
                 );
             },
             .rustfs => {
-                // A checkout that ran the filesystem store before rustfs was
-                // bundled has its bodies under `objects/`. The first rustfs
-                // start moves them across, so nothing disappears.
+                // A checkout that ran the filesystem store before rustfs was bundled has its bodies under `objects/`.
                 const fresh = !dirExists(io, try rustfsDataDir(allocator, environment));
 
                 const supervisor = try startRustfs(allocator, io, environment);
@@ -391,8 +370,7 @@ pub const Runtime = struct {
                     },
                     runtime.kind.rustfs.http.asTransport(),
                 );
-                // A fresh rustfs has no buckets, so the first write would fail
-                // with NoSuchBucket.
+                // A fresh rustfs has no buckets, so the first write would fail with NoSuchBucket.
                 try waitUntilServing(io, &runtime.kind.rustfs.store);
 
                 if (fresh) {
@@ -508,8 +486,7 @@ test "runtime: the data dir follows the platform scope" {
     try env.put("HOME", "/home/u");
 
     if (comptime builtin.os.tag == .windows) {
-        // Windows has no HOME: %LOCALAPPDATA% is the scope, and XDG/HOME must
-        // not rescue it — that is the bug that disabled the store outright.
+        // Windows has no HOME: %LOCALAPPDATA% is the scope, and XDG/HOME must not rescue it — that is the bug that disabled the store outright.
         try env.put("LOCALAPPDATA", "C:\\Users\\u\\AppData\\Local");
         const want = try std.fs.path.join(alloc, &.{ "C:\\Users\\u\\AppData\\Local", "pabrik" });
         defer alloc.free(want);

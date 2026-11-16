@@ -1,6 +1,4 @@
-//! The `git_file_stage` SSE channel: the backend telling the UI that a file
-//! moved between the index and the worktree, so the Files tab can move ONE
-//! row instead of re-fetching the whole git-status list.
+//! The `git_file_stage` SSE channel: the backend telling the UI that a file moved between the index and the worktree, so the Files tab can move ONE row instead of …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,8 +6,7 @@ const SseEvent = @import("sse.zig").SseEvent;
 
 const event_bus_mod = pabrikcore.event_bus;
 
-/// The central routing key. The frontend subscribes with the
-/// `git_file_stage` channel token, which `parseChannels` maps to this key.
+/// The central routing key.
 pub const RoutingKey = "git_file_stage";
 
 pub const EventStaged = "git_file_staged";
@@ -20,18 +17,13 @@ pub const GitFileStageEventInput = struct {
     action: []const u8,
     /// The repo-relative path that moved.
     path: []const u8,
-    /// The worktree the git command ran in. The frontend filters on this:
-    /// one browser tab can show several worktrees, and only the panel bound
-    /// to THIS cwd may move a row.
+    /// The worktree the git command ran in. The frontend filters on this
     cwd: []const u8,
-    /// True when the git command failed for this path. The frontend then
-    /// leaves the row where it is rather than moving a file that did not
-    /// move.
+    /// True when the git command failed for this path.
     failed: bool = false,
 };
 
-/// Emit one file-stage lifecycle event. No-op when `event_bus` is null (unit
-/// tests, and any caller that has no bus).
+/// Emit one file-stage lifecycle event.
 pub fn emitGitFileStageEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -55,8 +47,7 @@ pub fn emitGitFileStageEvent(
         "git_file_stage_unknown";
 
     bus.emit(SseEvent, RoutingKey, .{
-        // The routing-key literal, not a session id: this channel is not
-        // session-scoped (see the module docstring).
+        // The routing-key literal, not a session id: this channel is not session-scoped (see the module docstring).
         .session_id = RoutingKey,
         .data = data,
         .event_type = event_type_name,
@@ -131,9 +122,7 @@ test "each action maps to its own granular wire name" {
         captured = null;
         defer alloc.free(ev.data);
         try testing.expectEqualStrings(c.want, ev.event_type orelse "");
-        // The envelope id is the routing-key literal, NOT a session id —
-        // this channel is cwd-scoped, and the frontend filters on the
-        // payload's `cwd`.
+        // The envelope id is the routing-key literal, NOT a session id — this channel is cwd-scoped, and the frontend filters on the payload's `cwd`.
         try testing.expectEqualStrings(RoutingKey, ev.session_id);
     }
 }
@@ -156,8 +145,7 @@ test "the payload carries the path, cwd and failure flag" {
 
     try testing.expect(captured != null);
     const data = captured.?.data;
-    // `parsed` borrows slices into `data`, so it must be deinit'd BEFORE the
-    // buffer is freed — the other order is a use-after-free.
+    // `parsed` borrows slices into `data`, so it must be deinit'd BEFORE the buffer is freed — the other order is a use-after-free.
     {
         const parsed = try std.json.parseFromSlice(std.json.Value, alloc, data, .{});
         defer parsed.deinit();

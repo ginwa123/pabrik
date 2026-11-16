@@ -10,8 +10,7 @@ const admin_a = "owner@example.com";
 const admin_b = "teammate@example.com";
 const password = "supersecret123";
 
-/// Issue a request WITHOUT a status assertion — the caller asserts, because
-/// the status IS the behaviour under test.
+/// Issue a request WITHOUT a status assertion — the caller asserts, because the status IS the behaviour under test.
 fn send(
     h: *Harness,
     method: harness.HttpMethod,
@@ -75,8 +74,7 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "pabrik_session={s}", .{std.mem.trim(u8, first, " \t\r\n")});
 }
 
-/// The workspace the caller owns. Each `create-admin` provisions one Default
-/// workspace, and nobody else is a member of it yet.
+/// The workspace the caller owns.
 fn ownedWorkspaceId(h: *Harness, cookie: []const u8) ![]u8 {
     var r = try send(h, .GET, "/api/workspaces", null, cookie);
     defer r.deinit();

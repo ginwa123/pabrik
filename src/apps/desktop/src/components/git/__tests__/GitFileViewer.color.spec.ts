@@ -1,6 +1,4 @@
-/** Code color in the git file viewer. `GitFileViewer` renders the SAME parsed unified diff as the
- * review sidebar, and used to render its code lines monochrome via
- * `v-html="escapeDiffHtml(line.content)"`. */
+/** Code color in the git file viewer. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import GitFileViewer from '../GitFileViewer.vue'
@@ -49,8 +47,7 @@ describe('GitFileViewer — code color', () => {
 
   it('keeps the change sign glued to the code, with no stray whitespace', async () => {
     const wrapper = await mountViewer('src/demo.ts', TS_DIFF)
-    // The sign is its own span and the code is now one span per token:
-    // a newline between inline spans must not render as a space.
+    // The sign is its own span and the code is now one span per token
     expect(wrapper.text()).toContain('+const added = 3')
     expect(wrapper.text()).toContain('-const gone = 2')
   })

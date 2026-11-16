@@ -18,21 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The board's "New task" form on a device that has a navigation bar.
- *
- * This is the half of the bug Robolectric cannot see. The form used to be a
- * platform `Dialog` opened with `usePlatformDefaultWidth = false`, which
- * compose-ui measures against the whole display and then resizes its window to
- * the measured child — so the pinned "▶ Create task & run agent" row was drawn
- * underneath the navigation bar and the screen edge cut it in half. A JVM test
- * with no bars passes against that layout; this one reads the real inset and
- * refuses a commit row that does not clear it.
- *
- * Read the inset from the *activity's* window rather than assuming a size: a
- * device with gesture navigation and one with three buttons disagree, and
- * neither is the answer.
- */
+/** The board's "New task" form on a device that has a navigation bar. */
 @RunWith(AndroidJUnit4::class)
 class NewTaskDialogDeviceLayoutTest {
 

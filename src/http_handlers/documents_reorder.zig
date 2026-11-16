@@ -9,8 +9,7 @@ const document_events = @import("../modules/agent/loop/document_events.zig");
 
 const ReorderBody = struct {
     ordered_ids: []const []const u8 = &.{},
-    /// Which level is being renumbered. Absent or null is the root, because a
-    /// reorder always names exactly one sibling list.
+    /// Which level is being renumbered.
     folder_id: ?[]const u8 = null,
 };
 

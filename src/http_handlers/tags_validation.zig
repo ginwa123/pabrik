@@ -6,8 +6,7 @@ pub const TagValidationError = error{
     InvalidTags,
 };
 
-/// Validate and normalize a tag input from the wire. Caller passes `raw:
-/// ?[]const u8` from the parsed request body.
+/// Validate and normalize a tag input from the wire. Caller passes `raw
 pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) (TagValidationError || std.mem.Allocator.Error)![]u8 {
     // null or empty string → "no tags" sentinel.
     if (raw == null or raw.?.len == 0) {
@@ -23,8 +22,7 @@ pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) 
     if (parsed.value != .array) return TagValidationError.InvalidTags;
     const arr = parsed.value.array;
 
-    // Empty array → "no tags" sentinel (matches the "no tags
-    // supplied" semantics of null/empty).
+    // Empty array → "no tags" sentinel (matches the "no tags supplied" semantics of null/empty).
     if (arr.items.len == 0) {
         return allocator.dupe(u8, "");
     }
@@ -41,8 +39,7 @@ pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) 
     for (arr.items, 0..) |item, i| {
         if (item != .string) return TagValidationError.InvalidTags;
 
-        // Strip leading/trailing whitespace (the chip input may
-        // submit tags with spaces if the user pastes them).
+        // Strip leading/trailing whitespace (the chip input may submit tags with spaces if the user pastes them).
         const tag = std.mem.trim(u8, item.string, " \t\n\r");
 
         // Reject empty tags after trim.
@@ -59,8 +56,6 @@ pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) 
         }
 
         // Build the lowercase key for case-insensitive dedupe.
-        // Allocate a fresh buffer for the lowercased form so we
-        // don't mutate the (borrowed) tag string.
         var lower_buf: [50]u8 = undefined;
         if (tag.len > lower_buf.len) return TagValidationError.InvalidTags; // safety belt
         for (tag, 0..) |c, idx| {
@@ -68,8 +63,7 @@ pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) 
         }
         const lower_slice = lower_buf[0..tag.len];
 
-        // Duplicate check via the hashmap. `getOrPut` returns
-        // `found_existing = true` if the key already exists.
+        // Duplicate check via the hashmap.
         const gop = seen.getOrPut(allocator, lower_slice) catch return TagValidationError.InvalidTags;
         if (gop.found_existing) {
             // Duplicate tag — skip this entry. Don't append to output.
@@ -90,9 +84,7 @@ pub fn validateAndNormalizeTags(allocator: std.mem.Allocator, raw: ?[]const u8) 
     return out.toOwnedSlice(allocator);
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 const testing = std.testing;
 
@@ -160,9 +152,7 @@ test "validateAndNormalizeTags: rejects tag with forbidden chars" {
 }
 
 test "validateAndNormalizeTags: rejects tag > 50 chars" {
-    // Build a 51-char tag and wrap it as a JSON-encoded array. Use
-    // std.mem.concat (returns []const u8, sentinel-free) so the resulting
-    // buffer can be passed straight through to the validator.
+    // Build a 51-char tag and wrap it as a JSON-encoded array.
     const too_long = "a" ** 51;
     const json = try std.mem.concat(testing.allocator, u8, &.{ "[\"", too_long[0..51], "\"]" });
     defer testing.allocator.free(json);
@@ -185,18 +175,14 @@ test "validateAndNormalizeTags: accepts all allowed chars" {
 }
 
 test "validateAndNormalizeTags: trims whitespace from tags" {
-    // The chip input may submit a tag with leading/trailing whitespace
-    // if the user pasted it. Trim is safe (current char whitelist
-    // doesn't include space).
+    // The chip input may submit a tag with leading/trailing whitespace if the user pasted it.
     const result = try validateAndNormalizeTags(testing.allocator, "[\"  bug  \"]");
     defer testing.allocator.free(result);
     try testing.expectEqualStrings("[\"bug\"]", result);
 }
 
 test "validateAndNormalizeTags: dedupe preserves first occurrence (case-insensitive)" {
-    // The frontend may send a list with case variations. The first
-    // occurrence (by array order) wins for casing; later duplicates
-    // are dropped silently.
+    // The frontend may send a list with case variations.
     const result = try validateAndNormalizeTags(testing.allocator, "[\"a\",\"A\",\"a\"]");
     defer testing.allocator.free(result);
     try testing.expectEqualStrings("[\"a\"]", result);

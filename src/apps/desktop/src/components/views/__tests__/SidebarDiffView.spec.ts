@@ -101,8 +101,7 @@ describe('SidebarDiffView', () => {
       message: 'looks good',
       formatted: '## Code Review looks good',
     })
-    // Structured save bubbles up; nothing is sent to the LLM and the
-    // popup closes — the inline thread is the confirmation.
+    // Structured save bubbles up; nothing is sent to the LLM and the popup closes — the inline thread is the confirmation.
     expect(wrapper.emitted('submit-review')).toBeUndefined()
     const saved = wrapper.emitted('comment-saved')
     expect(saved).toHaveLength(1)

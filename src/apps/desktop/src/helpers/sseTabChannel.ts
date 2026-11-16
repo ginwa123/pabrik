@@ -1,5 +1,4 @@
-// src/apps/desktop/src/helpers/sseTabChannel.ts Cross-tab coordination for the global SSE
-// connection. PROBLEM: browsers cap HTTP/1.1 connections per origin at ~6.
+// src/apps/desktop/src/helpers/sseTabChannel.ts Cross-tab coordination for the global SSE connection.
 export interface TabChannelLike {
   postMessage(message: unknown): void
   addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
@@ -34,9 +33,7 @@ export interface TabChannelOptions {
   onRemoteState: (state: string) => void
   /** A follower asking the leader to reconnect. */
   onRemoteReconnect: () => void
-  /** A window that may have MISSED events should refresh its data: * it just became leader (the
-   * handover gap dropped events), or * it was hidden longer than `resyncAfterHiddenMs` and came
-   * back (background tabs get frozen/throttled and can miss deliveries). */
+  /** A window that may have MISSED events should refresh its data: * it just became leader (the handover gap dropped events), or * it was hidden longer than … */
   onResync?: (reason: string) => void
   /** Hidden-for-longer-than-this triggers a resync on return (default 5s). */
   resyncAfterHiddenMs?: number
@@ -86,14 +83,12 @@ function randomTabId(): string {
   return `t_${Math.random().toString(36).slice(2, 10)}`
 }
 
-/** Create the coordinator. `start()` must be called once the caller's callbacks
- * are wired; everything after that is driven by channel messages and timers. */
+/** Create the coordinator. */
 export function createTabChannel(opts: TabChannelOptions): TabChannel {
   const channelName = opts.channelName ?? DEFAULTS.channelName
   const tabId = opts.tabId ?? randomTabId()
   const isVisible = opts.isVisible ?? (() => {
-    // `document` is absent in some hosts (SSR/build); treat that as visible so a
-    // single-window host always leads.
+    // `document` is absent in some hosts (SSR/build); treat that as visible so a single-window host always leads.
     const d = (globalThis as { document?: { visibilityState?: string } }).document
     return d?.visibilityState ? d.visibilityState === 'visible' : true
   })
@@ -144,14 +139,11 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     try {
       channel.postMessage(msg)
     } catch {
-      // A non-cloneable payload must never break the local path — the leader
-      // still dispatches locally; followers just miss this one.
+      // A non-cloneable payload must never break the local path — the leader still dispatches locally; followers just miss this one.
     }
   }
 
-  /** Tell the app it may be missing data. Two things cause that: * we just took over the connection
-   * — events during the handover gap were delivered to nobody; * we were hidden long enough for the
-   * browser to freeze/throttle us, so deliveries (and rendering) were skipped. */
+  /** Tell the app it may be missing data. */
   function maybeResync(reason: string): void {
     if (closed) return
     if (!opts.onResync) return
@@ -176,8 +168,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     opts.onRoleChange?.('leader')
     console.log(`[sseTabChannel] became leader (${reason})`)
     opts.onBecomeLeader()
-    // The gap between the old leader's last event and our fresh connection is
-    // invisible to everyone: ask the app to refresh what it shows.
+    // The gap between the old leader's last event and our fresh connection is invisible to everyone: ask the app to refresh what it shows.
     maybeResync(`became leader (${reason})`)
   }
 
@@ -211,9 +202,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
   function armLeaderWatchdog(): void {
     if (leaderWatchdog !== null) clearTimeout(leaderWatchdog)
     if (closed || leader) return
-    // A HIDDEN tab must not take over on a timeout: browsers throttle its timers,
-    // so it would be a worse leader than the one it replaced. It only takes over
-    // on an explicit `down` (see `scheduleElection`).
+    // A HIDDEN tab must not take over on a timeout: browsers throttle its timers, so it would be a worse leader than the one it replaced.
     if (!isVisible()) return
     leaderWatchdog = setTimeout(() => {
       leaderWatchdog = null
@@ -226,8 +215,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
     }, leaderTimeoutMs)
   }
 
-  /** Claim after a jittered delay, so simultaneous candidates don't all win. `force` skips the
-   * "someone else may have claimed while we waited" re-check. */
+  /** Claim after a jittered delay, so simultaneous candidates don't all win. */
   function scheduleElection(reason: string, force = false): void {
     if (closed || leader || claimTimer !== null) return
     const jitter = Math.random() * electionJitterMs
@@ -262,8 +250,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
         leaderVisible = peer.visible
         leaderTabId = peer.tabId
         if (leader) {
-          // Two leaders (or an outranking newcomer): the loser steps down so the
-          // profile converges on exactly one connection.
+          // Two leaders (or an outranking newcomer): the loser steps down so the profile converges on exactly one connection.
           if (outranksTheirs(peer)) {
             post({ k: 'here', ...myPeer() })
           } else {
@@ -271,8 +258,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
           }
           return
         }
-        // A visible tab takes over from a hidden leader: browsers throttle hidden tabs, so leaving
-        // a stale hidden leader in charge stalls the whole profile.
+        // A visible tab takes over from a hidden leader: browsers throttle hidden tabs, so leaving a stale hidden leader in charge stalls the whole profile.
         if (shouldPreemptHiddenLeader(peer)) {
           scheduleElection('visible tab preempting hidden leader', true)
           return
@@ -284,8 +270,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
         lastLeaderBeatAt = 0
         leaderTabId = null
         stopHeartbeat()
-        // The leader disappeared: election. Hidden tabs wait longer so a visible
-        // tab (if any) wins.
+        // The leader disappeared: election.
         scheduleElection('leader stepped down')
         return
       case 'state':
@@ -314,8 +299,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
       try {
         channel = factory(channelName)
       } catch (e) {
-        // No BroadcastChannel (old engine, restricted context): behave exactly
-        // like the pre-tab-sharing code — this tab owns the connection.
+        // No BroadcastChannel (old engine, restricted context): behave exactly like the pre-tab-sharing code — this tab owns the connection.
         console.warn('[sseTabChannel] BroadcastChannel unavailable; running solo:', e)
         becomeLeader('no BroadcastChannel')
         return
@@ -327,12 +311,10 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
       }
       channel.addEventListener('message', onMessage)
 
-      // Ask whether anyone is already leading; if nobody answers (and no
-      // heartbeat arrives) we become the leader ourselves.
+      // Ask whether anyone is already leading; if nobody answers (and no heartbeat arrives) we become the leader ourselves.
       post({ k: 'who', ...myPeer() })
       armLeaderWatchdog()
-      // Claim straight away when nobody answers within one heartbeat — this makes
-      // the single-tab case as fast as it was before tab sharing existed.
+      // Claim straight away when nobody answers within one heartbeat — this makes the single-tab case as fast as it was before tab sharing existed.
       claimTimer = setTimeout(() => {
         claimTimer = null
         if (closed || leader) return
@@ -341,8 +323,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
       const ct = claimTimer as unknown as { unref?: () => void }
       ct.unref?.()
 
-      // A visible tab preempts a hidden leader: browsers pause/throttle streams in
-      // hidden tabs, so following the visible one keeps the feed live.
+      // A visible tab preempts a hidden leader: browsers pause/throttle streams in hidden tabs, so following the visible one keeps the feed live.
       onVisibility = () => {
         if (closed) return
         if (isVisible()) {
@@ -357,9 +338,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
             // Nobody visible is leading (or nobody at all): make sure SOMETHING is.
             armLeaderWatchdog()
           }
-          // We may have been frozen/throttled while hidden, missing both
-          // deliveries and rendering — ask the app to refresh. A quick alt-tab
-          // stays below the threshold and costs nothing.
+          // We may have been frozen/throttled while hidden, missing both deliveries and rendering — ask the app to refresh.
           if (hiddenForMs >= resyncAfterHiddenMs) {
             maybeResync(`visible after ${Math.round(hiddenForMs / 1000)}s hidden`)
           }
@@ -367,8 +346,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
         }
         hiddenSince = Date.now()
         if (leader) {
-          // We just went hidden: keep leading (no visible alternative yet) but
-          // advertise the change so a visible tab can take over.
+          // We just went hidden: keep leading (no visible alternative yet) but advertise the change so a visible tab can take over.
           leaderVisible = false
           post({ k: 'beat', ...myPeer() })
         }
@@ -411,9 +389,7 @@ export function createTabChannel(opts: TabChannelOptions): TabChannel {
 
     close(): void {
       if (closed) return
-      // Announce the handover BEFORE flipping the internal `closed` flag: `post()` is a no-op once
-      // closed, so posting after the flag would silently drop the `down` message and the remaining
-      // tabs would not take over until the heartbeat timeout (caught by `sseTabChannel.spec.ts >.
+      // Announce the handover BEFORE flipping the internal `closed` flag: `post()` is a no-op once closed, so posting after the flag would silently drop the `down` …
       if (leader) post({ k: 'down', tabId })
       closed = true
       stopHeartbeat()

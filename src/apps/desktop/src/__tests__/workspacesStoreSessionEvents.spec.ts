@@ -1,5 +1,4 @@
-/** Tests for the workspaces store's session-events handling. The backend cascade for task rename
- * emits a `session.updated` event on /api/sessions/stream. */
+/** Tests for the workspaces store's session-events handling. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -17,9 +16,7 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import type { SessionEvent } from '../api'
 
-/**  * Test-only stub SseClient. We don't drive state transitions from these tests (the bus's `state`
- * ShallowRef is not asserted here), but the install path requires a real-looking client — see
- * sseBus.spec.ts / App.spec.ts for the same helper. */
+/** Test-only stub SseClient. */
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,17 +43,13 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
       configurable: true,
     })
 
-    // Install the bus BEFORE the store's `init()` is called — `installSessionEventHandlers` invokes
-    // `useSseBus()` which throws if the bus hasn't been installed yet. Replace the underlying
-    // SseClient so we never touch the network in tests.
+    // Install the bus BEFORE the store's `init()` is called — `installSessionEventHandlers` invokes `useSseBus()` which throws if the bus hasn't been installed yet.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
     __setSseBusGlobalClient(makeStubClient('connecting'))
 
-    // Stub the workspaces/items API so init() doesn't hit the
-    // network. The same stub pattern is used by
-    // workspacesStoreInit.spec.ts and workspacesStoreTaskTypes.spec.ts.
+    // Stub the workspaces/items API so init() doesn't hit the network.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
   })
@@ -66,9 +59,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     vi.restoreAllMocks()
   })
 
-  /**    * Install the bus-backed handlers AND seed the store. Order matters: `init()` resets
-   * `workspaces.value` to `[]` on completion (or to the fetched list), so we seed AFTER the install
-   * call returns. */
+  /** Install the bus-backed handlers AND seed the store. */
   async function setupHandlersAndSeed() {
     const ws = useWorkspacesStore()
     await ws.init()
@@ -101,8 +92,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     const ws = useWorkspacesStore()
     // First init — installs the handler, resets workspaces.value to [].
     await ws.init()
-    // Second init — must NOT double-register the handler. The install flag is closure-scoped inside
-    // the store, so a second init() in the same store IS the no-op path (the flag is already true).
+    // Second init — must NOT double-register the handler.
     await ws.init()
     // Seed after the second init so the handler has data to mutate.
     ws.workspaces = [
@@ -232,14 +222,11 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBeNull()
   })
 
-  // Regression: switching from a chat to a task used to leave the navigation store's `activeChatId`
-  // populated with the prior chat's id.
+  // Regression: switching from a chat to a task used to leave the navigation store's `activeChatId` populated with the prior chat's id.
   it('setActiveTask clears navigationStore.activeChatId on non-null taskId', async () => {
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
-    // Simulate "user was viewing a chat, then clicks a task". navigationStore.setActiveChat
-    // prepends `chat-` to the session id passed in, so passing 'old_session' yields activeChatId
-    // === 'chat-old_session'.
+    // Simulate "user was viewing a chat, then clicks a task". navigationStore.setActiveChat prepends `chat-` to the session id passed in, so passing 'old_session' …
     nav.setActiveChat('old_session', 'Old Chat')
     expect(nav.activeChatId).toBe('chat-old_session')
 
@@ -251,9 +238,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(null) does NOT clear navigationStore.activeChatId', async () => {
-    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page instead of <ChatView>): the
-    // unconditional `clearActiveChat()` in `setActiveTask` was breaking the chat-nav paths in
-    // Sidebar.vue:316-322 and ChatsList.vue:220-232, where `setActiveChat(...)` is called.
+    // REGRESSION (2026-07-16, `view=chat&session=X` showed welcome page instead of <ChatView>): the unconditional `clearActiveChat()` in `setActiveTask` was breaking …
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     ws.setActiveTask('task_1')
@@ -267,9 +252,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('setActiveTask(taskId) DOES clear navigationStore.activeChatId', async () => {
-    // The opposite-direction invariant: ACTIVATING a task must clear any active chat, otherwise the
-    // v-else-if chain at AppLayout.vue:1459 (`currentView === 'task' && activeTask`) and the
-    // v-else-if at AppLayout.vue:1611 (`activeChatId.startsWith('chat-')`) would BOTH be true.
+    // The opposite-direction invariant: ACTIVATING a task must clear any active chat, otherwise the v-else-if chain at AppLayout.vue:1459 (`currentView === 'task' && …
     const ws = await setupHandlersAndSeed()
     const nav = useNavigationStore()
     nav.setActiveChat('pre_task', 'Pre-Task Chat')
@@ -282,8 +265,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
     expect(ws.activeTaskId).toBe('task_1')
   })
 
-  // ─── onSessionEvent fan-out (ChatsList regression fix) ─────────────────── The internal handler
-  // mutates workspace tree state.
+  // ─── onSessionEvent fan-out (ChatsList regression fix) ───────────────────
   it('fan-outs session.updated events to onSessionEvent subscribers', async () => {
     const ws = await setupHandlersAndSeed()
 
@@ -329,9 +311,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
   })
 
   it('fan-outs session.created events to onSessionEvent subscribers', async () => {
-    // The internal handler deliberately ignores 'created' (tasks are created via POST /tasks, not
-    // via session.created) — but external subscribers like ChatsList still need to see the event so
-    // the new session appears in their list.
+    // The internal handler deliberately ignores 'created' (tasks are created via POST /tasks, not via session.created) — but external subscribers like ChatsList …
     const ws = await setupHandlersAndSeed()
 
     const cb = vi.fn()
@@ -394,8 +374,7 @@ describe('useWorkspacesStore session events (via sseBus)', () => {
       updated_at: '2024-01-02T00:00:00Z',
     })
 
-    // Both subscribers got called (the throwing one threw, was
-    // caught + logged, and the next subscriber still ran).
+    // Both subscribers got called (the throwing one threw, was caught + logged, and the next subscriber still ran).
     expect(consoleSpy).toHaveBeenCalled()
     expect(goodCb).toHaveBeenCalledTimes(1)
     consoleSpy.mockRestore()

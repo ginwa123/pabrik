@@ -1,15 +1,11 @@
-//! Validation + joining helpers for `workspace_item_tasks.image_urls`
-//! (Migration 069 — kanban image urls column).
+//! Validation + joining helpers for `workspace_item_tasks.image_urls` (Migration 069 — kanban image urls column).
 
 const std = @import("std");
 
-/// Cap on the total joined `image_urls` payload (10 MB). The frontend
-/// pre-downscales images via `<canvas>` to < 4 MB raw, so the typical base64
-/// payload is 5-6 MB.
+/// Cap on the total joined `image_urls` payload (10 MB).
 pub const MAX_IMAGE_URLS_BYTES: usize = 10 * 1024 * 1024;
 
-/// Validate each URL in `joined` is a `data:image/<mime>;base64,...` URL and
-/// the total byte length is within `MAX_IMAGE_URLS_BYTES`.
+/// Validate each URL in `joined` is a `data:image/<mime>;base64,...` URL and the total byte length is within `MAX_IMAGE_URLS_BYTES`.
 pub fn validateImageUrls(joined: []const u8) ![]const u8 {
     if (joined.len > MAX_IMAGE_URLS_BYTES) return error.ImageUrlsTooLarge;
     if (joined.len == 0) return joined; // empty = no images
@@ -23,8 +19,7 @@ pub fn validateImageUrls(joined: []const u8) ![]const u8 {
     return joined;
 }
 
-/// `data:image/<mime>;base64,<payload>` — the only shape the frontend's
-/// `FileReader.readAsDataURL` produces.
+/// `data:image/<mime>;base64,<payload>` — the only shape the frontend's `FileReader.readAsDataURL` produces.
 fn isValidDataUrl(segment: []const u8) bool {
     const prefix = "data:image/";
     if (!std.mem.startsWith(u8, segment, prefix)) return false;
@@ -55,8 +50,7 @@ test "validateImageUrls accepts multiple data URLs joined with ||" {
 }
 
 test "validateImageUrls rejects non-data URLs" {
-    // http:// should NOT be accepted (security: prevents `<img>` from
-    // pointing at private network resources).
+    // http:// should NOT be accepted (security: prevents `<img>` from pointing at private network resources).
     const result = validateImageUrls("http://example.com/foo.png");
     try std.testing.expectError(error.InvalidImageUrl, result);
 }
@@ -82,17 +76,14 @@ test "validateImageUrls rejects empty MIME type" {
 }
 
 test "validateImageUrls tolerates empty segments between consecutive ||" {
-    // The frontend's join helper always produces non-empty segments,
-    // but tolerate the trailing `||` case for robustness (e.g. when
-    // joining in user space).
+    // The frontend's join helper always produces non-empty segments, but tolerate the trailing `||` case for robustness (e.g. when joining in user space).
     const joined = "data:image/png;base64,abc||";
     const result = try validateImageUrls(joined);
     try std.testing.expectEqualStrings(joined, result);
 }
 
 test "validateImageUrls accepts payloads at the cap" {
-    // Boundary check: a payload that is exactly the cap is accepted (the
-    // check is `> cap`, not `>= cap`).
+    // Boundary check: a payload that is exactly the cap is accepted (the check is `> cap`, not `>= cap`).
     try std.testing.expectEqual(@as(usize, 10 * 1024 * 1024), MAX_IMAGE_URLS_BYTES);
     // A small payload that's well under the cap validates.
     const ok = "data:image/png;base64,abc";

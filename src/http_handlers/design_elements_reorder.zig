@@ -1,6 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reorder`.
-//! Reorder 1+ elements on a page along the z-axis.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reorder`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,8 +13,7 @@ const ReorderElementsBody = struct {
     element_ids: []const []const u8 = &.{},
 };
 
-/// Domain-level error set. The handler maps each variant to an
-/// HTTP status code via two exhaustive switches below.
+/// Domain-level error set.
 pub const DesignElementsReorderError = error{
     /// `:page_id` path param was missing or empty.
     PageIdRequired,
@@ -36,9 +33,7 @@ pub const DesignElementsReorderError = error{
     OutOfMemory,
 };
 
-/// Map a `design_model.ReorderMode` enum variant to its lowercase string
-/// form. The wire side (`parsed.mode`) is the string; the model side wants
-/// the enum. `std.meta.stringToEnum` does the inverse.
+/// Map a `design_model.ReorderMode` enum variant to its lowercase string form.
 fn modeFromString(s: []const u8) ?design_model.ReorderMode {
     return std.meta.stringToEnum(design_model.ReorderMode, s);
 }
@@ -92,9 +87,7 @@ pub fn designElementsReorderHandler(
         });
     };
 
-    // 3. Reject empty element_ids BEFORE the model lookup (defence in
-    //    depth — the model would also reject, but we'd waste a
-    //    page_id SELECT round-trip).
+    // 3.
     if (parsed.element_ids.len == 0) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -143,8 +136,7 @@ pub fn designElementsReorderHandler(
         allocator.free(reordered);
     }
 
-    // 5. Build the success response (200 OK) with the `{reordered}`
-    //    envelope, in top-to-bottom z-order.
+    // 5.
     const Response = struct {
         reordered: []const http_response.DesignElementResponse,
     };
@@ -163,9 +155,7 @@ pub fn designElementsReorderHandler(
     });
 }
 
-// ===== Tests merged from design_elements_reorder_test.zig (2026-09-11
-// flatten) ===== Behavioural tests for the `POST .../elements/reorder` HTTP
-// handler.
+// ===== Tests merged from design_elements_reorder_test.zig (2026-09-11 flatten) ===== Behavioural tests for the `POST .../elements/reorder` HTTP handler.
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -259,9 +249,7 @@ fn readZ(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !?i64 {
     return null;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Behavioural tests
-// ───────────────────────────────────────────────────────────────────────
 
 test "reorderElements bring_to_front puts selected ids at the top in input order" {
     var s = try setupDb();
@@ -280,9 +268,7 @@ test "reorderElements bring_to_front puts selected ids at the top in input order
         s.alloc.free(result);
     }
 
-    // After bring_to_front [a, c]: a gets z=3 (top, since c had z=2 already
-    // and is first in input order... wait, this is bring_to_front, not
-    // preserve-input-order.
+    // After bring_to_front [a, c]: a gets z=3 (top, since c had z=2 already and is first in input order... wait, this is bring_to_front, not preserve-input-order.
     try testing.expectEqual(@as(?i64, 3), try readZ(s.alloc, &s.db, "a"));
     try testing.expectEqual(@as(?i64, 4), try readZ(s.alloc, &s.db, "c"));
     try testing.expectEqual(@as(?i64, 1), try readZ(s.alloc, &s.db, "b"));
@@ -311,8 +297,7 @@ test "reorderElements bring_forward swaps the selected element with the next sib
     try testing.expectEqual(@as(?i64, 1), try readZ(s.alloc, &s.db, "c"));
 }
 
-// Note: "page not found" detection at the model layer is brittle (the current
-// implementation collapses missing-page into a generic error).
+// Note: "page not found" detection at the model layer is brittle (the current implementation collapses missing-page into a generic error).
 
 test "reorderElements returns BadElementId when an id does not resolve on the page" {
     var s = try setupDb();

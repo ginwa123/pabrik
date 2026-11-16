@@ -65,42 +65,32 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // Active task within the selected workspace item
   const activeTaskId = ref<string | null>(null)
 
-  // FIX (task-url-overwrite, task_1785959660154, 2026-08-06): Navigation flag the AppLayout URL
-  // sync watcher checks before mirroring activeWorkspaceItemId / activeDesignPageId to the URL. Set
-  // true at the start of Sidebar.handleSelectTask and cleared after the router.push resolves.
+  // FIX (task-url-overwrite, task_1785959660154, 2026-08-06): Navigation flag the AppLayout URL sync watcher checks before mirroring activeWorkspaceItemId / …
   const isNavigatingToTask = ref(false)
 
-  // Kanban sort-by round-trip preservation (plan 2026-08-06-kanban- sort-by.md): when the user
-  // opens a kanban task from the kanban board, Sidebar snapshots the current `?sorts=` into this
-  // field.
+  // Kanban sort-by round-trip preservation (plan 2026-08-06-kanban- sort-by.md): when the user opens a kanban task from the kanban board, Sidebar snapshots the …
   const savedSortsParam = ref<string>('')
 
-  // NEW (Chunk 1 of design-element-drag-and-drop plan). The currently active design page id, set by
-  // DesignView on mount / tab switch and cleared on unmount.
+  // NEW (Chunk 1 of design-element-drag-and-drop plan).
   const activeDesignPageId = ref<string>('')
   function setActiveDesignPage(pageId: string): void {
     activeDesignPageId.value = pageId
   }
 
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): single source of truth for design pages,
-  // keyed by workspace item id. Both the sidebar tree (WorkspaceItem.vue) and the design canvas
-  // (DesignView.vue) read from this map.
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): single source of truth for design pages, keyed by workspace item id.
   const designPagesByItemId = ref<Record<string, DesignPage[]>>({})
 
-  // In-flight guard for `fetchDesignPages` — if a fetch is already pending for the same
-  // workspaceItemId, return its promise instead of starting a second one.
+  // In-flight guard for `fetchDesignPages` — if a fetch is already pending for the same workspaceItemId, return its promise instead of starting a second one.
   const designPagesInFlight = new Map<string, Promise<DesignPage[]>>()
 
   // NEW (kanban task search feature). Map<itemId, q> — the active search query per board.
   const activeSearchQueries: Map<string, string> = new Map()
 
   // NEW (kanban-sort-by).
-  // Map<itemId, sortField> + Map<itemId, direction> — the active per-board sort.
   const activeSortBy: Map<string, 'created_at' | 'updated_at' | 'name'> = new Map()
   const activeSortDirection: Map<string, 'asc' | 'desc'> = new Map()
 
-  // Per-column FIRST-PAGE loading signal. A reactive Set of `${itemId}:${columnId}` keys, true
-  // while that column's page-1 fetch is in flight.
+  // Per-column FIRST-PAGE loading signal.
   const firstPageLoadingColumns = ref<Set<string>>(new Set())
 
   const firstPageLoadingKey = (itemId: string, columnId: string) => `${itemId}:${columnId}`
@@ -109,8 +99,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return firstPageLoadingColumns.value.has(firstPageLoadingKey(itemId, columnId))
   }
 
-  // Design-element fetch signal. Holds `${itemId}:${pageId}` while that page's elements are in
-  // flight, null otherwise.
+  // Design-element fetch signal.
   const designElementsLoadingKey = ref<string | null>(null)
 
   function isDesignElementsLoading(itemId: string, pageId: string): boolean {
@@ -125,17 +114,14 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   // Workspaces with their items
   const workspaces = ref<Workspace[]>([])
 
-  // The persisted dropdown selection, validated against the loaded
-  // list — a stale id (workspace deleted in another tab / by API)
-  // falls through to the item-derived / first-workspace fallbacks.
+  // The persisted dropdown selection, validated against the loaded list — a stale id (workspace deleted in another tab / by API) falls through to the item-derived …
   function storedActiveWorkspace(): Workspace | undefined {
     const saved = readActiveWorkspaceKey()
     if (!saved) return undefined
     return workspaces.value.find((ws) => ws.id === saved)
   }
 
-  // ─── Kanban actions (Chunk 5 of workspace-item-kanban plan) ───────────── These five actions
-  // back the kanban board UI.
+  // ─── Kanban actions (Chunk 5 of workspace-item-kanban plan) ─────────────
   function findItem(workspaceId: string, itemId: string): WorkspaceItem | undefined {
     const workspace = workspaces.value.find((ws) => ws.id === workspaceId)
     if (!workspace) return undefined
@@ -152,9 +138,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return allWorkspaceItems.value.find((item) => item.id === activeWorkspaceItemId.value)
   })
 
-  // Get active workspace. Precedence (plan decision log): explicit selection (dropdown / URL
-  // restore) → persisted choice → workspace owning the active item (legacy fallback) → first
-  // workspace, so the dropdown and Projects section always have a target once any workspace exists.
+  // Get active workspace.
   const activeWorkspace = computed(() => {
     return (
       workspaces.value.find((ws) => ws.id === activeWorkspaceId.value) ||
@@ -181,8 +165,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return item.tasks.find((t) => t.id === activeTaskId.value) || null
   })
 
-  // NEW (kanban-embed-chatview plan, Task 1): "which item owns the active task". Walks every
-  // workspace's items + tasks looking for activeTaskId; returns the containing item's id or null.
+  // NEW (kanban-embed-chatview plan, Task 1): "which item owns the active task".
   const activeTaskWorkspaceItemId = computed(() => {
     const taskId = activeTaskId.value
     if (!taskId) return null
@@ -275,9 +258,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  /** Set (or clear) a project row's glyph; `null` is "Reset to default".
-   * Optimistic, with a rollback on failure — a sidebar that keeps a glyph the
-   * database never stored is worse than one that flickers. */
+  /** Set (or clear) a project row's glyph; `null` is "Reset to default". */
   async function setItemIcon(
     workspaceId: string,
     itemId: string,
@@ -423,28 +404,18 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     activeWorkspaceItemId,
     expandedItemIds,
     activeTaskId,
-    // FIX (task-url-overwrite, task_1785959660154, 2026-08-06): Navigation flag the AppLayout URL
-    // sync watcher checks before mirroring activeWorkspaceItemId / activeDesignPageId to the URL.
-    // Set true at the start of Sidebar.handleSelectTask and cleared after the router.push resolves.
+    // FIX (task-url-overwrite, task_1785959660154, 2026-08-06): Navigation flag the AppLayout URL sync watcher checks before mirroring activeWorkspaceItemId / …
     isNavigatingToTask,
-    // Kanban sort-by round-trip preservation (plan 2026-08-06): snapshots the active `?sorts=` when
-    // the user enters a task view, read back by AppLayout.handleCloseTaskView to restore the sort
-    // URL on close.
+    // Kanban sort-by round-trip preservation (plan 2026-08-06): snapshots the active `?sorts=` when the user enters a task view, read back by …
     savedSortsParam,
-    // NEW (Chunk 1 of design-element-drag-and-drop plan): the currently
-    // active design page id, mirrored from DesignView so AppLayout's
-    // design handlers can route PATCH/PUT/DELETE to the right page.
+    // NEW (Chunk 1 of design-element-drag-and-drop plan): the currently active design page id, mirrored from DesignView so AppLayout's design handlers can route …
     activeDesignPageId,
-    // Kanban task search (Chunk 4): exposed so SSE handlers can read
-    // the active q and forward it on refetch.
+    // Kanban task search (Chunk 4): exposed so SSE handlers can read the active q and forward it on refetch.
     activeSearchQueries,
-    // Kanban sort-by (Chunk 3): exposed so SSE handlers can read the active sort and forward it on
-    // refetch. The cursor is tied to the sort order — using a different sort on a refetch would
-    // fetch a meaningless page.
+    // Kanban sort-by (Chunk 3): exposed so SSE handlers can read the active sort and forward it on refetch.
     activeSortBy,
     activeSortDirection,
-    // Per-column first-page loading signal (see the declaration above
-    // for why it is not `columnPagination[colId].isLoading`).
+    // Per-column first-page loading signal (see the declaration above for why it is not `columnPagination[colId].isLoading`).
     firstPageLoadingColumns,
     isFirstPageLoading,
     // Design-element fetch signal (see the declaration above).
@@ -463,19 +434,13 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     activeTaskWorkspaceItemId,
     // Actions
     ...initActions,
-    // Lazy per-workspace items (plan: 2026-09-22-revamp-ui-chats): loads one workspace's
-    // items/tasks/design pages on demand; runInit uses it for the active workspace,
-    // setActiveWorkspace for every switch. Idempotent + in-flight deduped.
+    // Lazy per-workspace items (plan: 2026-09-22-revamp-ui-chats): loads one workspace's items/tasks/design pages on demand; runInit uses it for the active …
     ensureWorkspaceItemsLoaded: itemLoader.ensureWorkspaceItemsLoaded,
     toggleWorkspaceItem,
     ...selection,
-    // NEW (Chunk 1 of design-element-drag-and-drop plan): mirror the
-    // active design page id from DesignView. Called on mount + tab
-    // switch, and cleared on unmount.
+    // NEW (Chunk 1 of design-element-drag-and-drop plan): mirror the active design page id from DesignView.
     setActiveDesignPage,
-    // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the design-pages cache + the actions
-    // that mutate it. Both WorkspaceItem.vue (sidebar tree) and DesignView.vue consume
-    // `designPagesByItemId.value[itemId]` directly.
+    // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the design-pages cache + the actions that mutate it.
     designPagesByItemId,
     ...designPages,
     ...workspaceCrud,
@@ -491,9 +456,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     ...agentRuns,
     ...kanbanColumns,
     ...taskMoves,
-    // Read helper for the kanbanSse single-row fast path: a moved/assigned task that is already
-    // cached needs only a refreshTask (1 row), while an uncached one still needs the full column
-    // fetch to materialize the missing row.
+    // Read helper for the kanbanSse single-row fast path: a moved/assigned task that is already cached needs only a refreshTask (1 row), while an uncached one still …
     findCachedTask: media.findCachedTask,
     ...designElements,
     ...designGeometry,

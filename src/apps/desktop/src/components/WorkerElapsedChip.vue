@@ -44,9 +44,7 @@ export interface WorkerActivity {
 const props = withDefaults(
   defineProps<{
     sessionId: string
-    /** `chip` — a pill with the elapsed time (sidebar rows, kanban card).
-     * `text` — bare text, for surfaces that already carry a status line
-     *          (kanban row metadata, task-detail rows). */
+    /** `chip` — a pill with the elapsed time (sidebar rows, kanban card). */
     variant?: 'chip' | 'text'
     /** A distinct `data-testid` lets each surface target its own chip. */
     testId?: string
@@ -54,16 +52,14 @@ const props = withDefaults(
   { variant: 'chip', testId: 'worker-elapsed-chip' },
 )
 
-// Additive sibling of `processingState`. The default keeps the component
-// renderable in isolation (a unit test, or a host that never provided it).
+// Additive sibling of `processingState`.
 const workerActivity = inject<Ref<Record<string, WorkerActivity>>>(
   'workerActivity',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a fresh ref per mount is the documented inject default.
   ref({}) as any,
 )
 
-// The shared app-wide ticker. Falls back to a static "now" so an isolated
-// mount still renders a label rather than nothing.
+// The shared app-wide ticker.
 const workerNow = inject<Ref<number>>('workerNow', ref(Date.now()))
 
 const activity = computed(() => workerActivity.value[props.sessionId] ?? null)

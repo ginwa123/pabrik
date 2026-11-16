@@ -63,8 +63,7 @@ describe('WorkerElapsedChip', () => {
   })
 
   it('turns amber once the heartbeat passes the stale threshold', () => {
-    // A long run whose last heartbeat is 9 minutes old: alive in the DB,
-    // but about to be reaped by the 600s cron.
+    // A long run whose last heartbeat is 9 minutes old: alive in the DB, but about to be reaped by the 600s cron.
     const wrapper = mountChip({
       s1: { startedAt: ago(600_000), lastActivityAt: ago(540_000), description: '' },
     })
@@ -74,9 +73,7 @@ describe('WorkerElapsedChip', () => {
   })
 
   it('re-renders when the shared ticker advances', async () => {
-    // The interval lives in App.vue (`workerNow`), not here — a sidebar
-    // mounts one chip per row and a timer per row would be a timer per
-    // row. The chip is pure derived state off that shared ref.
+    // The interval lives in App.vue (`workerNow`), not here — a sidebar mounts one chip per row and a timer per row would be a timer per row.
     const wrapper = mountChip({
       s1: { startedAt: ago(60_000), lastActivityAt: ago(1_000), description: '' },
     })

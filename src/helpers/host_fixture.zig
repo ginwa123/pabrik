@@ -1,12 +1,9 @@
 //! host_fixture — a fixture program that runs on EVERY host.
-//! `writeProgram` renders one `Payload` as a `#!/bin/sh` script on POSIX
-//! and a `.cmd` batch file on Windows, so no test needs `/bin/sh`.
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// What a fixture program should do. Every field is optional; the defaults
-/// produce a program that prints nothing and exits 0.
+/// What a fixture program should do.
 pub const Payload = struct {
     /// Text printed to stdout, verbatim, with no trailing newline added.
     stdout: []const u8 = "",
@@ -14,34 +11,25 @@ pub const Payload = struct {
     stderr: []const u8 = "",
     /// Process exit code.
     exit_code: u8 = 0,
-    /// When set, the program writes its own argv (one per line, argv[0]
-    /// excluded) to this path before doing anything else. This is how the
-    /// suites prove which argv was actually spawned.
+    /// When set, the program writes its own argv (one per line, argv[0] excluded) to this path before doing anything else.
     argv_file: ?[]const u8 = null,
-    /// When set, the program writes this text to `argv_file` instead of its
-    /// argv. Used by fixtures that need to record a computed value.
+    /// When set, the program writes this text to `argv_file` instead of its argv.
     argv_file_body: ?[]const u8 = null,
-    /// When set, the program creates this (empty) file. A sentinel: if the
-    /// file exists afterwards, the program ran.
+    /// When set, the program creates this (empty) file.
     touch_file: ?[]const u8 = null,
     /// When true, the program prints its working directory to stdout.
     print_cwd: bool = false,
     /// When true, the program sleeps for `sleep_ms` before anything else.
-    /// A fixture that outlives the caller's deadline.
     sleep_ms: ?u32 = null,
-    /// When true, the program kills itself with a signal (POSIX) or exits
-    /// with a distinctive code (Windows, which has no signal to send).
+    /// When true, the program kills itself with a signal (POSIX) or exits with a distinctive code (Windows, which has no signal to send).
     kill_self: bool = false,
     /// When true, the program writes `repeat` copies of `stdout` to stdout.
-    /// Used by the large-output tests.
     repeat: ?usize = null,
     /// When true, the program writes `repeat` copies of `stderr` to stderr.
     repeat_stderr: ?usize = null,
 };
 
-/// A throwaway directory under `.zig-cache/tmp` plus fixture programs inside
-/// it. `root` is the absolute path; programs are marked executable on POSIX
-/// (Windows needs no permission bit, and `cmd.exe` runs a `.cmd` directly).
+/// A throwaway directory under `.zig-cache/tmp` plus fixture programs inside it.
 pub const Fixture = struct {
     tmp: std.testing.TmpDir,
     root: []u8,
@@ -61,15 +49,11 @@ pub const Fixture = struct {
         self.allocator.free(self.root);
     }
 
-    /// Write a fixture program named `name` that behaves as `payload`
-    /// describes, and return its absolute path. On Windows the file is
-    /// `<name>.cmd`: an extension-less file is looked up as a binary.
+    /// Write a fixture program named `name` that behaves as `payload` describes, and return its absolute path.
     pub fn writeProgram(self: *Fixture, name: []const u8, payload: Payload) ![]u8 {
         const script = try renderProgram(self.allocator, payload);
         defer self.allocator.free(script);
-        // On Windows the payloads live in sidecar data files the batch file
-        // relays to its streams (`cmdEmitLine`). Both files, even an empty
-        // one: a script may reference a stream through `repeat` alone.
+        // On Windows the payloads live in sidecar data files the batch file relays to its streams (`cmdEmitLine`).
         if (builtin.os.tag == .windows) {
             try self.tmp.dir.writeFile(std.testing.io, .{
                 .sub_path = sidecarFileName(.stdout),
@@ -84,8 +68,6 @@ pub const Fixture = struct {
     }
 
     /// `writeProgram` for a body the caller rendered (`git_pr_close.ghScript`).
-    /// On Windows such a body must write its own sidecar data files, or it
-    /// names files that do not exist and emits nothing.
     pub fn writeProgramText(self: *Fixture, name: []const u8, script: []const u8) ![]u8 {
         const file_name = try self.programFileName(name);
         defer self.allocator.free(file_name);
@@ -99,8 +81,7 @@ pub const Fixture = struct {
         return std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ self.root, file_name });
     }
 
-    /// The on-disk name of a fixture program: `name` on POSIX,
-    /// `name.cmd` on Windows.
+    /// The on-disk name of a fixture program: `name` on POSIX, `name.cmd` on Windows.
     fn programFileName(self: *Fixture, name: []const u8) ![]u8 {
         if (builtin.os.tag == .windows) {
             return std.fmt.allocPrint(self.allocator, "{s}.cmd", .{name});
@@ -118,13 +99,10 @@ pub const Fixture = struct {
     }
 };
 
-/// The shape `dirLink` builds on a given host class. Named so a test can say
-/// which one it is looking at, and so a host with neither FAILS the test that
-/// needs a link instead of passing it vacuously.
+/// The shape `dirLink` builds on a given host class.
 pub const DirLinkKind = enum { posix_symlink, windows_junction };
 
-/// The kind of directory link this host can create WITHOUT a privilege, or
-/// `null` where this tree names no shape.
+/// The kind of directory link this host can create WITHOUT a privilege, or `null` where this tree names no shape.
 pub fn dirLinkKind() ?DirLinkKind {
     return switch (builtin.os.tag) {
         .windows => .windows_junction,
@@ -133,22 +111,16 @@ pub fn dirLinkKind() ?DirLinkKind {
     };
 }
 
-/// Point the directory link `link_abs` at the directory `target_abs` (which
-/// must exist; `link_abs` must not), in the shape this host can build without
-/// a privilege. Paths underneath it reparse through it on every host.
+/// Point the directory link `link_abs` at the directory `target_abs` (which must exist; `link_abs` must not), in the shape this host can build without a privilege.
 pub fn dirLink(allocator: std.mem.Allocator, io: std.Io, target_abs: []const u8, link_abs: []const u8) !void {
-    // Windows needs SeCreateSymbolicLinkPrivilege for a real symlink
-    // (`error.PermissionDenied` without it, which is what a CI runner has); a
-    // directory JUNCTION needs none and reparses the paths underneath it too.
+    // Windows needs SeCreateSymbolicLinkPrivilege for a real symlink (`error.PermissionDenied` without it, which is what a CI runner has); a directory JUNCTION needs …
     return switch (dirLinkKind() orelse return error.NoDirectoryLinkShapeForHost) {
         .posix_symlink => std.Io.Dir.symLinkAbsolute(io, target_abs, link_abs, .{ .is_directory = true }),
         .windows_junction => dirLinkJunction(allocator, io, link_abs, target_abs),
     };
 }
 
-/// `mklink /J` is a `cmd.exe` builtin with no Win32 entry point of its own, so
-/// the command goes in a `.cmd` script — `std.process.spawn` runs a `.cmd`
-/// through `cmd.exe` — where a target path with a space needs no escaping.
+/// `mklink /J` is a `cmd.exe` builtin with no Win32 entry point of its own, so the command goes in a `.cmd` script — `std.process.spawn` runs a `.cmd` through …
 fn dirLinkJunction(allocator: std.mem.Allocator, io: std.Io, link_abs: []const u8, target_abs: []const u8) !void {
     var script_dir = std.testing.tmpDir(.{});
     defer script_dir.cleanup();
@@ -164,8 +136,7 @@ fn dirLinkJunction(allocator: std.mem.Allocator, io: std.Io, link_abs: []const u
     const script_path = try std.fs.path.join(allocator, &.{ buf[0..len], "dir-link.cmd" });
     defer allocator.free(script_path);
 
-    // stderr inherited: mklink words its refusals there, and the caller's
-    // failure should say why.
+    // stderr inherited: mklink words its refusals there, and the caller's failure should say why.
     var child = try std.process.spawn(io, .{
         .argv = &.{script_path},
         .stdin = .ignore,
@@ -179,9 +150,7 @@ fn dirLinkJunction(allocator: std.mem.Allocator, io: std.Io, link_abs: []const u
     return error.DirLinkFailed;
 }
 
-/// Render `payload` as a script this host can execute. Private: a Windows
-/// body NAMES the sidecar data files, and only `Fixture.writeProgram`
-/// writes them — handing the text to `writeProgramText` emits nothing.
+/// Render `payload` as a script this host can execute.
 fn renderProgram(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     return switch (builtin.os.tag) {
         .windows => renderCmd(allocator, payload),
@@ -189,9 +158,7 @@ fn renderProgram(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     };
 }
 
-/// Write `printf '%b' '<escaped>'` for `bytes`. `printf '%s'` cannot carry
-/// a NUL, so non-printable bytes are octal-escaped — which is what keeps
-/// the "non-UTF8 bytes survive capture" test honest.
+/// Write `printf '%b' '<escaped>'` for `bytes`.
 fn writeShBytes(w: *std.Io.Writer, bytes: []const u8) !void {
     try w.writeAll("printf '%b' '");
     for (bytes) |b| {
@@ -257,13 +224,10 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
     var aw: std.Io.Writer.Allocating = .fromArrayList(allocator, &out);
     const w = &aw.writer;
 
-    // `@echo off` keeps the batch file's own commands out of stdout, which
-    // every assertion below compares byte-for-byte.
+    // `@echo off` keeps the batch file's own commands out of stdout, which every assertion below compares byte-for-byte.
     try w.writeAll("@echo off\n");
 
-    // WHY NOT `echo`: it appends a space, ends with CRLF, and cannot emit a
-    // NUL. `else if`, mirroring `renderSh`: `repeat` REPLACES the single
-    // emission, or a `repeat = n` payload comes out n + 1 times.
+    // WHY NOT `echo`: it appends a space, ends with CRLF, and cannot emit a NUL.
     if (payload.repeat) |n| {
         try cmdEmitLine(w, .stdout, n);
     } else if (payload.stdout.len > 0) {
@@ -279,8 +243,6 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
             try w.print("> \"{s}\" echo {s}\n", .{ path, body });
         } else {
             // `%*` is the whole argument list, space-separated on one line.
-            // The suites that assert on it compare against that shape (see
-            // `argvRecordedShape`).
             try w.print("> \"{s}\" echo %*\n", .{path});
         }
     }
@@ -291,16 +253,12 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
         try w.writeAll("cd\n");
     }
     if (payload.sleep_ms) |ms| {
-        // `ping -n` is the portable Windows sleep. `timeout` is NOT used: it
-        // refuses to run when stdin is redirected (which `run_captured`
-        // always does) and exits at once, so the deadline test would fail.
+        // `ping -n` is the portable Windows sleep.
         const secs = @max(2, @divTrunc(ms + 999, 1000));
         try w.print("ping -n {d} 127.0.0.1 > nul\n", .{secs});
     }
     if (payload.kill_self) {
-        // Windows has no signal to send to yourself, so `exit /b` with a
-        // distinctive code is the analogue; the suites assert the child did
-        // not report success rather than naming a signal.
+        // Windows has no signal to send to yourself, so `exit /b` with a distinctive code is the analogue; the suites assert the child did not report success rather than …
         try w.writeAll("exit /b 9\n");
     }
     try w.print("exit /b {d}\n", .{payload.exit_code});
@@ -311,8 +269,6 @@ fn renderCmd(allocator: std.mem.Allocator, payload: Payload) ![]u8 {
 pub const DataStream = enum { stdout, stderr };
 
 /// The sidecar data file a `.cmd` fixture relays one stream's bytes from.
-/// One name per stream, so a payload writing both cannot clobber the other
-/// and a caller-rendered `.cmd` body can name the same file.
 pub fn sidecarFileName(stream: DataStream) []const u8 {
     return switch (stream) {
         .stdout => "pabrik-fixture-out.bin",
@@ -320,12 +276,9 @@ pub fn sidecarFileName(stream: DataStream) []const u8 {
     };
 }
 
-/// Write the batch statement that relays a sidecar file's bytes to `stream`,
-/// `repeat` times when given. WHY `type`, NOT `copy /b`: `copy` opens
-/// `CON`/`NUL` itself, so a redirected stdout gets only its status line.
+/// Write the batch statement that relays a sidecar file's bytes to `stream`, `repeat` times when given.
 pub fn cmdEmitLine(w: *std.Io.Writer, stream: DataStream, repeat: ?usize) !void {
-    // A redirection, not a second file: `1>&2` dups the child's own stderr
-    // handle, which is the pipe the caller reads.
+    // A redirection, not a second file: `1>&2` dups the child's own stderr handle, which is the pipe the caller reads.
     const to_stderr = switch (stream) {
         .stdout => "",
         .stderr => " 1>&2",
@@ -337,9 +290,7 @@ pub fn cmdEmitLine(w: *std.Io.Writer, stream: DataStream, repeat: ?usize) !void 
     }
 }
 
-/// How a fixture's recorded argv looks on this host: one argument per line
-/// on POSIX, space-separated on Windows. Assert through the helpers below
-/// rather than comparing against a literal.
+/// How a fixture's recorded argv looks on this host: one argument per line on POSIX, space-separated on Windows.
 pub const ArgvShape = enum {
     /// One argument per line, argv[0] excluded.
     one_per_line,
@@ -354,17 +305,12 @@ pub fn argvRecordedShape() ArgvShape {
     };
 }
 
-/// Everything a recorded argv can be split on: the POSIX shape's line break,
-/// the Windows one's spaces, and `"` — a SEPARATOR, not data, because the
-/// Windows record is cmd's tail and Zig quotes any argument with a comma.
+/// Everything a recorded argv can be split on: the POSIX shape's line break, the Windows one's spaces, and `"` — a SEPARATOR, not data, because the Windows record …
 const argv_separators = " \t\r\n\"";
 
-/// True when the recorded argv contains `needle` as a whole argument,
-/// whichever shape this host recorded it in.
+/// True when the recorded argv contains `needle` as a whole argument, whichever shape this host recorded it in.
 pub fn recordedArgvContains(recorded: []const u8, needle: []const u8) bool {
-    // Whole-argument match on BOTH shapes: a substring match would let
-    // `--head-ref` satisfy a needle of `--head`, and the create suite
-    // asserts that flag is ABSENT.
+    // Whole-argument match on BOTH shapes: a substring match would let `--head-ref` satisfy a needle of `--head`, and the create suite asserts that flag is ABSENT.
     var it = std.mem.tokenizeAny(u8, recorded, argv_separators);
     while (it.next()) |word| {
         if (std.mem.eql(u8, word, needle)) return true;
@@ -372,9 +318,7 @@ pub fn recordedArgvContains(recorded: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// True when the recorded argv contains `words` as a contiguous run of whole
-/// arguments in order — the POSIX form is `a\nb\n`, the Windows form `a b`.
-/// Used for the multi-word argv assertions.
+/// True when the recorded argv contains `words` as a contiguous run of whole arguments in order — the POSIX form is `a\nb\n`, the Windows form `a b`.
 pub fn recordedArgvContainsSequence(recorded: []const u8, words: []const []const u8) bool {
     if (words.len == 0) return true;
     var it = std.mem.tokenizeAny(u8, recorded, argv_separators);
@@ -384,8 +328,7 @@ pub fn recordedArgvContainsSequence(recorded: []const u8, words: []const []const
             matched += 1;
             if (matched == words.len) return true;
         } else {
-            // `words[0]` can be the very word that just broke the run, so
-            // restart from it rather than from zero.
+            // `words[0]` can be the very word that just broke the run, so restart from it rather than from zero.
             matched = if (std.mem.eql(u8, word, words[0])) 1 else 0;
         }
     }
@@ -393,8 +336,6 @@ pub fn recordedArgvContainsSequence(recorded: []const u8, words: []const []const
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
-// is that a fixture is host-portable, so its own tests must not decline a
-// host either.
 
 const testing = std.testing;
 
@@ -404,9 +345,7 @@ test "renderProgram: a POSIX payload is a shell script, a Windows one a batch fi
     defer a.free(script);
     if (builtin.os.tag == .windows) {
         try testing.expect(std.mem.startsWith(u8, script, "@echo off"));
-        // The payload is NOT in the script on Windows: it lives in a sidecar
-        // data file the batch file relays to the stream, because `echo`
-        // cannot emit a byte-exact payload.
+        // The payload is NOT in the script on Windows: it lives in a sidecar data file the batch file relays to the stream, because `echo` cannot emit a byte-exact …
         try testing.expect(std.mem.indexOf(u8, script, sidecarFileName(.stdout)) != null);
     } else {
         try testing.expect(std.mem.startsWith(u8, script, "#!/bin/sh"));
@@ -429,13 +368,10 @@ test "renderProgram: every payload field has a line in both dialects" {
     };
     const script = try renderProgram(a, full);
     defer a.free(script);
-    // The exit code is the last line in both dialects, and it is the one
-    // field every caller depends on.
+    // The exit code is the last line in both dialects, and it is the one field every caller depends on.
     const want_exit = if (builtin.os.tag == .windows) "exit /b 3" else "exit 3";
     try testing.expect(std.mem.endsWith(u8, std.mem.trimEnd(u8, script, "\n"), want_exit));
-    // Each optional field must have produced SOMETHING, or a caller that
-    // sets it would silently get a no-op fixture on this host. On Windows
-    // the payloads are sidecar files, so the script names them.
+    // Each optional field must have produced SOMETHING, or a caller that sets it would silently get a no-op fixture on this host.
     try testing.expect(std.mem.indexOf(u8, script, "/tmp/argv") != null);
     try testing.expect(std.mem.indexOf(u8, script, "/tmp/sentinel") != null);
     if (builtin.os.tag == .windows) {
@@ -546,8 +482,7 @@ test "writeProgram: print_cwd reports the directory the child ran in" {
     });
     defer r.deinit(a);
     try testing.expectEqual(@as(u8, 0), r.term.exited);
-    // The child's cwd is the directory we asked for, in the host's own
-    // spelling — compare the tail, not the separators.
+    // The child's cwd is the directory we asked for, in the host's own spelling — compare the tail, not the separators.
     try testing.expect(std.mem.indexOf(u8, r.stdout, "repo") != null);
 }
 
@@ -561,28 +496,21 @@ test "argvRecordedShape: one_per_line off Windows, one_line on it" {
 }
 
 test "recordedArgvContains: matches a whole argument, not a substring" {
-    // `--head` must not be satisfied by `--head-ref` — the create suite
-    // asserts the flag is ABSENT, and a substring match would pass while
-    // the flag was actually there.
+    // `--head` must not be satisfied by `--head-ref` — the create suite asserts the flag is ABSENT, and a substring match would pass while the flag was actually …
     try testing.expect(!recordedArgvContains("--head-ref\nmain\n", "--head"));
     try testing.expect(recordedArgvContains("--head-ref\nmain\n", "--head-ref"));
     try testing.expect(recordedArgvContains("--head-ref main", "--head-ref"));
     try testing.expect(!recordedArgvContains("--head-ref main", "--head"));
-    // A QUOTED argument matches its bare needle: on Windows the quote is
-    // cmd's, not the argument's (see `argv_separators`).
+    // A QUOTED argument matches its bare needle: on Windows the quote is cmd's, not the argument's (see `argv_separators`).
     try testing.expect(recordedArgvContains("pr view --json \"number,title\"", "number,title"));
     try testing.expect(recordedArgvContains("pr view --json \"number,title\"", "--json"));
 }
 
 test "recordedArgvContainsSequence: finds an ordered run in either host's shape" {
-    // Both shapes on EVERY host: the POSIX record is one argument per line,
-    // the Windows one cmd's single command tail, and the matcher has to read
-    // either without knowing which host it is running on.
+    // Both shapes on EVERY host: the POSIX record is one argument per line, the Windows one cmd's single command tail, and the matcher has to read either without …
     const one_per_line = "pr\nview\n--json\nnumber,title\n";
     const one_line = "pr view --json number,title";
-    // The Windows record arrives QUOTED whenever Zig had to quote an
-    // argument — one comma in the field list is enough — so the needle must
-    // survive the quotes (the CI regression this matcher is written for).
+    // The Windows record arrives QUOTED whenever Zig had to quote an argument — one comma in the field list is enough — so the needle must survive the quotes (the CI …
     const one_line_quoted = "pr view --json \"number,title\"";
     for ([_][]const u8{ one_per_line, one_line, one_line_quoted }) |recorded| {
         try testing.expect(recordedArgvContainsSequence(recorded, &.{ "pr", "view" }));
@@ -591,8 +519,7 @@ test "recordedArgvContainsSequence: finds an ordered run in either host's shape"
         try testing.expect(recordedArgvContainsSequence(recorded, &.{"--json"}));
         // An empty sequence is trivially present.
         try testing.expect(recordedArgvContainsSequence(recorded, &.{}));
-        // Out of order is not a run, and neither is a word that never
-        // appears.
+        // Out of order is not a run, and neither is a word that never appears.
         try testing.expect(!recordedArgvContainsSequence(recorded, &.{ "view", "pr" }));
         try testing.expect(!recordedArgvContainsSequence(recorded, &.{ "pr", "view", "create" }));
     }

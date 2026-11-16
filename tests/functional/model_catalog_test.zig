@@ -1,5 +1,4 @@
-//! Functional tests for the models.dev model catalog (Migration 106). WHY
-//! THIS SUITE EXISTS.
+//! Functional tests for the models.dev model catalog (Migration 106).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The storage contract the resolve endpoint reads. Written out here on purpose
-/// rather than reusing the migration: if someone changes the columns, this test
-/// must fail LOUDLY rather than quietly agree with the new shape.
+/// The storage contract the resolve endpoint reads.
 const SEED_SQL =
     \\CREATE TABLE IF NOT EXISTS model_catalog_providers (
     \\  id TEXT NOT NULL PRIMARY KEY, name TEXT, base_url TEXT, url_style TEXT, env_json TEXT);
@@ -33,9 +30,7 @@ const SEED_SQL =
     \\  VALUES (1, 1, 'https://models.dev/api.json', 4102444800000, 1, 1);
 ;
 
-/// Seed a pre-migrated catalog before the binary starts. `fetched_at_ms`
-/// above is deliberately in the FAR FUTURE so the freshness check cannot call
-/// the snapshot stale as the years roll by.
+/// Seed a pre-migrated catalog before the binary starts.
 fn seedCatalog(seed_io: std.Io, allocator: std.mem.Allocator, temp_dir: []const u8) anyerror!void {
     const dir = try harness.harnessPath(allocator, temp_dir, &.{ ".config", "pabrik" });
     defer allocator.free(dir);
@@ -71,8 +66,7 @@ test "model catalog: with no snapshot the resolve falls back to 200k AND SAYS SO
     try testing.expectEqual(@as(i64, 200_000), doc.int("context_window").?);
     try testing.expectEqualStrings("builtin", doc.str("source").?);
     try testing.expectEqualStrings("absent", doc.str("catalog").?);
-    // The reason reaches the wire, so the UI can render it instead of inventing
-    // its own copy (and so a support request can quote it).
+    // The reason reaches the wire, so the UI can render it instead of inventing its own copy (and so a support request can quote it).
     try testing.expect(doc.str("reason") != null);
 }
 
@@ -90,8 +84,7 @@ test "model catalog: a seeded snapshot makes the resolve answer 1,000,000" {
     var doc = try res.json();
     defer doc.deinit();
 
-    // THE BUG THIS WHOLE CHANGE EXISTS TO FIX: before the catalog, this
-    // answered 200_000 and every non-MiniMax profile compacted at 160k.
+    // THE BUG THIS WHOLE CHANGE EXISTS TO FIX: before the catalog, this answered 200_000 and every non-MiniMax profile compacted at 160k.
     try testing.expectEqual(@as(i64, 1_000_000), doc.int("context_window").?);
     try testing.expectEqualStrings("catalog", doc.str("source").?);
     try testing.expectEqual(@as(i64, 393_216), doc.int("output_tokens").?);
@@ -116,7 +109,6 @@ test "model catalog: an unknown model is 200k in a LIVE catalog, not a fabricate
     defer doc.deinit();
 
     // `catalog` is fresh — the snapshot exists — but THIS model is not in it.
-    // Reporting "absent" here would be a different lie.
     try testing.expectEqualStrings("fresh", doc.str("catalog").?);
     try testing.expectEqualStrings("builtin", doc.str("source").?);
     try testing.expectEqual(@as(i64, 200_000), doc.int("context_window").?);
@@ -148,9 +140,7 @@ test "model catalog: resolve without a model is a 400, not a 200 with a made-up 
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch {};
 
-    // `expect` because the harness asserts the status for you — and the 400 IS
-    // the assertion here: a missing `model` must not fall through to a 200
-    // carrying a made-up window.
+    // `expect` because the harness asserts the status for you — and the 400 IS the assertion here: a missing `model` must not fall through to a 200 carrying a …
     var res = try h.http(io, .GET, "/api/models/resolve", .{ .expect = &.{400} });
     defer res.deinit();
     try testing.expectEqual(@as(u16, 400), res.status);

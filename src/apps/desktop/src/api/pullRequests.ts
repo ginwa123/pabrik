@@ -1,13 +1,10 @@
 import { apiFetch } from './client'
 
-// Open a PR/MR in the worktree path via the forge CLI (`gh pr create` or
-// `glab mr create`). The backend runs the command and returns the URL.
+// Open a PR/MR in the worktree path via the forge CLI (`gh pr create` or `glab mr create`).
 export interface GitPrCreateResponse {
   success: boolean
   pr_url: string
-  // Renamed from `error_message` per PR review (git_pr_create.zig:60). The Zig struct field is
-  // `@"error"` (because `error` is a Zig keyword) and serializes to JSON `"error"`. This frontend
-  // field name matches the JSON wire format.
+  // Renamed from `error_message` per PR review (git_pr_create.zig:60).
   error: string
   // Which forge the PR/MR was opened on. Absent on older servers.
   provider?: string
@@ -33,9 +30,7 @@ export async function createGitPr(
   })
 }
 
-// PR Diff API — full unified diff for the PR attached to a session
-// (set_pull_request tool). Consumed by the ChatView right panel's
-// PR mode, which splits per file client-side.
+// PR Diff API — full unified diff for the PR attached to a session (set_pull_request tool).
 export interface GitPrDiff {
   pr_url: string
   base: string
@@ -59,14 +54,11 @@ export async function getPrDiff(
   return await apiFetch<GitPrDiff>(`/git/pr/diff?${params.toString()}`)
 }
 
-// PR status API — open/merged/closed state for the attached PR
-// (GET /api/git/pr/status via `gh pr view`). The PR tab polls this
-// so a merge on GitHub flips the badge without a manual refresh.
+// PR status API — open/merged/closed state for the attached PR (GET /api/git/pr/status via `gh pr view`).
 export interface GitPrStatus {
   // Which forge answered: `github` | `gitlab`. Absent on older servers.
   provider?: string
-  /** `false` when the forge was asked for this branch and has no change request: `status` and
-   * `state` are then `''`. Absent on older servers, where only a 404 said so. */
+  /** `false` when the forge was asked for this branch and has no change request: `status` and `state` are then `''`. */
   has_pr?: boolean
   /** Machine-readable cause of `has_pr === false`: `no_pr`. */
   reason?: string
@@ -77,9 +69,7 @@ export interface GitPrStatus {
   status: string // open | closed | merged (lowercased by backend)
   mergeable: string
   merge_state: string
-  /**    * The commit the head branch points at (`headRefOid` / GitLab `sha`). It is the merge box's head
-   * guard: `--match-head-commit` / `--sha`, so a merge cannot land on a commit the user never saw.
-   * `''` on older servers. */
+  /** The commit the head branch points at (`headRefOid` / GitLab `sha`). */
   head_sha: string
   head_ref: string
   base_ref: string
@@ -91,8 +81,7 @@ export interface GitPrStatus {
   additions: number
   deletions: number
   changed_files: number
-  /** APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge has no
-   *  verdict to give. It is the sentence behind "Merging is blocked". */
+  /** APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, or "" when the forge has no verdict to give. */
   review_decision: string
   /** The CI rollup, counted. The header chips and the merge box read it. */
   checks: GitPrChecksSummary
@@ -111,9 +100,7 @@ export async function getPrStatus(
   return await apiFetch<GitPrStatus>(`/git/pr/status?${params.toString()}`, { silent: true })
 }
 
-// The change request's conversation (GET /api/git/pr/conversation): the body,
-// the comments and the review verdicts. Every body here is authored by someone
-// who can comment on the repo, so it is rendered through helpers/markdown.ts.
+// The change request's conversation (GET /api/git/pr/conversation): the body, the comments and the review verdicts.
 export interface GitPrConversationComment {
   author: string
   body: string
@@ -157,16 +144,13 @@ export async function getPrConversation(
     pr: prUrl,
   })
   if (opts?.provider) params.set('provider', opts.provider)
-  // silent: true — the Conversation tab renders the server's own error
-  // sentence inline, so a toast would only repeat it.
+  // silent: true — the Conversation tab renders the server's own error sentence inline, so a toast would only repeat it.
   return await apiFetch<GitPrConversation>(`/git/pr/conversation?${params.toString()}`, {
     silent: true,
   })
 }
 
-// PR/MR list for a repo (GET /api/git/pr/list via `gh pr list` /
-// `glab mr list`). Powers the board-level change-request list — one
-// call for the whole repo, not one per card.
+// PR/MR list for a repo (GET /api/git/pr/list via `gh pr list` /`glab mr list`).
 export interface GitPrListItem {
   number: number
   title: string
@@ -198,15 +182,11 @@ export async function listPrs(
   if (opts?.state) params.set('state', opts.state)
   if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
   if (opts?.provider) params.set('provider', opts.provider)
-  // silent: true — the list view renders the forge's own error
-  // sentence inline (an error banner, not a toast), and the board
-  // button leaves its badge absent on failure.
+  // silent: true — the list view renders the forge's own error sentence inline (an error banner, not a toast), and the board button leaves its badge absent on …
   return await apiFetch<GitPrListResponse>(`/git/pr/list?${params.toString()}`, { silent: true })
 }
 
-// Close a PR/MR (POST /api/git/pr/close). `closed: false` with a `detail` is NOT an error status —
-// the forge accepted the command but the re-read still shows it open, so the UI must render the
-// forge's sentence rather than claim success.
+// Close a PR/MR (POST /api/git/pr/close).
 export interface GitPrCloseResponse {
   closed: boolean
   detail: string
@@ -219,8 +199,7 @@ export async function closePr(
   pr: string,
   opts?: { provider?: string },
 ): Promise<GitPrCloseResponse> {
-  // silent: true — the list view renders both the `closed: false`
-  // detail and the 502 `{ error }` sentence inline next to the row.
+  // silent: true — the list view renders both the `closed: false` detail and the 502 `{ error }` sentence inline next to the row.
   return await apiFetch<GitPrCloseResponse>('/git/pr/close', {
     method: 'POST',
     silent: true,
@@ -233,9 +212,7 @@ export async function closePr(
   })
 }
 
-/** Merge a PR/MR (POST /api/git/pr/merge). `method` is REQUIRED: the backend refuses an empty one
- * with a 400 rather than spawning, because `gh pr merge` without a strategy flag prompts for the
- * method and a non-tty child cannot answer it. */
+/** Merge a PR/MR (POST /api/git/pr/merge). */
 export interface GitPrMerge {
   success: boolean
   method: string
@@ -249,8 +226,7 @@ export interface MergePrOptions {
   /** Commit message for the merge/squash commit. */
   title?: string
   body?: string
-  /** Delete the source branch after merging. Off by default in the UI: the
-   *  source branch is usually the session's own worktree branch. */
+  /** Delete the source branch after merging. */
   delete_branch?: boolean
   /** The head commit the user was looking at. Both CLIs guard on it. */
   head_sha?: string
@@ -261,9 +237,7 @@ export async function mergePr(
   prUrl: string,
   opts: MergePrOptions,
 ): Promise<GitPrMerge> {
-  // The route spawns a forge CLI against a network, so it is given a far larger budget than the 15
-  // s default — the same reason `git_pr_merge.zig` runs the child under a 60 s deadline. `silent`
-  // because the box renders the server's own words inline instead of a toast.
+  // The route spawns a forge CLI against a network, so it is given a far larger budget than the 15 s default — the same reason `git_pr_merge.zig` runs the child …
   return await apiFetch<GitPrMerge>('/git/pr/merge', {
     method: 'POST',
     silent: true,
@@ -281,9 +255,7 @@ export async function mergePr(
   })
 }
 
-/** PR CI checks (GET /api/git/pr/checks via `gh pr checks`). `checks` is one row per CI job;
- * `steps` is filled in for failed and cancelled jobs only — "which job failed" is already on the PR
- * page, "which process or task failed" is what the user comes here for. */
+/** PR CI checks (GET /api/git/pr/checks via `gh pr checks`). */
 export interface GitPrCheckStep {
   name: string
   number: number
@@ -333,14 +305,11 @@ export async function getPrChecks(
     pr: prUrl,
   })
   if (opts?.provider) params.set('provider', opts.provider)
-  // `silent: true`: the Checks tab renders its own error inline, and a
-  // toast per poll would be noise on top of it.
+  // `silent: true`: the Checks tab renders its own error inline, and a toast per poll would be noise on top of it.
   return await apiFetch<GitPrChecks>(`/git/pr/checks?${params.toString()}`, { silent: true })
 }
 
-// Which-files-conflict API. `getPrStatus` tells us a PR is CONFLICTING but not what blocks it — no
-// forge API exposes that, so the backend runs the same three-way merge locally (`git merge-tree
-// --write-tree --name-only`) and names the paths.
+// Which-files-conflict API.
 export interface GitPrConflicts {
   pr_url: string
   /** The ref the merge was computed against, e.g. `refs/remotes/origin/main`. */
@@ -367,7 +336,6 @@ export async function getPrConflicts(
   if (opts?.provider) params.set('provider', opts.provider)
   if (opts?.base) params.set('base', opts.base)
   if (opts?.head) params.set('head', opts.head)
-  // silent: true — the PR tab renders this failure inline next to the badge,
-  // so a toast on top of that would double-report the same problem.
+  // silent: true — the PR tab renders this failure inline next to the badge, so a toast on top of that would double-report the same problem.
   return await apiFetch<GitPrConflicts>(`/git/pr/conflicts?${params.toString()}`, { silent: true })
 }

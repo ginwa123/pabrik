@@ -1,6 +1,4 @@
-/** Tests for the flat commit buttons in KanbanTaskDetailDialog. Create mode has TWO of them —
- * "Create task" + "▶ Create task & run agent"; edit mode has one ("Save"). The split button, its
- * caret and its menu are gone, so this spec also pins their absence (and the header Back button's). */
+/** Tests for the flat commit buttons in KanbanTaskDetailDialog. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -190,8 +188,7 @@ describe('KanbanTaskDetailDialog — per-action pending label', () => {
     await flushPromises()
     await typeName('My task')
 
-    // Click first — that is what attributes the in-flight state — then raise `creating` the way the
-    // host does once the request is on the wire.
+    // Click first — that is what attributes the in-flight state — then raise `creating` the way the host does once the request is on the wire.
     findInDom<HTMLButtonElement>('[data-testid="kanban-task-detail-save"]')!.click()
     await flushPromises()
     await wrapper!.setProps({ creating: true })
@@ -225,9 +222,7 @@ describe('KanbanTaskDetailDialog — per-action pending label', () => {
   })
 
   it('a host-raised creating with no click narrates on the run button and leaves Create task alone', async () => {
-    // No handler ran, so `pendingAction` is null and there is nothing to attribute the in-flight
-    // state to. The neutral wording lands on the primary action — the create button keeps its own
-    // label, which is the bug this spec exists to prevent regressing.
+    // No handler ran, so `pendingAction` is null and there is nothing to attribute the in-flight state to.
     mountDialog({ creating: true })
     await flushPromises()
     await typeName('My task')

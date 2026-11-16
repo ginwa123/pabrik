@@ -32,9 +32,7 @@ import { normalizeToolContent, parseSearchSkills } from './_shared/toolOutputPar
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Surfaced via the
-   *  shared <ToolParameters> block in the expanded body; empty/'{}'
-   *  renders nothing (see ToolParameters.vue hasArgs guard). */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
@@ -53,8 +51,7 @@ const hint = computed(() => parsed.value.hint)
 const truncated = computed(() => parsed.value.truncated)
 const nextOffset = computed(() => parsed.value.nextOffset)
 
-/** Paging facts in `search_tool`'s convention: this page's rows against the
- *  pre-paging total, so a truncated page reads `50/120 skills`. */
+/** Paging facts in `search_tool`'s convention: this page's rows against the pre-paging total, so a truncated page reads `50/120 skills`. */
 const countLabel = computed(() => {
   const rows = skills.value.length
   const total = parsed.value.total
@@ -79,9 +76,7 @@ const headerTitle = computed(() => {
   return bits.join('  ·  ')
 })
 
-/** "Nothing matched this query" and "this workspace has no skills at all"
- * are different facts and collapse into one row count, so branch on
- * whether the query was empty. */
+/** "Nothing matched this query" and "this workspace has no skills at all" are different facts and collapse into one row count, so branch on whether the query was … */
 const emptyMessage = computed(() =>
   isEmptyQuery.value
     ? 'No skills installed — nothing to list.'

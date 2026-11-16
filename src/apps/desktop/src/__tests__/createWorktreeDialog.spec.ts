@@ -1,12 +1,8 @@
-/** Tests for the CreateWorktreeDialog component. The dialog combines a FilePickerDialog (for
- * picking the parent directory) + a basename input + a Create/Cancel button pair. It composes the
- * final absolute path as `${parentDir}/${basename}` and emits `create(path)` on submit. */
+/** Tests for the CreateWorktreeDialog component. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-// ─── Mocks ───────────────────────────────────────────────────────────────── Stub the
-// FilePickerDialog — we only care that the parent wires up the picker's events. Real picker
-// behavior is tested in FilePickerDialog.spec.ts.
+// ─── Mocks ─────────────────────────────────────────────────────────────────
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -63,8 +59,7 @@ function clickInDom(selector: string) {
   el.click()
 }
 
-/** Set the value of the basename input and dispatch a `change` event so
- * Vue's v-model picks it up. Mirrors the AddItemDialog test pattern. */
+/** Set the value of the basename input and dispatch a `change` event so Vue's v-model picks it up. */
 function setBasename(value: string) {
   const input = findInDom<HTMLInputElement>('[data-testid="create-worktree-name"]')
   if (!input) throw new Error('No basename input found')
@@ -73,8 +68,7 @@ function setBasename(value: string) {
 }
 
 function mountDialog(initialCwd?: string) {
-  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
-  // each mount, and these accumulate in jsdom even after wrapper.unmount().
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for each mount, and these accumulate in jsdom even after …
   document.body.innerHTML = ''
   return mount(CreateWorktreeDialog, {
     attachTo: document.body,
@@ -174,8 +168,7 @@ describe('CreateWorktreeDialog — parent directory picker', () => {
     await new Promise((r) => setTimeout(r, 0))
     setBasename('my-feature')
     await new Promise((r) => setTimeout(r, 0))
-    // The dialog renders inside a Teleport, so the DOM is detached
-    // from the wrapper. Use document.body.textContent to read it.
+    // The dialog renders inside a Teleport, so the DOM is detached from the wrapper.
     expect(document.body.textContent).toContain('/home/me/projects/my-feature')
   })
 
@@ -269,8 +262,7 @@ describe('CreateWorktreeDialog — submit', () => {
     wrapper = mountDialog('/home/me/proj')
     setBasename('my-feature')
     await new Promise((r) => setTimeout(r, 0))
-    // The dialog renders inside a Teleport, so the DOM is detached
-    // from the wrapper. Use document.body.textContent to read it.
+    // The dialog renders inside a Teleport, so the DOM is detached from the wrapper.
     expect(document.body.textContent).toContain('/home/me/proj/my-feature')
   })
 

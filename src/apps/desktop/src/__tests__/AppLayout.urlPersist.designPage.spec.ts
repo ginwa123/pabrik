@@ -1,5 +1,4 @@
-/** Tests for AppLayout's URL → activeWorkspaceItemId persistence on page reload. Plan: feature "url
- * browser kanban" (workspace kanban URL persistence). */
+/** Tests for AppLayout's URL → activeWorkspaceItemId persistence on page reload. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -188,8 +187,7 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
     ]
     await nextTick()
     replaceMock.mockClear()
-    // Externally set activeDesignPageId — the watcher should fire
-    // and call router.replace with the new URL including pageId.
+    // Externally set activeDesignPageId — the watcher should fire and call router.replace with the new URL including pageId.
     ws.setActiveDesignPage(PAGE_ID_2)
     await nextTick()
     await nextTick()
@@ -239,9 +237,7 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
   })
 
   it('URL mirror does NOT clobber the chat suffix when activeDesignPageId changes', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the chat suffix on itemId must survive every URL write by
-    // the watcher. This pins the invariant: even if `setActiveDesignPage` fires (which changes
-    // activeDesignPageId), the watcher's write must NOT drop the suffix from itemId.
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the chat suffix on itemId must survive every URL write by the watcher.
     const replaceMock = vi.fn()
     useRouteMock.mockReturnValue({
       query: {
@@ -266,9 +262,7 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
     )
     await nextTick()
     await nextTick()
-    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites
-    // `workspaces.value` with the (empty) API mock result. Re-set workspaces so the URL watcher's
-    // lookup of activeWorkspace succeeds.
+    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites `workspaces.value` with the (empty) API mock result.
     ws.workspaces = [
       { id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [makeDesignItem()] } as Workspace,
     ]
@@ -277,9 +271,7 @@ describe('AppLayout — design page URL persistence (pageId in URL)', () => {
     ws.setActiveDesignPage(PAGE_ID_1)
     await nextTick()
     await nextTick()
-    // If the watcher DID fire, every write's path must still carry the chat suffix. The pre-fix
-    // watcher overwrote itemId with `DESIGN_ID` (bare) on every setActiveDesignPage call, which
-    // closed the chat dialog. Post-fix it preserves the suffix.
+    // If the watcher DID fire, every write's path must still carry the chat suffix.
     for (const call of replaceMock.mock.calls) {
       const target = call[0] as { path: string; query: Record<string, string> }
       expect(target.path).toBe(`/app/${WS_ID}/projects/${DESIGN_ID}/chat/task_xyz`)
@@ -468,9 +460,7 @@ describe('AppLayout — readable code-editor URLs (keep-append)', () => {
 })
 
 describe('AppLayout — code viewer surface (the right sidebar must survive)', () => {
-  // Regression: opening a file from the right-sidebar Explorer replaced the WHOLE <main> with the
-  // viewer overlay, so ChatView — which owns that sidebar, the header and the composer — was never
-  // mounted and the sidebar (plus its composer underneath) vanished.
+  // Regression: opening a file from the right-sidebar Explorer replaced the WHOLE <main> with the viewer overlay, so ChatView — which owns that sidebar, the header …
   beforeEach(() => {
     setActivePinia(createPinia())
     installBusForTests()
@@ -514,8 +504,7 @@ describe('AppLayout — code viewer surface (the right sidebar must survive)', (
     await (wrapper.vm as any).openInCodeEditor({ filePath: 'notes.txt', cwd: '/w' })
     await nextTick()
 
-    // The full-surface overlay must NOT be mounted: ChatView renders the
-    // file itself, so the right sidebar stays exactly where it was.
+    // The full-surface overlay must NOT be mounted: ChatView renders the file itself, so the right sidebar stays exactly where it was.
     expect(wrapper.find('[data-testid="code-viewer-overlay"]').exists()).toBe(false)
     expect(wrapper.find('chat-view-stub').exists()).toBe(true)
     wrapper.unmount()

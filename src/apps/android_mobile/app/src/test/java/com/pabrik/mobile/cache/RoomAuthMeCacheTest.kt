@@ -16,16 +16,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The `/me` cache against a **real** SQLite database.
- *
- * This table is the smallest of the three and has the least machinery, so the
- * tests here are short. What they are really pinning is that moving a *sealed
- * blob* out of a SharedPreferences value and into a **row** did not change any
- * of the three rules the `/me` cache exists to enforce: namespacing by cookie
- * fingerprint, freshness decided by the caller and not by the storage layer,
- * and fail-silent on a key that no longer opens.
- */
+/** The `/me` cache against a **real** SQLite database. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class RoomAuthMeCacheTest {
@@ -58,9 +49,7 @@ class RoomAuthMeCacheTest {
         cache.write(a, """{"user":{"id":"u_a"}}""", NOW)
 
         assertEquals("""{"user":{"id":"u_a"}}""", cache.read(a)?.body)
-        // This is the whole point of the fingerprint. The web's entry is
-        // unscoped, which is safe only because a browser profile is effectively
-        // one user; a phone is shared.
+        // This is the whole point of the fingerprint.
         assertNull(cache.read(b))
     }
 
@@ -90,10 +79,7 @@ class RoomAuthMeCacheTest {
 
     @Test
     fun theTimestampTheCallerSuppliedIsTheOneStored() {
-        // Freshness is a policy decision the DAO must not make: `AuthClient` is
-        // the only thing that knows whether a retry is bypassing the cache on
-        // purpose. If the row stamped itself, a stale answer would be
-        // indistinguishable from a miss.
+        // Freshness is a policy decision the DAO must not make: `AuthClient` is the only thing that knows whether a retry is bypassing the cache on purpose.
         val fingerprint = fingerprintOf("tok-a")
         cache.write(fingerprint, AUTHENTICATED, 1_000L)
 
@@ -124,9 +110,7 @@ class RoomAuthMeCacheTest {
             cursor.getString(0)
         }
 
-        // Unlike the sidebar's table there is nothing to order or filter on
-        // here, so the whole body is sealed. A `sqlite3` dump of this file
-        // should never contain a session's identity.
+        // Unlike the sidebar's table there is nothing to order or filter on here, so the whole body is sealed.
         assertFalse(column, column.contains("authenticated"))
         assertFalse(column, column.contains("u_1"))
     }
@@ -136,17 +120,13 @@ class RoomAuthMeCacheTest {
         val cookie = "tok-super-secret-value"
         cache.write(fingerprintOf(cookie), AUTHENTICATED, NOW)
 
-        // The fingerprint is the primary key and the body is sealed, so a dump
-        // of the file — which is what a shared-device extraction, a bug report
-        // or a backup produces — contains a hash and ciphertext. The bearer
-        // credential is nowhere in it.
+        // The fingerprint is the primary key and the body is sealed, so a dump of the file — which is what a shared-device extraction, a bug report or a backup produces …
         val dump = dumpTable("cached_auth_me")
         assertEquals(1, countRows())
         assertFalse(dump, dump.contains(cookie))
     }
 
-    /** Every cell of a table, flattened — what a `sqlite3` dump of the file
-     *  would hand to whoever opened the device next. */
+    /** Every cell of a table, flattened — what a `sqlite3` dump of the file would hand to whoever opened the device next. */
     private fun dumpTable(table: String): String = database.openHelper.readableDatabase
         .query("SELECT * FROM $table")
         .use { cursor ->
@@ -171,9 +151,7 @@ class RoomAuthMeCacheTest {
         )
 
         assertNull(cache.read(fingerprint))
-        // Dropped, so the same failing decryption is not re-attempted on every
-        // launch — the same thing `EncryptedPrefs` did with the entry it could
-        // not read.
+        // Dropped, so the same failing decryption is not re-attempted on every launch — the same thing `EncryptedPrefs` did with the entry it could not read.
         assertEquals(0, countRows())
     }
 
@@ -189,8 +167,7 @@ class RoomAuthMeCacheTest {
 
         refusing.write(fingerprintOf("tok-a"), AUTHENTICATED, NOW)
 
-        // A Keystore that will not open must leave the app fetching from the
-        // network, not crash the launch and not store the body in the clear.
+        // A Keystore that will not open must leave the app fetching from the network, not crash the launch and not store the body in the clear.
         assertEquals(0, countRows())
     }
 
@@ -208,9 +185,7 @@ class RoomAuthMeCacheTest {
 
         cache.clear()
 
-        // Signing out makes the old entry unreachable anyway — there is no
-        // cookie to derive its key from — but leaving it on disk would keep an
-        // identity around after the user asked for it to be gone.
+        // Signing out makes the old entry unreachable anyway — there is no cookie to derive its key from — but leaving it on disk would keep an identity around after the …
         assertNull(cache.read(fingerprintOf("tok-a")))
         assertNull(cache.read(fingerprintOf("tok-b")))
         assertEquals(0, countRows())

@@ -1,6 +1,4 @@
-/** Tests for KanbanView.handleRunAgentFromMenu — the card / row context-menu "Run agent" host
- * handler. Same store action as the detail dialog's caret menu (`startAgentOnTask` → POST
- * .../tasks/:task_id/start_agent), reached without opening the dialog. */
+/** Tests for KanbanView.handleRunAgentFromMenu — the card / row context-menu "Run agent" host handler. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -89,8 +87,7 @@ describe('KanbanView.handleRunAgentFromMenu', () => {
 
     expect(startAgentSpy).toHaveBeenCalledTimes(1)
     expect(startAgentSpy).toHaveBeenCalledWith('ws_1', 'item_1', 'task_existing')
-    // Success is silent — the SSE worker events drive the card's
-    // spinner from here, so a toast would be noise.
+    // Success is silent — the SSE worker events drive the card's spinner from here, so a toast would be noise.
     expect(notifications.notifications).toHaveLength(0)
   })
 
@@ -175,9 +172,7 @@ describe('KanbanView.handleRunAgentFromMenu', () => {
   })
 
   it('does not double-fire when called twice in quick succession', async () => {
-    // Per-task re-entrancy guard: the menu row is hidden while a worker
-    // runs, but the SSE state lands a beat after the click, so the
-    // second click has to bail on the in-flight POST.
+    // Per-task re-entrancy guard: the menu row is hidden while a worker runs, but the SSE state lands a beat after the click, so the second click has to bail on the …
     const store = useWorkspacesStore()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let resolveFirst: (v: any) => void = () => {}

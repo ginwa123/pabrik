@@ -12,9 +12,7 @@ const workspace_default = @import("workspace_items_default.zig");
 const vmd_policy = @import("../vmd/policy.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
-/// The name every automatically provisioned workspace gets. Cosmetic — clients
-/// select by id and a user may rename it — but it is what a brand-new account
-/// sees first, so it is pinned here rather than at each call site.
+/// The name every automatically provisioned workspace gets.
 pub const DEFAULT_WORKSPACE_NAME = "Default";
 
 pub const ProvisionError = error{
@@ -22,8 +20,7 @@ pub const ProvisionError = error{
     DatabaseError,
 };
 
-/// An owned pair. `deinit` frees both fields unconditionally, so BOTH must
-/// come from `allocator` — never a comptime string.
+/// An owned pair.
 pub const ProvisionedWorkspace = struct {
     id: []const u8,
     name: []const u8,
@@ -54,8 +51,7 @@ pub fn generateWorkspaceId(allocator: std.mem.Allocator, io: std.Io) ![]const u8
     return std.fmt.allocPrint(allocator, "ws_{d}_{s}", .{ ts_nanos, &hex_buf });
 }
 
-/// Insert one workspace row plus the membership row that makes it visible to
-/// its own creator.
+/// Insert one workspace row plus the membership row that makes it visible to its own creator.
 pub fn insertWorkspace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -78,8 +74,7 @@ pub fn insertWorkspace(
         \\    datetime('now'), datetime('now'), ?, ?)
     , &[_][]const u8{ workspace_id, name, member, if (is_vm) "1" else "0" });
 
-    // The membership row IS the visibility grant (Migration 100). `user_id`
-    // on `workspaces` is kept in sync deliberately — it is the rollback path.
+    // The membership row IS the visibility grant (Migration 100).
     _ = try tx.exec(
         allocator,
         "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'owner') ON CONFLICT DO NOTHING",
@@ -89,17 +84,14 @@ pub fn insertWorkspace(
     try tx.commit();
 }
 
-/// Mint an id, insert the workspace, and attach its default project. This is
-/// the whole of workspace creation — `POST /api/workspaces` and the
-/// provisioning hook both go through it, so neither can drift.
+/// Mint an id, insert the workspace, and attach its default project.
 pub fn createWorkspaceRow(
     allocator: std.mem.Allocator,
     db: *database.Db,
     io: std.Io,
     name: []const u8,
     owner: []const u8,
-    /// Needed to resolve the default project's `path` ($HOME). Read from the
-    /// process environment, never from a request body.
+    /// Needed to resolve the default project's `path` ($HOME).
     environment: ?*const std.process.Environ.Map,
     /// Whether the new workspace is VM-backed (Migration 115).
     is_vm: bool,
@@ -108,9 +100,7 @@ pub fn createWorkspaceRow(
     errdefer allocator.free(id);
     insertWorkspace(allocator, db, id, name, owner, is_vm) catch return error.DatabaseError;
 
-    // Every workspace has a default project, so a brand-new one shows its
-    // default in the Projects list on the very first paint instead of only
-    // after a later read fills it in.
+    // Every workspace has a default project, so a brand-new one shows its default in the Projects list on the very first paint instead of only after a later read …
     const defaulted = workspace_default.ensureDefaultProject(allocator, db, id, environment, null);
     if (defaulted) |project| {
         defer project.deinit(allocator);
@@ -118,14 +108,11 @@ pub fn createWorkspaceRow(
         std.log.warn("workspace_provisioning: default project ensure failed (non-fatal, the items list will heal it): {s}", .{@errorName(err)});
     }
 
-    // DUPE the name, never hand back the caller's slice or a comptime string:
-    // `ProvisionedWorkspace.deinit` frees both fields unconditionally.
+    // DUPE the name, never hand back the caller's slice or a comptime string
     return .{ .id = id, .name = try allocator.dupe(u8, name) };
 }
 
-/// Give `user_id` a workspace of their own, when they have none. Idempotent:
-/// returns null and writes nothing when the user already owns a workspace.
-/// Returns the created row otherwise.
+/// Give `user_id` a workspace of their own, when they have none. Idempotent
 pub fn ensureDefaultWorkspace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -139,8 +126,7 @@ pub fn ensureDefaultWorkspace(
     return try createWorkspaceRow(allocator, db, io, DEFAULT_WORKSPACE_NAME, user_id, environment, is_vm);
 }
 
-/// True when `user_id` has a membership row of its own. The predicate is
-/// deliberately `user_id = ?` and NOT "can this user see any workspace".
+/// True when `user_id` has a membership row of its own.
 fn ownsAnyWorkspace(db: *database.Db, allocator: std.mem.Allocator, user_id: []const u8) bool {
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_members WHERE user_id = ? LIMIT 1
@@ -175,8 +161,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // `workspaces` in its Migration 027 + 077 shape: `position` drives the
-    // listing order and `user_id` is the pre-Migration-100 owner column.
+    // `workspaces` in its Migration 027 + 077 shape: `position` drives the listing order and `user_id` is the pre-Migration-100 owner column.
     try db.exec(alloc,
         \\CREATE TABLE workspaces (
         \\  id TEXT PRIMARY KEY,
@@ -189,8 +174,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\)
     , &[_][]const u8{});
 
-    // Migration 100. The `role` CHECK constraint is kept so a regression that
-    // writes a role outside the enum fails here rather than in production.
+    // Migration 100.
     try db.exec(alloc,
         \\CREATE TABLE workspace_members (
         \\  workspace_id TEXT NOT NULL,
@@ -202,9 +186,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\)
     , &[_][]const u8{});
 
-    // Migration 094's shape, including the partial UNIQUE index — without it
-    // `ensureDefaultProject`'s race guard is untestable and the fixture would
-    // be testing a different system than production runs.
+    // Migration 094's shape, including the partial UNIQUE index — without it `ensureDefaultProject`'s race guard is untestable and the fixture would be testing a …
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\  id TEXT PRIMARY KEY,
@@ -242,9 +224,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\)
     , &[_][]const u8{});
 
-    // A real environment map with HOME set, because the default project's
-    // `path` IS the home directory and the whole feature is defined by where
-    // HOME lands.
+    // A real environment map with HOME set, because the default project's `path` IS the home directory and the whole feature is defined by where HOME lands.
     var env: std.process.Environ.Map = .init(alloc);
     errdefer env.deinit();
     try env.put("HOME", "/home/tester");
@@ -253,7 +233,6 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
 }
 
 /// Count rows in `workspaces` whose WHERE clause needs the id interpolated.
-/// `template` is a comptime fmt string with one `{{s}}` per argument.
 fn countWorkspacesFmt(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -292,8 +271,7 @@ test "ensureDefaultWorkspace: a user who owns no workspace gets one named Defaul
     try testing.expectEqualStrings("Default", created.name);
     try testing.expect(created.id.len > 0);
 
-    // The row is real, and it is wired to its owner — a workspace with no
-    // membership row is invisible to the very user it was made for.
+    // The row is real, and it is wired to its owner — a workspace with no membership row is invisible to the very user it was made for.
     try testing.expectEqual(
         @as(u32, 1),
         try countWorkspacesFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspaces WHERE id = '{s}' AND name = 'Default'", .{created.id}),
@@ -307,8 +285,7 @@ test "ensureDefaultWorkspace: a user who already owns a workspace gets no second
     defer ctx.deinit();
     const io = ctx.threaded.io();
 
-    // The user already worked here — they are an established account, not a
-    // fresh one, and a login must not sprout a second workspace behind them.
+    // The user already worked here — they are an established account, not a fresh one, and a login must not sprout a second workspace behind them.
     try insertWorkspace(alloc, &ctx.db, "ws_existing", "Client Project", "user_a", false);
 
     const created = try ensureDefaultWorkspace(alloc, &ctx.db, io, "user_a", &ctx.env, false);
@@ -325,8 +302,7 @@ test "ensureDefaultWorkspace: the new workspace lists above the existing ones" {
     defer ctx.deinit();
     const io = ctx.threaded.io();
 
-    // A legacy installation: shared rows already hold the whole position
-    // range.
+    // A legacy installation: shared rows already hold the whole position range.
     try insertWorkspace(alloc, &ctx.db, "ws_legacy", "Legacy", auth_common.system_user_id, false);
     try ctx.db.exec(alloc, "UPDATE workspaces SET position = 7 WHERE id = 'ws_legacy'", &[_][]const u8{});
 
@@ -348,9 +324,7 @@ test "ensureDefaultWorkspace: the provisioned workspace already has its default 
     const created = (try ensureDefaultWorkspace(alloc, &ctx.db, io, "user_a", &ctx.env, false)).?;
     defer created.deinit(alloc);
 
-    // A workspace with no project in it is the SAME dead end one level down:
-    // the user lands in "Default" and immediately meets an empty Projects
-    // list.
+    // A workspace with no project in it is the SAME dead end one level down
     try testing.expectEqual(
         @as(u32, 1),
         try countWorkspacesFmt(
@@ -360,8 +334,7 @@ test "ensureDefaultWorkspace: the provisioned workspace already has its default 
             .{created.id},
         ),
     );
-    // Its path is the server user's home — that is what makes a chat started
-    // in the default project resolve a cwd instead of failing.
+    // Its path is the server user's home — that is what makes a chat started in the default project resolve a cwd instead of failing.
     const default_path = try scalarTextFmt(
         &ctx.db,
         alloc,
@@ -383,8 +356,7 @@ test "createWorkspaceRow: a saas server's workspace is VM-backed, a local one's 
     const host_workspace = try createWorkspaceRow(alloc, &ctx.db, io, "Host", "user_b", &ctx.env, false);
     defer host_workspace.deinit(alloc);
 
-    // The flag is on the row, so the read path and the runtime agree on which
-    // workspace may be given a Firecracker.
+    // The flag is on the row, so the read path and the runtime agree on which workspace may be given a Firecracker.
     try testing.expectEqual(
         @as(i64, 1),
         try scalarI64Fmt(&ctx.db, alloc, "SELECT is_vm FROM workspaces WHERE id = '{s}'", .{vm_workspace.id}),
@@ -407,8 +379,7 @@ test "createWorkspaceRow: a VM workspace's default project is rooted in its gues
     const vm_workspace = try createWorkspaceRow(alloc, &ctx.db, io, "VM", "user_a", &ctx.env, true);
     defer vm_workspace.deinit(alloc);
 
-    // `is_vm` is written before the default project is attached, so the very
-    // first paint of a new workspace shows a tree its VM has — not the host's.
+    // `is_vm` is written before the default project is attached, so the very first paint of a new workspace shows a tree its VM has — not the host's.
     const default_path = try scalarTextFmt(
         &ctx.db,
         alloc,
@@ -425,9 +396,7 @@ test "ensureDefaultWorkspace: the legacy shared bucket is not a workspace of the
     defer ctx.deinit();
     const io = ctx.threaded.io();
 
-    // An installation that predates `--auth`: the machine owner's workspaces
-    // sit in the `user_system` bucket, which `workspaceVisibilityClause` lets
-    // a real user SEE.
+    // An installation that predates `--auth`: the machine owner's workspaces sit in the `user_system` bucket, which `workspaceVisibilityClause` lets a real user SEE.
     try insertWorkspace(alloc, &ctx.db, "ws_shared", "Shared Legacy", auth_common.system_user_id, false);
 
     const created = (try ensureDefaultWorkspace(alloc, &ctx.db, io, "user_a", &ctx.env, false)) orelse
@@ -465,16 +434,14 @@ test "ensureDefaultWorkspace: two users each get their own, neither sees the oth
         @as(u32, 1),
         try countWorkspacesFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = '{s}'", .{for_b.id}),
     );
-    // No id collision either — two workspaces in the same millisecond from the
-    // same process used to collide and fail the second INSERT.
+    // No id collision either — two workspaces in the same millisecond from the same process used to collide and fail the second INSERT.
     try testing.expectEqual(
         @as(u32, 2),
         try countWorkspacesFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspaces WHERE name = 'Default'", .{}),
     );
 }
 
-/// Read a single text column, interpolating ids that the code under test
-/// generated (never user input).
+/// Read a single text column, interpolating ids that the code under test generated (never user input).
 fn scalarTextFmt(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -490,8 +457,7 @@ fn scalarTextFmt(
     return alloc.dupe(u8, row.values[0]);
 }
 
-/// Read a single integer column, interpolating ids that the code under test
-/// generated (never user input).
+/// Read a single integer column, interpolating ids that the code under test generated (never user input).
 fn scalarI64Fmt(
     db: *database.Db,
     alloc: std.mem.Allocator,

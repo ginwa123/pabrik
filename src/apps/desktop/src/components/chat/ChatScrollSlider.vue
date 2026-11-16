@@ -194,9 +194,7 @@ const onThumbKeyDown = (e: KeyboardEvent): void => {
 
 onMounted(() => {
   ensureAttached()
-  // The scroller's containerRef resolves after mount and swaps on chat
-  // switch — poll until attached, then keep polling cheaply so a swap
-  // is picked up without host wiring.
+  // The scroller's containerRef resolves after mount and swaps on chat switch — poll until attached, then keep polling cheaply so a swap is picked up without host …
   resolveTimer = setInterval(ensureAttached, 500)
 })
 

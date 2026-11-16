@@ -20,13 +20,10 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 
-// Keep local toggle state in sync with the parent's `expanded` prop so the component behaves as a
-// *controlled* component (parent owns the truth).
+// Keep local toggle state in sync with the parent's `expanded` prop so the component behaves as a *controlled* component (parent owns the truth).
 const prevExpandedProp = ref(props.expanded ?? false)
 onMounted(() => {
   isExpanded.value = props.expanded ?? false
@@ -50,9 +47,7 @@ const parsed = computed(() => {
   return p
 })
 
-// Parameters as a JSON object (null when unparseable). Used for the
-// error-path diff fallback: on failure the envelope nulls `data`, so the
-// only place old_str/new_str survive is the `parameters` prop.
+// Parameters as a JSON object (null when unparseable).
 const paramsObj = computed((): Record<string, unknown> | null => {
   try {
     const raw = (props.parameters ?? '').trim()
@@ -65,8 +60,7 @@ const paramsObj = computed((): Record<string, unknown> | null => {
   }
 })
 
-// String field that preserves explicit empty strings (text_replace delete
-// uses new_str=""). Returns null only when the key is missing/non-string.
+// String field that preserves explicit empty strings (text_replace delete uses new_str="").
 const paramStr = (obj: Record<string, unknown> | null, ...keys: string[]): string | null => {
   if (!obj) return null
   for (const k of keys) {
@@ -76,9 +70,7 @@ const paramStr = (obj: Record<string, unknown> | null, ...keys: string[]): strin
   return null
 }
 
-// Diff content: prefer explicit props.diffviewBefore/After, then the envelope's before/after, then
-// the call parameters. The parameter fallback is useful for successful results whose legacy diff
-// fields are absent, but the result is gated by `parsed.success` below before anything is rendered.
+// Diff content: prefer explicit props.diffviewBefore/After, then the envelope's before/after, then the call parameters.
 const diffBefore = computed(() => {
   if (props.diffviewBefore != null && props.diffviewBefore !== '') return props.diffviewBefore
   if (parsed.value.before !== '') return parsed.value.before
@@ -91,16 +83,12 @@ const diffAfter = computed(() => {
   return fallback ?? ''
 })
 
-// Parameters describe the attempted edit; they are not proof that the edit was applied. Only a
-// successful result may render a diff — otherwise an OldStrNotFound/MissingField failure would show
-// the proposed replacement as if it were a real file change.
+// Parameters describe the attempted edit; they are not proof that the edit was applied.
 const hasDiff = computed(
   () => parsed.value.success && (diffBefore.value !== '' || diffAfter.value !== ''),
 )
 
-// old_str/new_str are already visualized as the diff above — hide them from
-// Arguments so the expanded card shows a visual diff plus the path instead
-// of a huge raw JSON blob (the screenshot that motivated this fix).
+// old_str/new_str are already visualized as the diff above — hide them from Arguments so the expanded card shows a visual diff plus the path instead of a huge …
 const ARGS_EXCLUDE = ['old_str', 'new_str', 'before', 'after', 'unified']
 
 const hasArgs = computed(() => {
@@ -117,9 +105,7 @@ const contentPath = computed((): string | null => {
   return p && p.trim() !== '' ? p : null
 })
 
-// Prefer the envelope's path; fall back to the parameters prop so a
-// still-running tool (placeholder envelope with empty <data>) shows its path.
-// The parser uses the `path` tag; also try `file_path` for forward-compat.
+// Prefer the envelope's path; fall back to the parameters prop so a still-running tool (placeholder envelope with empty <data>) shows its path.
 const displayPath = computed((): string | null => {
   return (
     contentPath.value ??
@@ -134,13 +120,11 @@ const isRunning = computed(() => {
 })
 
 // Language for diff code coloring, derived from the target file path.
-// DiffView falls back to plaintext (plain rendering) when unknown.
 const diffLanguage = computed(() => detectLanguage(displayPath.value ?? ''))
 
 const openInEditor = useInjectOpenInCodeEditor()
 
-// Forward the diff-view's @jump-to-line to the in-app code editor so the user can click a line
-// number in the diff and land on that exact line in the file viewer.
+// Forward the diff-view's @jump-to-line to the in-app code editor so the user can click a line number in the diff and land on that exact line in the file viewer.
 const handleJumpToLine = (line: number) => {
   const targetPath = displayPath.value ?? parsed.value.path
   if (!openInEditor || !props.cwd || !targetPath) return

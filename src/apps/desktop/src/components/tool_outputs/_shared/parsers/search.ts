@@ -28,8 +28,7 @@ export interface ParsedSearch {
   truncatedHint: string | null
 }
 
-/** A `rg -n` text row: `path:line:text`. Non-greedy so a Windows drive letter and any
- *  colon in the path stay part of the path. */
+/** A `rg -n` text row: `path:line:text`. */
 const TEXT_MATCH_ROW = /^(.*?):(\d+):([\s\S]*)$/
 /** `count_only` text row: `path:count`. */
 const TEXT_COUNT_ROW = /^(.*):(\d+)\s*$/
@@ -46,8 +45,7 @@ export interface ParsedSearchText {
   total: number | null
 }
 
-/** Read the tool's DEFAULT output: `text` format (`rg -n` bytes) arrives as `_raw`, not as
- *  `files[]`, and the card used to render that shape as "0 files, 0 matches". */
+/** Read the tool's DEFAULT output: `text` format (`rg -n` bytes) arrives as `_raw`, not as `files[]`, and the card used to render that shape as "0 files, 0 … */
 export function parseSearchText(raw: string): ParsedSearchText {
   const groups = new Map<string, FileResult>()
   let warning: string | null = null

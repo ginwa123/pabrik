@@ -10,8 +10,7 @@ const secrets_at_rest = @import("secrets_at_rest.zig");
 /// Longest legal secret name.
 pub const MAX_NAME_LEN: usize = 64;
 
-/// Longest legal description, in bytes. The text is handed to the model on
-/// every `list_secrets` call, so an unbounded one would spend the prompt.
+/// Longest legal description, in bytes.
 pub const MAX_DESCRIPTION_LEN: usize = 500;
 
 /// One row in `workspace_secrets`, WITHOUT the value.
@@ -25,16 +24,13 @@ pub const SecretRow = struct {
     updated_at: []const u8,
 };
 
-/// A name paired with its value. Produced ONLY by `loadSecretValues`. A
-/// caller holding one of these holds a live credential: never log it, never
-/// persist it, never put it in a tool result or an SSE frame.
+/// A name paired with its value.
 pub const SecretValueRow = struct {
     name: []const u8,
     value: []const u8,
 };
 
-/// Fields for a new secret. `workspace_id` is required and has no default:
-/// a secret with no owner is not a secret.
+/// Fields for a new secret. `workspace_id` is required and has no default
 pub const CreateSecretArgs = struct {
     workspace_id: []const u8,
     name: []const u8 = "",
@@ -42,8 +38,7 @@ pub const CreateSecretArgs = struct {
     description: []const u8 = "",
 };
 
-/// Describe shape. No `value`: describing a secret must never require
-/// supplying the credential again.
+/// Describe shape.
 pub const SetSecretDescriptionArgs = struct {
     workspace_id: []const u8,
     secret_id: []const u8,
@@ -70,27 +65,21 @@ pub const SecretsError = error{
     InsertFailed,
     UpdateFailed,
     DeleteFailed,
-    /// No master key on this host: the value cannot be sealed, so the write is
-    /// refused rather than stored as plaintext.
+    /// No master key on this host: the value cannot be sealed, so the write is refused rather than stored as plaintext.
     SealingUnavailable,
     OutOfMemory,
 };
 
-/// The value-reading paths have their own error set, so the four HTTP
-/// handlers' exhaustive switches over `SecretsError` do not grow a variant they
-/// can never see.
+/// The value-reading paths have their own error set, so the four HTTP handlers' exhaustive switches over `SecretsError` do not grow a variant they can never see.
 pub const ReadValuesError = error{
     WorkspaceIdRequired,
     QueryFailed,
-    /// The row is an envelope this host cannot open: a different key, or a
-    /// damaged row. Never reported as an empty credential.
+    /// The row is an envelope this host cannot open: a different key, or a damaged row.
     ValueUnreadable,
     OutOfMemory,
 };
 
-/// The plaintext of ONE secret, returned only to a caller that already decided
-/// the requester is a member of `workspace_id`. Owned; free with
-/// `freeRevealedSecret`.
+/// The plaintext of ONE secret, returned only to a caller that already decided the requester is a member of `workspace_id`.
 pub const RevealedSecret = struct {
     id: []u8,
     name: []u8,
@@ -99,29 +88,24 @@ pub const RevealedSecret = struct {
 
 pub const RevealError = error{
     IdsRequired,
-    /// No such secret in this workspace — never distinguished from "exists in
-    /// another workspace".
+    /// No such secret in this workspace — never distinguished from "exists in another workspace".
     NotFound,
     QueryFailed,
     ValueUnreadable,
     OutOfMemory,
 };
 
-/// The read shape shared by every value-free read, so no call site can
-/// accidentally return a different projection. There is deliberately no
-/// `value` in this list — see the module header.
+/// The read shape shared by every value-free read, so no call site can accidentally return a different projection.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, name, COALESCE(description, ''), " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') " ++
     "FROM workspace_secrets";
 
-/// The agent's discovery path: NAMES ONLY, ordered so the list is stable
-/// across calls.
+/// The agent's discovery path: NAMES ONLY, ordered so the list is stable across calls.
 const SELECT_NAMES =
     "SELECT name FROM workspace_secrets WHERE workspace_id = ? ORDER BY name";
 
-/// Prefix for `loadSecretValues`, which appends the `IN (...)` list. `id` is
-/// selected because it is the AAD the envelope is bound to.
+/// Prefix for `loadSecretValues`, which appends the `IN (...)` list.
 const SELECT_NAME_VALUE_PREFIX =
     "SELECT id, name, value FROM workspace_secrets WHERE workspace_id = ? AND name IN (";
 
@@ -152,8 +136,7 @@ pub fn listSecrets(
     defer q.deinit();
 
     var list: std.ArrayList(SecretRow) = .empty;
-    // A mid-iteration failure would strand the rows already built, so
-    // unwind them here rather than at each `try`.
+    // A mid-iteration failure would strand the rows already built, so unwind them here rather than at each `try`.
     errdefer freeSecretRows(allocator, list.items);
 
     while (q.next() catch return error.QueryFailed) |r| {
@@ -194,9 +177,7 @@ pub fn createSecret(
 
     const name = std.mem.trim(u8, args.name, " \t\n\r");
     if (name.len == 0) return error.NameRequired;
-    // Validated here, before the INSERT, rather than left to the database:
-    // the name is what a model types into a `{{SECRETS:NAME}}` placeholder,
-    // so a name the grammar cannot express is rejected at the edge.
+    // Validated here, before the INSERT, rather than left to the database
     if (!isValidName(name)) return error.InvalidName;
 
     // An empty value is rejected here rather than reaching the column.
@@ -205,18 +186,14 @@ pub fn createSecret(
     const description = std.mem.trim(u8, args.description, " \t\n\r");
     if (description.len > MAX_DESCRIPTION_LEN) return error.DescriptionTooLong;
 
-    // Pre-check so the ordinary duplicate is a clean NameTaken rather than a
-    // constraint violation surfacing as a 500 at the HTTP layer.
+    // Pre-check so the ordinary duplicate is a clean NameTaken rather than a constraint violation surfacing as a 500 at the HTTP layer.
     if (nameExists(db, allocator, args.workspace_id, name)) return error.NameTaken;
 
-    // Same id shape as `documents_store`: a nanosecond wall-clock string
-    // with a table prefix. `helpers.unixTimestampNanos` is cross-platform
-    // (`std.c.clock_gettime` does not compile on Windows in Zig 0.16).
+    // Same id shape as `documents_store`: a nanosecond wall-clock string with a table prefix.
     const secret_id = try std.fmt.allocPrint(allocator, "sec_{d}", .{helpers.unixTimestampNanos()});
     defer allocator.free(secret_id);
 
-    // Sealed under the row's own id, so the envelope cannot be moved to a
-    // different secret. No key means no write — see `sealValue`.
+    // Sealed under the row's own id, so the envelope cannot be moved to a different secret.
     const sealed = secrets_at_rest.sealValue(allocator, secret_id, args.value) catch |err| switch (err) {
         error.SealingUnavailable => return error.SealingUnavailable,
         error.OutOfMemory => return error.OutOfMemory,
@@ -224,15 +201,13 @@ pub fn createSecret(
     };
     defer allocator.free(sealed);
 
-    // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column, for the
-    // empty-slice-binds-as-NULL reason described above.
+    // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column, for the empty-slice-binds-as-NULL reason described above.
     db.exec(allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value, description, created_at, updated_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     , &[_][]const u8{ secret_id, args.workspace_id, name, sealed, description }) catch |err| switch (err) {
         error.ExecuteFailed => {
-            // A failed INSERT is not automatically a taken name: it is also
-            // what a same-nanosecond primary-key collision looks like.
+            // A failed INSERT is not automatically a taken name: it is also what a same-nanosecond primary-key collision looks like.
             if (nameExists(db, allocator, args.workspace_id, name)) {
                 return error.NameTaken;
             }
@@ -241,9 +216,7 @@ pub fn createSecret(
         else => return error.InsertFailed,
     };
 
-    // The re-read reports the full error set, so map it: a row that is not
-    // there after a successful INSERT is the consistency error, and anything
-    // else — including the guards that cannot trigger, since both ids are
+    // The re-read reports the full error set, so map it: a row that is not there after a successful INSERT is the consistency error, and anything else — including …
     return getSecret(allocator, db, args.workspace_id, secret_id) catch |err| switch (err) {
         error.NotFound, error.IdsRequired, error.QueryFailed => error.InsertFailed,
         error.OutOfMemory => error.InsertFailed,
@@ -251,9 +224,7 @@ pub fn createSecret(
     };
 }
 
-/// Rotate a secret's value. `name` is immutable — see `UpdateSecretArgs`.
-/// Scoped like every other read: a foreign id reports `error.NotFound` and
-/// updates nothing.
+/// Rotate a secret's value.
 pub fn updateSecret(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -262,14 +233,10 @@ pub fn updateSecret(
     if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (args.secret_id.len == 0) return error.IdsRequired;
 
-    // Same reason as create: `value: ""` would store an empty credential
-    // rather than reporting that nothing was supplied. Clearing a secret is
-    // `deleteSecret`, which is an explicit act.
+    // Same reason as create: `value: ""` would store an empty credential rather than reporting that nothing was supplied.
     if (args.value.len == 0) return error.ValueRequired;
 
     // `db.exec` reports no row count, so existence is checked separately.
-    // Selecting `id` only keeps the current value out of memory: this
-    // function replaces it wholesale and never needs to read it back.
     var q = db.query(
         allocator,
         "SELECT id FROM workspace_secrets WHERE id = ? AND workspace_id = ?",
@@ -298,9 +265,7 @@ pub fn updateSecret(
         return error.UpdateFailed;
 }
 
-/// Write (or clear) a secret's description. `updated_at` is deliberately left
-/// alone: that column is the credential's rotation stamp, not the row's edit
-/// stamp, and `list_secrets` reports it to the model as "last rotated".
+/// Write (or clear) a secret's description.
 pub fn setSecretDescription(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -309,13 +274,11 @@ pub fn setSecretDescription(
     if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (args.secret_id.len == 0) return error.IdsRequired;
 
-    // Trimmed first and validated at the edge, so the length the caller is
-    // told about is the length that would actually be stored.
+    // Trimmed first and validated at the edge, so the length the caller is told about is the length that would actually be stored.
     const description = std.mem.trim(u8, args.description, " \t\n\r");
     if (description.len > MAX_DESCRIPTION_LEN) return error.DescriptionTooLong;
 
-    // `db.exec` reports no row count, so existence is checked separately —
-    // and selecting only `id` keeps the credential out of this process.
+    // `db.exec` reports no row count, so existence is checked separately — and selecting only `id` keeps the credential out of this process.
     var q = db.query(
         allocator,
         "SELECT id FROM workspace_secrets WHERE id = ? AND workspace_id = ?",
@@ -337,8 +300,7 @@ pub fn setSecretDescription(
         return error.UpdateFailed;
 }
 
-/// Delete a secret. Scoped like every other read: a foreign id reports
-/// `error.NotFound` and deletes nothing.
+/// Delete a secret.
 pub fn deleteSecret(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -363,8 +325,7 @@ pub fn deleteSecret(
     ) catch return error.DeleteFailed;
 }
 
-/// The NAMES in one workspace, ordered, with no values attached. This is the
-/// only function the agent-facing paths may call.
+/// The NAMES in one workspace, ordered, with no values attached.
 pub fn listSecretNames(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -388,8 +349,7 @@ pub fn listSecretNames(
     return out.toOwnedSlice(allocator);
 }
 
-/// The values of the named secrets in one workspace, for the substitution path. Every value is
-/// OPENED here, and a row that will not open reports `ValueUnreadable` instead of an empty value.
+/// The values of the named secrets in one workspace, for the substitution path.
 pub fn loadSecretValues(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -434,9 +394,7 @@ pub fn loadSecretValues(
     return out.toOwnedSlice(allocator);
 }
 
-/// The plaintext of ONE secret, for the member-only reveal route. The caller is
-/// responsible for having checked membership first — this function scopes to
-/// the workspace and nothing else.
+/// The plaintext of ONE secret, for the member-only reveal route.
 pub fn revealSecret(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -474,8 +432,7 @@ pub fn freeRevealedSecret(allocator: std.mem.Allocator, revealed: RevealedSecret
     allocator.free(revealed.value);
 }
 
-/// Whether `(workspace_id, name)` is already taken. Used both as the
-/// create-time pre-check and as the classifier after a failed INSERT.
+/// Whether `(workspace_id, name)` is already taken.
 fn nameExists(
     db: *database.Db,
     allocator: std.mem.Allocator,
@@ -531,9 +488,7 @@ pub fn freeSecretNames(allocator: std.mem.Allocator, names: [][]u8) void {
     allocator.free(names);
 }
 
-/// Free a slice of name/value pairs. Call this as soon as the substituted
-/// tool call has been dispatched — it is the only thing standing between a
-/// live credential and a leaking allocator's error report.
+/// Free a slice of name/value pairs.
 pub fn freeSecretValueRows(allocator: std.mem.Allocator, rows: []SecretValueRow) void {
     for (rows) |row| {
         allocator.free(row.name);
@@ -542,9 +497,7 @@ pub fn freeSecretValueRows(allocator: std.mem.Allocator, rows: []SecretValueRow)
     allocator.free(rows);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
@@ -553,8 +506,7 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// A fixed key for the whole suite: no test reads the host's real key file, and
-/// the key is stable so an envelope written by one call opens in the next.
+/// A fixed key for the whole suite: no test reads the host's real key file, and the key is stable so an envelope written by one call opens in the next.
 const test_key: [secrets_at_rest.KEY_LEN]u8 = blk: {
     var k: [secrets_at_rest.KEY_LEN]u8 = undefined;
     for (&k, 0..) |*b, i| b.* = @intCast(i);
@@ -596,8 +548,7 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-/// The credential behind a stored value. The raw column is an envelope, so
-/// every assertion about what was saved has to open it.
+/// The credential behind a stored value.
 fn openStored(ctx: *TestCtx, name: []const u8) ![]u8 {
     const alloc = testing.allocator;
     const stored = try storedValue(ctx, name);
@@ -614,8 +565,7 @@ fn openStored(ctx: *TestCtx, name: []const u8) ![]u8 {
     return secrets_at_rest.openValue(alloc, row.values[0], stored);
 }
 
-/// Create one secret and free the returned row, for tests that only care
-/// that the call succeeded.
+/// Create one secret and free the returned row, for tests that only care that the call succeeded.
 fn seed(allocator: std.mem.Allocator, ctx: *TestCtx, workspace_id: []const u8, name: []const u8) !void {
     const value = try std.fmt.allocPrint(allocator, "v_{s}", .{name});
     defer allocator.free(value);
@@ -627,9 +577,7 @@ fn seed(allocator: std.mem.Allocator, ctx: *TestCtx, workspace_id: []const u8, n
     freeSecretRow(allocator, row);
 }
 
-/// Read one stored value straight from SQL, bypassing the store, so an
-/// assertion about what was actually persisted cannot be satisfied by the
-/// same code path it is testing.
+/// Read one stored value straight from SQL, bypassing the store, so an assertion about what was actually persisted cannot be satisfied by the same code path it is …
 fn storedValue(ctx: *TestCtx, name: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
@@ -648,8 +596,7 @@ test "createSecret rejects an empty name before it reaches the database" {
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // `Backend.exec` binds "" as SQL NULL, so a name check that ran
-    // after the INSERT would surface as a constraint error instead.
+    // `Backend.exec` binds "" as SQL NULL, so a name check that ran after the INSERT would surface as a constraint error instead.
     try testing.expectError(error.NameRequired, createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .name = "",
@@ -705,9 +652,7 @@ test "createSecret rejects a name the placeholder grammar cannot express" {
         }));
     }
 
-    // 64 is the cap; 65 is not a name. A legal-length name paired with an
-    // empty value reports ValueRequired, which shows the name check passed
-    // first rather than masking it behind InvalidName.
+    // 64 is the cap; 65 is not a name.
     const too_long = "a" ** (MAX_NAME_LEN + 1);
     try testing.expectError(error.InvalidName, createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
@@ -737,8 +682,7 @@ test "createSecret reports a duplicate name in the same workspace as NameTaken" 
 
     try seed(alloc, &ctx, "ws_1", "GITHUB_TOKEN");
 
-    // A clean, specific error — not a constraint violation the HTTP layer
-    // would have to turn into a 500.
+    // A clean, specific error — not a constraint violation the HTTP layer would have to turn into a 500.
     try testing.expectError(error.NameTaken, createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .name = "GITHUB_TOKEN",
@@ -772,8 +716,7 @@ test "every read is scoped: a foreign workspace_id sees nothing" {
     });
     defer freeSecretRow(alloc, row);
 
-    // NotFound, not another workspace's row — a distinct "wrong workspace"
-    // error would confirm the id exists.
+    // NotFound, not another workspace's row — a distinct "wrong workspace" error would confirm the id exists.
     try testing.expectError(error.NotFound, getSecret(alloc, &ctx.db, "ws_2", row.id));
     try testing.expectError(error.NotFound, updateSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_2",
@@ -809,13 +752,10 @@ test "listSecretNames returns names and its SQL cannot select a value" {
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Asserted on the SQL string itself, not on a result set: a result can
-    // only show that the column is absent today, whereas a source change
-    // that adds it is exactly the regression this has to catch.
+    // Asserted on the SQL string itself, not on a result set: a result can only show that the column is absent today, whereas a source change that adds it is exactly …
     try testing.expect(std.mem.indexOf(u8, SELECT_NAMES, "value") == null);
 
-    // The shared read projection has the same property, so a value-free read
-    // stays value-free wherever it is reused.
+    // The shared read projection has the same property, so a value-free read stays value-free wherever it is reused.
     try testing.expect(std.mem.indexOf(u8, SELECT_COLUMNS, "value") == null);
 
     try seed(alloc, &ctx, "ws_1", "ZEBRA");
@@ -848,9 +788,7 @@ test "loadSecretValues returns only the requested names, with their values" {
     try testing.expectEqualStrings("STRIPE", values[1].name);
     try testing.expectEqualStrings("v_STRIPE", values[1].value);
 
-    // An unknown name is absent from the result rather than an empty value:
-    // only the caller knows which placeholder went missing, and reporting it
-    // as "" would turn a typo into a confusing third-party 401 later.
+    // An unknown name is absent from the result rather than an empty value
     const partial = try loadSecretValues(alloc, &ctx.db, "ws_1", &[_][]const u8{ "GH", "NOPE" });
     defer freeSecretValueRows(alloc, partial);
     try testing.expectEqual(@as(usize, 1), partial.len);
@@ -881,8 +819,7 @@ test "updateSecret rotates the value and leaves the name alone" {
     });
     defer freeSecretRow(alloc, rotated);
 
-    // A rename would silently break every prompt and saved tool call that
-    // references {{SECRETS:GH}}, so the name is not part of the update.
+    // A rename would silently break every prompt and saved tool call that references {{SECRETS:GH}}, so the name is not part of the update.
     try testing.expectEqualStrings("GH", rotated.name);
     try testing.expectEqualStrings(created.id, rotated.id);
 
@@ -890,8 +827,7 @@ test "updateSecret rotates the value and leaves the name alone" {
     defer alloc.free(persisted);
     try testing.expectEqualStrings("ghp_new", persisted);
 
-    // Rotation is the only update there is, so an empty value is refused
-    // rather than storing an empty credential. Clearing a secret is a delete.
+    // Rotation is the only update there is, so an empty value is refused rather than storing an empty credential.
     try testing.expectError(error.ValueRequired, updateSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .secret_id = created.id,
@@ -943,8 +879,7 @@ test "deleteSecret removes the row and leaves an empty list behind" {
     defer freeSecretNames(alloc, names);
     try testing.expectEqual(@as(usize, 0), names.len);
 
-    // The other workspace's identically named secret is untouched — the
-    // DELETE was scoped, not global.
+    // The other workspace's identically named secret is untouched — the DELETE was scoped, not global.
     const other = try listSecretNames(alloc, &ctx.db, "ws_2");
     defer freeSecretNames(alloc, other);
     try testing.expectEqual(@as(usize, 1), other.len);
@@ -1062,8 +997,7 @@ test "revealSecret answers NotFound for another workspace's id" {
     });
     defer freeSecretRow(alloc, row);
 
-    // NotFound, not a distinct "wrong workspace" error: a different answer
-    // would confirm the id exists somewhere else.
+    // NotFound, not a distinct "wrong workspace" error: a different answer would confirm the id exists somewhere else.
     try testing.expectError(error.NotFound, revealSecret(alloc, &ctx.db, "ws_2", row.id));
     try testing.expectError(error.NotFound, revealSecret(alloc, &ctx.db, "ws_1", "sec_missing"));
     try testing.expectError(error.IdsRequired, revealSecret(alloc, &ctx.db, "ws_1", ""));
@@ -1113,8 +1047,7 @@ test "a row sealed under a different key reports ValueUnreadable, not an empty v
     try testing.expectError(error.ValueUnreadable, loadSecretValues(alloc, &ctx.db, "ws_1", &names));
 }
 
-/// The description column straight from SQL, bypassing the store. A NULL
-/// reads back as `<null>` so a missing default cannot pass for an empty write.
+/// The description column straight from SQL, bypassing the store.
 fn storedDescription(ctx: *TestCtx, id: []const u8) ![]u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
@@ -1166,9 +1099,7 @@ test "a secret created with no description reads back as an empty string, never 
     defer freeSecretRow(alloc, row);
     try testing.expectEqualStrings("", row.description);
 
-    // An empty slice binds as SQL NULL, so without the store's COALESCE the
-    // column would be NULL and a reader would get a null where it declared
-    // a string.
+    // An empty slice binds as SQL NULL, so without the store's COALESCE the column would be NULL and a reader would get a null where it declared a string.
     const persisted = try storedDescription(&ctx, row.id);
     defer alloc.free(persisted);
     try testing.expectEqualStrings("", persisted);
@@ -1256,8 +1187,7 @@ test "describing a secret does not move its rotation timestamp" {
     });
     defer freeSecretRow(alloc, described);
 
-    // `updated_at` is what `list_secrets` reports as "last rotated", so an
-    // edit to the prose must not make a stale credential look fresh.
+    // `updated_at` is what `list_secrets` reports as "last rotated", so an edit to the prose must not make a stale credential look fresh.
     try testing.expectEqualStrings("2000-01-01 00:00:00", described.updated_at);
 }
 

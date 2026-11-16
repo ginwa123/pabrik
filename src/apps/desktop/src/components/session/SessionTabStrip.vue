@@ -56,8 +56,7 @@ function close(tabId: string): void {
   void refreshMarks()
 }
 
-// The pinned tab wears the session's name — the strip IS the session's title bar, and a tab that
-// says "Chat" while the rail says the real name is the one thing this row must never do.
+// The pinned tab wears the session's name — the strip IS the session's title bar, and a tab that says "Chat" while the rail says the real name is the one thing …
 function syncTitle(): void {
   const pinned = row.value.find((tab) => tab.pinned)
   if (pinned && props.title && pinned.title !== props.title) {

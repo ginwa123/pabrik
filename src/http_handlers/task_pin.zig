@@ -1,6 +1,4 @@
 //! `POST /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/pin`.
-//! Body: `{ "is_pinned": true | false }`. Flips the `is_pinned` flag on the
-//! row.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -15,9 +13,7 @@ pub const TaskPinError = error{
     IsPinnedMustBeBool,
     TaskNotFound,
     PinUpdateFailed,
-    /// `makeTaskPinResponse` / `std.json.Stringify.valueAlloc` can
-    /// fail with `OutOfMemory`. Unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `makeTaskPinResponse` / `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
@@ -26,15 +22,12 @@ pub const TaskPinInput = struct {
     is_pinned: bool,
 };
 
-/// Tagged outcome: returns the new pinned_position (or 0 if
-/// unpinning).
+/// Tagged outcome: returns the new pinned_position (or 0 if unpinning).
 pub const TaskPinResult = struct {
     new_pos: i64,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -49,9 +42,7 @@ fn useCase(
         input.task_id,
         input.is_pinned,
     ) catch |err| {
-        // The model function returns a wider error set; the only
-        // domain-meaningful variant is `TaskNotFound` (404). All
-        // other errors collapse to `PinUpdateFailed` (500).
+        // The model function returns a wider error set; the only domain-meaningful variant is `TaskNotFound` (404).
         if (err == error.TaskNotFound) return error.TaskNotFound;
         return error.PinUpdateFailed;
     };
@@ -59,9 +50,7 @@ fn useCase(
     return .{ .new_pos = new_pos };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn taskPinHandler(
     ctx: gserverz.HttpContext,

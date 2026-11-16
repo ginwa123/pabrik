@@ -9,9 +9,7 @@ const auth_common = @import("auth_common.zig");
 pub const WorkspaceDeleteError = error{
     OutOfMemory,
     DatabaseError,
-    /// The workspace does not exist, or belongs to another user. The two
-    /// cases are deliberately indistinguishable (404, never 403) so a
-    /// caller cannot probe for the existence of someone else's ids.
+    /// The workspace does not exist, or belongs to another user.
     NotFound,
 };
 
@@ -53,9 +51,7 @@ fn useCase(
     auth_enabled: bool,
     headers: anytype,
 ) WorkspaceDeleteError!WorkspaceDeleteResult {
-    // Resolve the owner server-side (cookie only — never the body/path) and
-    // refuse to touch a workspace this request cannot see. Without this a
-    // caller could destroy another user's workspace by guessing its id.
+    // Resolve the owner server-side (cookie only — never the body/path) and refuse to touch a workspace this request cannot see.
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, auth_enabled, headers) catch {
         return error.OutOfMemory;
     };
@@ -78,8 +74,7 @@ fn useCase(
         if (row) |r| r.deinit(allocator);
     }
 
-    // `begin`/`commit` return the full sqlite error set, which is far wider
-    // than this file's handler-facing set.
+    // `begin`/`commit` return the full sqlite error set, which is far wider than this file's handler-facing set.
     var tx = sqlite_db.begin() catch {
         std.log.warn("workspaceDelete: BEGIN failed for {s}", .{id});
         return error.DatabaseError;
@@ -87,9 +82,7 @@ fn useCase(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // Workspace first, still visibility-gated — a foreign id matches nothing
-    // and the tx rolls back, so a foreign caller can never strip a real
-    // owner's members.
+    // Workspace first, still visibility-gated — a foreign id matches nothing and the tx rolls back, so a foreign caller can never strip a real owner's members.
     tx.exec(
         allocator,
         "DELETE FROM workspaces WHERE id = ? AND " ++ comptime auth_common.workspaceVisibilityClause("workspaces"),
@@ -115,9 +108,7 @@ fn useCase(
     return .{ .id = id };
 }
 
-// ============================================================================
 // useCase — membership cleanup
-// ============================================================================
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -155,9 +146,7 @@ fn setupDeleteDb() !DeleteCtx {
         \\  PRIMARY KEY (workspace_id, user_id)
         \\)
     , &.{});
-    // Mirrors Migration 103's `workspace_secrets` (the columns the delete
-    // path touches). Kept as a literal here, like the two tables above, so
-    // this fixture stays independent of the migration chain.
+    // Mirrors Migration 103's `workspace_secrets` (the columns the delete path touches).
     try db.exec(alloc,
         \\CREATE TABLE workspace_secrets (
         \\  id TEXT PRIMARY KEY,
@@ -195,8 +184,7 @@ fn countRows(ctx: *DeleteCtx, sql: []const u8, params: []const []const u8) !u64 
     return std.fmt.parseInt(u64, row.values[0], 10);
 }
 
-/// A header bag with no Cookie, so `parseSessionToken` yields null and
-/// `resolveRequestUserId` resolves the sentinel.
+/// A header bag with no Cookie, so `parseSessionToken` yields null and `resolveRequestUserId` resolves the sentinel.
 const NoCookie = struct {
     pub fn get(_: @This(), _: []const u8) ?[]const u8 {
         return null;
@@ -235,8 +223,7 @@ test "workspaceDelete refuses an unknown workspace and deletes nothing" {
 
     try testing.expectError(error.NotFound, useCase(alloc, &ctx.db, "ws_nope", true, NoCookie{}));
 
-    // The refused call must not have taken the real workspace's members with
-    // it — the cleanup only runs after a visibility-gated DELETE.
+    // The refused call must not have taken the real workspace's members with it — the cleanup only runs after a visibility-gated DELETE.
     try testing.expectEqual(@as(u64, 1), try countRows(&ctx, "SELECT COUNT(*) FROM workspaces WHERE id = 'ws_x'", &.{}));
     try testing.expectEqual(@as(u64, 1), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = 'ws_x'", &.{}));
 }

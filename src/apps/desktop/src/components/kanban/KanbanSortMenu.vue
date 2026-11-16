@@ -100,9 +100,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-// Click-outside + Esc handlers are only needed when the trigger
-// flow is active. showTrigger=false skips both — the modal wrapper
-// owns its own backdrop + Esc close.
+// Click-outside + Esc handlers are only needed when the trigger flow is active. showTrigger=false skips both — the modal wrapper owns its own backdrop + Esc …
 onMounted(() => {
   if (!props.showTrigger) return
   document.addEventListener('click', handleDocumentClick)
@@ -115,8 +113,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown)
 })
 
-// Trigger label: shows the current sort mode so the user can see
-// the active sort at a glance without opening the menu.
+// Trigger label: shows the current sort mode so the user can see the active sort at a glance without opening the menu.
 const triggerLabel = computed(() => {
   const item = MENU_ITEMS.find((m) => isActive(m))
   return item ? item.label : 'Manual'

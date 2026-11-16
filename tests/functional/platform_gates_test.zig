@@ -1,5 +1,4 @@
-// Contract tests for the platform-gate table. Zig port of
-// `tests/functional/platform_gates_test.py` (same test names, same order).
+// Contract tests for the platform-gate table.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,13 +7,9 @@ const builtin = @import("builtin");
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // The gate table
-// ============================================================================
 
-/// One `(platform, module) -> reason` row. `import_time` records whether the
-/// blocker kills COLLECTION (a module-scope `import pty`) or only the TEST
-/// BODY.
+/// One `(platform, module) -> reason` row.
 pub const Gate = struct {
     platform: []const u8,
     /// Module BASENAME with no extension.
@@ -23,13 +18,9 @@ pub const Gate = struct {
     import_time: bool = false,
 };
 
-/// Every gate, as a flat table. The comment above each group is the
-/// class of blocker, so a new row lands next to its siblings and the
-/// "why" is visible without opening each test.
+/// Every gate, as a flat table.
 pub const GATES = [_]Gate{
     // ── POSIX-only stdlib imports (`pty` / `fcntl` / `termios`) ──────────
-    // These are module-level `import pty`, so on Windows they are a
-    // COLLECTION ERROR that takes the whole file with them, not a test
     .{
         .platform = "win32",
         .module = "tui_turn_streaming_test",
@@ -43,8 +34,6 @@ pub const GATES = [_]Gate{
         .import_time = true,
     },
     // ── Linux-only kernel interfaces ────────────────────────────────────
-    // RSS accounting reads /proc/<pid>/status. macOS has no /proc; the
-    // equivalent is `ps -o rss=` or psutil, and the TUI perf budget is the
     .{
         .platform = "darwin",
         .module = "tui_perf_test",
@@ -52,8 +41,6 @@ pub const GATES = [_]Gate{
     },
 
     // ── Product gate: no pty backend on Windows ──────────────────────────
-    // DELETED 2026-10-17. Every row here said "no pty backend on Windows:
-    // terminal_session.zig sets is_pty_os = linux || macos", and that is no
     .{
         .platform = "win32",
         .module = "terminal_sidebar_ui_test",
@@ -61,8 +48,6 @@ pub const GATES = [_]Gate{
     },
 
     // ── POSIX signal / waitpid semantics ────────────────────────────────
-    // The test asserts a graceful-shutdown EXIT CODE of 130, which is what a
-    // process group that received SIGINT reports.
     .{
         .platform = "win32",
         .module = "graceful_shutdown_test",
@@ -70,7 +55,6 @@ pub const GATES = [_]Gate{
     },
 
     // ── select() over a pipe ────────────────────────────────────────────
-    // CPython's Windows select() accepts sockets only.
     .{
         .platform = "win32",
         .module = "mcp_stdio_hang_test",
@@ -78,18 +62,14 @@ pub const GATES = [_]Gate{
     },
 };
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Every platform key the table can be asked about, in a stable order.
-/// Derived from a fixed list rather than from `GATES` on purpose.
 pub fn gatePlatforms() []const []const u8 {
     return &.{ "win32", "darwin", "linux" };
 }
 
-/// The gate platform key for the RUNNING interpreter. `sys.platform` is what
-/// the Python table is keyed on.
+/// The gate platform key for the RUNNING interpreter.
 pub fn currentPlatform() []const u8 {
     return switch (builtin.os.tag) {
         .windows => "win32",
@@ -123,8 +103,7 @@ pub fn gatesFor(platform: []const u8) GateList {
     return out;
 }
 
-/// Rows that are blocked at COLLECTION time on `platform` — the pytest
-/// `collect_ignore` half. TODO(port): no Zig consumer.
+/// Rows that are blocked at COLLECTION time on `platform` — the pytest `collect_ignore` half.
 pub fn collectIgnoreFor(platform: []const u8) GateList {
     var out: GateList = .{};
     for (GATES) |g| {
@@ -133,9 +112,7 @@ pub fn collectIgnoreFor(platform: []const u8) GateList {
     return out;
 }
 
-/// Rows that are skipped at TEST-BODY time on `platform` — the pytest
-/// `pytest.mark.skip` half, whose Zig counterpart is
-/// `error.SkipZigTest` returned from the test body.
+/// Rows that are skipped at TEST-BODY time on `platform` — the pytest `pytest.mark.skip` half, whose Zig counterpart is `error.SkipZigTest` returned from the test …
 pub fn runtimeSkipReasons(platform: []const u8) GateList {
     var out: GateList = .{};
     for (GATES) |g| {
@@ -151,8 +128,7 @@ fn gatedModules() GateList {
     return out;
 }
 
-/// The suites the gate table can name, as ABSOLUTE directory paths. TWO
-/// suites, not one.
+/// The suites the gate table can name, as ABSOLUTE directory paths.
 fn suiteDirs() ![]const []const u8 {
     const candidates = [_][]const u8{
         "tests/functional",
@@ -162,9 +138,7 @@ fn suiteDirs() ![]const []const u8 {
     for (candidates) |c| {
         var probe: [std.fs.max_path_bytes]u8 = undefined;
         const resolved = std.Io.Dir.cwd().realPathFile(io, c, &probe) catch continue;
-        // A directory containing `harness.zig` is THIS package's suite
-        // directory; the repo root is not (it has no such file directly
-        // inside it).
+        // A directory containing `harness.zig` is THIS package's suite directory; the repo root is not (it has no such file directly inside it).
         const marker = std.fmt.allocPrint(gpa, "{s}/harness.zig", .{probe[0..resolved]}) catch continue;
         defer gpa.free(marker);
         std.Io.Dir.cwd().access(io, marker, .{}) catch continue;
@@ -173,8 +147,7 @@ fn suiteDirs() ![]const []const u8 {
         const parent = std.fs.path.dirname(probe[0..resolved]) orelse continue;
         const ui = try std.fmt.allocPrint(gpa, "{s}/functional_ui", .{parent});
         errdefer gpa.free(ui);
-        // A missing `functional_ui` is not fatal: a checkout that never
-        // ran the UI suites simply has no gate that names one.
+        // A missing `functional_ui` is not fatal: a checkout that never ran the UI suites simply has no gate that names one.
         const ui_present = blk: {
             std.Io.Dir.cwd().access(io, ui, .{}) catch break :blk false;
             break :blk true;
@@ -197,14 +170,11 @@ fn suiteDirs() ![]const []const u8 {
     return error.FileNotFound;
 }
 
-/// True iff `stem` names a suite that exists on disk under any suite
-/// directory, with either extension.
+/// True iff `stem` names a suite that exists on disk under any suite directory, with either extension.
 fn suiteExists(dirs: []const []const u8, stem: []const u8) bool {
     const suffixes = [_][]const u8{ ".zig", ".py" };
     for (dirs) |dir| {
-        // `continue` (not a labelled `continue :outer`) — the label belongs
-        // to the DIRECTORY loop, and jumping there would skip the remaining
-        // suffixes in the directory just searched.
+        // `continue` (not a labelled `continue :outer`) — the label belongs to the DIRECTORY loop, and jumping there would skip the remaining suffixes in the directory …
         for (suffixes) |s| {
             const p = std.fmt.allocPrint(gpa, "{s}/{s}{s}", .{ dir, stem, s }) catch return false;
             defer gpa.free(p);
@@ -215,9 +185,7 @@ fn suiteExists(dirs: []const []const u8, stem: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // A gate for a renamed/deleted file is a gate that never fires.
 test "every_gate_names_a_file_that_exists" {
@@ -242,9 +210,7 @@ test "every_gate_names_a_file_that_exists" {
     }
 }
 
-// First-wins de-duplication in the helpers would mask a conflict. `gatesFor`
-// returns every row in table order, so two disagreeing rows both reach the
-// assertions below instead of quietly resolving to one.
+// First-wins de-duplication in the helpers would mask a conflict.
 test "no_module_is_gated_twice_on_one_platform" {
     for (gatePlatforms()) |platform| {
         var seen: std.ArrayList([]const u8) = .empty;
@@ -285,7 +251,6 @@ test "import_and_runtime_gates_are_disjoint_win32" {
 }
 
 // A file is either never imported OR skipped — never both.
-// Parametrize row: platform="darwin".
 test "import_and_runtime_gates_are_disjoint_darwin" {
     const ignored = collectIgnoreFor("darwin");
     const skipped = runtimeSkipReasons("darwin");
@@ -303,7 +268,6 @@ test "import_and_runtime_gates_are_disjoint_darwin" {
 }
 
 // A file is either never imported OR skipped — never both.
-// Parametrize row: platform="linux".
 test "import_and_runtime_gates_are_disjoint_linux" {
     const ignored = collectIgnoreFor("linux");
     const skipped = runtimeSkipReasons("linux");
@@ -344,7 +308,6 @@ test "every_row_carries_a_reason_a_reviewer_can_act_on_win32" {
 }
 
 // Every skip must say WHY, and name the platform or the blocker.
-// Parametrize row: platform="darwin".
 test "every_row_carries_a_reason_a_reviewer_can_act_on_darwin" {
     const rows = runtimeSkipReasons("darwin");
     for (rows.slice()) |g| {
@@ -367,10 +330,8 @@ test "every_row_carries_a_reason_a_reviewer_can_act_on_darwin" {
 }
 
 // Every skip must say WHY, and name the platform or the blocker.
-// Parametrize row: platform="linux".
 test "every_row_carries_a_reason_a_reviewer_can_act_on_linux" {
-    // Vacuous by construction — there are no Linux rows, which is the point
-    // and is asserted separately.
+    // Vacuous by construction — there are no Linux rows, which is the point and is asserted separately.
     const rows = runtimeSkipReasons("linux");
     for (rows.slice()) |g| {
         if (g.reason.len == 0) {
@@ -391,8 +352,7 @@ test "every_row_carries_a_reason_a_reviewer_can_act_on_linux" {
     }
 }
 
-/// Does `reason` name the platform or a portable blocker? Case-folded,
-/// so "Windows" and "windows" both count.
+/// Does `reason` name the platform or a portable blocker?
 fn namesPlatformOrBlocker(reason: []const u8) bool {
     const needles = [_][]const u8{ "windows", "macos", "linux", "/proc", "posix" };
     var buf: [512]u8 = undefined;
@@ -405,8 +365,6 @@ fn namesPlatformOrBlocker(reason: []const u8) bool {
 }
 
 // Guard against a row keyed on a platform string nothing can produce.
-// `currentPlatform` matches `GATES[i].platform` against the value the
-// COMPILER reports.
 test "every_row_declares_the_platform_key_it_claims" {
     for (GATES) |g| {
         for (gatePlatforms()) |known| {
@@ -418,8 +376,7 @@ test "every_row_declares_the_platform_key_it_claims" {
     }
 }
 
-// The Linux cell must not be gated at all, or the fix is not done. The table
-// exists to let ubuntu-24.04 keep running everything it ran before.
+// The Linux cell must not be gated at all, or the fix is not done.
 test "gates_are_built_for_this_platform_or_are_explicit_about_the_rest" {
     for (GATES) |g| {
         if (!std.mem.eql(u8, g.platform, "linux")) continue;
@@ -448,8 +405,7 @@ test "helpers_honour_an_explicit_platform_argument" {
         _ = runtimeSkipReasons(platform).slice();
     }
 
-    // Sanity: the three platforms are genuinely different, so a
-    // hardcoded return value cannot pass this file.
+    // Sanity: the three platforms are genuinely different, so a hardcoded return value cannot pass this file.
     const win = moduleCount("win32");
     const mac = moduleCount("darwin");
     const lin = moduleCount("linux");
@@ -484,8 +440,7 @@ fn moduleCount(platform: []const u8) usize {
     return n;
 }
 
-// Body-analysis barrier. An unreferenced function is never type-checked,
-// so a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = gatePlatforms;
     _ = currentPlatform;

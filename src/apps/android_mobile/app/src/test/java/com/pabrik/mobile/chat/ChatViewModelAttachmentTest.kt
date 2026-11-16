@@ -22,16 +22,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Images on a turn, at the ViewModel level.
- *
- * The reader in these tests is a fake, and that is the point: the decode is
- * the one part that needs a `Bitmap` and a gallery, and it is also the least
- * interesting part. What has to be checked on a device is the *bookkeeping* —
- * that a refusal leaves the turn alone, that the images ride along with the
- * send, and that a failed send does not eat them. All of that is reachable
- * without one.
- */
+/** Images on a turn, at the ViewModel level. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelAttachmentTest {
 
@@ -85,11 +76,7 @@ class ChatViewModelAttachmentTest {
     }
 
 
-    /**
-     * A reader that answers from a table, so a test can name the exact
-     * attachment a pick produces — including one that is too big, and one that
-     * cannot be read at all.
-     */
+    /** A reader that answers from a table, so a test can name the exact attachment a pick produces — including one that is too big, and one that cannot be read at all. */
     private class TableImageReader(
         private val bySource: Map<String, ChatAttachment?>,
     ) : PickedImageReader {
@@ -151,10 +138,7 @@ class ChatViewModelAttachmentTest {
 
     @Test
     fun thePaperclipGoesQuietTheMomentAPickIsTapped() = attachmentTest { s ->
-        // Synchronously, before anything is drained. A 12 MP decode is a few
-        // hundred milliseconds; if `isAttaching` only rose once the coroutine
-        // was scheduled, the paperclip would look inert for the whole of it
-        // and a reader would tap it a second time.
+        // Synchronously, before anything is drained.
         val (model, _) = opened(s, reader = readerOf("content://one" to attachment("a1")))
 
         model.attachImage("content://one")
@@ -170,9 +154,7 @@ class ChatViewModelAttachmentTest {
 
     @Test
     fun aSecondPickIsIgnoredWhileTheFirstIsStillDecoding() = attachmentTest { s ->
-        // The guard, from the reader's side. Draining in between would test
-        // nothing; the point is that the second tap arrives before the first
-        // pick has produced anything.
+        // The guard, from the reader's side.
         val reader = readerOf("content://a" to attachment("a"), "content://b" to attachment("b"))
         val (model, _) = opened(s, reader = reader)
 
@@ -284,9 +266,7 @@ class ChatViewModelAttachmentTest {
 
     @Test
     fun `an image with no text is still a turn`() = attachmentTest { s ->
-        // The reader who attached a screenshot and wrote nothing is asking a
-        // question the picture answers. Refusing on an empty body would be a
-        // rule from a client that had no attachments.
+        // The reader who attached a screenshot and wrote nothing is asking a question the picture answers.
         val (model, transport) = opened(s, reader = readerOf("content://a" to attachment("a")))
 
         model.attachImage("content://a")
@@ -310,8 +290,7 @@ class ChatViewModelAttachmentTest {
 
     @Test
     fun `a send with no images leaves image_urls empty`() = attachmentTest { s ->
-        // A trailing or lone `|` would make the transcript render an
-        // attachment that is not there.
+        // A trailing or lone `|` would make the transcript render an attachment that is not there.
         val (model, transport) = opened(s)
 
         model.onDraftChanged("plain text")
@@ -339,9 +318,7 @@ class ChatViewModelAttachmentTest {
 
     @Test
     fun `a failed send keeps the images, so a retry is one tap`() = attachmentTest { s ->
-        // The images are megabytes the reader spent a minute choosing. Losing
-        // them to a dropped connection is the worst thing this feature could
-        // do, and it is exactly what a non-optimistic clear on failure does.
+        // The images are megabytes the reader spent a minute choosing.
         val image = attachment("a")
         val (model, transport) = opened(
             s,

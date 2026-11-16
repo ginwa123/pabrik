@@ -1,5 +1,4 @@
-//! `DELETE /api/agent-routines/:routine_id/tools/:tool_name`. Removes a tool
-//! from the routine's allowlist. Returns `{ok: true}` on success.
+//! `DELETE /api/agent-routines/:routine_id/tools/:tool_name`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,8 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_routine_db = @import("../models/agent_routine.db.zig");
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const ToolDeleteError = error{
     /// `routine_id` or `tool_name` path param was missing or empty.
     IdsRequired,
@@ -23,13 +21,9 @@ pub const ToolDeleteInput = struct {
     tool_name: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Delete a tool row for the given agent-routines config. The use-case
-/// is transport-agnostic: it works for both the per-request arena
-/// (production HTTP handler) and `testing.allocator` (unit tests).
+/// Delete a tool row for the given agent-routines config.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -43,9 +37,7 @@ fn useCase(
         return error.DeleteFailed;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentRoutineToolsDeleteHandler(
@@ -84,7 +76,6 @@ pub fn agentRoutineToolsDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

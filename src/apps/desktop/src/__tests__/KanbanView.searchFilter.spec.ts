@@ -70,9 +70,7 @@ describe('KanbanView search filter wiring', () => {
     vi.advanceTimersByTime(350)
     await flushPromises()
 
-    // Per-column initial fetch (Option B): the search watcher calls fetchKanbanTasksForAllColumns,
-    // not fetchKanbanTasks directly. The underlying per-column fetches happen as
-    // Promise.all(map(col => fetchKanbanTasks(...))).
+    // Per-column initial fetch (Option B): the search watcher calls fetchKanbanTasksForAllColumns, not fetchKanbanTasks directly.
     expect(spyForAllColumns).toHaveBeenCalledWith(WS_ID, ITEM_ID, 10, 'design')
   })
 
@@ -117,8 +115,7 @@ describe('KanbanView search filter wiring', () => {
     const searchInput = wrapper.find('[data-testid="kanban-search-input"]')
     await searchInput.setValue('nothing-matches')
     await flushPromises()
-    // Banner testid is prefixed with item.id per the project
-    // convention (`kanban-view-${item.id}-no-search-matches`).
+    // Banner testid is prefixed with item.id per the project convention (`kanban-view-${item.id}-no-search-matches`).
     const bannerSel = `[data-testid="kanban-view-${ITEM_ID}-no-search-matches"]`
     expect(wrapper.find(bannerSel).exists()).toBe(true)
     expect(wrapper.find(bannerSel).text()).toContain('nothing-matches')

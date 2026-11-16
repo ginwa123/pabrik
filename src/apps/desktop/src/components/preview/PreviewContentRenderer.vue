@@ -74,9 +74,7 @@ const props = withDefaults(
   defineProps<{
     contentType: 'markdown' | 'text' | 'code' | 'image' | 'html' | 'mermaid' | 'plantuml' | 'd2'
     args: PreviewArgs
-    /**      * Layout variant (kept for backward compat). Only `'inline'` is used — compact chat-bubble
-     * layout that auto-resizes to fit the iframe's content height, plus an "Open in new tab" button
-     * for HTML content. */
+    /** Layout variant (kept for backward compat). */
     variant?: 'side' | 'inline'
   }>(),
   { variant: 'inline' },
@@ -88,8 +86,6 @@ const MIN_IFRAME_HEIGHT = 200
 
 function onIframeMessage(e: MessageEvent) {
   // Filter by source — only messages from our own auto-resize script.
-  // Grows to the FULL content height (no upper cap) so no inner
-  // scrollbar ever appears — the outer chat scroller owns scrolling.
   const reported = readAutoResizeHeight(e, PREVIEW_AUTO_RESIZE_SOURCE)
   if (reported === null) return
   const iframe = iframeRef.value
@@ -109,9 +105,7 @@ onUnmounted(() => {
   }
 })
 
-// ─── Auto-resize script (prepended to the iframe srcdoc) ──────────── The reporter script and its
-// postMessage parser live in helpers/iframeAutoResize.ts — shared with ChatView.vue's `<html>`
-// frames.
+// ─── Auto-resize script (prepended to the iframe srcdoc) ────────────
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -121,9 +115,7 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
-// text / code branch (consumed via v-html). `image`, `html`, `markdown` and
-// `mermaid` render via dedicated elements instead — the v-html string is
-// empty for them so we don't double-render.
+// text / code branch (consumed via v-html).
 const renderedContent = computed<string>(() => {
   const ct = props.contentType
   const c = props.args.content ?? ''
@@ -137,13 +129,10 @@ const renderedContent = computed<string>(() => {
   return ''
 })
 
-/**  * A presented markdown file can carry mermaid — as a `<mermaid>` block or a ```mermaid fence — so
- * its prose and its diagrams render from one text pass. */
+/** A presented markdown file can carry mermaid — as a `<mermaid>` block or a ```mermaid fence — so its prose and its diagrams render from one text pass. */
 const markdownSegments = computed(() => extractRichBlocks(props.args.content ?? ''))
 
 // XSS guard for image: only data: URLs and http(s) URLs are allowed.
-// Other payloads (e.g. javascript:) silently render nothing — the
-// underlying `imageSrc` computed returns null in that case.
 const imageSrc = computed<string | null>(() => {
   if (props.contentType !== 'image') return null
   const c = props.args.content ?? ''
@@ -153,8 +142,7 @@ const imageSrc = computed<string | null>(() => {
   return null
 })
 
-/** Build the iframe's `srcdoc` value from the user HTML. CRITICAL: do NOT manually escape `<`, `>`,
- * `&`, `"` here. The shell carries literal colours, so the tick makes it rebuild on a theme change. */
+/** Build the iframe's `srcdoc` value from the user HTML. */
 const htmlSrcDoc = computed<string | null>(() => {
   void themeTick.value
   if (props.contentType !== 'html') return null
@@ -162,9 +150,7 @@ const htmlSrcDoc = computed<string | null>(() => {
   return `${PREVIEW_AUTO_RESIZE_SCRIPT}${frameDocumentStyle()}${raw}`
 })
 
-// ─── Open in new tab ─────────────────────────────────────────────── HTML previews offer an "Open
-// in new tab" action that builds a Blob URL from the raw HTML and opens it via window.open. The
-// iframe stays sandboxed (NULL origin); the new tab gets the full viewport width for wide content.
+// ─── Open in new tab ───────────────────────────────────────────────
 function openInNewTab() {
   if (typeof window === 'undefined' || typeof URL === 'undefined') return
   try {

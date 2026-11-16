@@ -5,9 +5,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 149 — a database created before Migration 072's DDL was corrected
-/// keeps `ON DELETE SET NULL` on the `NOT NULL` `kanban.kanban_column_id`, so
-/// deleting a kanban project rolls back with a NOT NULL constraint error.
+/// Migration 149 — a database created before Migration 072's DDL was corrected keeps `ON DELETE SET NULL` on the `NOT NULL` `kanban.kanban_column_id`, so deleting …
 pub const Migration149RepairKanbanColumnCascade = struct {
     pub const version: u32 = 149;
     pub const name = "repair_kanban_column_cascade";
@@ -63,8 +61,7 @@ pub const Migration149RepairKanbanColumnCascade = struct {
         try tx.commit();
     }
 
-    /// True when the placement already dies with its column — the shape a
-    /// database created after Migration 072 was corrected has.
+    /// True when the placement already dies with its column — the shape a database created after Migration 072 was corrected has.
     fn cascadesOnColumnDelete(db: *Backend, allocator: std.mem.Allocator) !bool {
         if (dialect.is_postgres) {
             var row = try db.queryRow(
@@ -234,9 +231,7 @@ test "Migration149 is a no-op on a database with no placement table" {
     try test_db.openMemory(&db, threaded.io());
     try Migration149RepairKanbanColumnCascade.up(&db, alloc);
 }
-// ════════════════════════════════════════════════════════════════════════════
 // Migration149 — postgres path (the sqlite tests above cannot reach it)
-// ════════════════════════════════════════════════════════════════════════════
 
 fn openPgLegacyDb(alloc: std.mem.Allocator) !struct { db: Backend, threaded: std.Io.Threaded } {
     var threaded = std.Io.Threaded.init(alloc, .{});

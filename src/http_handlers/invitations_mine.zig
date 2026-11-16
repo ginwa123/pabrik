@@ -1,6 +1,4 @@
-//! `GET /api/invitations` — the caller's own inbox: every workspace waiting on
-//! an answer from this account. Not workspace-scoped, so it needs no gate: the
-//! rows are chosen by the resolved caller's id and nothing else.
+//! `GET /api/invitations` — the caller's own inbox: every workspace waiting on an answer from this account.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -124,8 +122,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Under `--auth` off the caller is the installation owner, whose inbox is
-/// empty — the invitee here only exists as a row in `users`.
+/// Under `--auth` off the caller is the installation owner, whose inbox is empty — the invitee here only exists as a row in `users`.
 const NoCookie = struct {
     pub fn get(_: @This(), _: []const u8) ?[]const u8 {
         return null;
@@ -141,8 +138,7 @@ test "useCase answers the installation owner with an empty inbox, not somebody e
     const out = try useCase(alloc, &ctx.db, false, NoCookie{});
     defer store.freeInvitationRows(alloc, out.invitations);
 
-    // `user_system` holds no invitation, so the list is empty rather than
-    // every invitation in the database.
+    // `user_system` holds no invitation, so the list is empty rather than every invitation in the database.
     try testing.expectEqual(@as(usize, 0), out.invitations.len);
 }
 
@@ -152,9 +148,7 @@ test "useCase keys the inbox on the resolved caller, not on a query parameter" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The store answers for an id; the handler can only ever pass the id it
-    // resolved from the cookie, which is what keeps one user out of another's
-    // inbox.
+    // The store answers for an id; the handler can only ever pass the id it resolved from the cookie, which is what keeps one user out of another's inbox.
     const rows = try store.listForInvitee(alloc, &ctx.db, "user_ben");
     defer store.freeInvitationRows(alloc, rows);
     try testing.expectEqual(@as(usize, 2), rows.len);

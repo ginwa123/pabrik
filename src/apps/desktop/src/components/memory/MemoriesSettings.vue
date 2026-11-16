@@ -15,8 +15,7 @@ const handleSelectMemory = (name: string) => {
   selectedMemoryName.value = name
 }
 
-/** Open the create-mode form in the right panel. Wired to the "+ New Memory" button in the list
- * header so the user doesn't have to first deselect the current memory. */
+/** Open the create-mode form in the right panel. */
 const handleCreateClick = () => {
   selectedMemoryName.value = null
   memoryDetailRef.value?.startCreate()

@@ -1,13 +1,10 @@
-//! Storage layer for workspace document folders (Migration 140). The depth,
-//! cycle and "delete reparents" invariants live here because the agent tools
-//! write through these functions too, not only the HTTP handlers.
+//! Storage layer for workspace document folders (Migration 140).
 
 const std = @import("std");
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
 
-/// Five levels. The sidebar rail is 240px and each level spends the 16px
-/// `--sb-mark` slot, so a sixth level leaves 120px for a title.
+/// Five levels.
 pub const MAX_FOLDER_DEPTH: u8 = 5;
 
 var folder_id_counter: std.atomic.Value(u64) = .init(0);
@@ -25,8 +22,7 @@ pub const FolderRow = struct {
     position: i64,
     created_at: []const u8,
     updated_at: []const u8,
-    /// Migration 148 — the folder's own glyph name. NULL means "no override":
-    /// the sidebar draws `folder` / `folder-open` from the expanded state.
+    /// Migration 148 — the folder's own glyph name. NULL means "no override"
     icon: ?[]const u8 = null,
 };
 
@@ -39,8 +35,7 @@ pub const CreateFolderArgs = struct {
 
 pub const UpdateFolderArgs = struct {
     name: ?[]const u8 = null,
-    /// Set `move_parent` to move, so `parent_id = null` means "to the root"
-    /// rather than "keep the current parent".
+    /// Set `move_parent` to move, so `parent_id = null` means "to the root" rather than "keep the current parent".
     parent_id: ?[]const u8 = null,
     move_parent: bool = false,
 };
@@ -121,9 +116,7 @@ pub fn freeFolderRows(allocator: std.mem.Allocator, rows: []FolderRow) void {
     allocator.free(rows);
 }
 
-/// Every folder in one workspace, in saved order. The client assembles the
-/// tree from `parent_id`; a per-level read would be an N+1 on the sidebar's
-/// first paint.
+/// Every folder in one workspace, in saved order.
 pub fn listFolders(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -168,9 +161,7 @@ pub fn getFolder(
     return rowFromValues(allocator, r.values) catch return error.OutOfMemory;
 }
 
-/// `folder_id` exists in this workspace AND belongs to `parent_id` (which may
-/// be null for the root). Used by the document write path so a document can
-/// never point at a folder from another workspace.
+/// `folder_id` exists in this workspace AND belongs to `parent_id` (which may be null for the root).
 pub fn folderExists(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -189,8 +180,7 @@ pub fn folderExists(
     return true;
 }
 
-/// The folder's parent, `null` at the root. `error.NotFound` when the folder
-/// does not exist in this workspace.
+/// The folder's parent, `null` at the root.
 fn parentOf(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -212,8 +202,7 @@ fn parentOf(
 
 const QueryOrDepthError = error{ NotFound, QueryFailed, TooDeep, OutOfMemory };
 
-/// Levels from the root: a root folder is 1, its child 2. Walks up rather than
-/// trusting a stored number, so a corrupt row cannot report depth 1 forever.
+/// Levels from the root: a root folder is 1, its child 2.
 fn depthOf(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -320,8 +309,7 @@ pub fn createFolder(
     defer allocator.free(folder_id);
 
     const parent = args.parent_id orelse "";
-    // `#` cannot appear in a folder id; "" binds as SQL NULL, so comparing
-    // `COALESCE(parent_id, '')` against it would never match.
+    // `#` cannot appear in a folder id; "" binds as SQL NULL, so comparing `COALESCE(parent_id, '')` against it would never match.
     const level = if (parent.len == 0) "#root" else parent;
     db.exec(allocator,
         \\INSERT INTO document_folders (id, workspace_id, parent_id, name, position, created_at, updated_at)
@@ -336,8 +324,7 @@ pub fn createFolder(
     };
 }
 
-/// Rename and/or move a folder. A move is refused when it would create a cycle
-/// or exceed `MAX_FOLDER_DEPTH`; both refusals leave the stored row untouched.
+/// Rename and/or move a folder.
 pub fn updateFolder(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -400,9 +387,7 @@ pub fn updateFolder(
     return getFolder(allocator, db, workspace_id, folder_id) catch return error.UpdateFailed;
 }
 
-/// Set (or clear) a folder's glyph. `null` is "Reset to default". Separate
-/// from `updateFolder` so an icon-only write cannot trip the rename validation
-/// or the move/cycle checks.
+/// Set (or clear) a folder's glyph.
 pub fn updateFolderIcon(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -433,8 +418,7 @@ pub fn updateFolderIcon(
     };
 }
 
-/// Delete a folder and move its contents one level up. Returns how many
-/// documents were reparented, so the caller can tell the user none were lost.
+/// Delete a folder and move its contents one level up.
 pub fn deleteFolder(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -706,8 +690,7 @@ test "deleteFolder: documents and child folders move up, nothing is deleted" {
         }
     }
 
-    // The two documents moved into the removed folder now sit in its parent,
-    // one level up, not at the root of the section.
+    // The two documents moved into the removed folder now sit in its parent, one level up, not at the root of the section.
     var q = try ctx.db.query(alloc,
         \\SELECT COUNT(*) FROM documents WHERE workspace_id = 'ws_1' AND folder_id = ?
     , &[_][]const u8{parent.id});

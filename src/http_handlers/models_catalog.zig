@@ -11,13 +11,11 @@ const llm_models = pabrikcore.llm_models;
 const opencode = @import("../modules/agent/loop/opencode.zig");
 const helpers = @import("helpers");
 
-/// The picker's page size when the caller does not say. Small on purpose: the
-/// client is a combobox, and it narrows by typing.
+/// The picker's page size when the caller does not say.
 const DEFAULT_LIMIT: u32 = 50;
 const MAX_LIMIT: u32 = 500;
 
-/// Twice the sync interval: one missed tick is normal, two means something is
-/// wrong and the number in the UI may be out of date.
+/// Twice the sync interval: one missed tick is normal, two means something is wrong and the number in the UI may be out of date.
 const STALE_AFTER_MS: i64 = 2 * 60 * 60 * 1000;
 
 const CLI_MODELS_TIMEOUT_MS: u32 = 20_000;
@@ -45,9 +43,7 @@ fn err(allocator: std.mem.Allocator, status: u16, res: gserverz.HttpResponse, ms
     });
 }
 
-/// The last sync attempt's FAILURE, when it failed — absent when it succeeded or
-/// never ran, since an empty string reads as "failed for no reason". This is what
-/// lets the profile editor answer "no catalog yet — why?".
+/// The last sync attempt's FAILURE, when it failed — absent when it succeeded or never ran, since an empty string reads as "failed for no reason".
 fn writeLastSync(w: *std.Io.Writer, attempt: refresh_mod.LastAttempt) !void {
     if (attempt.ok or attempt.error_name.len == 0) return;
     try w.writeAll(",\"last_sync_error\":");
@@ -56,9 +52,7 @@ fn writeLastSync(w: *std.Io.Writer, attempt: refresh_mod.LastAttempt) !void {
     try w.print("{d}", .{attempt.at_ms});
 }
 
-/// Freshness of the cached snapshot. `absent` when nothing was ever synced —
-/// which is NOT the same as "synced, zero models", and the UI must not render
-/// them the same way.
+/// Freshness of the cached snapshot.
 fn catalogState(allocator: std.mem.Allocator, io: std.Io, db: anytype) CatalogState {
     const meta = store.loadMeta(db, allocator) catch return .absent;
     const m = meta orelse return .absent;
@@ -69,9 +63,7 @@ fn catalogState(allocator: std.mem.Allocator, io: std.Io, db: anytype) CatalogSt
     return .fresh;
 }
 
-// ============================================================================
 // GET /api/models/catalog
-// ============================================================================
 
 const Row = struct {
     provider_id: []const u8,
@@ -300,9 +292,7 @@ pub fn modelsCatalogHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     return res.jsonResponse(.{ .status_code = 200, .data = try aw.toOwnedSlice() });
 }
 
-// ============================================================================
 // GET /api/models/resolve
-// ============================================================================
 
 pub fn modelsResolveHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
@@ -324,8 +314,7 @@ pub fn modelsResolveHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     const cat = catalog.getSingleton();
     const state = catalogState(allocator, ctx.io, di.db);
 
-    // No catalog ⇒ say so, and hand back the built-in guess explicitly. This is
-    // today's behaviour made legible instead of a confidently wrong number.
+    // No catalog ⇒ say so, and hand back the built-in guess explicitly.
     const facts: ?*const catalog.ModelFacts = if (cat) |c| c.lookup(provider, model) else null;
 
     var aw: std.Io.Writer.Allocating = .init(allocator);
@@ -400,9 +389,7 @@ pub fn modelsResolveHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     return res.jsonResponse(.{ .status_code = 200, .data = try aw.toOwnedSlice() });
 }
 
-// ============================================================================
 // POST /api/models/refresh
-// ============================================================================
 
 pub fn modelsRefreshHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     _ = req;
@@ -410,8 +397,7 @@ pub fn modelsRefreshHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     const di = try pabrikcore.getSingleton();
 
     const report = refresh_mod.refresh(allocator, ctx.io, di.db) catch |e| {
-        // The reason reaches the caller. A "refresh failed" that hides WHY is
-        // the failure mode this endpoint exists to avoid.
+        // The reason reaches the caller.
         return err(allocator, 502, res, @errorName(e));
     };
 

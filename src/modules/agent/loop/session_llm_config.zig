@@ -13,9 +13,7 @@ const workspace_scope = @import("workspace_scope.zig");
 
 const placeholder_prefix = "{" ++ "{SECRETS:";
 
-/// The merged config with `{` `{SECRETS:NAME}` `}` resolved in its credential
-/// fields, so a saved placeholder is what a run authenticates with. Takes
-/// ownership of `text`; with nothing to resolve the same slice comes back.
+/// The merged config with `{` `{SECRETS:NAME}` `}` resolved in its credential fields, so a saved placeholder is what a run authenticates with.
 fn resolveCredentialPlaceholders(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -38,8 +36,7 @@ fn resolveCredentialPlaceholders(
     return substituted;
 }
 
-/// The `LlmConfig` in force for `session_id`, or null when the process-global
-/// singleton should be read instead.
+/// The `LlmConfig` in force for `session_id`, or null when the process-global singleton should be read instead.
 pub fn forSession(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -48,9 +45,7 @@ pub fn forSession(
     const di = pabrikcore.getSingleton() catch return null;
     if (session_id.len == 0) return null;
 
-    // Owner. Auth mode scopes config per user; file mode has one shared
-    // bucket, which is the empty-string owner the workspace overlay table
-    // also uses.
+    // Owner.
     var owned_owner: ?[]u8 = null;
     defer if (owned_owner) |o| allocator.free(o);
     const owner: []const u8 = if (di.auth_enabled) blk: {
@@ -75,8 +70,7 @@ pub fn forSession(
     return fromJsonText(allocator, text);
 }
 
-/// The config TEXT a scoped read should parse, or `null` for "the singleton
-/// is authoritative".
+/// The config TEXT a scoped read should parse, or `null` for "the singleton is authoritative".
 pub fn mergedConfigTextFor(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -103,26 +97,20 @@ pub fn mergedConfigTextFor(
 
     if (overlay == null) {
         if (!auth_enabled and !in_workspace) {
-            // File mode, no workspace in scope: the singleton already holds
-            // exactly these bytes.
+            // File mode, no workspace in scope: the singleton already holds exactly these bytes.
             if (base) |b| allocator.free(b);
             return null;
         }
-        // Ownership of `base` MOVES TO THE CALLER here. Freeing it on the way
-        // out - the `defer` this used to have - handed the caller freed
-        // memory to parse, which is a crash, not a leak.
+        // Ownership of `base` MOVES TO THE CALLER here.
         return base;
     }
 
-    // Case 3. The base is only an INPUT to the merge, so it is freed here;
-    // a malformed base degrades to `{}` inside `overlayJson`, so the overlay
-    // still applies rather than being silently dropped.
+    // Case 3.
     defer if (base) |b| allocator.free(b);
     return workspace_config.overlayJson(allocator, base orelse "", overlay.?) catch null;
 }
 
-/// The workspace this session belongs to, or `""` when it has none. Two
-/// sources, in order: 1.
+/// The workspace this session belongs to, or `""` when it has none.
 pub fn sessionWorkspace(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -140,16 +128,13 @@ pub fn sessionWorkspace(
     if (r.values.len < 1) return error.SessionHasNoWorkspace;
     if (r.values[0].len > 0) return try allocator.dupe(u8, r.values[0]);
 
-    // Empty column: fall back to the canonical resolver. An unresolvable
-    // session (no task link, no cwd match, an ambiguous tie) is a legal
-    // legacy row and reads as "no workspace" - no overlay, no error.
+    // Empty column: fall back to the canonical resolver.
     const resolved = try workspace_scope.resolveWorkspaceId(allocator, db, session_id);
     if (resolved) |w| return w;
     return try allocator.dupe(u8, "");
 }
 
-/// The `LlmConfig` stored in `users.config_json` for `owner`, or null when
-/// that user has no saved config (or it cannot be used).
+/// The `LlmConfig` stored in `users.config_json` for `owner`, or null when that user has no saved config (or it cannot be used).
 pub fn forOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -162,8 +147,7 @@ pub fn forOwner(
     return fromJsonText(allocator, content);
 }
 
-/// The `LlmConfig` for an `(owner, workspace)` pair with no session row in
-/// play: the request-scoped sibling of `forSession`.
+/// The `LlmConfig` for an `(owner, workspace)` pair with no session row in play: the request-scoped sibling of `forSession`.
 pub fn forOwnerAndWorkspace(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -173,9 +157,7 @@ pub fn forOwnerAndWorkspace(
     owner: []const u8,
     workspace_id: []const u8,
 ) ?*config_mod.LlmConfig {
-    // In auth mode the overlay is keyed by the requesting user, so an empty
-    // owner is "no identity" and must not fall through to the shared
-    // file-mode bucket.
+    // In auth mode the overlay is keyed by the requesting user, so an empty owner is "no identity" and must not fall through to the shared file-mode bucket.
     if (auth_enabled and owner.len == 0) return null;
     if (workspace_id.len == 0) return forOwner(allocator, db, owner);
     const merged = mergedConfigTextFor(
@@ -192,9 +174,7 @@ pub fn forOwnerAndWorkspace(
     return fromJsonText(allocator, text);
 }
 
-/// Parse one user's saved config into a heap `LlmConfig` owned by
-/// `allocator`, or null on any parse failure — a corrupt row degrades to the
-/// singleton rather than failing a chat turn.
+/// Parse one user's saved config into a heap `LlmConfig` owned by `allocator`, or null on any parse failure — a corrupt row degrades to the singleton rather than …
 pub fn fromJsonText(
     allocator: std.mem.Allocator,
     content: []const u8,
@@ -227,9 +207,7 @@ pub fn sessionOwner(
     return try allocator.dupe(u8, r.values[0]);
 }
 
-// =====================================================================
 // Tests (in-memory SQLite with the real migration chain)
-// =====================================================================
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -307,8 +285,7 @@ test "forOwner: a saved profile is what a chat turn gets" {
     try testing.expectEqualStrings("user-model", eff.model);
     try testing.expectEqualStrings("http://user.example/v1", eff.base_url);
     try testing.expectEqualStrings("user-key", eff.api_key);
-    // The same cascade the workflow calls with an EMPTY profile name must
-    // also land on the user's active_profile, not on top-level defaults.
+    // The same cascade the workflow calls with an EMPTY profile name must also land on the user's active_profile, not on top-level defaults.
     const via_active = cfg.resolveEffectiveAgent("");
     try testing.expectEqualStrings("user-model", via_active.model);
     try testing.expectEqualStrings("user-key", via_active.api_key);
@@ -346,9 +323,7 @@ test "fromJsonText: matches the on-disk parse for identical bytes" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Same bytes in both places: the database copy must produce the same
-    // config a config.json with those bytes would (that is the promise the
-    // fix rests on — file mode and auth mode cannot diverge).
+    // Same bytes in both places: the database copy must produce the same config a config.json with those bytes would (that is the promise the fix rests on — file …
     const body =
         "{\"active_profile\":\"p\",\"profiles_models\":{\"p\":{\"model\":\"m\"," ++
         "\"base_url\":\"http://x/v1\",\"api_key\":\"k\"}},\"tools\":[\"used_tools\"]}";
@@ -386,8 +361,6 @@ test "sessionOwner: owner is read from the session, absent owner is an error" {
 }
 
 // ─── The workspace layer (Migration 105) ───────────────────────────────────
-// `mergedConfigTextFor` exists precisely so these can be written:
-// `forSession` needs the process-global singleton and there is no
 
 const store = @import("workspace_settings_store.zig");
 
@@ -408,8 +381,7 @@ test "no overlay in file mode is null, so the singleton stays authoritative" {
 
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_a") == null);
 
-    // Positive control: the same call DOES answer once an overlay exists, so
-    // the null above is "nothing to merge" and not a function that never works.
+    // Positive control: the same call DOES answer once an overlay exists, so the null above is "nothing to merge" and not a function that never works.
     try putOverlay(&ctx.db, "", "ws_a", "{\"tools\":[\"read_file\"]}");
     const merged = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_a") orelse
         return error.OverlayIgnored;
@@ -423,9 +395,7 @@ test "an overlay in file mode merges over the base and replaces an array" {
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    // `environment = null` means no config.json is reachable, so the base is
-    // empty - which is exactly the fresh-install case. The overlay must still
-    // apply rather than being dropped for want of a base.
+    // `environment = null` means no config.json is reachable, so the base is empty - which is exactly the fresh-install case.
     try putOverlay(&ctx.db, "", "ws_a", "{\"tools\":[\"read_file\"],\"active_profile\":\"mine\"}");
     const merged = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_a") orelse
         return error.OverlayIgnored;
@@ -462,13 +432,11 @@ test "auth mode: a workspace's own row is the whole scoped answer" {
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
     try testing.expectEqualStrings("read_file", cfg.tools.?[0]);
 
-    // The row says nothing about profiles, and that absence is a decision:
-    // the user's profile (and the key it carries) is NOT adopted.
+    // The row says nothing about profiles, and that absence is a decision
     try testing.expect(cfg.agents.get("claude") == null);
     try testing.expect(cfg.active_agent == null);
 
-    // The retry backoff is workspace-scoped too, so the user's 1234 does not
-    // reach a run in here: an unset workspace retries immediately.
+    // The retry backoff is workspace-scoped too, so the user's 1234 does not reach a run in here: an unset workspace retries immediately.
     try testing.expectEqual(@as(u32, 0), cfg.retry_delay_ms);
 }
 
@@ -489,8 +457,7 @@ test "a workspace's own retry delay is the one the run uses" {
     defer freeResolved(cfg);
     try testing.expectEqual(@as(u32, 2500), cfg.retry_delay_ms);
 
-    // Outside a workspace the same user still gets their own value: the move
-    // narrows where the setting is read from, it does not delete the field.
+    // Outside a workspace the same user still gets their own value: the move narrows where the setting is read from, it does not delete the field.
     const plain = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "") orelse
         return error.UserConfigLost;
     defer alloc.free(plain);
@@ -516,8 +483,7 @@ test "auth mode: a workspace with no row has no scoped settings" {
 
     const cfg = fromJsonText(alloc, text) orelse return error.Unparseable;
     defer freeResolved(cfg);
-    // Nothing was saved for this workspace, so there are no tools, no active
-    // agent and no retry backoff - the user's scoped keys are not a fallback.
+    // Nothing was saved for this workspace, so there are no tools, no active agent and no retry backoff - the user's scoped keys are not a fallback.
     try testing.expect(cfg.tools == null);
     try testing.expect(cfg.active_agent == null);
     try testing.expectEqual(@as(u32, 0), cfg.retry_delay_ms);
@@ -538,8 +504,7 @@ test "an empty profile row stays empty instead of borrowing the user's" {
         "{\"profiles_models\":{\"claude\":{\"model\":\"opus\",\"api_key\":\"sk-user\"}}," ++
             "\"active_profile\":\"claude\"}",
     );
-    // A workspace whose profiles list is empty - the state every workspace
-    // now starts in.
+    // A workspace whose profiles list is empty - the state every workspace now starts in.
     try putOverlay(&ctx.db, "u_1", "ws_a", "{\"profiles_models\":{}}");
 
     const merged = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
@@ -561,8 +526,7 @@ test "an overlay never reaches another workspace" {
     try putOverlay(&ctx.db, "", "ws_a", "{\"active_profile\":\"mine\"}");
 
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_b") == null);
-    // Positive control: ws_a itself does see it. The slice is owned, so it is
-    // freed - an assertion that only checks `!= null` leaks the whole config.
+    // Positive control: ws_a itself does see it.
     const seen = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, false, "", "ws_a") orelse
         return error.OverlayInvisible;
     defer alloc.free(seen);
@@ -575,15 +539,13 @@ test "an overlay never reaches another user in the same workspace" {
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    // u_1 saved a config AND an overlay for the shared workspace. u_2 must
-    // see their own config (here: none) - never u_1's, which carries a key.
+    // u_1 saved a config AND an overlay for the shared workspace. u_2 must see their own config (here: none) - never u_1's, which carries a key.
     try insertUser(&ctx.db, "u_1", "{\"active_profile\":\"mine\"}");
     try putOverlay(&ctx.db, "u_1", "ws_shared", "{\"active_profile\":\"u1-only\"}");
 
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_2", "ws_shared") == null);
 
-    // And u_1 still gets theirs - so the null above is isolation, not a
-    // broken lookup.
+    // And u_1 still gets theirs - so the null above is isolation, not a broken lookup.
     const mine = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_shared") orelse
         return error.OverlayLost;
     defer alloc.free(mine);
@@ -597,8 +559,7 @@ test "a session with no workspace_id keeps the user-level answer" {
     const alloc = testing.allocator;
 
     try insertUser(&ctx.db, "u_1", "{\"active_profile\":\"mine\"}");
-    // Empty workspace_id: no overlay lookup at all, so the user config comes
-    // through exactly as it did before the workspace layer existed.
+    // Empty workspace_id: no overlay lookup at all, so the user config comes through exactly as it did before the workspace layer existed.
     const text = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "") orelse
         return error.UserConfigLost;
     defer alloc.free(text);
@@ -622,8 +583,7 @@ test "sessionWorkspace reads the row, and an unknown session is an error" {
 
     try testing.expectError(error.UnknownSession, sessionWorkspace(alloc, &ctx.db, "s_nope"));
 
-    // A row with no workspace reads as "" - not an error, because a session
-    // without a workspace is a legal legacy row.
+    // A row with no workspace reads as "" - not an error, because a session without a workspace is a legal legacy row.
     try ctx.db.exec(
         alloc,
         "INSERT INTO sessions (id, name, status, user_id) VALUES ('s_2', 's', 'active', 'u_1')",
@@ -635,8 +595,6 @@ test "sessionWorkspace reads the row, and an unknown session is an error" {
 }
 
 // ─── Reachability of the workspace layer ───────────────────────────────────
-// `forSession` is what makes the overlay apply to a real chat, and it can
-// only layer the overlay once it knows the workspace.
 
 test "sessionWorkspace: an empty column resolves through the task link" {
     var ctx = try setupDb();
@@ -644,9 +602,7 @@ test "sessionWorkspace: an empty column resolves through the task link" {
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    // Exactly the shape a kanban create writes: a sessions row with no
-    // workspace_id, plus the task row whose id IS the session id (Migration
-    // 052 dropped the redundant `session_id` column).
+    // Exactly the shape a kanban create writes: a sessions row with no workspace_id, plus the task row whose id IS the session id (Migration 052 dropped the …
     try ctx.db.exec(
         alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1', 'ws_kanban', 'kanban')",
@@ -674,8 +630,7 @@ test "sessionWorkspace: a set column still wins over the task link" {
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    // An explicit binding is authoritative: a future writer of the column must
-    // not be overridden by the (heuristic) resolver.
+    // An explicit binding is authoritative: a future writer of the column must not be overridden by the (heuristic) resolver.
     try ctx.db.exec(
         alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_1', 'ws_from_task', 'kanban')",
@@ -703,8 +658,7 @@ test "sessionWorkspace: no task link and no cwd match reads as no workspace" {
     defer ctx.db.deinit();
     const alloc = testing.allocator;
 
-    // A plain chat outside every workspace item path: fail closed to "", no
-    // overlay, no error. `workspace_scope.resolveWorkspaceId` owns that rule.
+    // A plain chat outside every workspace item path: fail closed to "", no overlay, no error.
     try ctx.db.exec(
         alloc,
         "INSERT INTO sessions (id, name, status, user_id, cwd) VALUES ('s_plain', 's', 'active', 'u_1', '/nowhere/at/all')",
@@ -750,14 +704,11 @@ test "forOwnerAndWorkspace: the workspace's own active_profile and profiles win"
     defer freeResolved(plain);
     try testing.expectEqualStrings("user-default", plain.active_agent.?);
 
-    // No identity in auth mode: nothing scoped, so the caller falls back to
-    // the singleton rather than to the shared file-mode bucket.
+    // No identity in auth mode: nothing scoped, so the caller falls back to the singleton rather than to the shared file-mode bucket.
     try testing.expect(forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "", "ws_a") == null);
 }
 
 // ─── Credential placeholders in a saved config ─────────────────────────────
-// A picker in the UI writes the placeholder into the api_key field. These pin
-// that a RUN resolves it, and that the stored document is not rewritten.
 
 const secrets_at_rest = @import("secrets_at_rest.zig");
 
@@ -807,12 +758,10 @@ test "forOwnerAndWorkspace: an api_key placeholder resolves, and a model placeho
 
     const resolved = cfg.resolveEffectiveAgent("resolved");
     try testing.expectEqualStrings("sk-live-secret", resolved.api_key);
-    // A non-credential field keeps the literal placeholder: substituting it
-    // would rename the model to the secret.
+    // A non-credential field keeps the literal placeholder: substituting it would rename the model to the secret.
     try testing.expectEqualStrings(key_ph, resolved.model);
 
-    // A name this workspace does not store is NOT blanked, so adding the
-    // secret later makes the same saved document work.
+    // A name this workspace does not store is NOT blanked, so adding the secret later makes the same saved document work.
     const unresolved = cfg.resolveEffectiveAgent("unresolved");
     try testing.expectEqualStrings(missing_ph, unresolved.api_key);
 
@@ -833,8 +782,7 @@ test "resolveCredentialPlaceholders: no workspace means the text is passed throu
     const key_ph = try placeholder(alloc, "API_KEY");
     defer alloc.free(key_ph);
 
-    // No workspace, no secrets to resolve against: the caller keeps its own
-    // slice, so a config outside any workspace cannot resolve anything.
+    // No workspace, no secrets to resolve against: the caller keeps its own slice, so a config outside any workspace cannot resolve anything.
     const own = try alloc.dupe(u8, key_ph);
     const same = resolveCredentialPlaceholders(alloc, &ctx.db, "", own);
     defer alloc.free(same);
@@ -850,8 +798,7 @@ test "resolveCredentialPlaceholders: a document without a placeholder is not cop
     const plain = try alloc.dupe(u8, "{\"retry_delay_ms\":2000}");
     const out = resolveCredentialPlaceholders(alloc, &ctx.db, "ws_a", plain);
     defer alloc.free(out);
-    // Same bytes AND the same allocation: the fast path allocates nothing, so
-    // freeing `out` is the same as freeing `plain`.
+    // Same bytes AND the same allocation: the fast path allocates nothing, so freeing `out` is the same as freeing `plain`.
     try testing.expectEqualStrings("{\"retry_delay_ms\":2000}", out);
     try testing.expectEqual(@intFromPtr(plain.ptr), @intFromPtr(out.ptr));
 }

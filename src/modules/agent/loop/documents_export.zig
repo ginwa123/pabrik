@@ -1,28 +1,21 @@
-//! Turning a stored document into a file a browser can download, and a set of documents into
-//! one zip. The HTTP handlers and the headless CLI both go through here, so a download and a
-//! `pabrik headless documents export` produce the same bytes.
+//! Turning a stored document into a file a browser can download, and a set of documents into one zip.
 
 const std = @import("std");
 const documents_store = @import("documents_store.zig");
 
-/// A markdown document exports as its own body, so the extension is the one a
-/// text editor opens.
+/// A markdown document exports as its own body, so the extension is the one a text editor opens.
 pub const MARKDOWN_EXT = ".md";
 
-/// An office document's body is the Univer snapshot envelope. JSON is the only
-/// faithful representation we hold, and it round-trips back into the editor.
+/// An office document's body is the Univer snapshot envelope.
 pub const OFFICE_EXT = ".json";
 
-/// An HTML document's body is the page source, so it exports as a file a
-/// browser opens directly.
+/// An HTML document's body is the page source, so it exports as a file a browser opens directly.
 pub const HTML_EXT = ".html";
 
 /// The name a document with no usable title exports as.
 pub const FALLBACK_STEM = "document";
 
-/// Longest stem kept, in bytes. A 4 KiB title is legal in the database and
-/// illegal in most filesystems; 80 bytes leaves room for the extension and a
-/// ` (12)` de-duplication suffix.
+/// Longest stem kept, in bytes.
 pub const MAX_STEM_BYTES: usize = 80;
 
 /// The zip's own name, so a caller never has to invent one.
@@ -51,9 +44,7 @@ pub fn mimeFor(format: []const u8) []const u8 {
     return "text/markdown; charset=utf-8";
 }
 
-/// True for a byte a filesystem or a `Content-Disposition` header cannot carry
-/// verbatim. Everything at or above 0x80 is a UTF-8 lead or continuation byte
-/// and is kept — a title in Indonesian or Japanese must survive.
+/// True for a byte a filesystem or a `Content-Disposition` header cannot carry verbatim.
 fn isUnsafeNameByte(byte: u8) bool {
     if (byte < 0x20 or byte == 0x7f) return true;
     return switch (byte) {
@@ -62,9 +53,7 @@ fn isUnsafeNameByte(byte: u8) bool {
     };
 }
 
-/// `<title><ext>`, safe to hand to a filesystem and to a header. Unsafe bytes become `-`, runs
-/// of them collapse to one, and leading/trailing spaces and dots are dropped. A title with
-/// nothing usable left becomes `document`.
+/// `<title><ext>`, safe to hand to a filesystem and to a header.
 pub fn fileName(
     allocator: std.mem.Allocator,
     title: []const u8,
@@ -93,22 +82,18 @@ pub fn fileName(
     return std.mem.concat(allocator, u8, &.{ kept, ext });
 }
 
-/// Drop leading and trailing spaces and dots, and cut a trailing partial UTF-8
-/// sequence so the name is always valid text.
+/// Drop leading and trailing spaces and dots, and cut a trailing partial UTF-8 sequence so the name is always valid text.
 fn trimStem(raw: []const u8) []const u8 {
     var start: usize = 0;
     while (start < raw.len and (raw[start] == ' ' or raw[start] == '.')) start += 1;
     var end: usize = raw.len;
     while (end > start and (raw[end - 1] == ' ' or raw[end - 1] == '.')) end -= 1;
-    // The byte cap can cut a multi-byte character in half. Walk back only while
-    // the slice is still invalid — a complete trailing character is kept.
+    // The byte cap can cut a multi-byte character in half.
     while (end > start and !std.unicode.utf8ValidateSlice(raw[start..end])) end -= 1;
     return raw[start..end];
 }
 
-/// `attachment; filename="<ascii>"; filename*=UTF-8''<pct-encoded>`. The plain
-/// `filename` is the fallback every client understands; `filename*` (RFC 5987)
-/// is what carries a non-ASCII title without mangling it.
+/// `attachment; filename="<ascii>"; filename*=UTF-8''<pct-encoded>`.
 pub fn contentDisposition(allocator: std.mem.Allocator, name: []const u8) ExportError![]u8 {
     var ascii: std.ArrayList(u8) = .empty;
     defer ascii.deinit(allocator);
@@ -142,9 +127,7 @@ pub const Entry = struct {
     bytes: []const u8,
 };
 
-/// A stored-method (uncompressed) zip holding `entries`, in the order given. Store, not deflate:
-/// the bodies are small, and a compression dependency would be a new build input. The timestamp
-/// is fixed at 1980-01-01, so the same documents always produce the same bytes.
+/// A stored-method (uncompressed) zip holding `entries`, in the order given. Store, not deflate
 pub fn buildZip(allocator: std.mem.Allocator, entries: []const Entry) ExportError![]u8 {
     if (entries.len > std.math.maxInt(u16)) return error.TooManyEntries;
 
@@ -171,8 +154,7 @@ pub fn buildZip(allocator: std.mem.Allocator, entries: []const Entry) ExportErro
     return out.toOwnedSlice(allocator);
 }
 
-/// 1980-01-01 00:00:00 in MS-DOS form: the earliest instant the format can
-/// express, and therefore the one that never depends on the clock.
+/// 1980-01-01 00:00:00 in MS-DOS form: the earliest instant the format can express, and therefore the one that never depends on the clock.
 const DOS_TIME: u16 = 0;
 const DOS_DATE: u16 = 0x0021;
 
@@ -254,8 +236,6 @@ fn writeEndRecord(
 }
 
 /// `name`, or `name (2)`, `name (3)` … — whichever is not already in `taken`.
-/// Two documents titled "Untitled document" must not collapse into one entry.
-/// The returned slice is owned by the caller and is also appended to `taken`.
 pub fn uniqueName(
     allocator: std.mem.Allocator,
     name: []const u8,
@@ -302,13 +282,11 @@ pub const ExportedArchive = struct {
     name: []const u8,
     mime: []const u8,
     bytes: []u8,
-    /// How many documents went in. The zip's own directory is the authority on
-    /// the contents; this is what the caller reports.
+    /// How many documents went in.
     count: usize,
 };
 
-/// The single-document export: the stored body, under a name derived from the
-/// title and the format.
+/// The single-document export: the stored body, under a name derived from the title and the format.
 pub fn exportOne(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -327,9 +305,7 @@ pub fn exportOne(
     };
 }
 
-/// The multi-document export: one zip, one entry per document, in the order the
-/// caller named them. A repeated title gets a numbered suffix rather than
-/// overwriting its twin.
+/// The multi-document export: one zip, one entry per document, in the order the caller named them.
 pub fn exportMany(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -348,8 +324,7 @@ pub fn exportMany(
         taken.deinit(allocator);
     }
 
-    // The zip is built from copies: a row's body is freed with the row, and the
-    // archive outlives every row it was built from.
+    // The zip is built from copies: a row's body is freed with the row, and the archive outlives every row it was built from.
     var bodies: std.ArrayList([]u8) = .empty;
     defer {
         for (bodies.items) |body| allocator.free(body);
@@ -450,8 +425,7 @@ test "contentDisposition: a non-ASCII name keeps an ASCII fallback and an encode
     const value = try contentDisposition(alloc, "Rencana — 日本語.md");
     defer alloc.free(value);
 
-    // The plain `filename` is what a client that ignores RFC 5987 reads, so it
-    // must be pure ASCII — one `_` per non-ASCII byte, never a raw UTF-8 byte.
+    // The plain `filename` is what a client that ignores RFC 5987 reads, so it must be pure ASCII — one `_` per non-ASCII byte, never a raw UTF-8 byte.
     const fallback_end = std.mem.indexOf(u8, value, "\"; filename*=") orelse
         return error.MissingEncodedForm;
     try testing.expect(std.mem.startsWith(u8, value, "attachment; filename=\"Rencana "));
@@ -461,8 +435,7 @@ test "contentDisposition: a non-ASCII name keeps an ASCII fallback and an encode
     try testing.expect(std.mem.indexOf(u8, value, "filename*=UTF-8''Rencana%20%E2%80%94%20") != null);
 }
 
-/// One entry read back out of an archive by walking its central directory —
-/// the same path an unzip tool takes, so a malformed header fails here.
+/// One entry read back out of an archive by walking its central directory — the same path an unzip tool takes, so a malformed header fails here.
 const ReadBack = struct { name: []const u8, bytes: []const u8 };
 
 fn readBack(allocator: std.mem.Allocator, zip: []const u8) ![]ReadBack {

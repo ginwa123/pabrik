@@ -1,5 +1,4 @@
-/** Behavioural tests for KanbanTaskDetailDialog — tag autocomplete wiring (Task 2.7 of the
- * kanban-task-tags-autocomplete plan). */
+/** Behavioural tests for KanbanTaskDetailDialog — tag autocomplete wiring (Task 2.7 of the kanban-task-tags-autocomplete plan). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -16,9 +15,7 @@ const TASK_WITH_TAGS: Task = {
   tags: ['bug'],
 }
 
-// The dialog reads the parent kanban's workspace_item_id from the `column` prop (Task itself
-// doesn't carry workspace_item_id). All `mountDialog()` calls below pass this so the composable has
-// a valid item id to fetch suggestions for.
+// The dialog reads the parent kanban's workspace_item_id from the `column` prop (Task itself doesn't carry workspace_item_id).
 const COLUMN: KanbanColumn = {
   id: 'col_x',
   workspace_item_id: 'item_x',
@@ -83,9 +80,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
     mountDialog(TASK_WITH_TAGS)
     await flushPromises()
     await flushPromises()
-    // The dialog's watcher fires ensureLoaded() when show=true and a
-    // task + workspaceId are present. The composable passes the ids
-    // through to getKanbanTagSuggestions.
+    // The dialog's watcher fires ensureLoaded() when show=true and a task + workspaceId are present.
     expect(spy).toHaveBeenCalledWith('ws_x', 'item_x', { limit: 8, offset: 0 })
   })
 
@@ -99,8 +94,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
       has_more: false,
     })
 
-    // Task already has 'bug' as a chip. The dialog should NOT pass
-    // 'bug' into the input's :suggestions binding.
+    // Task already has 'bug' as a chip.
     mountDialog(TASK_WITH_TAGS)
     await flushPromises()
     await flushPromises()
@@ -131,8 +125,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('fetches in create mode when the column prop is present (so the new task can pick from existing tags)', async () => {
-    // previous test ("does NOT fetch in create mode") locked in a bug: users opening the "+ Add
-    // task" dialog could not see the kanban's existing tags in the dropdown.
+    // previous test ("does NOT fetch in create mode") locked in a bug: users opening the "+ Add task" dialog could not see the kanban's existing tags in the dropdown.
     const spy = vi
       .spyOn(api, 'getKanbanTagSuggestions')
       .mockResolvedValue({
@@ -157,8 +150,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('renders the existing-tag dropdown in create mode so the user can one-click pick a tag', async () => {
-    // PlanRegression
-    // guard for the user-reported symptom: "when create a task, the auto tags not trigger".
+    // PlanRegression guard for the user-reported symptom: "when create a task, the auto tags not trigger".
     vi.spyOn(api, 'getKanbanTagSuggestions').mockResolvedValue({
       tags: [
         { name: 'kanban', count: 5, last_used_at: null },
@@ -190,8 +182,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
     field.dispatchEvent(new Event('focus', { bubbles: true }))
     await flushPromises()
 
-    // All three existing kanban tags should appear as suggestions. None are
-    // on the task yet (it's brand-new), so the exclude set is empty.
+    // All three existing kanban tags should appear as suggestions.
     expect(
       findInDom('[data-testid="kanban-task-detail-create-tags-suggestion-kanban"]'),
     ).not.toBeNull()
@@ -206,8 +197,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
   })
 
   it('clicking a suggestion in create mode adds the chip (one-click pick)', async () => {
-    // End-to-end of the user request: open "+ Add task", focus tags input,
-    // click an existing tag in the dropdown, see the chip appear.
+    // End-to-end of the user request: open "+ Add task", focus tags input, click an existing tag in the dropdown, see the chip appear.
     vi.spyOn(api, 'getKanbanTagSuggestions').mockResolvedValue({
       tags: [
         { name: 'kanban', count: 5, last_used_at: null },
@@ -242,8 +232,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
       '[data-testid="kanban-task-detail-create-tags-suggestion-kanban"]',
     )
     if (!kanbanSuggestion) throw new Error('kanban suggestion row not found')
-    // KanbanTagsInput uses `@mousedown.prevent` (not @click) so the blur
-    // doesn't dismiss the dropdown before commit fires.
+    // KanbanTagsInput uses `@mousedown.prevent` (not @click) so the blur doesn't dismiss the dropdown before commit fires.
     kanbanSuggestion.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     await flushPromises()
 
@@ -273,8 +262,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
     await flushPromises()
     const callsAfterOpen = spy.mock.calls.length
 
-    // Toggle show false then true again — the watcher should reset
-    // the composable and trigger ensureLoaded again.
+    // Toggle show false then true again — the watcher should reset the composable and trigger ensureLoaded again.
     await wrapper!.setProps({ show: false })
     await flushPromises()
     await wrapper!.setProps({ show: true })
@@ -302,9 +290,7 @@ describe('KanbanTaskDetailDialog — tag autocomplete wiring', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenLastCalledWith('ws_x', 'item_x', { limit: 8, offset: 0 })
 
-    // The wiring proof: the KanbanTagsInput child component receives
-    // the composable's loadNextPage function as its `onLoadMore` prop.
-    // Calling that prop triggers a second fetch at offset=8.
+    // The wiring proof: the KanbanTagsInput child component receives the composable's loadNextPage function as its `onLoadMore` prop.
     const tagsInput = wrapper!.findComponent({ name: 'KanbanTagsInput' })
     expect(tagsInput.exists()).toBe(true)
     const onLoadMore = tagsInput.props('onLoadMore')

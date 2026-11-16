@@ -8,7 +8,6 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
 /// Migration 104 - Add `sessions.is_pinned` + `sessions.pinned_position`.
-/// Powers the PINNED section above RECENT in the sidebar.
 pub const Migration104AddSessionPinned = struct {
     pub const version: u32 = 104;
     pub const name = "add_session_pinned";

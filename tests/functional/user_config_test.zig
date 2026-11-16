@@ -1,5 +1,4 @@
-// Functional tests for `--auth` per-user config (users.config_json). Zig port
-// of `tests/functional/user_config_test.py` (same test names, same order).
+// Functional tests for `--auth` per-user config (users.config_json).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -9,9 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawHttp(
@@ -99,8 +96,6 @@ fn profileBody(name: []const u8, model: []const u8) ![]u8 {
 }
 
 /// Where `getDefaultConfigDir` (Config.zig) actually writes config.json.
-/// Mirrors that function's platform switch: * macOS — `~/Library/Application
-/// Support/pabrik`.
 fn configFilePath(home: []const u8) ![]u8 {
     return switch (builtin.os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik", "config.json" }),
@@ -109,8 +104,7 @@ fn configFilePath(home: []const u8) ![]u8 {
     };
 }
 
-/// The raw bytes of `config.json` under `home`, or `null` when it does
-/// not exist. Caller owns a non-null result.
+/// The raw bytes of `config.json` under `home`, or `null` when it does not exist.
 fn readConfigBytes(home: []const u8) !?[]u8 {
     const path = try configFilePath(home);
     defer gpa.free(path);
@@ -139,9 +133,7 @@ fn hasProfile(doc: *const harness.Json, name: []const u8) bool {
     return profiles.contains(name);
 }
 
-// ============================================================================
 // Test 1: AUTH-GET-DEFAULTS
-// ============================================================================
 
 // A fresh admin GETs defaults (no config_json yet).
 test "auth_get_defaults" {
@@ -169,9 +161,7 @@ test "auth_get_defaults" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python: `cfg.get("profiles") in (None, {})` — absent, null, or an
-    // empty object are all "the user has no profiles yet". A populated
-    // map fails.
+    // Python: `cfg.get("profiles") in (None, {})` — absent, null, or an empty object are all "the user has no profiles yet".
     if (doc.get("profiles")) |v| switch (v) {
         .null => {},
         .object => |o| {
@@ -187,9 +177,7 @@ test "auth_get_defaults" {
     };
 }
 
-// ============================================================================
 // Test 2: AUTH-PUT-ISOLATION
-// ============================================================================
 
 // User A and B have independent configs.
 test "auth_put_isolation" {
@@ -269,12 +257,9 @@ test "auth_put_isolation" {
     }
 }
 
-// ============================================================================
 // Test 3: AUTH-FILE-UNTOUCHED
-// ============================================================================
 
-// PUT in auth mode never writes config.json — but the DB-backed GET does
-// reflect the save.
+// PUT in auth mode never writes config.json — but the DB-backed GET does reflect the save.
 test "auth_put_leaves_config_file_untouched" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -306,8 +291,7 @@ test "auth_put_leaves_config_file_untouched" {
     const after = try readConfigBytes(h.temp_dir);
     defer if (after) |a| gpa.free(a);
 
-    // Both absent, or byte-identical: PUT in --auth mode must not touch
-    // config.json.
+    // Both absent, or byte-identical: PUT in --auth mode must not touch config.json.
     if ((before == null) != (after == null)) {
         std.debug.print("PUT in --auth mode created/destroyed config.json\n", .{});
         return error.TestUnexpectedResult;
@@ -332,9 +316,7 @@ test "auth_put_leaves_config_file_untouched" {
     }
 }
 
-// ============================================================================
 // Test 4: AUTH-UNAUTH
-// ============================================================================
 
 // GET/PUT/DELETE without cookie -> 401.
 test "auth_unauth_config_endpoints_are_401" {
@@ -381,9 +363,7 @@ test "auth_unauth_config_endpoints_are_401" {
     }
 }
 
-// ============================================================================
 // Test 5: AUTH-DELETE
-// ============================================================================
 
 // DELETE removes the profile from the user's column.
 test "auth_delete_profile" {
@@ -431,9 +411,7 @@ test "auth_delete_profile" {
     }
 }
 
-// ============================================================================
 // Test 6: OFF-MODE-REGRESSION
-// ============================================================================
 
 // Without --auth, PUT still writes config.json.
 test "off_mode_put_still_writes_file" {

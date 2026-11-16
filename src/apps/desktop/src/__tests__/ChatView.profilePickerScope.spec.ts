@@ -1,5 +1,4 @@
-/** The composer's agent list must offer the agents a run in THIS workspace will actually use. The
- * list is `useChatComposerAgents`'s `availableAgents` (rendered by FileInput's `@` list). */
+/** The composer's agent list must offer the agents a run in THIS workspace will actually use. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -50,8 +49,7 @@ function installApiMocks() {
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the mount stalled on the 404 the global fetch stub answers with.
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the mount stalled on the 404 the global fetch stub answers …
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
@@ -135,17 +133,14 @@ describe('composer agent list — workspace scope', () => {
 
     const names = await loadComposer('ws_with_kilo')
 
-    // The regression: `kilo` was in the workspace's Settings -> Profiles list
-    // and in no picker row, because the list came from the user scope.
+    // The regression: `kilo` was in the workspace's Settings -> Profiles list and in no picker row, because the list came from the user scope.
     expect(names).toContain('kilo')
     expect(wsSpy).toHaveBeenCalledWith('ws_with_kilo')
     expect(vi.mocked(api.getPabrikConfig)).not.toHaveBeenCalled()
   })
 
   it('falls back to the user-scope config when no workspace is in scope', async () => {
-    // Negative control for the test above: with nothing in scope the list
-    // really does read the user scope, so the absence of `kilo` there is the
-    // scope's doing and not an empty list passing vacuously.
+    // Negative control for the test above: with nothing in scope the list really does read the user scope, so the absence of `kilo` there is the scope's doing and …
     const wsSpy = installApiMocks()
 
     const names = await loadComposer('')
@@ -157,9 +152,7 @@ describe('composer agent list — workspace scope', () => {
   })
 
   it('the route workspace wins over a different active workspace in the store', async () => {
-    // `/app/:workspaceId/chat/:sessionId` is the canonical chat URL, and it is the only source that
-    // is right on a cold deep-link load - the store has not resolved an active workspace yet at
-    // that point.
+    // `/app/:workspaceId/chat/:sessionId` is the canonical chat URL, and it is the only source that is right on a cold deep-link load - the store has not resolved an …
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [

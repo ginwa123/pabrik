@@ -47,9 +47,7 @@ export function useDesignKeyboard(deps: Deps): void {
   const workspacesStore = useWorkspacesStore()
 
   const handleKeydown = (event: KeyboardEvent): void => {
-    // Skip when the user is typing in an input/textarea/contenteditable
-    // — don't steal keys from the W×H inputs, the PropertiesPanel
-    // form fields, etc.
+    // Skip when the user is typing in an input/textarea/contenteditable — don't steal keys from the W×H inputs, the PropertiesPanel form fields, etc.
     const target = event.target as HTMLElement | null
     if (
       target &&
@@ -58,9 +56,7 @@ export function useDesignKeyboard(deps: Deps): void {
       return
     }
 
-    // Space held (no Ctrl/Cmd/Alt/Shift — those are bound to other shortcuts, and Alt+Space is the
-    // window-menu shortcut on Linux/macOS). Plain Space should NOT scroll the page when the design
-    // view is mounted — that's the browser default we override here.
+    // Space held (no Ctrl/Cmd/Alt/Shift — those are bound to other shortcuts, and Alt+Space is the window-menu shortcut on Linux/macOS).
     if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
       if (!isSpacePressed.value) {
         isSpacePressed.value = true
@@ -71,16 +67,13 @@ export function useDesignKeyboard(deps: Deps): void {
     }
 
     if (event.key === 'Escape') {
-      // Esc exits Preview first (more useful than clearing selection
-      // — the user is trying to get back to editing). Only clear the
-      // selection if we're already in Edit mode.
+      // Esc exits Preview first (more useful than clearing selection — the user is trying to get back to editing).
       if (isPreviewMode.value) {
         togglePreviewMode()
         return
       }
       selectedIds.value = new Set()
-      // Also close the canvas context menu (Chunk 4) and the
-      // add-element dialog if it's open.
+      // Also close the canvas context menu (Chunk 4) and the add-element dialog if it's open.
       contextMenu.close()
       if (showAddElementDialog.value) {
         showAddElementDialog.value = false
@@ -89,7 +82,6 @@ export function useDesignKeyboard(deps: Deps): void {
     }
 
     // Chunk 4: Cmd/Ctrl+A → Select all (Figma convention).
-    // Handles BOTH Mac (metaKey) and Linux/Windows (ctrlKey).
     if (
       (event.key === 'a' || event.key === 'A') &&
       (event.ctrlKey || event.metaKey) &&
@@ -101,9 +93,7 @@ export function useDesignKeyboard(deps: Deps): void {
       return
     }
 
-    // Chunk 4: Cmd/Ctrl+] (bring forward) and Cmd/Ctrl+Shift+] (bring to front). Both gate on
-    // selection.size >= 1. The actual reorder call lives in `workspacesStore.reorderDesignElements`,
-    // which Chunk 5 introduces — until then the shortcut fires the stub that no-ops with a warning.
+    // Chunk 4: Cmd/Ctrl+] (bring forward) and Cmd/Ctrl+Shift+] (bring to front).
     if (event.key === ']' && (event.ctrlKey || event.metaKey) && !event.altKey) {
       event.preventDefault()
       if (event.shiftKey) {
@@ -114,8 +104,7 @@ export function useDesignKeyboard(deps: Deps): void {
       return
     }
 
-    // Chunk 4: Cmd/Ctrl+[ (send backward) and Cmd/Ctrl+Shift+[
-    // (send to back).
+    // Chunk 4: Cmd/Ctrl+[ (send backward) and Cmd/Ctrl+Shift+[ (send to back).
     if (event.key === '[' && (event.ctrlKey || event.metaKey) && !event.altKey) {
       event.preventDefault()
       if (event.shiftKey) {
@@ -139,8 +128,7 @@ export function useDesignKeyboard(deps: Deps): void {
       const count = selectedIds.value.size
       if (!confirm(`Delete ${count} element${count === 1 ? '' : 's'}?`)) return
       if (!workspaceId.value || !effectiveItemId.value || !activePageId.value) return
-      // Undo/redo plan (Chunk 5): capture deleted elements + their
-      // HTML bodies BEFORE the deletion so undo restores them.
+      // Undo/redo plan (Chunk 5): capture deleted elements + their HTML bodies BEFORE the deletion so undo restores them.
       const deletedElements = Array.from(selectedIds.value)
         .map((id) => {
           const el = elements.value.find((e) => e.id === id)
@@ -161,9 +149,7 @@ export function useDesignKeyboard(deps: Deps): void {
       return
     }
 
-    // Cmd/Ctrl+P toggles Preview/Edit mode. Plain P (no modifier) is a common type-to-pan shortcut in
-    // design tools — not used here, but we intentionally don't bind it so the future pan-tool doesn't
-    // conflict.
+    // Cmd/Ctrl+P toggles Preview/Edit mode.
     if (
       (event.key === 'p' || event.key === 'P') &&
       (event.ctrlKey || event.metaKey) &&
@@ -175,9 +161,7 @@ export function useDesignKeyboard(deps: Deps): void {
       return
     }
 
-    // NEW (Chunk 6 of grouped-layers plan): Cmd/Ctrl+G groups the current selection into a new
-    // `group` at the union bbox. Figma convention. The composable enforces the 2+ selection rule
-    // silently (mirrors Figma's Cmd+G).
+    // NEW (Chunk 6 of grouped-layers plan): Cmd/Ctrl+G groups the current selection into a new `group` at the union bbox.
     if (
       (event.key === 'g' || event.key === 'G') &&
       (event.ctrlKey || event.metaKey) &&
@@ -191,16 +175,13 @@ export function useDesignKeyboard(deps: Deps): void {
         }
         return
       }
-      // Undo/redo plan (Chunk 5): capture the group entry before
-      // the selection gets cleared by the composable.
+      // Undo/redo plan (Chunk 5): capture the group entry before the selection gets cleared by the composable.
       void history.captureGroup('__pending__', Array.from(selectedIds.value), true)
       void designHandlers.groupSelection()
       return
     }
 
-    // Undo/redo keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Cmd/Ctrl+Y) were intentionally
-    // removed in 2026-08-06 when the feature was hidden from the design UI. Browser-native Cmd+Z now
-    // reaches the user unimpeded.
+    // Undo/redo keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Cmd/Ctrl+Y) were intentionally removed in 2026-08-06 when the feature was hidden from the design UI.
     if (
       (event.key === 'f' || event.key === 'F' || (event.key === '1' && event.shiftKey)) &&
       !event.ctrlKey &&
@@ -212,8 +193,6 @@ export function useDesignKeyboard(deps: Deps): void {
     }
 
     // Arrow keys nudge the selection by 1 design-px; Shift+arrow by 10.
-    // Gated on `selectedIds.size > 0` (Figma-style: arrows do nothing
-    // when there's nothing to nudge).
     if (
       selectedIds.value.size > 0 &&
       (event.key === 'ArrowLeft' ||
@@ -225,16 +204,12 @@ export function useDesignKeyboard(deps: Deps): void {
       const step = event.shiftKey ? 10 : 1
       const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
       const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
-      // Undo/redo plan (Chunk 4): each keypress is one undo entry (Figma parity). Pre-state is
-      // captured BEFORE the PATCH loop; post-state AFTER. capturePostState is async (reads HTML
-      // body); we don't await so the next keypress queues the next capture.
+      // Undo/redo plan (Chunk 4): each keypress is one undo entry (Figma parity).
       void history.capturePreState(Array.from(selectedIds.value))
       for (const id of selectedIds.value) {
         const el = elements.value.find((e) => e.id === id)
         if (!el) continue
-        // The element's "effective" position is the cached `el.x` plus the accumulated nudge delta
-        // (since the last time `elements.value` was fresh). Without this, the second arrow press
-        // would read the stale `el.x` and re-emit the same x, freezing the element.
+        // The element's "effective" position is the cached `el.x` plus the accumulated nudge delta (since the last time `elements.value` was fresh).
         const off = nudgeOffsets.get(id) ?? { x: 0, y: 0 }
         const baseX = el.x + off.x
         const baseY = el.y + off.y
@@ -255,8 +230,7 @@ export function useDesignKeyboard(deps: Deps): void {
   }
 
   const handleKeyup = (event: KeyboardEvent): void => {
-    // Release Space. Don't gate on target — if focus moved to an input
-    // mid-press, we still want to clear the body cursor on Space-up.
+    // Release Space.
     if (event.key === ' ' && isSpacePressed.value) {
       isSpacePressed.value = false
       document.body.style.cursor = ''
@@ -264,9 +238,7 @@ export function useDesignKeyboard(deps: Deps): void {
   }
 
   const handleWindowBlur = (): void => {
-    // Defensive: if focus is lost (window blur / tab switch) while
-    // Space is held, the keyup event may never fire. Reset so we
-    // don't leave the cursor stuck on "grab".
+    // Defensive: if focus is lost (window blur / tab switch) while Space is held, the keyup event may never fire.
     if (isSpacePressed.value) {
       isSpacePressed.value = false
       document.body.style.cursor = ''
@@ -285,8 +257,6 @@ export function useDesignKeyboard(deps: Deps): void {
     window.removeEventListener('blur', handleWindowBlur)
     // Defensive: clear body cursor if we unmount mid-press.
     document.body.style.cursor = ''
-    // NOTE: we intentionally do NOT clear `activeDesignPageId` here. Why: AppLayout's main-content
-    // v-else-if chain renders TWO <DesignView> instances for the same design item — one in the
-    // single-column branch (no chat open) and one inside the 3-column branch (chat open).
+    // NOTE: we intentionally do NOT clear `activeDesignPageId` here.
   })
 }

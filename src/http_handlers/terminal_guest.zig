@@ -1,6 +1,4 @@
-//! Under `--saas` a terminal is a shell running INSIDE the workspace's VM,
-//! reached through `pabrik-vmd`. Refusals are the point: no branch here reaches
-//! a host `forkpty`, so a process that cannot name a VM says so instead.
+//! Under `--saas` a terminal is a shell running INSIDE the workspace's VM, reached through `pabrik-vmd`.
 
 const std = @import("std");
 const terminal_session = @import("terminal_session.zig");
@@ -8,8 +6,7 @@ const runtime_mode = @import("../runtime_mode.zig");
 const policy = @import("../vmd/policy.zig");
 const vmd = @import("../vmd/vmd_client.zig");
 
-/// Guest terminal ids are distinguishable from host ones on sight, so a handler
-/// that receives an id can route it without consulting the mode.
+/// Guest terminal ids are distinguishable from host ones on sight, so a handler that receives an id can route it without consulting the mode.
 pub const id_prefix = "gterm-";
 /// The backend name a guest terminal reports on the wire.
 pub const backend_guest_pty: []const u8 = "guest-pty";
@@ -31,8 +28,7 @@ pub const Error = error{
     OutOfMemory,
 };
 
-/// Where a create should run. `refuse` carries the message a caller reads, so
-/// the refusal explains itself instead of looking like a missing feature.
+/// Where a create should run.
 pub const Route = union(enum) {
     host,
     guest: []const u8,
@@ -41,8 +37,7 @@ pub const Route = union(enum) {
 
 pub const workspace_hint = "SaaS mode runs the terminal inside the workspace VM: pass workspace_id";
 
-/// Local mode keeps the host pty. A `--saas` process answers only for a
-/// workspace, and refuses rather than spawning a shell on the host.
+/// Local mode keeps the host pty.
 pub fn routeFor(mode: runtime_mode.Mode, workspace_id: ?[]const u8) Route {
     if (mode != .saas) return .host;
     const id = workspace_id orelse return .{ .refuse = workspace_hint };
@@ -55,9 +50,7 @@ pub fn isGuestId(id: []const u8) bool {
     return std.mem.startsWith(u8, id, id_prefix);
 }
 
-/// The directory the guest shell starts in, as a workspace-RELATIVE path. Under
-/// `--saas` the only vocabulary that exists is the guest's own, so a host path
-/// resolves to the workspace root rather than being translated.
+/// The directory the guest shell starts in, as a workspace-RELATIVE path.
 pub fn guestCwdFor(requested: []const u8) []const u8 {
     const rel = policy.relativeWorkspace(policy.guest_root, requested) orelse return "";
     return rel;
@@ -65,8 +58,7 @@ pub fn guestCwdFor(requested: []const u8) []const u8 {
 
 pub const Size = struct { cols: u16, rows: u16 };
 
-/// Validate a create without touching the VM: the window bounds are the host
-/// pty path's, so a caller cannot tell the two substrates apart by their errors.
+/// Validate a create without touching the VM: the window bounds are the host pty path's, so a caller cannot tell the two substrates apart by their errors.
 pub fn validateSize(cols: ?u16, rows: ?u16) Error!Size {
     const c = cols orelse terminal_session.default_cols;
     const r = rows orelse terminal_session.default_rows;
@@ -78,9 +70,7 @@ pub fn validateSize(cols: ?u16, rows: ?u16) Error!Size {
     return .{ .cols = c, .rows = r };
 }
 
-/// The daemon's own reason for a refused create (the guest's, when the refusal
-/// came from the VM). Copied out of the client's record so the handler can put
-/// it on the wire instead of a generic string.
+/// The daemon's own reason for a refused create (the guest's, when the refusal came from the VM).
 pub const Refusal = struct {
     pub const max = 256;
     message: [max]u8 = [_]u8{0} ** max,
@@ -100,11 +90,9 @@ pub const Info = struct {
 pub const Session = struct {
     id: []u8,
     workspace_id: []u8,
-    /// The directory the shell started in, as the GUEST sees it: a path
-    /// relative to the workspace root. Empty means the workspace root.
+    /// The directory the shell started in, as the GUEST sees it: a path relative to the workspace root.
     cwd: []u8,
-    /// The guest's terminal id: its slot in the VM's tty table, which is also
-    /// how the daemon finds the port that terminal answers on.
+    /// The guest's terminal id: its slot in the VM's tty table, which is also how the daemon finds the port that terminal answers on.
     tty_id: i64,
     /// The pid of the shell, as the GUEST reports it. Never a host pid.
     guest_pid: i64,
@@ -145,8 +133,7 @@ fn registry() *std.StringHashMap(*Session) {
     return &g_sessions;
 }
 
-/// Wall-clock seconds through libc, exactly as the host pty path ages its
-/// sessions. Coarse seconds are plenty for an idle sweep.
+/// Wall-clock seconds through libc, exactly as the host pty path ages its sessions.
 extern "c" fn time(t: ?*i64) i64;
 
 fn nowSeconds() i64 {
@@ -192,8 +179,7 @@ pub fn getSession(id: []const u8) ?*Session {
     return reg.get(id);
 }
 
-/// No session, or someone else's session: a foreign id is indistinguishable
-/// from a missing one, exactly as on the host pty path.
+/// No session, or someone else's session: a foreign id is indistinguishable from a missing one, exactly as on the host pty path.
 pub fn getSessionForOwner(id: []const u8, caller_owner: []const u8) ?*Session {
     const s = getSession(id) orelse return null;
     if (s.owner.len == 0 or caller_owner.len == 0) return s;
@@ -201,9 +187,7 @@ pub fn getSessionForOwner(id: []const u8, caller_owner: []const u8) ?*Session {
     return s;
 }
 
-/// Every live guest terminal the caller may drive, in the same shape as the
-/// host list: the workspace it belongs to, the directory it started in, and
-/// the console it got. Owner-scoped with the guest's own rule.
+/// Every live guest terminal the caller may drive, in the same shape as the host list: the workspace it belongs to, the directory it started in, and the console …
 pub fn listSessionsForOwner(allocator: std.mem.Allocator, caller_owner: []const u8) ![]terminal_session.SessionSummary {
     var out = std.ArrayList(terminal_session.SessionSummary).empty;
     errdefer {
@@ -262,8 +246,7 @@ fn allocId() Error![]u8 {
     return std.fmt.allocPrint(g_alloc, "{s}{x}", .{ id_prefix, n }) catch return error.OutOfMemory;
 }
 
-/// Where `--saas` talks to its manager, or null when this host cannot run a VM
-/// at all. Public because every terminal handler needs the same answer.
+/// Where `--saas` talks to its manager, or null when this host cannot run a VM at all.
 pub fn socketPath() ?[]const u8 {
     return managerSocket();
 }
@@ -292,8 +275,7 @@ fn checkCapacity() Error!void {
     if (n >= cap) return error.TooManySessions;
 }
 
-/// Start a shell inside the workspace's VM. The guest owns the pty; the pid that
-/// comes back is the guest's.
+/// Start a shell inside the workspace's VM.
 pub fn create(
     allocator: std.mem.Allocator,
     workspace_id: []const u8,
@@ -375,8 +357,7 @@ pub const Output = struct {
     exit_code: ?i32,
 };
 
-/// Everything the guest produced since `cursor`, plus the exit state. An empty
-/// answer with `exited` false means the terminal is simply quiet.
+/// Everything the guest produced since `cursor`, plus the exit state.
 pub fn readOutputAlloc(
     allocator: std.mem.Allocator,
     socket: []const u8,
@@ -530,8 +511,7 @@ pub fn destroyForOwner(allocator: std.mem.Allocator, socket: []const u8, id: []c
     reapSession(allocator, socket, entry.value);
 }
 
-/// Teardown for a session already removed from the registry: kill the guest
-/// shell, give the buffer back, free the record.
+/// Teardown for a session already removed from the registry: kill the guest shell, give the buffer back, free the record.
 fn reapSession(allocator: std.mem.Allocator, socket: []const u8, s: *Session) void {
     var client = vmd.Client.init(allocator, socket);
     client.ttyClose(s.workspace_id, s.tty_id) catch {};
@@ -543,9 +523,7 @@ fn reapSession(allocator: std.mem.Allocator, socket: []const u8, s: *Session) vo
     g_alloc.destroy(s);
 }
 
-/// Reap what nothing touched past the idle timeout. The rule is the host pty
-/// path's own (`terminal_session.shouldReap`), so a terminal ages out at the same
-/// rate in either substrate.
+/// Reap what nothing touched past the idle timeout.
 pub fn sweepIdle(allocator: std.mem.Allocator, socket: []const u8) void {
     sweepIdleExcluding(allocator, socket, null);
 }
@@ -580,8 +558,7 @@ fn sweepIdleExcluding(allocator: std.mem.Allocator, socket: []const u8, exclude:
     }
 }
 
-// ==== Behaviour tests: the decisions, not the VM — a live terminal is the
-// ==== functional UI test's job.
+// ==== Behaviour tests: the decisions, not the VM — a live terminal is the ==== functional UI test's job.
 
 const testing = std.testing;
 
@@ -737,8 +714,7 @@ test "a burst past the cap keeps the newest bytes and does not abort the process
     const chunk = try testing.allocator.alloc(u8, policy.max_tty_chunk);
     defer testing.allocator.free(chunk);
 
-    // 16 x 32 KiB guest chunks, the largest a read returns. Capacity overshoots
-    // the slack one append BEFORE the stream fills the cap: the aborting state.
+    // 16 x 32 KiB guest chunks, the largest a read returns.
     mutexLock(&s.mutex);
     var i: usize = 0;
     while (i < 16) : (i += 1) {
@@ -755,8 +731,7 @@ test "a burst past the cap keeps the newest bytes and does not abort the process
     try testing.expectEqual(terminal_session.buffer_cap, len);
     try testing.expectEqual(@as(u64, 16 * policy.max_tty_chunk), total);
     try testing.expectEqual(total - terminal_session.buffer_cap, base);
-    // The window that survives is the newest cap-sized tail: the last eight
-    // chunks, in order, with nothing left of the seven before them.
+    // The window that survives is the newest cap-sized tail: the last eight chunks, in order, with nothing left of the seven before them.
     try testing.expectEqual(@as(u8, 'a' + 8), kept[0]);
     try testing.expectEqual(@as(u8, 'a' + 15), kept[kept.len - 1]);
 }
@@ -795,8 +770,7 @@ test "a guest terminal ages out on the host path's own rule" {
     busy.last_output_at_s = nowSeconds();
     busy.mutex.unlock();
 
-    // No manager on this socket, so a reaped session's `tty close` is a no-op
-    // that cannot reach a VM; the sweep decision is what this asserts.
+    // No manager on this socket, so a reaped session's `tty close` is a no-op that cannot reach a VM; the sweep decision is what this asserts.
     sweepIdle(testing.allocator, "/nonexistent/pabrik-vmd.sock");
     try testing.expect(getSession(stale_id) == null);
     try testing.expect(getSession(busy_id) != null);

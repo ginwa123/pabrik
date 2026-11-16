@@ -17,9 +17,7 @@ interface MediaParams {
 export function createMediaActions(p: MediaParams) {
   const { workspaces, findItem, cacheTaskMutation } = p
 
-  // In-flight media requests, keyed by task id. Concurrent callers
-  // (dialog re-open, batch prefetch racing a dialog open) share one
-  // promise instead of firing duplicate GETs for the same task.
+  // In-flight media requests, keyed by task id.
   const mediaInflight = new Map<string, Promise<void>>()
 
   function findCachedTask(workspaceId: string, itemId: string, taskId: string): Task | undefined {
@@ -38,8 +36,7 @@ export function createMediaActions(p: MediaParams) {
     return wantImage || wantVideo
   }
 
-  // Card-first async media. The flag-only list payload lets cards render immediately (badge state);
-  // this queues the thumbnail fetch behind it via GET .../tasks/:id/media.
+  // Card-first async media.
   function queueCardMediaLoad(workspaceId: string, itemId: string): void {
     const item = findItem(workspaceId, itemId)
     if (!item?.tasks || item.tasks.length === 0) return
@@ -54,8 +51,6 @@ export function createMediaActions(p: MediaParams) {
   }
 
   // Paints a task's last-known thumbnail from the local media cache.
-  // Returns true when anything was painted — the caller then revalidates
-  // that task in the background instead of treating it as loaded.
   function applyCachedMedia(task: Task): boolean {
     if (!taskNeedsMedia(task)) return false
     const hit = readTaskMediaCache(task.id)
@@ -80,9 +75,7 @@ export function createMediaActions(p: MediaParams) {
     return painted
   }
 
-  // Lazy media fetch (media-flags change). When list/get report `is_have_image` / `is_have_video`,
-  // the detail dialog calls this once to populate the cached task's imageUrls/videoUrls in place
-  // (shared with the board card thumbnail).
+  // Lazy media fetch (media-flags change).
   async function fetchTaskMedia(
     workspaceId: string,
     itemId: string,
@@ -127,8 +120,7 @@ export function createMediaActions(p: MediaParams) {
     await run
   }
 
-  // Parallel batch prefetch (media-flags change). Fetches media for every flagged-but-unloaded task
-  // concurrently via one `api.getTasksMedia` round (≈ one round-trip, not N sequential).
+  // Parallel batch prefetch (media-flags change).
   async function fetchTasksMedia(
     workspaceId: string,
     itemId: string,
@@ -147,9 +139,7 @@ export function createMediaActions(p: MediaParams) {
       await Promise.allSettled(alreadyRunning)
       return
     }
-    // Note: the `finally` below deletes map entries unconditionally. Safe: a new request for the
-    // same id can only start when the map holds no entry, and entries are removed only here — no
-    // caller can replace an in-flight entry mid-run (single-threaded).
+    // Note: the `finally` below deletes map entries unconditionally.
     const run = (async (): Promise<void> => {
       try {
         const results = await api.getTasksMedia(workspaceId, itemId, pending)

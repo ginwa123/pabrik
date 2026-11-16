@@ -1,6 +1,4 @@
-//! `GET /api/terminal/sessions` — the live terminal sessions the caller may
-//! drive, so a window-level footer can list them grouped per workspace. The
-//! substrate follows the runtime: host ptys locally, workspace VMs under saas.
+//! `GET /api/terminal/sessions` — the live terminal sessions the caller may drive, so a window-level footer can list them grouped per workspace.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -11,8 +9,7 @@ const terminal_guest = @import("terminal_guest.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const auth_common = @import("auth_common.zig");
 
-/// One session on the wire. The fields a launcher needs: which workspace it
-/// belongs to, where its shell started, and the console it got.
+/// One session on the wire.
 pub const TerminalSessionSummary = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -34,8 +31,7 @@ pub fn terminalListHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Owner for the list (plan 2026-09-25, W2.5). Server-derived from the
-    // `pabrik_session` cookie only — never a body/query/header field.
+    // Owner for the list (plan 2026-09-25, W2.5).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
 
@@ -65,9 +61,7 @@ pub fn terminalListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = json_str });
 }
 
-// ---------------------------------------------------------------------
-// Inline tests: the wire shape, and the rule that decides whose shells
-// are in it.
+// Inline tests: the wire shape, and the rule that decides whose shells are in it.
 
 const testing = std.testing;
 

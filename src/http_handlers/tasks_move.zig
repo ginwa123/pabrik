@@ -1,6 +1,4 @@
 //! `PATCH /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/move`.
-//! Migration 111 gates it: a task waiting on an unfinished dependency may not
-//! change column (409 + blockers) unless the body sets `force`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,8 +13,7 @@ const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 const MoveTaskBody = struct {
     column_id: []const u8,
     position: i64,
-    /// Skip the dependency gate. Defaults to false so an older client (and the
-    /// agent's first attempt) always takes the safe path.
+    /// Skip the dependency gate.
     force: bool = false,
 };
 
@@ -42,8 +39,6 @@ pub const TasksMoveError = error{
     ColumnIdRequired,
     MoveFailed,
     /// `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
-    /// Unreachable on the per-request arena, but the type system
-    /// requires the variant.
     OutOfMemory,
 };
 
@@ -54,17 +49,13 @@ pub const TasksMoveInput = struct {
     body: MoveTaskBody,
 };
 
-/// The two ways a move can end, both PRE-SERIALIZED JSON. `blocked` carries a
-/// string, not a struct of slices: the edge list it borrows from is freed before
-/// `useCase` returns.
+/// The two ways a move can end, both PRE-SERIALIZED JSON.
 pub const TasksMoveResult = union(enum) {
     moved: []const u8,
     blocked: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -85,15 +76,13 @@ fn useCase(
         input.body.force,
     ) catch |err| switch (err) {
         error.BlockedByDependencies => {
-            // Re-read instead of trusting the gate's verdict: the dependency may
-            // have completed in between, and a 409 must never list no blockers.
+            // Re-read instead of trusting the gate's verdict: the dependency may have completed in between, and a 409 must never list no blockers.
             const blocked = kanban_model.incompleteDependencies(
                 allocator,
                 db,
                 input.task_id,
             ) catch return error.MoveFailed;
-            // Freed through `kanban_model.deps` — the same module copy that
-            // produced the slice.
+            // Freed through `kanban_model.deps` — the same module copy that produced the slice.
             defer kanban_model.deps.freeEdges(allocator, blocked);
 
             const fields = http_response.makeTaskDependencyFields(
@@ -115,8 +104,7 @@ fn useCase(
         else => return error.MoveFailed,
     };
 
-    // Emit SSE event so other connected clients refresh their kanban view.
-    // action="moved" matches the frontend's `KanbanTaskEvent` union variant.
+    // Emit SSE event so other connected clients refresh their kanban view. action="moved" matches the frontend's `KanbanTaskEvent` union variant.
     on_event_sent_kanban.onEventSendKanbanTask(allocator, .{
         .action = "moved",
         .workspace_id = input.workspace_id,
@@ -131,9 +119,7 @@ fn useCase(
         );
     };
 
-    // Chunk 5 of kanban-task-notification-icon: dragging a card to another
-    // column is the most visible "human touch" — stamp last_human_touched_at
-    // so the kanban card flips from the orange "awaiting review" dot to the
+    // Chunk 5 of kanban-task-notification-icon: dragging a card to another column is the most visible "human touch" — stamp last_human_touched_at so the kanban card …
     pabrikcore.ai_mod.llm_history.updateTaskLastHumanTouchedAt(
         allocator,
         db,
@@ -152,9 +138,7 @@ fn useCase(
     }, .{}) };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn tasksMoveHandler(
     ctx: gserverz.HttpContext,
@@ -173,9 +157,7 @@ pub fn tasksMoveHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "item_id required" }),
         });
     }
-    // workspace_id is required for the SSE payload (the frontend
-    // filters events for the active workspace). Empty is fine —
-    // the SSE event will still be emitted with workspace_id="".
+    // workspace_id is required for the SSE payload (the frontend filters events for the active workspace).
     const ws_id = req.params.get("workspace_id") orelse "";
     const task_id = req.params.get("task_id") orelse "";
     if (task_id.len == 0) {
@@ -235,14 +217,11 @@ pub fn tasksMoveHandler(
     };
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 const testing = std.testing;
 
-/// `useCase` hands back an owned JSON string on BOTH arms; the test allocator
-/// fails the suite on a leak, so every caller releases it.
+/// `useCase` hands back an owned JSON string on BOTH arms; the test allocator fails the suite on a leak, so every caller releases it.
 fn freeOutcome(allocator: std.mem.Allocator, outcome: TasksMoveResult) void {
     switch (outcome) {
         .moved => |json| allocator.free(json),
@@ -250,8 +229,7 @@ fn freeOutcome(allocator: std.mem.Allocator, outcome: TasksMoveResult) void {
     }
 }
 
-/// In-memory DB: three columns (only `c3` completes a task), two tasks, and
-/// `t1` waiting for `t2`.
+/// In-memory DB: three columns (only `c3` completes a task), two tasks, and `t1` waiting for `t2`.
 fn setupDb() !struct { db: pabrikcore.database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});

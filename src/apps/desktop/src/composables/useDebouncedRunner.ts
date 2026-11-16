@@ -1,6 +1,4 @@
-/** Trailing-edge debounce around ONE repeatable task — the settings autosave. Every edit calls
- * `schedule()`; the task runs once the edit burst goes quiet, and `task` must resolve (report your
- * own failures) so a pending run can never surface as an unhandled rejection. */
+/** Trailing-edge debounce around ONE repeatable task — the settings autosave. */
 export interface DebouncedRunner {
   /** (Re)start the idle window. A non-positive `delayMs` runs the task on the next microtask. */
   schedule: () => void

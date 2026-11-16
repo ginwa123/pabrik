@@ -24,28 +24,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The blank screen, reproduced.
- *
- * A `pabrik://` link that reaches the activity without `FLAG_ACTIVITY_NEW_TASK`
- * goes through `handleDeepLink`'s "another app's task" branch, which navigates
- * with `popUpTo(graph, inclusive = true)` — so the shell is never pushed and the
- * deep-linked leaf is the only destination on the back stack. The back arrow on
- * that screen used to call the no-argument `popBackStack()`, which is inclusive:
- * it emptied the back stack, reported `false` while doing it, and left `NavHost`
- * with no visible entry, which it renders as *nothing*. The process stayed alive
- * and the activity stayed resumed, so the reader got a window with no content,
- * no way out, and a Back button that quit the app.
- *
- * These tests put the real `NavHost` into that state and assert that an in-app
- * affordance leaves something on screen. On the chat route that affordance is no
- * longer a back arrow, and no longer the drawer's "All chats" row either — the
- * drawer opens the list that row led to, so keeping it would have been a second
- * route to where the reader already stands. What is left is the system Back
- * button, which the chat destination claims with a `BackHandler`. This is the
- * only thing standing between a deep-linked chat and "Back quits the app", so it
- * is driven for real here rather than simulated.
- */
+/** The blank screen, reproduced. */
 @RunWith(AndroidJUnit4::class)
 class PabrikNavGraphBackInstrumentedTest {
     @get:Rule
@@ -77,14 +56,7 @@ class PabrikNavGraphBackInstrumentedTest {
         )
     }
 
-    /**
-     * The chat's way out: the system Back button, which the route claims.
-     *
-     * The drawer is opened first and closed again on purpose. `ModalNavigationDrawer`
-     * registers its own, deeper `BackHandler`, and the dispatcher runs the
-     * most-recently-added enabled callback first — so an open drawer has to eat
-     * the press, and only a closed one can be relied on to reach the route's.
-     */
+    /** The chat's way out: the system Back button, which the route claims. */
     private fun leaveChatWithTheSystemBackButton() {
         composeTestRule.onNodeWithTag("chat_drawer_menu").performClick()
         composeTestRule.waitForIdle()
@@ -136,9 +108,7 @@ class PabrikNavGraphBackInstrumentedTest {
     @Test
     fun anEmptiedBackStackShowsTheRecoveryScreenRatherThanNothing() {
         setUpGraph()
-        // Empty the back stack the way the inclusive pop did, and assert the graph
-        // answers it rather than leaving a bare window. This is the guard that
-        // turns any future way into that state into one tap.
+        // Empty the back stack the way the inclusive pop did, and assert the graph answers it rather than leaving a bare window.
         composeTestRule.runOnUiThread {
             controller.popBackStack(controller.graph.id, inclusive = true)
         }
@@ -151,10 +121,7 @@ class PabrikNavGraphBackInstrumentedTest {
     }
 }
 
-/**
- * The production graph with inert data, so the test exercises the real routes and
- * the real back affordances rather than a stand-in for them.
- */
+/** The production graph with inert data, so the test exercises the real routes and the real back affordances rather than a stand-in for them. */
 @Composable
 private fun TestNavGraph(navController: NavHostController) {
     PabrikNavGraph(
@@ -165,8 +132,7 @@ private fun TestNavGraph(navController: NavHostController) {
         navController = navController,
         homeState = HomeUiState(isLoading = false),
         chatState = MutableStateFlow(ChatUiState(sessionId = "sess_1", isLoading = false)),
-        // Nothing saved: the back stack is what this file is about, and a
-        // position that resumed would navigate out from under the test.
+        // Nothing saved: the back stack is what this file is about, and a position that resumed would navigate out from under the test.
         positionStore = NoLastPosition,
         onSelectWorkspace = {},
         onSelectChat = {},
@@ -181,13 +147,7 @@ private fun TestNavGraph(navController: NavHostController) {
     )
 }
 
-/**
- * A store with nothing in it: a first launch.
- *
- * Defined here rather than shared with the JVM tests because `src/test` is not on
- * the instrumented classpath. Every test that composes the graph needs one, and
- * only the resume tests care what it holds.
- */
+/** A store with nothing in it: a first launch. */
 internal object NoLastPosition : LastPositionStore {
     override fun read(userId: String?): LastPosition = LastPosition()
     override fun save(userId: String?, position: LastPosition) = Unit

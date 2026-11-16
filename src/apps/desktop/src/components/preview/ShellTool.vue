@@ -3,8 +3,7 @@ import { computed, ref } from 'vue'
 import ToolParameters from '../tool_outputs/_shared/ToolParameters.vue'
 import { normalizeToolContent, parseShell } from '../tool_outputs/_shared/toolOutputParser'
 
-/** ShellTool — the canonical renderer for shell-tool outputs. Replaces the bash-only `Bash.vue`
- * with a parameterised component. */
+/** ShellTool — the canonical renderer for shell-tool outputs. */
 const props = defineProps<{
   content: unknown
   toolName: string
@@ -24,9 +23,7 @@ const isTimeout = computed(() => parsed.value.timedOut)
 const stdoutLines = computed(() => parsed.value.stdoutLines)
 const stderrLines = computed(() => parsed.value.stderrLines)
 
-// Command from the `parameters` prop (tool-call args, not the result
-// envelope). `parameters` is XML like `<command>sleep 10</command>...`
-// from jsonArgsToXml — NOT JSON — but try JSON first for forward-compat.
+// Command from the `parameters` prop (tool-call args, not the result envelope).
 const parsedParamsCommand = computed((): string | null => {
   const raw = props.parameters
   if (!raw || raw.trim() === '') return null
@@ -47,9 +44,7 @@ const parsedParamsCommand = computed((): string | null => {
   return null
 })
 
-// Prefer the envelope's command; fall back to the parameters prop so a
-// still-running tool (placeholder envelope with empty <data>) shows its
-// command. Treat empty string as null.
+// Prefer the envelope's command; fall back to the parameters prop so a still-running tool (placeholder envelope with empty <data>) shows its command.
 const displayCommand = computed((): string | null => {
   const fromEnvelope = parsed.value.command
   if (fromEnvelope && fromEnvelope.trim() !== '') return fromEnvelope
@@ -71,8 +66,7 @@ const hasStderr = computed(() => {
   return stderr.value && stderr.value.trim() !== '' && stderr.value.trim() !== 'No errors.'
 })
 
-// The envelope's error string. EVERY tool result carries one - a failed command, a rejected
-// argument, a tool name that does not exist.
+// The envelope's error string.
 const envelopeError = computed((): string | null => {
   const err = normalized.value.error
   if (typeof err !== 'string') return null

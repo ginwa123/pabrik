@@ -1,5 +1,4 @@
-// `POST /api/llm/session/:id/touched` — mark-as-seen clears the amber stale
-// dot.
+// `POST /api/llm/session/:id/touched` — mark-as-seen clears the amber stale dot.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,13 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// `sessionLastHumanTouchedAt`'s replacement for the Python `_db_val`: read
-/// `GET /api/llm/session`, find the one entry whose `session_id` matches, and
-/// return its `last_human_touched_at` wire field — `""` when the column is
+/// `sessionLastHumanTouchedAt`'s replacement for the Python `_db_val`: read `GET /api/llm/session`, find the one entry whose `session_id` matches, and return its …
 fn sessionLastHumanTouchedAt(doc: *const harness.Json, session_id: []const u8) ![]const u8 {
     const entry = findSessionInList(doc, session_id) catch |err| {
         std.debug.print("expected 1 match for {s}: {s}\n", .{ session_id, @errorName(err) });
@@ -25,8 +20,6 @@ fn sessionLastHumanTouchedAt(doc: *const harness.Json, session_id: []const u8) !
 }
 
 /// The single `sessions[]` entry with `session_id == id`.
-///
-/// Borrows from `doc`.
 fn findSessionInList(doc: *const harness.Json, id: []const u8) !std.json.Value {
     const sessions = doc.array("sessions") orelse return error.TestUnexpectedResult;
 
@@ -47,8 +40,7 @@ fn findSessionInList(doc: *const harness.Json, id: []const u8) !std.json.Value {
     return found orelse error.TestUnexpectedResult;
 }
 
-/// Python's `entry.get(key) or ""` — missing key, JSON `null`, or a
-/// non-string all collapse to `""`.
+/// Python's `entry.get(key) or ""` — missing key, JSON `null`, or a non-string all collapse to `""`.
 fn jsonStringField(value: std.json.Value, key: []const u8) []const u8 {
     const obj = switch (value) {
         .object => |o| o,
@@ -60,8 +52,7 @@ fn jsonStringField(value: std.json.Value, key: []const u8) []const u8 {
     };
 }
 
-/// `PUT {base}/session/:id` — the auto-creating write the Python tests used
-/// to make the row exist.
+/// `PUT {base}/session/:id` — the auto-creating write the Python tests used to make the row exist.
 fn ensureSession(h: *Harness, base: []const u8, sid: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "{s}/session/{s}", .{ base, sid });
     defer gpa.free(path);
@@ -72,7 +63,6 @@ fn ensureSession(h: *Harness, base: []const u8, sid: []const u8, name: []const u
 }
 
 /// `POST {base}/session/:id/touched` with the sidebar's empty body.
-/// Returns the parsed response body.
 fn postTouched(h: *Harness, base: []const u8, sid: []const u8) !harness.Json {
     const path = try std.fmt.allocPrint(gpa, "{s}/session/{s}/touched", .{ base, sid });
     defer gpa.free(path);
@@ -81,12 +71,9 @@ fn postTouched(h: *Harness, base: []const u8, sid: []const u8) !harness.Json {
     return r.json();
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// `touched` answers 200 {success:true, session_id:<id>} and the column
-// is no longer NULL.
+// `touched` answers 200 {success:true, session_id:<id>} and the column is no longer NULL.
 test "touched_stamps_column" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -110,9 +97,7 @@ test "touched_stamps_column" {
     };
     try testing.expectEqualStrings(sid, echoed);
 
-    // The column must be non-NULL. See the file header: the list
-    // endpoint's `last_human_touched_at` is a CASE over the very column,
-    // so a non-empty value IS the non-NULL reading.
+    // The column must be non-NULL.
     var list = try h.http(io, .GET, "/api/llm/session", .{ .expect = &.{200} });
     defer list.deinit();
     var ldoc = try list.json();
@@ -125,8 +110,7 @@ test "touched_stamps_column" {
     }
 }
 
-// After a touch the amber dot clears: the wire field is populated and
-// `updated_at` is no longer strictly greater than it.
+// After a touch the amber dot clears: the wire field is populated and `updated_at` is no longer strictly greater than it.
 test "touched_clears_stale_dot" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -155,9 +139,7 @@ test "touched_clears_stale_dot" {
         return error.TestUnexpectedResult;
     }
 
-    // The dot condition is `updated_at > last_human_touched_at`; after a
-    // touch, `human` is the later stamp so the dot clears. Python:
-    // `assert not (updated > human)`.
+    // The dot condition is `updated_at > last_human_touched_at`; after a touch, `human` is the later stamp so the dot clears.
     if (std.mem.order(u8, updated, human) == .gt) {
         std.debug.print(
             "dot should clear: updated_at={s} last_human_touched_at={s}\n",

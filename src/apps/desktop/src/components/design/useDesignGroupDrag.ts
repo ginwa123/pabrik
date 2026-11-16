@@ -28,8 +28,7 @@ export function useDesignGroupDrag(deps: Deps) {
     history,
   } = deps
 
-  // Chunk 2: group drag. BUG FIX (2026-07-29): the original implementation used `el.x + finalDx`
-  // where `el.x` is the element's CURRENT position from `elements.value`.
+  // Chunk 2: group drag.
   let dragStartPositions: Map<string, { x: number; y: number }> | null = null
 
   const handleGroupDrag = (delta: { dx: number; dy: number }): void => {
@@ -142,9 +141,7 @@ export function useDesignGroupDrag(deps: Deps) {
     }
   }
 
-  // Undo/redo plan (Chunk 4): gesture boundary capture. The pre-state is captured at drag-start
-  // (pointerdown); the post- state at drag-end (pointerup trailing emit). REGRESSION (2026-07-30):
-  // this handler REPLACED the original `clearSnapGuides` on the `@drag-end` binding.
+  // Undo/redo plan (Chunk 4): gesture boundary capture.
   const handleDragStart = (ids: string[]): void => {
     void history.capturePreState(ids)
   }
@@ -157,9 +154,7 @@ export function useDesignGroupDrag(deps: Deps) {
     dragStartPositions = null
     void history
       .capturePostState(
-        // For single-element drag, ids is implicit (just this element). For multi-element drag, ids
-        // has been captured. We pass an empty array as a safety net — capturePostState re-reads the
-        // live state from the store and diffs against the pre-state we captured above.
+        // For single-element drag, ids is implicit (just this element).
         Array.from(selectedIds.value),
       )
       .then(() => {

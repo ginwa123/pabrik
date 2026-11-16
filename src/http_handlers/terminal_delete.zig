@@ -1,6 +1,4 @@
-//! `DELETE /api/terminal/sessions/:id` — kill the shell, close the PTY, drop
-//! the session. Success: 200 `{ ok: true }`. Unknown id: to retry — the
-//! session is already gone).
+//! `DELETE /api/terminal/sessions/:id` — kill the shell, close the PTY, drop the session.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -34,8 +32,7 @@ pub fn terminalDeleteHandler(
         });
     }
 
-    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is
-    // indistinguishable from a missing one (404, never 403).
+    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is indistinguishable from a missing one (404, never 403).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
 

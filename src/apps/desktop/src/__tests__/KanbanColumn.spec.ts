@@ -1,5 +1,4 @@
-/** Tests for KanbanColumn — a single column with header (inline rename + count badge + ⋮ menu),
- * cards list, footer "+ Add" button, and drop zone. */
+/** Tests for KanbanColumn — a single column with header (inline rename + count badge + ⋮ menu), cards list, footer "+ Add" button, and drop zone. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -77,8 +76,7 @@ describe('KanbanColumn — header rendering', () => {
       makeTask({ id: 't2', kanban_column_id: COL_TODO, kanban_position: 1 }),
       makeTask({ id: 't3', kanban_column_id: COL_DONE, kanban_position: 0 }),
     ])
-    // Two cards in this column (t1, t2); t3 is in another column and
-    // should NOT be rendered here.
+    // Two cards in this column (t1, t2); t3 is in another column and should NOT be rendered here.
     const cards = wrapper.findAll(`[data-kanban-card]`)
     expect(cards).toHaveLength(2)
     expect(cards[0]!.attributes('data-kanban-card')).toBe('t1')
@@ -86,9 +84,7 @@ describe('KanbanColumn — header rendering', () => {
   })
 
   it('renders cards in input order (backend applies the sort per-column via fetchKanbanTasks)', () => {
-    // The client-side sort was removed in 2026-08-06 (kanban- sort-independence, take 2). The
-    // backend's per-column fetch returns tasks in the column's own sort order — `cardsInColumn`
-    // here is a thin filter, no comparator. The wire order is what the user sees.
+    // The client-side sort was removed in 2026-08-06 (kanban- sort-independence, take 2).
     wrapper = mountColumn(makeColumn(), [
       makeTask({ id: 't1', kanban_column_id: COL_TODO, kanban_position: 2 }),
       makeTask({ id: 't2', kanban_column_id: COL_TODO, kanban_position: 0 }),
@@ -206,9 +202,7 @@ describe('KanbanColumn — ⋮ menu', () => {
 })
 
 describe('KanbanColumn — column header drag-and-drop reorder', () => {
-  // The header is draggable: dragstart sets the kanban-column-id
-  // MIME, dragover/drop on a header emit reorder-column. This is the
-  // Trello/Jira UX (column reorder via header drag).
+  // The header is draggable: dragstart sets the kanban-column-id MIME, dragover/drop on a header emit reorder-column.
   let wrapper: VueWrapper | null = null
 
   beforeEach(() => {
@@ -248,9 +242,7 @@ describe('KanbanColumn — column header drag-and-drop reorder', () => {
     wrapper = mountColumn(makeColumn({ id: COL_DONE }))
     const header = wrapper.find(`[data-testid="kanban-column-${COL_DONE}-header"]`)
 
-    // Simulate the source: this header is the DROP target;
-    // COL_TODO is being dragged onto it. The drop handler should
-    // emit reorder-column with { columnId: COL_TODO, targetColumnId: COL_DONE }.
+    // Simulate the source: this header is the DROP target; COL_TODO is being dragged onto it.
     const setData = vi.fn()
     const dataTransfer = {
       effectAllowed: '',
@@ -297,8 +289,7 @@ describe('KanbanColumn — column header drag-and-drop reorder', () => {
     expect(wrapper.emitted('reorderColumn')).toBeUndefined()
   })
 })
-/** Sort modal — the coverage gap. `KanbanColumn` wires the modal as `@click` on <KanbanSortMenu>,
- * which declares no `click` emit, so it is a NATIVE listener on the menu's root <div>. */
+/** Sort modal — the coverage gap. */
 describe('KanbanColumn — sort modal', () => {
   let wrapper: VueWrapper | null = null
 
@@ -332,9 +323,7 @@ describe('KanbanColumn — sort modal', () => {
   })
 
   it('opening the modal does NOT emit sortChange', async () => {
-    // The opening click cannot reach the modal's native @click listener:
-    // the modal is a sibling subtree (not on the click's propagation path)
-    // and is not yet mounted when the event dispatches.
+    // The opening click cannot reach the modal's native @click listener
     wrapper = mountColumn(makeColumn())
     await openSortModal(wrapper)
     expect(wrapper.emitted('sortChange')).toBeUndefined()
@@ -362,8 +351,7 @@ describe('KanbanColumn — sort modal', () => {
   })
 
   it('re-picking the SAME sort still emits (the parent refetches the column)', async () => {
-    // Deliberate: the emit is unconditional so the per-column fetch fires
-    // even when the values did not change.
+    // Deliberate: the emit is unconditional so the per-column fetch fires even when the values did not change.
     wrapper = mountColumn(makeColumn())
     await openSortModal(wrapper)
     await wrapper.find('[data-testid="kanban-sort-menu-position"]').trigger('click')
@@ -387,8 +375,6 @@ describe('KanbanColumn — sort modal', () => {
 
   it('setSortMode (the URL-restore seam) does not emit', async () => {
     // KanbanView drives the column's sort on URL restore via defineExpose.
-    // That path must NOT emit — the URL is already correct, and emitting
-    // would fire a redundant fetch.
     wrapper = mountColumn(makeColumn())
     const exposed = wrapper.vm as unknown as {
       setSortMode: (s: string, d: string) => void

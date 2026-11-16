@@ -64,8 +64,7 @@ export function useFilePickerRows<T>(deps: FilePickerRowsDeps<T>) {
   const filteredContent = computed<ContentItem<T>[]>(() => {
     const entries = deps.contentEntries.value ?? []
     const items: ContentItem<T>[] = entries.map((raw) => {
-      // Cast through unknown because Vue's deep ref unwraps T into UnwrapRefSimple<T>
-      // inside the ref's value array. The user's data-source functions still expect T.
+      // Cast through unknown because Vue's deep ref unwraps T into UnwrapRefSimple<T> inside the ref's value array.
       const item = raw as unknown as T
       return {
         item,
@@ -105,9 +104,7 @@ export function useFilePickerRows<T>(deps: FilePickerRowsDeps<T>) {
   const treeFlat = computed<TreeRow<T>[]>(() => {
     const result: TreeRow<T>[] = []
     const cache = deps.treeEntriesCache.value
-    // Root key is '/' on POSIX, '' when the dialog opened at the system root (resolved via
-    // getSystemFolder), or a drive/UNC root (`C:\`, `\\server\share`) on Windows. Prefer '' (a failed
-    // '/' load leaves a stale empty '/' entry behind after the system-root fallback).
+    // Root key is '/' on POSIX, '' when the dialog opened at the system root (resolved via getSystemFolder), or a drive/UNC root (`C:\`, `\\server\share`) on Windows.
     const rootKey =
       Object.keys(cache).find((k) => k === '') ??
       Object.keys(cache).find((k) => k === '/' || isRootPath(k))

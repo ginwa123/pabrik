@@ -1,5 +1,4 @@
-// Wire test: the agent loop must not read a PER-TURN-ARENA MCP snapshot on a
-// turn that no longer owns it.
+// Wire test: the agent loop must not read a PER-TURN-ARENA MCP snapshot on a turn that no longer owns it.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,21 +10,15 @@ const gpa = testing.allocator;
 const io = testing.io;
 const Io = std.Io;
 
-/// The MCP server name in the config, the tool the python stub advertises,
-/// and the name the model actually sees: pabrik namespaces MCP tools as
-/// `mcp_<server>_<tool>` (see `convertMcpToolsToAgentTools`), and that wire
+/// The MCP server name in the config, the tool the python stub advertises, and the name the model actually sees: pabrik namespaces MCP tools as …
 const MCP_SERVER_NAME = "stub";
 const MCP_TOOL_NAME = "stub_tool_0";
 const MCP_WIRE_NAME = "mcp_" ++ MCP_SERVER_NAME ++ "_" ++ MCP_TOOL_NAME;
 
-/// Tool offered by the python stub. `MCP_TOOL_COUNT` is asserted through the
-/// resolution checkpoint log, so a stub that answered `tools/list` with nothing
-/// cannot let this test pass vacuously.
+/// Tool offered by the python stub.
 const MCP_TOOL_COUNT = 3;
 
-/// Tool-bearing requests answered with a tool call before the config mutation,
-/// and in total. The gap (here 3 turns) is the number of turns that run AFTER
-/// the refresh, which is what the regression assertion needs to observe.
+/// Tool-bearing requests answered with a tool call before the config mutation, and in total.
 const TOOL_TURNS_BEFORE_CLEAR: usize = 2;
 const TOOL_TURNS_TOTAL: usize = 7;
 
@@ -99,9 +92,7 @@ fn toolCallSse(alloc: std.mem.Allocator, turn: usize) ![]u8 {
     , .{turn});
 }
 
-/// True when `body` (a chat-completion request) lists `name` in its `tools`
-/// array. Parsed rather than substring-matched so a mention of the name in the
-/// prompt cannot make the assertion pass vacuously.
+/// True when `body` (a chat-completion request) lists `name` in its `tools` array.
 fn bodyListsTool(body: []const u8, name: []const u8) bool {
     var parsed = std.json.parseFromSlice(std.json.Value, gpa, body, .{}) catch return false;
     defer parsed.deinit();
@@ -141,32 +132,23 @@ const CRASH_MARKERS = [_][]const u8{
     "Segmentation fault",
 };
 
-// ============================================================================
 // Stub upstream (OpenAI-shaped SSE)
-// ============================================================================
 
-/// One `pabrik` chat-completion request per accepted connection, answered from
-/// the tool-turn counter. The assertions read the counters from the test
-/// thread, so they are atomics.
+/// One `pabrik` chat-completion request per accepted connection, answered from the tool-turn counter.
 const Stub = struct {
     port: u16,
     server: Io.net.Server,
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
-    /// Tool-bearing requests answered so far. The session auto-name call carries
-    /// no `tools` array and is not counted.
+    /// Tool-bearing requests answered so far.
     tool_turns: std.atomic.Value(usize) = .init(0),
     /// Set by the test once the config mutation has been sent.
     clear_sent: std.atomic.Value(bool) = .init(false),
-    /// The regression flag: a tool-bearing request that arrived after the
-    /// mutation AND still carried the equipped MCP tool.
+    /// The regression flag: a tool-bearing request that arrived after the mutation AND still carried the equipped MCP tool.
     mcp_tool_after_clear: std.atomic.Value(bool) = .init(false),
-    /// Positive control: the equipped MCP tool WAS in the tool list on a
-    /// pre-mutation turn, so its absence afterwards is the snapshot and not a
-    /// seeding mistake.
+    /// Positive control: the equipped MCP tool WAS in the tool list on a pre-mutation turn, so its absence afterwards is the snapshot and not a seeding mistake.
     turn_before_clear_has_tool: std.atomic.Value(bool) = .init(false),
-    /// A tool-bearing request that arrived after the mutation at all — the
-    /// positive control that the post-refresh turns really ran.
+    /// A tool-bearing request that arrived after the mutation at all — the positive control that the post-refresh turns really ran.
     turn_after_clear: std.atomic.Value(bool) = .init(false),
 
     fn start(stub: *Stub) !void {
@@ -240,8 +222,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     defer if (owned_sse) |s| gpa.free(s);
     var sse: []const u8 = TEXT_SSE;
     if (tool_bearing) {
-        // Pace the loop so the test's config mutation lands BETWEEN turns (see
-        // TURN_PACING_MS).
+        // Pace the loop so the test's config mutation lands BETWEEN turns (see TURN_PACING_MS).
         Io.sleep(io, .fromMilliseconds(TURN_PACING_MS), .awake) catch {};
         const n = stub.tool_turns.fetchAdd(1, .monotonic);
         if (n < TOOL_TURNS_TOTAL) {
@@ -253,9 +234,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
             stub.turn_after_clear.store(true, .release);
             if (has_tool) stub.mcp_tool_after_clear.store(true, .release);
         } else if (has_tool) {
-            // Positive control for the assertion below: the equipped MCP tool IS
-            // in the tool list on the pre-mutation turns, so a missing one
-            // afterwards is the snapshot and not a seeding mistake.
+            // Positive control for the assertion below: the equipped MCP tool IS in the tool list on the pre-mutation turns, so a missing one afterwards is the snapshot and …
             stub.turn_before_clear_has_tool.store(true, .release);
         }
     }
@@ -300,9 +279,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Absolute path of an executable `name`, looked up on PATH.
 fn findOnPath(name: []const u8) ?[]u8 {
@@ -326,8 +303,7 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
-/// Run one statement against `db_path` through the sqlite3 CLI, returning the
-/// CLI's stdout (caller owns it).
+/// Run one statement against `db_path` through the sqlite3 CLI, returning the CLI's stdout (caller owns it).
 fn sqliteRunOut(alloc: std.mem.Allocator, db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(alloc, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", db_path, sql },
@@ -359,8 +335,7 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) !void {
     gpa.free(out);
 }
 
-/// The whole process log (the resolution checkpoints must be counted across
-/// every turn, and `tailLog` windows by line count).
+/// The whole process log (the resolution checkpoints must be counted across every turn, and `tailLog` windows by line count).
 fn readLog(h: *Harness) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(io, h.log_path, gpa, .limited(1 << 22)) catch |err| switch (err) {
         error.FileNotFound => gpa.dupe(u8, ""),
@@ -369,7 +344,6 @@ fn readLog(h: *Harness) ![]u8 {
 }
 
 /// Set by the test to `<tempdir>/mcp_stub.log` — the python MCP stub's trace.
-/// Best-effort: diagnostics only.
 var mcp_stub_log_path: []const u8 = "";
 
 fn readStubLog() []u8 {
@@ -390,8 +364,7 @@ fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
     return n;
 }
 
-/// Poll until the stub has answered `want` tool-bearing requests, failing with
-/// the log if the server dies first.
+/// Poll until the stub has answered `want` tool-bearing requests, failing with the log if the server dies first.
 fn waitForToolTurns(stub: *Stub, want: usize, h: *Harness) !void {
     const deadline = Io.Timestamp.now(io, .awake).toMilliseconds() + 60_000;
     while (Io.Timestamp.now(io, .awake).toMilliseconds() < deadline) {
@@ -417,9 +390,7 @@ fn waitForToolTurns(stub: *Stub, want: usize, h: *Harness) !void {
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Test
-// ============================================================================
 
 test "mcp snapshot survives a mid-run config mutation" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
@@ -448,8 +419,7 @@ test "mcp snapshot survives a mid-run config mutation" {
         defer f.close(io);
         try f.writeStreamingAll(io, MCP_STUB_PY);
     }
-    // Stub trace path for the failure diagnostics (owned by this frame, aliased
-    // by the global the diagnostics read).
+    // Stub trace path for the failure diagnostics (owned by this frame, aliased by the global the diagnostics read).
     const stub_log = try harness.harnessPath(gpa, h.temp_dir, &.{"mcp_stub.log"});
     defer gpa.free(stub_log);
     mcp_stub_log_path = stub_log;
@@ -470,8 +440,7 @@ test "mcp snapshot survives a mid-run config mutation" {
         defer r.deinit();
     }
 
-    // 2. Session row + the equipped MCP tool, both seeded BEFORE the run: the
-    //    tool list is resolved on the first turn.
+    // 2.
     const session_id = try std.fmt.allocPrint(gpa, "sess_mcp_snap_{d}", .{
         Io.Timestamp.now(io, .real).toSeconds(),
     });
@@ -484,15 +453,12 @@ test "mcp snapshot survives a mid-run config mutation" {
     defer gpa.free(seed_session);
     try sqliteRun(db, seed_session);
 
-    // The equipped name is the WIRE name: pabrik namespaces MCP tools as
-    // `mcp_<server>_<tool>`, and that is what the catalog and the model see.
+    // The equipped name is the WIRE name: pabrik namespaces MCP tools as `mcp_<server>_<tool>`, and that is what the catalog and the model see.
     const seed_equip = try std.fmt.allocPrint(gpa, "INSERT OR IGNORE INTO session_progressive_tool (session_id, tool_name, server_name, loaded_at_nano) VALUES ('{s}', '{s}', '{s}', 1);", .{ session_id, MCP_WIRE_NAME, MCP_SERVER_NAME });
     defer gpa.free(seed_equip);
     try sqliteRun(db, seed_equip);
 
-    // Read the row back: `INSERT OR IGNORE` swallows a constraint violation
-    // silently, and a missing row would make the assertion below pass for the
-    // wrong reason (an unseeded equip set fails on EVERY turn, not just the
+    // Read the row back: `INSERT OR IGNORE` swallows a constraint violation silently, and a missing row would make the assertion below pass for the wrong reason (an …
     {
         const check = try std.fmt.allocPrint(gpa, "SELECT COUNT(*) FROM session_progressive_tool WHERE session_id = '{s}' AND tool_name = '{s}';", .{ session_id, MCP_WIRE_NAME });
         defer gpa.free(check);
@@ -526,9 +492,7 @@ test "mcp snapshot survives a mid-run config mutation" {
     // 4. Wait for the pre-mutation tool turns.
     try waitForToolTurns(&stub, TOOL_TURNS_BEFORE_CLEAR, &h);
 
-    // 5. THE TRIGGER: a config write while the run is live. `PUT
-    //    /api/config/pabrik` calls `clearMcpToolsCache()`, so the next turn
-    //    takes the in-loop refresh branch.
+    // 5.
     {
         var r = try h.http(io, .PUT, "/api/config/pabrik", .{
             .json_body = cfg_body,
@@ -540,8 +504,7 @@ test "mcp snapshot survives a mid-run config mutation" {
 
     // 6. Let the loop run on past the mutation.
     try waitForToolTurns(&stub, TOOL_TURNS_TOTAL, &h);
-    // Give the loop a moment to finish the turn that follows the last tool call
-    // (the stub serves text from here) so that request is recorded too.
+    // Give the loop a moment to finish the turn that follows the last tool call (the stub serves text from here) so that request is recorded too.
     Io.sleep(io, .fromMilliseconds(1500), .awake) catch {};
 
     // ── Assertions ────────────────────────────────────────────────────────
@@ -559,8 +522,7 @@ test "mcp snapshot survives a mid-run config mutation" {
         }
     }
 
-    // Positive control 1: the MCP cache really was populated AND refetched
-    // after the mutation.
+    // Positive control 1: the MCP cache really was populated AND refetched after the mutation.
     const resolved_marker = try std.fmt.allocPrint(gpa, "mcp_count={d} ", .{MCP_TOOL_COUNT});
     defer gpa.free(resolved_marker);
     const resolved_hits = countOccurrences(log, resolved_marker);
@@ -581,8 +543,7 @@ test "mcp snapshot survives a mid-run config mutation" {
         return error.TestUnexpectedResult;
     }
 
-    // Positive control 3: the equipped MCP tool WAS in the tool list on a
-    // pre-mutation turn.
+    // Positive control 3: the equipped MCP tool WAS in the tool list on a pre-mutation turn.
     if (!stub.turn_before_clear_has_tool.load(.acquire)) {
         std.debug.print(
             "the equipped MCP tool `{s}` never appeared in a pre-mutation tool list, so this run did not exercise the path (check the equip seed + the MCP fetch).\n--- log ---\n{s}\n",
@@ -591,8 +552,7 @@ test "mcp snapshot survives a mid-run config mutation" {
         return error.TestUnexpectedResult;
     }
 
-    // THE REGRESSION: the equipped MCP tool must still be in the model's tool
-    // list on a turn that ran after the refresh.
+    // THE REGRESSION: the equipped MCP tool must still be in the model's tool list on a turn that ran after the refresh.
     if (!stub.mcp_tool_after_clear.load(.acquire)) {
         std.debug.print(
             "the equipped MCP tool `{s}` is missing from the tool list of every turn after the config mutation — the loop is reading a stale per-turn snapshot.\n--- log ---\n{s}\n",
@@ -602,8 +562,7 @@ test "mcp snapshot survives a mid-run config mutation" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so a
-// stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = Stub.start;
     _ = Stub.shutdown;

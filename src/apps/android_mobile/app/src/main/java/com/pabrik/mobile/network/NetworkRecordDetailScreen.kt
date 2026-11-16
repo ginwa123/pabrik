@@ -88,8 +88,7 @@ fun NetworkRecordDetailScreen(
     var pendingReplay by remember { mutableStateOf<NetworkLogEntry?>(null) }
     val clipboard = LocalClipboardManager.current
 
-    // A mutation re-records a real server-side effect, so it never fires on a
-    // single tap; the confirm dialog is the whole point of the guard.
+    // A mutation re-records a real server-side effect, so it never fires on a single tap; the confirm dialog is the whole point of the guard.
     val requestReplay: (NetworkLogEntry) -> Unit = { target ->
         if (target.isMutation) {
             pendingReplay = target

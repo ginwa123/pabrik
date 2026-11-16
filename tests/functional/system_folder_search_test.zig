@@ -1,6 +1,4 @@
-// Functional wire tests for GET /api/system/folder?action=search. Zig port of
-// `tests/functional/system_folder_search_test.py` (same test names, same
-// order).
+// Functional wire tests for GET /api/system/folder?action=search.
 
 const std = @import("std");
 const testing = std.testing;
@@ -27,8 +25,7 @@ fn writeFileIn(base: []const u8, parts: []const []const u8, contents: []const u8
     try writeFileAt(p, contents);
 }
 
-/// Build the search fixture cwd inside `scratch`. Returns the owned cwd
-/// path; the caller frees it and removes `scratch` via `cleanupExtraDir`.
+/// Build the search fixture cwd inside `scratch`.
 fn buildSearchFixture(scratch: []const u8) ![]u8 {
     const cwd = try std.fs.path.join(gpa, &.{ scratch, "search-proj" });
     errdefer gpa.free(cwd);
@@ -94,9 +91,7 @@ fn buildSearchFixture(scratch: []const u8) ![]u8 {
     return cwd;
 }
 
-/// The owned outcome of one search request. `doc`'s arena holds every string
-/// the `entries` array borrows, so a `Search` MUST stay alive for as long as
-/// a caller reads `entries`.
+/// The owned outcome of one search request.
 const Search = struct {
     resp: harness.Response,
     doc: harness.Json,
@@ -134,8 +129,7 @@ fn search(h: *Harness, cwd: []const u8, q: []const u8, limit: []const u8) !Searc
     return .{ .resp = r, .doc = doc };
 }
 
-/// The `path` of every row, copied into owned strings. The caller frees
-/// each element and then the slice via `freeRowPaths`.
+/// The `path` of every row, copied into owned strings.
 fn rowPaths(entries: std.json.Array) ![][]u8 {
     const out = try gpa.alloc([]u8, entries.items.len);
     errdefer gpa.free(out);
@@ -186,9 +180,7 @@ fn hasName(entries: std.json.Array, name: []const u8) bool {
     return false;
 }
 
-/// Boot a harness plus the search fixture, cleaned up on the way out. The
-/// fixture is built BEFORE the harness so that a failure in either step can
-/// unwind the other's allocation without an `undefined` defer.
+/// Boot a harness plus the search fixture, cleaned up on the way out.
 fn bootWithFixture(h: *Harness, scratch: *[]u8, cwd: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     scratch.* = try harness.makeScratchDir(gpa);
@@ -212,9 +204,7 @@ test "search_comp_returns_components_excludes_node_modules" {
     var cwd: []u8 = undefined;
     try bootWithFixture(&h, &scratch, &cwd);
 
-    // DEFER ORDER IS LIFO AND LOADS-BEARING. Each `defer` below READS a
-    // buffer the one registered after it must still own, so every
-    // `free` is registered BEFORE the reader of it.
+    // DEFER ORDER IS LIFO AND LOADS-BEARING.
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
     defer gpa.free(cwd);
@@ -239,9 +229,7 @@ test "search_comp_returns_components_excludes_node_modules" {
         if (std.mem.indexOf(u8, p, "components") != null) saw_components = true;
     }
     if (!saw_components) {
-        // Python printed `paths[:5]`; guard the empty case here — with
-        // zero rows `paths[0]` is out of bounds and would turn a
-        // readable assertion failure into an index panic.
+        // Python printed `paths[:5]`; guard the empty case here — with zero rows `paths[0]` is out of bounds and would turn a readable assertion failure into an index …
         const first = if (paths.len > 0) paths[0] else "<no rows>";
         std.debug.print("expected a components hit in {d} rows, first = {s}\n", .{ paths.len, first });
         return error.TestUnexpectedResult;
@@ -259,8 +247,7 @@ test "search_comp_returns_components_excludes_node_modules" {
         }
     }
 
-    // Wire shape guard: snake_case fields on every row. `is_directory`
-    // must be PRESENT (not merely falsy) — an absent key fails.
+    // Wire shape guard: snake_case fields on every row.
     for (entries.items) |row| {
         const obj = switch (row) {
             .object => |o| o,
@@ -399,9 +386,7 @@ test "search_perf_300_files_under_5s" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // `.awake` is the MONOTONIC clock — Python's `time.monotonic`. A
-    // wall-clock step backwards (NTP) would otherwise read as a
-    // negative elapsed time and pass a budget it actually blew.
+    // `.awake` is the MONOTONIC clock — Python's `time.monotonic`.
     const start = std.Io.Timestamp.now(io, .awake).toMilliseconds();
     var s = try search(&h, cwd, "file_", "50");
     defer s.deinit();

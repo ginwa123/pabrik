@@ -1,6 +1,4 @@
-// Functional tests for the create_session user-message fix. Zig port of
-// `tests/functional/kanban_create_session_user_message_test.py` (same test
-// names, same order).
+// Functional tests for the create_session user-message fix.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,19 +7,13 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// A pair of stub base64 image URLs (deliberately short — the llm_history
-// column stores the full data URL string, but we only need to assert "the
-// value passed in is the value stored").
+// A pair of stub base64 image URLs (deliberately short — the llm_history column stores the full data URL string, but we only need to assert "the value passed in …
 const PNG_DATA_URL_1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
 const JPEG_DATA_URL_2 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA/8H//2Q==";
 
-// ============================================================================
 // Helpers — wire
-// ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
-/// `Response` body it was parsed from, so a helper may not RETURN one.
-/// Helpers below return owned bytes and each test parses locally.
+/// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -88,8 +80,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The wire body of `POST .../kanban/tasks`. `image_urls` is the array of
-/// base64 data URLs the user pasted in the kanban detail editor.
+/// The wire body of `POST .../kanban/tasks`.
 const TaskBody = struct {
     mode: []const u8,
     name: []const u8,
@@ -100,8 +91,7 @@ const TaskBody = struct {
     selected_profile_model: ?[]const u8 = null,
 };
 
-/// POST `/workspaces/:ws/items/:kanban/kanban/tasks`. Returns the WHOLE
-/// response body, owned.
+/// POST `/workspaces/:ws/items/:kanban/kanban/tasks`.
 fn createTask(h: *Harness, ws: []const u8, kanban: []const u8, body: TaskBody) ![]u8 {
     const encoded = try std.json.Stringify.valueAlloc(gpa, body, .{ .emit_null_optional_fields = false });
     defer gpa.free(encoded);
@@ -118,9 +108,7 @@ fn createTask(h: *Harness, ws: []const u8, kanban: []const u8, body: TaskBody) !
     return gpa.dupe(u8, r.body);
 }
 
-/// `_create_task_via_kanban_endpoint` — the shape the dialog sends. For
-/// `create_and_run` the backend requires a non-empty `queue_message`
-/// (validation lives in kanban_tasks_create.zig:127-135 — 400 otherwise).
+/// `_create_task_via_kanban_endpoint` — the shape the dialog sends.
 fn createTaskViaKanbanEndpoint(
     h: *Harness,
     ws: []const u8,
@@ -166,9 +154,7 @@ fn taskIdOf(body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/llm/session/:id/messages` — the llm_history rows, newest
-/// first by default; we ask for created_at ASC to mirror the chat
-/// render order. Returns the WHOLE response body, owned.
+/// `GET /api/llm/session/:id/messages` — the llm_history rows, newest first by default; we ask for created_at ASC to mirror the chat render order.
 fn getSessionMessages(h: *Harness, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -185,9 +171,7 @@ fn getSessionMessages(h: *Harness, session_id: []const u8) ![]u8 {
     return gpa.dupe(u8, r.body);
 }
 
-/// How many `messages` entries carry `role == "user"`. The bug under test is
-/// specifically about a MISSING user-role row, so this is the count every
-/// assertion is about.
+/// How many `messages` entries carry `role == "user"`.
 fn userRoleCount(doc: *const harness.Json) !usize {
     const messages = doc.array("messages") orelse {
         std.debug.print("expected messages list, got: {s}\n", .{@tagName(doc.value().*)});
@@ -202,8 +186,7 @@ fn userRoleCount(doc: *const harness.Json) !usize {
     return n;
 }
 
-/// The value of `key` on the `n`-th user-role message. BORROWED from
-/// `doc`, which the caller owns for the whole borrow.
+/// The value of `key` on the `n`-th user-role message.
 fn userRoleValue(doc: *const harness.Json, n: usize, key: []const u8) ?std.json.Value {
     const messages = doc.array("messages") orelse return null;
     var seen: usize = 0;
@@ -218,7 +201,6 @@ fn userRoleValue(doc: *const harness.Json, n: usize, key: []const u8) ?std.json.
 }
 
 /// `GET /api/llm/session/:id/messages?limit=1` → `selected_profile_model`.
-/// This is the exact endpoint the chatview reads on session open.
 fn getSessionSelectedProfile(h: *Harness, session_id: []const u8) !?[]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -251,9 +233,7 @@ fn getSessionSelectedProfile(h: *Harness, session_id: []const u8) !?[]u8 {
     return null; // "value never became non-null" — the bug
 }
 
-// ============================================================================
 // Helpers — sqlite3 CLI
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -325,9 +305,7 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     return res.stdout;
 }
 
-/// Read `sessions.is_auto_retry_until_stop` straight from the DB. Used to
-/// prove the unattended flag itself is NOT lost by the gating fix (it must
-/// land on the step-5 full INSERT instead of the useCase's bare INSERT).
+/// Read `sessions.is_auto_retry_until_stop` straight from the DB.
 const Flag = union(enum) {
     missing,
     null_,
@@ -343,8 +321,7 @@ const Flag = union(enum) {
         self.* = undefined;
     }
 
-    /// Owned; the caller frees. Every shape renders, because a failure
-    /// message that has to guess is worse than one that allocates.
+    /// Owned; the caller frees.
     fn render(self: *const Flag, alloc: std.mem.Allocator) ![]u8 {
         return switch (self.*) {
             .missing => alloc.dupe(u8, "<no row>"),
@@ -400,9 +377,7 @@ fn readAutoRetryFlag(temp_dir: []const u8, session_id: []const u8) !Flag {
     };
 }
 
-// ============================================================================
 // Test 1: create_session WITH description inserts one user-role row
-// ============================================================================
 
 // Regression for task_1787213354784_1.
 test "create_session_with_description_inserts_user_role_row" {
@@ -436,8 +411,7 @@ test "create_session_with_description_inserts_user_role_row" {
         return error.TestUnexpectedResult;
     }
 
-    // mode='create_session' returns session.status='idle' (vs 'send' for
-    // create_and_run — the wire discriminator the frontend uses).
+    // mode='create_session' returns session.status='idle' (vs 'send' for create_and_run — the wire discriminator the frontend uses).
     {
         var doc = try parseJson(resp);
         defer doc.deinit();
@@ -519,9 +493,7 @@ test "create_session_with_description_inserts_user_role_row" {
     }
 }
 
-// ============================================================================
 // Test 2: create_session EMPTY description STILL inserts a user row
-// ============================================================================
 
 // Regression for the empty-description bug (task_1787757006639_2).
 test "create_session_with_empty_description_inserts_user_message" {
@@ -536,9 +508,7 @@ test "create_session_with_empty_description_inserts_user_message" {
     const kanban_id = try createKanban(&h, ws_id, "sprint-csum");
     defer gpa.free(kanban_id);
 
-    // The EXACT wire the dialog sends when the user types a title and
-    // no description — KanbanView.handleCreateTaskSave forwards an
-    // empty description verbatim (no trim, no fallback).
+    // The EXACT wire the dialog sends when the user types a title and no description — KanbanView.handleCreateTaskSave forwards an empty description verbatim (no …
     const resp = try createTaskViaKanbanEndpoint(
         &h,
         ws_id,
@@ -593,13 +563,9 @@ test "create_session_with_empty_description_inserts_user_message" {
     }
 }
 
-// ============================================================================
 // Test 3: image attachments are persisted on the user message
-// ============================================================================
 
-// Image attachments from the kanban detail dialog must land on the user-role
-// llm_history row's `image_url` column, so the chatview can render thumbnails
-// inline.
+// Image attachments from the kanban detail dialog must land on the user-role llm_history row's `image_url` column, so the chatview can render thumbnails inline.
 test "create_session_with_image_urls_attaches_them_to_user_message" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -682,8 +648,7 @@ test "create_session_with_image_urls_attaches_them_to_user_message" {
         }
     }
 
-    // The task itself still carries the description (the pre-existing
-    // path must not have regressed).
+    // The task itself still carries the description (the pre-existing path must not have regressed).
     {
         var create_doc = try parseJson(resp);
         defer create_doc.deinit();
@@ -699,13 +664,9 @@ test "create_session_with_image_urls_attaches_them_to_user_message" {
     }
 }
 
-// ============================================================================
 // Test 4: image-only (empty description) still inserts a row
-// ============================================================================
 
-// The new contract fires on `description.len > 0 OR image_urls.len > 0` —
-// title-only tasks with attached images must still get a user-role row
-// (otherwise the chatview would land on an empty session and the user's
+// The new contract fires on `description.len > 0 OR image_urls.len > 0` — title-only tasks with attached images must still get a user-role row (otherwise the …
 test "create_session_with_image_urls_only_still_inserts_user_message" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -774,12 +735,9 @@ test "create_session_with_image_urls_only_still_inserts_user_message" {
     }
 }
 
-// ============================================================================
 // Profile persistence (regression: task_1787494153778_2)
-// ============================================================================
 
-// Regression for task_1787494153778_2 ("wrong profile select"). The dialog
-// ALWAYS sends is_auto_retry_until_stop ('0' or '1').
+// Regression for task_1787494153778_2 ("wrong profile select").
 test "create_session_persists_selected_profile_model" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -799,8 +757,7 @@ test "create_session_persists_selected_profile_model" {
         .description = "dialog wire with unattended on",
         // The bug's trigger: the dialog ALWAYS includes this field.
         .is_auto_retry_until_stop = "1",
-        // The harness's stub profile — the only profile name that
-        // exists in the test HOME's config.json.
+        // The harness's stub profile — the only profile name that exists in the test HOME's config.json.
         .selected_profile_model = "stub",
     });
     defer gpa.free(resp);
@@ -824,8 +781,7 @@ test "create_session_persists_selected_profile_model" {
         return error.TestUnexpectedResult;
     }
 
-    // And the unattended flag must NOT be lost by the gating — it now lands
-    // via the step-5 full INSERT instead of the useCase's bare one.
+    // And the unattended flag must NOT be lost by the gating — it now lands via the step-5 full INSERT instead of the useCase's bare one.
     var flag = try readAutoRetryFlag(h.temp_dir, task_id);
     defer flag.deinit();
     if (!flag.isOne()) {
@@ -840,8 +796,7 @@ test "create_session_persists_selected_profile_model" {
     }
 }
 
-// Same regression for the 'Create task & run agent' button
-// (mode='create_and_run') — same bare-INSERT PK race, same fix.
+// Same regression for the 'Create task & run agent' button (mode='create_and_run') — same bare-INSERT PK race, same fix.
 test "create_and_run_persists_selected_profile_model" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -880,9 +835,7 @@ test "create_and_run_persists_selected_profile_model" {
     }
 }
 
-// Control: no selected_profile_model on the wire → GET returns '' (the
-// COALESCE-on-NULL shape), NOT a stale value. Guards against a
-// regression where the fix accidentally leaks a default into the column.
+// Control: no selected_profile_model on the wire → GET returns '' (the COALESCE-on-NULL shape), NOT a stale value.
 test "create_session_without_profile_stays_empty" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -908,8 +861,7 @@ test "create_session_without_profile_stays_empty" {
     const task_id = try taskIdOf(resp);
     defer gpa.free(task_id);
 
-    // Python: `assert got in ("", None)` — BOTH are accepted, because the
-    // helper itself returns None when the value never became non-null.
+    // Python: `assert got in ("", None)` — BOTH are accepted, because the helper itself returns None when the value never became non-null.
     const got = try getSessionSelectedProfile(&h, task_id);
     defer if (got) |g| gpa.free(g);
     if (got) |g| {
@@ -924,9 +876,7 @@ test "create_session_without_profile_stays_empty" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = parseJson;
     _ = objectStr;
     _ = createWorkspace;

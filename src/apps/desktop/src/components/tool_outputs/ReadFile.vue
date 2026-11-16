@@ -17,9 +17,7 @@ const props = defineProps<{
   expanded?: boolean
   cwd?: string
   parameters?: string
-  /** The picture the backend attached to this tool result (`llm_history.image_url`, decoded
-   * into a list by the chat view). An image read carries no text content at all, so this is
-   * the only place the bytes exist. */
+  /** The picture the backend attached to this tool result (`llm_history.image_url`, decoded into a list by the chat view). */
   imageUrls?: string[]
 }>()
 
@@ -36,8 +34,7 @@ const parsed = computed(() => {
 // Display the parsed content; the parser already strips XML wrappers.
 const fileContent = computed(() => parsed.value.content || '')
 
-// Raw content lines. A single trailing "" produced by a final "\n" is
-// a split artifact, not a real line — drop it so the gutter stays exact.
+// Raw content lines.
 const contentLines = computed(() => {
   const c = fileContent.value
   if (!c) return []
@@ -46,8 +43,7 @@ const contentLines = computed(() => {
   return lines
 })
 
-// 1-indexed display number of the first line. The backend's start_line
-// is a 0-indexed offset, so line i renders as baseLine + i.
+// 1-indexed display number of the first line.
 const baseLine = computed(() => (parsed.value.startLine ?? 0) + 1)
 
 const lineCount = computed(() => contentLines.value.length)
@@ -57,8 +53,7 @@ const contentPath = computed((): string | null => {
   return p && p.trim() !== '' ? p : null
 })
 
-// Prefer the envelope's path; fall back to the parameters prop so a
-// still-running tool (placeholder envelope with empty <data>) shows its path.
+// Prefer the envelope's path; fall back to the parameters prop so a still-running tool (placeholder envelope with empty <data>) shows its path.
 const displayPath = computed((): string | null => {
   return contentPath.value ?? extractParam(props.parameters, 'path')
 })
@@ -74,9 +69,7 @@ const isRunning = computed(() => {
   return isEmpty && displayPath.value !== null
 })
 
-// The picture itself. The backend inlines it as a `data:` URL on the tool result, so no
-// download round-trip is needed (and none would work: the download endpoint sandboxes to
-// the session cwd, while a screenshot often lives outside it).
+// The picture itself.
 const imageSrc = computed((): string | null => {
   for (const url of props.imageUrls ?? []) {
     if (typeof url === 'string' && url.trim() !== '') return url
@@ -84,8 +77,7 @@ const imageSrc = computed((): string | null => {
   return null
 })
 
-// The payload declares an image even when the data URL never arrived (a row persisted
-// before the backend attached it). The card must say so instead of claiming "(empty)".
+// The payload declares an image even when the data URL never arrived (a row persisted before the backend attached it).
 const declaredImageMime = computed((): string | null => {
   const mime = parsed.value.mime
   return mime && mime.toLowerCase().startsWith('image/') ? mime : null
@@ -104,26 +96,20 @@ const imageAlt = computed((): string => {
   return path ? basenameOfPath(path) : 'image'
 })
 
-// An image read has no text to read, so the picture IS the answer: the card opens itself
-// when one arrives. A user toggle wins from then on — derived, never watched (the desktop
-// app bans `watch`).
+// An image read has no text to read, so the picture IS the answer: the card opens itself when one arrives.
 const userExpanded = ref<boolean | null>(null)
 const isExpanded = computed(
   () => userExpanded.value ?? (isImageRead.value || (props.expanded ?? false)),
 )
 
-// An inline image has no intrinsic size until it decodes, so the card would pop taller
-// mid-scroll. Reserve the space until load (an error counts as arrived — the img hides
-// itself and the reserve must drop too).
+// An inline image has no intrinsic size until it decodes, so the card would pop taller mid-scroll.
 const imageLoaded = ref(false)
 const fullscreenSrc = ref<string | null>(null)
 
-// Language for code coloring, derived from the file path. Unknown
-// extensions fall back to plaintext (plain-text rendering, exactly as before).
+// Language for code coloring, derived from the file path.
 const fileLanguage = computed(() => detectLanguage(displayPath.value ?? ''))
 
-// Per-line tokens for code coloring. Tokens render as framework text
-// nodes (never HTML strings), so file content cannot inject markup.
+// Per-line tokens for code coloring.
 const highlightedLines = computed((): Token[][] => {
   const lang = fileLanguage.value
   return contentLines.value.map((line) => highlightLine(line, lang))

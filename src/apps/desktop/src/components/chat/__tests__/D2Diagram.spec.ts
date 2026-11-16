@@ -1,6 +1,4 @@
-/** Behavioural tests for <D2Diagram>. Nothing here touches the network: the component's contract is
- * "show the URL the server would answer, or the source when it refuses". The encoding deflates
- * through a stream, so every assertion waits for the element rather than assuming one microtask. */
+/** Behavioural tests for <D2Diagram>. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import D2Diagram from '../D2Diagram.vue'

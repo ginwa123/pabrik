@@ -136,8 +136,6 @@ pub fn start(
 }
 
 // ===== Tests merged from scheduler_test.zig (2026-09-29 flatten) =====
-// Behavioral tests for `Scheduler.zig` (Task 3 of the
-// workspace-items-routines plan).
 
 const testing = std.testing;
 
@@ -148,8 +146,7 @@ const Migration139AddRoutineCwd = migration.Migration139AddRoutineCwd;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimal parent tables
-/// and run Migration 084. Mirrors the helper in `model.zig`.
+/// Open a fresh in-memory sqlite DB with the minimal parent tables and run Migration 084.
 fn setupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -186,9 +183,7 @@ fn setupDb() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Run a single-column SELECT and return a duplicated copy of the
-/// first row's first column. Returns null when the query produces no
-/// rows. Mirrors the helper in `model.zig`.
+/// Run a single-column SELECT and return a duplicated copy of the first row's first column.
 fn scalarText(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args: []const []const u8) !?[]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();

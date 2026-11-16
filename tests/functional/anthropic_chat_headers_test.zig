@@ -1,5 +1,4 @@
-//! Wire test: an anthropic-style CHAT turn sends `x-api-key` +
-//! `anthropic-version` (and `x-opencode-session`), not Bearer.
+//! Wire test: an anthropic-style CHAT turn sends `x-api-key` + `anthropic-version` (and `x-opencode-session`), not Bearer.
 
 const std = @import("std");
 const testing = std.testing;
@@ -36,12 +35,10 @@ const SSE_STREAM =
     "data: {\"type\":\"message_stop\"}\n" ++
     "\n";
 
-/// A recorded upstream request head. Owned by the Stub; copied by the test
-/// before the server is stopped. Only the HEAD is kept.
+/// A recorded upstream request head.
 const MAX_HEAD_BYTES = 1 << 18;
 
-/// A one-request-headers stub Anthropic SSE upstream, served from a
-/// background thread.
+/// A one-request-headers stub Anthropic SSE upstream, served from a background thread.
 const Stub = struct {
     io: Io,
     port: u16,
@@ -83,8 +80,7 @@ fn stopStub(stub: *Stub) void {
         var c = conn;
         c.close(stub.io);
     } else |_| {
-        // Listener already gone: `accept` returned an error and the
-        // serve loop has exited. Nothing to wake.
+        // Listener already gone: `accept` returned an error and the serve loop has exited.
     }
 
     stub.thread.join();
@@ -95,9 +91,7 @@ fn stopStub(stub: *Stub) void {
 
 fn serveStub(stub: *Stub) void {
     while (!stub.stop.load(.acquire)) {
-        // `defer` inside a loop body runs at the end of THAT
-        // iteration, so each accepted socket is closed before the next
-        // accept — the connection is what the upstream does per POST.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept — the connection is what the upstream …
         var stream = stub.server.accept(stub.io) catch break;
         defer stream.close(stub.io);
         if (stub.stop.load(.acquire)) break;
@@ -105,9 +99,7 @@ fn serveStub(stub: *Stub) void {
     }
 }
 
-/// Read one request, record its head, reply with the SSE transcript. THE HEAD
-/// AND THE BODY OVERLAP IN THE SOCKET BUFFER, and getting that wrong hangs
-/// the whole suite.
+/// Read one request, record its head, reply with the SSE transcript.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);
@@ -132,9 +124,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
 
     const head = acc.written()[0..head_len];
 
-    // Drain whatever of the body is still unread. A full agent prompt is
-    // tens of KB, and a client cannot be answered mid-frame; it is not
-    // recorded because no assertion in this suite looks at a body.
+    // Drain whatever of the body is still unread.
     var remaining = contentLength(head);
     if (acc.written().len > head_len) remaining -|= acc.written().len - head_len;
     while (remaining > 0) {
@@ -207,8 +197,7 @@ const POLL_BUDGET_MS: i64 = 60_000;
 /// `time.sleep(0.5)` between polls.
 const POLL_INTERVAL_MS: i64 = 500;
 
-/// Poll `GET /api/llm/session/<id>/messages` until an assistant message with
-/// content lands. Returns an OWNED copy of its text.
+/// Poll `GET /api/llm/session/<id>/messages` until an assistant message with content lands.
 fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -239,8 +228,7 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
             return gpa.dupe(u8, content.string);
         }
 
-        // Sleep the Python's `time.sleep(0.5)` INTERVAL, capped by what is
-        // left of the budget — never the whole remainder.
+        // Sleep the Python's `time.sleep(0.5)` INTERVAL, capped by what is left of the budget — never the whole remainder.
         const remaining = deadline - std.Io.Timestamp.now(io, .awake).toMilliseconds();
         if (remaining > 0) {
             const nap = @min(remaining, POLL_INTERVAL_MS);
@@ -248,9 +236,7 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
         }
     }
 
-    // The Python's message ("the stub may not have been hit or the SSE did
-    // not parse") named two very different failures and gave the reader
-    // nothing to tell them apart.
+    // The Python's message ("the stub may not have been hit or the SSE did not parse") named two very different failures and gave the reader nothing to tell them …
     const tail = try h.tailLog(io, gpa, 40);
     defer gpa.free(tail);
     std.debug.print(
@@ -266,9 +252,7 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
 test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Registered FIRST so it runs LAST: the recorded heads are read by
-    // the assertions, and the serve thread must outlive the harness
-    // teardown's shutdown of the child.
+    // Registered FIRST so it runs LAST: the recorded heads are read by the assertions, and the serve thread must outlive the harness teardown's shutdown of the child.
     var stub: Stub = .{
         .io = io,
         .port = 0,
@@ -278,9 +262,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
     try startStub(&stub);
     defer stopStub(&stub);
 
-    // `stub_llm_profile` is load-bearing, not a convenience: without a
-    // configured profile the binary has no model to run the turn with, so
-    // nothing ever reaches the stub.
+    // `stub_llm_profile` is load-bearing, not a convenience: without a configured profile the binary has no model to run the turn with, so nothing ever reaches the …
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -302,8 +284,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
         defer r.deinit();
     }
 
-    // 2. Send the first chat message — the exact sendChatMessage wire
-    // (session_id + queue_message + profile selection).
+    // 2.
     const session_id = try std.fmt.allocPrint(gpa, "sess_anthropic_hdr_{d}", .{
         std.Io.Timestamp.now(io, .real).toSeconds(),
     });
@@ -314,9 +295,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
     , .{session_id});
     defer gpa.free(session_body);
     {
-        // Python: `expect=(200, 201, 500)` — the worker runs in the
-        // background, so a 500 here can still be a healthy boot with a
-        // failed turn that the poll below reports on.
+        // Python: `expect=(200, 201, 500)` — the worker runs in the background, so a 500 here can still be a healthy boot with a failed turn that the poll below reports …
         var r = try h.http(io, .POST, "/api/llm/session", .{
             .json_body = session_body,
             .expect = &.{ 200, 201, 500 },
@@ -324,8 +303,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
         defer r.deinit();
     }
 
-    // 3. Poll until the assistant reply lands (the worker turn
-    // completes against the stub).
+    // 3.
     const assistant_text = try waitForAssistantReply(&h, &stub, session_id);
     defer gpa.free(assistant_text);
     if (std.mem.indexOf(u8, assistant_text, "hello from stub") == null) {
@@ -333,8 +311,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
         return error.TestUnexpectedResult;
     }
 
-    // 4. Header contract on EVERY stub request (chat turn +
-    // session auto-naming all go through Agent.callStreaming).
+    // 4.
     var seen = try stub.snapshot();
     defer {
         for (seen.items) |h2| gpa.free(h2);
@@ -366,9 +343,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
             );
             return error.TestUnexpectedResult;
         }
-        // Python: `assert headers.get("x-opencode-session")` — a
-        // TRUTHINESS check, so an absent header and an empty one fail
-        // alike. `orelse ""` plus the length test is the same shape.
+        // Python: `assert headers.get("x-opencode-session")` — a TRUTHINESS check, so an absent header and an empty one fail alike.
         const sess_hdr = headerValue(head, "x-opencode-session") orelse "";
         if (sess_hdr.len == 0) {
             std.debug.print(
@@ -381,9 +356,7 @@ test "anthropic_chat_turn_sends_x_api_key_not_bearer" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never
-    // type-checked, so a stdlib rename inside one would stay invisible
-    // until some caller appeared.
+    // Body-analysis barrier: an unreferenced function is never type-checked, so a stdlib rename inside one would stay invisible until some caller appeared.
     _ = Stub;
     _ = Stub.snapshot;
     _ = startStub;

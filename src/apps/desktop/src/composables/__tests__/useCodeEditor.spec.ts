@@ -1,6 +1,4 @@
-/** Tests for useCodeEditor.ts — verifies the composable's `OpenInCodeEditorOptions` contract and
- * the `useInjectOpenInCodeEditor` injection key (chunks 5+6). The composable itself is a thin
- * `inject` wrapper, so the meaningful test is: 1. */
+/** Tests for useCodeEditor.ts — verifies the composable's `OpenInCodeEditorOptions` contract and the `useInjectOpenInCodeEditor` injection key (chunks 5+6). */
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, provide } from 'vue'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,9 +37,7 @@ beforeEach(() => {
 
 describe('useCodeEditor composable', () => {
   it('OpenInCodeEditorOptions accepts an optional line number', () => {
-    // This is a compile-time + runtime check. If the `line` field were
-    // missing, this test wouldn't type-check and the assignment below
-    // would error at the build step.
+    // This is a compile-time + runtime check.
     const opts: OpenInCodeEditorOptions = {
       filePath: '/foo/bar.ts',
       cwd: '/foo',
@@ -96,9 +92,7 @@ describe('useCodeEditor composable', () => {
   })
 
   it('threaded `line` option reaches the handler verbatim (chunks 5+6)', async () => {
-    // This is the contract the DiffView's @jump-to-line relies on:
-    // clicking a line number in the diff must call the editor handler with
-    // that exact line number so the editor can scroll there.
+    // This is the contract the DiffView's @jump-to-line relies on
     const calls: OpenInCodeEditorOptions[] = []
     const openFn: OpenInCodeEditorFn = async (opts) => {
       calls.push(opts)

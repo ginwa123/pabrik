@@ -6,17 +6,13 @@ import { defineComponent, h, provide } from 'vue'
 import Search from '../Search.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
 
-// ──────────────────────────────────────────────────────────────────────── Test fixtures — match
-// the JSON data shape
-// ────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────── Test fixtures — match the JSON data shape
 interface MatchFixture {
   line: number
   text: string
 }
 
-/**
- * No-match payload: `files: []` + a `warning` body.
- */
+/** No-match payload: `files: []` + a `warning` body. */
 const noMatchData = (pattern = 'needle_NOT_FOUND', path = '/tmp/repo/src') => ({
   pattern,
   path,
@@ -28,9 +24,7 @@ const noMatchData = (pattern = 'needle_NOT_FOUND', path = '/tmp/repo/src') => ({
   warning: `no matches for pattern "${pattern}" in path "${path}"`,
 })
 
-/**
- * One-match payload with a single file block.
- */
+/** One-match payload with a single file block. */
 const oneMatchData = (pattern = 'TODO', path = '/tmp/repo/src') => ({
   pattern,
   path,
@@ -70,20 +64,15 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Header rendering — the operator's first-glance view of what was searched
-// ────────────────────────────────────────────────────────────────────────
 describe('Search.vue — header rendering (operator-visible pattern + path)', () => {
   it('shows the actual pattern from the payload, not "unknown" (regression: bug 2026-08-06)', () => {
     const wrapper = makeWrapper({ content: noMatchData('needle_NOT_FOUND', '/tmp/x') })
 
-    // The pattern text appears inside quotes in the header. Specifically
-    // NOT the literal "unknown" that the pre-fix payload (no pattern key)
-    // produced.
+    // The pattern text appears inside quotes in the header.
     const html = wrapper.html()
     expect(html).toContain('needle_NOT_FOUND')
-    // The header should NOT fall back to "unknown" because the payload
-    // carries pattern="needle_NOT_FOUND".
+    // The header should NOT fall back to "unknown" because the payload carries pattern="needle_NOT_FOUND".
     expect(html).not.toContain('"unknown"')
   })
 
@@ -92,9 +81,7 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
 
     const html = wrapper.html()
     expect(html).toContain('in /repo/path/src')
-    // The "in unknown" fallback would render if the pattern/path lookup
-    // returned null. With the new backend payload it MUST return the
-    // real path.
+    // The "in unknown" fallback would render if the pattern/path lookup returned null.
     expect(html).not.toContain('in unknown')
   })
 
@@ -111,9 +98,7 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
   it('renders the warning text from the payload', () => {
     const wrapper = makeWrapper({ content: noMatchData() })
 
-    // The header's right-hand side shows the warning body, styled orange. Locks in that the
-    // no-match warning surfaces the actionable message ("no matches for pattern...") so the
-    // operator can copy/paste it into a chat.
+    // The header's right-hand side shows the warning body, styled orange.
     const html = wrapper.html()
     expect(html).toContain('no matches for pattern')
     expect(html).toContain('needle_NOT_FOUND')
@@ -121,9 +106,7 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
   })
 
   it('falls back to "unknown" only when the payload truly has no pattern', () => {
-    // Payload without pattern/path keys. We keep the "unknown" fallback for back-compat with stale
-    // rows. The fix's job is to ensure NEW results carry the keys; this test confirms we haven't
-    // broken the fallback.
+    // Payload without pattern/path keys.
     const wrapper = makeWrapper({
       content: { warning: 'pattern not found', files: [] },
     })
@@ -132,9 +115,7 @@ describe('Search.vue — header rendering (operator-visible pattern + path)', ()
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Match-found payload — must still work after the no-match fix
-// ────────────────────────────────────────────────────────────────────────
 describe('Search.vue — match-found payload (regression guard)', () => {
   it('renders the pattern + path on match results', () => {
     const wrapper = makeWrapper({
@@ -156,8 +137,7 @@ describe('Search.vue — match-found payload (regression guard)', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────── Empty/no-match results —
-// Arguments must still be reachable.
+// ──────────────────────────────────────────────────────────────────────── Empty/no-match results — Arguments must still be reachable.
 describe('Search.vue — warning payload still shows Arguments (empty/no-match)', () => {
   const warningContent = {
     pattern: 'foo',
@@ -191,9 +171,7 @@ describe('Search.vue — warning payload still shows Arguments (empty/no-match)'
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────── Output contract (JSON
-// migration, schema §2.3): * every value arrives as plain JSON — no entity decoding, * the payload
-// carries returned/total/truncated.
+// ──────────────────────────────────────────────────────────────────────── Output contract (JSON migration, schema §2.3): * every value arrives as plain JSON — …
 const payloadWithSummary = (
   file: { path: string; total: number; count: number; lines: MatchFixture[] },
   summary: { returned: number; total: number; truncated: boolean },

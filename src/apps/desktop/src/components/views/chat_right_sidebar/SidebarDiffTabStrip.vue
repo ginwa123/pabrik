@@ -18,8 +18,7 @@ const stripOverflows = ref(false)
 
 const setActiveTab = (tab: PanelTab) => emit('select', tab)
 
-// The strip holds six labels in a 238px cluster, so the active tab has to be
-// scrolled into view: a tab you cannot see is a tab you cannot come back to.
+// The strip holds six labels in a 238px cluster, so the active tab has to be scrolled into view: a tab you cannot see is a tab you cannot come back to.
 const scrollActiveTabIntoView = () => {
   const el = tabStrip.value
   if (!el) return

@@ -1,5 +1,4 @@
-/** Tests for useKanbanColumnScrollRestore — the save-on-scroll + restore-on-appear contract for a
- * kanban column's vertical scroll. */
+/** Tests for useKanbanColumnScrollRestore — the save-on-scroll + restore-on-appear contract for a kanban column's vertical scroll. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick, ref, type Ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -28,8 +27,7 @@ beforeAll(() => {
     configurable: true,
   })
 
-  // jsdom does NOT provide requestAnimationFrame — polyfill it with
-  // setTimeout(0) so the composable's `await rAF × 2` resolves.
+  // jsdom does NOT provide requestAnimationFrame — polyfill it with setTimeout(0) so the composable's `await rAF × 2` resolves.
   if (typeof globalThis.requestAnimationFrame !== 'function') {
     globalThis.requestAnimationFrame = (cb: (t: number) => void): number =>
       setTimeout(() => cb(performance.now()), 0) as unknown as number
@@ -86,8 +84,7 @@ function mountHarness({
   }
 }
 
-/**  * Give the container real scroll geometry. jsdom reports 0 for scrollHeight / clientHeight, which
- * would make the composable's "not scrollable yet" early-exit skip every restore. */
+/** Give the container real scroll geometry. jsdom reports 0 for scrollHeight / clientHeight, which would make the composable's "not scrollable yet" early-exit … */
 function setGeometry(
   container: HTMLDivElement,
   { scrollHeight, clientHeight }: { scrollHeight: number; clientHeight: number },
@@ -104,8 +101,7 @@ function setGeometry(
   })
 }
 
-/** Wait the two requestAnimationFrame ticks the composable awaits before
- * applying a restore, plus a microtask flush so Vue's effects settle. */
+/** Wait the two requestAnimationFrame ticks the composable awaits before applying a restore, plus a microtask flush so Vue's effects settle. */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   await new Promise<void>((r) => requestAnimationFrame(() => r()))
@@ -186,9 +182,7 @@ describe('useKanbanColumnScrollRestore', () => {
   })
 
   it('waits for the column to become scrollable before giving up', async () => {
-    // The cards may not be laid out by the second animation frame. Bailing out
-    // on `max <= 0` immediately would silently drop the restore — the user
-    // would come back to a column sitting at the top, which is the bug.
+    // The cards may not be laid out by the second animation frame.
     localStorage.setItem(KEY, '640')
     const harness = mountHarness()
     setGeometry(harness.container, { scrollHeight: 400, clientHeight: 800 })
@@ -208,9 +202,7 @@ describe('useKanbanColumnScrollRestore', () => {
   })
 
   it('wires up when the container appears LATE (the v-if card list)', async () => {
-    // The regression this composable exists for: a kanban column renders its VirtualScroller under
-    // `v-if="cardsInColumn.length > 0"`, so on a cold load (tasks still arriving) there is no
-    // element at setup time.
+    // The regression this composable exists for: a kanban column renders its VirtualScroller under `v-if="cardsInColumn.length > 0"`, so on a cold load (tasks still …
     localStorage.setItem(KEY, '640')
     const harness = mountHarness()
     await harness.setVisible(false)
@@ -261,9 +253,7 @@ describe('useKanbanColumnScrollRestore', () => {
   })
 
   it('flushes the last CAPTURED value on unmount, not a fresh DOM read', async () => {
-    // A torn-down element reports scrollTop = 0. Reading the DOM at flush
-    // time would therefore wipe a good saved position with zero — which is
-    // exactly the bug this guards.
+    // A torn-down element reports scrollTop = 0.
     const harness = mountHarness({ withScrollEnd: true })
     setGeometry(harness.container, { scrollHeight: 5000, clientHeight: 800 })
 

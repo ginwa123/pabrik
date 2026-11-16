@@ -1,6 +1,4 @@
-/**  * Shared folder-diff snapshot — the module every frontend diff read goes through. These tests
- * assert the properties that stop the request flood: a click is free, concurrent readers share one
- * request, and a dead backend surfaces as a rejection rather than a diff that looks clean. */
+/** Shared folder-diff snapshot — the module every frontend diff read goes through. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import {
   clearFolderDiffCache,
@@ -47,9 +45,7 @@ describe('folderDiffCache', () => {
   })
 
   it('a path the server did not report is an EMPTY diff, not an error', async () => {
-    // The server only reports CHANGED paths. A clean file used to come back
-    // from the per-file endpoint as empty content, so callers must still get
-    // that — otherwise every unchanged file renders as a failure.
+    // The server only reports CHANGED paths.
     primeFolderDiffs('/repo', [diffFor('a.txt')])
     const got = await fetchFolderDiff('/repo', 'untouched.txt', false)
     expect(got).toEqual({ path: 'untouched.txt', diff_content: '', staged: false })
@@ -85,8 +81,7 @@ describe('folderDiffCache', () => {
 
   it('rejects when the backend fails — it must not look like "no changes"', async () => {
     getGitFolderDiffsMock.mockRejectedValue(new Error('backend down'))
-    // An outage swallowed into an empty diff reads in the UI as "this file is
-    // unchanged", which is the worst direction to be wrong in.
+    // An outage swallowed into an empty diff reads in the UI as "this file is unchanged", which is the worst direction to be wrong in.
     await expect(fetchFolderDiff('/repo', 'a.txt', false)).rejects.toThrow('backend down')
   })
 

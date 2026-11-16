@@ -18,11 +18,9 @@ pub const ProcessInfo = struct {
     exit_code: ?i32,
 };
 
-/// Check if a process is still running by its PID
-/// Returns the current status of the process
+/// Check if a process is still running by its PID Returns the current status of the process
 pub fn checkProcessStatus(pid: i32) ProcessStatus {
-    // Uses the cross-platform process_status.isProcessRunning helper
-    // (kill(pid, 0) on POSIX, OpenProcess(QUERY_LIMITED) on Windows).
+    // Uses the cross-platform process_status.isProcessRunning helper (kill(pid, 0) on POSIX, OpenProcess(QUERY_LIMITED) on Windows).
     if (pid <= 0) return .unknown;
     if (process_status.isProcessRunning(pid)) {
         return .running;
@@ -30,9 +28,7 @@ pub fn checkProcessStatus(pid: i32) ProcessStatus {
     return .completed;
 }
 
-/// Check process status and get exit code if available
-/// This reads from /proc/PID/stat or uses waitpid if it's a child process
-/// For non-child processes, we can only determine if they're running or not
+/// Check process status and get exit code if available This reads from /proc/PID/stat or uses waitpid if it's a child process For non-child processes, we can only …
 pub fn getProcessInfo(pid: i32) ProcessInfo {
     const status = checkProcessStatus(pid);
     

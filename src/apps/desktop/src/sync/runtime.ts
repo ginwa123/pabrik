@@ -1,20 +1,16 @@
-/** The Effect seam for the sync slice. Two things live here: 1. `syncStoreLayer` — the local cache
- * as a `Layer`, for code that composes a whole Effect program and wants the service in context. 2.
- * `runSyncEffect*` — the Effect seam for Vue `<script setup>` callers. */
+/** The Effect seam for the sync slice. */
 import { Cause, Effect, Exit } from 'effect'
 import { describeSyncError, type SyncError } from './SyncError'
 import { IndexedDbStoreLive } from './IndexedDbStore'
 
-/**  * The same cache as a `Layer`, for code that composes a whole Effect program and wants the service
- * in context: ```ts Effect.provide(program, syncStoreLayer) ``` */
+/** The same cache as a `Layer`, for code that composes a whole Effect program and wants the service in context: ```ts Effect.provide(program, syncStoreLayer) ``` */
 export const syncStoreLayer = IndexedDbStoreLive
 
 const report = (op: string, error: SyncError): void => {
   if (import.meta.env?.DEV) console.warn(`[sync] ${op}: ${describeSyncError(error)}`)
 }
 
-/** Run a fallible sync Effect for its value, degrading to `null` on failure.
- * @param op Short label used in the dev-mode warning, e.g. `'sessions.loadDelta'`. */
+/** Run a fallible sync Effect for its value, degrading to `null` on failure. @param op Short label used in the dev-mode warning, e.g. `'sessions.loadDelta'`. */
 export async function runSyncEffect<A>(
   effect: Effect.Effect<A, SyncError>,
   op: string,
@@ -25,8 +21,7 @@ export async function runSyncEffect<A>(
   return null
 }
 
-/** Run a fallible sync Effect for its value, degrading to `fallback` on
- * failure. Use when the "empty" answer is not `null` (e.g. `[]` for rows). */
+/** Run a fallible sync Effect for its value, degrading to `fallback` on failure. */
 export async function runSyncEffectOr<A>(
   effect: Effect.Effect<A, SyncError>,
   fallback: A,
@@ -38,9 +33,7 @@ export async function runSyncEffectOr<A>(
   return fallback
 }
 
-/**  * Run a best-effort sync Effect for its side effects, e.g. `putLocal`. These are typed
- * `Effect<void, never>` by the engine, but the error channel is accepted anyway so a caller cannot
- * accidentally turn an advisory write into a rejected promise. */
+/** Run a best-effort sync Effect for its side effects, e.g. `putLocal`. */
 export async function runSyncVoid(
   effect: Effect.Effect<void, SyncError>,
   op: string,
@@ -49,9 +42,7 @@ export async function runSyncVoid(
   if (Exit.isFailure(exit)) report(op, Cause.squash(exit.cause) as SyncError)
 }
 
-/** Run a fallible sync Effect and keep BOTH outcomes distinguishable. `runSyncEffect` degrades to
- * `null`, which is right when "nothing there" and "could not check" lead to the same correct
- * action. */
+/** Run a fallible sync Effect and keep BOTH outcomes distinguishable. */
 export async function runSyncResult<A>(
   effect: Effect.Effect<A, SyncError>,
   op: string,
@@ -63,6 +54,5 @@ export async function runSyncResult<A>(
   return { ok: false, reason: describeSyncError(error) }
 }
 
-// Re-exported so specs and future slices can build a program with the store
-// in context without importing three modules.
+// Re-exported so specs and future slices can build a program with the store in context without importing three modules.
 export { SyncStore, memorySyncStoreLayer, makeMemorySyncStore } from './SyncStore'

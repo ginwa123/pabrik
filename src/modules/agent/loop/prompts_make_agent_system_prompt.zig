@@ -1,13 +1,11 @@
-//! Builds the `## Agent System Prompt` system-prompt section for sessions
-//! bound to an Agent workspace-item.
+//! Builds the `## Agent System Prompt` system-prompt section for sessions bound to an Agent workspace-item.
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_db = @import("../../../models/agent.db.zig");
 
-/// Resolve the workspace_item_id for a session. Returns "" when the
-/// session doesn't exist (no workspace_item_tasks row).
+/// Resolve the workspace_item_id for a session.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -25,8 +23,7 @@ fn resolveWorkspaceItemId(
     return try allocator.dupe(u8, "");
 }
 
-/// Resolve `workspace_item_id` → is-it-an-agent check. Returns false when
-/// the workspace_item doesn't exist OR isn't an agent.
+/// Resolve `workspace_item_id` → is-it-an-agent check.
 fn isAgentItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -45,8 +42,7 @@ fn isAgentItem(
     return false;
 }
 
-/// Build the `## Agent System Prompt` system-prompt section. Returns an
-/// owned slice (empty for non-agent sessions). Caller frees.
+/// Build the `## Agent System Prompt` system-prompt section.
 pub fn makeAgentSystemPrompt(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -63,8 +59,7 @@ pub fn makeAgentSystemPrompt(
         return try allocator.dupe(u8, "");
     }
 
-    // Fetch the prompt rows (position DESC — same ordering convention as
-    // agent_knowledge).
+    // Fetch the prompt rows (position DESC — same ordering convention as agent_knowledge).
     const prompts = agent_db.listSystemPrompts(allocator, .{ .db = db }, workspace_item_id) catch
         return try allocator.dupe(u8, "");
     defer {
@@ -118,9 +113,7 @@ pub fn makeAgentSystemPrompt(
         try out.appendSlice(allocator, "\n");
     }
 
-    // Every row was whitespace-only → emit nothing (matches the
-    // "no rows" contract instead of a bare header). Free the partial
-    // buffer before returning the empty slice.
+    // Every row was whitespace-only → emit nothing (matches the "no rows" contract instead of a bare header).
     if (std.mem.indexOf(u8, out.items, "### ") == null) {
         out.deinit(allocator);
         return try allocator.dupe(u8, "");
@@ -131,8 +124,7 @@ pub fn makeAgentSystemPrompt(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;
@@ -173,8 +165,7 @@ fn setupDb() !TestCtx {
         \\)
     , &[_][]const u8{});
     try Migration116.up(&db, alloc);
-    // mirror that, or the agent_system_prompt table (Migration 080) is
-    // missing and prompt-row INSERTs fail.
+    // mirror that, or the agent_system_prompt table (Migration 080) is missing and prompt-row INSERTs fail.
     return .{ .db = db, .threaded = threaded };
 }
 

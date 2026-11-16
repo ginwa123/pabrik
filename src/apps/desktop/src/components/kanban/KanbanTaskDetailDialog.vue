@@ -24,8 +24,7 @@ const props = withDefaults(
     workspaceId?: string
     availableColumns?: KanbanColumn[]
     creating?: boolean
-    // NEW (kanban task dependencies). Same-board candidates for
-    // the dependency picker. Forwarded to the inner detail panel.
+    // NEW (kanban task dependencies).
     tasks?: Task[]
   }>(),
   {
@@ -59,9 +58,7 @@ const forwardClose = () => {
   emit('close')
 }
 
-// Test seam: two specs drive the cwd picker via
-// `wrapper.vm.selectCwd(path)` on this wrapper. Delegate to the
-// inner inline panel (which owns cwdSession + the update-cwd emit).
+// Test seam: two specs drive the cwd picker via `wrapper.vm.selectCwd(path)` on this wrapper.
 const innerDetail = ref<{ selectCwd: (path: string) => void } | null>(null)
 defineExpose({
   selectCwd: (path: string) => innerDetail.value?.selectCwd(path),

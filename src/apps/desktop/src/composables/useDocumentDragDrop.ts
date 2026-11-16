@@ -1,5 +1,4 @@
-/** Drag-and-drop for the sidebar's Documents tree: reorder within a level, move into a folder,
- * drop on the empty space below the tree to send a row back to the root. */
+/** Drag-and-drop for the sidebar's Documents tree: reorder within a level, move into a folder, drop on the empty space below the tree to send a row back to the … */
 import { ref } from 'vue'
 import { isAtOrBelow, useDocumentsStore } from '../stores/documents'
 import type { Document } from '../api'
@@ -11,8 +10,7 @@ export function useDocumentDragDrop(opts: {
 }) {
   const documentsStore = useDocumentsStore()
 
-  /** When the last drop landed. A drop arrives as a click on some browsers, and toggling the
-   * folder shut right after the document fell into it reads as "the move did nothing". */
+  /** When the last drop landed. */
   const lastDropAt = ref(0)
 
   const draggingDoc = ref<string | null>(null)
@@ -50,8 +48,7 @@ export function useDocumentDragDrop(opts: {
     if (!draggingDoc.value && !draggingFolder.value) return
     event.preventDefault()
     if (row.kind === 'folder') {
-      // A folder cannot be dropped into itself or its own descendant; the store
-      // refuses it too, but a dead drop target should not look alive.
+      // A folder cannot be dropped into itself or its own descendant; the store refuses it too, but a dead drop target should not look alive.
       const source = draggingFolder.value
       if (
         source &&
@@ -94,9 +91,7 @@ export function useDocumentDragDrop(opts: {
     void documentsStore.reorderDocuments(wsId, ids, folderId)
   }
 
-  /** The element under the pointer is the truth: a drag can skip a `dragover` frame, and a drop
-   * that trusts the last hover frame is a silent no-op on any part of a folder row that is not its
-   * exact middle. */
+  /** The element under the pointer is the truth: a drag can skip a `dragover` frame, and a drop that trusts the last hover frame is a silent no-op on any part of a … */
   const rowUnder = (event: DragEvent) => {
     const el = event.target as HTMLElement | null
     const rowEl = el?.closest('[data-folder-id], [data-doc-id]') as HTMLElement | null

@@ -1,6 +1,4 @@
-// Workspace secrets UI. The load-bearing assertion in this file is test 2: a stored secret value
-// must NEVER reach the DOM — not masked, not hinted, not in a `title=` tooltip, not in a `data-*`
-// attribute.
+// Workspace secrets UI.
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,9 +10,7 @@ import SecretsSection from '../components/workspace/SecretsSection.vue'
 import WorkspaceSettingsView from '../components/views/WorkspaceSettingsView.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Only the four secrets calls are stubbed; everything else stays real so this spec can also import
-// the real router (which pulls AppLayout, and through it the rest of the api module) without half
-// of that module going undefined underneath it.
+// Only the four secrets calls are stubbed; everything else stays real so this spec can also import the real router (which pulls AppLayout, and through it the …
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
   return {
@@ -97,9 +93,7 @@ describe('SecretsSection', () => {
   })
 
   it('never renders a secret value — not even if one arrives on the row payload', async () => {
-    // The server never sends one. This test pins that the component does
-    // not grow a path to display it even if a future payload carried it —
-    // the exact leak shape McpServersSection has via its `:title=` tooltip.
+    // The server never sends one.
     const leaky = {
       ...baseSecret,
       value: SECRET_VALUE,
@@ -110,8 +104,7 @@ describe('SecretsSection', () => {
     expect(wrapper.html()).not.toContain(SECRET_VALUE)
     expect(wrapper.find('[title*="sk-live"]').exists()).toBe(false)
 
-    // ...and the same holds for a value the user just typed: the input is
-    // a DOM property, never an attribute, and nothing echoes it back out.
+    // ...and the same holds for a value the user just typed: the input is a DOM property, never an attribute, and nothing echoes it back out.
     await wrapper.find('[data-testid="name-input"]').setValue('NEW_SECRET')
     await wrapper.find('[data-testid="value-input"]').setValue(SECRET_VALUE)
     expect(wrapper.html()).not.toContain(SECRET_VALUE)
@@ -150,8 +143,7 @@ describe('SecretsSection', () => {
     expect(wrapper.find('[data-testid="revealed-value"]').exists()).toBe(false)
 
     await wrapper.find('[data-testid="reveal-btn"]').trigger('click')
-    // The component asks; it never fetches the value itself and never invents
-    // one from the row payload.
+    // The component asks; it never fetches the value itself and never invents one from the row payload.
     expect(wrapper.emitted('reveal')?.[0]).toEqual(['sec_1'])
     expect(wrapper.find('[data-testid="revealed-value"]').exists()).toBe(false)
     wrapper.unmount()
@@ -201,8 +193,7 @@ describe('SecretsSection', () => {
   })
 
   it('renders the empty state only once a list has actually loaded', () => {
-    // Not fetched yet — an empty state here would be a lie about the
-    // backend; the view is still waiting on it.
+    // Not fetched yet — an empty state here would be a lie about the backend; the view is still waiting on it.
     expect(
       mountSection({ secrets: [], loaded: false }).find('[data-testid="empty-state"]').exists(),
     ).toBe(false)
@@ -350,8 +341,7 @@ describe('SecretsSection', () => {
   })
 })
 
-// ─── WorkspaceSettingsView: the ?section= URL contract ──────────────────── A view that lives only
-// in component state is unreachable by refresh, Back/Forward and a shared link.
+// ─── WorkspaceSettingsView: the ?section= URL contract ────────────────────
 async function makeSettingsRouter(query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -425,8 +415,7 @@ describe('WorkspaceSettingsView (URL-backed sections)', () => {
     expect(router.currentRoute.value.query.focus).toBe('alpha')
     expect(wrapper.find('[data-testid="secrets-section"]').exists()).toBe(true)
 
-    // Back to the default tab and the param is stripped again — the same
-    // "keep the URL clean" rule NalarSettings follows.
+    // Back to the default tab and the param is stripped again — the same "keep the URL clean" rule NalarSettings follows.
     await wrapper.find('[data-tab-id="overview"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.section).toBeUndefined()
@@ -458,9 +447,7 @@ describe('WorkspaceSettingsView (URL-backed sections)', () => {
   })
 })
 
-// ─── Route registration order ───────────────────────────────────────────── The one thing about
-// this route that is not visible in a type checker: Vue Router matches in REGISTRATION order, and
-// `/app/:workspaceId` sits directly below the new entry.
+// ─── Route registration order ─────────────────────────────────────────────
 describe('workspace settings route registration', () => {
   it('resolves /app/:workspaceId/settings to the workspace-settings route', async () => {
     const real = (await import('../router/index')).default
@@ -468,8 +455,7 @@ describe('workspace settings route registration', () => {
     expect(real.currentRoute.value.name).toBe('workspace-settings')
     expect(real.currentRoute.value.params.workspaceId).toBe('ws_1')
 
-    // …and the ?section= query survives, which is the whole point of the
-    // URL contract: a shared link restores the same open section.
+    // …and the ?section= query survives, which is the whole point of the URL contract: a shared link restores the same open section.
     await real.push('/app/ws_1/settings?section=secrets')
     expect(real.currentRoute.value.name).toBe('workspace-settings')
     expect(real.currentRoute.value.query.section).toBe('secrets')

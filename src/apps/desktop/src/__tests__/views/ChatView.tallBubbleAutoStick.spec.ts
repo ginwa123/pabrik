@@ -1,6 +1,4 @@
-/** The reported scenario, end to end on the real component: "Chatview has issue if sse send a llm
- * chunk and llm full data finish reason stop, its like automatically go to bottom scrollbar
- * chatview" + "if the messages many and the content response is long, it is not auto scroll. */
+/** The reported scenario, end to end on the real component: "Chatview has issue if sse send a llm chunk and llm full data finish reason stop, its like … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'
@@ -17,8 +15,7 @@ import {
 } from '../../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 
-// ── The hoisted api mock ──────────────────────────────────────────────────── Two seams, both
-// required, both hoisted.
+// ── The hoisted api mock ────────────────────────────────────────────────────
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -52,8 +49,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// jsdom does not implement HTMLElement.prototype.scrollTo — polyfill it so
-// scrollToBottom observably moves scrollTop.
+// jsdom does not implement HTMLElement.prototype.scrollTo — polyfill it so scrollToBottom observably moves scrollTop.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -74,8 +70,7 @@ if (
   }
 }
 
-// No layout in jsdom: a fixed tall geometry so the 1000-message transcript is
-// usably scrollable from mount and "the bottom" is a known number.
+// No layout in jsdom: a fixed tall geometry so the 1000-message transcript is usably scrollable from mount and "the bottom" is a known number.
 const TOTAL_HEIGHT = 20000
 const VIEWPORT = 800
 const BOTTOM = TOTAL_HEIGHT - VIEWPORT
@@ -96,8 +91,7 @@ Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
 /** "1000 messages" — the volume half of the report. */
 const MESSAGE_COUNT = 1000
 
-/** A body long enough to fill the viewport on its own when rendered — the "content can be height is
- * very height until full screen" half. */
+/** A body long enough to fill the viewport on its own when rendered — the "content can be height is very height until full screen" half. */
 const FULL_SCREEN_BODY = Array.from({ length: 40 }, (_, i) =>
   `Paragraph ${i} of a very long pasted log or diff body. `.repeat(12),
 ).join('\n\n')
@@ -109,9 +103,7 @@ function seedTallTranscript(): void {
   historyRows.length = 0
   for (let i = 0; i < MESSAGE_COUNT; i++) {
     const bucket = i % 10
-    // 20% a full-screen-tall bubble, 20% carries a thought, the rest a
-    // normal paragraph — heterogeneous on purpose, since uniform rows make
-    // the height-model corrections cancel out and hide this class of bug.
+    // 20% a full-screen-tall bubble, 20% carries a thought, the rest a normal paragraph — heterogeneous on purpose, since uniform rows make the height-model …
     const content = bucket < 2 ? FULL_SCREEN_BODY : `Short message ${i}`
     const row: Record<string, unknown> = {
       id: `msg_${i}`,
@@ -174,9 +166,7 @@ async function mountChatView(
     attachTo: document.body,
     global: { provide: { processingState } },
   })
-  // The scroller's mount gate is `!isInitializing && (isLoading || messageGroups.length > 0)`, and
-  // `isInitializing` only clears once the history load settles — so the scroller's presence IS the
-  // signal, and waiting on it turns a silent "never rendered" into one clear error.
+  // The scroller's mount gate is `!isInitializing && (isLoading || messageGroups.length > 0)`, and `isInitializing` only clears once the history load settles — so …
   for (let i = 0; i < 100; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()
@@ -197,8 +187,7 @@ async function settle(ms = 250): Promise<void> {
   await nextTick()
 }
 
-/**  * The app's own "is the reader at the bottom" answer, read from the DOM the way a user would: the
- * jump-to-bottom arrow is rendered under `v-if="!isAtBottom && …"`, so it is the flag itself. */
+/** The app's own "is the reader at the bottom" answer, read from the DOM the way a user would: the jump-to-bottom arrow is rendered under `v-if="!isAtBottom && … */
 function stickDisarmed(wrapper: VueWrapper): boolean {
   return wrapper.find('.chat-scroll-to-bottom').exists()
 }
@@ -254,9 +243,7 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
     expect(container.scrollTop).toBe(BOTTOM)
     expect(stickDisarmed(wrapper)).toBe(false)
 
-    // A LONG response: many deltas, each appending to the streaming row. This
-    // is the "content response is long" half — one chunk would not grow the
-    // window the way a run of them does.
+    // A LONG response: many deltas, each appending to the streaming row.
     for (let i = 0; i < 12; i++) {
       emitLlm({
         type: 'chunk',
@@ -274,17 +261,13 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
       }
     }
 
-    // The finishing event the report names: the streaming row is swapped for
-    // the canonical DB row under a new id and a new group key, at a different
-    // height than the row it replaces.
+    // The finishing event the report names: the streaming row is swapped for the canonical DB row under a new id and a new group key, at a different height than the …
     emitLlm({
       type: 'full',
       session_id: session,
       id: 'db_row_tall_final',
       role: 'assistant',
-      // Deliberately NOT byte-identical to the seeded tall bodies: the `full` handler drops an
-      // event that duplicates an existing row on role + content + tool_call_id (the 2026-08-23
-      // TOOLS-pill-spam fix), and 20% of the seed carries exactly `FULL_SCREEN_BODY`.
+      // Deliberately NOT byte-identical to the seeded tall bodies: the `full` handler drops an event that duplicates an existing row on role + content + tool_call_id …
       content: `${FULL_SCREEN_BODY}\n\nFinal line that only this turn has.`,
       reasoning_content: THOUGHT,
       finish_reason: 'stop',
@@ -297,17 +280,14 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
     )
     expect(container.scrollTop).toBe(BOTTOM)
 
-    // The canonical row really did replace the streaming one — otherwise the
-    // assertions above ran before the swap happened and proved nothing.
+    // The canonical row really did replace the streaming one — otherwise the assertions above ran before the swap happened and proved nothing.
     const vm = wrapper.vm as unknown as { messages: Array<{ id: string }> }
     expect(vm.messages.some((m) => m.id === 'db_row_tall_final')).toBe(true)
     expect(vm.messages.some((m) => m.id.startsWith('streaming-'))).toBe(false)
   })
 
   it('re-arms and follows again after the reader returns from the history', async () => {
-    // The exact arming moment the reported bug used to be lost at: the reader goes up to read
-    // history, comes back with the app's own jump-to-bottom affordance (which re-arms
-    // `isAtBottom`), and THEN a long response arrives.
+    // The exact arming moment the reported bug used to be lost at: the reader goes up to read history, comes back with the app's own jump-to-bottom affordance (which …
     const session = 'tall_stick_return'
     installApiMocks()
     wrapper = await mountChatView(session, processingState)
@@ -326,8 +306,7 @@ describe('ChatView — 1000 messages, full-screen-tall bodies, thoughts, long re
       content: 'A long answer that starts while the reader is still in the history.',
     })
     await settle(300)
-    // A scrolled-up reader must be left alone — that is the other half of the
-    // contract, and the reason the fix is a re-target rather than "always jump".
+    // A scrolled-up reader must be left alone — that is the other half of the contract, and the reason the fix is a re-target rather than "always jump".
     expect(container.scrollTop).toBe(5000)
 
     // Come back to the tail, the way a reader does.

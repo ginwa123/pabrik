@@ -1,5 +1,4 @@
-// End-to-end smoke test for the functional Harness. Zig port of
-// `tests/functional/smoke_boot_test.py` (same test names).
+// End-to-end smoke test for the functional Harness.
 
 const std = @import("std");
 const testing = std.testing;
@@ -15,8 +14,6 @@ fn bootOne() !Harness {
 }
 
 // ─── The module's own harness safety invariants ────────────────────────────
-// These are NOT ports: they are the guards on `harness.zig` itself, and they
-// run without booting a binary (so they work on a clean checkout).
 
 test "is_safe_tmp_rejects_dangerous_paths" {
     const root = try harness.tmpRoot(gpa);
@@ -41,16 +38,13 @@ test "is_safe_tmp_rejects_dangerous_paths" {
     try testing.expect(!try harness.isSafeTmp(io, gpa, root, root));
 }
 
-// The port picker must never return 8081 (the always-running dev
-// backend) and must return a bindable port.
+// The port picker must never return 8081 (the always-running dev backend) and must return a bindable port.
 test "find_free_port_random_avoids_reserved_8081" {
     const port = try harness.findFreePortRandom(gpa);
     try testing.expect(port != 8081);
     try testing.expect(port >= harness.RANDOM_PORT_START);
     try testing.expect(port <= harness.RANDOM_PORT_END);
-    // The returned port really was free when we probed it — bind it
-    // ourselves as the cross-check (the probe closed its socket, so a
-    // failure here means the picker returned a port that was taken).
+    // The returned port really was free when we probed it — bind it ourselves as the cross-check (the probe closed its socket, so a failure here means the picker …
     try testing.expect(harness.portIsFreeWithReuse(io, port));
 }
 
@@ -147,16 +141,14 @@ test "state_lives_in_temp_dir" {
     var h = try bootOne();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
-    // The DB path is $HOME/.config/pabrik/agent.db. With HOME=temp_dir
-    // it must be at temp_dir/.config/pabrik/agent.db.
+    // The DB path is $HOME/.config/pabrik/agent.db.
     const db_path = try std.fs.path.join(gpa, &.{ h.temp_dir, ".config", "pabrik", "agent.db" });
     defer gpa.free(db_path);
     std.Io.Dir.cwd().access(io, db_path, .{}) catch {
         std.debug.print("agent.db not found at expected tempdir path {s}\n", .{db_path});
         return error.TestUnexpectedResult;
     };
-    // The real $HOME must NOT contain a `pabrik/agent.db` newly created by
-    // this test.
+    // The real $HOME must NOT contain a `pabrik/agent.db` newly created by this test.
 }
 
 // The real $HOME is captured intact by the harness.
@@ -165,8 +157,7 @@ test "orig_home_untouched_after_session" {
     var h = try bootOne();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
-    // Python: `h.orig_home == os.environ["HOME"] or
-    // Path(h.orig_home).exists()`.
+    // Python: `h.orig_home == os.environ["HOME"] or Path(h.orig_home).exists()`.
     const home = testing.environ.getAlloc(gpa, "HOME") catch try gpa.dupe(u8, "");
     defer gpa.free(home);
     try testing.expect(std.mem.eql(u8, h.orig_home, home));
@@ -178,9 +169,7 @@ test "teardown_restores_home_and_keeps_orig_dir" {
     var h = try bootOne();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
 
-    // Python records this as a tautology: "the assertion is tautological; the
-    // real coverage is in
-    // harness_safety_test.py::test_teardown_with_safe_temp_dir_runs_rmtree".
+    // Python records this as a tautology: "the assertion is tautological; the real coverage is in …
     try testing.expect(h.orig_home.len > 0);
     try testing.expect(std.fs.path.isAbsolute(h.orig_home));
 }

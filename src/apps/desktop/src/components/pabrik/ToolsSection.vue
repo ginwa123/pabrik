@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** ToolsSection — Tools tab in Pabrik settings. Renders the default tool checklist stored as
- * `config.json → "tools": [...]` (plan 2026-09-22-tools-menu-config-default-tools). */
+/** ToolsSection — Tools tab in Pabrik settings. */
 import { computed, onMounted } from 'vue'
 
 import { useAgentToolsStore, type AgentRegistryEntry } from '../../stores/agentTools'
@@ -8,9 +7,7 @@ import { useAgentToolsStore, type AgentRegistryEntry } from '../../stores/agentT
 const props = defineProps<{ modelValue: string[] | null }>()
 const emit = defineEmits<{ change: [list: string[]] }>()
 
-// Display selection while config.json has no `tools` key: the built-in seed lists from
-// src/agentic_loop/tools_equipped.zig — DEFAULT_AGENT_TOOLS + DEFAULT_KANBAN_TOOLS
-// (kanban_list, kanban_move_task).
+// Display selection while config.json has no `tools` key: the built-in seed lists from src/agentic_loop/tools_equipped.zig — DEFAULT_AGENT_TOOLS + …
 const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'command',
   'read_file',
@@ -21,9 +18,7 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'list_directory',
   'search',
   'glob',
-  // Web search. Both halves ship default-on: `list_web_search_providers` is how the agent discovers
-  // what the user configured, and it answers with an explicit "none configured" envelope rather
-  // than failing — so enabling them costs nothing until a `web_search` provider exists.
+  // Web search.
   'web_search',
   'list_web_search_providers',
   'update_plan',
@@ -31,12 +26,9 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'save_memory',
   'load_memory',
   'read_workspace_session',
-  // Starts or resumes a session agent, another workspace included. Default-on, like
-  // `spawn_sub_agent`: handing work to another session is core agent behaviour.
+  // Starts or resumes a session agent, another workspace included.
   'run_session',
-  // Workspace-scoped documents (Migration 098). Default-on: writing a note the user asked for is a
-  // core agent behaviour, and the tools refuse cleanly outside a workspace-linked session, so
-  // enabling them by default costs nothing. `document` is the read/search half.
+  // Workspace-scoped documents (Migration 098).
   'document',
   'document_markdown',
   'manage_project',
@@ -49,8 +41,7 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'spawn_sub_agent',
   'list_agents',
   'used_tools',
-  // Read-only introspection: where this session runs (cwd, git worktree, task)
-  // and whether a run is in flight. Default-on, like `read_workspace_session`.
+  // Read-only introspection: where this session runs (cwd, git worktree, task) and whether a run is in flight.
   'view_session',
   'search_tool',
   'view_tool',
@@ -59,8 +50,7 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'kanban_move_task',
 ]
 
-// The 13 wireframe groups, rendered in this order; registry names not
-// in GROUP_BY_TOOL fall into the trailing "Other" bucket.
+// The 13 wireframe groups, rendered in this order; registry names not in GROUP_BY_TOOL fall into the trailing "Other" bucket.
 const TOOL_GROUPS: readonly string[] = [
   'Files & shell',
   'Search',
@@ -130,9 +120,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
   add_mcp_server: 'MCP',
 }
 
-// Hard invariants of the runtime (not user configuration):
-// MAIN_AGENT_ONLY_NAMES never reach sub-agents, and the two kanban
-// tools are the mode floor that is always re-added in kanban mode.
+// Hard invariants of the runtime (not user configuration)
 const MAIN_AGENT_ONLY = new Set(['spawn_sub_agent', 'run_session', 'run_skill_eval'])
 const MODE_FLOOR = new Set(['kanban_list', 'kanban_move_task'])
 
@@ -206,8 +194,7 @@ const grouped = computed<ToolGroup[]>(() => {
 })
 
 function emitSelection(selection: Set<string>) {
-  // Full explicit array, in registry order; names missing from the
-  // registry are dropped so the saved list always validates server-side.
+  // Full explicit array, in registry order; names missing from the registry are dropped so the saved list always validates server-side.
   emit(
     'change',
     registry.value.filter((t) => selection.has(t.name)).map((t) => t.name),

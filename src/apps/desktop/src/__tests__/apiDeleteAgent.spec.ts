@@ -1,6 +1,4 @@
-/** Unit tests for the `api.deleteAgent` function. Mocks `global.fetch`
- * to assert URL, method, and error handling without hitting the
- * network. */
+/** Unit tests for the `api.deleteAgent` function. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

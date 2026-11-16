@@ -1,5 +1,4 @@
-//! `GET /api/skill-evals/runs` and `GET /api/skill-evals/summary` — the READ
-//! surface for Skill Evals.
+//! `GET /api/skill-evals/runs` and `GET /api/skill-evals/summary` — the READ surface for Skill Evals.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -44,16 +43,11 @@ const ResultJson = struct {
     accuracy: u8,
     duplication: u8,
     rationale: []const u8,
-    /// A JSON *string* here (the stored array), because the column holds JSON
-    /// text. The reader parses it; emitting it raw would need a custom
-    /// serializer for one field.
+    /// A JSON *string* here (the stored array), because the column holds JSON text.
     missing_paths: []const u8,
-    /// Whether the intrinsic half came from the shared fact cache rather than
-    /// being computed for this session.
+    /// Whether the intrinsic half came from the shared fact cache rather than being computed for this session.
     shared_fact: bool,
-    /// The skill body the verdict was computed against, verbatim, and the
-    /// text the verdict would write over it. Together they are the
-    /// before/after a human needs to judge a proposal.
+    /// The skill body the verdict was computed against, verbatim, and the text the verdict would write over it.
     content_at_use: []const u8,
     proposed_diff: []const u8,
     applied: bool,
@@ -73,9 +67,7 @@ fn parseLimit(raw: ?[]const u8) SkillEvalsError!u32 {
     return if (n > MAX_LIMIT) MAX_LIMIT else n;
 }
 
-// =====================================================================
 // Use cases
-// =====================================================================
 
 fn runsUseCase(
     allocator: std.mem.Allocator,
@@ -108,8 +100,7 @@ fn runsUseCase(
         }) catch return error.Internal;
     }
 
-    // Results only when one run was asked for. Listing every result of every
-    // run would be a much bigger response for no extra information.
+    // Results only when one run was asked for.
     var result_rows: []skill_evals_db.ResultRow = &.{};
     var owns_results = false;
     if (run_id.len > 0) {
@@ -169,9 +160,7 @@ fn summaryUseCase(
     }, .{}) catch return error.Internal;
 }
 
-// =====================================================================
 // Increment 7 — the apply endpoint
-// =====================================================================
 
 /// What the apply endpoint did, for the response body.
 const ApplyJson = struct {
@@ -182,8 +171,7 @@ const ApplyJson = struct {
     message: []const u8,
 };
 
-/// Apply one verdict. The order matters and is the whole design: 1. Read the
-/// result.
+/// Apply one verdict.
 fn applyUseCase(
     allocator: std.mem.Allocator,
     result_id: []const u8,
@@ -198,8 +186,7 @@ fn applyUseCase(
         return error.ResultNotFound;
     defer row.deinit(allocator);
 
-    // A verdict that is already stale is not applicable — the body moved on and
-    // the proposal no longer describes it.
+    // A verdict that is already stale is not applicable — the body moved on and the proposal no longer describes it.
     if (std.mem.eql(u8, row.status, "stale")) return error.Stale;
 
     const claim = skill_evals_db.claimApply(allocator, db, result_id, action) catch return error.Internal;
@@ -209,15 +196,12 @@ fn applyUseCase(
         .won => {},
     }
 
-    // The hash re-check. `base_content_hash` is the body the eval judged; if
-    // the workspace's row no longer hashes to it, the verdict is about a body
-    // that is gone.
+    // The hash re-check.
     const current = readCurrentSkillHash(allocator, di, row.skill_name, row.session_id) catch null;
     if (current) |hash| {
         defer allocator.free(hash);
         if (row.base_content_hash.len > 0 and !std.mem.eql(u8, hash, row.base_content_hash)) {
-            // Give the claim back FIRST, or the verdict can never be applied
-            // again even after a re-evaluate.
+            // Give the claim back FIRST, or the verdict can never be applied again even after a re-evaluate.
             skill_evals_db.releaseApply(allocator, db, result_id) catch {};
             skill_evals_db.markResultStale(allocator, db, result_id) catch {};
             return error.Stale;
@@ -235,8 +219,7 @@ fn applyUseCase(
     }, .{}) catch return error.Internal;
 }
 
-/// Tell the UI a verdict was applied, so the Evals tab can refresh. Emitted
-/// after the claim is recorded; a failure here must not fail the apply.
+/// Tell the UI a verdict was applied, so the Evals tab can refresh.
 fn emitApplied(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -248,16 +231,14 @@ fn emitApplied(
     });
 }
 
-/// Hash the skill body as it stands in the workspace this result's session
-/// ran in, or null when it cannot be read.
+/// Hash the skill body as it stands in the workspace this result's session ran in, or null when it cannot be read.
 fn readCurrentSkillHash(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,
     skill_name: []const u8,
     session_id: []const u8,
 ) !?[]u8 {
-    // Fails closed, like every other caller: an unresolvable session is
-    // "cannot tell", and "cannot tell" must not read as "unchanged".
+    // Fails closed, like every other caller: an unresolvable session is "cannot tell", and "cannot tell" must not read as "unchanged".
     const workspace_id = workspace_scope.resolveWorkspaceId(allocator, di.db, session_id) catch null;
     defer if (workspace_id) |w| allocator.free(w);
     const ws = workspace_id orelse return null;
@@ -265,20 +246,15 @@ fn readCurrentSkillHash(
     const row = (skills_store.getSkillByName(allocator, di.db, ws, skill_name) catch null) orelse return null;
     defer skills_store.freeSkillRow(allocator, row);
 
-    // Byte-exact, matching `run_skill_eval`: the hash is only comparable with
-    // `base_content_hash` if both sides hashed the same bytes.
+    // Byte-exact, matching `run_skill_eval`: the hash is only comparable with `base_content_hash` if both sides hashed the same bytes.
     var buf: [64]u8 = undefined;
     skill_evals_db.sha256Hex(row.content, &buf);
     return try allocator.dupe(u8, buf[0..]);
 }
 
-// =====================================================================
 // Handlers
-// =====================================================================
 
-/// Map the closed error set to a status code and message. Two exhaustive
-/// switches, so adding an error variant fails to compile rather than falling
-/// through to a 500.
+/// Map the closed error set to a status code and message.
 fn errorResponse(
     allocator: std.mem.Allocator,
     res: gserverz.HttpResponse,
@@ -336,8 +312,7 @@ pub fn skillEvalsSummaryHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = body });
 }
 
-/// `POST /api/skill-evals/results/apply?result_id=...&action=...` A POST
-/// because it mutates: it records that a human accepted a verdict.
+/// `POST /api/skill-evals/results/apply?result_id=...&action=...` A POST because it mutates: it records that a human accepted a verdict.
 pub fn skillEvalsApplyHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,

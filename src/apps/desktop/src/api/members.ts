@@ -1,13 +1,10 @@
 import { apiFetch } from './client'
 
-// ─── Workspace members (Migration 100) ─────────────────────────────────── Who belongs to one
-// workspace and with which role. An invite names an existing account by email; there is no signup,
-// so an address with no account is a 404 the form has to show.
+// ─── Workspace members (Migration 100) ───────────────────────────────────
 export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer'
 
 export interface WorkspaceMember {
-  /** The workspace this membership is in — an accepted invitation's response
-   * carries it so the caller knows which workspace just became available. */
+  /** The workspace this membership is in — an accepted invitation's response carries it so the caller knows which workspace just became available. */
   workspace_id: string
   user_id: string
   email: string
@@ -18,8 +15,7 @@ export interface WorkspaceMember {
   invited_by: string
 }
 
-/** GET /api/workspaces/:workspaceId/members — owners first. A workspace with no members returns
- * `{ members: [], count: 0 }`, which is a different answer from a failed request. */
+/** GET /api/workspaces/:workspaceId/members — owners first. */
 export async function listMembers(
   workspaceId: string,
 ): Promise<{ members: WorkspaceMember[]; count: number }> {
@@ -29,8 +25,7 @@ export async function listMembers(
   )
 }
 
-/** PATCH /api/workspaces/:workspaceId/members/:userId Body: `{ role }`. 409 when the change would
- * leave the workspace with no owner. */
+/** PATCH /api/workspaces/:workspaceId/members/:userId Body: `{ role }`. 409 when the change would leave the workspace with no owner. */
 export async function updateMemberRole(
   workspaceId: string,
   userId: string,
@@ -42,8 +37,7 @@ export async function updateMemberRole(
   )
 }
 
-/** DELETE /api/workspaces/:workspaceId/members/:userId — 409 for the last owner, 404 for an account
- * that is not a member. */
+/** DELETE /api/workspaces/:workspaceId/members/:userId — 409 for the last owner, 404 for an account that is not a member. */
 export async function removeMember(
   workspaceId: string,
   userId: string,

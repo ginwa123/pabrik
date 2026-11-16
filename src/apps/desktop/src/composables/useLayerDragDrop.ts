@@ -1,5 +1,4 @@
-/** Pure-logic composable that backs the LayersPanel drag-and-drop affordance. Owns the drag state
- * machine + per-element visual class predicates. */
+/** Pure-logic composable that backs the LayersPanel drag-and-drop affordance. */
 import { computed, ref, type Ref } from 'vue'
 
 import type { DesignElement } from '../api'
@@ -8,21 +7,17 @@ import type { DesignElement } from '../api'
 export const TOP_LEVEL_SENTINEL = '__design_top_level__'
 
 export interface LayerDragDropArgs {
-  /** Reactive list of all elements on the active page. Accepts:
-   *  - a getter () => array | Ref<array> (for live computed refs)
-   */
+  /** Reactive list of all elements on the active page. Accepts */
   elements:
     | DesignElement[]
     | Ref<DesignElement[]>
     | (() => DesignElement[] | Ref<DesignElement[]>)
-  /**    * Optional reactive selectedIds (same union). When the dragged row is in this Set AND its size >
-   * 1, the whole set is dragged together. */
+  /** Optional reactive selectedIds (same union). */
   selectedIds?: Set<string> | Ref<Set<string>> | (() => Set<string> | null)
 }
 
 export interface DropResult {
-  /** Always in insertion order — matches the input order from
-   *  selectedIds (or just the dragged row id for single-drag). */
+  /** Always in insertion order — matches the input order from selectedIds (or just the dragged row id for single-drag). */
   elementIds: string[]
   /** null = leave any current group, become top-level. */
   newParentId: string | null
@@ -52,9 +47,7 @@ export function useLayerDragDrop(args: LayerDragDropArgs) {
 
   const elements = computed<DesignElement[]>(resolveElements)
 
-  // Walk the parent_id chain upward from `descendant_id`. Returns true iff `ancestor_id` is
-  // `descendant_id`'s parent OR any ancestor of `descendant_id` (i.e., reparenting `descendant_id`
-  // under `ancestor_id` would be valid — not a cycle).
+  // Walk the parent_id chain upward from `descendant_id`.
   function isAncestor(targetAncestor: string, descendantId: string): boolean {
     let current: string | null = descendantId
     for (let depth = 0; depth < 1024; depth++) {
@@ -67,18 +60,14 @@ export function useLayerDragDrop(args: LayerDragDropArgs) {
     return false
   }
 
-  // A target is a valid drop zone iff: - For TOP_LEVEL_SENTINEL: always valid. - For a real row id:
-  // that row is `group` or `frame`, AND NONE of the dragged elements is the target itself OR a
-  // descendant of the target (cycle check).
+  // A target is a valid drop zone iff: - For TOP_LEVEL_SENTINEL: always valid. - For a real row id
   function isValidDropTarget(targetId: string, sourceIds: Set<string>): boolean {
     if (targetId === TOP_LEVEL_SENTINEL) return true
     const t = elements.value.find((e) => e.id === targetId)
     if (!t) return false
     // Only group/frame can contain children.
     if (t.type !== 'group' && t.type !== 'frame') return false
-    // Block ANY dragged element being the target itself OR an ancestor of the target (cycle check:
-    // reparenting src under targetId would close a cycle if src is reachable from targetId's parent
-    // chain).
+    // Block ANY dragged element being the target itself OR an ancestor of the target (cycle check
     for (const src of sourceIds) {
       if (targetId === src) return false
       if (isAncestor(src, targetId)) return false
@@ -96,9 +85,7 @@ export function useLayerDragDrop(args: LayerDragDropArgs) {
   }
 
   function onDragStart(rowId: string, _event: DragEvent | Event): void {
-    // Multi-drag: if the dragged row is in selectedIds AND the
-    // selection has > 1 element, drag the whole set. Otherwise
-    // drag just this row.
+    // Multi-drag: if the dragged row is in selectedIds AND the selection has > 1 element, drag the whole set.
     const sel = resolveSelectedIds()
     if (sel && sel.has(rowId) && sel.size > 1) {
       draggedIds.value = new Set(sel)

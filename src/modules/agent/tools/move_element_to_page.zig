@@ -1,5 +1,4 @@
-//! LLM tool: `move_element_to_page` — relocates an existing design element
-//! from one page to another page in the same design item.
+//! LLM tool: `move_element_to_page` — relocates an existing design element from one page to another page in the same design item.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -16,12 +15,9 @@ const sanitizeControlChars = helpers.sanitize_control_chars;
 pub const MoveElementToPageInput = struct {
     /// The element id to move. Must exist on the active page.
     element_id: []const u8 = "",
-    /// The destination page id. Both pages must live on the same
-    /// design item (`workspace_item_id`); cross-design moves are
-    /// rejected with `CrossDesign`.
+    /// The destination page id.
     new_page_id: []const u8 = "",
-    /// Default true. When false, only the root moves (descendants
-    /// stay behind on the source page as top-level orphans).
+    /// Default true.
     apply_to_children: bool = true,
 };
 
@@ -69,8 +65,7 @@ pub const move_element_to_page_tool = AgentTool{
     },
 };
 
-/// Error JSON object `{"error":...}` so the tool dispatcher can detect
-/// it via the top-level `error` key.
+/// Error JSON object `{"error":...}` so the tool dispatcher can detect it via the top-level `error` key.
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -84,8 +79,6 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
 }
 
 /// Validate `element_id` is non-empty and `new_page_id` is non-empty.
-/// Returns null when both are valid, or an error JSON object on a
-/// missing field.
 fn validateInputShape(allocator: std.mem.Allocator, input: MoveElementToPageInput) !?[]u8 {
     if (input.element_id.len == 0) {
         return try errorJSON(allocator, "element_id is required (find it in the `id` field of an element object in a `set_design_page` or `get_design_context` response)");
@@ -116,8 +109,7 @@ fn validateInputShape(allocator: std.mem.Allocator, input: MoveElementToPageInpu
     return null;
 }
 
-/// Execute the `move_element_to_page` tool. Returns a JSON string for the
-/// LLM.
+/// Execute the `move_element_to_page` tool.
 pub fn executeMoveElementToPageToString(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -127,8 +119,7 @@ pub fn executeMoveElementToPageToString(
     // 0. Input validation (shape only — DB validation runs after).
     if (try validateInputShape(allocator, input)) |e| return e;
 
-    // 1. Delegate to the design-model layer. The cascade + auto-detach
-    //    + SSE event all happen inside `moveElementToPage`.
+    // 1.
     const updated = design_model.moveElementToPage(allocator, db, .{
         .source_page_id = active_page_id,
         .element_id = input.element_id,
@@ -150,8 +141,7 @@ pub fn executeMoveElementToPageToString(
     return try renderSuccessJSON(allocator, updated);
 }
 
-/// Render the success JSON response. Lists every moved element (root +
-/// descendants) with their `page_id`, `name`, `type`.
+/// Render the success JSON response.
 fn renderSuccessJSON(
     allocator: std.mem.Allocator,
     moved: []const design_model.DesignElement,
@@ -171,8 +161,7 @@ fn renderSuccessJSON(
     return try std.json.Stringify.valueAlloc(allocator, .{ .moved = out.items }, .{});
 }
 
-/// JSON row for one moved element (keys mirror the old `<element ... />`
-/// attributes 1:1).
+/// JSON row for one moved element (keys mirror the old `<element ...
 pub const MovedElementJSON = struct {
     id: []const u8,
     page_id: []const u8,
@@ -182,9 +171,7 @@ pub const MovedElementJSON = struct {
 
 const testing = std.testing;
 
-// =====================================================================
 // Test fixtures
-// =====================================================================
 
 const TestCtx = struct {
     db: database.Db,
@@ -283,9 +270,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 test "move_element_to_page_tool has the expected LLM-facing schema (name, required fields)" {
     const tool = move_element_to_page_tool;
@@ -404,7 +389,6 @@ test "executeMoveElementToPageToString rejects bad prefixes via an error object"
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -434,8 +418,7 @@ pub fn execMoveElementToPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     };
     defer parsed.deinit();
 
-    // The tool needs the *active* page_id — the agentic loop currently passes
-    // the page context through `ctx.cwd` or a similar channel.
+    // The tool needs the *active* page_id — the agentic loop currently passes the page context through `ctx.cwd` or a similar channel.
     const active_page_id = ctx.active_page_id;
 
     const inner = executeMoveElementToPageToString(
@@ -458,9 +441,7 @@ pub fn execMoveElementToPage(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

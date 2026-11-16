@@ -1,6 +1,4 @@
-//! Notify server that the client is disconnecting from an SSE stream. This
-//! removes ALL SSE connections for the session (forceful disconnect of the
-//! entire session).
+//! Notify server that the client is disconnecting from an SSE stream.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,9 +13,7 @@ pub const SseDisconnectResult = struct {
     removed_clients: u32,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(session_id: []const u8) SseDisconnectError!SseDisconnectResult {
     const server = gserverz.global_server orelse return error.ServerNotAvailable;
@@ -26,9 +22,7 @@ fn useCase(session_id: []const u8) SseDisconnectError!SseDisconnectResult {
     return .{ .removed_clients = removed_count };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Notify server that client is disconnecting from SSE stream.
 pub fn sseDisconnectHandler(
@@ -38,8 +32,7 @@ pub fn sseDisconnectHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Per `pabrik-http-handler-thin-wrapper-pattern`, use
-    // `req.params.get` rather than the (non-existent) `path_param`.
+    // Per `pabrik-http-handler-thin-wrapper-pattern`, use `req.params.get` rather than the (non-existent) `path_param`.
     const session_id = req.params.get("session_id") orelse {
         return res.jsonResponse(.{
             .status_code = 400,

@@ -10,9 +10,7 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const IsWorkerCancelledInput = @import("is_worker_cancelled.zig").IsWorkerCancelledInput;
 
-// Portable sleep helper. We can't use std.c.timespec directly because it's
-// broken on Windows in Zig 0.16 (see test_sleep.zig for the upstream
-// analysis).
+// Portable sleep helper.
 extern "kernel32" fn Sleep(dw_milliseconds: u32) callconv(.winapi) void;
 
 const WorkflowNanoSleepTimespec = extern struct {
@@ -23,16 +21,13 @@ extern "c" fn nanosleep(req: *const WorkflowNanoSleepTimespec, rem: ?*WorkflowNa
 
 fn sleepChunk(chunk_ms: u32) void {
     if (comptime builtin.os.tag == .windows) {
-        // Win32 Sleep takes a DWORD (u32) of milliseconds. Saturate
-        // at u32 max so a huge chunk_ms doesn't wrap to 0.
+        // Win32 Sleep takes a DWORD (u32) of milliseconds.
         const ms_dword: u32 = std.math.cast(u32, chunk_ms) orelse std.math.maxInt(u32);
         Sleep(ms_dword);
     } else {
         const ts = WorkflowNanoSleepTimespec{
             .sec = 0,
-            // Explicit c_long cast — `chunk_ms * std.time.ns_per_ms` produces
-            // a `u32` (chunk_ms's type) which the linker can't coerce to
-            // c_long on Windows (where c_long=i32).
+            // Explicit c_long cast — `chunk_ms * std.time.ns_per_ms` produces a `u32` (chunk_ms's type) which the linker can't coerce to c_long on Windows (where c_long=i32).
             .nsec = @as(c_long, @intCast(chunk_ms * std.time.ns_per_ms)),
         };
         _ = nanosleep(&ts, null);
@@ -64,8 +59,7 @@ pub fn retryDelayMs(
         @as(i96, @intCast(delay_ms)) * std.time.ns_per_ms;
 
     while (true) {
-        // Cancellation check — same shape as the loop-top check at
-        // workflow.zig:276 so the cancel UX is consistent.
+        // Cancellation check — same shape as the loop-top check at workflow.zig:276 so the cancel UX is consistent.
         if (isWorkerCancelled(IsWorkerCancelledInput{
             .allocator = allocator,
             .db = db,

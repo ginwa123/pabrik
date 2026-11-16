@@ -35,30 +35,12 @@ import com.pabrik.mobile.ui.PabrikDim
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * Which tool cards the reader has opened.
- *
- * Keyed by message id and never by index: a streamed append shifts every index
- * below it, so an index key silently collapses the cards the user had just
- * opened — and the agentic run this feature exists for is nothing but appends.
- * `rememberSaveable` because a card someone opened should still be open after a
- * rotation.
- */
+/** Which tool cards the reader has opened. */
 @Composable
 fun rememberToolExpansion(): ToolExpansion =
     rememberSaveable(saver = ToolExpansion.Saver) { ToolExpansion() }
 
-/**
- * An explicit open/closed decision per row.
- *
- * A decision, not a set of open rows, and the distinction is the whole design.
- * A card can *default* to open — `ask_user` does, because the run is blocked on
- * it — and a set of open ids cannot express "this one defaults to open and the
- * reader has now closed it", because absent would have to mean both
- * "inherit the default" and "explicitly closed". Every defaulting card would be
- * impossible to close. So the map holds the reader's overrides and absence means
- * "inherit", which is the only encoding where both directions work.
- */
+/** An explicit open/closed decision per row. */
 class ToolExpansion(initial: Map<String, Boolean> = emptyMap()) {
     private var overrides: Map<String, Boolean> by mutableStateOf(initial)
 
@@ -70,20 +52,7 @@ class ToolExpansion(initial: Map<String, Boolean> = emptyMap()) {
     }
 
     companion object {
-        /**
-         * Saves only the *open* ids.
-         *
-         * Saving every key and restoring them all as `true` reopens every card
-         * the reader had shut — and four of the card kinds default to open, so
-         * the damage lands on exactly the cards that must not be reopened
-         * (a dismissed blocking question). A closed card simply has no entry,
-         * which is the same absence that means "inherit the default".
-         *
-         * The alternative of saving key → boolean needs a `Bundle`-friendly
-         * type the Compose `Saver` machinery does not offer for a `Map`, and it
-         * would halve the payload for no gain: a `false` entry is always
-         * recoverable from the default.
-         */
+        /** Saves only the *open* ids. */
         val Saver = listSaver<ToolExpansion, String>(
             save = { state -> state.overrides.filterValues { it }.keys.toList() },
             restore = { ids -> ToolExpansion(ids.associateWith { true }) },
@@ -91,20 +60,7 @@ class ToolExpansion(initial: Map<String, Boolean> = emptyMap()) {
     }
 }
 
-/**
- * The header for tool calls that no card has answered yet.
- *
- * It is a header rather than a row of its own, and that is the whole change:
- * the call and its output are one thing the reader looks at, so this draws at
- * the top of the run it belongs to instead of as a separate list item above
- * it. [groupMessages] decides which calls land here — by the time a call has a
- * result card on screen, it is not in the list, because the card already shows
- * the call's name and arguments and a second line repeating them is the noise.
- *
- * What is left is the live window: a call declared a moment ago whose `tool`
- * row has not landed. Those have nothing else drawing them, so the header is
- * the only thing keeping a running tool call from being invisible.
- */
+/** The header for tool calls that no card has answered yet. */
 @Composable
 fun ToolCallSummaryRow(
     calls: List<ToolCallEntry>,

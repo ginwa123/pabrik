@@ -3,17 +3,13 @@ import { describe, expect, it } from 'vitest'
 
 import ForgeIcon from '../components/git/ForgeIcon.vue'
 
-/** The brand marks are locked by path, the same way `WorkspaceItemTaskCard.gitBranch.spec.ts` locks
- * the fork/branch SVG. The reason is in AGENTS.md ("No Emoji as Icons"): the panel used to say 🔀
- * for both forges, so a GitLab merge request rendered identically to a GitHub pull request. */
+/** The brand marks are locked by path, the same way `WorkspaceItemTaskCard.gitBranch.spec.ts` locks the fork/branch SVG. */
 const GITHUB_PATH_FRAGMENT = 'M12 .297c-6.63 0-12 5.373-12 12'
 const GITLAB_PATH_FRAGMENT = 'm23.6004 9.5927'
 
 describe('ForgeIcon', () => {
   it('renders the GitHub mark for github, empty, and unknown providers', () => {
-    // pr_provider is empty on every session created before GitLab
-    // support existed, and all of those are GitHub — same default as
-    // forgeWording().
+    // pr_provider is empty on every session created before GitLab support existed, and all of those are GitHub — same default as forgeWording().
     for (const provider of ['github', '', null, undefined, 'something-else']) {
       const wrapper = mount(ForgeIcon, { props: { provider } })
       expect(wrapper.find('path').attributes('d')).toContain(GITHUB_PATH_FRAGMENT)
@@ -30,8 +26,7 @@ describe('ForgeIcon', () => {
   })
 
   it('follows forgeWording for every provider, so prose and icon agree', () => {
-    // The bug this component exists to prevent was icon and prose
-    // disagreeing. Same input, same answer, one place.
+    // The bug this component exists to prevent was icon and prose disagreeing.
     const github = mount(ForgeIcon, { props: { provider: 'github' } })
     const gitlab = mount(ForgeIcon, { props: { provider: 'gitlab' } })
     expect(github.attributes('data-forge')).not.toBe(gitlab.attributes('data-forge'))

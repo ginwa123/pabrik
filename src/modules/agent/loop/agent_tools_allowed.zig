@@ -1,6 +1,4 @@
 //! Returns the enabled tool names for the agent bound to a workspace_item.
-//! This is the **input** to the runtime tool filter wired into
-//! `workflow.zig:runAgenticMultiStepnew` (Task 12).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -8,15 +6,12 @@ const sqlite = @import("pabrikcore").sqlite;
 const agent_db = @import("../../../models/agent.db.zig");
 
 /// Resolve the enabled tool names for the agent bound to `workspace_item_id`.
-/// Returns an owned slice of `[]const u8`; caller must `free` each element
-/// AND the slice header (via `free` loop).
 pub fn agentToolsAllowed(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_item_id: []const u8,
 ) ![]const []const u8 {
-    // 1. Resolve agent_id (same as workspace_item_id per spec D3). If the
-    //    workspace_item doesn't exist or isn't an agent, return empty.
+    // 1.
     if (!agent_db.exists(allocator, .{ .db = db }, workspace_item_id)) return &.{};
 
     // 2. Fetch the enabled tool names ordered by tool_name ASC.
@@ -25,8 +20,7 @@ pub fn agentToolsAllowed(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;

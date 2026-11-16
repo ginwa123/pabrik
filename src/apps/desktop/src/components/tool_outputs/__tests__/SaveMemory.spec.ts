@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SaveMemory from '../SaveMemory.vue'
 
-// ────────────────────────────────────────────────────────────────────────
 // jsdom clipboard stub (matches ReadWorkspaceSession.spec.ts pattern)
-// ────────────────────────────────────────────────────────────────────────
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -25,9 +23,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Helpers
-// ────────────────────────────────────────────────────────────────────────
 const makeSuccessContent = (
   opts: {
     id?: string
@@ -45,18 +41,14 @@ const makeErrorContent = (msg = 'content exceeds the 1 MiB per-memory cap') => (
 
 const makeEmptyContent = () => ({})
 
-// The saved note. `executeSaveMemory` deliberately does NOT echo the body
-// back (1 KiB–1 MiB would blow the LLM's context), so the card reads
-// `content` / `tags` from the tool-call args in `parameters`.
+// The saved note.
 const BODY = 'The user prefers dark mode for the editor and pnpm over npm.'
 const TAGS = 'preferences||user'
 
 const makeParams = (content: string, tags: string | null = TAGS) =>
   JSON.stringify(tags === null ? { content } : { content, tags })
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('SaveMemory.vue — happy path', () => {
   it('renders the tool name pill + the id in the header on success', () => {
     const wrapper = mount(SaveMemory, {
@@ -184,8 +176,7 @@ describe('SaveMemory.vue — expand/collapse interaction', () => {
 
     await wrapper.find('[data-testid="save-memory-copy-id"]').trigger('click')
     expect(clipboardWrites).toEqual(['mem_aabbccdd11223344'])
-    // Body still collapsed (the click was stopPropagation'd inside the
-    // copy handler, so it didn't bubble to the header).
+    // Body still collapsed (the click was stopPropagation'd inside the copy handler, so it didn't bubble to the header).
     expect(wrapper.find('[data-testid="save-memory-body"]').exists()).toBe(false)
 
     wrapper.unmount()
@@ -209,9 +200,7 @@ describe('SaveMemory.vue — empty envelope edge case', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // The saved body.
-// ────────────────────────────────────────────────────────────────────────
 describe('SaveMemory.vue — saved body', () => {
   it('renders the note body from the tool-call args when expanded', () => {
     const wrapper = mount(SaveMemory, {
@@ -321,9 +310,7 @@ describe('SaveMemory.vue — saved body', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Id + tags: header only, in both states.
-// ────────────────────────────────────────────────────────────────────────
 describe('SaveMemory.vue — id + tags live in the header', () => {
   it('shows the id and the tags on ONE header line, in the collapsed state', () => {
     const wrapper = mount(SaveMemory, {
@@ -346,9 +333,7 @@ describe('SaveMemory.vue — id + tags live in the header', () => {
     expect(header.find('[data-testid="save-memory-header-id"]').exists()).toBe(true)
     expect(header.find('[data-testid="save-memory-header-tags"]').exists()).toBe(true)
 
-    // The expanded body must NOT repeat the header's two facts. (The
-    // Arguments <details> legitimately still lists the raw `tags` — check
-    // the chips, not the string, so that block is out of scope.)
+    // The expanded body must NOT repeat the header's two facts.
     const body = wrapper.find('[data-testid="save-memory-body"]')
     expect(body.text()).not.toContain('mem_aabbccdd11223344')
     expect(body.findAll('[data-testid^="save-memory-tag-"]')).toHaveLength(0)
@@ -396,8 +381,7 @@ describe('SaveMemory.vue — id + tags live in the header', () => {
       props: { content: {}, parameters: makeParams(BODY) },
     })
     const header = wrapper.find('[data-testid="save-memory-header-label"]')
-    // The id slot still renders (it is a fixed part of the layout) but
-    // falls back to "unknown" — it must not invent a mem_* id.
+    // The id slot still renders (it is a fixed part of the layout) but falls back to "unknown" — it must not invent a mem_* id.
     expect(header.find('[data-testid="save-memory-header-id"]').text()).toBe('unknown')
     expect(header.find('[data-testid="save-memory-header-tags"]').exists()).toBe(true)
   })

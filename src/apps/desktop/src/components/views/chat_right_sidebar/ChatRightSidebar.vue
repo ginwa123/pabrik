@@ -14,18 +14,15 @@ const props = defineProps<{
   width: number
   minWidth?: number
   maxWidth?: number
-  /**    * Branch from the bottom status bar (single source of truth). `undefined` while loading — the
-   * panel falls back to its own fetched branch. Drilled from ChatView's `sidebarBranch`. */
+  /** Branch from the bottom status bar (single source of truth). */
   branch?: string
   /** Attached PR URL — switches the panel to PR-changes mode. */
   prUrl?: string
   /** Effective provider for the attached PR. */
   prProvider?: string
-  /**    * Per-chat persistence key (ChatView's chatId). When set, terminal session ids persist in
-   * localStorage and re-attach on return; without it sessions die with the tab (legacy behavior). */
+  /** Per-chat persistence key (ChatView's chatId). */
   sessionKey?: string
-  /** The workspace this chat runs in; the Terminal tab runs its shell inside that
-   * workspace's VM under `--saas`. */
+  /** The workspace this chat runs in; the Terminal tab runs its shell inside that workspace's VM under `--saas`. */
   workspaceId?: string
 }>()
 
@@ -68,8 +65,7 @@ function loadPanel(): SidebarPanel {
 
 const activePanel = ref<SidebarPanel>(loadPanel())
 
-// The rail. The panel's name is the active segment's own label, so there is no separate title row
-// above it — one row of chrome instead of two.
+// The rail.
 const PANEL_SEGMENTS: { id: SidebarPanel; glyph: string; label: string }[] = [
   { id: 'explorer', glyph: '▤', label: 'Explorer' },
   { id: 'changes', glyph: '⎇', label: 'Changes' },
@@ -77,8 +73,6 @@ const PANEL_SEGMENTS: { id: SidebarPanel; glyph: string; label: string }[] = [
 ]
 
 // Router is optional: unit mounts (ChatRightSidebar.spec) have no router.
-// Grab once at setup so setPanel can sync ?sidebar= without calling
-// useRouter inside the click handler.
 let router: ReturnType<typeof useRouter> | null = null
 let route: ReturnType<typeof useRoute> | null = null
 try {
@@ -89,8 +83,7 @@ try {
   route = null
 }
 
-// Every view switch lands in the URL (?sidebar=explorer|changes|terminal)
-// so refresh, Back/Forward, and shared links restore the same panel.
+// Every view switch lands in the URL (?sidebar=explorer|changes|terminal) so refresh, Back/Forward, and shared links restore the same panel.
 const setPanel = (panel: SidebarPanel) => {
   activePanel.value = panel
   try {
@@ -105,8 +98,6 @@ const setPanel = (panel: SidebarPanel) => {
 }
 
 // Explorer file-click opens in the in-app CodeEditor (same flow as the center diff's Open button).
-// Captured at setup: inject() only resolves during setup — calling it inside the click handler
-// would return null. Null-guarded for mounts outside an AppLayout subtree (unit tests).
 const openInEditor = useInjectOpenInCodeEditor()
 const onExplorerFileClick = (file: FolderEntry) => {
   if (!openInEditor || !props.cwd) return
@@ -138,12 +129,9 @@ const startResize = (e: MouseEvent) => {
 
 const close = () => emit('update:open', false)
 
-// No cwd watcher here: SidebarDiffPanel already watches props.cwd itself (clears its tab cache +
-// reloads). A second fetch from this level doubled every worktree switch and the two concurrent
-// getGitChanges calls could resolve out of order (stale branch wins).
+// No cwd watcher here: SidebarDiffPanel already watches props.cwd itself (clears its tab cache + reloads).
 defineExpose({
   // Reload the panel's current tab (PR tab re-syncs merge state too).
-  // Falls back to git status for older panel refs without refresh().
   refresh: () => {
     const panel = panelRef.value as unknown as {
       refresh?: () => unknown

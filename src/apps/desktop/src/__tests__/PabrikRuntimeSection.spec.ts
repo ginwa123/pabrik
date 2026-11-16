@@ -1,6 +1,4 @@
-/** Tests for PabrikRuntimeSection.vue — the Runtime tab in WORKSPACE settings. The behaviour under
- * test is the seconds↔milliseconds conversion and the [0, 60 000] clamp the backend also enforces,
- * plus the agent auto-compaction switch. */
+/** Tests for PabrikRuntimeSection.vue — the Runtime tab in WORKSPACE settings. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -132,8 +130,7 @@ describe('PabrikRuntimeSection', () => {
 
     const payload = wrapper.emitted('update:modelValue')?.[0]?.[0] as PabrikRuntimeSettings
     expect(payload.agent_auto_compaction).toBe(false)
-    // The siblings ride along untouched: the toggle must not reset a delay the
-    // user set in the other card.
+    // The siblings ride along untouched: the toggle must not reset a delay the user set in the other card.
     expect(payload.retry_delay_ms).toBe(0)
     expect(payload.llm_read_timeout_ms).toBe(900_000)
   })

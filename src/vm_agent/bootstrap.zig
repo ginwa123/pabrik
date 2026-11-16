@@ -1,14 +1,11 @@
-//! The guest's bootstrap: the `/init` that asks the host for the current agent
-//! (so a workspace's disk never carries one) and execs it, falling back to the
-//! agent on the disk (`/init.agent`).
+//! The guest's bootstrap: the `/init` that asks the host for the current agent (so a workspace's disk never carries one) and execs it, falling back to the agent …
 
 const std = @import("std");
 const linux = std.os.linux;
 const vsock = @import("vsock.zig");
 const wire = @import("vm_wire");
 
-/// Where the fetched agent is written, and the name it is exec'd under. The
-/// DISK's root, not /tmp: a guest may mount /tmp noexec.
+/// Where the fetched agent is written, and the name it is exec'd under.
 const agent_path = "/pabrik-vm-agent";
 
 /// The agent that the image also carries, used when the host does not answer.
@@ -95,8 +92,7 @@ fn fetchAndExec() bool {
         written += got;
     }
     say("bootstrap: wrote {d} bytes of the agent", .{written});
-    // The file must be closed before it is exec'd: a file still open for
-    // writing is ETXTBSY.
+    // The file must be closed before it is exec'd: a file still open for writing is ETXTBSY.
     _ = linux.close(out_fd);
     exec(agent_path);
     return true;

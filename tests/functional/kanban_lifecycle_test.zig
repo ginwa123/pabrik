@@ -1,5 +1,4 @@
-// Functional tests for kanban lifecycle. Zig port of
-// `tests/functional/kanban_lifecycle_test.py` (same test names, same order).
+// Functional tests for kanban lifecycle.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // HTTP helpers
-// ============================================================================
 
 /// Python `_create_workspace`. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -82,9 +79,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
         std.debug.print("created item id should start with 'item_', got '{s}'\n", .{id});
         return error.TestUnexpectedResult;
     }
-    // The envelope also returns the 3 freshly-seeded default columns -
-    // sanity-check the contract is honoured (not part of the bug fix,
-    // but cheap to assert and catches regressions).
+    // The envelope also returns the 3 freshly-seeded default columns -sanity-check the contract is honoured (not part of the bug fix, but cheap to assert and catches …
     switch (root.get("columns") orelse {
         std.debug.print("created kanban envelope should include a 'columns' list, got {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -126,9 +121,7 @@ fn addColumn(
     name: []const u8,
     position: ?i64,
 ) ![]u8 {
-    // `emit_null_optional_fields = false` is what makes an absent
-    // `position` OMITTED rather than `"position": null` - Python only
-    // added the key when the caller passed one.
+    // `emit_null_optional_fields = false` is what makes an absent `position` OMITTED rather than `"position": null` - Python only added the key when the caller …
     const body = try std.json.Stringify.valueAlloc(
         gpa,
         .{ .name = name, .position = position },
@@ -173,8 +166,7 @@ fn addTask(
     return gpa.dupe(u8, r.body);
 }
 
-/// Python `_list_tasks` → the parsed `{tasks:[...]}` document. Owned and
-/// self-contained (see `listColumnsDoc`).
+/// Python `_list_tasks` → the parsed `{tasks:[...]}` document.
 fn listTasksDoc(h: *Harness, workspace_id: []const u8, kanban_id: []const u8) !harness.Json {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -197,9 +189,7 @@ fn listTasksDoc(h: *Harness, workspace_id: []const u8, kanban_id: []const u8) !h
     };
 }
 
-/// Python `body.get("tasks", body if isinstance(body, list) else [])`: the
-/// `tasks` array if the root is an object carrying one, the root itself if
-/// the root is already a list, else empty.
+/// Python `body.get("tasks", body if isinstance(body, list) else [])`: the `tasks` array if the root is an object carrying one, the root itself if the root is …
 fn tasksArray(doc: *const harness.Json, ctx: []const u8) !std.json.Array {
     const empty: std.json.Array = .{ .items = &.{}, .capacity = 0, .allocator = gpa };
     return switch (doc.value().*) {
@@ -298,8 +288,7 @@ fn arrayHasField(arr: std.json.Array, key: []const u8, want: []const u8) bool {
     return false;
 }
 
-/// Python `r.json().get("success", True) is True` — an ABSENT `success`
-/// key counts as success; a present one must be `true`.
+/// Python `r.json().get("success", True) is True` — an ABSENT `success` key counts as success; a present one must be `true`.
 fn successOrAbsent(doc: *const harness.Json, ctx: []const u8) !bool {
     const v = doc.get("success") orelse return true;
     return switch (v) {
@@ -315,8 +304,7 @@ fn strLessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .lt;
 }
 
-/// Python `sorted(c["name"] for c in cols)` rendered as one comparable
-/// string. Owned.
+/// Python `sorted(c["name"] for c in cols)` rendered as one comparable string.
 fn sortedNamesCsv(arr: std.json.Array) ![]u8 {
     var names: std.ArrayList([]const u8) = .empty;
     defer names.deinit(gpa);
@@ -336,9 +324,7 @@ fn sortedNamesCsv(arr: std.json.Array) ![]u8 {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced fn body is never
-    // type-checked, so a stdlib rename inside one hides until a caller
-    // appears.
+    // Body-analysis barrier: an unreferenced fn body is never type-checked, so a stdlib rename inside one hides until a caller appears.
     _ = createWorkspace;
     _ = createKanban;
     _ = listColumnsDoc;
@@ -356,9 +342,7 @@ comptime {
     _ = successOrAbsent;
 }
 
-// ============================================================================
 // Test 1: kanban create seeds 3 default columns
-// ============================================================================
 
 // POST /items/kanban creates 3 default columns (todo/in_progress/done).
 test "create_kanban_seeds_three_default_columns" {
@@ -380,8 +364,7 @@ test "create_kanban_seeds_three_default_columns" {
         std.debug.print("expected 3 default columns, got {d}\n", .{cols.items.len});
         return error.TestUnexpectedResult;
     }
-    // The default names are typically: todo, in_progress, done
-    // (in some order). Just verify we have 3 distinct columns.
+    // The default names are typically: todo, in_progress, done (in some order).
     var distinct: usize = 0;
     for (cols.items, 0..) |m, i| {
         const obj = switch (m) {
@@ -409,9 +392,7 @@ test "create_kanban_seeds_three_default_columns" {
     }
 }
 
-// ============================================================================
 // Test 2: add a 4th column
-// ============================================================================
 
 // Append a 4th column, list now has 4.
 test "add_fourth_column" {
@@ -449,9 +430,7 @@ test "add_fourth_column" {
     }
 }
 
-// ============================================================================
 // Test 3: add 12 tasks across 4 columns
-// ============================================================================
 
 // 4 columns x 3 tasks each = 12 tasks total.
 test "add_twelve_tasks_across_four_columns" {
@@ -510,9 +489,7 @@ test "add_twelve_tasks_across_four_columns" {
     }
 }
 
-// ============================================================================
 // Test 4: move task across columns
-// ============================================================================
 
 // Create task under col-A, move to col-B, verify presence/absence.
 test "move_task_across_columns" {
@@ -581,8 +558,7 @@ test "move_task_across_columns" {
         try std.testing.expectEqualStrings(col_b, try strAt(root, "column_id", "move response"));
     }
 
-    // The task is now under col_b (verify by listing tasks and checking
-    // the column_id field).
+    // The task is now under col_b (verify by listing tasks and checking the column_id field).
     var tasks_doc = try listTasksDoc(&h, ws_id, kanban_id);
     defer tasks_doc.deinit();
     const tasks = try tasksArray(&tasks_doc, "tasks after move");
@@ -622,9 +598,7 @@ test "move_task_across_columns" {
     }
 }
 
-// ============================================================================
 // Test 5: move task to same column is idempotent
-// ============================================================================
 
 // Moving a task to the column it's already in is a no-op.
 test "move_task_to_same_column_is_idempotent" {
@@ -688,12 +662,9 @@ test "move_task_to_same_column_is_idempotent" {
     }
 }
 
-// ============================================================================
 // Test 6: delete column moves tasks to NULL (orphans)
-// ============================================================================
 
-// Delete a column: tasks get kanban_column_id=NULL (or stay but without the
-// column).
+// Delete a column: tasks get kanban_column_id=NULL (or stay but without the column).
 test "delete_column_orphans_tasks" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -766,9 +737,7 @@ test "delete_column_orphans_tasks" {
     }
 }
 
-// ============================================================================
 // Test 7: pin a task
-// ============================================================================
 
 // POST /pin flips is_pinned to true; GET shows it as pinned.
 test "pin_task" {
@@ -813,9 +782,7 @@ test "pin_task" {
         defer r.deinit();
         var doc = try r.json();
         defer doc.deinit();
-        // Response shape varies (the handler returns the new
-        // pinned_position): `success` defaults to True when absent, or
-        // the body carries `new_pos`.
+        // Response shape varies (the handler returns the new pinned_position): `success` defaults to True when absent, or the body carries `new_pos`.
         const success_default = blk: {
             const v = doc.get("success") orelse break :blk true;
             break :blk switch (v) {
@@ -870,12 +837,9 @@ test "pin_task" {
     }
 }
 
-// ============================================================================
 // Test 8: copy kanban spec from another kanban
-// ============================================================================
 
-// Create kanban-A with 4 columns, kanban-B with 1, copy A's spec
-// to B (replace mode), B now has 4 columns matching A.
+// Create kanban-A with 4 columns, kanban-B with 1, copy A's spec to B (replace mode), B now has 4 columns matching A.
 test "copy_kanban_spec_replaces_columns" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -926,9 +890,7 @@ test "copy_kanban_spec_replaces_columns" {
         defer gpa.free(path);
         var r = try h.http(io, .POST, path, .{ .json_body = body, .expect = &.{200} });
         defer r.deinit();
-        // The response shape may vary; just assert success (absent
-        // counts as success, exactly like Python's
-        // `r.json().get("success", True) is True`).
+        // The response shape may vary; just assert success (absent counts as success, exactly like Python's `r.json().get("success", True) is True`).
         var doc = try r.json();
         defer doc.deinit();
         if (!try successOrAbsent(&doc, "copy_spec response")) {
@@ -955,9 +917,7 @@ test "copy_kanban_spec_replaces_columns" {
     }
 }
 
-// ============================================================================
 // Test 9: delete kanban item leaves columns as orphans
-// ============================================================================
 
 // Delete the kanban item; columns become orphans (no FK CASCADE).
 test "delete_kanban_item_orphans_columns" {

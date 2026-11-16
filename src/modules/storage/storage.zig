@@ -1,11 +1,8 @@
-//! The object-store seam for document bodies: metadata stays in the
-//! `documents` table, the body lives behind this interface, and
-//! `documents.content_key` is the pointer between them.
+//! The object-store seam for document bodies: metadata stays in the `documents` table, the body lives behind this interface, and `documents.content_key` is the …
 
 const std = @import("std");
 
-/// Every failure a backend may report. Backends map their own error sets onto
-/// this one so a caller never has to know which store it is talking to.
+/// Every failure a backend may report.
 pub const Error = error{
     /// No object at that key.
     NotFound,
@@ -20,12 +17,10 @@ pub const Stat = struct {
     bytes: u64,
 };
 
-/// Largest object this store accepts. Matches `documents_store.MAX_CONTENT_BYTES`
-/// so a body that fits the column also fits the store.
+/// Largest object this store accepts.
 pub const MAX_OBJECT_BYTES: usize = 4 << 20;
 
-/// Longest key accepted. A key is a path, and a path longer than this is a
-/// caller bug rather than a document.
+/// Longest key accepted.
 pub const MAX_KEY_BYTES: usize = 1024;
 
 /// Length of a lowercase hex SHA-256 digest.
@@ -63,9 +58,7 @@ pub const Storage = struct {
     }
 };
 
-/// Why `key` is unusable, or null when it is fine. A key is a RELATIVE path;
-/// rejecting `..`, `.`, empty segments, a leading slash and backslashes is
-/// what keeps a filesystem backend inside its root.
+/// Why `key` is unusable, or null when it is fine.
 pub fn invalidKeyReason(key: []const u8) ?[]const u8 {
     if (key.len == 0) return "key is empty";
     if (key.len > MAX_KEY_BYTES) return "key is longer than the limit";
@@ -94,9 +87,7 @@ pub fn isSafeSegment(value: []const u8) bool {
     return true;
 }
 
-/// The key a document body lives at:
-/// `ws/{workspace_id}/documents/{document_id}/{sha256}.md`. Workspace-prefixed
-/// so a tenant delete is a prefix op; content-addressed so the object is immutable.
+/// The key a document body lives at
 pub fn documentKey(
     allocator: std.mem.Allocator,
     workspace_id: []const u8,

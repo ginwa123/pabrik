@@ -8,9 +8,7 @@ import KanbanCard from '../components/kanban/KanbanCard.vue'
 import type { Task } from '../stores/workspaces'
 
 function mountCard(task: Task) {
-  // WorkspaceItemTask injects `processingState`; provide a default so
-  // the mount succeeds (matches the pattern in workspaceItemTaskLoadMore
-  // .spec.ts and workspaceItemTaskRoutine.spec.ts).
+  // WorkspaceItemTask injects `processingState`; provide a default so the mount succeeds (matches the pattern in workspaceItemTaskLoadMore .spec.ts and …
   const processingState: Ref<Record<string, boolean>> = ref({})
   return mount(KanbanCard, {
     props: {
@@ -58,8 +56,7 @@ describe('KanbanCard', () => {
     wrapper = mountCard(sampleTask)
     const card = wrapper.find('[data-kanban-card="task_1"]')
 
-    // jsdom's DragEvent doesn't expose a real dataTransfer, so we
-    // synthesize one and assert on the calls we made.
+    // jsdom's DragEvent doesn't expose a real dataTransfer, so we synthesize one and assert on the calls we made.
     const setData = vi.fn()
     const dataTransfer = {
       effectAllowed: '',
@@ -84,9 +81,7 @@ describe('KanbanCard', () => {
     expect(wrapper.emitted('dragend')?.[0]).toEqual([])
   })
 
-  // NEW (change-task-to-card-kanban plan): KanbanCard passes the `variant="card"` prop to its
-  // wrapped <WorkspaceItemTask> so the kanban-card UX (bordered card layout, optional description
-  // preview) is used inside kanban columns.
+  // NEW (change-task-to-card-kanban plan): KanbanCard passes the `variant="card"` prop to its wrapped <WorkspaceItemTask> so the kanban-card UX (bordered card …
   it('renders the wrapped WorkspaceItemTask in card variant (data-task-card present, data-task-row absent)', () => {
     wrapper = mountCard(sampleTask)
     expect(wrapper.find('[data-task-card]').exists()).toBe(true)

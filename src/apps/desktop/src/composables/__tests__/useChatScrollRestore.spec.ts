@@ -1,6 +1,4 @@
-/** Tests for useChatScrollRestore — verifies the save-on-scroll + restore-on-mount contract for
- * ChatView's VirtualScroller. Why these tests exist: When a user opens a task from the kanban
- * sidebar, ChatView mounts with `:key="task-<id>"`. */
+/** Tests for useChatScrollRestore — verifies the save-on-scroll + restore-on-mount contract for ChatView's VirtualScroller. */
 import {
   afterEach,
   beforeAll,
@@ -100,9 +98,7 @@ function setScrollGeometry(
   })
 }
 
-/** Wait for the composable's onMounted handler to: 1. read the saved scrollTop from localStorage 2.
- * wait for scrollHeight > clientHeight (or 500ms safety net) 3. attach scroll + scrollend listeners
- * The scrollHeight poll happens inside `await` loops that check `Date.now(). */
+/** Wait for the composable's onMounted handler to: 1. read the saved scrollTop from localStorage 2. wait for scrollHeight > clientHeight (or 500ms safety net) 3. … */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   await new Promise<void>((r) => setTimeout(r, 100))
@@ -215,9 +211,7 @@ describe('useChatScrollRestore — restore contract', () => {
   })
 
   it('restorePosition is a no-op when containerRef is null', async () => {
-    // Mount, then force the ref to null via unmount. The captured
-    // restorePosition still references the (now-detached) ref's
-    // value (null after unmount). Call it — should not throw.
+    // Mount, then force the ref to null via unmount.
     const harness = mountHarness()
     await waitForRestore()
     harness.wrapper.unmount()

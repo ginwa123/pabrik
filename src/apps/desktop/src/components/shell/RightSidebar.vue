@@ -189,9 +189,7 @@ const startGitPoll = () => {
   }, 30000)
 }
 
-// Cwd sync: load status + poll while bound; stop the poll and clear the
-// lists when unbound. Prev-value guard on update — same body the watcher
-// ran; the mount call covers the initial load (the old `immediate: true`).
+// Cwd sync: load status + poll while bound; stop the poll and clear the lists when unbound.
 function syncCwdGitStatus(newCwd: string | undefined) {
   if (newCwd) {
     loadGitStatus()

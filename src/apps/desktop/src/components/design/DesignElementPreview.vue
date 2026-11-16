@@ -57,12 +57,9 @@ const props = withDefaults(
   defineProps<{
     html: string
     editable?: boolean
-    // Pointer-events mode for the iframe. The canvas passes 'none' so clicks fall through to the
-    // parent element (drag / resize / select); the editable Monaco preview would pass 'auto' so the
-    // user can interact with the iframe content.
+    // Pointer-events mode for the iframe.
     pointerEvents?: 'auto' | 'none'
-    // The element's CSS fill color. See project memory "design-element-rectangle-covers-iframe" for
-    // the parallel white-rectangle bug; this fix completes the white-bleed story.
+    // The element's CSS fill color.
     fill?: string
   }>(),
   {
@@ -81,9 +78,7 @@ const iframeHtml = computed(() => `<style>html,body{margin:0;height:100%;}</styl
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
-// Wire up contenteditable + blur handler on the iframe's body once the iframe has loaded its
-// srcdoc. We can't do this in `onMounted` because the srcdoc is async — by the time
-// `iframeRef.value` is attached, the inner document may not exist yet.
+// Wire up contenteditable + blur handler on the iframe's body once the iframe has loaded its srcdoc.
 const onIframeLoad = (): void => {
   if (!props.editable) return
   const iframe = iframeRef.value
@@ -99,8 +94,7 @@ const onIframeLoad = (): void => {
   })
 }
 
-// Re-attach the listener when `editable` flips from false to true (the user just opened the edit
-// panel).
+// Re-attach the listener when `editable` flips from false to true (the user just opened the edit panel).
 const prevEditable = ref(props.editable)
 onUpdated(() => {
   if (props.editable && !prevEditable.value) onIframeLoad()

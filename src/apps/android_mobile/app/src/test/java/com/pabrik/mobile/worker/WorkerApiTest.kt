@@ -7,15 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pins the `/api/workers` contract the spinner depends on.
- *
- * A fixture only proves the parser agrees with itself; the wire test that pins
- * it against the server is `tests/functional/android_workers_contract_test.py`.
- * What these cases protect is the *shape handling* that fixture cannot show:
- * which of the two id fields is read, and what happens when a field is missing
- * or explicitly null.
- */
+/** Pins the `/api/workers` contract the spinner depends on. */
 class WorkerApiTest {
     @Test
     fun `the workers path asks for the page the server defaults to`() {
@@ -25,11 +17,7 @@ class WorkerApiTest {
 
     @Test
     fun `there is one channel set for the whole app, and it includes workers`() {
-        // The bus that owns the socket subscribes `llm` and `queue` as bare
-        // central keys with no session id and every subscriber filters by
-        // `event.session_id` itself. That is what lets one socket serve a chat
-        // AND a sidebar that is on screen precisely when no chat is open, which
-        // is why `workers` used to be a second connection and no longer is.
+        // The bus that owns the socket subscribes `llm` and `queue` as bare central keys with no session id and every subscriber filters by `event.session_id` itself.
         val path = SseChannels.eventsPath()
 
         assertEquals("/api/events?channels=llm,queue,sessions,workers", path)
@@ -37,8 +25,7 @@ class WorkerApiTest {
         assertTrue("llm must be on the shared connection", path.contains("llm"))
         assertTrue("queue must be on the shared connection", path.contains("queue"))
         assertTrue("sessions must be on the shared connection", path.contains("sessions"))
-        // A per-session routing key would need a socket per open chat, which is
-        // the thing this exists to avoid.
+        // A per-session routing key would need a socket per open chat, which is the thing this exists to avoid.
         assertFalse("no per-session channel key", path.contains(":"))
     }
 
@@ -68,9 +55,7 @@ class WorkerApiTest {
 
     @Test
     fun `every returned row is busy regardless of the flags it carries`() {
-        // `status` and `is_running` are hardcoded by the server, so a row with
-        // `is_running: false` still means a worker exists. Parsing the flag
-        // instead of the presence is the bug this case exists to prevent.
+        // `status` and `is_running` are hardcoded by the server, so a row with `is_running: false` still means a worker exists.
         val body = """
             {
                 "workers": [
@@ -86,9 +71,7 @@ class WorkerApiTest {
 
     @Test
     fun `a row with an empty session_id falls back to id`() {
-        // The server populates both on `created`, but the list is built by one
-        // query that selects `id` first — so a row written by a path that only
-        // set `id` must still resolve to a session.
+        // The server populates both on `created`, but the list is built by one query that selects `id` first — so a row written by a path that only set `id` must still …
         val body = """
             {"workers": [{"id": "task_9", "session_id": ""}], "count": 1}
         """.trimIndent()
@@ -117,12 +100,7 @@ class WorkerApiTest {
 
     @Test
     fun `a missing workers array is unknown, not an empty list`() {
-        // `count` is not the list. This used to be `emptySet()` — no crash, but
-        // indistinguishable from a server with nothing running, and every caller
-        // acted on it: the sidebar's spinner would go out because an envelope
-        // was not the shape it expected, and `ChatViewModel.revalidate` would
-        // settle a live streaming turn. Null says "could not read the list", and
-        // `ChatClient` turns that into `Unavailable`, which changes nothing.
+        // `count` is not the list.
         assertNull(WorkerApi.parseRunningSessionIds("""{"count": 0}"""))
     }
 

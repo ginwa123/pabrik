@@ -1,6 +1,4 @@
-/** Inline comment threads on the sidebar diff. - Saved comments render as thread rows docked after
- * their lines, survive remount via localStorage, support Edit (reopen box at the exact range) and
- * Delete, and escape message HTML. - Clicking a diff row opens the box. */
+/** Inline comment threads on the sidebar diff. - Saved comments render as thread rows docked after their lines, survive remount via localStorage, support Edit … */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'
@@ -11,8 +9,7 @@ import { makeLocalStorageStub } from '../../../__tests__/helpers'
 const CWD = '/repo'
 const PATH = 'src/reviewed.ts'
 
-// Lines spanning 17-30. The seeded 20-26 range anchors its thread after
-// the new-26 row; 28/29 sit outside it.
+// Lines spanning 17-30.
 const LINES: ParsedDiffLine[] = [
   { type: 'hunk', content: '@@ -17,14 +17,14 @@', lineIndex: 0 },
   { type: 'context', content: 'ctx-17', oldLineNum: 17, newLineNum: 17, lineIndex: 1 },
@@ -73,8 +70,7 @@ beforeEach(() => {
 
 describe('SidebarDiffView row clicks', () => {
   it('clicking a row reopens the box with the saved draft', async () => {
-    // Clicking new-22 opens a +-3 context window over rows 3..9, i.e.
-    // lines 19-25 — seed that deterministic key so the draft reloads.
+    // Clicking new-22 opens a +-3 context window over rows 3..9, i.e. lines 19-25 — seed that deterministic key so the draft reloads.
     seed(CWD, PATH, 19, 25, 'window draft nineteen twenty-five')
     const wrapper = mountView()
     await rowByText(wrapper, 'new-22').trigger('click')

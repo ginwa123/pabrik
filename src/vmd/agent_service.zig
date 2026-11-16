@@ -1,6 +1,4 @@
-//! The host's half of the agent hand-off: it serves the current agent to a
-//! guest's bootstrap, so a workspace's disk never carries the agent and a new
-//! one reaches every workspace at the next boot.
+//! The host's half of the agent hand-off: it serves the current agent to a guest's bootstrap, so a workspace's disk never carries the agent and a new one reaches …
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -45,8 +43,7 @@ const unix_af: u32 = 1;
 const sock_stream: u32 = 1;
 const backlog: u32 = 16;
 const max_path_bytes: usize = 4096;
-/// One listener per workspace, so this is the ceiling on how many hand-off
-/// sockets one daemon holds. A box past it keeps the listeners it has.
+/// One listener per workspace, so this is the ceiling on how many hand-off sockets one daemon holds.
 const max_listeners: usize = 512;
 /// How long an accept that ran out of descriptors pauses before retrying.
 const starved_backoff_ns: u64 = 100 * std.time.ns_per_ms;
@@ -65,9 +62,7 @@ pub fn keyFor(layout: vm_client.Layout, buf: []u8) ?[]const u8 {
 
 pub const Reservation = enum { reserved, already_bound, no_room };
 
-/// Which keys already have a listener, so `ensure` is a lookup after the first
-/// call for a workspace. Without it every dispatch bound a socket and a thread
-/// and leaked both: `RLIMIT_NOFILE` filled and the manager died of `EMFILE`.
+/// Which keys already have a listener, so `ensure` is a lookup after the first call for a workspace.
 const Registry = struct {
     lock: std.atomic.Mutex = .unlocked,
     count: usize = 0,
@@ -86,9 +81,7 @@ const Registry = struct {
         return null;
     }
 
-    /// Claim the key BEFORE its socket exists, so two dispatches that arrive
-    /// together cannot both bind: the loser used to unlink the winner's socket
-    /// and then fail its own bind with `EADDRINUSE` (errno 98).
+    /// Claim the key BEFORE its socket exists, so two dispatches that arrive together cannot both bind: the loser used to unlink the winner's socket and then fail its …
     fn reserve(self: *@This(), key: []const u8) Reservation {
         if (self.find(key) != null) return .already_bound;
         if (self.count == max_listeners or key.len > max_path_bytes) return .no_room;
@@ -115,14 +108,10 @@ const Registry = struct {
 
 var bound = Registry{};
 
-/// Bind the hand-off socket for a workspace, once. Safe to call on every
-/// dispatch, so the listener exists before the guest's first dial — and cheap,
-/// because every call after the first is a lookup.
+/// Bind the hand-off socket for a workspace, once.
 pub fn ensure(allocator: std.mem.Allocator, layout: vm_client.Layout, agent: []const u8) void {
     if (agent.len == 0) return;
-    // The socket lives in the workspace's directory, which the reconciler
-    // creates when it boots the VM — but the listener has to be there
-    // BEFORE the guest starts, so the directory is made here.
+    // The socket lives in the workspace's directory, which the reconciler creates when it boots the VM — but the listener has to be there BEFORE the guest starts, so …
     vm_client.ensureWorkspaceDir(layout) catch return;
     var key_buf: [max_path_bytes]u8 = undefined;
     const key = keyFor(layout, &key_buf) orelse return;
@@ -140,8 +129,7 @@ pub fn ensure(allocator: std.mem.Allocator, layout: vm_client.Layout, agent: []c
     }
 
     if (bindListener(allocator, key, agent)) return;
-    // The socket never came up: give the slot back so the next dispatch tries
-    // again instead of believing this workspace is served.
+    // The socket never came up: give the slot back so the next dispatch tries again instead of believing this workspace is served.
     bound.lockIt();
     bound.drop(key);
     bound.lock.unlock();
@@ -215,8 +203,7 @@ fn acceptLoop(listener: *Listener) void {
             continue;
         }
         if (err == .INTR) continue;
-        // A descriptor-starved accept must not spin: the guest dials once, at
-        // boot, so a short pause costs nothing and keeps the CPU quiet.
+        // A descriptor-starved accept must not spin: the guest dials once, at boot, so a short pause costs nothing and keeps the CPU quiet.
         if (err == .MFILE or err == .NFILE or err == .NOBUFS or err == .NOMEM) {
             var pause = linux.timespec{ .sec = 0, .nsec = @intCast(starved_backoff_ns) };
             _ = linux.nanosleep(&pause, null);
@@ -284,17 +271,12 @@ const testing = std.testing;
 
 // ─── the leak that killed the manager ────────────────────────────────────
 
-// `ensure` runs on every dispatch (`exec`, `tty`, `fs.*`, `spawn`, `probe`,
-// `signal`, `log`), so it must be free after the first call. It was not: one
-// workspace filled the descriptors until `accept4` answered `EMFILE`.
+// `ensure` runs on every dispatch (`exec`, `tty`, `fs.*`, `spawn`, `probe`, `signal`, `log`), so it must be free after the first call.
 
-/// How long a test waits for the listener's answer. The accept thread is
-/// somebody else's, so the wait is a deadline, never a sleep.
+/// How long a test waits for the listener's answer.
 const answer_deadline_ms: i32 = 5000;
 
-/// How many entries a /proc directory holds, dot entries included. Raw
-/// `getdents64`: a directory listing is the one thing this file needs, and it
-/// costs one descriptor that it closes itself.
+/// How many entries a /proc directory holds, dot entries included.
 fn countEntries(path: []const u8) !usize {
     var path_buf: [max_path_bytes]u8 = undefined;
     const path_z = cstr(path, &path_buf) orelse return error.PathTooLong;
@@ -319,15 +301,12 @@ fn countEntries(path: []const u8) !usize {
     return entries;
 }
 
-/// Descriptors this process has open, the listing's own descriptor and its two
-/// dot entries excluded. A listener is a descriptor, so this is the number the
-/// crash was about.
+/// Descriptors this process has open, the listing's own descriptor and its two dot entries excluded.
 fn openDescriptors() !usize {
     return try countEntries("/proc/self/fd") - 3;
 }
 
-/// Threads this process runs. Each leaked listener also leaked its accept
-/// thread, so this number climbed with the descriptor count.
+/// Threads this process runs.
 fn liveThreads() !usize {
     return try countEntries("/proc/self/task") - 2;
 }
@@ -344,9 +323,7 @@ fn layoutIn(allocator: std.mem.Allocator, root: []const u8) !vm_client.Layout {
 
 var temp_seq = std.atomic.Value(u32).init(0);
 
-/// A short, per-test root under /tmp. `testing.tmpDir` lives under the build
-/// cache, and a unix socket path is capped at 108 bytes — deeper than that and
-/// the bind is `ENAMETOOLONG`, not a leak.
+/// A short, per-test root under /tmp.
 fn makeTempRoot(allocator: std.mem.Allocator) ![]u8 {
     const seq = temp_seq.fetchAdd(1, .seq_cst);
     const path = try std.fmt.allocPrint(allocator, "/tmp/vmd-agent-test-{d}-{d}", .{ linux.getpid(), seq });
@@ -362,8 +339,7 @@ fn makeTempRoot(allocator: std.mem.Allocator) ![]u8 {
     return path;
 }
 
-/// Remove the socket and the directories `layoutFor` + `ensureWorkspaceDir`
-/// created, so a test leaves nothing behind.
+/// Remove the socket and the directories `layoutFor` + `ensureWorkspaceDir` created, so a test leaves nothing behind.
 fn removeTempRoot(root: []const u8, layout: vm_client.Layout) void {
     var buf: [max_path_bytes]u8 = undefined;
     var key_buf: [max_path_bytes]u8 = undefined;
@@ -379,9 +355,7 @@ fn removeTempRoot(root: []const u8, layout: vm_client.Layout) void {
     if (cstr(root, &buf)) |z| _ = linux.rmdir(z);
 }
 
-/// Counts the bytes still held, so a heap leak is an assertion and not a log
-/// line. The listener is intentionally still alive when a test ends, so the
-/// assertion is a delta across the dispatches, never "zero at the end".
+/// Counts the bytes still held, so a heap leak is an assertion and not a log line.
 const CountingAllocator = struct {
     parent: std.mem.Allocator,
     live_bytes: usize = 0,
@@ -423,8 +397,7 @@ const CountingAllocator = struct {
     }
 };
 
-/// Dial the hand-off socket the way a guest's bootstrap does: one request
-/// line, then the head and the agent.
+/// Dial the hand-off socket the way a guest's bootstrap does: one request line, then the head and the agent.
 fn askTheListener(allocator: std.mem.Allocator, key: []const u8, request: []const u8) ![]u8 {
     const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
     if (linux.errno(rc) != .SUCCESS) return error.NoSocket;
@@ -456,8 +429,7 @@ fn askTheListener(allocator: std.mem.Allocator, key: []const u8, request: []cons
 
     const body = try allocator.alloc(u8, len);
     errdefer allocator.free(body);
-    // The head and the body can arrive in one segment, so whatever followed
-    // the newline is already the start of the agent.
+    // The head and the body can arrive in one segment, so whatever followed the newline is already the start of the agent.
     const already = head_buf[newline + 1 .. head_len];
     const carried = @min(already.len, len);
     @memcpy(body[0..carried], already[0..carried]);
@@ -488,8 +460,7 @@ test "a workspace keeps one hand-off listener however often the daemon dispatche
 
     for (0..16) |_| ensure(allocator, layout, "the agent's bytes");
 
-    // One socket, one accept thread, one Listener: the second dispatch and
-    // every one after it must cost none of the three.
+    // One socket, one accept thread, one Listener: the second dispatch and every one after it must cost none of the three.
     try testing.expectEqual(descriptors, try openDescriptors());
     try testing.expectEqual(threads, try liveThreads());
     try testing.expectEqual(bytes, counting.live_bytes);
@@ -505,8 +476,7 @@ test "the guest's bootstrap is answered after the daemon dispatches again" {
     defer removeTempRoot(root, layout);
 
     ensure(allocator, layout, "the agent's bytes");
-    // A later dispatch must not unlink the socket a booting guest is about to
-    // dial, nor answer `EADDRINUSE` on a bind of its own.
+    // A later dispatch must not unlink the socket a booting guest is about to dial, nor answer `EADDRINUSE` on a bind of its own.
     ensure(allocator, layout, "the agent's bytes");
 
     var key_buf: [max_path_bytes]u8 = undefined;

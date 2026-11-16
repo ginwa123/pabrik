@@ -1,33 +1,24 @@
 //! What a workspace's VM has been asked to do, as THIS daemon remembers it.
-//! Memory-only on purpose: a fresh daemon that guessed would reap work it has
-//! never seen, and a workspace with no entry here is never idle.
 
-// The terminal needs no counter of its own: the guest pump asks the VM every
-// 50 ms (`terminal_ws.zig`), so an attached tab already keeps `last_work_ms`
-// fresh. Re-add an `open_ttys` count only if that pump becomes event-driven.
+// The terminal needs no counter of its own: the guest pump asks the VM every 50 ms (`terminal_ws.zig`), so an attached tab already keeps `last_work_ms` fresh.
 
 const std = @import("std");
 const linux = std.os.linux;
 
-/// How many workspaces may be tracked at once. Past the cap the least recently
-/// used reading is dropped, and a dropped reading means "unknown", which means
-/// "not idle": the reaper keeps a VM it cannot describe.
+/// How many workspaces may be tracked at once.
 pub const max_entries: usize = 256;
 
-/// Detached jobs remembered per workspace. More than this and the least
-/// recently seen job is forgotten, which can only make a VM live longer.
+/// Detached jobs remembered per workspace.
 pub const max_jobs: usize = 16;
 
-/// The daemon's clock, the same one the reconciler reads: monotonic
-/// milliseconds, so a wall-clock jump can neither stall nor force a reap.
+/// The daemon's clock, the same one the reconciler reads: monotonic milliseconds, so a wall-clock jump can neither stall nor force a reap.
 pub fn nowMs() i64 {
     var ts: linux.timespec = undefined;
     _ = linux.clock_gettime(linux.CLOCK.MONOTONIC, &ts);
     return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), std.time.ns_per_ms);
 }
 
-/// One detached job: the pid the GUEST reported for it, and when this daemon
-/// last had news of it. `spawn` mints it, `probe` refreshes it.
+/// One detached job: the pid the GUEST reported for it, and when this daemon last had news of it.
 pub const Job = struct {
     pid: i64 = 0,
     seen_ms: i64 = 0,
@@ -38,8 +29,7 @@ pub const Entry = struct {
     last_work_ms: i64 = 0,
     /// Requests inside the daemon for this workspace right now.
     in_flight: u32 = 0,
-    /// The VMM this workspace is running, as last seen. A new pid is a new
-    /// guest, and every reading about the old one is void.
+    /// The VMM this workspace is running, as last seen.
     last_pid: i64 = 0,
     jobs: [max_jobs]Job = [_]Job{.{}} ** max_jobs,
     job_count: usize = 0,
@@ -48,14 +38,12 @@ pub const Entry = struct {
     cpu_seen: bool = false,
 };
 
-/// A reading for the reaper. Every field is something the daemon measured;
-/// nothing here is inferred.
+/// A reading for the reaper.
 pub const Snapshot = struct {
     last_work_ms: i64,
     in_flight: u32,
     live_jobs: u32,
-    /// Null when there is no earlier CPU sample to subtract, or when the VMM's
-    /// clock went backwards (a recycled pid). Null is "cannot tell", never 0.
+    /// Null when there is no earlier CPU sample to subtract, or when the VMM's clock went backwards (a recycled pid).
     cpu_delta_ms: ?u64,
 };
 
@@ -70,8 +58,7 @@ fn trackJob(entry: *Entry, pid: i64, seen_ms: i64) void {
         entry.job_count += 1;
         return;
     }
-    // Full: forget the job nobody has looked at longest. Forgetting can only
-    // keep a VM up for longer than it must, never take one down early.
+    // Full: forget the job nobody has looked at longest.
     var oldest: usize = 0;
     for (entry.jobs[0..entry.job_count], 0..) |job, i| {
         if (job.seen_ms < entry.jobs[oldest].seen_ms) oldest = i;
@@ -95,14 +82,10 @@ fn dropJobAt(entry: *Entry, index: usize) void {
     entry.job_count -= 1;
 }
 
-/// Every mutable reading for all workspaces this daemon serves. Allocated once
-/// and shared by pointer: `Manager` is copied per connection (`daemon.zig`,
-/// `serveConnection`), so a field that lived inside it would be per-caller.
+/// Every mutable reading for all workspaces this daemon serves.
 pub const Activity = struct {
     allocator: std.mem.Allocator,
-    /// A spin lock, like the rest of this daemon's shared registries: every
-    /// critical section here is a hash-map lookup or a few integer store, so a
-    /// waiter never spins for long enough to deserve a blocking primitive.
+    /// A spin lock, like the rest of this daemon's shared registries: every critical section here is a hash-map lookup or a few integer store, so a waiter never spins …
     lock: std.atomic.Mutex = .unlocked,
     map: std.StringHashMap(Entry),
     /// How many readings were dropped to stay under `max_entries`.
@@ -161,8 +144,7 @@ pub const Activity = struct {
         entry.in_flight += 1;
     }
 
-    /// …and has finished, answered or not: a failed call is still a call, and
-    /// the sweep right after it must not read the VM as abandoned.
+    /// …and has finished, answered or not: a failed call is still a call, and the sweep right after it must not read the VM as abandoned.
     pub fn leave(self: *Activity, workspace_id: []const u8, now_ms: i64) void {
         self.lockIt();
         defer self.unlockIt();
@@ -189,9 +171,7 @@ pub const Activity = struct {
         dropJob(entry, pid);
     }
 
-    /// A fresh VMM: every tty and every spawned pid died with the old one, so
-    /// the readings start from zero. False when the pid did not change, which
-    /// is the warm path. `in_flight` is balanced by enter/leave, never here.
+    /// A fresh VMM: every tty and every spawned pid died with the old one, so the readings start from zero.
     pub fn notePid(self: *Activity, workspace_id: []const u8, pid: i64, now_ms: i64) bool {
         self.lockIt();
         defer self.unlockIt();
@@ -213,8 +193,6 @@ pub const Activity = struct {
     }
 
     /// One workspace's reading, taking the fresh CPU clock in the same pass.
-    /// Null means "this daemon knows nothing", which is never idle. A job
-    /// nobody has watched for `job_trust_ms` is dropped before it is counted.
     pub fn sample(
         self: *Activity,
         workspace_id: []const u8,
@@ -237,8 +215,7 @@ pub const Activity = struct {
 
         var delta: ?u64 = null;
         if (cpu_ticks) |ticks| {
-            // USER_HZ is 100 on every Linux ABI — a frozen constant, not a
-            // setting — so one tick is 10 ms and needs no sysconf.
+            // USER_HZ is 100 on every Linux ABI — a frozen constant, not a setting — so one tick is 10 ms and needs no sysconf.
             if (entry.cpu_seen and ticks >= entry.cpu_ticks) delta = (ticks - entry.cpu_ticks) * 10;
             entry.cpu_ticks = ticks;
             entry.cpu_seen = true;
@@ -311,8 +288,7 @@ test "a boot forgets the jobs and the CPU sample it inherited" {
     _ = act.notePid("ws_1", 4242, 2_000);
     const after = act.sample("ws_1", 2_000, 6_000, 60_000).?;
     try testing.expectEqual(@as(u32, 0), after.live_jobs);
-    // The first sample after a reset has nothing to subtract, even though a
-    // sample was taken before the boot.
+    // The first sample after a reset has nothing to subtract, even though a sample was taken before the boot.
     try testing.expectEqual(@as(?u64, null), after.cpu_delta_ms);
 }
 
@@ -332,8 +308,7 @@ test "a pid whose clock went backwards is not a delta" {
 
     act.enter("ws_1", 1_000);
     _ = act.sample("ws_1", 1_000, 9_000, 60_000);
-    // A recycled pid: the VMM restarted under the same number. Reporting the
-    // difference would be a huge negative or a lie; "cannot tell" is neither.
+    // A recycled pid: the VMM restarted under the same number.
     try testing.expectEqual(@as(?u64, null), act.sample("ws_1", 16_000, 40, 60_000).?.cpu_delta_ms);
 }
 

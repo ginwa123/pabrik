@@ -1,6 +1,4 @@
-/** Exporting documents from the sidebar: the right-click menu, the Ctrl/Shift selection, and
- * that picking an export row calls the API with exactly the selected ids and hands the blob to
- * the browser's download path. */
+/** Exporting documents from the sidebar: the right-click menu, the Ctrl/Shift selection, and that picking an export row calls the API with exactly the selected … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'

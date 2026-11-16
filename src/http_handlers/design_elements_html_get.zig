@@ -1,6 +1,4 @@
-//! `GET
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
-//! Lazy-load an element's full HTML body.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/html`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,21 +9,17 @@ const design_model = @import("../modules/agent/loop/design_model.zig");
 pub const DesignElementHtmlGetError = error{
     /// `:element_id` path param was missing or empty.
     ElementIdRequired,
-    /// `design_model.loadElementHtml` returned `ElementNotFound` or
-    /// `FileNotFound` (no row or the file is missing on disk).
+    /// `design_model.loadElementHtml` returned `ElementNotFound` or `FileNotFound` (no row or the file is missing on disk).
     ElementNotFound,
     /// `loadElementHtml` failed for some other DB / IO reason.
     QueryFailed,
-    /// `std.json.Stringify.valueAlloc` failed (effectively
-    /// unreachable on the per-request arena).
+    /// `std.json.Stringify.valueAlloc` failed (effectively unreachable on the per-request arena).
     OutOfMemory,
 };
 
 pub const DesignElementHtmlResponse = struct { html: []const u8 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -45,9 +39,7 @@ fn useCase(
     return try std.json.Stringify.valueAlloc(allocator, response, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designElementsHtmlGetHandler(
     ctx: gserverz.HttpContext,

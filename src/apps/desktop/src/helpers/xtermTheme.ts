@@ -7,8 +7,7 @@ export interface XtermTheme {
   cursor: string
 }
 
-/** xterm paints into a canvas, so it cannot read a CSS variable: hand it the resolved values. Both
- * terminals in the app build their theme here, so they cannot drift into two different darks. */
+/** xterm paints into a canvas, so it cannot read a CSS variable: hand it the resolved values. */
 export const resolveXtermTheme = (): XtermTheme => ({
   background: readThemeToken('--color-bg-dim', '#12120f'),
   foreground: readThemeToken('--semantic-text', '#c5c9c5'),

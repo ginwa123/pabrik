@@ -1,6 +1,4 @@
-/** ChatView's cached mount: what is on screen while the REMOTE half of the transcript load is still
- * in flight. Contract under test (ChatView.vue, `runHistoryLoadAttempt`): - The load has two
- * halves. */
+/** ChatView's cached mount: what is on screen while the REMOTE half of the transcript load is still in flight. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -29,8 +27,7 @@ type RawRow = {
   finish_reason: string
 }
 
-/** Everything the two mocked seams read at CALL time (never at factory time),
- * so a test can set up a scenario before the mount. */
+/** Everything the two mocked seams read at CALL time (never at factory time), so a test can set up a scenario before the mount. */
 const ctl = vi.hoisted(() => ({
   /** Rows `primeFromCache` answers with — ChatMessage-shaped: `{ id, raw }`. */
   cached: [] as unknown[],
@@ -116,8 +113,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// jsdom 29 has no HTMLElement.prototype.scrollTo; ChatView's cached-mount paint
-// calls scrollToBottom immediately. Assign-only, like src/__tests__/setup.ts.
+// jsdom 29 has no HTMLElement.prototype.scrollTo; ChatView's cached-mount paint calls scrollToBottom immediately.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -193,7 +189,6 @@ describe('ChatView cached mount — what the reader sees while the remote half l
     ctl.fetchPageCalls = 0
     ctl.loadDeltaCalls = 0
 
-    // The mount-time best-effort calls are not what this spec is about.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
     vi.spyOn(api, 'getSession').mockResolvedValue({
@@ -251,8 +246,7 @@ describe('ChatView cached mount — what the reader sees while the remote half l
     ctl.pageMode = 'pending'
 
     wrapper = mountView()
-    // The skeleton is up from the first frame, so waiting on it proves nothing
-    // — wait for the load to actually reach the network half.
+    // The skeleton is up from the first frame, so waiting on it proves nothing — wait for the load to actually reach the network half.
     await waitFor(() => ctl.fetchPageCalls > 0)
 
     expect(wrapper.find(SKELETON).exists()).toBe(true)
@@ -300,8 +294,7 @@ describe('ChatView cached mount — what the reader sees while the remote half l
   })
 
   it('cache hit whose rows do not render: the skeleton holds, and the load falls through to the authoritative page', async () => {
-    // An assistant turn with no content, no reasoning and no tool call: cached,
-    // but `messageGroups` drops it, so there is nothing on screen.
+    // An assistant turn with no content, no reasoning and no tool call: cached, but `messageGroups` drops it, so there is nothing on screen.
     ctl.cached = [{ id: 'm1', raw: rawRow('m1', 'assistant', '', 1) }]
     // Let the delta settle so the fall-through is observable.
     ctl.deltaMode = 'empty'

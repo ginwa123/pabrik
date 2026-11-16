@@ -31,13 +31,7 @@ class RecentsModelsTest {
 
     @Test
     fun aRunningSessionOrdersFirstEvenThoughTheHumanTouchedItLongestAgo() {
-        // The reported behaviour: on the desktop the session the agent is
-        // working on sits at the top of Recent, because the list is ordered by
-        // `updated_at` — the column that keeps moving while a run is in
-        // flight. This row's human-touch stamp is the OLDEST of the three, so
-        // ordering by the label key would bury it at the bottom. That was the
-        // bug: the sidebar folded both timestamps into one field and sorted on
-        // the label.
+        // The reported behaviour: on the desktop the session the agent is working on sits at the top of Recent, because the list is ordered by `updated_at` — the column …
         val running = ChatSummary(
             id = "chat-running",
             workspaceId = "workspace-a",
@@ -58,9 +52,7 @@ class RecentsModelsTest {
 
     @Test
     fun aRunningSessionKeepsTheHumansOwnTimeInItsLabel() {
-        // Same row, seen from the other side: topping the list must not make
-        // the pill lie. The agent has been working for 2 minutes; the human
-        // was last here 3 hours ago. The pill says 3h.
+        // Same row, seen from the other side: topping the list must not make the pill lie.
         val now = 10_000_000_000L
         val running = ChatSummary(
             id = "chat-running",
@@ -76,14 +68,11 @@ class RecentsModelsTest {
 
     @Test
     fun hasTimestampReadsTheLabelKeyNotTheOrderKey() {
-        // A hand-built row whose label key is missing gets no pill rather than
-        // a fabricated "56y" — the order key is a perfectly good sort value but
-        // it is not what the pill is allowed to claim is true about the human.
+        // A hand-built row whose label key is missing gets no pill rather than a fabricated "56y" — the order key is a perfectly good sort value but it is not what the …
         val unlabelled = ChatSummary("chat-1", "workspace-a", "Legacy", 5_000L, 0L)
 
         assertEquals(false, unlabelled.hasTimestamp)
-        // Still ordered, never dropped: no label is a presentation problem, an
-        // invisible session is a data problem.
+        // Still ordered, never dropped: no label is a presentation problem, an invisible session is a data problem.
         assertEquals(listOf("chat-1"), recentChatsForWorkspace(listOf(unlabelled), "workspace-a").map { it.id })
     }
 

@@ -1,5 +1,4 @@
-/** A run's tool time, in the unit a human reads: raw seconds (`3217.1s`) is a number nobody
- * converts in their head. The boundaries are the ones a clock has. */
+/** A run's tool time, in the unit a human reads: raw seconds (`3217.1s`) is a number nobody converts in their head. */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`
   const seconds = Math.round(ms / 1000)

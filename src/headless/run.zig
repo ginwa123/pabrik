@@ -1,5 +1,4 @@
-//! `pabrik headless run` — one agentic turn, no server. Headless mode must
-//! not contain a second implementation of the backend.
+//! `pabrik headless run` — one agentic turn, no server.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,11 +14,9 @@ pub const TurnResult = struct {
     session_id: []const u8,
     /// The final assistant text. Empty when the turn produced none.
     assistant_text: []const u8,
-    /// The `finish_reason` of the final assistant row: `stop`, `length`,
-    /// `tool_calls`, or `cancelled`.
+    /// The `finish_reason` of the final assistant row: `stop`, `length`, `tool_calls`, or `cancelled`.
     finish_reason: []const u8,
-    /// The `loop_index` of the final assistant row — how many LLM
-    /// iterations the turn took, tool-call rounds included.
+    /// The `loop_index` of the final assistant row — how many LLM iterations the turn took, tool-call rounds included.
     iterations: u32,
     /// True when the turn hit `--timeout-ms` before finishing.
     timed_out: bool,
@@ -27,8 +24,7 @@ pub const TurnResult = struct {
     error_name: ?[]const u8 = null,
 };
 
-/// Shared state between the caller (which polls) and the SSE subscriber
-/// (which runs on the loop's Io task). See the module header.
+/// Shared state between the caller (which polls) and the SSE subscriber (which runs on the loop's Io task).
 const Watch = struct {
     var mutex: std.Io.Mutex = .init;
     var io: ?std.Io = null;
@@ -70,15 +66,12 @@ const Watch = struct {
     }
 };
 
-/// The SSE subscriber. Fires for every `llm_full` event on every session,
-/// so the first thing it does is drop the ones that are not ours.
+/// The SSE subscriber.
 fn onLlmEvent(ev: SseEvent) void {
     if (Watch.done) return;
     if (!std.mem.eql(u8, ev.session_id, Watch.session_id)) return;
 
-    // The payload is the `SseEventLLMHistory` JSON. Parse only the fields
-    // that decide completion; a malformed payload is not worth failing a
-    // turn over.
+    // The payload is the `SseEventLLMHistory` JSON.
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, std.heap.page_allocator, ev.data, .{
         .ignore_unknown_fields = true,
     }) catch return;
@@ -102,16 +95,13 @@ fn onLlmEvent(ev: SseEvent) void {
         if (v == .string) Watch.recordFinish(v.string);
     }
 
-    // `stop` is the loop's normal exit. `length` means it bumped
-    // max_tokens and kept going, so it is NOT terminal — a caller that
-    // wants a bound on that sets `--timeout-ms`.
+    // `stop` is the loop's normal exit.
     if (Watch.finish_len > 0 and std.mem.eql(u8, Watch.finish_reason[0..Watch.finish_len], "stop")) {
         Watch.done = true;
     }
 }
 
-/// Run one turn and wait for it. The returned `TurnResult` borrows
-/// `session_id` from `allocator`, which the caller owns.
+/// Run one turn and wait for it.
 pub fn run(
     allocator: std.mem.Allocator,
     backend: *boot_mod.Backend,
@@ -120,12 +110,10 @@ pub fn run(
     const io = backend.io;
     const ctx = backend.ctx;
 
-    // ─── Subscribe BEFORE the turn starts ─── Subscribing after would miss
-    // the first `llm_full` and hang until the timeout.
+    // ─── Subscribe BEFORE the turn starts ───
     try backend.event_bus.subscribe(SseEvent, "llm", onLlmEvent);
 
-    // ─── Drive the REAL session-create funnel ─── This is the same `useCase`
-    // the POST /api/llm/session handler calls.
+    // ─── Drive the REAL session-create funnel ───
     const created = try pabrikcore.http_handlers.sessionCreateUseCase(
         allocator,
         io,
@@ -140,17 +128,14 @@ pub fn run(
         "",
     );
 
-    // The usecase dupes nothing for us — `ResponseSession` borrows from
-    // the per-call arena — so take our own copy before it goes away.
+    // The usecase dupes nothing for us — `ResponseSession` borrows from the per-call arena — so take our own copy before it goes away.
     const session_id = try allocator.dupe(u8, created.id);
 
     // Now that the id is known, watch this session specifically too.
     Watch.reset(io, session_id);
     try backend.event_bus.subscribe(SseEvent, session_id, onLlmEvent);
 
-    // ─── Wait for the loop ─── The turn is already running: `emit_run_agent`
-    // (inside the usecase above) scheduled it on
-    // `ctx.group_emit_session_create` and emitted `RunParamsNew`, and `boot`
+    // ─── Wait for the loop ───
     const deadline_ms: ?i64 = if (a.timeout_ms == 0)
         null
     else
@@ -162,9 +147,7 @@ pub fn run(
         const finished = Watch.done;
         Watch.unlock();
         if (finished) {
-            // A group keeps talking after its first `stop`, so the run is
-            // over when the loop releases the session's worker row — the same
-            // signal for a one-agent session.
+            // A group keeps talking after its first `stop`, so the run is over when the loop releases the session's worker row — the same signal for a one-agent session.
             if (!workflow.isWorkerRunning(allocator, backend.ctx.db, session_id)) break;
         }
 
@@ -186,9 +169,7 @@ pub fn run(
         .finish_reason = if (Watch.finish_len > 0) Watch.finish_reason[0..Watch.finish_len] else "",
         .iterations = Watch.iterations,
         .timed_out = timed_out,
-        // The loop reports its own failures as an `is_error` llm_history row
-        // rather than a returned error, so there is no error name to forward
-        // here.
+        // The loop reports its own failures as an `is_error` llm_history row rather than a returned error, so there is no error name to forward here.
         .error_name = null,
     };
 }

@@ -1,5 +1,4 @@
-/** Static contract: every tool-card branch in the tool dispatcher (the v-if/v-else-if chain
- * on message.tool_name) must thread the parameters. The dispatcher lives in ToolCard.vue. */
+/** Static contract: every tool-card branch in the tool dispatcher (the v-if/v-else-if chain on message.tool_name) must thread the parameters. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -7,9 +6,7 @@ import { resolve } from 'node:path'
 const source = readFileSync(resolve(__dirname, '../ToolCard.vue'), 'utf8')
 const template = source.slice(source.indexOf('<template>'))
 
-/** Slice the template window for one dispatcher branch: the `<Tag` occurrence whose tag body
- * carries the branch content (`:content="content"`, or `:message="message"` for the plan
- * cards). */
+/** Slice the template window for one dispatcher branch: the `<Tag` occurrence whose tag body carries the branch content (`:content="content"`, or … */
 function branchWindow(marker: string): string {
   let from = 0
   for (;;) {

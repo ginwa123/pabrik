@@ -18,16 +18,13 @@ pub const DiffResult = struct {
     }
 };
 
-// ── LCS diff
-// ────────────────────────────────────────────────────────────────── Works on
-// any granularity: pass raw bytes, or split into lines first.
+// ── LCS diff ────────────────────────────────────────────────────────────────── Works on any granularity: pass raw bytes, or split into lines first.
 
 pub fn diff(allocator: Allocator, before: []const u8, after: []const u8) !DiffResult {
     const n = before.len;
     const m = after.len;
 
-    // Build LCS length table: dp[i][j] = LCS length of before[0..i] vs after[0..j]
-    // We use a flat array of (n+1)*(m+1) u32s.
+    // Build LCS length table: dp[i][j] = LCS length of before[0..i] vs after[0..j] We use a flat array of (n+1)*(m+1) u32s.
     const dp = try allocator.alloc(u32, (n + 1) * (m + 1));
     defer allocator.free(dp);
     @memset(dp, 0);
@@ -110,9 +107,7 @@ pub fn diff(allocator: Allocator, before: []const u8, after: []const u8) !DiffRe
     return .{ .chunks = slice };
 }
 
-// ── Line-level wrapper
-// ──────────────────────────────────────────────────────── If you want
-// line-level granularity (like git diff), use this instead.
+// ── Line-level wrapper ──────────────────────────────────────────────────────── If you want line-level granularity (like git diff), use this instead.
 
 pub const LineDiff = struct {
     chunks: []LineChunk,
@@ -189,9 +184,7 @@ pub fn diffLines(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Split on line boundaries, dropping the `CR` of a CRLF pair. A
-/// Windows-authored file arrives here as `one\r\ntwo\r\n`, and splitting on
-/// `\n` alone leaves every line ending in a stray `\r`.
+/// Split on line boundaries, dropping the `CR` of a CRLF pair.
 pub fn splitLines(allocator: Allocator, text: []const u8) ![][]const u8 {
     var list = std.ArrayList([]const u8).empty;
     var it = std.mem.splitScalar(u8, text, '\n');
@@ -227,8 +220,7 @@ pub fn formatAnsi(allocator: Allocator, result: DiffResult) ![]const u8 {
     return try out.toOwnedSlice(allocator);
 }
 
-/// Format line-level diff as ANSI-colored split view (vimdiff style)
-/// Left = before, Right = after - lines aligned side by side
+/// Format line-level diff as ANSI-colored split view (vimdiff style) Left = before, Right = after - lines aligned side by side
 pub fn formatLinesAnsi(allocator: Allocator, result: LineDiff) ![]const u8 {
     var out = std.ArrayList(u8).empty;
     errdefer out.deinit(allocator);
@@ -521,8 +513,6 @@ test "line diff - multiline change" {
 }
 
 // ── CRLF contract ─────────────────────────────────────────────────────────
-// Windows-authored files are CRLF, and every consumer of these lines (the
-// ANSI renderer, the hunk headers, the frontend's diff card) treats a
 test "splitLines - drops the CR of a CRLF pair" {
     const lines = try splitLines(std.testing.allocator, "one\r\ntwo\r\nthree\r\n");
     defer std.testing.allocator.free(lines);
@@ -540,9 +530,7 @@ test "splitLines - CRLF with no trailing newline" {
     try std.testing.expectEqualStrings("two", lines[1]);
 }
 
-// The property that actually matters: line-splitting is the ONLY difference
-// between the two, so once `\r` is gone a CRLF file must diff exactly like
-// its LF twin.
+// The property that actually matters: line-splitting is the ONLY difference between the two, so once `\r` is gone a CRLF file must diff exactly like its LF twin.
 test "splitLines - a CRLF file produces a byte-identical diff to its LF twin" {
     const Alloc = std.testing.allocator;
     const lf_before = try splitLines(Alloc, "a\nb\nc\n");
@@ -559,9 +547,7 @@ test "splitLines - a CRLF file produces a byte-identical diff to its LF twin" {
     const crlf = try diffLines(Alloc, crlf_before, crlf_after);
     defer crlf.deinit(Alloc);
 
-    // Same shape, and the context lines actually MATCH. Before the fix each
-    // CRLF line carried a trailing `\r`, so nothing compared equal and the
-    // whole file came back as delete+insert.
+    // Same shape, and the context lines actually MATCH.
     try std.testing.expectEqual(lf.chunks.len, crlf.chunks.len);
     var eq_lines: usize = 0;
     for (lf.chunks, crlf.chunks) |a, b| {

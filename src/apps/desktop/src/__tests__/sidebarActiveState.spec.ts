@@ -1,6 +1,4 @@
-/**  * Regression tests for the "active state leaks across Chats ↔ workspace item" bug. Selecting a chat
- * must clear `activeWorkspaceItemId` in the workspaces store, and vice versa. Before the fix these
- * tests fail. */
+/** Regression tests for the "active state leaks across Chats ↔ workspace item" bug. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, reactive, ref } from 'vue'
@@ -29,8 +27,7 @@ function makeStubClient(initial: SseState): SseClient {
   return stub as SseClient
 }
 
-// ChatsList calls useRouter() in setup; the `mocks: { $router: ... }` option below only patches
-// `this.$router` (Options API), so we must stub the composable at module level.
+// ChatsList calls useRouter() in setup; the `mocks: { $router: ... }` option below only patches `this.$router` (Options API), so we must stub the composable at …
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({ query: {} as Record<string, string>, path: '/', fullPath: '/' })),
   useRouterMock: vi.fn(() => ({ replace: vi.fn(), push: vi.fn() })),
@@ -49,9 +46,7 @@ function mountChatsList() {
   return mount(ChatsList, {
     global: {
       mocks: { $router: { replace: vi.fn() } },
-      // Real Vue ref — ChatsList has `watch(processingState, ..., { deep: true })` (lines 110-119
-      // and 367-372). A plain `{ value: {} }` object logs `[Vue warn]: Invalid watch source` and
-      // turns the watchers into silent no-ops, hiding reactivity regressions.
+      // Real Vue ref — ChatsList has `watch(processingState, ..., { deep: true })` (lines 110-119 and 367-372).
       provide: { processingState: ref<Record<string, boolean>>({}) },
     },
   })
@@ -67,9 +62,7 @@ describe('sidebar active-state exclusivity', () => {
       writable: true,
       configurable: true,
     })
-    // ChatsList and AppLayout both call workspacesStore.onSessionEvent(cb) synchronously in setup,
-    // which now requires the sseBus to be installed (Chunk 6 of unify-frontend-sse). Install a stub
-    // bus before mounting.
+    // ChatsList and AppLayout both call workspacesStore.onSessionEvent(cb) synchronously in setup, which now requires the sseBus to be installed (Chunk 6 of …
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -103,9 +96,7 @@ describe('sidebar active-state exclusivity', () => {
   })
 
   it('createChat is gone (removed 2026-09-22) — no method, no "+" button', async () => {
-    // New chats are created from workspace items (projects), not from
-    // a "+" button — every chat belongs to a workspace so the list
-    // can stay scoped. This pins the removal.
+    // New chats are created from workspace items (projects), not from a "+" button — every chat belongs to a workspace so the list can stay scoped.
     const wrapper = mountChatsList()
     await nextTick()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,8 +122,7 @@ describe('sidebar active-state exclusivity', () => {
   })
 
   it('removing a non-active chat does NOT clear activeWorkspaceItemId', async () => {
-    // Guards the `if (wasActive)` reset in removeChat: deleting an
-    // inactive chat must not disturb the workspace-item selection.
+    // Guards the `if (wasActive)` reset in removeChat: deleting an inactive chat must not disturb the workspace-item selection.
     const ws = useWorkspacesStore()
     ws.setActiveWorkspaceItem('item_keep')
 
@@ -144,16 +134,13 @@ describe('sidebar active-state exclusivity', () => {
       { id: 'chat_doomed', name: 'Doomed', active: false, processing: false },
     ]
     vi.spyOn(api, 'deleteChat').mockResolvedValue({ success: true })
-    // No @ts-expect-error needed here: `removeChat` is exposed via ChatsList.vue's `defineExpose({
-    // ...removeChat, ... })`. Compare with the first test, which DOES need it for `setActive`
-    // (closure-only, not exposed). The asymmetry reflects `defineExpose` membership.
+    // No @ts-expect-error needed here: `removeChat` is exposed via ChatsList.vue's `defineExpose({ ...removeChat, ... })`.
     await wrapper.vm.removeChat('chat_doomed')
 
     expect(ws.activeWorkspaceItemId).toBe('item_keep')
   })
 
-  // Inverse direction (task → chat) regressions: clicking a chat must also
-  // clear the workspacesStore.activeTaskId, not just activeWorkspaceItemId.
+  // Inverse direction (task → chat) regressions: clicking a chat must also clear the workspacesStore.activeTaskId, not just activeWorkspaceItemId.
   it('clicking a chat row clears activeTaskId (inverse direction)', async () => {
     const ws = useWorkspacesStore()
     ws.setActiveTask('task_old')
@@ -169,8 +156,7 @@ describe('sidebar active-state exclusivity', () => {
   })
 
   it('clicking a chat row clears both item and task (inverse direction)', async () => {
-    // Combined coverage for the removed createChat clearing: a chat
-    // activation clears the workspace item AND the active task.
+    // Combined coverage for the removed createChat clearing: a chat activation clears the workspace item AND the active task.
     const ws = useWorkspacesStore()
     ws.setActiveWorkspaceItem('item_99')
     ws.setActiveTask('task_old')
@@ -197,17 +183,13 @@ describe('AppLayout URL-driven chat navigation', () => {
       writable: true,
       configurable: true,
     })
-    // AppLayout now includes <SseStatusBadge /> (Chunk 7), which calls `useSseBus()` synchronously
-    // in setup. Without a bus install, the badge throws "useSseBus called before installSseBus" and
-    // the whole mount fails.
+    // AppLayout now includes <SseStatusBadge /> (Chunk 7), which calls `useSseBus()` synchronously in setup.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
     __setSseBusGlobalClient(makeStubClient('connecting'))
 
-    // Mock the workspace API calls triggered by `workspacesStore.initializeFromSystemFolder()` in
-    // onMounted. The call is fire-and-forget (no `await` in AppLayout) but we still mock it to
-    // avoid unhandled promise rejections / noisy console output in test logs.
+    // Mock the workspace API calls triggered by `workspacesStore.initializeFromSystemFolder()` in onMounted.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -218,8 +200,7 @@ describe('AppLayout URL-driven chat navigation', () => {
       home: '/',
     })
 
-    // Mock the chat session API calls triggered by
-    // `fetchChatSessionCwd()` when the URL is `?view=chat&session=X`.
+    // Mock the chat session API calls triggered by `fetchChatSessionCwd()` when the URL is `?view=chat&session=X`.
     vi.spyOn(api, 'getSession').mockResolvedValue({
       sessionId: 'chat_url',
       sessionName: 'URL Chat',
@@ -233,9 +214,7 @@ describe('AppLayout URL-driven chat navigation', () => {
       next_cursor: null,
     })
 
-    // Reset the route mock to a clean default. Individual tests below
-    // override this to drive specific URL→state transitions in
-    // AppLayout.onMounted and the route.query watcher.
+    // Reset the route mock to a clean default.
     useRouteMock.mockReturnValue({
       query: {} as Record<string, string>,
       path: '/app',
@@ -255,8 +234,7 @@ describe('AppLayout URL-driven chat navigation', () => {
     ws.setActiveWorkspaceItem('item_stale')
     expect(ws.activeWorkspaceItemId).toBe('item_stale')
 
-    // Drive AppLayout's onMounted chat-view branch by pretending the
-    // page was reloaded with a chat-session URL.
+    // Drive AppLayout's onMounted chat-view branch by pretending the page was reloaded with a chat-session URL.
     useRouteMock.mockReturnValue({
       query: { view: 'chat', session: 'chat_url' },
 
@@ -282,9 +260,7 @@ describe('AppLayout URL-driven chat navigation', () => {
     await flushPromises()
     wrapper.unmount()
 
-    // The fix: onMounted's chat branch must reset the workspace-item
-    // active state — the URL is the source of truth, and it points
-    // to a chat.
+    // The fix: onMounted's chat branch must reset the workspace-item active state — the URL is the source of truth, and it points to a chat.
     expect(ws.activeWorkspaceItemId).toBeNull()
   })
 
@@ -319,17 +295,13 @@ describe('AppLayout URL-driven chat navigation', () => {
     })
     await flushPromises()
 
-    // Sanity: onMounted ran but didn't touch activeWorkspaceItemId
-    // (initial URL was workspace, not chat).
+    // Sanity: onMounted ran but didn't touch activeWorkspaceItemId (initial URL was workspace, not chat).
     expect(ws.activeWorkspaceItemId).toBe('item_from_url_watch')
 
-    // Now navigate to a chat URL — the watch's chat branch must fire and reset the workspace-item
-    // active state. The guard `activeChatId.value !== 'chat-${sessionId}'` is true here
-    // (activeChatId is empty after the workspace mount), so the reset block executes.
+    // Now navigate to a chat URL — the watch's chat branch must fire and reset the workspace-item active state.
     routeObj.query = { view: 'chat', session: 'chat_new' }
     await nextTick()
-    // The route reconcile runs from the layout's `onUpdated` pump (the watcher it replaced is gone),
-    // so a URL change takes effect when the layout re-renders — drive that explicitly.
+    // The route reconcile runs from the layout's `onUpdated` pump (the watcher it replaced is gone), so a URL change takes effect when the layout re-renders — drive …
     wrapper.vm.$forceUpdate()
     await flushPromises()
     wrapper.unmount()

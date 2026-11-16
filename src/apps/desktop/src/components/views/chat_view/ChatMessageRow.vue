@@ -56,8 +56,7 @@ const props = defineProps<{
   renderMessageHtml: (msg: Message) => string
 }>()
 
-/** A user block whose every row is a compaction envelope: a system divider, never a human turn.
- * `every` (not `messages[0]`) is what stops a mixed block from ever swallowing its own content. */
+/** A user block whose every row is a compaction envelope: a system divider, never a human turn. */
 const isCompactionDivider = computed(
   (): boolean =>
     props.group.role === 'user' &&

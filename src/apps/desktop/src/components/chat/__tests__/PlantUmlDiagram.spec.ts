@@ -1,5 +1,4 @@
-/** Behavioural tests for <PlantUmlDiagram>. Nothing here touches the network: the component's
- * contract is "show the URL the server would answer, or the source when it refuses". */
+/** Behavioural tests for <PlantUmlDiagram>. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PlantUmlDiagram from '../PlantUmlDiagram.vue'

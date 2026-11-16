@@ -1,6 +1,4 @@
-/** The outcome wording for the board's agent actions: the same messages the component used to spell
- * out inline, in one place, so the "started / network error / unexpected" ladder cannot drift
- * between the dialog button and the card's context menu. */
+/** The outcome wording for the board's agent actions: the same messages the component used to spell out inline, in one place, so the "started / network error / … */
 export interface AgentStartResult {
   success?: boolean
   status?: string

@@ -1,5 +1,4 @@
-// Subagent selected_profile_model forwarding (task_1789672620943_1). Zig port
-// of `tests/functional/subagent_selected_profile_test.py`.
+// Subagent selected_profile_model forwarding (task_1789672620943_1).
 
 // QUERY STRINGS ARE IN THE PATH, NOT IN `HttpOptions.params`.
 
@@ -10,12 +9,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Poll `GET /api/llm/session/:id/messages` until a non-null
-/// `selected_profile_model` shows up, and return it OWNED. Returns `null`
-/// after 30 attempts — the Python helper's `None`.
+/// Poll `GET /api/llm/session/:id/messages` until a non-null `selected_profile_model` shows up, and return it OWNED.
 fn getProfileViaMessages(h: *Harness, session_id: []const u8) !?[]u8 {
-    // Query is INLINED, not passed via `HttpOptions.params`: see the
-    // "QUERY STRINGS ARE IN THE PATH" note at the top of this file.
+    // Query is INLINED, not passed via `HttpOptions.params`: see the "QUERY STRINGS ARE IN THE PATH" note at the top of this file.
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages?limit=1", .{session_id});
     defer gpa.free(path);
 
@@ -26,8 +22,7 @@ fn getProfileViaMessages(h: *Harness, session_id: []const u8) !?[]u8 {
 
         var doc = try r.json();
         defer doc.deinit();
-        // The `@as(?[]u8, ...)` is load-bearing: a bare `try` yields
-        // `[]u8`, which will not coerce into the optional return type.
+        // The `@as(?[]u8, ...)` is load-bearing: a bare `try` yields `[]u8`, which will not coerce into the optional return type.
         if (doc.str("selected_profile_model")) |got| return @as(?[]u8, try gpa.dupe(u8, got));
 
         std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
@@ -62,8 +57,7 @@ test "subagent_profile_persists_and_rereads" {
     const got = try getProfileViaMessages(&h, session_id);
     defer if (got) |g| gpa.free(g);
 
-    // Python: `assert got == "union alpha"` — a profile lost on
-    // re-read is exactly the subagent-child NULL regression.
+    // Python: `assert got == "union alpha"` — a profile lost on re-read is exactly the subagent-child NULL regression.
     try testing.expectEqualStrings("union alpha", got orelse {
         std.debug.print("selected_profile_model never appeared on re-read for {s}\n", .{session_id});
         return error.TestUnexpectedResult;
@@ -106,7 +100,6 @@ test "empty_profile_explicitly_clears_via_put" {
     const got = try getProfileViaMessages(&h, session_id);
     defer if (got) |g| gpa.free(g);
 
-    // With zero llm_history rows the messages endpoint yields null
-    // (no JOINed row); both None and '' mean "no profile".
+    // With zero llm_history rows the messages endpoint yields null (no JOINed row); both None and '' mean "no profile".
     if (got) |g| try testing.expectEqualStrings("", g);
 }

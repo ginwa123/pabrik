@@ -1,6 +1,4 @@
-//! `pabrik-vmd`'s socket front end: it authenticates each caller by the
-//! credential the kernel reports, then runs the requested action against the
-//! workspace's VM. The VM's pid is on disk, so a restarted daemon adopts it.
+//! `pabrik-vmd`'s socket front end: it authenticates each caller by the credential the kernel reports, then runs the requested action against the workspace's VM.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -35,29 +33,21 @@ pub const Config = struct {
     fc_bin: []const u8 = "firecracker",
     mem_mib: u32 = vm_client.default_mem_mib,
     vcpus: u32 = vm_client.default_vcpus,
-    /// The uid allowed to call this daemon. Null means "the daemon's own uid",
-    /// which is the single-user case; a daemon started as root sets it to the
-    /// server's uid.
+    /// The uid allowed to call this daemon.
     allowed_uid: ?u32 = null,
     /// 0 turns the background sweep off.
     sweep_interval_ms: u32 = reconciler_mod.default_sweep_interval_ms,
     /// The first retry delay after a failed attempt; doubles up to a minute.
     backoff_base_ms: i64 = reconciler_mod.default_backoff_base_ms,
-    /// A workspace whose VM nobody has used for this long is stopped, and boots
-    /// again on the next request. 0 turns the idle reaper off.
+    /// A workspace whose VM nobody has used for this long is stopped, and boots again on the next request. 0 turns the idle reaper off.
     idle_stop_ms: u32 = reconciler_mod.default_idle_stop_ms,
-    /// A VMM younger than this is never reaped, so the first command after a
-    /// boot is always allowed to arrive.
+    /// A VMM younger than this is never reaped, so the first command after a boot is always allowed to arrive.
     idle_grace_ms: u32 = 60_000,
-    /// Guest CPU in one sweep window that still counts as activity: an idle
-    /// Firecracker with halted vCPUs reads ~0.
+    /// Guest CPU in one sweep window that still counts as activity: an idle Firecracker with halted vCPUs reads ~0.
     idle_cpu_ms: u32 = 50,
-    /// The host's own TCP ports, refused to every workspace's egress whatever
-    /// address is used to reach them.
+    /// The host's own TCP ports, refused to every workspace's egress whatever address is used to reach them.
     host_listeners: []const u16 = &.{8081},
-    /// The `pabrik-vm-agent` this host serves to a guest's bootstrap. Null
-    /// means the daemon serves none, and every guest runs the agent that is
-    /// on its own disk.
+    /// The `pabrik-vm-agent` this host serves to a guest's bootstrap.
     agent_path: ?[]const u8 = null,
 };
 
@@ -74,11 +64,8 @@ pub const State = struct {
 // ─── the manager: workspace id in, derived paths out ────────────────────
 
 /// A resize runs e2fsck and resize2fs on the image, so two must never overlap.
-/// The reconciler's flock is on the workspace directory and a resize calls into
-/// it, so the resize takes its own file instead.
 fn lockResize(dir: []const u8) ?linux.fd_t {
-    // A workspace that never booted has no directory yet, and a resize may be
-    // the first thing that ever asks for one.
+    // A workspace that never booted has no directory yet, and a resize may be the first thing that ever asks for one.
     vm_client.ensureDir(dir) catch return null;
     var path_buf: [4096]u8 = undefined;
     const path = std.fmt.bufPrintZ(&path_buf, "{s}/resize.lock", .{dir}) catch return null;
@@ -95,12 +82,9 @@ fn lockResize(dir: []const u8) ?linux.fd_t {
 pub const Manager = struct {
     allocator: std.mem.Allocator,
     config: Config,
-    /// The current agent, served to every guest's bootstrap. Empty when the
-    /// daemon was started without one.
+    /// The current agent, served to every guest's bootstrap.
     agent: []const u8 = &.{},
-    /// What every workspace's VM has been asked to do. A POINTER: this Manager
-    /// is copied per connection thread and every copy must see the same
-    /// counters. Null when the allocation failed, which only disables reaping.
+    /// What every workspace's VM has been asked to do.
     activity: ?*activity_mod.Activity = null,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) Manager {
@@ -154,13 +138,9 @@ pub const Manager = struct {
 
     /// The workspace's layout, booting its VM only when the reconciler says so.
     pub fn ensure(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !vm_client.Layout {
-        // The listeners are bound BEFORE the VM boots: a guest's bootstrap
-        // dials for the agent the moment the kernel starts, and the request
-        // below only returns once the guest is up (or has failed).
+        // The listeners are bound BEFORE the VM boots: a guest's bootstrap dials for the agent the moment the kernel starts, and the request below only returns once the …
         const layout = try self.layoutFor(allocator, workspace_id);
-        // The egress listener lives in the workspace's directory, which the
-        // reconciler only creates when it boots: on a FIRST dispatch the bind
-        // failed on a missing directory and the guest's first dial was reset.
+        // The egress listener lives in the workspace's directory, which the reconciler only creates when it boots: on a FIRST dispatch the bind failed on a missing …
         vm_client.ensureWorkspaceDir(layout) catch {};
         egress_proxy.ensure(self.allocator, layout, self.config.host_listeners);
         agent_service.ensure(self.allocator, layout, self.agent);
@@ -170,8 +150,7 @@ pub const Manager = struct {
             log("workspace {s} is {s}: {s}", .{ workspace_id, record.state.name(), record.last_error });
             return error.VmUnavailable;
         }
-        // A changed VMM pid is a fresh guest: its ttys and its jobs died with
-        // the old one, so the readings start over. A no-op on the warm path.
+        // A changed VMM pid is a fresh guest: its ttys and its jobs died with the old one, so the readings start over.
         if (self.activity) |act| _ = act.notePid(workspace_id, record.pid, activity_mod.nowMs());
         return layout;
     }
@@ -186,15 +165,12 @@ pub const Manager = struct {
         };
     }
 
-    /// Every workspace VM this daemon owns, stopped. A manager that is going
-    /// down takes the VMs with it.
+    /// Every workspace VM this daemon owns, stopped.
     pub fn stopAll(self: *const Manager, allocator: std.mem.Allocator) !u32 {
         return self.reconciler().stopAll(allocator);
     }
 
-    /// Stop the VM, record what it must boot with, start it again: Firecracker
-    /// takes vCPUs and RAM only at `InstanceStart`, and a disk grows only while
-    /// stopped. The guest comes back; the processes inside it do not.
+    /// Stop the VM, record what it must boot with, start it again: Firecracker takes vCPUs and RAM only at `InstanceStart`, and a disk grows only while stopped.
     pub fn resize(
         self: *const Manager,
         allocator: std.mem.Allocator,
@@ -203,8 +179,7 @@ pub const Manager = struct {
         mem_mib: u32,
         disk_mib: u32,
     ) !State {
-        // This daemon serves each connection on its own thread, so a second
-        // resize can arrive mid-grow. See `lockResize`.
+        // This daemon serves each connection on its own thread, so a second resize can arrive mid-grow.
         const resizing = try self.layoutFor(allocator, workspace_id);
         defer resizing.deinit(allocator);
         const lock_fd = lockResize(resizing.dir) orelse return error.ResizeLockFailed;
@@ -213,8 +188,7 @@ pub const Manager = struct {
         if (!self.stopWorkspace(allocator, workspace_id)) return error.StopFailed;
         if (disk_mib != 0) try self.growDisk(allocator, workspace_id, disk_mib);
         try spec_store.write(allocator, self.config.root, workspace_id, .{ .vcpus = vcpus, .mem_mib = mem_mib });
-        // A guest that fails to come up is reported through the state, so the
-        // caller still gets the record and its reason.
+        // A guest that fails to come up is reported through the state, so the caller still gets the record and its reason.
         if (self.ensure(allocator, workspace_id)) |layout| {
             layout.deinit(allocator);
         } else |_| {}
@@ -228,9 +202,7 @@ pub const Manager = struct {
         return vm_client.diskSizeMib(layout.disk);
     }
 
-    /// Grow the image the workspace boots from. An image that does not exist
-    /// yet is cloned from the base first: growing nothing would leave a
-    /// filesystem-less file where the guest expects a root device.
+    /// Grow the image the workspace boots from.
     fn growDisk(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8, disk_mib: u32) !void {
         const layout = try self.layoutFor(allocator, workspace_id);
         defer layout.deinit(allocator);
@@ -238,8 +210,7 @@ pub const Manager = struct {
         try vm_client.growDisk(layout.disk, disk_mib);
     }
 
-    /// `false` means nothing was running, or that a VMM this daemon cannot
-    /// account for still owns the workspace.
+    /// `false` means nothing was running, or that a VMM this daemon cannot account for still owns the workspace.
     pub fn stopWorkspace(self: *const Manager, allocator: std.mem.Allocator, workspace_id: []const u8) bool {
         if (self.layoutFor(allocator, workspace_id)) |layout| {
             egress_proxy.release(layout);
@@ -279,9 +250,7 @@ pub fn peerOf(fd: linux.fd_t) !policy.Peer {
 
 var stopping = std.atomic.Value(bool).init(false);
 
-/// SIGUSR1 means "the service that owns this daemon is going away": the
-/// workspace VMs it owns go down with it. SIGTERM and SIGINT only stop the
-/// daemon — the VMs stay, because a daemon that is restarted adopts them.
+/// SIGUSR1 means "the service that owns this daemon is going away": the workspace VMs it owns go down with it.
 var taking_vms_down = std.atomic.Value(bool).init(false);
 
 fn onSignal(sig: std.posix.SIG) callconv(.c) void {
@@ -289,8 +258,7 @@ fn onSignal(sig: std.posix.SIG) callconv(.c) void {
     if (sig == std.posix.SIG.USR1) taking_vms_down.store(true, .seq_cst);
 }
 
-/// Without SA_RESTART, a signal makes the blocked `accept` return EINTR, which
-/// is how the loop notices. The flag is set from the handler, never cleared.
+/// Without SA_RESTART, a signal makes the blocked `accept` return EINTR, which is how the loop notices.
 pub fn installSignalHandlers() void {
     var sa = std.posix.Sigaction{
         .handler = .{ .handler = onSignal },
@@ -333,20 +301,16 @@ fn listenUnix(path: []const u8) !linux.fd_t {
     return fd;
 }
 
-/// How long the accept loop pauses after an accept that ran out of
-/// descriptors, before it tries again.
+/// How long the accept loop pauses after an accept that ran out of descriptors, before it tries again.
 const accept_starved_backoff_ms: u32 = 100;
 
 /// What a failed `accept4` means for the daemon's life.
 pub const AcceptVerdict = enum {
     /// A signal interrupted the wait: wait again.
     retry,
-    /// The daemon is momentarily out of descriptors or buffers. Transient by
-    /// nature and it must never end the daemon: the manager is the only process
-    /// that can stop a workspace's VM, so ending it here orphans every VMM.
+    /// The daemon is momentarily out of descriptors or buffers.
     starved,
-    /// The listening socket is not a listening socket any more. Nothing to
-    /// wait for.
+    /// The listening socket is not a listening socket any more.
     fatal,
 };
 
@@ -360,9 +324,7 @@ pub fn acceptVerdict(err: linux.E) AcceptVerdict {
 
 /// What a manager's exit does to the VMs it owns.
 pub const ExitKind = enum {
-    /// SIGTERM / SIGINT: "stop the daemon". The VMs STAY, because a daemon
-    /// that is started again adopts them — the contract
-    /// `scripts/vmd-daemon-smoke.sh` asserts.
+    /// SIGTERM / SIGINT: "stop the daemon".
     deliberate_stop,
     /// SIGUSR1: the service that owns this daemon is going away.
     service_gone,
@@ -370,9 +332,7 @@ pub const ExitKind = enum {
     failed,
 };
 
-/// A VMM is nobody's child once this process is gone, so only a deliberate stop
-/// may leave one running. Every other exit takes the VMs down with it: the
-/// failure path used to leave each workspace's Firecracker orphaned.
+/// A VMM is nobody's child once this process is gone, so only a deliberate stop may leave one running.
 pub fn exitTakesVmsDown(exit: ExitKind) bool {
     return exit != .deliberate_stop;
 }
@@ -405,8 +365,7 @@ pub fn serve(allocator: std.mem.Allocator, config: Config) !void {
     }
 }
 
-/// One thread per connection, so a long build in one workspace cannot stall
-/// another's `ls`; the only shared state is on disk.
+/// One thread per connection, so a long build in one workspace cannot stall another's `ls`; the only shared state is on disk.
 fn acceptLoop(fd: linux.fd_t, manager: Manager) !void {
     while (!stopping.load(.seq_cst)) {
         const rc = linux.accept4(fd, null, null, linux.SOCK.CLOEXEC);
@@ -441,14 +400,12 @@ fn takeVmsDown(manager: Manager) void {
     if (stopped > 0) log("shutdown: stopped {d} workspace VM(s)", .{stopped});
 }
 
-/// The reconciler's clock: one pass over every workspace per interval. It
-/// never waits on a workspace somebody is booting, because its lock is a try.
+/// The reconciler's clock: one pass over every workspace per interval.
 fn sweepLoop(manager: Manager) void {
     var arena = std.heap.ArenaAllocator.init(manager.allocator);
     while (!stopping.load(.seq_cst)) {
         defer _ = arena.reset(.retain_capacity);
-        // The activity readings turn this pass into the idle reaper; without
-        // them (an allocation that failed) it only counts.
+        // The activity readings turn this pass into the idle reaper; without them (an allocation that failed) it only counts.
         const report = manager.reconciler().sweep(arena.allocator(), .{ .activity = manager.activity }) catch |err| {
             log("sweep failed: {s}", .{@errorName(err)});
             sleepMs(manager.config.sweep_interval_ms);
@@ -499,8 +456,7 @@ fn serveConnection(manager: Manager, conn: linux.fd_t) void {
         return;
     };
 
-    // The proxy's frames carry their own types, so they are answered before
-    // `rpc.decodeRequest` ever sees an action it does not know.
+    // The proxy's frames carry their own types, so they are answered before `rpc.decodeRequest` ever sees an action it does not know.
     if (proxy_rpc.isProxyFrame(body)) {
         const payload = proxy_rpc.serve(manager, aa, body) catch |err| blk: {
             log("proxy request failed: {s}", .{@errorName(err)});
@@ -517,9 +473,7 @@ fn serveConnection(manager: Manager, conn: linux.fd_t) void {
     };
     defer request.deinit();
 
-    // Work is what keeps a workspace's VM alive; `status` and `ping` are reads
-    // of the state file, and the console polls `status` for every workspace, so
-    // counting them would pin every VM forever.
+    // Work is what keeps a workspace's VM alive; `status` and `ping` are reads of the state file, and the console polls `status` for every workspace, so counting …
     const work = rpc.carriesWork(request.value.action);
     if (work) {
         if (manager.activity) |act| act.enter(request.value.workspace_id, activity_mod.nowMs());
@@ -549,9 +503,7 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
             if (vm_limits.check(request.workspace_id, request.vcpus, request.mem_mib)) |refusal| {
                 return rpc.encodeFailure(allocator, request.id, .bad_request, refusal.message());
             }
-            // The disk rule needs the image's current size, and a refusal must
-            // land BEFORE the restart: refusing after stopping would cost the
-            // guest its processes for nothing.
+            // The disk rule needs the image's current size, and a refusal must land BEFORE the restart: refusing after stopping would cost the guest its processes for …
             if (request.disk_mib != 0) {
                 const current_mib = manager.diskMib(allocator, request.workspace_id);
                 if (vm_limits.checkDisk(request.disk_mib, current_mib)) |refusal| {
@@ -568,8 +520,7 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
         },
         .stop => {
             _ = manager.stopWorkspace(allocator, request.workspace_id);
-            // The VM is gone on purpose: its counters die with it, so a later
-            // boot cannot inherit a job or a tty from the old guest.
+            // The VM is gone on purpose: its counters die with it, so a later boot cannot inherit a job or a tty from the old guest.
             if (manager.activity) |act| act.forget(request.workspace_id);
             return rpc.encodeAck(allocator, request.id);
         },
@@ -610,9 +561,7 @@ fn dispatch(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request
     }
 }
 
-/// A terminal RPC. `open` asks the AGENT to fork the guest process that will
-/// own the pty; every other op talks to that process on the port it bound, so
-/// a terminal never queues behind a long `exec` on the agent's own port.
+/// A terminal RPC.
 fn dispatchTty(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a terminal: {s}", .{ request.workspace_id, @errorName(err) });
@@ -703,9 +652,7 @@ fn dispatchTty(manager: Manager, allocator: std.mem.Allocator, request: rpc.Requ
     }
 }
 
-/// A duplex RPC. `open` asks the AGENT to fork the guest process that owns the
-/// server; every other op talks to that process on the port it bound, so a
-/// reading client never queues behind a long `exec` on the agent's own port.
+/// A duplex RPC.
 fn dispatchDuplex(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a duplex: {s}", .{ request.workspace_id, @errorName(err) });
@@ -789,8 +736,7 @@ fn dispatchDuplex(manager: Manager, allocator: std.mem.Allocator, request: rpc.R
     }
 }
 
-/// A file RPC runs against a READY VM, like `exec`: the caller asked for a
-/// tool's worth of work, so a cold workspace boots rather than refuses.
+/// A file RPC runs against a READY VM, like `exec`: the caller asked for a tool's worth of work, so a cold workspace boots rather than refuses.
 fn dispatchFsStat(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a stat: {s}", .{ request.workspace_id, @errorName(err) });
@@ -807,8 +753,7 @@ fn dispatchFsStat(manager: Manager, allocator: std.mem.Allocator, request: rpc.R
     });
 }
 
-/// The bytes come from the guest; the host never opens the file. That is the
-/// whole point of the op, so there is no host fallback to reach for.
+/// The bytes come from the guest; the host never opens the file.
 fn dispatchFsRead(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a read: {s}", .{ request.workspace_id, @errorName(err) });
@@ -840,8 +785,7 @@ fn dispatchFsRemove(manager: Manager, allocator: std.mem.Allocator, request: rpc
     return rpc.encodeAck(allocator, request.id);
 }
 
-/// The bytes come from the caller and land in the guest. The daemon opens
-/// nothing: it is the guest that creates and extends the file.
+/// The bytes come from the caller and land in the guest.
 fn dispatchFsWrite(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a write: {s}", .{ request.workspace_id, @errorName(err) });
@@ -849,8 +793,7 @@ fn dispatchFsWrite(manager: Manager, allocator: std.mem.Allocator, request: rpc.
     };
     _ = vm_client.writeFile(allocator, layout, request.path, request.data, request.create_dirs) catch |err| {
         log("write in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
-        // A write the GUEST refused is the caller's own request; anything else
-        // is the workspace not being usable. They are not the same failure.
+        // A write the GUEST refused is the caller's own request; anything else is the workspace not being usable.
         if (err == vm_client.Error.WriteFailed) {
             return rpc.encodeFailure(allocator, request.id, .bad_request, @errorName(err));
         }
@@ -859,8 +802,7 @@ fn dispatchFsWrite(manager: Manager, allocator: std.mem.Allocator, request: rpc.
     return rpc.encodeAck(allocator, request.id);
 }
 
-/// A walk's entries cross as the guest reported them — relative paths and a
-/// kind — and the daemon adds nothing to them.
+/// A walk's entries cross as the guest reported them — relative paths and a kind — and the daemon adds nothing to them.
 fn dispatchFsWalk(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a walk: {s}", .{ request.workspace_id, @errorName(err) });
@@ -885,8 +827,7 @@ fn dispatchFsWalk(manager: Manager, allocator: std.mem.Allocator, request: rpc.R
     });
 }
 
-/// A detached job runs in the workspace's VM, so the pid the caller gets back
-/// is the guest's — and the log it writes is a guest path.
+/// A detached job runs in the workspace's VM, so the pid the caller gets back is the guest's — and the log it writes is a guest path.
 fn dispatchSpawn(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = manager.ensure(allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no usable VM for a job: {s}", .{ request.workspace_id, @errorName(err) });
@@ -904,14 +845,12 @@ fn dispatchSpawn(manager: Manager, allocator: std.mem.Allocator, request: rpc.Re
         log("spawn in workspace {s} failed: {s}", .{ request.workspace_id, @errorName(err) });
         return rpc.encodeFailure(allocator, request.id, .vm_unavailable, @errorName(err));
     };
-    // A detached job is work the host cannot see any other way: it keeps the VM
-    // up until a probe says it is gone, and dies with the VM if it is wrong.
+    // A detached job is work the host cannot see any other way: it keeps the VM up until a probe says it is gone, and dies with the VM if it is wrong.
     if (manager.activity) |act| act.addJob(request.workspace_id, spawned.pid, activity_mod.nowMs());
     return rpc.encodeSpawned(allocator, request.id, spawned.pid, log_path);
 }
 
-/// `observe`, never `ensure`: a probe must not BOOT the VM it is asking about,
-/// or a job from before a stop would be reported as merely exited.
+/// `observe`, never `ensure`: a probe must not BOOT the VM it is asking about, or a job from before a stop would be reported as merely exited.
 fn dispatchProbe(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const state = try manager.state(allocator, request.workspace_id);
     defer state.deinit(allocator);
@@ -927,17 +866,14 @@ fn dispatchProbe(manager: Manager, allocator: std.mem.Allocator, request: rpc.Re
         // A guest that will not answer is not evidence that the job lives.
         return rpc.encodeProbe(allocator, request.id, false, "unresponsive", state.pid);
     };
-    // Only a proven death retires a job. An unresponsive guest may still be
-    // running it, and forgetting it there would let the reaper take the VM out
-    // from under a live build.
+    // Only a proven death retires a job.
     if (!probed.alive) {
         if (manager.activity) |act| act.jobExited(request.workspace_id, request.pid);
     }
     return rpc.encodeProbe(allocator, request.id, probed.alive, state.label, state.pid);
 }
 
-/// The layout of a VM that is ALREADY running. Booting one to answer a question
-/// about a job that VM no longer holds would be a side effect, not an answer.
+/// The layout of a VM that is ALREADY running.
 fn readyLayout(manager: Manager, allocator: std.mem.Allocator, workspace_id: []const u8) !vm_client.Layout {
     const state = try manager.state(allocator, workspace_id);
     defer state.deinit(allocator);
@@ -957,8 +893,7 @@ fn dispatchSignal(manager: Manager, allocator: std.mem.Allocator, request: rpc.R
     return rpc.encodeAck(allocator, request.id);
 }
 
-/// Read a job's log through the guest, filling the caller's budget from as many
-/// guest chunks as it takes. The host never opens the file.
+/// Read a job's log through the guest, filling the caller's budget from as many guest chunks as it takes.
 fn dispatchLog(manager: Manager, allocator: std.mem.Allocator, request: rpc.Request) ![]u8 {
     const layout = readyLayout(manager, allocator, request.workspace_id) catch |err| {
         log("workspace {s} has no running VM to read a log from: {s}", .{ request.workspace_id, @errorName(err) });
@@ -1046,9 +981,7 @@ fn readExact(fd: linux.fd_t, buf: []u8) !void {
     }
 }
 
-/// One idle VMM stopped, said once and in full: which workspace, how long it
-/// had been unused, and what it was holding. This line is the feature's only
-/// evidence in a log, so it carries the numbers.
+/// One idle VMM stopped, said once and in full: which workspace, how long it had been unused, and what it was holding.
 fn logReaped(_: *anyopaque, workspace_id: []const u8, idle_ms: i64, rss_mib: u32) void {
     log("reaped idle workspace {s}: {d}s without work, ~{d} MiB rss", .{
         workspace_id, @divTrunc(idle_ms, 1000), rss_mib,
@@ -1067,9 +1000,7 @@ fn log(comptime fmt: []const u8, args: anytype) void {
 const testing = std.testing;
 
 test "an accept that ran out of descriptors keeps the daemon alive" {
-    // The incident: a leaked listener per dispatch filled the descriptor table,
-    // `accept4` answered EMFILE, and the daemon exited — leaving every VMM it
-    // owned running with no manager.
+    // The incident: a leaked listener per dispatch filled the descriptor table, `accept4` answered EMFILE, and the daemon exited — leaving every VMM it owned running …
     try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.MFILE));
     try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.NFILE));
     try testing.expectEqual(AcceptVerdict.starved, acceptVerdict(.NOBUFS));
@@ -1088,8 +1019,7 @@ test "a listening socket that is gone ends the accept loop" {
 }
 
 test "a daemon that died takes its workspace VMs down, one that was told to stop leaves them" {
-    // Only a deliberate stop leaves a VMM running for the next daemon to
-    // adopt; a manager that failed must not orphan it.
+    // Only a deliberate stop leaves a VMM running for the next daemon to adopt; a manager that failed must not orphan it.
     try testing.expect(exitTakesVmsDown(.failed));
     try testing.expect(exitTakesVmsDown(.service_gone));
     try testing.expect(!exitTakesVmsDown(.deliberate_stop));

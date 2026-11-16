@@ -1,6 +1,4 @@
-//! Storage layer for the `update_plan` + `get_plan` agent tools. The plan is a
-//! column pair on the session it belongs to (Migration 132); `session_plan` is
-//! mirrored on every save for one release so a rollback is a binary swap.
+//! Storage layer for the `update_plan` + `get_plan` agent tools.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,8 +8,7 @@ const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
 const migration = @import("../../../migrations/migration.zig");
 
-/// One session's plan. All string fields are allocator-owned and must be
-/// freed by the caller via `deinit`.
+/// One session's plan.
 pub const PlanRow = struct {
     session_id: []const u8,
     plan_md: []const u8,
@@ -31,8 +28,7 @@ pub const SavePlanArgs = struct {
     content: []const u8,
 };
 
-/// Hard cap on plan size. 256 KiB is large enough for ~50 checklist items
-/// with prose, small enough to keep system-prompt injection bounded.
+/// Hard cap on plan size. 256 KiB is large enough for ~50 checklist items with prose, small enough to keep system-prompt injection bounded.
 pub const MAX_PLAN_BYTES: usize = 256 * 1024;
 
 fn sessionExists(
@@ -91,8 +87,7 @@ pub fn getPlan(
     return allocator.dupe(u8, "");
 }
 
-/// Fetch the full `PlanRow` for `session_id`. Returns `null` when the session
-/// never wrote a plan — `plan_updated_at` stays NULL until the first save.
+/// Fetch the full `PlanRow` for `session_id`.
 pub fn getPlanOpt(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -121,8 +116,7 @@ pub fn getPlanOpt(
     };
 }
 
-// ===================================================================== Tests
-// In-memory SQLite against the real migration chain.
+// ===================================================================== Tests In-memory SQLite against the real migration chain.
 
 const TestCtx = struct {
     db: database.Db,
@@ -153,8 +147,7 @@ fn seedSession(ctx: *TestCtx, session_id: []const u8) !void {
     );
 }
 
-/// The column as SQL returns it, so an assertion about where the plan lives
-/// cannot be satisfied by the reader under test.
+/// The column as SQL returns it, so an assertion about where the plan lives cannot be satisfied by the reader under test.
 fn rawSessionPlanMd(ctx: *TestCtx, session_id: []const u8) ![]u8 {
     const alloc = testing.allocator;
     var row = try ctx.db.queryRow(

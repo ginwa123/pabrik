@@ -2,9 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import Search from '../Search.vue'
 
-// The shape a DEFAULT-format search result has: the tool renders `rg -n` bytes
-// and the envelope wraps them as `_raw`. The card read only the JSON shape, so
-// this payload used to render "0 files, 0 matches" while the model had the lines.
+// The shape a DEFAULT-format search result has: the tool renders `rg -n` bytes and the envelope wraps them as `_raw`.
 const textPayload = {
   tool: 'search',
   parameters: { pattern: 'TODO|FIXME', path: '/repo', cwd: '/repo' },

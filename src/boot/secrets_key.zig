@@ -1,6 +1,4 @@
-//! The master key that seals `workspace_secrets.value`: `PABRIK_SECRETS_MASTER_KEY` (64 hex) if
-//! set, else `<config dir>/secrets.key` created 0600 from the OS CSPRNG on first use. Every failure
-//! collapses to `key = null` plus a `problem` the boot log reports; writes then fail closed.
+//! The master key that seals `workspace_secrets.value`: `PABRIK_SECRETS_MASTER_KEY` (64 hex) if set, else `<config dir>/secrets.key` created 0600 from the OS …
 
 const std = @import("std");
 const helpers = @import("helpers");
@@ -21,20 +19,17 @@ pub const Problem = enum {
     malformed_env,
     /// The key file exists but is not 64 hex characters.
     malformed_file,
-    /// Neither the file nor the directory could be created (read-only HOME, a
-    /// container with no writable state dir).
+    /// Neither the file nor the directory could be created (read-only HOME, a container with no writable state dir).
     unwritable,
     /// The OS CSPRNG refused to produce bytes.
     random_failed,
 };
 
 pub const Status = struct {
-    /// Null means "this host has no key": sealed rows cannot be opened and
-    /// writes are refused rather than stored as plaintext.
+    /// Null means "this host has no key": sealed rows cannot be opened and writes are refused rather than stored as plaintext.
     key: ?[KEY_LEN]u8 = null,
     source: Source = .key_file,
-    /// The key file in force, owned. Empty when the key came from the
-    /// environment.
+    /// The key file in force, owned.
     path: []u8 = &.{},
     problem: ?Problem = null,
 
@@ -60,8 +55,7 @@ pub const Status = struct {
     }
 };
 
-/// Parse 64 hex characters, ignoring surrounding whitespace (which is what a
-/// trailing newline in a secret file or an exported variable leaves behind).
+/// Parse 64 hex characters, ignoring surrounding whitespace (which is what a trailing newline in a secret file or an exported variable leaves behind).
 pub fn parseKey(text: []const u8) ?[KEY_LEN]u8 {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len != hex_len) return null;
@@ -83,8 +77,7 @@ fn hexDigit(c: u8) ?u8 {
     };
 }
 
-/// Resolve the key. `env_value` is the raw `PABRIK_SECRETS_MASTER_KEY` (null
-/// when unset); `config_dir` is the directory the key file lives in.
+/// Resolve the key.
 pub fn load(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -92,8 +85,7 @@ pub fn load(
     config_dir: []const u8,
 ) Status {
     if (env_value) |raw| {
-        // A variable that is SET but wrong is an error, not a reason to fall
-        // back to a file: the operator meant to control the key.
+        // A variable that is SET but wrong is an error, not a reason to fall back to a file: the operator meant to control the key.
         const key = parseKey(raw) orelse return .{ .problem = .malformed_env };
         return .{ .key = key, .source = .environment };
     }
@@ -104,8 +96,7 @@ pub fn load(
     switch (readKeyFile(allocator, io, path) catch .unreadable) {
         .key => |key| return .{ .key = key, .source = .key_file, .path = path },
         .malformed => return .{ .problem = .malformed_file, .path = path },
-        // A file that exists but will not open must NOT be replaced: the new
-        // key would orphan every value sealed under the old one.
+        // A file that exists but will not open must NOT be replaced: the new key would orphan every value sealed under the old one.
         .unreadable => return .{ .problem = .unwritable, .path = path },
         .missing => {},
     }
@@ -151,8 +142,7 @@ fn readKeyFile(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Read
     return .{ .key = key };
 }
 
-/// Generate the key, write it 0600, and hand it back. Windows has no POSIX
-/// mode bits, so the file is protected by the account rather than by the mode.
+/// Generate the key, write it 0600, and hand it back.
 fn createKeyFile(io: std.Io, path: []const u8) !([KEY_LEN]u8) {
     var key: [KEY_LEN]u8 = undefined;
     try helpers.random.fillRandom(&key);
@@ -187,8 +177,7 @@ test "parseKey accepts 64 hex characters and nothing else" {
     try testing.expectEqual(@as(u8, 0x01), key[0]);
     try testing.expectEqual(@as(u8, 0xef), key[31]);
 
-    // Upper case, and the trailing newline an exported variable or a pasted
-    // file leaves behind.
+    // Upper case, and the trailing newline an exported variable or a pasted file leaves behind.
     const upper = "0123456789ABCDEF" ** 4;
     const from_upper = parseKey("  " ++ upper ++ "\n") orelse return error.ExpectedKey;
     try testing.expectEqualSlices(u8, &key, &from_upper);
@@ -270,8 +259,7 @@ test "a malformed key file reports a problem instead of quietly regenerating" {
 
     var status = load(testing.allocator, testing.io, null, config_dir);
     defer status.deinit(testing.allocator);
-    // Regenerating here would destroy every value sealed under the old key, so
-    // the answer is "no key" and a message that says to delete the file.
+    // Regenerating here would destroy every value sealed under the old key, so the answer is "no key" and a message that says to delete the file.
     try testing.expect(status.key == null);
     try testing.expectEqual(Problem.malformed_file, status.problem.?);
 }
@@ -289,8 +277,7 @@ test "a malformed environment key does not fall back to the key file" {
     defer status.deinit(testing.allocator);
     try testing.expect(status.key == null);
     try testing.expectEqual(Problem.malformed_env, status.problem.?);
-    // An operator who set the variable must hear about the typo, not get a
-    // different key behind their back.
+    // An operator who set the variable must hear about the typo, not get a different key behind their back.
     try testing.expectError(error.FileNotFound, tmp.dir.openFile(testing.io, file_name, .{}));
 }
 

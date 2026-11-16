@@ -19,37 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Regression: the reader's OWN turn, echoed back by the server, has to land at
- * the BOTTOM of the transcript.
- *
- * **The wire fact this file exists for.** `SseEventLLMHistory`
- * (`src/agentic_loop/sse_on_event_send_llm_history.zig:19-56`) has **no
- * `created_at` member** — the server pretty-prints the struct and cannot emit a
- * key the struct does not declare. So *every* `llm_full` row arrives without a
- * timestamp, the reader's included: the queue drain writes it with
- * `is_emit_sse = true` (`workflow.zig:997-1024`).
- *
- * That is survivable, because the Vue web **appends** the echoed row with a
- * local clock and never sorts it (`ChatView.vue:3870-3873`,
- * `messages.value.push({ ..., timestamp: new Date() })`). Sorting a row whose
- * key is `0` against a transcript whose newest rows are real keys files it at
- * **index 0** — the top of the chat — while the viewport is pinned to the last
- * index. The reader sends a message into an existing chat, watches the spinner
- * appear, and their own words never show up.
- *
- * The frames below are the ones the backend really sends for one turn, replayed
- * through the real [SseFrameParser] and the real [decodeChatFrame] rather than
- * hand-built event objects, so a fixture cannot quietly grow a `created_at` the
- * server would never have sent.
- */
-/**
- * One already-answered turn in the transcript, served over REST.
- *
- * Top-level rather than a member: the nested [ChatViewModelUserEchoTest.FakeTransport]
- * cannot reach the outer class's instance properties, and its default argument
- * needs a real body.
- */
+// Regression: the reader's OWN turn, echoed back by the server, has to land at the BOTTOM of the transcript.
 private val TWO_TURN_TRANSCRIPT = """
     {"messages":[
       {"id":"900","role":"user","content":"hello there","created_at":"1789450000000000000"},
@@ -90,11 +60,7 @@ class ChatViewModelUserEchoTest {
         override fun clear() { value = null }
     }
 
-    /**
-     * A transcript that already has one answered turn in it, because "the user
-     * bubble is last" is only a meaningful claim when there is something older
-     * for it to be last *relative to*.
-     */
+    /** A transcript that already has one answered turn in it, because "the user bubble is last" is only a meaningful claim when there is something older for it to be … */
     private class FakeTransport(
         var messagesBody: String = TWO_TURN_TRANSCRIPT,
         var offline: Boolean = false,
@@ -141,14 +107,7 @@ class ChatViewModelUserEchoTest {
         nowMillis = clock,
     ).also { it.onUserChanged("user_a") }
 
-    /**
-     * Feeds raw SSE wire text through the real line parser and the real frame
-     * decoder, then hands the event to the bus exactly as the socket does.
-     *
-     * Going through the parser is the point: it is what rejoins a pretty-printed
-     * payload, so a test that built an [SseFrame] by hand would not notice the
-     * server's multi-line `data:` framing at all.
-     */
+    /** Feeds raw SSE wire text through the real line parser and the real frame decoder, then hands the event to the bus exactly as the socket does. */
     private fun FakeSseBus.replay(wire: String) {
         val parser = SseFrameParser()
         for (line in wire.split("\n")) {
@@ -158,19 +117,8 @@ class ChatViewModelUserEchoTest {
     }
 
     // ── the wire ────────────────────────────────────────────────────────────
-    //
-    // Flush-left `data:` on every line, exactly as `unified_events_sse.zig:76-84`
-    // writes it: it prefixes the server's own pretty-printed line with `data: `
-    // rather than indenting the prefix, so the JSON indentation lands *after*
-    // the colon. `SseFrameParser` splits on the first colon, so an indented
-    // `data:` prefix would silently drop every continuation line — the fixture
-    // has to be the wire, not a prettier way of writing it.
 
-    /**
-     * `queue_queued` — emitted by `insert_queue_message.zig:47-80` on EVERY
-     * send, idle session included (`workflow.zig:727-743`): the turn only starts
-     * after the drain, so even an unbusy chat routes through the queue first.
-     */
+    /** `queue_queued` — emitted by `insert_queue_message.zig:47-80` on EVERY send, idle session included (`workflow.zig:727-743`): the turn only starts after the … */
     private val QUEUE_QUEUED_WIRE = """
 event: queue_queued
 data: {
@@ -183,11 +131,7 @@ data: }
 
 """.trimIndent() + "\n"
 
-    /**
-     * `queue_deleted` — `delete_queue_worker.zig:31-66`, fired right after the
-     * drain. Note the payload has **no** `message`: by the time this lands the
-     * text has to be in the transcript or it is nowhere.
-     */
+    /** `queue_deleted` — `delete_queue_worker.zig:31-66`, fired right after the drain. */
     private val QUEUE_DELETED_WIRE = """
 event: queue_deleted
 data: {
@@ -198,14 +142,7 @@ data: }
 
 """.trimIndent() + "\n"
 
-    /**
-     * `llm_full` with `role: "user"` — the drain writing the reader's turn to
-     * `llm_history` with `is_emit_sse = true` (`workflow.zig:997-1024`).
-     *
-     * **There is no `created_at` line here and there must not be one added**: the
-     * struct that gets serialised cannot produce it. The `finish_reason` is the
-     * literal string `"null"`, which is exactly what the backend sends.
-     */
+    /** `llm_full` with `role: "user"` — the drain writing the reader's turn to `llm_history` with `is_emit_sse = true` (`workflow.zig:997-1024`). */
     private val USER_ECHO_WIRE = """
 event: llm_full
 data: {
@@ -249,12 +186,7 @@ data: }
 
 """.trimIndent() + "\n"
 
-    /**
-     * A `created_at` the server DID send — the only shape in which one arrives,
-     * because nothing in `SseEventLLMHistory` produces it today. It is here to
-     * pin the other half of the rule: a row that carries a real timestamp is
-     * ordered by that timestamp, not by when the phone happened to receive it.
-     */
+    /** A `created_at` the server DID send — the only shape in which one arrives, because nothing in `SseEventLLMHistory` produces it today. */
     private val SERVER_STAMPED_ECHO_WIRE = """
 event: llm_full
 data: {
@@ -271,11 +203,7 @@ data: }
 
     // ── the tests ───────────────────────────────────────────────────────────
 
-    /**
-     * The reported symptom, end to end: send into an EXISTING chat, let the
-     * server's own echo of the reader's turn land, and the transcript must read
-     * in the order the reader lived it.
-     */
+    /** The reported symptom, end to end: send into an EXISTING chat, let the server's own echo of the reader's turn land, and the transcript must read in the order … */
     @Test
     fun `the sent message is not received as the last turn`() = echoTest { schedulers ->
         val cache = InMemoryChatCache()
@@ -291,8 +219,7 @@ data: }
         schedulers.drain()
         assertEquals("the POST must actually have gone out", 1, transport.sendCount)
 
-        // The turn the reader just sent is queued first — every send is, whether
-        // or not a worker was already live.
+        // The turn the reader just sent is queued first — every send is, whether or not a worker was already live.
         bus.replay(QUEUE_QUEUED_WIRE)
         schedulers.drain()
         assertEquals(
@@ -333,12 +260,7 @@ data: }
         )
     }
 
-    /**
-     * The ordering must survive the process. `rawObjectFor` writes
-     * `created_at = message.sortKeyNanos.toString()`, so a row that came off the
-     * wire keyless is persisted as `"0"` — and a cold start re-reads the same
-     * wrong position it just repaired, which is how this comes back weeks later.
-     */
+    /** The ordering must survive the process. */
     @Test
     fun `a cold start still reads the sent message in the right place`() = echoTest { schedulers ->
         val cache = InMemoryChatCache()
@@ -356,8 +278,7 @@ data: }
         bus.replay(USER_ECHO_WIRE)
         schedulers.drain()
 
-        // A brand new ViewModel over the same cache, with the socket offline, so
-        // the paint can only come from disk.
+        // A brand new ViewModel over the same cache, with the socket offline, so the paint can only come from disk.
         val offline = FakeTransport(offline = true)
         val restarted = model(
             schedulers.ioDispatcher,
@@ -380,20 +301,7 @@ data: }
         )
     }
 
-    /**
-     * The other half of the rule: a row that *does* carry a server timestamp
-     * keeps it.
-     *
-     * The arrival stamp exists to give keyless rows something to be ordered by.
-     * If it were applied unconditionally it would also overwrite a server's
-     * ordering with the phone's clock — and the phone's clock is the one input
-     * on this whole path that nobody vouches for.
-     *
-     * Note what this asserts and what it does not: the row's **key** and
-     * **timestamp** survive. Its POSITION is arrival order, like the web's,
-     * because an `llm_full` frame is by construction the newest row written and
-     * re-sorting on a timestamp that arrived keyless is the defect.
-     */
+    /** The other half of the rule: a row that *does* carry a server timestamp keeps it. */
     @Test
     fun `a wire timestamp is never overwritten by the local clock`() = echoTest { schedulers ->
         val bus = FakeSseBus()
@@ -425,10 +333,7 @@ data: }
     }
 
     private companion object {
-        /**
-         * A fixed clock, so the assertions are about ORDER rather than about how
-         * fast the machine the test runs on happens to be.
-         */
+        /** A fixed clock, so the assertions are about ORDER rather than about how fast the machine the test runs on happens to be. */
         const val FIXED_MILLIS = 1_789_451_300_000L
     }
 }

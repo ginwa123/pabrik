@@ -1,13 +1,10 @@
-//! At-rest sealing for workspace secret values: `v1:<key_id>:<b64url(nonce || ct || tag)>`,
-//! AES-256-GCM, AAD = `v1:<secret_id>`. Protects the database FILE (backups, copies, a DB GUI);
-//! not the account, which can read the key file. Writes fail closed, and a legacy row reads as-is.
+//! At-rest sealing for workspace secret values: `v1:<key_id>:<b64url(nonce || ct || tag)>`, AES-256-GCM, AAD = `v1:<secret_id>`.
 
 const std = @import("std");
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
 
-/// Envelope version marker. A stored value either starts with this or is
-/// legacy plaintext; there is no third state.
+/// Envelope version marker.
 pub const prefix = "v1:";
 
 pub const KEY_LEN: usize = 32;
@@ -23,31 +20,25 @@ pub const SealError = error{
     UnsupportedPlatform,
 };
 
-/// What `sealValue` can report: the cipher's own failures plus the "no key on
-/// this host" state, which is a refusal rather than a reason to store plaintext.
+/// What `sealValue` can report: the cipher's own failures plus the "no key on this host" state, which is a refusal rather than a reason to store plaintext.
 pub const SealValueError = SealError || error{SealingUnavailable};
 
 pub const OpenError = error{
     /// Not an envelope. The caller reads it as legacy plaintext.
     NotSealed,
-    /// The envelope does not parse: bad prefix, bad key id, bad base64, or too
-    /// short to contain a nonce and a tag.
+    /// The envelope does not parse: bad prefix, bad key id, bad base64, or too short to contain a nonce and a tag.
     Malformed,
-    /// Sealed with a key whose id is not ours. Distinct from `Corrupt` because
-    /// the remedy is different: the keychain holds the wrong key, versus the
-    /// row itself is damaged.
+    /// Sealed with a key whose id is not ours.
     WrongKey,
     /// GCM authentication failed: the ciphertext, the tag or the AAD changed.
     Corrupt,
     OutOfMemory,
 };
 
-/// The process's master key, or null when the host has no keychain. Filled once
-/// by `setKey` at boot, before any request or agent runs.
+/// The process's master key, or null when the host has no keychain.
 var current_key: ?[KEY_LEN]u8 = null;
 
-/// Record the master key. `null` means "no key on this host": writes go in
-/// plaintext and sealed rows cannot be opened.
+/// Record the master key.
 pub fn setKey(key: ?[KEY_LEN]u8) void {
     current_key = key;
 }
@@ -65,11 +56,9 @@ pub fn isSealed(stored: []const u8) bool {
 pub const Kind = enum {
     /// A `v1:` envelope this build can open.
     sealed,
-    /// No envelope marker: a value written before this feature existed, or
-    /// while this host had no keychain. Read as-is.
+    /// No envelope marker: a value written before this feature existed, or while this host had no keychain.
     legacy_plaintext,
-    /// Shaped like an envelope (`v<digits>:`) but not a version this build knows. NEVER treated as
-    /// plaintext: substituting a future `v2:…` would hand the provider the envelope text.
+    /// Shaped like an envelope (`v<digits>:`) but not a version this build knows.
     unknown_envelope,
 };
 
@@ -99,8 +88,7 @@ fn aadFor(allocator: std.mem.Allocator, secret_id: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, prefix ++ "{s}", .{secret_id});
 }
 
-/// Seal `plaintext` for the row `secret_id`; the caller owns the result. A fresh nonce per call
-/// means the same value seals differently twice, so a rotation is not observable from the file.
+/// Seal `plaintext` for the row `secret_id`; the caller owns the result.
 pub fn seal(
     allocator: std.mem.Allocator,
     key: [KEY_LEN]u8,
@@ -141,8 +129,7 @@ pub fn seal(
     return out;
 }
 
-/// Open an envelope produced by `seal`. `error.NotSealed` means the input was
-/// never sealed and the caller should use it as-is.
+/// Open an envelope produced by `seal`.
 pub fn open(
     allocator: std.mem.Allocator,
     key: [KEY_LEN]u8,
@@ -164,8 +151,7 @@ pub fn open(
     if (it.next() != null) return error.Malformed;
     if (key_id.len != KEY_ID_HEX_LEN) return error.Malformed;
 
-    // Report a foreign key before touching the ciphertext: the two failures
-    // have different remedies, and a GCM tag failure cannot tell them apart.
+    // Report a foreign key before touching the ciphertext: the two failures have different remedies, and a GCM tag failure cannot tell them apart.
     const ours = keyIdOf(key);
     if (!std.mem.eql(u8, key_id, &ours)) return error.WrongKey;
 
@@ -204,9 +190,7 @@ pub fn sealingAvailable() bool {
     return current_key != null;
 }
 
-/// Seal `plaintext` under the host key. FAILS CLOSED: with no key the write is
-/// refused rather than stored as plaintext, so this column can never gain a new
-/// plaintext row.
+/// Seal `plaintext` under the host key.
 pub fn sealValue(
     allocator: std.mem.Allocator,
     secret_id: []const u8,
@@ -216,8 +200,7 @@ pub fn sealValue(
     return seal(allocator, key, secret_id, plaintext);
 }
 
-/// The read counterpart: open an envelope, pass legacy plaintext through. `error.KeyUnavailable`
-/// is distinct from "no such secret", so a sealed row on a keyless host is never an empty value.
+/// The read counterpart: open an envelope, pass legacy plaintext through.
 pub const OpenValueError = error{ KeyUnavailable, Malformed, WrongKey, Corrupt, OutOfMemory };
 
 pub fn openValue(
@@ -240,17 +223,14 @@ pub fn openValue(
     };
 }
 
-/// Seal every legacy plaintext row; returns how many were sealed (0 with no key). At boot, not in a
-/// migration, because the chain must stay runnable where no key exists. With `secure_delete` on,
-/// the UPDATE zeroes the old bytes in place; `compactAfterSeal` handles what predates the pragma.
+/// Seal every legacy plaintext row; returns how many were sealed (0 with no key).
 pub fn sealLegacyRows(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) !usize {
     const key = current_key orelse return 0;
 
-    // Collect first, update second: rewriting rows while the SELECT's cursor is
-    // still open is how a "seal everything" loop seals a moving target.
+    // Collect first, update second: rewriting rows while the SELECT's cursor is still open is how a "seal everything" loop seals a moving target.
     const Row = struct { id: []u8, value: []u8 };
     var rows: std.ArrayList(Row) = .empty;
     defer {
@@ -276,8 +256,7 @@ pub fn sealLegacyRows(
     }
     if (rows.items.len == 0) return 0;
 
-    // One UPDATE per row, each atomic on its own; the pass is idempotent, so a crash midway is
-    // finished by the next boot. No wrapping transaction: `BEGIN IMMEDIATE` is sqlite-only SQL.
+    // One UPDATE per row, each atomic on its own; the pass is idempotent, so a crash midway is finished by the next boot.
     var sealed_count: usize = 0;
     for (rows.items) |row| {
         const envelope = seal(allocator, key, row.id, row.value) catch |err| {
@@ -298,9 +277,7 @@ pub fn sealLegacyRows(
     return sealed_count;
 }
 
-/// Make the file on disk match the claim that values are sealed: `wal_checkpoint(TRUNCATE)` drops
-/// frames holding pre-seal bytes, then `VACUUM` (skipped above `vacuum_max_bytes`, logged) purges
-/// pages freed before `secure_delete` was switched on.
+/// Make the file on disk match the claim that values are sealed: `wal_checkpoint(TRUNCATE)` drops frames holding pre-seal bytes, then `VACUUM` (skipped above …
 pub const vacuum_max_bytes: u64 = 256 * 1024 * 1024;
 
 pub fn compactAfterSeal(
@@ -334,8 +311,6 @@ pub fn compactAfterSeal(
 }
 
 // ==== Tests ================================================================
-// Each test sets its own key (never the real key file); `setKey(null)` covers "no key here".
-// ============================================================================
 
 const testing = std.testing;
 
@@ -354,11 +329,9 @@ test "seal/open round-trips, and the envelope carries no plaintext" {
 
     // The shape: v1:<8 hex>:<payload>
     try testing.expect(isSealed(envelope));
-    // Exactly two separators: `v1`, the key id, then the payload (the base64url
-    // alphabet has no `:` in it).
+    // Exactly two separators: `v1`, the key id, then the payload (the base64url alphabet has no `:` in it).
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, envelope, ":"));
-    // The key id is derived from the key, so it is asserted against the same
-    // derivation rather than against a literal that a different key would move.
+    // The key id is derived from the key, so it is asserted against the same derivation rather than against a literal that a different key would move.
     const expected_id = keyIdOf(test_key);
     try testing.expectEqualStrings(&expected_id, envelope[prefix.len..][0..KEY_ID_HEX_LEN]);
     try testing.expectEqual(@as(u8, ':'), envelope[prefix.len + KEY_ID_HEX_LEN]);
@@ -381,8 +354,7 @@ test "the nonce is fresh per write, so the same value seals differently twice" {
     const b = try seal(alloc, test_key, "sec_1", plaintext);
     defer alloc.free(b);
 
-    // A fixed nonce would make these identical, which is what lets a database
-    // reader tell that a rotation did not actually change the credential.
+    // A fixed nonce would make these identical, which is what lets a database reader tell that a rotation did not actually change the credential.
     try testing.expect(!std.mem.eql(u8, a, b));
 
     const opened_a = try open(alloc, test_key, "sec_1", a);
@@ -411,8 +383,7 @@ test "an envelope is bound to its row id, so moving it to another secret fails" 
     const envelope = try seal(alloc, test_key, "sec_1", "value");
     defer alloc.free(envelope);
 
-    // A row copied, moved or swapped by someone with write access to the file
-    // must not decrypt into the wrong secret.
+    // A row copied, moved or swapped by someone with write access to the file must not decrypt into the wrong secret.
     try testing.expectError(error.Corrupt, open(alloc, test_key, "sec_2", envelope));
 }
 
@@ -423,8 +394,7 @@ test "a foreign key is reported as WrongKey, not as a corrupt row" {
 
     var other_key: [KEY_LEN]u8 = undefined;
     @memset(&other_key, 7);
-    // The two failures have different remedies — the keychain holds the wrong
-    // key, versus the row is damaged — so they must not collapse into one.
+    // The two failures have different remedies — the keychain holds the wrong key, versus the row is damaged — so they must not collapse into one.
     try testing.expectError(error.WrongKey, open(alloc, other_key, "sec_1", envelope));
 }
 
@@ -432,9 +402,7 @@ test "malformed envelopes are rejected, not guessed at" {
     const alloc = testing.allocator;
     const id = keyIdOf(test_key);
 
-    // These carry OUR key id on purpose: a foreign id is reported as WrongKey
-    // before the payload is ever parsed (that is its own test), so a case that
-    // used one here would prove nothing about the payload checks.
+    // These carry OUR key id on purpose: a foreign id is reported as WrongKey before the payload is ever parsed (that is its own test), so a case that used one here …
     const owned = [_][]u8{
         try std.fmt.allocPrint(alloc, "v1:{s}", .{id}), // no payload field
         try std.fmt.allocPrint(alloc, "v1:{s}:", .{id}), // empty payload
@@ -470,8 +438,7 @@ test "classify separates legacy plaintext from a future envelope version" {
     try testing.expectEqual(Kind.legacy_plaintext, classify("v1"));
     try testing.expectEqual(Kind.legacy_plaintext, classify("version: 1"));
 
-    // A version this build does not know is an ERROR, not plaintext: the whole
-    // point is that envelope text must never be substituted as a credential.
+    // A version this build does not know is an ERROR, not plaintext: the whole point is that envelope text must never be substituted as a credential.
     try testing.expectEqual(Kind.unknown_envelope, classify("v2:b38d9170:AAAA"));
     try testing.expectEqual(Kind.unknown_envelope, classify("v10:x:y"));
     try testing.expectError(error.Malformed, open(alloc, test_key, "sec_1", "v2:b38d9170:AAAA"));
@@ -481,9 +448,7 @@ test "classify separates legacy plaintext from a future envelope version" {
 test "legacy plaintext passes through both helpers untouched" {
     const alloc = testing.allocator;
 
-    // No prefix means a row written before this feature existed, or written
-    // while the host had no keychain. It must stay readable — that single rule
-    // is why the upgrade cannot brick.
+    // No prefix means a row written before this feature existed, or written while the host had no keychain.
     try testing.expectError(error.NotSealed, open(alloc, test_key, "sec_1", "plain-value"));
 
     const passed = try openValue(alloc, "sec_1", "plain-value");
@@ -496,8 +461,7 @@ test "with no key set, a write is refused instead of stored as plaintext" {
     defer setKey(null);
 
     setKey(null);
-    // FAIL CLOSED. The alternative — writing the value as-is — is what makes
-    // "encrypted at rest" a claim nobody can check.
+    // FAIL CLOSED.
     try testing.expect(!sealingAvailable());
     try testing.expectError(error.SealingUnavailable, sealValue(alloc, "sec_1", "no-key-here"));
 
@@ -529,9 +493,7 @@ test "sealValue under a key produces an envelope, and openValue reads it back" {
     try testing.expectEqualStrings("round-trip-me", opened);
 }
 
-/// Minimal `workspace_secrets` fixture. Spelled out here rather than imported
-/// from the migrations: this module is a leaf, and a test that borrowed the
-/// migration would pass even if the migration shipped a different table.
+/// Minimal `workspace_secrets` fixture.
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -589,8 +551,7 @@ test "sealLegacyRows seals every plaintext row and leaves sealed ones alone" {
         \\  ('sec_b', 'ws_1', 'BETA', 'plain-b')
     , &.{});
 
-    // A row that is already sealed must not be re-sealed (which would double
-    // the envelope and lose the value).
+    // A row that is already sealed must not be re-sealed (which would double the envelope and lose the value).
     const already = try seal(alloc, test_key, "sec_c", "already-sealed");
     defer alloc.free(already);
     try ctx.db.exec(alloc,
@@ -642,8 +603,6 @@ test "sealLegacyRows is a no-op with no key, and the rows stay readable" {
 test "after sealing, the plaintext is gone from the database FILE" {
     if (comptime database.backend_is_postgres) return error.SkipZigTest;
     // THE assertion that proves "encrypted at rest" rather than "round-trips".
-    // Everything above tests the cipher in memory; this reads the bytes SQLite
-    // actually left on disk, which is the thing a copied `agent.db` contains.
     const alloc = testing.allocator;
     defer setKey(null);
     setKey(test_key);
@@ -662,8 +621,7 @@ test "after sealing, the plaintext is gone from the database FILE" {
     var db: database.Db = .{};
     defer db.deinit();
     try db.init(io, db_path_z);
-    // The same pragma the real boot path applies, because it is half of why
-    // the UPDATE below erases in place instead of leaving the old bytes behind.
+    // The same pragma the real boot path applies, because it is half of why the UPDATE below erases in place instead of leaving the old bytes behind.
     try db.exec(alloc, "PRAGMA secure_delete = ON", &.{});
     try db.exec(alloc,
         \\CREATE TABLE workspace_secrets (
@@ -682,8 +640,7 @@ test "after sealing, the plaintext is gone from the database FILE" {
         \\VALUES ('sec_s', 'ws_1', 'S', ?)
     , &[_][]const u8{sentinel});
 
-    // Database AND both sidecars: a fresh write lives in `-wal` until a checkpoint, so searching
-    // only the main file would miss the newest value and make the control pass for a wrong reason.
+    // Database AND both sidecars: a fresh write lives in `-wal` until a checkpoint, so searching only the main file would miss the newest value and make the control …
     const read_file_bytes = struct {
         fn go(io_: std.Io, dir: std.Io.Dir, gpa: std.mem.Allocator) ![]u8 {
             var out: std.ArrayList(u8) = .empty;
@@ -700,8 +657,7 @@ test "after sealing, the plaintext is gone from the database FILE" {
         }
     }.go;
 
-    // POSITIVE CONTROL: the plaintext IS on disk before sealing, otherwise the assertion below
-    // passes on a search that finds nothing because it looks in the wrong place.
+    // POSITIVE CONTROL: the plaintext IS on disk before sealing, otherwise the assertion below passes on a search that finds nothing because it looks in the wrong …
     const before = try read_file_bytes(io, tmp.dir, alloc);
     defer alloc.free(before);
     try testing.expect(std.mem.indexOf(u8, before, sentinel) != null);
@@ -712,8 +668,7 @@ test "after sealing, the plaintext is gone from the database FILE" {
     const after = try read_file_bytes(io, tmp.dir, alloc);
     defer alloc.free(after);
     try testing.expect(std.mem.indexOf(u8, after, sentinel) == null);
-    // And the row still reads back, so the plaintext is gone because it is
-    // sealed, not because it was lost.
+    // And the row still reads back, so the plaintext is gone because it is sealed, not because it was lost.
     var q = try db.query(alloc, "SELECT value FROM workspace_secrets WHERE id = 'sec_s'", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;

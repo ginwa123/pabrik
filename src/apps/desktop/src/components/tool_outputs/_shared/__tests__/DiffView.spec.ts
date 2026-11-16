@@ -18,8 +18,7 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-/** Class names anywhere inside `root` that force a text color with
- * `!important` — the only form that beats `.tok-*` in the compiled CSS. */
+/** Class names anywhere inside `root` that force a text color with `!important` — the only form that beats `.tok-*` in the compiled CSS. */
 function importantTextTints(root: {
   findAll: (s: string) => { classes: () => string[] }[]
 }): string[] {
@@ -90,8 +89,7 @@ describe('DiffView', () => {
   })
 
   it('REGRESSION: line-shift after insert renders only 1 changed row', () => {
-    // Inserting 'b' at position 2 of a 10-line file should mark only line 2
-    // as changed. Lines 3-10 must remain isChanged=false in the split view.
+    // Inserting 'b' at position 2 of a 10-line file should mark only line 2 as changed.
     const wrapper = mount(DiffView, {
       props: {
         before: 'l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10',
@@ -170,9 +168,7 @@ describe('DiffView', () => {
     localStorage.clear()
   })
 
-  // ─────────────────────────────────────────────────────────────────────
   // jump-to-line emit (chunks 5+6)
-  // ─────────────────────────────────────────────────────────────────────
   it('emits jump-to-line when an after-side line number is clicked (split view)', async () => {
     const wrapper = mount(DiffView, {
       props: {
@@ -181,13 +177,10 @@ describe('DiffView', () => {
       },
     })
     // Find the row containing the after-line "2" (the inserted row).
-    // The after-side row has data-side="after" and data-line="2".
     const afterLineRows = wrapper.findAll('[data-side="after"][data-line="2"]')
     expect(afterLineRows.length).toBe(1)
     const afterLineRow = afterLineRows[0]!
     // The gutter is the first <span> child (sibling of the bg layer).
-    // Query for it directly because the row now has a [data-bg] div
-    // before the gutter span.
     const gutter = afterLineRow.element.querySelector('span:not([data-bg])')!
     expect(gutter).toBeTruthy()
     await gutter.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -221,8 +214,7 @@ describe('DiffView', () => {
       // Pure insert: empty before → no before-line numbers anywhere.
       props: { before: '', after: 'NEW' },
     })
-    // The before-side gutter cells should have no line number — clicking
-    // them should NOT emit (no `data-line` attr on those rows).
+    // The before-side gutter cells should have no line number — clicking them should NOT emit (no `data-line` attr on those rows).
     const rowsWithoutLine = wrapper.findAll('[data-side="before"][data-row]')
     rowsWithoutLine.forEach((r) => {
       expect(r.attributes('data-line')).toBeUndefined()
@@ -230,13 +222,9 @@ describe('DiffView', () => {
     expect(wrapper.emitted('jump-to-line')).toBeFalsy()
   })
 
-  // ───────────────────────────────────────────────────────────────────── Clean split-view
-  // rendering (chunks 5+6 redesign) Layout (top → bottom in DOM): 1. PANE — <div
-  // class="overflow-x-auto ..."> (the scroll container) 2.
+  // ───────────────────────────────────────────────────────────────────── Clean split-view rendering (chunks 5+6 redesign) Layout (top → bottom in DOM): 1.
   it('split view: changed row has bg color on itself, NO inline highlights', () => {
-    // User feedback: the previous version mixed row bg + per-word strikethrough + per-word
-    // highlights on the same line, which was unreadable. The new design is row bg on the row
-    // element + plain text — no [data-bg] child, no inline highlights.
+    // User feedback: the previous version mixed row bg + per-word strikethrough + per-word highlights on the same line, which was unreadable.
     const wrapper = mount(DiffView, {
       props: {
         before: 'hello world',
@@ -246,15 +234,12 @@ describe('DiffView', () => {
     const beforeRows = wrapper.findAll('[data-side="before"][data-row]')
     expect(beforeRows.length).toBeGreaterThan(0)
     const firstBeforeRow = beforeRows[0]!
-    // The bg is on the row's own inline style (not on a [data-bg] child). We assert the row has the
-    // bg-color and that NO [data-bg] child element exists — locks in the redesigned layout so a
-    // future revert to the old per-row [data-bg] layer is caught.
+    // The bg is on the row's own inline style (not on a [data-bg] child).
     expect(firstBeforeRow.attributes('style') ?? '').toMatch(/background-color/)
     expect(firstBeforeRow.find('[data-bg]').exists()).toBe(false)
     // Plain text — no strikethrough anywhere in the row.
     expect(firstBeforeRow.html()).not.toContain('line-through')
-    // No green "insert" highlight inside the before side (was the
-    // original visual confusion — strikethrough on green).
+    // No green "insert" highlight inside the before side (was the original visual confusion — strikethrough on green).
     expect(firstBeforeRow.html()).not.toMatch(/bg-\[var\(--tint-success\)\]/)
   })
 
@@ -277,8 +262,7 @@ describe('DiffView', () => {
   })
 
   it('split view: shared sizing wrapper has width:max-content + min-width:100% (one wrapper per pane)', () => {
-    // Critical UX combination: ONE shared sizing wrapper per pane (width: max-content + min-width:
-    // 100%) so every row inherits the same final width.
+    // Critical UX combination: ONE shared sizing wrapper per pane (width: max-content + min-width
     const wrapper = mount(DiffView, {
       props: {
         before: 'x',
@@ -288,22 +272,18 @@ describe('DiffView', () => {
     const row = wrapper.find('[data-row]')
     expect(row.exists()).toBe(true)
     // The row's direct parent is the SHARED WRAPPER (single per pane).
-    // It has width:max-content + min-width:100%.
     const sharedWrapper = row.element.parentElement!
     const wrapperStyle = sharedWrapper.getAttribute('style') ?? ''
     expect(wrapperStyle).toMatch(/width:\s*max-content/)
     expect(wrapperStyle).toMatch(/min-width:\s*100%/)
-    // The row itself is `width: 100%` of the shared wrapper — not
-    // `max-content` (which would per-row-size).
+    // The row itself is `width: 100%` of the shared wrapper — not `max-content` (which would per-row-size).
     const rowStyle = row.attributes('style') ?? ''
     expect(rowStyle).toMatch(/width:\s*100%/)
     expect(rowStyle).not.toMatch(/width:\s*max-content/)
   })
 
   it('split view: pane uses overflow-x-auto (long lines trigger horizontal scroll)', () => {
-    // The PANE (grandparent of the row, parent of the shared wrapper) uses `overflow-x: auto` so
-    // long content triggers a horizontal scrollbar. Combined with the shared-wrapper sizing, the bg
-    // stays anchored to the visible pane while the content scrolls under it.
+    // The PANE (grandparent of the row, parent of the shared wrapper) uses `overflow-x: auto` so long content triggers a horizontal scrollbar.
     const wrapper = mount(DiffView, {
       props: {
         before: 'a\nb',
@@ -319,9 +299,7 @@ describe('DiffView', () => {
   })
 
   it('split view: gutter is position:sticky so line numbers stay visible when scrolling right', () => {
-    // When the user scrolls right, the gutter (line number cell)
-    // should stay visible at the left edge of the pane. This is
-    // implemented via position:sticky + left:0 on the gutter span.
+    // When the user scrolls right, the gutter (line number cell) should stay visible at the left edge of the pane.
     const wrapper = mount(DiffView, {
       props: {
         before: 'a',
@@ -338,9 +316,7 @@ describe('DiffView', () => {
     expect(gutterStyle).toMatch(/left:\s*0/)
   })
 
-  // ─────────────────────────────────────────────────────────────────────
   // Code coloring (text_replace output code coloring)
-  // ─────────────────────────────────────────────────────────────────────
   it('colorizes tokens when filePath has a known extension', () => {
     const wrapper = mount(DiffView, {
       props: {
@@ -397,9 +373,7 @@ describe('DiffView', () => {
   })
 
   it('states its own text colour on every pane, so plain tokens are readable', () => {
-    // Measured in a real browser: with the row tint gone, `.tok-plain` (color: inherit) resolved to
-    // the initial value — BLACK on the dark card. The pane must carry the base colour itself, not
-    // inherit blindly from whatever hosts the diff.
+    // Measured in a real browser: with the row tint gone, `.tok-plain` (color: inherit) resolved to the initial value — BLACK on the dark card.
     const wrapper = mount(DiffView, {
       props: { before: 'const a = 1', after: 'const b = 2', filePath: 'demo.ts' },
     })
@@ -422,9 +396,7 @@ describe('DiffView', () => {
     const changed = wrapper.findAll('[data-changed="true"]')
     expect(changed.length).toBeGreaterThan(0)
     for (const row of changed) {
-      // Nothing inside a changed row may carry an `!important` text tint (`!text-[var(--semantic-error)]`): it wins
-      // over `.tok-*` in the compiled CSS and paints the whole line one color. The row BACKGROUND
-      // is what marks added/removed.
+      // Nothing inside a changed row may carry an `!important` text tint (`!text-[var(--semantic-error)]`): it wins over `.tok-*` in the compiled CSS and paints the …
       expect(importantTextTints(row)).toEqual([])
       expect(row.findAll('.tok-keyword').length).toBeGreaterThan(0)
     }
@@ -441,8 +413,7 @@ describe('DiffView', () => {
     expect(wrapper.findAll('[data-kind="delete"] span[class*="--semantic-error"]').length).toBeGreaterThan(0)
     expect(wrapper.findAll('[data-kind="insert"] span[class*="--semantic-success"]').length).toBeGreaterThan(0)
 
-    // The ROW carries the background tint only — an `!important` text tint
-    // here is what would hide every token.
+    // The ROW carries the background tint only — an `!important` text tint here is what would hide every token.
     for (const row of wrapper.findAll('[data-kind="delete"], [data-kind="insert"]')) {
       expect(importantTextTints(row)).toEqual([])
     }

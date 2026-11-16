@@ -1,5 +1,4 @@
-// Functional test: a kanban task's agent run uses the REQUESTING user's
-// config when `--auth` is on — not the process-global `config.json`.
+// Functional test: a kanban task's agent run uses the REQUESTING user's config when `--auth` is on — not the process-global `config.json`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -18,9 +17,7 @@ const GLOBAL_ENDPOINT = "127.0.0.1:1";
 
 const MAX_HEAD_BYTES = 1 << 18;
 
-// SSE body the stub answers with. The model is baked in because the
-// payload is a `const` — the test asserts the REQUEST carried USER_MODEL,
-// not the reply.
+// SSE body the stub answers with.
 const SSE_OK =
     "data: {\"id\":\"chatcmpl-kanbanauth\",\"object\":\"chat.completion.chunk\"," ++
     "\"model\":\"user-config-model\",\"choices\":[{\"index\":0," ++
@@ -31,9 +28,7 @@ const SSE_OK =
     "\"finish_reason\":\"stop\"}]}\n\n" ++
     "data: [DONE]\n\n";
 
-// ============================================================================
 // Stub upstream (same shape as auth_config_source_test.zig)
-// ============================================================================
 
 const Recorded = struct {
     head: []u8,
@@ -194,9 +189,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-// ============================================================================
 // Auth-mode wire helpers (mirrors auth_config_source_test.zig)
-// ============================================================================
 
 fn rawHttp(
     h: *Harness,
@@ -276,12 +269,9 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "pabrik_session={s}", .{token});
 }
 
-// ============================================================================
 // Test
-// ============================================================================
 
-// A `--auth` kanban "Create & run" turn must call the profile saved in
-// `users.config_json`.
+// A `--auth` kanban "Create & run" turn must call the profile saved in `users.config_json`.
 test "kanban_create_and_run_uses_the_users_config_not_config_json" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -379,8 +369,7 @@ test "kanban_create_and_run_uses_the_users_config_not_config_json" {
         defer r.deinit();
     }
 
-    // 4. Poll for the turn's dispatch. The stub can only be hit if the
-    //    per-user profile won.
+    // 4.
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + 30_000;
     while (stub.count() == 0 and std.Io.Timestamp.now(io, .awake).toMilliseconds() < deadline) {
         std.Io.sleep(io, .fromMilliseconds(250), .awake) catch {};

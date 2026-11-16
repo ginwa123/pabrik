@@ -8,8 +8,7 @@ import {
   writeWorkspacesCache,
 } from '../workspacesCache'
 
-// jsdom in this project's Vitest does not reliably provide localStorage
-// (same guard as gitStatusCache.spec.ts / authMe.spec.ts).
+// jsdom in this project's Vitest does not reliably provide localStorage (same guard as gitStatusCache.spec.ts / authMe.spec.ts).
 function ensureLocalStorage(): void {
   if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
     const store: Record<string, string> = {}

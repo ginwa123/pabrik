@@ -1,6 +1,4 @@
-/**    * The URL funnel: the one place a navigation becomes (or re-uses) a tab. Every route lands here, so no
- * call site has to know the strip exists — and the tab that a URL names is resolved **inside that
- * session's row**, which is what makes two sessions two strips. */
+/** The URL funnel: the one place a navigation becomes (or re-uses) a tab. */
 import {
   hasTabIdentity,
   migrateLegacySettingsTab,
@@ -58,32 +56,27 @@ export function createFunnel(deps: FunnelDeps) {
     rawQuery: Record<string, unknown>,
     itemType?: string | null,
   ): SyncResult {
-    // Migrate pre-tab-mode kanban-settings deep links (`?tab=<section>`) to `?section=` before the
-    // tab ID logic runs — otherwise a legacy value like `?tab=memories` is mistaken for an unknown
-    // browser tab ID and rewritten to a fresh `tab_xxx`, dropping the section.
+    // Migrate pre-tab-mode kanban-settings deep links (`?tab=<section>`) to `?section=` before the tab ID logic runs — otherwise a legacy value like `?tab=memories` …
     const query = migrateLegacySettingsTab(path, rawQuery)
     const plain = tabQueryOf(query)
     const urlTabId = typeof query.tab === 'string' ? query.tab : ''
 
     if (!deps.enabled() || !shouldTabify(path, query)) return untouched(path, plain, query)
-    // A target the engine cannot name (a document page, most of all) keeps the URL it already had:
-    // the funnel never invents a `home` tab for a page that is not the chats list.
+    // A target the engine cannot name (a document page, most of all) keeps the URL it already had
     if (!hasTabIdentity(path, plain)) return untouched(path, plain, query)
 
     const variants = tabKeyVariants(path, query, itemType)
     const canonical = variants[0] ?? ''
     const owner = ownerOfTarget(path, plain)
     const named = urlTabId ? deps.byId(urlTabId) : null
-    // A tab id from another session's row is not this URL's tab: the funnel corrects the address
-    // instead of moving a tab across rows.
+    // A tab id from another session's row is not this URL's tab: the funnel corrects the address instead of moving a tab across rows.
     const candidates = [
       named && variants.includes(named.key) && ownerOf(named) === owner ? named : null,
       deps.findExisting(variants, owner),
     ]
     const existing = candidates.find((candidate): candidate is Tab => candidate !== null)
 
-    // A navigation that lands on the tab already on screen is not a change: touching the store (a
-    // re-key, a title refresh, an activation) is enough to re-render the surface underneath it.
+    // A navigation that lands on the tab already on screen is not a change: touching the store (a re-key, a title refresh, an activation) is enough to re-render the …
     if (existing && existing.id === deps.activeId() && existing.key === canonical) {
       const settled = existing.pinned ? plain : withTabParam(plain, existing.id)
       return { path, query: settled, changed: !sameRouteQuery(settled, query) }
@@ -97,9 +90,7 @@ export function createFunnel(deps: FunnelDeps) {
     deps.activate(tab.id)
     // An artifact's row is created by the artifact itself: give it the anchor it must stand beside.
     deps.ensureAnchor(owner)
-    // `?tab=` disambiguates WHICH artifact a session is showing. The session's own tab needs no
-    // name — the URL already names the session — and writing one would rewrite every chat URL on
-    // arrival, which is enough to remount the surface underneath it.
+    // `?tab=` disambiguates WHICH artifact a session is showing.
     const desired = tab.pinned ? plain : withTabParam(plain, tab.id)
     return { path, query: desired, changed: !sameRouteQuery(desired, query) }
   }

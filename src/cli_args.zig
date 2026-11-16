@@ -1,6 +1,4 @@
-// src/cli_args.zig Types the TOP-LEVEL `pabrik` command-line flags. The flag
-// list, the values they take and the `--help` text live in `cli/flags.zig`;
-// this file only types what the caller consumes.
+// src/cli_args.zig Types the TOP-LEVEL `pabrik` command-line flags.
 
 const std = @import("std");
 const logger_mod = @import("modules/logger/Logger.zig");
@@ -8,42 +6,28 @@ const cli_flags = @import("cli/flags.zig");
 const cli_parse = @import("cli/parse.zig");
 
 pub const CliArgs = struct {
-    /// `--port`. Stays null unless the user passed it explicitly, so the
-    /// default can honour `web_launch_enabled` (random port when on, 8081
-    /// when off). 0 = pick a random free loopback port.
+    /// `--port`.
     port: ?u16 = null,
-    /// `--static-dir`. Copied onto `ctxParent.static_dir_path` once that
-    /// context exists. Allocator-owned for the process lifetime — see `parse`.
-    /// Ignored when `no_static_dir` is set (see that field).
+    /// `--static-dir`.
     static_dir: ?[]const u8 = null,
     /// `--no-static-dir`: serve the API only, no static files at `/`.
     no_static_dir: bool = false,
-    /// `--http2 h2c`. OFF by default; there is deliberately no TLS here, so
-    /// browsers keep using HTTP/1.1 unless TLS is also enabled.
+    /// `--http2 h2c`.
     enable_h2c: bool = false,
-    /// `--tls <cert.pem> <key.pem>` (allocator-owned, process lifetime), or
-    /// the pair `tls_selfsigned` generates / reuses in the app data dir.
+    /// `--tls <cert.pem> <key.pem>` (allocator-owned, process lifetime), or the pair `tls_selfsigned` generates / reuses in the app data dir.
     tls_cert_path: ?[]const u8 = null,
     tls_key_path: ?[]const u8 = null,
-    /// `--tls-selfsigned` generates (first run) or reuses a self-signed
-    /// pair in the app data dir.
+    /// `--tls-selfsigned` generates (first run) or reuses a self-signed pair in the app data dir.
     tls_selfsigned: bool = false,
-    /// Opt-in auth (`--auth`): login enforcement (login page + session
-    /// cookie + middleware). Off by default so existing single-user setups
-    /// keep working with zero behaviour change.
+    /// Opt-in auth (`--auth`): login enforcement (login page + session cookie + middleware).
     auth_enabled: bool = false,
     /// `--saas`: every workspace runs in its own microVM (Linux + KVM only).
-    /// Implies `--auth` and refuses to start where it cannot be honoured; see
-    /// `src/runtime_mode.zig` for the decision table.
     saas: bool = false,
-    /// `-h` / `--help` was seen. `parse` prints the usage text and stops
-    /// scanning, so the caller must bail out without starting anything.
+    /// `-h` / `--help` was seen.
     help_requested: bool = false,
 };
 
-/// Which flag was rejected. One variant per distinct user-facing message —
-/// the messages differ, so collapsing them into one `InvalidArgs` would lose
-/// the only thing that tells the user what to fix.
+/// Which flag was rejected.
 pub const FailureKind = enum {
     missing_port_value,
     invalid_port_value,
@@ -56,15 +40,13 @@ pub const FailureKind = enum {
 /// What `parse` rejected, in enough detail to print the message.
 pub const Failure = struct {
     kind: FailureKind,
-    /// The offending word — the `--http2` mode, or the cert path given to a
-    /// one-armed `--tls`. Empty when the flag simply had no value.
+    /// The offending word — the `--http2` mode, or the cert path given to a one-armed `--tls`.
     value: []const u8 = "",
 };
 
 pub const ParseError = error{OutOfMemory};
 
-/// Parse `args` (argv WITHOUT argv[0]) into `out`, which is reset to its
-/// defaults first.
+/// Parse `args` (argv WITHOUT argv[0]) into `out`, which is reset to its defaults first.
 pub fn parse(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -76,9 +58,7 @@ pub fn parse(
         .dupe_text = true,
     };
     const failure = (try cli_parse.parse(CliArgs, opts, allocator, args, out, null)) orelse {
-        // Help wins over everything to its right, exactly as it did when the
-        // scan was inline here: `pabrik --help --port abc` prints usage and
-        // exits 0 rather than failing on the bad port.
+        // Help wins over everything to its right, exactly as it did when the scan was inline here: `pabrik --help --port abc` prints usage and exits 0 rather than …
         if (out.help_requested) printUsage();
         return null;
     };
@@ -123,8 +103,7 @@ pub fn printUsage() void {
 
 const testing = std.testing;
 
-/// Free the allocator-owned slices a successful `parse` may have produced,
-/// so `testing.allocator`'s leak check is meaningful.
+/// Free the allocator-owned slices a successful `parse` may have produced, so `testing.allocator`'s leak check is meaningful.
 fn freeParsed(allocator: std.mem.Allocator, args: CliArgs) void {
     if (args.static_dir) |v| allocator.free(v);
     if (args.tls_cert_path) |v| allocator.free(v);
@@ -180,9 +159,7 @@ test "parse: --port, --static-dir and --auth are read in any order" {
 }
 
 test "parse: --port 0 is preserved so the free-port picker runs later" {
-    // `port == 0` must survive parsing — main.zig turns it into a concrete
-    // free port via web_port.pickFreePort, and a parser that collapsed it to
-    // null would silently fall back to 8081.
+    // `port == 0` must survive parsing — main.zig turns it into a concrete free port via web_port.pickFreePort, and a parser that collapsed it to null would silently …
     var args: CliArgs = .{};
     defer freeParsed(testing.allocator, args);
     try ok(&.{ "--port", "0" }, &args);
@@ -210,18 +187,14 @@ test "parse: --static-dir copies the value instead of aliasing argv" {
     defer freeParsed(testing.allocator, args);
     try ok(&argv, &args);
     try testing.expectEqualStrings("/tmp/web", args.static_dir.?);
-    // Mutating the argument buffer must NOT change what was parsed. This is
-    // what dupe buys, and what a `?[]const u8 = args[i]` version would get
-    // wrong on Windows, where the iterator buffer is freed on deinit.
+    // Mutating the argument buffer must NOT change what was parsed.
     backing[0] = 'X';
     try testing.expectEqualStrings("/tmp/web", args.static_dir.?);
     try rejects(&.{"--static-dir"}, .missing_static_dir_value);
 }
 
 test "parse: --no-static-dir is independent of --static-dir, in either order" {
-    // `zig build run` appends `--static-dir src/apps/desktop/dist`, so the
-    // opt-out has to be readable from the same argv — and has to win
-    // regardless of where it lands. main.zig resolves the precedence from
+    // `zig build run` appends `--static-dir src/apps/desktop/dist`, so the opt-out has to be readable from the same argv — and has to win regardless of where it …
     var flag_first: CliArgs = .{};
     defer freeParsed(testing.allocator, flag_first);
     try ok(&.{ "--no-static-dir", "--static-dir", "/tmp/webapp" }, &flag_first);
@@ -254,9 +227,7 @@ test "parse: bare --http2 means h2c, explicit off disables it" {
 
 test "parse: --http2 rejects an unknown mode and eats the next word" {
     try rejects(&.{ "--http2", "on" }, .invalid_http2_mode);
-    // `--http2` unconditionally consumes the following word, so `--auth` after
-    // it is read as the MODE, not as a flag. Pre-existing behaviour; pinned so
-    // that making it "nicer" has to be a deliberate change.
+    // `--http2` unconditionally consumes the following word, so `--auth` after it is read as the MODE, not as a flag.
     try rejects(&.{ "--http2", "--auth" }, .invalid_http2_mode);
 }
 
@@ -283,8 +254,7 @@ test "parse: --tls with only one path fails instead of half-configuring TLS" {
     defer freeParsed(testing.allocator, out);
     const f = (try parse(testing.allocator, &.{ "--tls", "/tmp/cert.pem" }, &out)).?;
     try testing.expectEqual(FailureKind.missing_tls_key_path, f.kind);
-    // The message echoes the cert that WAS given, so the user can tell which
-    // of two --tls flags was short.
+    // The message echoes the cert that WAS given, so the user can tell which of two --tls flags was short.
     try testing.expectEqualStrings("/tmp/cert.pem", f.value);
 }
 
@@ -304,8 +274,7 @@ test "parse: --help stops scanning, so a bad flag to its right is never seen" {
     defer freeParsed(testing.allocator, args);
     try ok(&argv, &args);
     try testing.expectEqual(true, args.help_requested);
-    // `--auth` was scanned BEFORE the help flag, so it survives; the bad
-    // `--port` after it is never reached.
+    // `--auth` was scanned BEFORE the help flag, so it survives; the bad `--port` after it is never reached.
     try testing.expectEqual(true, args.auth_enabled);
     try testing.expectEqual(@as(?u16, null), args.port);
 }
@@ -342,8 +311,7 @@ test "parse: --saas is off by default and independent of --auth" {
     try testing.expectEqual(true, both.saas);
     try testing.expectEqual(true, both.auth_enabled);
 
-    // `--saas` alone stays `--saas` here: implying `--auth` is the boot
-    // path's job, because only it knows whether the platform can honour it.
+    // `--saas` alone stays `--saas` here: implying `--auth` is the boot path's job, because only it knows whether the platform can honour it.
     var saas_only: CliArgs = .{};
     defer freeParsed(testing.allocator, saas_only);
     try ok(&.{"--saas"}, &saas_only);

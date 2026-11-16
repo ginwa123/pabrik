@@ -15,7 +15,6 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient } from '../helpers/sseClient'
 
-// Local SseClient stub. Mirrors sidebarKanbanSortUrl.spec.ts:30-46.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeStubClient(initial: 'connecting'): any {
   return {
@@ -30,12 +29,9 @@ function makeStubClient(initial: 'connecting'): any {
   }
 }
 
-// Stub vue-router. Sidebar calls useRouter() and useRoute() in setup —
-// we replace them with mocks whose query + push/replace are
-// controllable per-test. Mirrors AppLayout.sortUrlRoundTrip.spec.ts:45-59.
+// Stub vue-router.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => {
-  // Per-test controlled query + router stubs. These mutable refs are
-  // captured by closure; each beforeEach re-initialises them.
+  // Per-test controlled query + router stubs.
   const routeRef = { query: {} as Record<string, string> }
   const routerStub = { replace: vi.fn(), push: vi.fn() }
   return {
@@ -105,16 +101,13 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     // Reset the mock router for each test.
     useRouterMock.mockClear()
      
-    // Reset route query for each test.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(useRouteMock as any).mockImplementation(() => ({
       query: {} as Record<string, string>,
       path: '/app',
       fullPath: '/app',
     }))
-    // The current vi.hoisted() returns a stable mock; the implementation reads from a single
-    // routeRef. We reset that ref's query here. (useRouteMock.getMockImplementation() returns the
-    // closure fn that builds a fresh object each call; we want a stable one for state.)
+    // The current vi.hoisted() returns a stable mock; the implementation reads from a single routeRef.
     useRouteMock.mockImplementation(() => ({
       query: {},
       path: '/app',
@@ -128,8 +121,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
   })
 
   function setRouteQuery(q: Record<string, string>) {
-    // Re-implement useRoute to return a stable object whose query is
-    // mutated by tests. Mirrors AppLayout.urlPersist.spec.ts:167-176.
+    // Re-implement useRoute to return a stable object whose query is mutated by tests.
     useRouteMock.mockImplementation(() => ({
       query: q,
       path: '/app',
@@ -174,8 +166,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     await nextTick()
 
     const pushArg = lastPushCall()
-    // PATH-BASED (2026-09-22 revamp): the task chat lives at
-    // /app/{ws}/projects/{item}/chat/{task}; sorts ride in the query.
+    // PATH-BASED (2026-09-22 revamp): the task chat lives at /app/{ws}/projects/{item}/chat/{task}; sorts ride in the query.
     expect(pushArg.path).toBe(`/app/${WS_ID}/projects/${ITEM_ID}/chat/${TASK_ID}`)
     expect(pushArg.query.sorts).toBe(
       'col_a:updated_at:desc,col_b:updated_at:desc',
@@ -211,9 +202,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const router = (useRouterMock as any).getMockImplementation()()
     expect(router.push).toHaveBeenCalled()
-    // Pre-fix this used router.replace, which would clobber the
-    // kanban URL in the browser history. The user reported
-    // "append the url browser" — push is the right primitive.
+    // Pre-fix this used router.replace, which would clobber the kanban URL in the browser history.
     expect(router.replace).not.toHaveBeenCalled()
 
     wrapper.unmount()
@@ -261,9 +250,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
       { id: WS_ID, name: 'WS', items: [baseItem] },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
-    // The URL is a deep link — no workspaceId in route.query. The new URL MUST add workspaceId from
-    // the active store state (setActiveTask auto-discovers the parent item + workspace via
-    // workspacesStore.setActiveTask's parent-item lookup at workspaces.ts:3366).
+    // The URL is a deep link — no workspaceId in route.query.
     setRouteQuery({
       view: 'workspace',
       workspaceId: WS_ID,
@@ -306,17 +293,14 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     sidebar.selectTask(TASK_ID)
     await nextTick()
 
-    // The snapshot is the close-restore fallback. AppLayout's
-    // handleCloseTaskView reads savedSortsParam and writes it back
-    // into the workspace URL on close.
+    // The snapshot is the close-restore fallback.
     expect(store.savedSortsParam).toBe('col_a:name:asc')
 
      
     wrapper.unmount()
   })
 
-  // ─── add-workspace-id-params plan (2026-08-06) ────────────────── The user reported
-  // (task_1785774094183): task URLs were missing `workspaceId`.
+  // ─── add-workspace-id-params plan (2026-08-06) ──────────────────
   it('writes workspaceId from the active store even when the URL breadcrumb lacks it (add-workspace-id-params, 2026-08-06)', async () => {
     const store = useWorkspacesStore()
     store.workspaces = [
@@ -325,9 +309,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
     store.setActiveWorkspaceItem(ITEM_ID)
-    // Simulate a URL refresh that landed the user on a task view WITHOUT workspaceId in route.query
-    // — e.g. an older URL bookmark, or a code path that stripped workspaceId. The user wants the
-    // URL to be repaired with workspaceId once they click a task.
+    // Simulate a URL refresh that landed the user on a task view WITHOUT workspaceId in route.query — e.g. an older URL bookmark, or a code path that stripped …
     setRouteQuery({
       view: 'workspace',
       workspaceId: WS_ID,
@@ -371,9 +353,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     await nextTick()
 
     const pushArg = lastPushCall()
-    // The URL should include the kanban-mode breadcrumb:
-    //   /app/W/projects/K/chat/task_X?sorts=S
-    // PATH-BASED (2026-09-22 revamp)
+    // The URL should include the kanban-mode breadcrumb
     expect(pushArg.path).toBe(`/app/${WS_ID}/projects/${ITEM_ID}/chat/${TASK_ID}`)
     expect(pushArg.query.sorts).toBe('col_a:updated_at:desc')
 
@@ -411,9 +391,7 @@ describe('Sidebar.handleSelectTask — APPEND URL, not REPLACE (better-url-brows
     const pushArg = lastPushCall()
     // PATH-BASED (2026-09-22 revamp)
     expect(pushArg.path).toBe(`/app/${WS_ID}/projects/item_design/chat/${TASK_ID}`)
-    // pageId preserved from URL (the URL is the source of truth for
-    // design page state, mirrored from the store's activeDesignPageId
-    // via DesignView's onMount + tab switch watcher).
+    // pageId preserved from URL (the URL is the source of truth for design page state, mirrored from the store's activeDesignPageId via DesignView's onMount + tab …
     expect(pushArg.query.pageId).toBe('page_first')
 
     wrapper.unmount()

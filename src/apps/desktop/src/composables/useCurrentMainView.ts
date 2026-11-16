@@ -8,8 +8,7 @@ import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
 export type CurrentMainView =
   | { kind: 'chat'; sessionId: string; workspaceId?: string }
   | {
-      /** Document page (Migration 095). `/app/{ws}/doc/{id}` — a PAGE shape, so the document
-       * REPLACES the main view and the chat is not mounted underneath it. */
+      /** Document page (Migration 095). */
       kind: 'document'
       documentId: string
       workspaceId?: string
@@ -17,9 +16,7 @@ export type CurrentMainView =
   | {
       kind: 'workspace'
       workspaceId?: string
-      /**        * Optional: absent for a standalone `?workspaceId=X` selection with no item open (header
-       * dropdown switch — revamp plan 2026-09-22). Row-highlight consumers compare against it, so
-       * `undefined` simply means "no row active". */
+      /** Optional: absent for a standalone `?workspaceId=X` selection with no item open (header dropdown switch — revamp plan 2026-09-22). */
       itemId?: string
       pageId?: string
       chatTaskId?: string
@@ -34,19 +31,13 @@ export type CurrentMainView =
 export function useCurrentMainView(): ComputedRef<CurrentMainView> {
   const route = useRoute()
   return computed<CurrentMainView>(() => {
-    // Defensive: `useRoute()` returns undefined when called outside a
-    // router context (some tests mount the component without mocking
-    // vue-router). Treat that as an empty query → `kind: 'none'`.
+    // Defensive: `useRoute()` returns undefined when called outside a router context (some tests mount the component without mocking vue-router).
     const q = (route?.query ?? {}) as Record<string, string>
 
-    // Path-based contract first (plan: 2026-09-22-revamp-ui-chats). A project is a workspace item,
-    // so path projects map onto the existing `workspace` kind (itemId = projectId) — every
-    // row-highlight consumer keeps working unchanged.
+    // Path-based contract first (plan: 2026-09-22-revamp-ui-chats).
     const parsed = parseAppPath(route?.path ?? '')
 
-    // Document page (Migration 095). No `?doc=` fallback: Migration 095 shipped that overlay shape
-    // and was replaced by this path shape before it was in wide use, so there are no links in the
-    // wild to keep working and no second way for the URL to name a document.
+    // Document page (Migration 095).
     if (parsed.kind === 'doc') {
       return { kind: 'document', documentId: parsed.documentId, workspaceId: parsed.workspaceId }
     }
@@ -60,9 +51,7 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
       }
     }
 
-    // Landing with a legacy `?view=` query is not the landing — fall
-    // through to the query handling below (the boot rewrite converts
-    // it to a path URL on the next tick).
+    // Landing with a legacy `?view=` query is not the landing — fall through to the query handling below (the boot rewrite converts it to a path URL on the next …
     const landingWithLegacyQuery =
       parsed.kind === 'landing' &&
       (q.view === 'chat' || q.view === 'task' || q.view === 'workspace')
@@ -76,8 +65,7 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
       parsed.kind === 'projectChat' ||
       parsed.kind === 'projectAdd'
     ) {
-      // `/add` maps onto the same `workspace` view as its project, so the
-      // sidebar keeps the active project row while the add page is open.
+      // `/add` maps onto the same `workspace` view as its project, so the sidebar keeps the active project row while the add page is open.
       return {
         kind: 'workspace',
         workspaceId: parsed.workspaceId,
@@ -86,8 +74,7 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
         chatTaskId: parsed.kind === 'projectChat' ? parsed.chatTaskId : undefined,
       }
     }
-    // `other` (settings, kanban-settings, legacy routes, unknown):
-    // fall through to the query + path-param handling below.
+    // `other` (settings, kanban-settings, legacy routes, unknown)
     const view = q.view
     if (view === 'chat') {
       if (typeof q.session === 'string' && q.session.length > 0) {
@@ -97,9 +84,7 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
     }
     if (view === 'workspace') {
       if (typeof q.itemId === 'string' && q.itemId.length > 0) {
-        // Parse the wire-shape itemId (may carry `/chat/<taskId>` suffix when the chat dialog is
-        // open). The bare id is exposed as `itemId`; the optional chat task id is exposed as
-        // `chatTaskId`.
+        // Parse the wire-shape itemId (may carry `/chat/<taskId>` suffix when the chat dialog is open).
         const parsed = parseItemIdWithChat(q.itemId)
         return {
           kind: 'workspace',
@@ -109,9 +94,7 @@ export function useCurrentMainView(): ComputedRef<CurrentMainView> {
           chatTaskId: parsed.chatTaskId ?? undefined,
         }
       }
-      // Standalone workspace selection: `?view=workspace&workspaceId=X`
-      // with no item open (header dropdown switch — revamp plan
-      // 2026-09-22). itemId stays undefined → no sidebar row active.
+      // Standalone workspace selection: `?view=workspace&workspaceId=X` with no item open (header dropdown switch — revamp plan 2026-09-22). itemId stays undefined → …
       if (typeof q.workspaceId === 'string' && q.workspaceId.length > 0) {
         return { kind: 'workspace', workspaceId: q.workspaceId }
       }

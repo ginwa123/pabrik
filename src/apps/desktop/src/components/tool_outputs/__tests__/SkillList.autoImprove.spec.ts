@@ -1,6 +1,4 @@
-/** SkillList.vue — the per-row agent lock. The list is the only surface that
- * shows every skill at once, so it is where "which of these may the agent
- * touch?" is answerable. */
+/** SkillList.vue — the per-row agent lock. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -106,8 +104,7 @@ describe('SkillList — the auto-improve lock', () => {
 
     expect(updateSkillMock).toHaveBeenCalledWith(WS_ID, 'alpha', { is_can_auto_improve: false })
     expect(getSkillsMock.mock.calls.length).toBeGreaterThan(callsAfterLoad)
-    // The checkbox lives inside the row's click target, so without the
-    // stop-propagation the user would be thrown into the detail pane.
+    // The checkbox lives inside the row's click target, so without the stop-propagation the user would be thrown into the detail pane.
     expect(wrapper.emitted('selectSkill')).toBeUndefined()
   })
 

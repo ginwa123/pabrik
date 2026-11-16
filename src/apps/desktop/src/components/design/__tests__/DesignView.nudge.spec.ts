@@ -1,14 +1,11 @@
-/** Behavioral tests for DesignView.vue's keyboard nudge (arrow keys move selection by 1px;
- * Shift+arrow by 10px). 3 tests: 1. Arrow key nudges selection by 1 design-px. 2. */
+/** Behavioral tests for DesignView.vue's keyboard nudge (arrow keys move selection by 1px; Shift+arrow by 10px). 3 tests: 1. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import DesignView from '../DesignView.vue'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 
-// vi.mock factories are hoisted above `const` declarations by Vitest, so the spy must be created
-// inside `vi.hoisted()` to exist before the factory runs (which eagerly imports DesignView.vue →
-// DesignElement.vue → ../../api during module evaluation).
+// vi.mock factories are hoisted above `const` declarations by Vitest, so the spy must be created inside `vi.hoisted()` to exist before the factory runs (which …
 const { updateDesignElementGeometrySpy, listDesignPagesMock } = vi.hoisted(() => ({
   updateDesignElementGeometrySpy: vi.fn().mockResolvedValue({ id: 'el_1' }),
   listDesignPagesMock: vi.fn().mockResolvedValue({

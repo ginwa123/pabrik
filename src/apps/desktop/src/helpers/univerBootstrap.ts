@@ -20,9 +20,7 @@ interface UniverFacade {
   Event: { CommandExecuted: string }
 }
 
-/**
- * Mount a Univer editor of `kind`. Univer is imported HERE and nowhere else.
- */
+/** Mount a Univer editor of `kind`. */
 export async function mountOfficeEditor(
   container: HTMLElement,
   kind: OfficeKind,
@@ -60,8 +58,7 @@ export async function mountOfficeEditor(
     const created = createUniver({
       ...base,
       locales: { [locale]: merge({}, messages.default) },
-      // An empty `workerURL` keeps the formula engine on the main thread: the
-      // worker is optional at runtime, and shipping one means a second bundle.
+      // An empty `workerURL` keeps the formula engine on the main thread: the worker is optional at runtime, and shipping one means a second bundle.
       presets: [UniverSheetsCorePreset({ container, workerURL: '' })],
     })
     univer = created.univer

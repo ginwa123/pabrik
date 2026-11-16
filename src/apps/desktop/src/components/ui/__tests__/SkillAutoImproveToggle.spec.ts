@@ -1,6 +1,4 @@
-/** SkillAutoImproveToggle.vue — the lock checkbox. Three behaviours only this component can get
- * wrong: 1. It must send the FLAG ALONE. The panel's other saves carry description + content, and a
- * toggle that posted those would race an in-flight edit. 2. */
+/** SkillAutoImproveToggle.vue — the lock checkbox. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SkillAutoImproveToggle from '../SkillAutoImproveToggle.vue'

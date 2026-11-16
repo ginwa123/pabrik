@@ -1,6 +1,4 @@
-/** Phase 0 RED contract for the XML → JSON tool-output migration (plan
- * `2026-09-18-agent-tool-output-xml-to-json.md`, schema in
- * `2026-09-18-agent-tool-output-json-schema.md`). */
+/** Phase 0 RED contract for the XML → JSON tool-output migration (plan `2026-09-18-agent-tool-output-xml-to-json.md`, schema in … */
 import { describe, expect, it } from 'vitest'
 import { unwrapToolOutput, tryUnwrapToolOutput } from './unwrapToolOutput'
 

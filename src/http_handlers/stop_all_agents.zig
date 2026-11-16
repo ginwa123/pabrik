@@ -1,6 +1,4 @@
-//! Bulk endpoint `POST .../kanban/columns/:column_id/stop_all_agents`. Stops
-//! agents on every running task in a kanban column, including tasks not yet
-//! loaded by frontend pagination.
+//! Bulk endpoint `POST .../kanban/columns/:column_id/stop_all_agents`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,9 +8,7 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const http_response = @import("http_response.zig");
 
-// =====================================================================
 // Domain types
-// =====================================================================
 
 /// Per-task outcome inside a bulk stop.
 pub const PerTaskResult = enum {
@@ -21,15 +17,13 @@ pub const PerTaskResult = enum {
     failed,
 };
 
-/// Injectable per-task stopper. Production checks `isTaskRunning` then
-/// calls `cancelSession`; tests supply a fake with the same split.
+/// Injectable per-task stopper.
 pub const TaskStopper = struct {
     ptr: ?*anyopaque,
     run: *const fn (?*anyopaque, []const u8) PerTaskResult,
 };
 
-/// Bulk outcome: owned id lists. Caller owns every string + slice;
-/// release with `deinit`.
+/// Bulk outcome: owned id lists.
 pub const StopAllAgentsOutcome = struct {
     stopped: [][]u8,
     skipped: [][]u8,
@@ -48,9 +42,7 @@ pub const StopAllAgentsOutcome = struct {
     }
 };
 
-// =====================================================================
 // Injectable core (behavioural-test seam)
-// =====================================================================
 
 /// List every task id in `column_id`, then run `stopper` per id.
 pub fn stopAllAgentsWithStopper(
@@ -76,8 +68,7 @@ pub fn stopAllAgentsWithStopper(
         }
     }
 
-    // 2. Server-side id list (pagination-agnostic): the kanban join
-    //    table holds the 1:1 task-to-column placement post-Migration-072.
+    // 2.
     var ids = std.ArrayList([]u8).empty;
     errdefer {
         for (ids.items) |id| allocator.free(id);
@@ -122,8 +113,7 @@ pub fn stopAllAgentsWithStopper(
             .failed => try failed.append(allocator, id),
         }
     }
-    // Ownership of every id slice moves into the three outcome lists;
-    // release only the staging container (not its elements).
+    // Ownership of every id slice moves into the three outcome lists; release only the staging container (not its elements).
     ids.deinit(allocator);
 
     return .{
@@ -133,9 +123,7 @@ pub fn stopAllAgentsWithStopper(
     };
 }
 
-// =====================================================================
 // Live binding (mirrors run_all_agents.zig liveRun)
-// =====================================================================
 
 const LiveCtx = struct {
     allocator: std.mem.Allocator,
@@ -144,16 +132,13 @@ const LiveCtx = struct {
 
 fn liveStop(ptr: ?*anyopaque, task_id: []const u8) PerTaskResult {
     const c: *LiveCtx = @ptrCast(@alignCast(ptr.?));
-    // Idle tasks (no worker row) are skipped — cancelling them would be
-    // a no-op UPDATE matching 0 rows, but the summary must tell the
-    // user "nothing was running" vs "we stopped N agents".
+    // Idle tasks (no worker row) are skipped — cancelling them would be a no-op UPDATE matching 0 rows, but the summary must tell the user "nothing was running" vs …
     if (!pabrikcore.ai_mod.llm_history.isTaskRunning(c.allocator, c.db, task_id)) return .skipped;
     pabrikcore.ai_mod.llm_history.cancelSession(c.allocator, c.db, task_id) catch return .failed;
     return .stopped;
 }
 
-/// Production use-case: check `isTaskRunning` per id (idle ⇒ skipped),
-/// then `cancelSession` (running ⇒ stopped, error ⇒ failed).
+/// Production use-case: check `isTaskRunning` per id (idle ⇒ skipped), then `cancelSession` (running ⇒ stopped, error ⇒ failed).
 pub fn stopAllAgentsUseCase(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -164,12 +149,9 @@ pub fn stopAllAgentsUseCase(
     return stopAllAgentsWithStopper(allocator, db, column_id, stopper);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// `POST
-/// /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/stop_all_agents`.
+/// `POST /api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/stop_all_agents`.
 pub fn stopAllAgentsHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -177,8 +159,7 @@ pub fn stopAllAgentsHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // 1. Validate `:column_id` path parameter (empty-slice-as-NULL rule:
-    //    "" must never reach a WHERE binding).
+    // 1. Validate `:column_id` path parameter (empty-slice-as-NULL rule
     const column_id = req.params.get("column_id") orelse "";
     if (column_id.len == 0) {
         return res.jsonResponse(.{
@@ -216,12 +197,9 @@ pub fn stopAllAgentsHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "stop_all_agents use-case failed" }),
         });
     };
-    // Note: outcome slices are arena-allocated on the success path; the
-    // per-request arena frees them (no deinit here). The ColumnNotFound
-    // branch above maps unknown columns to 404.
+    // Note: outcome slices are arena-allocated on the success path; the per-request arena frees them (no deinit here).
 
-    // 4. Success envelope with the three id lists the frontend summary
-    //    banner needs: "stopped", "skipped", "failed".
+    // 4.
     const stopped_json = try std.json.Stringify.valueAlloc(allocator, outcome.stopped, .{});
     const skipped_json = try std.json.Stringify.valueAlloc(allocator, outcome.skipped, .{});
     const failed_json = try std.json.Stringify.valueAlloc(allocator, outcome.failed, .{});
@@ -235,14 +213,11 @@ pub fn stopAllAgentsHandler(
     });
 }
 
-// =====================================================================
 // Inline behavioural tests.
 
 const testing = std.testing;
 
-// =====================================================================
 // Behavioural harness: bare in-memory DB + fake stopper
-// =====================================================================
 
 const TestDb = struct {
     db: database.Db,
@@ -267,8 +242,7 @@ fn setupDb() !TestDb {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Post-Migration-072 minimal schema: the kanban join table holds the 1:1
-/// task-to-board placement.
+/// Post-Migration-072 minimal schema: the kanban join table holds the 1:1 task-to-board placement.
 fn setupColumnSchema(ctx: *TestDb) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc,
@@ -292,7 +266,6 @@ fn setupColumnSchema(ctx: *TestDb) !void {
 }
 
 /// Seed one column (c1) with three tasks (A idle, B running, C running).
-/// B + C get `worker` rows so the real `isTaskRunning` guard fires.
 fn seedThreeTaskColumn(ctx: *TestDb) !void {
     const alloc = testing.allocator;
     try ctx.db.exec(alloc, "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('c1', 'item_1', 'todo', 0)", &.{});
@@ -303,9 +276,7 @@ fn seedThreeTaskColumn(ctx: *TestDb) !void {
     try ctx.db.exec(alloc, "INSERT INTO worker (id, session_id, cancelled) VALUES ('task-B', 'task-B', 0), ('task-C', 'task-C', 0)", &.{});
 }
 
-/// Fake per-task stopper with production guard semantics: idle (no
-/// worker row) ⇒ skipped, scripted fail-list ⇒ failed, otherwise ⇒
-/// stopped. Never touches the real `cancelled` flag.
+/// Fake per-task stopper with production guard semantics: idle (no worker row) ⇒ skipped, scripted fail-list ⇒ failed, otherwise ⇒ stopped.
 const FakeCtx = struct {
     db: *database.Db,
     fail_ids: []const []const u8 = &.{},
@@ -338,9 +309,7 @@ test "stopAllAgents rejects empty column_id" {
     defer ctx.deinit();
     var fake = FakeCtx{ .db = &ctx.db };
 
-    // Empty-slice-as-NULL rule: "" must never reach a `WHERE id = ?`
-    // binding (Backend binds "" as SQL NULL). The use-case
-    // validates first and returns EmptyColumnId.
+    // Empty-slice-as-NULL rule: "" must never reach a `WHERE id = ?` binding (Backend binds "" as SQL NULL).
     const result = stopAllAgentsWithStopper(
         testing.allocator,
         &ctx.db,
@@ -403,8 +372,7 @@ test "stopAllAgents collects single-task failures instead of throwing" {
     defer ctx.deinit();
     try setupColumnSchema(&ctx);
     try seedThreeTaskColumn(&ctx);
-    // task-C's stopper blows up (e.g. cancelSession DB error in
-    // production); B must still stop and A must still skip.
+    // task-C's stopper blows up (e.g. cancelSession DB error in production); B must still stop and A must still skip.
     const fail_ids: []const []const u8 = &.{"task-C"};
     var fake = FakeCtx{ .db = &ctx.db, .fail_ids = fail_ids };
 

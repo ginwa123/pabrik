@@ -12,9 +12,7 @@ type Deps = {
   cwd: () => string
 }
 
-/**    * The layout owns the router and the tab funnel, so it is the only place a tab gesture becomes
- * navigation: a click on a tab takes exactly the path a sidebar click takes. Provided once, read by
- * the session strip. */
+/** The layout owns the router and the tab funnel, so it is the only place a tab gesture becomes navigation: a click on a tab takes exactly the path a sidebar … */
 export function useProvideTabStripActions(deps: Deps): TabStripActions {
   const actions: TabStripActions = {
     activate: (tabId) => {

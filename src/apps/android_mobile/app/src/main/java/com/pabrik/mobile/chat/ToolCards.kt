@@ -44,21 +44,10 @@ import com.pabrik.mobile.ui.PabrikText
 import org.json.JSONArray
 import java.util.Locale
 
-/**
- * Width of the card's leading rule. The web's `.chat-tool-card` is
- * `border-left: 2px`; 2dp is the same weight once the transcript is scaled for
- * a phone's density.
- */
+/** Width of the card's leading rule. */
 private val TOOL_CARD_RULE_WIDTH = 2.dp
 
-/**
- * A tool row, rendered.
- *
- * The dispatch is a `when` over [ToolCardModel.kind] rather than a chain of
- * `v-else-if` equivalents: a new tool is one new branch here and one new
- * [ToolKind], and an unhandled tool cannot fall through to nothing because
- * [ToolKind.Raw] catches it explicitly.
- */
+/** A tool row, rendered. */
 @Composable
 fun ToolCardView(
     model: ToolCardModel,
@@ -66,19 +55,10 @@ fun ToolCardView(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     onAnswer: (QuestionAnswer) -> Unit = {},
-    /**
-     * Which chat this row belongs to. Only `present_files` needs it, and only
-     * to scope its download to this session's working directory — but the
-     * endpoint requires it, so it has to reach the card. Empty means "no
-     * session", which the file client refuses rather than guessing.
-     */
+    /** Which chat this row belongs to. */
     sessionId: String = "",
 ) {
-    // A card with neither a body nor any arguments has nothing to reveal, so
-    // its header is a label rather than a button. A *placeholder* row is in
-    // exactly that state — `data: null` on a success — and its arguments are
-    // the only thing it has to say, so "no body" must never be read as "no
-    // arguments".
+    // A card with neither a body nor any arguments has nothing to reveal, so its header is a label rather than a button.
     val hasArguments = model.parametersJson.isNotBlank()
     val hasBody = model.body !is ToolBody.Empty
     val expandable = hasBody || hasArguments
@@ -91,11 +71,7 @@ fun ToolCardView(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // The web's "paragraph mode" (ChatView.vue's `.chat-tool-card`):
-            // `border: none`, a 2px left rule that recolours on error, and
-            // `border-radius: 0`. A dozen boxed cards in a row read as a wall.
-            // Compose has no `border-left`, so the rule is drawn as a 2dp rect
-            // pinned to the leading edge rather than a four-sided stroke.
+            // The web's "paragraph mode" (ChatView.vue's `.chat-tool-card`)
             .drawBehind {
                 drawRect(
                     color = ruleColor,
@@ -127,8 +103,7 @@ fun ToolCardView(
             }
         }
 
-        // Outside the `hasBody` block on purpose: a running tool's arguments
-        // live here and nowhere else, because its body is empty by definition.
+        // Outside the `hasBody` block on purpose: a running tool's arguments live here and nowhere else, because its body is empty by definition.
         if (expanded && hasArguments) {
             ToolParametersBlock(
                 parametersJson = model.parametersJson,
@@ -138,15 +113,7 @@ fun ToolCardView(
     }
 }
 
-/**
- * The left rule's colour, and with the box gone the card's only error channel.
- * Mirrors the web, where a failing card binds `border-red-500/50` and that class
- * recolours the `border-left` rather than drawing a frame.
- *
- * Not `@Composable` on purpose: a colour is a value, and keeping it a plain
- * function is what lets `ToolCardFrameTest` assert the three-way split on the
- * JVM instead of only grepping the source.
- */
+/** The left rule's colour, and with the box gone the card's only error channel. */
 internal fun CardRuleColor(model: ToolCardModel): Color = when {
     model.pending -> PabrikDim
     model.success -> PabrikBorder
@@ -207,11 +174,7 @@ private fun ReadFileBody(body: ToolBody.ReadFile) {
     }
     val first = body.firstLineNumber
     val scroll = rememberScrollState()
-    // `read_file` reads the whole file with no cap on the wire, and one `Row`
-    // plus two `Text`s per line is three composables per line — a 5,000-line
-    // file is 15,000 composables inside a single `LazyColumn` item, which
-    // defeats the virtualization the whole transcript is built on. Beyond the
-    // cap the reader is told what it is not seeing and can ask for the rest.
+    // `read_file` reads the whole file with no cap on the wire, and one `Row` plus two `Text`s per line is three composables per line — a 5,000-line file is 15,000 …
     var showAll by remember(body.path) { mutableStateOf(false) }
     val visible = if (showAll) lines else lines.take(MAX_RENDERED_FILE_LINES)
     Column(
@@ -234,8 +197,7 @@ private fun ReadFileBody(body: ToolBody.ReadFile) {
                         .padding(end = 8.dp),
                 )
                 Text(
-                    // A blank line still needs a glyph, or the row collapses to
-                    // zero height and the gutter stops lining up with the text.
+                    // A blank line still needs a glyph, or the row collapses to zero height and the gutter stops lining up with the text.
                     text = line.ifEmpty { " " },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
@@ -422,9 +384,7 @@ private fun ListDirectoryBody(body: ToolBody.ListDirectory) {
 
 @Composable
 private fun DiffBody(body: ToolBody.Diff) {
-    // `unified` is the backend's own rendering when it supplied one; a client
-    // that re-diffs `before`/`after` and disagrees with the server is worse
-    // than one that just shows the server's answer.
+    // `unified` is the backend's own rendering when it supplied one; a client that re-diffs `before`/`after` and disagrees with the server is worse than one that …
     if (body.unified.isNotBlank()) {
         MonospaceBlock(text = body.unified)
         return
@@ -432,14 +392,7 @@ private fun DiffBody(body: ToolBody.Diff) {
     DiffView(before = body.before, after = body.after)
 }
 
-/**
- * Two-sided diff, in transcript order.
- *
- * A phone cannot show the web's side-by-side split and stay legible, so this is
- * a single column: the line number that moved, the sign, the text. Colour alone
- * would leave it unreadable to a colour-blind reader, which is why each row
- * also carries a `+` / `-` / ` ` marker.
- */
+/** Two-sided diff, in transcript order. */
 @Composable
 fun DiffView(
     before: String,
@@ -560,13 +513,7 @@ private fun PlanBody(body: ToolBody.Plan) {
     }
 }
 
-/**
- * One `ask_user` reply, ready to post.
- *
- * A value rather than four loose parameters because it is built in a composable
- * and consumed in a ViewModel two frames away, and a positional `(String, String,
- * Boolean)` at that distance is a swap waiting to happen.
- */
+/** One `ask_user` reply, ready to post. */
 data class QuestionAnswer(
     val questionId: String?,
     val toolCallId: String,
@@ -574,14 +521,7 @@ data class QuestionAnswer(
     val skip: Boolean = false,
 )
 
-/**
- * A blocking `ask_user` question, rendered with the affordance to answer it.
- *
- * The default-collapsed rule is inverted here, matching the web: every other
- * card is detail supporting a message, but this one *is* the message — the run
- * has ended and nothing happens until the reader answers. A collapsed card the
- * reader has to guess the meaning of is a chat that looks hung.
- */
+/** A blocking `ask_user` question, rendered with the affordance to answer it. */
 @Composable
 private fun QuestionCard(
     body: ToolBody.Question,
@@ -589,18 +529,13 @@ private fun QuestionCard(
     onAnswer: (QuestionAnswer) -> Unit,
 ) {
     var draft by remember(body.questionId) { mutableStateOf("") }
-    // Selection is local: nothing is posted until the reader confirms, and
-    // `multi_select` turns one answer into several, which is a decision the card
-    // owns rather than the wire.
+    // Selection is local: nothing is posted until the reader confirms, and `multi_select` turns one answer into several, which is a decision the card owns rather …
     var selected by remember(body.questionId) { mutableStateOf(emptySet<String>()) }
     val canSubmit = body.isPending && (selected.isNotEmpty() || draft.isNotBlank())
 
     body.header?.let { ToolKeyValue(key = "header", value = it) }
 
-    // Markdown, like the web's `renderMarkdownHtml` on the same field. The
-    // model writes a question in its own voice — "**Option 1 — postgres.** Is
-    // that right?" — and rendering it as one literal wall of asterisks is the
-    // reported case this card exists for.
+    // Markdown, like the web's `renderMarkdownHtml` on the same field.
     MarkdownText(
         source = body.question,
         color = PabrikText,
@@ -704,8 +639,7 @@ private fun QuestionCard(
             }
         }
     } else {
-        // One branch, one answer row. Rendering it in both the input block and
-        // the status block drew "answer: sqlite" twice on every settled card.
+        // One branch, one answer row.
         ToolKeyValue(
             key = "answer",
             value = body.answer
@@ -729,15 +663,7 @@ private fun QuestionCard(
     }
 }
 
-/**
- * The `answer` string the endpoint expects.
- *
- * `validateAnswerShape` (`ask_user_answer.zig`) parses the answer itself as
- * JSON when `multi_select` is set, so a multi-select reply has to be an array
- * of strings. Sending `"postgres, sqlite"` gets a 400, the run stays blocked,
- * and the only way out is Skip — which throws the answer away. Pure, so the
- * wire contract is testable without a device.
- */
+/** The `answer` string the endpoint expects. */
 internal fun encodeAnswer(
     selected: Set<String>,
     draft: String,
@@ -747,8 +673,7 @@ internal fun encodeAnswer(
         if (selected.isEmpty()) return draft.trim().ifEmpty { null }
         return JSONArray(selected.toList()).toString()
     }
-    // A tapped option wins over whatever is in the text field: that is the one
-    // the reader just chose, and a question may offer both.
+    // A tapped option wins over whatever is in the text field: that is the one the reader just chose, and a question may offer both.
     if (selected.isNotEmpty()) return selected.first()
     return draft.trim().ifEmpty { null }
 }
@@ -769,8 +694,7 @@ private fun SubAgentSpawnBody(body: ToolBody.SubAgentSpawn) {
                 .padding(horizontal = 8.dp, vertical = 2.dp)
                 .testTag("sub_agent_result"),
         )
-        // The whole point of spawning a sub-agent is its response; a card that
-        // only shows the ok/fail line throws away the answer.
+        // The whole point of spawning a sub-agent is its response; a card that only shows the ok/fail line throws away the answer.
         result.response?.takeIf { it.isNotBlank() }?.let { response ->
             MonospaceBlock(
                 text = response,
@@ -875,13 +799,7 @@ private fun SkillListBody(body: ToolBody.SkillList) {
     if (!body.sawEverything) MoreResultsNote(body.nextOffset)
 }
 
-/**
- * One name + description row, shared by the two paged-search cards.
- *
- * `scope` is a badge on the row rather than a section heading because a regex
- * search returns global and local skills in whatever order they match; the
- * bracket form is `kanban_list`'s, for the same reason.
- */
+/** One name + description row, shared by the two paged-search cards. */
 @Composable
 private fun SkillRow(entry: ToolBody.SkillEntry) {
     Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
@@ -906,14 +824,7 @@ private fun SkillRow(entry: ToolBody.SkillEntry) {
     }
 }
 
-/**
- * The foot of a page that is not the whole answer.
- *
- * Same wording and same place as `kanban_list`'s, because the failure it
- * prevents is the same one: a reader who sees three of nineteen skills and no
- * note concludes the query only matched three. `next_offset` is the server's
- * own pointer to the rest, so it is shown when there is one.
- */
+/** The foot of a page that is not the whole answer. */
 @Composable
 private fun MoreResultsNote(nextOffset: Int?) {
     val suffix = nextOffset?.let { " (next page starts at offset $it)" }.orEmpty()
@@ -993,17 +904,7 @@ private fun KanbanListBody(body: ToolBody.KanbanList) {
     }
 }
 
-/**
- * One [PresentFileCard] per file.
- *
- * This used to be a `label → path · size` text row per file, which is the
- * reason `present_files` looked broken on the phone: the tool's whole promise
- * is "here is a file, look at it", and a path is not a file. The card now
- * fetches the bytes and draws them — a screenshot as a picture, a README as
- * markdown, a PDF as a row with an Open button — matching
- * `PresentFiles.vue`, which has fetched `GET /api/files/download` this whole
- * time.
- */
+/** One [PresentFileCard] per file. */
 @Composable
 private fun PresentFilesBody(body: ToolBody.PresentFiles, sessionId: String) {
     body.files.forEach { file ->
@@ -1093,8 +994,7 @@ private fun ProgressiveBody(body: ToolBody.ProgressiveTool) {
                 .testTag("progressive_description"),
         )
     }
-    // The same row renderer `search_skills` uses: both are paged searches over
-    // a list of `{name, description, …}` objects, so the two cards look alike.
+    // The same row renderer `search_skills` uses: both are paged searches over a list of `{name, description, …}` objects, so the two cards look alike.
     body.tools.forEach { tool -> SkillRow(tool) }
 }
 
@@ -1111,12 +1011,7 @@ internal fun formatBytes(bytes: Long): String {
     return String.format(Locale.ROOT, "%.1f %s", value, units[index])
 }
 
-/**
- * The keys a card already draws, so the Arguments block does not repeat them.
- *
- * `text_replace` is the one that matters: its `old_str`/`new_str` are the whole
- * file's worth of text, and the card is already showing them as a diff.
- */
+/** The keys a card already draws, so the Arguments block does not repeat them. */
 internal val ToolCardModel.excludedParameters: Set<String>
     get() = when (kind) {
         ToolKind.Diff -> setOf("old_str", "new_str", "before", "after")
@@ -1124,12 +1019,7 @@ internal val ToolCardModel.excludedParameters: Set<String>
         else -> emptySet()
     }
 
-/**
- * The amber the whole client uses for "waiting on something outside the run":
- * a `running…` badge, a pending question's warning, a placeholder card's rule.
- *
- * Named so the three reads of "in flight but not failing" cannot drift apart.
- */
+/** The amber the whole client uses for "waiting on something outside the run" */
 internal val BLOCKING = Color(0xFFD8B96A)
 
 /** A selected option row, against the card's own background. */

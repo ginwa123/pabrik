@@ -7,15 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The pure half of the `/me` cache: the key derivation and the freshness rule.
- *
- * The fingerprint is the load-bearing piece — it decides whose cached identity
- * a given cookie can reach, and it is now the primary key of `cached_auth_me`
- * rather than a prefix of one — so it is driven directly rather than left to
- * the storage layer. The envelope tests are gone: a row has a column per field,
- * so there is no shape left to misparse.
- */
+/** The pure half of the `/me` cache: the key derivation and the freshness rule. */
 class AuthMeCacheCodecTest {
 
     @Test
@@ -29,8 +21,7 @@ class AuthMeCacheCodecTest {
 
     @Test
     fun differentCookiesFingerprintDifferently() {
-        // This is the isolation guarantee: account A's cached identity is not
-        // addressable with account B's cookie.
+        // This is the isolation guarantee: account A's cached identity is not addressable with account B's cookie.
         assertNotEquals(
             AuthMeCacheCodec.fingerprint("tok-a"),
             AuthMeCacheCodec.fingerprint("tok-b"),
@@ -41,9 +32,7 @@ class AuthMeCacheCodecTest {
     fun theFingerprintDoesNotLeakTheCookie() {
         val fingerprint = AuthMeCacheCodec.fingerprint("super-secret-session-cookie")!!
 
-        // A bearer credential must never become part of a storage key — and it
-        // is now a column value, not just a filename component, so a database
-        // dump would carry it just as far.
+        // A bearer credential must never become part of a storage key — and it is now a column value, not just a filename component, so a database dump would carry it …
         assertTrue(fingerprint, !fingerprint.contains("secret"))
         assertTrue(fingerprint, !fingerprint.contains("super"))
         assertEquals(32, fingerprint.length) // 16 bytes, hex
@@ -71,15 +60,13 @@ class AuthMeCacheCodecTest {
     fun aClockThatWentBackwardsDoesNotPoisonTheEntry() {
         val entry = CachedAuthMe(body = "{}", storedAtEpochMillis = 10_000L)
 
-        // now < storedAt gives a negative age, which is "very fresh". Safer to
-        // re-fetch than to trust; and either way it must not throw.
+        // now < storedAt gives a negative age, which is "very fresh".
         entry.isFresh(5_000L, AuthMeCacheCodec.TTL_MILLIS)
     }
 
     @Test
     fun theTtlMatchesTheWeb() {
-        // Mirrors AUTH_ME_TTL_MS in helpers/authMe.ts. If the web's number moves,
-        // this is the place that should be argued about, not silently diverge.
+        // Mirrors AUTH_ME_TTL_MS in helpers/authMe.ts.
         assertEquals(30_000L, AuthMeCacheCodec.TTL_MILLIS)
     }
 }

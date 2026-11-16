@@ -1,6 +1,4 @@
-/** Conflict-only PR UI for SidebarDiffPanel (quiet-when-clean). Contract: CONFLICTING/DIRTY shows
- * the red "Merge conflicts" badge plus the "This branch has conflicts that must be resolved" banner
- * with a Resolve link to <pr-url>/conflicts. */
+/** Conflict-only PR UI for SidebarDiffPanel (quiet-when-clean). */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
@@ -213,8 +211,7 @@ describe('SidebarDiffPanel conflicting-file list', () => {
     expect(wrapper.get('[data-testid="sidebar-pr-conflict-badge"]').text()).toContain(
       'Merge conflicts (2)',
     )
-    // Provenance line — an empty list is only meaningful next to the ref it
-    // was computed from.
+    // Provenance line — an empty list is only meaningful next to the ref it was computed from.
     expect(wrapper.get('[data-testid="sidebar-pr-conflict-base"]').text()).toContain(
       'refs/remotes/origin/main',
     )
@@ -244,8 +241,7 @@ describe('SidebarDiffPanel conflicting-file list', () => {
     getPrConflictsMock.mockResolvedValue(conflictsPayload([]))
     const wrapper = mountPrPanel()
     await flushPromises()
-    // A red badge plus an empty file list reads as "nothing to do" — which is
-    // the one thing that must never happen here.
+    // A red badge plus an empty file list reads as "nothing to do" — which is the one thing that must never happen here.
     expect(wrapper.find('[data-testid="sidebar-pr-conflict-files"]').exists()).toBe(false)
     const notice = wrapper.get('[data-testid="sidebar-pr-conflict-unreproduced"]')
     expect(notice.text()).toContain('Could not reproduce these conflicts locally')

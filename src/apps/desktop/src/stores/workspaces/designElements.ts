@@ -27,8 +27,7 @@ interface DesignElementsParams {
 export function createDesignElements(p: DesignElementsParams) {
   const { findItem, designElementsLoadingKey, activeDesignPageId } = p
 
-  // ─── Design mode actions (Chunk 6 of design-mode-redesign plan) ────── These 5 actions back the
-  // design canvas / layers panel / properties panel UI of the v6 Figma-lite design mode.
+  // ─── Design mode actions (Chunk 6 of design-mode-redesign plan) ──────
   async function fetchDesignElements(
     workspaceId: string,
     itemId: string,
@@ -36,14 +35,11 @@ export function createDesignElements(p: DesignElementsParams) {
   ): Promise<void> {
     const item = findItem(workspaceId, itemId)
     if (!item) return
-    // Mark this page's element fetch in flight so DesignView's canvas, LayersPanel and
-    // PropertiesPanel can hold a skeleton instead of rendering their empty states — "Click +
-    // Element to add your first element" is a false statement while the fetch is outstanding.
+    // Mark this page's element fetch in flight so DesignView's canvas, LayersPanel and PropertiesPanel can hold a skeleton instead of rendering their empty states — …
     designElementsLoadingKey.value = `${itemId}:${pageId}`
     try {
       const { elements } = await api.getDesignPage(workspaceId, itemId, pageId)
-      // Mirror in PLACE (per-id replace + splice + append) rather than `item.design_elements =
-      // elements`.
+      // Mirror in PLACE (per-id replace + splice + append) rather than `item.design_elements = elements`.
       if (!item.design_elements) {
         item.design_elements = elements
         designLogger.warn({
@@ -73,9 +69,7 @@ export function createDesignElements(p: DesignElementsParams) {
       // Build a Map<id, incomingElement> for O(1) lookup.
       const incomingById = new Map<string, (typeof elements)[number]>()
       for (const el of elements) incomingById.set(el.id, el)
-      // Walk the local array. For each existing row: - if its id is in the incoming set, replace in
-      // place - if its id is NOT in the incoming set, mark for splice We splice from the end so the
-      // live indices stay valid.
+      // Walk the local array.
       const toSplice: number[] = []
       for (let i = 0; i < item.design_elements.length; i++) {
         const existing = item.design_elements[i]!
@@ -91,27 +85,20 @@ export function createDesignElements(p: DesignElementsParams) {
       for (let i = toSplice.length - 1; i >= 0; i--) {
         item.design_elements.splice(toSplice[i]!, 1)
       }
-      // Append any incoming elements that weren't already in the
-      // array (newly created elsewhere — LLMs, other tabs).
+      // Append any incoming elements that weren't already in the array (newly created elsewhere — LLMs, other tabs).
       for (const remaining of incomingById.values()) {
         item.design_elements.push(remaining)
       }
     } catch (err) {
       console.error('[workspacesStore.fetchDesignElements] API call failed:', err)
-      // Leave the existing elements array untouched so the UI
-      // doesn't flash to empty on a transient network blip. The
-      // next SSE event will trigger another fetch.
+      // Leave the existing elements array untouched so the UI doesn't flash to empty on a transient network blip.
     } finally {
-      // Cleared on BOTH paths so a failed fetch cannot park the
-      // skeleton — the surfaces fall back to their empty states, which
-      // is the honest answer when the request failed.
+      // Cleared on BOTH paths so a failed fetch cannot park the skeleton — the surfaces fall back to their empty states, which is the honest answer when the request …
       designElementsLoadingKey.value = null
     }
   }
 
-  // Add an element to a design page and append it to the local item's `design_elements` array. The
-  // backend returns the full element with server-assigned id / position / timestamps. We push (not
-  // unshift) to match the backend's ordering (oldest first by position).
+  // Add an element to a design page and append it to the local item's `design_elements` array.
   async function addDesignElement(
     workspaceId: string,
     itemId: string,
@@ -133,9 +120,7 @@ export function createDesignElements(p: DesignElementsParams) {
     return newElem
   }
 
-  // Patch an element's fields (full update — backend applies a sparse merge). Replaces the local
-  // copy in place so the canvas re-renders the patched element immediately. Used by the
-  // PropertiesPanel (form input changes) and the LLM tool-driven update_element handler.
+  // Patch an element's fields (full update — backend applies a sparse merge).
   async function updateDesignElement(
     workspaceId: string,
     itemId: string,
@@ -152,8 +137,7 @@ export function createDesignElements(p: DesignElementsParams) {
     return updated
   }
 
-  // HTML body-only update (Monaco Save button). Mirrors the `updateDesignElement` shape: PATCHes
-  // the dedicated html endpoint, mirrors the response into the local design_elements array.
+  // HTML body-only update (Monaco Save button).
   async function updateDesignElementHtml(
     workspaceId: string,
     itemId: string,
@@ -170,9 +154,7 @@ export function createDesignElements(p: DesignElementsParams) {
     return updated
   }
 
-  // Delete an element. Idempotent on the backend (returns
-  // `{success: true}` whether the row existed or not). Filters
-  // the local `design_elements` array to remove the row.
+  // Delete an element.
   async function deleteDesignElement(
     workspaceId: string,
     itemId: string,
@@ -186,8 +168,7 @@ export function createDesignElements(p: DesignElementsParams) {
     }
   }
 
-  // Wrap 2+ elements into a new `group` (or `frame`) parent at the union bbox. The backend returns
-  // the full new parent + the updated children (with `parent_id` set).
+  // Wrap 2+ elements into a new `group` (or `frame`) parent at the union bbox.
   async function reorderDesignElements(
     workspaceId: string,
     itemId: string,
@@ -199,9 +180,7 @@ export function createDesignElements(p: DesignElementsParams) {
       mode,
       element_ids: elementIds,
     })
-    // Mirror the server's `reordered` rows into the local design_elements array so the layers panel
-    // + canvas re-render immediately. We replace matching ids in place (preserves the local array's
-    // ordering for any ids NOT in the response).
+    // Mirror the server's `reordered` rows into the local design_elements array so the layers panel + canvas re-render immediately.
     const item = findItem(workspaceId, itemId)
     if (item?.design_elements) {
       for (const updated of result.reordered) {
@@ -222,12 +201,9 @@ export function createDesignElements(p: DesignElementsParams) {
     const item = findItem(workspaceId, itemId)
     if (item) {
       if (!item.design_elements) item.design_elements = []
-      // Append the new parent (preserves backend ordering: highest
-      // position last).
+      // Append the new parent (preserves backend ordering: highest position last).
       item.design_elements.push(result.parent)
-      // Replace each child in place. We don't filter the array first because the backend's returned
-      // children are already updated versions; the originals are still useful for comparison in
-      // tests but the in-place replace keeps the array length stable.
+      // Replace each child in place.
       for (const updated of result.children) {
         const idx = item.design_elements.findIndex((e) => e.id === updated.id)
         if (idx !== -1) item.design_elements[idx] = updated
@@ -236,9 +212,7 @@ export function createDesignElements(p: DesignElementsParams) {
     return result
   }
 
-  // Atomic N-element reparent (1 OR many). Used by the LayersPanel drag-and-drop affordance. The
-  // whole batch is all-or-nothing — the backend rejects with 400 BadReparent if ANY element would
-  // close a cycle, and 0 writes happen.
+  // Atomic N-element reparent (1 OR many).
   async function reparentDesignElementsBatch(
     workspaceId: string,
     itemId: string,
@@ -263,8 +237,7 @@ export function createDesignElements(p: DesignElementsParams) {
     return result.updated
   }
 
-  // Dissolve a group/frame: reparent its direct children to the group's parent (or top-level if the
-  // group had no parent), then delete the group row.
+  // Dissolve a group/frame: reparent its direct children to the group's parent (or top-level if the group had no parent), then delete the group row.
   async function ungroupDesignElements(
     workspaceId: string,
     itemId: string,
@@ -286,8 +259,7 @@ export function createDesignElements(p: DesignElementsParams) {
     return result
   }
 
-  // Move a single element (and its subtree when apply_to_children=true) from `sourcePageId` to
-  // `newPageId`. Backend returns the moved elements; we mirror by: 1.
+  // Move a single element (and its subtree when apply_to_children=true) from `sourcePageId` to `newPageId`.
   async function moveDesignElementToPage(
     workspaceId: string,
     itemId: string,
@@ -307,8 +279,7 @@ export function createDesignElements(p: DesignElementsParams) {
         input,
       )
       const item = findItem(workspaceId, itemId)
-      // Mirror: remove moved ids from the source page's elements if
-      // they're in local memory (the source page is the active page).
+      // Mirror: remove moved ids from the source page's elements if they're in local memory (the source page is the active page).
       if (item && item.design_elements && activeDesignPageId.value === sourcePageId) {
         const movedIds = new Set(updated.map((el) => el.id))
         for (let i = item.design_elements.length - 1; i >= 0; i--) {
@@ -317,12 +288,9 @@ export function createDesignElements(p: DesignElementsParams) {
           }
         }
       }
-      // Q6 default: navigate to the target page. Also triggers the
-      // existing watcher to refetch the target page's elements.
+      // Q6 default: navigate to the target page.
       activeDesignPageId.value = input.new_page_id
-      // Re-fetch the target page explicitly so the canvas reflects the
-      // moved elements immediately (the watcher's debounce may add
-      // latency the user notices on click).
+      // Re-fetch the target page explicitly so the canvas reflects the moved elements immediately (the watcher's debounce may add latency the user notices on click).
       await fetchDesignElements(workspaceId, itemId, input.new_page_id)
       return updated
     } catch (err) {

@@ -1,6 +1,4 @@
-/** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode). Mount pattern: same as
- * KanbanTaskDetailDialog.runAgent.spec.ts — <Teleport to="body">, so use `attachTo: document.body`
- * + `document.querySelector` (NOT `wrapper.find`). */
+/** Tests for the "Start agent" button in KanbanTaskDetailDialog (edit mode). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -29,9 +27,7 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
     findAllInDom('[data-testid="kanban-task-detail-dialog"]').forEach((el) => el.remove())
   })
 
-  /** Mount the dialog with optional props and an optional `processingState` provider. The
-   * `processingState` map mirrors the one App.vue provides — a Record<sessionId, boolean> where
-   * `true` means a worker is currently running for that session. */
+  /** Mount the dialog with optional props and an optional `processingState` provider. */
   function mountDialog(
     propsOverride: Record<string, unknown> = {},
     processingState: Record<string, boolean> | undefined = undefined,
@@ -41,9 +37,7 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
       attachTo: document.body,
       props: { show: true, task: null, mode: 'edit', ...propsOverride },
       global: {
-        // Only include processingState when the test passes one — the dialog's
-        // `inject('processingState', undefined)` falls back to undefined when absent, so the "no
-        // provider" branch is also exercised by omitting this key.
+        // Only include processingState when the test passes one — the dialog's `inject('processingState', undefined)` falls back to undefined when absent, so the "no …
         provide: processingState !== undefined ? { processingState } : {},
       },
     })
@@ -57,8 +51,7 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
   })
 
   it('does NOT render the start-agent button in create mode', async () => {
-    // Create mode has its own ▶ Create task & run agent button. The
-    // edit-mode Start agent button would be redundant + confusing.
+    // Create mode has its own ▶ Create task & run agent button.
     mountDialog({ mode: 'create', task: null })
     await flushPromises()
     expect(findInDom('[data-testid="kanban-task-detail-start-agent"]')).toBeNull()
@@ -91,8 +84,7 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
   })
 
   it('enables the start-agent button when processingState has no entry for the task', async () => {
-    // processingState is provided but doesn't contain this task's id —
-    // the dialog treats the absence as "no worker running".
+    // processingState is provided but doesn't contain this task's id — the dialog treats the absence as "no worker running".
     mountDialog(
       { task: { id: 'task_orphan', name: 'Orphan', task_type: 'standard' } as Task },
       { task_other: true },
@@ -105,9 +97,7 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
   })
 
   it('enables the start-agent button when no processingState is provided at all', async () => {
-    // Defensive: the dialog's `inject('processingState', undefined)` defaults to undefined when the
-    // provider is missing (e.g. tests that mount the dialog in isolation). The button must still be
-    // enabled — we don't want to break the dialog if a future refactor forgets to provide the map.
+    // Defensive: the dialog's `inject('processingState', undefined)` defaults to undefined when the provider is missing (e.g. tests that mount the dialog in …
     mountDialog(
       { task: { id: 'task_no_provider', name: 'NoProvider', task_type: 'standard' } as Task },
       undefined,
@@ -144,9 +134,7 @@ describe('KanbanTaskDetailDialog — Start agent', () => {
     const btn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-start-agent"]',
     )
-    // `disabled` buttons drop the click event in the browser — we mimic
-    // that by calling .click() and asserting the absence of an emit.
-    // (Calling .click() on a disabled button in jsdom is a no-op.)
+    // `disabled` buttons drop the click event in the browser — we mimic that by calling .click() and asserting the absence of an emit.
     btn?.click()
     await flushPromises()
     expect(wrapper!.emitted('start-agent')).toBeUndefined()

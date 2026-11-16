@@ -1,16 +1,13 @@
-//! Pure helpers for parsing the per-profile / per-sub-agent `thinking` and
-//! `reasoning_effort` string fields.
+//! Pure helpers for parsing the per-profile / per-sub-agent `thinking` and `reasoning_effort` string fields.
 
 const std = @import("std");
 
 /// Errors emitted by `parseThinkingString`.
 pub const ThinkingModeError = error{InvalidThinkingMode};
 
-/// Parses the per-profile / per-sub-agent `thinking` string field into a
-/// typed `?bool`.
+/// Parses the per-profile / per-sub-agent `thinking` string field into a typed `?bool`.
 pub fn parseThinkingString(raw: []const u8) ThinkingModeError!?bool {
-    // Tolerate a single leading/trailing space — defensive against
-    // hand-edited config.json files.
+    // Tolerate a single leading/trailing space — defensive against hand-edited config.json files.
     const trimmed: []const u8 = blk: {
         if (raw.len >= 1 and raw[0] == ' ') break :blk raw[1..];
         break :blk raw;
@@ -33,9 +30,7 @@ pub fn parseThinkingString(raw: []const u8) ThinkingModeError!?bool {
 /// Errors emitted by `parseReasoningEffort`.
 pub const ReasoningEffortError = error{InvalidReasoningEffort};
 
-/// Parses the per-profile / per-sub-agent `reasoning_effort` string field
-/// into the canonical 4-value set accepted by OpenAI-style reasoning APIs (o1
-/// / o3 / GPT-5 / DeepSeek-R1): - `"low"` → `"low"` - `"medium"` → `"medium"`
+/// Parses the per-profile / per-sub-agent `reasoning_effort` string field into the canonical 4-value set accepted by OpenAI-style reasoning APIs (o1 / o3 / GPT-5 …
 pub fn parseReasoningEffort(raw: []const u8) ReasoningEffortError![]const u8 {
     if (raw.len == 0) return "auto";
     if (std.mem.eql(u8, raw, "low")) return "low";
@@ -46,8 +41,6 @@ pub fn parseReasoningEffort(raw: []const u8) ReasoningEffortError![]const u8 {
 }
 
 // ===== Tests merged from parse_thinking_test.zig (2026-09-29 flatten) =====
-// Tests for parse_thinking.zig — pure helpers `parseThinkingString` and
-// `parseReasoningEffort`.
 
 const testing = std.testing;
 
@@ -80,8 +73,7 @@ test "parseThinkingString garbage -> error.InvalidThinkingMode" {
 }
 
 test "parseThinkingString leading whitespace stripped" {
-    // Defensive: tolerate one accidental leading space (frontend types
-    // shouldn't carry whitespace, but a hand-edited config.json might).
+    // Defensive: tolerate one accidental leading space (frontend types shouldn't carry whitespace, but a hand-edited config.json might).
     try testing.expectEqual(@as(?bool, true), try parseThinkingString(" on"));
     try testing.expectEqual(@as(?bool, false), try parseThinkingString("off "));
 }
@@ -112,6 +104,5 @@ test "parseReasoningEffort garbage -> error.InvalidReasoningEffort" {
 
 test "parseReasoningEffort is case-sensitive (Anthropic / OpenAI treat LOW/low the same but we do NOT silently lowercase)" {
     // The frontend always sends lowercase; we accept only lowercase.
-    // Uppercase would surface as an error so the user notices a misconfig.
     try testing.expectError(error.InvalidReasoningEffort, parseReasoningEffort("LOW"));
 }

@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** CompactToolGroup — a run of tool calls, the thoughts between them and the narration the agent
- * wrote on the way to each call. Every run is one card that unfolds into the rows, a run of one
- * included: the count and the duration are what the reader scans for. */
+/** CompactToolGroup — a run of tool calls, the thoughts between them and the narration the agent wrote on the way to each call. */
 import { computed, onMounted, onUnmounted, onUpdated, ref } from 'vue'
 
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
@@ -80,8 +78,7 @@ const countLabel = computed(() =>
   cards.value.length === 1 ? '1 tool call' : `${cards.value.length} tool calls`,
 )
 
-/** A run of one has no count to scan, so the header carries the call itself. A running call
- * already names itself beside the count, so it is not named twice. */
+/** A run of one has no count to scan, so the header carries the call itself. */
 const summaryLabel = computed(() => {
   if (runningIndex.value >= 0) return ''
   const only = cards.value.length === 1 ? cards.value[0] : undefined

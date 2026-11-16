@@ -1,6 +1,4 @@
-/** SkillDetail.vue — the edit path. The companion file (`SkillDetail.spec.ts`) pins reading and
- * deleting. This one pins the two things an edit can get wrong that a read cannot: 1. A patch that
- * mentions only ONE field must not blank the other. */
+/** SkillDetail.vue — the edit path. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -67,8 +65,7 @@ describe('SkillDetail — editing', () => {
     await flushPromises()
     await openEditor(wrapper)
 
-    // A blank form would make the first Save a no-op patch the server
-    // refuses with 409 — the user would have to retype everything.
+    // A blank form would make the first Save a no-op patch the server refuses with 409 — the user would have to retype everything.
     expect(
       (wrapper.find('[data-testid="skill-edit-description"]').element as HTMLInputElement).value,
     ).toBe('convert PDFs to images')
@@ -85,9 +82,7 @@ describe('SkillDetail — editing', () => {
     await flushPromises()
     await openEditor(wrapper)
 
-    // A rename would break every `use_skill({ name })` call and every
-    // cached `skill_eval` verdict, so the form does not carry the field
-    // at all rather than carrying a disabled one.
+    // A rename would break every `use_skill({ name })` call and every cached `skill_eval` verdict, so the form does not carry the field at all rather than carrying a …
     const inputs = wrapper.findAll('input')
     expect(inputs.some((i) => (i.element as HTMLInputElement).value === 'pdf')).toBe(false)
     expect(wrapper.text()).toContain('name is fixed')
@@ -144,9 +139,7 @@ describe('SkillDetail — editing', () => {
   it('renders the STORED row after a save, not what was typed', async () => {
     seedWorkspace()
     getSkillDetailMock.mockResolvedValue(detail())
-    // The server is the authority: it trims, and it is what the next read
-    // returns. Rendering the draft instead would show text that is not
-    // actually in the database.
+    // The server is the authority: it trims, and it is what the next read returns.
     updateSkillMock.mockResolvedValue({
       skill: {
         name: 'pdf',
@@ -185,8 +178,7 @@ describe('SkillDetail — editing', () => {
     await wrapper.find('[data-testid="skill-edit-save"]').trigger('click')
     await flushPromises()
 
-    // The description is the list row's second line. Without this the two
-    // halves disagree about the same skill until a reload.
+    // The description is the list row's second line.
     expect(wrapper.emitted('skillSaved')).toEqual([['pdf']])
   })
 
@@ -198,8 +190,7 @@ describe('SkillDetail — editing', () => {
     await flushPromises()
     await openEditor(wrapper)
 
-    // The server answers 409 to a no-op patch, so an enabled Save here
-    // would be a button whose only outcome is an error.
+    // The server answers 409 to a no-op patch, so an enabled Save here would be a button whose only outcome is an error.
     const save = wrapper.find('[data-testid="skill-edit-save"]')
     expect((save.element as HTMLButtonElement).disabled).toBe(true)
 
@@ -239,8 +230,7 @@ describe('SkillDetail — editing', () => {
     await wrapper.find('[data-testid="skill-edit-save"]').trigger('click')
     await flushPromises()
 
-    // The user is mid-edit: the reason belongs beside the fields that
-    // caused it, and the form must stay open with the draft intact.
+    // The user is mid-edit: the reason belongs beside the fields that caused it, and the form must stay open with the draft intact.
     expect(wrapper.find('[data-testid="skill-save-error"]').text()).toContain('HTTP 409')
     expect(wrapper.emitted('error')).toBeUndefined()
     expect(wrapper.find('[data-testid="skill-edit-content"]').exists()).toBe(true)

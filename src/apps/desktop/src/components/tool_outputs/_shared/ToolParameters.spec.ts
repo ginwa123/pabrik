@@ -1,5 +1,4 @@
-/** Tests for ToolParameters.vue — shared Arguments block for tool-output cards. Guard (mirrors
- * McpTool.vue hasArgs): trim in '', '{}' -> render nothing. */
+/** Tests for ToolParameters.vue — shared Arguments block for tool-output cards. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

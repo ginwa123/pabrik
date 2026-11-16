@@ -59,8 +59,7 @@ type ListState =
   | { kind: 'failed'; message: string }
 
 const state = ref<ListState>({ kind: 'loading' })
-// Last-known row counts per tab, so the strip can show both numbers
-// even though only the active tab is fetched.
+// Last-known row counts per tab, so the strip can show both numbers even though only the active tab is fetched.
 const tabCounts = ref<{ open: number | null; closed: number | null }>({ open: null, closed: null })
 
 const provider = computed(() => (state.value.kind === 'ready' ? state.value.provider : ''))
@@ -72,8 +71,6 @@ const pluralLabel = computed(() =>
 const newCrLabel = computed(() => `New ${wording.value.noun} ↗`)
 
 // ─── Error sentence extraction ─────────────────────────────────────────────
-// The backend's error bodies are always `{ "error": "<sentence>" }`;
-// surface that sentence, never a status code.
 const errorSentence = (err: unknown): string => {
   if (err instanceof ApiError) {
     const body = err.body || ''
@@ -128,8 +125,7 @@ onMounted(() => {
   if (props.open) load()
 })
 
-// No `watch()` here — `local/no-watch` bans ALL new watchers, including the single-source
-// side-effect form.
+// No `watch()` here — `local/no-watch` bans ALL new watchers, including the single-source side-effect form.
 defineExpose({ reload: load })
 
 // ─── Meta line ─────────────────────────────────────────────────────────────
@@ -143,8 +139,6 @@ const checkedLabel = computed(() => {
 })
 
 // `updated_at` arrives as ISO (`2026-10-12T06:34:01Z`); `new Date` parses that natively.
-// (helpers/formatRelativeTime targets the SQLite-datetime wire shape and would read the trailing
-// `Z` as invalid, rendering every row as "now".)
 const relTime = (iso: string): string => {
   if (!iso) return 'now'
   const ms = new Date(iso).getTime()
@@ -164,9 +158,7 @@ const taskForRow = (row: GitPrListItem): Task | null =>
   (props.tasks ?? []).find((t) => (t.git_branch ?? '') === row.head_ref && row.head_ref !== '') ??
   null
 
-// Default ON, client-side, exact equality (no prefix matching,
-// case-sensitive): a row is on this board only when a card's
-// `git_branch` IS the row's `head_ref`.
+// Default ON, client-side, exact equality (no prefix matching, case-sensitive): a row is on this board only when a card's `git_branch` IS the row's `head_ref`.
 const onlyThisBoard = ref(true)
 
 const rows = computed(() => (state.value.kind === 'ready' ? state.value.rows : []))
@@ -201,15 +193,11 @@ const openRowUrl = (row: GitPrListItem): void => {
 // ─── Close flow ────────────────────────────────────────────────────────────
 const confirmRow = ref<GitPrListItem | null>(null)
 const showConfirm = ref(false)
-// Number of the row whose close is in flight (null when idle). While
-// set, the confirm dialog stays up and every other row's Close is
-// disabled.
+// Number of the row whose close is in flight (null when idle).
 const closingNumber = ref<number | null>(null)
-// Forge sentences that arrived WITHOUT an error status:
-// per-row `detail` for `{ closed: false }`.
+// Forge sentences that arrived WITHOUT an error status
 const closeDetails = ref<Record<number, string>>({})
-// Transport/command failure (`{ error }` from a rejected promise):
-// one banner above the table, never a silent no-op.
+// Transport/command failure (`{ error }` from a rejected promise)
 const closeError = ref<string>('')
 const toast = ref<string>('')
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -254,9 +242,7 @@ const runClose = (row: GitPrListItem): void => {
           toastTimer = null
         }, 4000)
       } else {
-        // The forge accepted the command but the re-read still
-        // shows it open: render the forge's own sentence, keep
-        // the row where it was.
+        // The forge accepted the command but the re-read still shows it open: render the forge's own sentence, keep the row where it was.
         closeDetails.value = {
           ...closeDetails.value,
           [row.number]: resp.detail || 'The forge left it open.',
@@ -273,9 +259,7 @@ const runClose = (row: GitPrListItem): void => {
 }
 
 const onConfirmDialogConfirm = (): void => {
-  // The dialog emits `close` right after `confirm`; the close
-  // handler ignores it while a close is in flight so the dialog
-  // stays up until the forge answers.
+  // The dialog emits `close` right after `confirm`; the close handler ignores it while a close is in flight so the dialog stays up until the forge answers.
   const row = confirmRow.value
   if (!row || closingNumber.value !== null) return
   runClose(row)

@@ -21,15 +21,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The cache-then-revalidate contract at the ViewModel level.
- *
- * The contract is about ORDERING — paint from disk, then fetch — and the state
- * that proves it (real messages on screen with the spinner still running) is
- * exactly the state a synchronous test cannot see if both run on one
- * scheduler. So main and IO get separate schedulers, mirroring the device: the
- * fetch is genuinely pending until drained.
- */
+/** The cache-then-revalidate contract at the ViewModel level. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelCacheTest {
 
@@ -46,14 +38,7 @@ class ChatViewModelCacheTest {
             }
         }
 
-        /**
-         * Everything queued *right now*, and nothing they queue in turn.
-         *
-         * The one move that can see the gap between "the cache has been read"
-         * and "the fetch has been applied": `advanceUntilIdle` on the IO
-         * scheduler would run the fetch as well, and the frame under test is
-         * the one before that.
-         */
+        /** Everything queued *right now*, and nothing they queue in turn. */
         fun step() {
             io.runCurrent()
             main.runCurrent()
@@ -127,12 +112,7 @@ class ChatViewModelCacheTest {
         nowMillis = { 1_789_451_234_000L },
     ).also { it.onUserChanged("user_a") }
 
-    /**
-     * A realistic nanosecond stamp. `created_at` is only recognised as a stamp
-     * when it is at least 13 digits, so a small test offset must be added to a
-     * real base or every row sorts as 0 and the ordering assertions prove
-     * nothing.
-     */
+    /** A realistic nanosecond stamp. */
     private val nanoBase = 1_789_451_234_567_000_000L
 
     private fun wire(
@@ -174,18 +154,14 @@ class ChatViewModelCacheTest {
 
         model.openSession("sess_1")
 
-        // Main alone: the prime is background work, so driving the UI scheduler
-        // must not paint it. It used to paint here — a blocking 400-row Room
-        // read and 400 `JSONObject` parses inside the tap handler, which is the
-        // freeze this is the regression test for.
+        // Main alone: the prime is background work, so driving the UI scheduler must not paint it.
         s.main.advanceUntilIdle()
         assertTrue(
             "the cache prime must not run on the caller's thread",
             model.uiState.value.messages.isEmpty(),
         )
 
-        // One step: the cache read has returned and been published, and the
-        // fetch is still in flight.
+        // One step: the cache read has returned and been published, and the fetch is still in flight.
         s.step()
         val state = model.uiState.value
         assertEquals(listOf("from disk"), state.messages.map { it.content })
@@ -194,10 +170,7 @@ class ChatViewModelCacheTest {
 
     @Test
     fun `a live frame that lands before the cache prime is not rolled back`() = cacheTest { s ->
-        // The prime is background work now, so it can finish after something
-        // newer is already on screen. The cache is by definition older, and
-        // publishing it then would put a stale turn back in the transcript —
-        // the one thing paint-from-cache must never do.
+        // The prime is background work now, so it can finish after something newer is already on screen.
         val cache = InMemoryChatCache().apply {
             writeMessages("user_a", "sess_1", listOf(cachedRow("m1", 100L, content = "stale")))
         }
@@ -473,9 +446,7 @@ class ChatViewModelCacheTest {
         s.drain()
         assertTrue("the first load is a full one", model.uiState.value.hasMoreOlder)
 
-        // Any warm revalidate — a session rename, a reconnect — is short by
-        // definition, so the server answers has_more=false for it. Letting that
-        // reset the paging state would switch off scroll-back for good.
+        // Any warm revalidate — a session rename, a reconnect — is short by definition, so the server answers has_more=false for it.
         transport.messages = page(wire("m3", 300L))
         bus.state(ChatStreamState.Live)
         bus.state(ChatStreamState.Reconnecting)
@@ -501,8 +472,7 @@ class ChatViewModelCacheTest {
         bus.emit(ChatStreamEvent.Chunk("sess_1", 0, content = "world"))
 
         val streaming = model.uiState.value.messages.single()
-        // The backend sends raw provider deltas. Assigning would leave only the
-        // last fragment on screen.
+        // The backend sends raw provider deltas.
         assertEquals("Hello world", streaming.content)
         assertEquals("hmm", streaming.reasoningContent)
         assertTrue(streaming.isStreaming)
@@ -533,8 +503,7 @@ class ChatViewModelCacheTest {
         assertEquals(1, messages.size)
         assertEquals("the complete answer", messages.single().content)
         assertFalse("the placeholder must be gone", messages.single().isStreaming)
-        // Write-through, so a cold start reads the completed turn rather than
-        // a stub or nothing at all.
+        // Write-through, so a cold start reads the completed turn rather than a stub or nothing at all.
         assertEquals("m9", cache.readMessages("user_a", "sess_1", 10)!!.single().id)
     }
 
@@ -570,8 +539,7 @@ class ChatViewModelCacheTest {
         val model = model(s.ioDispatcher, InMemoryChatCache(), transport, bus)
         model.openSession("sess_1")
 
-        // The tool's completed row arrives live while the fetch is in flight,
-        // and the in-flight response still carries its placeholder content.
+        // The tool's completed row arrives live while the fetch is in flight, and the in-flight response still carries its placeholder content.
         val live = ChatMessage(
             id = "tool_1",
             role = ChatMessage.ROLE_TOOL,
@@ -585,8 +553,7 @@ class ChatViewModelCacheTest {
         )
         s.drain()
 
-        // Writing the stale REST row back would turn a finished tool result
-        // into a spinner.
+        // Writing the stale REST row back would turn a finished tool result into a spinner.
         assertEquals("the real result", model.uiState.value.messages.single().content)
     }
 
@@ -624,8 +591,7 @@ class ChatViewModelCacheTest {
         model.sendMessage()
         s.drain()
 
-        // The web removed its optimistic push deliberately: it lands at the
-        // wrong end of the array and re-keys the grouped list.
+        // The web removed its optimistic push deliberately: it lands at the wrong end of the array and re-keys the grouped list.
         assertTrue(model.uiState.value.messages.isEmpty())
         assertTrue(
             "the turn was queued",
@@ -664,8 +630,7 @@ class ChatViewModelCacheTest {
 
     @Test
     fun `a run already in progress when the chat is opened is re attached`() = cacheTest { s ->
-        // The backend writes `llm_history` only when a turn completes, so a cold
-        // open mid-run otherwise stops one message short of the live answer.
+        // The backend writes `llm_history` only when a turn completes, so a cold open mid-run otherwise stops one message short of the live answer.
         val model = model(
             s.ioDispatcher,
             InMemoryChatCache(),

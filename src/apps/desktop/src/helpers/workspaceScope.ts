@@ -1,5 +1,4 @@
-/** The workspace a route-scoped surface is ABOUT. Order: the PATH's workspace id, then the one the
- * app is actually in. */
+/** The workspace a route-scoped surface is ABOUT. */
 export function resolveWorkspaceId(
   fromPath: string | string[] | null | undefined,
   activeWorkspaceId: string | null | undefined,
@@ -8,9 +7,7 @@ export function resolveWorkspaceId(
   return activeWorkspaceId ?? ''
 }
 
-/** The workspace the app is on: the one every workspace-scoped request
- *  names. Under `--saas` the server lists a workspace's VM, so a request that
- *  does not say which workspace it means is refused. */
+/** The workspace the app is on: the one every workspace-scoped request names. */
 let currentWorkspaceId: string | null = null
 
 /** Set the workspace the app is on. An empty id means "no workspace". */
@@ -23,9 +20,7 @@ export function getCurrentWorkspaceId(): string | null {
   return currentWorkspaceId
 }
 
-/** `url` with the workspace the app is on appended, for the endpoints whose
- *  `path` alone cannot name it: under `--saas` every `/api/git/*` tree lives
- *  in a workspace's VM, so the request has to say which one. */
+/** `url` with the workspace the app is on appended, for the endpoints whose `path` alone cannot name it: under `--saas` every `/api/git/*` tree lives in a … */
 export function withWorkspaceId(url: string): string {
   if (!url.startsWith('/git/')) return url
   const id = getCurrentWorkspaceId()

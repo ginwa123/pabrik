@@ -1,18 +1,13 @@
-//! A loop that answers a socket must never trade a failed syscall for a spin:
-//! `poll` re-arms the instant a readable socket it could not `accept` stays
-//! readable, which pins a vCPU at 100%. Both guest loops share this policy.
+//! A loop that answers a socket must never trade a failed syscall for a spin
 
 const std = @import("std");
 
-/// The first wait: one poll tick, short enough that a transient failure (a
-/// connection reset between `poll` and `accept`) costs 50 ms and not a second.
+/// The first wait: one poll tick, short enough that a transient failure (a connection reset between `poll` and `accept`) costs 50 ms and not a second.
 pub const first_ms: u32 = 50;
-/// The ceiling: a listener broken for good still wakes twice a second, so it
-/// stays visible in `top` without owning the core.
+/// The ceiling: a listener broken for good still wakes twice a second, so it stays visible in `top` without owning the core.
 pub const max_ms: u32 = 500;
 
-/// How long to wait after one turn of a listener loop. `accepted` is whether
-/// that turn took a connection; `failures` is the run of turns that did not.
+/// How long to wait after one turn of a listener loop.
 pub fn afterTurn(accepted: bool, failures: u32) u32 {
     if (accepted) return 0;
     const doublings = @min(failures, 8);

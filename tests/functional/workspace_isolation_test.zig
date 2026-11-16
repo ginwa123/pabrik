@@ -1,5 +1,4 @@
-// Functional tests for per-user workspace isolation (plan 2026-09-25, W1 +
-// W2.1).
+// Functional tests for per-user workspace isolation (plan 2026-09-25, W1 + W2.1).
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,18 +10,12 @@ const io = testing.io;
 /// The session cookie's name, as `Set-Cookie` spells it.
 const COOKIE_NAME = "pabrik_session=";
 
-/// Every user in this suite shares one password, exactly as in the
-/// Python original — the variable under test is the IDENTITY, not the
-/// secret.
+/// Every user in this suite shares one password, exactly as in the Python original — the variable under test is the IDENTITY, not the secret.
 const PASSWORD = "supersecret123";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Issue a request WITHOUT a status assertion — the caller asserts. `cookie`
-/// is the raw `Cookie:` header value (`pabrik_session=<tok>`), or null for no
-/// cookie at all.
+/// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawHttp(
     h: *Harness,
     method: harness.HttpMethod,
@@ -48,8 +41,7 @@ fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
-/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
+/// Run `pabrik create-admin` against the harness HOME.
 fn createAdmin(home: []const u8, email: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -90,9 +82,7 @@ fn login(h: *Harness, email: []const u8) ![]u8 {
         return error.TestUnexpectedResult;
     }
 
-    // The token is the SEGMENT between `pabrik_session=` and the next `;` —
-    // Python's `set_cookie.split("pabrik_session=", 1)[1].split(";",
-    // 1)[0].strip()`.
+    // The token is the SEGMENT between `pabrik_session=` and the next `;` — Python's `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(
@@ -115,8 +105,7 @@ const TwoTokens = struct {
     }
 };
 
-/// Boot auth mode with two admins in the SAME server process and log
-/// both in. Python's `_two_users`, minus the returned harness.
+/// Boot auth mode with two admins in the SAME server process and log both in.
 fn twoUsers(h: *Harness) !TwoTokens {
     try createAdmin(h.temp_dir, "a@example.com", false);
     try createAdmin(h.temp_dir, "b@example.com", true);
@@ -128,9 +117,7 @@ fn twoUsers(h: *Harness) !TwoTokens {
     return .{ .a = a, .b = b };
 }
 
-/// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
-///
-/// `cookie` null means "no cookie at all", which is the auth-off case.
+/// `POST /api/workspaces {"name": ...}` → the new workspace's id.
 fn createWorkspace(h: *Harness, name: []const u8, cookie: ?[]const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
     defer gpa.free(body);
@@ -150,8 +137,7 @@ fn createWorkspace(h: *Harness, name: []const u8, cookie: ?[]const u8) ![]u8 {
     });
 }
 
-/// `GET /api/workspaces?is_include_items=false` → the visible workspace ids,
-/// as OWNED strings.
+/// `GET /api/workspaces?is_include_items=false` → the visible workspace ids, as OWNED strings.
 fn listWorkspaceIds(h: *Harness, cookie: ?[]const u8) ![][]u8 {
     var r = try rawHttp(h, .GET, "/api/workspaces", null, cookie);
     defer r.deinit();
@@ -209,12 +195,9 @@ fn hasId(ids: []const []u8, id: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// LIST-ISOLATION — A's workspace must not appear in B's list, and vice
-// versa.
+// LIST-ISOLATION — A's workspace must not appear in B's list, and vice versa.
 test "workspaces_list_is_per_user" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootAuth();
@@ -265,8 +248,7 @@ test "workspaces_list_is_per_user" {
     }
 }
 
-// GET-ISOLATION — 404 rather than 403: B must not learn that A's id
-// exists.
+// GET-ISOLATION — 404 rather than 403: B must not learn that A's id exists.
 test "workspace_get_by_foreign_id_is_404" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootAuth();
@@ -287,8 +269,7 @@ test "workspace_get_by_foreign_id_is_404" {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}", .{ws_a});
     defer gpa.free(path);
 
-    // OWN-READ: the owner still sees it (guards an "everyone gets 404"
-    // false pass).
+    // OWN-READ: the owner still sees it (guards an "everyone gets 404" false pass).
     {
         var r = try rawHttp(&h, .GET, path, null, cookie_a);
         defer r.deinit();
@@ -311,9 +292,7 @@ test "workspace_get_by_foreign_id_is_404" {
     }
 }
 
-// AUTH-OFF-REGRESS: without `--auth` the create + list round-trip still
-// works. No identity means the shared sentinel owns the row, so the same
-// request that created it still sees it — the pre-isolation behaviour.
+// AUTH-OFF-REGRESS: without `--auth` the create + list round-trip still works.
 test "auth_off_is_unchanged" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -337,8 +316,7 @@ test "auth_off_is_unchanged" {
     }
 }
 
-// The DESTRUCTIVE half of "A must not interfere with B": a scoped list
-// alone is not enough if DELETE still acts on a raw id.
+// The DESTRUCTIVE half of "A must not interfere with B": a scoped list alone is not enough if DELETE still acts on a raw id.
 test "foreign_delete_and_rename_are_refused" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootAuth();
@@ -475,8 +453,7 @@ test "sessions_are_owned_by_their_creator" {
         }
     }
 
-    // The LIST: compared on the RAW BODY so the test does not depend on
-    // the JSON envelope's shape (Python: `assert sess in a_body.decode()`).
+    // The LIST: compared on the RAW BODY so the test does not depend on the JSON envelope's shape (Python: `assert sess in a_body.decode()`).
     {
         var r = try rawHttp(&h, .GET, "/api/session", null, cookie_a);
         defer r.deinit();
@@ -526,8 +503,6 @@ test "items_of_a_foreign_workspace_are_refused" {
     defer gpa.free(items_url);
 
     // A can list its own items — proves the gate is not a blanket 404.
-    // The BEFORE body is kept (owned) because the AFTER read must be
-    // compared byte-for-byte.
     const before = blk: {
         var r = try rawHttp(&h, .GET, items_url, null, cookie_a);
         defer r.deinit();
@@ -553,8 +528,7 @@ test "items_of_a_foreign_workspace_are_refused" {
         }
     }
 
-    // B cannot add an item (the middleware rejects before the body is
-    // parsed).
+    // B cannot add an item (the middleware rejects before the body is parsed).
     {
         var r = try rawHttp(&h, .POST, items_url, "{\"name\":\"intruder\"}", cookie_b);
         defer r.deinit();
@@ -601,8 +575,7 @@ test "items_of_a_foreign_workspace_are_refused" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = rawHttp;
     _ = bootAuth;

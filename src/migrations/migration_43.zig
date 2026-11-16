@@ -12,12 +12,10 @@ pub const Migration043AddPositionToWorkspaces = struct {
     pub const name = "add_position_to_workspaces";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Adds the `position` column to the workspaces table. The column is
-        // the sort key for the sidebar's workspace list
+        // Adds the `position` column to the workspaces table.
         try db.exec(allocator, "ALTER TABLE workspaces ADD COLUMN position INTEGER NOT NULL DEFAULT 0", &[_][]const u8{});
 
-        // Backfill. Assign position N-1 to the newest workspace, 0 to the
-        // oldest.
+        // Backfill.
         try db.exec(allocator,
             \\UPDATE workspaces
             \\SET position = (
@@ -31,9 +29,7 @@ pub const Migration043AddPositionToWorkspaces = struct {
         // Index on position for the list endpoint's ORDER BY.
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspaces_position ON workspaces(position DESC)", &[_][]const u8{});
 
-        // ANALYZE so the query planner picks up the new index on
-        // existing databases (without this, the planner may still
-        // pick a full scan on pre-existing data).
+        // ANALYZE so the query planner picks up the new index on existing databases (without this, the planner may still pick a full scan on pre-existing data).
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

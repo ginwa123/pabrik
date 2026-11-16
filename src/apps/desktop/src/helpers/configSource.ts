@@ -1,6 +1,4 @@
-/** Where a config editor reads and writes its `PabrikConfig`. The editor (`PabrikConfigEditor.vue`)
- * used to call the user-scope API functions directly, which made "user settings" and "workspace
- * settings" the same code path with no seam to tell them apart. */
+/** Where a config editor reads and writes its `PabrikConfig`. */
 import {
   deleteAgent as apiDeleteAgent,
   deleteWorkspaceAgent,
@@ -13,14 +11,10 @@ import {
 
 export type ConfigScope = 'user' | 'workspace'
 
-/** The config sections that live in Workspace settings, in nav order. One list, two consumers: the
- * settings shell renders a nav item per entry and the workspace view renders an editor for each -
- * so a section can never be listed but unrenderable (a dead link) or renderable but unlisted. */
+/** The config sections that live in Workspace settings, in nav order. */
 export const WORKSPACE_AGENT_SECTIONS = ['agents', 'mcp', 'tools', 'evals', 'runtime'] as const
 
-/**  * Does the WORKSPACE settings page render this section? The complement of
- * `WORKSPACE_AGENT_SECTIONS`, for callers that hold a section id from somewhere else (the editor's
- * remembered tab, a deep link) and must decide whether it has a home in workspace scope at all. */
+/** Does the WORKSPACE settings page render this section? */
 export function isWorkspaceAgentSection(id: string): boolean {
   return (WORKSPACE_AGENT_SECTIONS as readonly string[]).includes(id)
 }
@@ -28,18 +22,13 @@ export function isWorkspaceAgentSection(id: string): boolean {
 export interface PabrikConfigSource {
   /** Which scope this source edits. Drives labels, not requests. */
   readonly scope: ConfigScope
-  /** The workspace this source edits, when the scope has one. The "Test"
-   * probes send it so a credential stored as a `{` `{SECRETS:NAME}` `}`
-   * placeholder is resolved against THIS workspace's secrets. */
+  /** The workspace this source edits, when the scope has one. */
   readonly workspaceId?: string
-  /** Load the config to edit. User scope swallows a transport failure into `{}` (pre-existing
-   * behaviour: the page still renders defaults). */
+  /** Load the config to edit. */
   load(): Promise<PabrikConfig>
   /** Persist the whole edited config. */
   save(config: PabrikConfig): Promise<void>
-  /** Remove one profile by name. Each scope has its own endpoint: the user-scope one also
-   * live-reloads the backend's in-memory config, and the workspace-scope one edits this
-   * workspace's own copy and nothing else. */
+  /** Remove one profile by name. */
   deleteAgent(name: string): Promise<void>
 }
 

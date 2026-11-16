@@ -42,8 +42,7 @@ describe('useDesignHandlers.reparentLayers', () => {
       reposition: 'last_in_parent',
     })
 
-    // Single-element: same shape (still goes through batch endpoint
-    // with element_ids.length === 1).
+    // Single-element: same shape (still goes through batch endpoint with element_ids.length === 1).
     apiMock.mockResolvedValueOnce({ updated: [] })
     await handler.reparentLayers({
       workspaceId: 'ws_1',

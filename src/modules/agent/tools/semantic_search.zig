@@ -3,9 +3,7 @@ const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 const indexing = @import("indexing_semantic_search.zig");
 
-// ============================================================================
 // Semantic Search Tool Types
-// ============================================================================
 
 pub const SemanticSearchInput = struct {
     query: []const u8,
@@ -26,9 +24,7 @@ pub const SemanticSearchResult = struct {
     error_msg: ?[]const u8 = null,
 };
 
-// ============================================================================
 // Tool Schemas
-// ============================================================================
 
 pub const semantic_search_tool = AgentTool{
     .type = "function",
@@ -70,9 +66,7 @@ pub const index_codebase_tool = AgentTool{
     },
 };
 
-// ============================================================================
 // JSON Output Formatting
-// ============================================================================
 
 const sanitize = @import("helpers").sanitize_control_chars;
 
@@ -154,9 +148,7 @@ pub fn handleSemanticSearch(
     }
 }
 
-// ============================================================================
 // Index Codebase Handler
-// ============================================================================
 
 pub fn handleIndexCodebase(
     allocator: std.mem.Allocator,

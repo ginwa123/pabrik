@@ -1,6 +1,4 @@
-// Wire tests for the `spawn_sub_agent` required-tools + worktree wording. Zig
-// port of `tests/functional/spawn_sub_agent_tools_required_test.py` (same
-// test names, same order).
+// Wire tests for the `spawn_sub_agent` required-tools + worktree wording.
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,9 +10,7 @@ const io = testing.io;
 
 const REGISTRY_ROUTE = "/api/agent-tools/registry";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// `GET /api/agent-tools/registry` indexed by name.
 const Registry = struct {
@@ -86,8 +82,7 @@ const Registry = struct {
         return self.by_name.get(name);
     }
 
-    /// The registry's names, sorted — the Python `sorted(tools)` in the
-    /// "missing from registry" failure message.
+    /// The registry's names, sorted — the Python `sorted(tools)` in the "missing from registry" failure message.
     fn sortedNames(self: *const Registry) ![]const []const u8 {
         const names = try gpa.alloc([]const u8, self.by_name.count());
         errdefer gpa.free(names);
@@ -103,9 +98,7 @@ fn strLessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .lt;
 }
 
-/// The description for `name`, failing with the registry's sorted name list
-/// if the tool is absent. Python: `assert "spawn_sub_agent" in tools, f"…
-/// missing from registry: {sorted(tools)}"`.
+/// The description for `name`, failing with the registry's sorted name list if the tool is absent.
 fn requireDescription(reg: *const Registry, name: []const u8) ![]const u8 {
     if (reg.description(name)) |d| return d;
     const names = reg.sortedNames() catch return error.TestUnexpectedResult;
@@ -119,8 +112,7 @@ fn requireDescription(reg: *const Registry, name: []const u8) ![]const u8 {
     return error.TestUnexpectedResult;
 }
 
-/// `needle` must occur in `desc`. Prints the whole description on
-/// failure — a substring assertion is unreadable without it.
+/// `needle` must occur in `desc`.
 fn expectCarries(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     if (std.mem.indexOf(u8, desc, needle) != null) return;
     std.debug.print(
@@ -130,9 +122,7 @@ fn expectCarries(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     return error.TestUnexpectedResult;
 }
 
-/// `needle` must NOT occur in `desc`. The old omit-means-all sentence
-/// is the load-bearing negative: leaving it in place would teach the
-/// model exactly what the feature forbids.
+/// `needle` must NOT occur in `desc`.
 fn expectAbsent(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     if (std.mem.indexOf(u8, desc, needle) == null) return;
     std.debug.print(
@@ -142,13 +132,9 @@ fn expectAbsent(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// The model-facing description must demand an explicit allowlist. The WHAT is
-// the point of the feature: without this sentence the model keeps omitting
-// `tools` and every child silently receives ALL tools.
+// The model-facing description must demand an explicit allowlist.
 test "spawn_description_requires_explicit_tools" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -161,8 +147,7 @@ test "spawn_description_requires_explicit_tools" {
 
     const desc = try requireDescription(&reg, "spawn_sub_agent");
 
-    // WHAT: required explicit allowlist, with the three rejected shapes
-    // named.
+    // WHAT: required explicit allowlist, with the three rejected shapes named.
     try expectCarries(desc, "spawn_sub_agent", "REQUIRED, explicit allowlist");
     try expectCarries(desc, "spawn_sub_agent", "Missing, empty, or [\"all\"] is rejected");
     try expectCarries(desc, "spawn_sub_agent", "There is no omit-means-all");
@@ -173,7 +158,6 @@ test "spawn_description_requires_explicit_tools" {
 }
 
 // The description must carry the worktree rule with its trigger.
-// Explorer-code (read-only) shares the parent cwd — NO new worktree.
 test "spawn_description_teaches_explorer_shares_writer_isolates" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

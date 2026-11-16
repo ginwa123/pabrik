@@ -63,9 +63,7 @@ fn errorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     return try std.json.Stringify.valueAlloc(allocator, .{ .@"error" = message }, .{});
 }
 
-/// Record the delegation and answer with the payload the caller sees. A
-/// refusal is a payload with an `error` field, not a Zig error: the model
-/// reads it and can retry with a name that exists.
+/// Record the delegation and answer with the payload the caller sees.
 pub fn delegateToAgent(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -86,9 +84,7 @@ pub fn delegateToAgent(
     const members = try session_group.listMembers(allocator, db, session_id);
     defer session_group.freeMembers(allocator, members);
 
-    // The roster is not a gate: a chat with no members still has its own agent,
-    // and the caller may address any agent by name. The roster only supplies the
-    // spelling when it has one.
+    // The roster is not a gate: a chat with no members still has its own agent, and the caller may address any agent by name.
     var target: ?[]const u8 = null;
     for (members) |m| {
         if (std.ascii.eqlIgnoreCase(m.name, wanted)) {

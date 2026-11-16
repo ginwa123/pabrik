@@ -1,5 +1,4 @@
-/** Behavioural tests for the kanban `?sorts=` URL round-trip. **Bug fixed (2026-08-06):** "when
- * click chatview, my sort url is gone" — opening a task from the kanban drops the `?sorts=` param. */
+/** Behavioural tests for the kanban `?sorts=` URL round-trip. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -17,12 +16,9 @@ import {
 import type { SseClient, SseState } from '../helpers/sseClient'
 import { useTabsStore } from '../stores/tabs'
 
-// Stub vue-router (AppLayout uses useRoute()/useRouter() for URL
-// sync). Mirrors AppLayout.kanbanChatDialog.spec.ts:33-53.
+// Stub vue-router (AppLayout uses useRoute()/useRouter() for URL sync).
 const { useRouteMock, useRouterMock, routerReplaceCalls } = vi.hoisted(() => {
-  // Shared across mounts so a test can inspect what AppLayout navigated to
-  // (useRouter() hands back a fresh object per mount, so a per-mount spy would
-  // be unreachable from the test body).
+  // Shared across mounts so a test can inspect what AppLayout navigated to (useRouter() hands back a fresh object per mount, so a per-mount spy would be …
   const routerReplaceCalls: Array<{ path?: string; query?: Record<string, string> }> = []
   return {
     routerReplaceCalls,
@@ -45,9 +41,7 @@ vi.mock('vue-router', async () => {
   return { ...actual, useRouter: useRouterMock, useRoute: useRouteMock }
 })
 
-// Mirror AppLayout.kanbanChatDialog.spec.ts's fixtures so the
-// existing test infrastructure (jsdom + vue-test-utils) just
-// works.
+// Mirror AppLayout.kanbanChatDialog.spec.ts's fixtures so the existing test infrastructure (jsdom + vue-test-utils) just works.
 const WS_ID = 'ws_sort_url'
 const ITEM_ID = 'item_sort_url'
 const TASK_ID = 'task_sort_url'
@@ -62,8 +56,7 @@ const baseItem = {
   ],
 }
 
-// Local bus installer (mirrors AppLayout.kanbanChatDialog.spec.ts
-// — the project doesn't have a shared one yet).
+// Local bus installer (mirrors AppLayout.kanbanChatDialog.spec.ts — the project doesn't have a shared one yet).
 function installBusForTests() {
   const app = createApp({})
   installSseBus(app)
@@ -90,9 +83,7 @@ function mountAppLayout(): ReturnType<typeof mount> {
         KanbanView: true,
         DesignView: true,
         Chats: true,
-        // `@click` stands in for the in-chat ✕, which emits `close`. With tab
-        // mode off that routes through handleCloseTaskView's legacy path — the
-        // only remaining caller of the savedSortsParam contract.
+        // `@click` stands in for the in-chat ✕, which emits `close`.
         ChatView: {
           template: `<div data-testid="chatview-stub" @click="$emit('close')" />`,
           props: ['chatId', 'chatName', 'cwd', 'showHeader'],
@@ -102,11 +93,8 @@ function mountAppLayout(): ReturnType<typeof mount> {
   })
 }
 
-// Mock the workspace-store API calls so init() doesn't wipe the
-// injected fixture (same approach as AppLayout.kanbanChatDialog.spec.ts).
+// Mock the workspace-store API calls so init() doesn't wipe the injected fixture (same approach as AppLayout.kanbanChatDialog.spec.ts).
 function rewireApiForFixture(store: ReturnType<typeof useWorkspacesStore>) {
-  // Snapshot the fixture tree NOW: lazy init() replaces `workspaces.value` with empty-items rows
-  // BEFORE calling getWorkspacesItems, so a live read would see the wiped tree.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const snapshot = JSON.parse(JSON.stringify(store.workspaces)) as any[]
   vi.spyOn(api, 'getWorkspaces').mockImplementation(async () => ({
@@ -148,9 +136,7 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
       configurable: true,
     })
     installBusForTests()
-    // Stub API calls fired by AppLayout's onMounted →
-    // initializeFromSystemFolder → init() (otherwise the fetch fails
-    // on the relative URL). Mirrors AppLayout.kanbanChatDialog.spec.ts.
+    // Stub API calls fired by AppLayout's onMounted → initializeFromSystemFolder → init() (otherwise the fetch fails on the relative URL).
     vi.spyOn(api, 'getWorkspaces').mockImplementation(async () => ({
       workspaces: [],
     }))
@@ -193,9 +179,7 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
  
 
   it('tab mode off: restores ?sorts= from the snapshot when the chat closes', async () => {
-    // Tab mode off is the ONLY remaining caller of the savedSortsParam
-    // contract: with tabs on, the board tab carries its own ?sorts= and the
-    // chat closes back onto it (see AppLayout.tabs.spec.ts).
+    // Tab mode off is the ONLY remaining caller of the savedSortsParam contract: with tabs on, the board tab carries its own ?sorts= and the chat closes back onto it …
     localStorage.setItem('pabrik-tabs-enabled', 'false')
     const store = useWorkspacesStore()
     store.workspaces = [
@@ -207,9 +191,7 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ] as any
     rewireApiForFixture(store)
-    // Pre-populate the snapshot field the way Sidebar.vue does on user click — this simulates the
-    // user being on the `?view=workspace&...&sorts=col_a:name:asc` URL right before they click a
-    // card.
+    // Pre-populate the snapshot field the way Sidebar.vue does on user click — this simulates the user being on the `?view=workspace&...&sorts=col_a:name:asc` URL …
     store.savedSortsParam = 'col_a:name:asc'
 
     const wrapper = mountAppLayout()
@@ -223,16 +205,12 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
 
     expect(wrapper.find('[data-testid="chatview-stub"]').exists()).toBe(true)
 
-    // Close the chat. handleCloseTaskView must read savedSortsParam, write
-    // sorts=col_a:name:asc back into the URL, then clear the snapshot so a
-    // subsequent close doesn't accidentally restore a stale sort.
+    // Close the chat. handleCloseTaskView must read savedSortsParam, write sorts=col_a:name:asc back into the URL, then clear the snapshot so a subsequent close …
     routerReplaceCalls.length = 0
     await wrapper.find('[data-testid="chatview-stub"]').trigger('click')
     await nextTick()
 
-    // The store field must be cleared (consumed on close) so a
-    // subsequent close-without-a-fresh-task-open doesn't carry a
-    // stale snapshot forward.
+    // The store field must be cleared (consumed on close) so a subsequent close-without-a-fresh-task-open doesn't carry a stale snapshot forward.
     expect(store.savedSortsParam).toBe('')
     const sorted = routerReplaceCalls.find((call) => call.query && 'sorts' in call.query)
     expect(sorted?.query?.sorts).toBe('col_a:name:asc')
@@ -267,8 +245,7 @@ describe('AppLayout — kanban ?sorts= URL round-trip via task view', () => {
     await wrapper.find('[data-testid="chatview-stub"]').trigger('click')
     await nextTick()
 
-    // Snapshot was empty, must still be empty (nothing to consume,
-    // nothing to write), and no navigation may carry a sorts= param.
+    // Snapshot was empty, must still be empty (nothing to consume, nothing to write), and no navigation may carry a sorts= param.
     expect(store.savedSortsParam).toBe('')
     expect(routerReplaceCalls.every((call) => !(call.query && 'sorts' in call.query))).toBe(true)
 

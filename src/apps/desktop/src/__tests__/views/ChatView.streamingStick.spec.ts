@@ -1,6 +1,4 @@
-/** Regression tests for the "yank-to-bottom while reading during streaming" bug (video report: user
- * scrolls up to read history while the run is still streaming — Stop button visible — and the
- * viewport snaps back to the bottom on every new chunk). */
+/** Regression tests for the "yank-to-bottom while reading during streaming" bug (video report: user scrolls up to read history while the run is still streaming — … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -34,9 +32,7 @@ vi.mock('../../api', async (importOriginal) => {
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 
-// ChatView calls useRoute()/useRouter() on mount (URL param sync). In jsdom
-// there is no router — stub the pair (same pattern as
-// AppLayout.chatview.spec.ts).
+// ChatView calls useRoute()/useRouter() on mount (URL param sync).
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
   return {
@@ -50,9 +46,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// jsdom 29 does NOT implement HTMLElement.prototype.scrollTo — polyfill a
-// real implementation so scrollToBottom / scrollToPosition observably move
-// scrollTop (same polyfill as ChatView.scrollRestore.spec.ts).
+// jsdom 29 does NOT implement HTMLElement.prototype.scrollTo — polyfill a real implementation so scrollToBottom / scrollToPosition observably move scrollTop …
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -73,8 +67,7 @@ if (
   }
 }
 
-// No layout in jsdom: every element reports a 20000px scrollHeight against
-// an 800px viewport, so the 100-message chat is scrollable from mount.
+// No layout in jsdom: every element reports a 20000px scrollHeight against an 800px viewport, so the 100-message chat is scrollable from mount.
 Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
   configurable: true,
   get(): number {
@@ -150,8 +143,7 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
     await nextTick()
     if (wrapper.find('.virtual-scroller').exists()) break
   }
-  // Let mount-time timers (VirtualScroller 100ms measure, loadMore 200ms
-  // debounce, initial-load rAFs) flush so the scenario starts clean.
+  // Let mount-time timers (VirtualScroller 100ms measure, loadMore 200ms debounce, initial-load rAFs) flush so the scenario starts clean.
   await new Promise((r) => setTimeout(r, 400))
   await nextTick()
   return wrapper
@@ -173,15 +165,12 @@ async function userScrollTo(container: HTMLElement, top: number): Promise<void> 
   container.scrollTop = top
   container.dispatchEvent(new Event('scroll'))
   await nextTick()
-  // Flush the scroller's 200ms loadMore debounce (has_more=false in the
-  // mock, so it suppresses without mutating — but let it settle anyway).
+  // Flush the scroller's 200ms loadMore debounce (has_more=false in the mock, so it suppresses without mutating — but let it settle anyway).
   await new Promise((r) => setTimeout(r, 300))
   await nextTick()
 }
 
-/**  * Simulate tail growth below the viewport (an SSE chunk / tool card landing while the user reads):
- * raise scrollHeight, then emit the exact event VirtualScroller fires when its measured total
- * grows. */
+/** Simulate tail growth below the viewport (an SSE chunk / tool card landing while the user reads) */
 async function growTail(
   wrapper: VueWrapper,
   container: HTMLElement,
@@ -249,8 +238,7 @@ describe('ChatView — no yank-to-bottom while reading during streaming', () => 
     // Initial load lands at the bottom (20000 - 800).
     expect(container.scrollTop).toBe(20000 - 800)
 
-    // The user scrolls up to read history (the video scenario: run still
-    // streaming, Stop button visible).
+    // The user scrolls up to read history (the video scenario: run still streaming, Stop button visible).
     await userScrollTo(container, 5000)
     expect(container.scrollTop).toBe(5000)
 

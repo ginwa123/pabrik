@@ -2361,9 +2361,6 @@
   "src/components/views/CodeEditor.vue": {
     "local/no-try-catch": {
       "count": 1
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/components/views/KanbanKnowledgePanel.vue": {
@@ -2390,11 +2387,6 @@
       "count": 5
     }
   },
-  "src/components/views/LocalMemoryDetailView.vue": {
-    "local/no-try-catch": {
-      "count": 4
-    }
-  },
   "src/components/views/RoutineView.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
@@ -2403,11 +2395,6 @@
       "count": 16
     },
     "max-lines": {
-      "count": 1
-    }
-  },
-  "src/components/views/WorkspaceItemMemoriesView.vue": {
-    "local/no-try-catch": {
       "count": 1
     }
   },

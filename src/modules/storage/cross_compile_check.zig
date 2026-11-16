@@ -1,6 +1,4 @@
 //! Cross-target compile check for the storage module's per-OS branches.
-//! Cross-target compile check for the storage module's per-OS branches.
-//! Never executed — only analysed, once per target, by `check:storage-cross`.
 
 const storage = @import("storage.zig");
 const fs_backend = @import("fs.zig");
@@ -21,7 +19,6 @@ export fn pabrik_storage_cross_compile_check() callconv(.c) void {
     _ = &rustfs.Supervisor.deinit;
 
     // The filesystem backend's path handling (keys use `/` on every host).
-    // `asStorage` forces the vtable, and with it put/get/delete/stat.
     _ = &fs_backend.FsStorage.open;
     _ = &fs_backend.FsStorage.asStorage;
 

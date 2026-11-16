@@ -48,9 +48,7 @@ pub fn extractTag(xml: []const u8, tag: []const u8, allocator: std.mem.Allocator
     return xml[content_start .. content_start + end_idx];
 }
 
-// Thinking tags used by LLM models (e.g., Claude, DeepSeek)
-// <think> = <think> (7 bytes)
-//  = </think> (8 bytes)
+// Thinking tags used by LLM models (e.g., Claude, DeepSeek) <think> = <think> (7 bytes) = </think> (8 bytes)
 const THINK_OPEN: []const u8 = &[_]u8{ '<', 't', 'h', 'i', 'n', 'k', '>' };
 const THINK_CLOSE: []const u8 = &[_]u8{ '<', '/', 't', 'h', 'i', 'n', 'k', '>' };
 

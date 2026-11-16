@@ -1,13 +1,11 @@
-/** Behavioural tests for `DesignHistoryButtons.vue`. Renders two toolbar buttons with disabled
- * states + tooltips that show the next undo/redo entry's label. */
+/** Behavioural tests for `DesignHistoryButtons.vue`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref, type ComputedRef } from 'vue'
 import DesignHistoryButtons from '../components/design/DesignHistoryButtons.vue'
 
-// Mock the composable so we control canUndo/canRedo/nextUndoLabel/etc.
-// and can assert on undo()/redo() call counts.
+// Mock the composable so we control canUndo/canRedo/nextUndoLabel/etc. and can assert on undo()/redo() call counts.
 const undoMock = vi.fn().mockResolvedValue(undefined)
 const redoMock = vi.fn().mockResolvedValue(undefined)
 const canUndoRef = ref(false)

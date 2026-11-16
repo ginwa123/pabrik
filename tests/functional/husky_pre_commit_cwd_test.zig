@@ -1,5 +1,4 @@
-//! The pre-commit hook's Zig lint step is reachable from the CWD the hook
-//! actually runs in.
+//! The pre-commit hook's Zig lint step is reachable from the CWD the hook actually runs in.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -19,26 +18,19 @@ const DESKTOP_REL = "src/apps/desktop";
 /// The Zig lint step's script, spelled the way the hook spells it.
 const ZIG_LINT_REL = "scripts/lint-no-catch-unreachable.sh";
 
-/// The Zig scan's success line, which appears in the hook's stdout only if
-/// the step actually ran. Assembled from two pieces because the linter scans
-/// raw bytes and would flag the literal pair here.
+/// The Zig scan's success line, which appears in the hook's stdout only if the step actually ran.
 const ZIG_SCAN_OK_LINE = "no 'catch" ++ " unreachable'";
 
 /// What `zig build zginlint:check` prints when the tree is pinned.
 const ZGINLINT_OK_LINE = "within the pinned ceilings";
 
-/// The zginlint step as an executable line, newlines included so the
-/// matching needle cannot be the hook's own header comment.
+/// The zginlint step as an executable line, newlines included so the matching needle cannot be the hook's own header comment.
 const ZGINLINT_HOOK_LINE = "\nzig build zginlint:check\n";
 
-///
-/// The hook runs a real selftest plus a real scan; 120 s is generous for
-/// ~1 s of work and still bounds a wedged child.
+/// The hook runs a real selftest plus a real scan; 120 s is generous for ~1 s of work and still bounds a wedged child.
 const HOOK_TIMEOUT_MS: i64 = 120_000;
 
 /// `subprocess.run(timeout=<ms>)` as `std.process.RunOptions.timeout`.
-/// `Io.Timeout.duration` is a `Clock.Duration` — a (raw duration, clock)
-/// PAIR, not a bare duration — and its constructors live on the RAW half.
 fn timeoutMs(ms: i64) Io.Timeout {
     return .{ .duration = .{
         .raw = .{ .nanoseconds = @as(i96, ms) * std.time.ns_per_ms },
@@ -75,7 +67,6 @@ fn repoRootAbs() ![]u8 {
 }
 
 /// Write `contents` to `<dir>/<name>`, make it executable, return its path.
-/// Owned by the caller.
 fn writeExecutable(dir: []const u8, name: []const u8, contents: []const u8) ![]u8 {
     const path = try std.fs.path.join(gpa, &.{ dir, name });
     errdefer gpa.free(path);
@@ -101,8 +92,7 @@ fn readFileOrNull(path: []const u8) !?[]u8 {
     };
 }
 
-/// The stub `pnpm`: record the CWD it was invoked from and the argv it got,
-/// then exit 0 so the hook proceeds to the Zig step.
+/// The stub `pnpm`: record the CWD it was invoked from and the argv it got, then exit 0 so the hook proceeds to the Zig step.
 const PNPM_STUB =
     \\#!/bin/sh
     \\pwd -P > "$PNPM_STUB_CWD_OUT"
@@ -110,9 +100,7 @@ const PNPM_STUB =
     \\exit 0
 ;
 
-/// The stub `bash`: record the CWD of every invocation of the Zig lint
-/// script, then hand off to the REAL bash so the step still runs. The `case`
-/// filter matters.
+/// The stub `bash`: record the CWD of every invocation of the Zig lint script, then hand off to the REAL bash so the step still runs.
 const BASH_STUB =
     \\#!/bin/sh
     \\case "$*" in
@@ -123,9 +111,7 @@ const BASH_STUB =
     \\exec "$BASH_SHIM_REAL" "$@"
 ;
 
-/// The stub `zig`: record the CWD and argv of the hook's one invocation,
-/// print what a green `zginlint:check` prints, then exit 0. Stubbed for the
-/// same reason `pnpm` is — the real step compiles the CLI and walks 847 files.
+/// The stub `zig`: record the CWD and argv of the hook's one invocation, print what a green `zginlint:check` prints, then exit 0.
 const ZIG_STUB =
     \\#!/bin/sh
     \\pwd -P > "$ZIG_STUB_CWD_OUT"
@@ -174,8 +160,7 @@ fn makeFixture() !Fixture {
     const pnpm = try writeExecutable(bindir, "pnpm", PNPM_STUB);
     errdefer gpa.free(pnpm);
 
-    // The real bash path is baked into the stub's ENVIRONMENT, not its
-    // text: the path is host-specific and the stub is a fixed literal.
+    // The real bash path is baked into the stub's ENVIRONMENT, not its text: the path is host-specific and the stub is a fixed literal.
     const bash = try writeExecutable(bindir, "bash", BASH_STUB);
     errdefer gpa.free(bash);
 
@@ -207,8 +192,7 @@ fn makeFixture() !Fixture {
     };
 }
 
-/// The environment the hook runs under: the parent's, with the stub bindir
-/// FIRST on PATH and the record paths exported.
+/// The environment the hook runs under: the parent's, with the stub bindir FIRST on PATH and the record paths exported.
 fn hookEnviron(fx: *Fixture, real_bash: []const u8) !std.process.Environ.Map {
     var map = try std.process.Environ.createMap(std.testing.environ, gpa);
     errdefer map.deinit();
@@ -233,9 +217,7 @@ fn hookEnviron(fx: *Fixture, real_bash: []const u8) !std.process.Environ.Map {
     return map;
 }
 
-/// Run the real hook from the repo root with the stubs on PATH. Returns the
-/// child's exit code plus its captured streams; the caller owns the two
-/// buffers and must free them.
+/// Run the real hook from the repo root with the stubs on PATH.
 const HookRun = struct {
     code: ?u8,
     stdout: []u8,
@@ -253,9 +235,7 @@ fn runHook(hook_abs: []const u8, root: []const u8, fx: *Fixture, real_bash: []co
 
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sh", hook_abs },
-        // The CWD husky gives the hook: the worktree root. This is the
-        // precondition the whole test is about — if it were wrong, the
-        // Zig step would fail for a reason that is not the hook's bug.
+        // The CWD husky gives the hook: the worktree root.
         .cwd = .{ .path = root },
         .environ_map = &env_map,
         .timeout = timeoutMs(HOOK_TIMEOUT_MS),
@@ -304,8 +284,7 @@ fn hasRipgrep() bool {
     return exitCode(res.term) == 0;
 }
 
-/// Everything a test needs to run the hook once: the hook's absolute path,
-/// the repo root, the real bash, and the stub fixture.
+/// Everything a test needs to run the hook once: the hook's absolute path, the repo root, the real bash, and the stub fixture.
 const Setup = struct {
     hook: []u8,
     root: []u8,
@@ -336,12 +315,9 @@ fn makeSetup() !Setup {
     return .{ .hook = hook, .root = root, .real_bash = real_bash, .fx = fx };
 }
 
-// ============================================================================
 // The tests
-// ============================================================================
 
-// The headline regression: the hook exits 0 and the Zig scan's success line
-// is in its stdout, which means the step RAN.
+// The headline regression: the hook exits 0 and the Zig scan's success line is in its stdout, which means the step RAN.
 test "pre_commit_hook_reaches_the_zig_lint_step" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
     if (!hasRipgrep()) {
@@ -377,9 +353,7 @@ test "pre_commit_hook_reaches_the_zig_lint_step" {
         return error.TestUnexpectedResult;
     }
 
-    // The same guard for the third step. A hook that dropped
-    // `zig build zginlint:check` would still exit 0 on this fixture,
-    // because the `zig` stub is only invoked when the hook names it.
+    // The same guard for the third step.
     if (std.mem.indexOf(u8, run.stdout, ZGINLINT_OK_LINE) == null) {
         std.debug.print(
             "hook exited 0 but never ran `zig build zginlint:check`:\n{s}\n",
@@ -389,8 +363,7 @@ test "pre_commit_hook_reaches_the_zig_lint_step" {
     }
 }
 
-// The frontend half still mirrors CI: `pnpm run lint:check` from
-// src/apps/desktop. The subshell fix must not have moved the lint itself.
+// The frontend half still mirrors CI: `pnpm run lint:check` from src/apps/desktop.
 test "pre_commit_hook_runs_the_frontend_lint_from_the_desktop_dir" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
@@ -400,9 +373,7 @@ test "pre_commit_hook_runs_the_frontend_lint_from_the_desktop_dir" {
     var run = try s.run();
     defer run.deinit();
 
-    // The stub must have been invoked at all. A hook that never reaches
-    // the frontend lint would leave both record files absent, and reading
-    // a missing file must be a failure rather than a vacuous pass.
+    // The stub must have been invoked at all.
     const recorded_cwd = (try readFileOrNull(s.fx.pnpm_cwd_out)) orelse {
         std.debug.print(
             "the stub pnpm was never invoked (no {s}); hook exited {?d}\n--stderr--\n{s}\n",
@@ -440,9 +411,7 @@ test "pre_commit_hook_runs_the_frontend_lint_from_the_desktop_dir" {
     }
 }
 
-// The property `cd ../..` broke, asserted directly rather than through the
-// exit code: when the hook invokes the Zig lint script, its own CWD is the
-// repo root.
+// The property `cd ../..` broke, asserted directly rather than through the exit code: when the hook invokes the Zig lint script, its own CWD is the repo root.
 test "pre_commit_hook_invokes_the_zig_lint_from_the_repo_root" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
@@ -462,9 +431,7 @@ test "pre_commit_hook_invokes_the_zig_lint_from_the_repo_root" {
     };
     defer gpa.free(recorded);
 
-    // One line per invocation. CI makes two (selftest, then scan), so at
-    // least two lines is the floor; the FIRST is the one whose CWD decides
-    // whether the relative path resolves.
+    // One line per invocation.
     var lines = std.mem.splitScalar(u8, recorded, '\n');
     var first: ?[]const u8 = null;
     var count: usize = 0;
@@ -500,12 +467,9 @@ test "pre_commit_hook_invokes_the_zig_lint_from_the_repo_root" {
     }
 }
 
-// The third mirrored step has the same CWD requirement as the Zig scan:
-// `zig build zginlint:check` resolves `build.zig` and the baseline
-// relative to the repo root.
+// The third mirrored step has the same CWD requirement as the Zig scan
 
-// Observed through the `zig` stub's `pwd -P`, for the same reason the bash
-// stub is: a child inherits the hook's CWD, so the record IS the hook's.
+// Observed through the `zig` stub's `pwd -P`, for the same reason the bash stub is: a child inherits the hook's CWD, so the record IS the hook's.
 test "pre_commit_hook_invokes_zginlint_from_the_repo_root" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
@@ -550,8 +514,7 @@ test "pre_commit_hook_invokes_zginlint_from_the_repo_root" {
     }
 }
 
-// The hook must not have been "fixed" by deleting the Zig step, and must not
-// have regressed to a bare `cd`.
+// The hook must not have been "fixed" by deleting the Zig step, and must not have regressed to a bare `cd`.
 test "pre_commit_hook_invokes_the_zig_lint_script_by_its_repo_relative_path" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
@@ -561,8 +524,7 @@ test "pre_commit_hook_invokes_the_zig_lint_script_by_its_repo_relative_path" {
     const body = try readFile(hook);
     defer gpa.free(body);
 
-    // Both invocations the CI job makes: the selftest first (a scanner
-    // that has stopped matching is a silent outage), then the scan.
+    // Both invocations the CI job makes: the selftest first (a scanner that has stopped matching is a silent outage), then the scan.
     const needle_selftest = "bash " ++ ZIG_LINT_REL ++ " --selftest";
     const needle_scan = "bash " ++ ZIG_LINT_REL ++ "\n";
     if (std.mem.indexOf(u8, body, needle_selftest) == null) {
@@ -582,8 +544,7 @@ test "pre_commit_hook_invokes_the_zig_lint_script_by_its_repo_relative_path" {
         return error.TestUnexpectedResult;
     }
 
-    // And the zginlint gate must still be named. Dropping this line would
-    // leave the hook mirroring a job it no longer runs.
+    // And the zginlint gate must still be named.
     if (std.mem.indexOf(u8, body, ZGINLINT_HOOK_LINE) == null) {
         std.debug.print(
             "the hook no longer runs `{s}` — the zginlint gate is not " ++
@@ -593,9 +554,7 @@ test "pre_commit_hook_invokes_the_zig_lint_script_by_its_repo_relative_path" {
         return error.TestUnexpectedResult;
     }
 
-    // And the frontend lint must still be there, in a subshell. A bare
-    // `cd src/apps/desktop` is the shape that broke; the subshell is what
-    // keeps the parent's CWD at the root.
+    // And the frontend lint must still be there, in a subshell.
     if (std.mem.indexOf(u8, body, "(cd " ++ DESKTOP_REL) == null) {
         std.debug.print(
             "the hook no longer runs the frontend lint in a subshell " ++

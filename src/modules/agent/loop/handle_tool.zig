@@ -34,9 +34,7 @@ const onEventSendLLMHistory = on_event_sent.onEventSendLLMHistory;
 const insertLLMHistories = @import("insert_llm_histories.zig").inserLLMHistories;
 const skill_evals_db = @import("skill_evals_db.zig");
 
-// ============================================================================
 // TOOL REGISTRY - Single source of truth: modules/agent/tools/tools_equipped.zig
-// ============================================================================
 
 /// Re-export from the canonical registry (`modules/agent/tools/tools_equipped.zig`).
 pub const TOOL_REGISTRY = tools_equipped.UNIFIED_TOOL_REGISTRY;
@@ -57,40 +55,28 @@ pub const ToolContext = struct {
     is_thinking: *bool,
     environment: ?*const std.process.Environ.Map,
     selected_profile_model: []const u8 = "",
-    /// See `tools.ToolExecContext.allowed_tools` — the progressive-tool
-    /// adapter needs it to know which built-ins are not enabled.
+    /// See `tools.ToolExecContext.allowed_tools` — the progressive-tool adapter needs it to know which built-ins are not enabled.
     allowed_tools: []const u8 = "",
     is_sub_agent: bool = false,
-    /// The `llm_history` tool-result row for the tool call being dispatched
-    /// (the Phase-1 placeholder). See `tools.ToolExecContext.llm_history_id`.
+    /// The `llm_history` tool-result row for the tool call being dispatched (the Phase-1 placeholder).
     llm_history_id: []const u8 = "",
     /// Interpreter for `register_hook.py`, from the workspace settings.
-    /// Empty = auto-resolve.
     python_bin: []const u8 = "",
 };
 
 /// Result of parsing diff_view XML from tool result.
-/// If diff_view was found, content_without_diffview is an allocated string (caller must free).
-/// Otherwise, content_without_diffview is the original content slice.
 pub const DiffViewParseResult = struct {
     /// The content with diff_view section removed (allocated if diff_view found).
-    /// Caller must free this if diff_view_found is true.
     content_without_diffview: []const u8,
     /// Whether a diff_view section was found and removed
     diff_view_found: bool,
-    /// The before content extracted from <before> tag, XML-unescaped
-    /// (`&quot;` → `"`, `&lt;` → `<`, `&gt;` → `>`, `&apos;` → `'`, `&amp;` →
-    /// `&`).
+    /// The before content extracted from <before> tag, XML-unescaped (`&quot;` → `"`, `&lt;` → `<`, `&gt;` → `>`, `&apos;` → `'`, `&amp;` → `&`).
     before: ?[]const u8,
     /// The after content extracted from <after> tag, XML-unescaped (see `before`).
-    /// Null if the tag wasn't found. If `diff_view_found` is true, this is
-    /// ALWAYS an allocated buffer that the caller MUST free.
     after: ?[]const u8,
 };
 
 /// Parses diff_view XML from a text_replace tool result.
-/// Extracts before/after content and returns content with diff_view section removed.
-/// ALWAYS returns an allocated string for content_without_diffview - caller MUST free it.
 pub fn parseDiffViewFromResult(allocator: std.mem.Allocator, content: []const u8) !DiffViewParseResult {
     const dv_start = std.mem.indexOf(u8, content, "<diff_view>");
     const dv_end = std.mem.indexOf(u8, content, "</diff_view>");
@@ -155,15 +141,11 @@ const ToolResult = struct {
     skill_saved: ?SkillSaveInfo = null,
     agent_saved: ?AgentSaveInfo = null,
     progressive_tool_saved: ?ProgressiveToolSaveInfo = null,
-    /// See `tools.ToolExecResult.stop_loop` — the tool asked for the turn to
-    /// end once this batch is persisted. OR-merged into `ToolBatchOutcome`.
+    /// See `tools.ToolExecResult.stop_loop` — the tool asked for the turn to end once this batch is persisted.
     stop_loop: bool = false,
-    /// Secrets this dispatch resolved, so the caller can scrub them back out
-    /// of `output` before it is persisted or streamed. Empty when the call
-    /// carried no placeholder.
+    /// Secrets this dispatch resolved, so the caller can scrub them back out of `output` before it is persisted or streamed.
     secrets: []const secrets_substitution.ResolvedSecret = &.{},
-    /// A `data:image/<mime>;base64,...` URL for the model to SEE, not just
-    /// read about. Owned by the caller once returned.
+    /// A `data:image/<mime>;base64,...` URL for the model to SEE, not just read about.
     image_url: ?[]const u8 = null,
 };
 
@@ -182,8 +164,7 @@ const ProgressiveToolSaveInfo = struct {
     server_name: []const u8,
 };
 
-/// Extended result type for main agent tool execution
-/// Includes optional temperature/is_thinking for set_agent_properties
+/// Extended result type for main agent tool execution Includes optional temperature/is_thinking for set_agent_properties
 const MainAgentToolResult = struct {
     output: []const u8,
     temperature: ?f32 = null,
@@ -192,9 +173,7 @@ const MainAgentToolResult = struct {
     agent_saved: ?AgentSaveInfo = null,
 };
 
-// ============================================================================
-// Workspace-secret substitution seam (plan 2026-10-02-workspace-secrets) The
-// promise these helpers carry is two-sided.
+// Workspace-secret substitution seam (plan 2026-10-02-workspace-secrets) The promise these helpers carry is two-sided.
 
 /// The prefix every placeholder opens with.
 const secrets_placeholder_prefix = "{{SECRETS:";
@@ -203,9 +182,7 @@ fn mayContainSecretPlaceholder(args: []const u8) bool {
     return std.mem.indexOf(u8, args, secrets_placeholder_prefix) != null;
 }
 
-/// Free a `resolved` list and every string in it. `name` and `value` are each
-/// their own allocation. A zero-length list is the "nothing was substituted"
-/// default and frees as a no-op.
+/// Free a `resolved` list and every string in it.
 fn freeResolvedSecrets(allocator: std.mem.Allocator, resolved: []const secrets_substitution.ResolvedSecret) void {
     for (resolved) |entry| {
         allocator.free(entry.name);
@@ -235,45 +212,35 @@ fn secretSubstitutionError(
             "arguments were not valid JSON, so no secret could be substituted — nothing was run.",
             .{},
         ),
-        // Propagated rather than reported: an OOM here is a real fault, and
-        // reporting it as a bad placeholder would send the agent hunting for
-        // the wrong problem.
+        // Propagated rather than reported: an OOM here is a real fault, and reporting it as a bad placeholder would send the agent hunting for the wrong problem.
         error.OutOfMemory => return error.OutOfMemory,
     };
     defer allocator.free(message);
     return wrapToolOutput(allocator, tool_name, args, false, message, "");
 }
 
-/// Adapts `secrets_store` to `secrets_substitution.Resolver`, with a
-/// per-dispatch cache and no database dependency of its own.
+/// Adapts `secrets_store` to `secrets_substitution.Resolver`, with a per-dispatch cache and no database dependency of its own.
 const SecretResolver = struct {
     allocator: std.mem.Allocator,
     db: *database.Db,
-    /// Null = the session belongs to no workspace. Resolved server-side from
-    /// the session id, so the model can never choose it.
+    /// Null = the session belongs to no workspace.
     workspace_id: ?[]const u8,
-    /// One store query per DISTINCT name. A placeholder repeated ten times in
-    /// one call must not become ten queries, and the values have to outlive
-    /// the resolver call that produced them because `redactOutput` runs later.
+    /// One store query per DISTINCT name.
     cache: std.StringHashMapUnmanaged([]const u8) = .empty,
-    /// The most recent name this resolver refused. Read by the error envelope
-    /// so it can name the key.
+    /// The most recent name this resolver refused.
     missing_name: ?[]const u8 = null,
 
     fn init(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) SecretResolver {
         return .{
             .allocator = allocator,
             .db = db,
-            // Any failure to resolve — no session, no link, no matching
-            // workspace, a query error — collapses to "no workspace", which
-            // fails every name closed.
+            // Any failure to resolve — no session, no link, no matching workspace, a query error — collapses to "no workspace", which fails every name closed.
             .workspace_id = workspace_scope.resolveWorkspaceId(allocator, db, session_id) catch null,
         };
     }
 
     fn deinit(self: *SecretResolver) void {
-        // `HashMapUnmanaged.deinit` releases the table only, so the entries it
-        // does not own are released here.
+        // `HashMapUnmanaged.deinit` releases the table only, so the entries it does not own are released here.
         var it = self.cache.iterator();
         while (it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
@@ -294,9 +261,7 @@ const SecretResolver = struct {
         defer secrets_store.freeSecretValueRows(self.allocator, rows);
 
         for (rows) |row| {
-            // The cache stores copies rather than slices into `rows`, which
-            // the defer above releases as soon as this returns. A name is not
-            // a secret, so owning it as the key costs nothing.
+            // The cache stores copies rather than slices into `rows`, which the defer above releases as soon as this returns.
             const key = self.allocator.dupe(u8, row.name) catch return self.refuse(name);
             const value = self.allocator.dupe(u8, row.value) catch {
                 self.allocator.free(key);
@@ -309,9 +274,7 @@ const SecretResolver = struct {
             };
         }
 
-        // A name this workspace does not store is simply absent from `rows`,
-        // which is the same thing as a miss. Only the caller knows which
-        // placeholder it asked about, so reporting it is the caller's job.
+        // A name this workspace does not store is simply absent from `rows`, which is the same thing as a miss.
         return self.cache.get(name) orelse self.refuse(name);
     }
 
@@ -323,25 +286,19 @@ const SecretResolver = struct {
     }
 
     fn lookup(ctx: ?*const anyopaque, name: []const u8) ?[]const u8 {
-        // The erased `ctx` is const because the `Resolver` signature says so;
-        // the adapter's own state (cache, last miss) is genuinely mutated, so
-        // the const is shed here rather than by widening the signature.
+        // The erased `ctx` is const because the `Resolver` signature says so; the adapter's own state (cache, last miss) is genuinely mutated, so the const is shed here …
         const self: *SecretResolver = @ptrCast(@alignCast(@constCast(ctx orelse return null)));
         return self.resolve(name);
     }
 };
 
-/// Run ONE tool call through the agent loop's own path (hooks → registry →
-/// `dispatchFromRegistry`) with no `llm_history` bookkeeping, so a CLI or a
-/// test can exercise a tool without an LLM. Output is owned by the caller.
+/// Run ONE tool call through the agent loop's own path (hooks → registry → `dispatchFromRegistry`) with no `llm_history` bookkeeping, so a CLI or a test can …
 pub fn runToolDirect(ctx: ToolContext, tool_call: agent.ToolCall) ![]const u8 {
     const result = try dispatchTool(ctx, tool_call);
     return result.output;
 }
 
-/// The one place a tool call is timed: every envelope that leaves here carries
-/// its `duration_ms`, whichever path produced it (pre-hook short-circuit,
-/// secret-substitution error, registry, MCP, post-hook replacement).
+/// The one place a tool call is timed: every envelope that leaves here carries its `duration_ms`, whichever path produced it (pre-hook short-circuit …
 fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     const started_ns = std.Io.Timestamp.now(ctx.io, .real).nanoseconds;
     var result = try dispatchToolInner(ctx, tool_call);
@@ -351,17 +308,13 @@ fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     return result;
 }
 
-/// Lookup a tool by name and execute it using unified registry Refactored:
-/// Uses entry.exec() directly instead of double lookup Lua hooks
-/// (`hooks/register_hook.lua :: init(event, data)`) wrap every dispatch: the
+/// Lookup a tool by name and execute it using unified registry Refactored
 fn dispatchToolInner(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     var effective_call = tool_call;
     var modified_args: ?[]const u8 = null;
     defer if (modified_args) |a| ctx.allocator.free(a);
 
-    // Translate a deprecated tool name to its current registry entry (`bash`
-    // → `command`) BEFORE the hooks run, so a pre-2026-09-04 name behaves
-    // like the tool it now means: same hooks, same exec, same envelope.
+    // Translate a deprecated tool name to its current registry entry (`bash` → `command`) BEFORE the hooks run, so a pre-2026-09-04 name behaves like the tool it now …
     if (tools_equipped.resolveToolAlias(tool_call.function.name)) |canonical| {
         effective_call.function.name = canonical;
     }
@@ -375,9 +328,7 @@ fn dispatchToolInner(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
         .short_circuit => |out| return ToolResult{ .output = out },
     }
 
-    // ─── Workspace-secret substitution ─── Deliberately AFTER the pre-hook:
-    // a user-authored Lua hook receives `arguments` and may log or rewrite
-    // them, so substituting first would hand plaintext to arbitrary user code
+    // ─── Workspace-secret substitution ───
     var resolver: SecretResolver = undefined;
     var resolver_live = false;
     defer if (resolver_live) resolver.deinit();
@@ -399,8 +350,7 @@ fn dispatchToolInner(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
             &resolver,
             &sub,
         ) catch |err| {
-            // Never dispatch: an empty substitution would reach the tool and
-            // surface much later as an opaque third-party 401.
+            // Never dispatch: an empty substitution would reach the tool and surface much later as an opaque third-party 401.
             const envelope = try secretSubstitutionError(ctx.allocator, effective_call.function.name, effective_call.function.arguments, &resolver, err);
             return ToolResult{ .output = envelope };
         };
@@ -428,16 +378,13 @@ fn dispatchToolInner(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
         result.output = replacement;
     }
 
-    // Ownership of the resolved list moves to the caller, which redacts the
-    // output with it and then frees it; the defer above must not also do so.
+    // Ownership of the resolved list moves to the caller, which redacts the output with it and then frees it; the defer above must not also do so.
     result.secrets = sub.resolved;
     sub.resolved = &.{};
     return result;
 }
 
-/// Outcome of the Lua pre hook for one tool call. Owned strings transfer
-/// to the caller (short_circuit becomes the tool output, proceed_modified
-/// must be freed after dispatch).
+/// Outcome of the Lua pre hook for one tool call.
 const PreHookAction = union(enum) {
     proceed,
     proceed_modified: []const u8,
@@ -463,8 +410,7 @@ fn runPreHookAction(ctx: ToolContext, tool_name: []const u8, arguments: []const 
     }
 }
 
-/// Run the Lua post hook. Returns an owned replacement output, or null to
-/// keep `current`. Never errors outward (fail-open inside).
+/// Run the Lua post hook.
 fn runPostHookOverride(ctx: ToolContext, tool_name: []const u8, arguments: []const u8, current: []const u8) ?[]const u8 {
     const hook_ctx = hooks.HookContext{ .session_id = ctx.session_id, .cwd = ctx.cwd, .model = ctx.model, .python_bin = ctx.python_bin };
     const post = hooks.runPostHook(ctx.allocator, ctx.io, ctx.logger, ctx.environment, tool_name, arguments, current, hook_ctx) catch return null;
@@ -478,19 +424,15 @@ fn runPostHookOverride(ctx: ToolContext, tool_name: []const u8, arguments: []con
     }
 }
 
-/// The object store document bodies live in, resolved from the process
-/// singleton so a dispatch never has to remember to thread it. With no store
-/// the document tools have nowhere to put a body.
+/// The object store document bodies live in, resolved from the process singleton so a dispatch never has to remember to thread it.
 fn documentStorage() ?pabrik.storage.storage.Storage {
     const di = pabrik.getSingleton() catch return null;
     return di.objectStore();
 }
 
-/// Dispatch tool execution from registry entry
-/// Calls exec directly and handles auto-save via registry flags
+/// Dispatch tool execution from registry entry Calls exec directly and handles auto-save via registry flags
 fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools_equipped.ToolExecFunc) !ToolResult {
-    // Stack-local, not a threadlocal: a nested sub-agent dispatch on this
-    // thread must not clobber the outer probe.
+    // Stack-local, not a threadlocal: a nested sub-agent dispatch on this thread must not clobber the outer probe.
     var cancel_probe = session_cancel_probe.Probe.init(ctx.db, ctx.session_id, ctx.io);
 
     const ctx_local = tools.ToolExecContext{
@@ -508,22 +450,16 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         .is_thinking = ctx.is_thinking,
         .environment = ctx.environment,
         .selected_profile_model = ctx.selected_profile_model,
-        // 2026-08-23 spawn-subagent-live-progress: thread the parent's
-        // tool_call.id through ToolExecContext so execSpawnSubAgent can emit
-        // progress events keyed by it (ChatView.vue's reducer filters on this
+        // 2026-08-23 spawn-subagent-live-progress: thread the parent's tool_call.id through ToolExecContext so execSpawnSubAgent can emit progress events keyed by it …
         .tool_call_id = tool_call.id,
-        // Progressive tool search: the exec-side catalog computes which
-        // built-ins are NOT enabled, which needs the resolved allowlist.
+        // Progressive tool search: the exec-side catalog computes which built-ins are NOT enabled, which needs the resolved allowlist.
         .allowed_tools = ctx.allowed_tools,
         .is_sub_agent = ctx.is_sub_agent,
         // The Phase-1 placeholder row this result will be written into.
         .llm_history_id = ctx.llm_history_id,
         // The document tools broadcast their mutations over SSE on this bus.
-        // A host without one (unit tests) leaves it null and the emit no-ops.
         .event_bus = if (pabrik.getSingleton()) |di| di.event_bus else |_| null,
-        // Document bodies live in the object store, not in a column. Without
-        // this handle `document_markdown` writes a row with no
-        // body and the document reads back empty.
+        // Document bodies live in the object store, not in a column.
         .storage = documentStorage(),
         // Only a tool that blocks needs it, and only `command` reads it.
         .cancel_hook = cancel_probe.hook(),
@@ -553,8 +489,7 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
 fn isMCPTool(config: *const config_mod.LlmConfig, tool_name: []const u8) bool {
     if (config.mcpServers() == null) return false;
 
-    // MCP tool names have format: mcp_{serverName}_{toolName}
-    // e.g., mcp_context7_query-docs
+    // MCP tool names have format: mcp_{serverName}_{toolName} e.g., mcp_context7_query-docs
     if (!std.mem.startsWith(u8, tool_name, "mcp_")) return false;
 
     // Find second underscore (after "mcp_") to get server name
@@ -576,9 +511,7 @@ fn dispatchMCP(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
         ctx.logger,
         tool_call,
         ctx.config,
-        // The Stop button must reach the MCP lease wait and the child reads:
-        // a second session on the same stdio server otherwise waits forever
-        // for the first one with no way out.
+        // The Stop button must reach the MCP lease wait and the child reads
         .{ .cancel_session = .{
             .db = ctx.db,
             .session_id = ctx.session_id,
@@ -604,8 +537,7 @@ pub fn isKnownTool(name: []const u8) bool {
     return false;
 }
 
-/// Check if a tool name is registered or is an MCP tool Alias-aware on
-/// purpose.
+/// Check if a tool name is registered or is an MCP tool Alias-aware on purpose.
 pub fn isKnownToolOrMCP(name: []const u8, config: *const config_mod.LlmConfig) bool {
     if (tools_equipped.isDispatchableToolName(name)) return true;
     return isMCPTool(config, name);
@@ -624,8 +556,7 @@ pub fn getToolNames() []const []const u8 {
     return &names;
 }
 
-/// Tool-result text for a call whose name is neither a registry entry nor an
-/// MCP tool.
+/// Tool-result text for a call whose name is neither a registry entry nor an MCP tool.
 fn unknownToolMessage(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     if (tools_equipped.retiredToolSuggestion(name)) |replacement| {
         return std.fmt.allocPrint(
@@ -655,9 +586,7 @@ fn unknownToolMessage(allocator: std.mem.Allocator, name: []const u8) ![]const u
     return out.toOwnedSlice(allocator);
 }
 
-// ============================================================================
 // HELPER FUNCTIONS - XML Parsing
-// ============================================================================
 
 fn parseSkillFromResult(result: []const u8) ?struct { name: []const u8, content: []const u8 } {
     if (std.mem.indexOf(u8, result, "<loaded>true</loaded>") == null) return null;
@@ -684,20 +613,15 @@ fn parseAgentFromResult(result: []const u8) ?[]const u8 {
     return result[name_begin .. name_begin + name_end];
 }
 
-// ============================================================================
 // MAIN HANDLER - Clean dispatch using registry
-// ============================================================================
 
 /// Longest `last_activity_description` written by `touchWorkerActivity`.
-/// The column is a human-facing label rendered in the UI, so it is capped
-/// rather than allowed to grow with an arbitrarily large argument blob.
 const worker_activity_desc_max = 120;
 
 const worker_activity_prefix = "Tool call: ";
 const worker_activity_ellipsis = "…";
 
-/// Stamp `worker.last_activity_nano` + a short "what is it doing" label for
-/// the worker running `session_id`, and emit the SSE `worker_updated` event.
+/// Stamp `worker.last_activity_nano` + a short "what is it doing" label for the worker running `session_id`, and emit the SSE `worker_updated` event.
 fn touchWorkerActivity(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -705,9 +629,7 @@ fn touchWorkerActivity(
     tool_name: []const u8,
     arguments: []const u8,
 ) !void {
-    // A worker row only exists while a run is in flight. Absence is the
-    // normal case for a sub-agent's parent (whose row was already deleted)
-    // and for any call made outside a worker, so this is not an error.
+    // A worker row only exists while a run is in flight.
     var probe = try db.query(allocator, "SELECT 1 FROM worker WHERE id = ? LIMIT 1", &.{session_id});
     defer probe.deinit();
     const row = try probe.next();
@@ -720,8 +642,7 @@ fn touchWorkerActivity(
     try llm_history.updateWorkerActivityWithDescription(allocator, db, session_id, desc);
 }
 
-/// Longest prefix of `s` that is at most `limit` bytes and ends on a UTF-8
-/// character boundary, so a cut never writes a partial codepoint.
+/// Longest prefix of `s` that is at most `limit` bytes and ends on a UTF-8 character boundary, so a cut never writes a partial codepoint.
 fn clipToCharBoundary(s: []const u8, limit: usize) usize {
     var end = @min(limit, s.len);
     while (end > 0 and end < s.len and (s[end] & 0xC0) == 0x80) end -= 1;
@@ -729,7 +650,6 @@ fn clipToCharBoundary(s: []const u8, limit: usize) usize {
 }
 
 /// `Tool call: <name>` + a truncated leading slice of `arguments`.
-/// Returns an allocated string the caller owns.
 fn buildWorkerActivityDescription(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -757,11 +677,9 @@ fn buildWorkerActivityDescription(
     return std.fmt.allocPrint(allocator, "{s}{s}", .{ label.items, worker_activity_ellipsis });
 }
 
-/// What `handle_tool` reports back to the workflow loop. A plain `void` was
-/// enough while every tool was fire-and-forget.
+/// What `handle_tool` reports back to the workflow loop.
 pub const ToolBatchOutcome = struct {
-    /// At least one tool in the batch asked to end the turn (`command`'s
-    /// `is_stop`).
+    /// At least one tool in the batch asked to end the turn (`command`'s `is_stop`).
     stop_loop: bool = false,
 };
 
@@ -783,24 +701,18 @@ pub fn handle_tool(
     config: *const config_mod.LlmConfig,
     environment: ?*const std.process.Environ.Map,
     selected_profile_model: []const u8,
-    // Passed straight through to `ToolExecContext`. Zig has no default
-    // parameter values, so every caller must supply them; `workflow.zig`
-    // does. The tool-result envelope stays the same either way.
+    // Passed straight through to `ToolExecContext`.
     allowed_tools: []const u8,
     is_sub_agent: bool,
-    /// Who is speaking this turn. A group session changes speaker between
-    /// turns, and the newest row still names the previous one.
+    /// Who is speaking this turn.
     agent_override: []const u8,
 ) !ToolBatchOutcome {
     var outcome: ToolBatchOutcome = .{};
 
     if (res_dynamic_agent.tool_calls) |tc| {
-        // ─── Phase 1: INSERT placeholder rows for ALL known tools ─── This
-        // is the critical fix for the "Invalid function ID" bug.
+        // ─── Phase 1: INSERT placeholder rows for ALL known tools ───
 
-        // ─── Phase 2: INSERT the assistant message (existing code) ─── The
-        // assistant message declares tool_calls=[A, B, C] and has existing
-        // tool_call_id columns that match the placeholders by id.
+        // ─── Phase 2: INSERT the assistant message (existing code) ───
         var has_known_tools = false;
         for (tc) |tool_call| {
             if (isKnownToolOrMCP(tool_call.function.name, config)) {
@@ -856,9 +768,7 @@ pub fn handle_tool(
         var list_id_that_was_loaded: std.ArrayList([]const u8) = .empty;
 
         for (tc) |tool_call| {
-            // Phase 1 placeholder content: the canonical envelope, so the
-            // frontend's `tryUnwrapToolOutput` can parse it. A call that will
-            // run is marked `pending`; an unknown tool is already a verdict.
+            // Phase 1 placeholder content: the canonical envelope, so the frontend's `tryUnwrapToolOutput` can parse it.
             const placeholder = if (!isKnownToolOrMCP(tool_call.function.name, config)) blk: {
                 // Same actionable text Phase 3 writes.
                 const msg = try unknownToolMessage(allocator, tool_call.function.name);
@@ -883,9 +793,7 @@ pub fn handle_tool(
                 defer allocator.free(bare);
                 break :blk try withPending(allocator, bare);
             };
-            // `insertLLMHistories` duplicates the content slice internally
-            // (line 123 of insert_llm_histories.zig), so we own and free the
-            // envelope string after the call returns — the DB row holds its
+            // `insertLLMHistories` duplicates the content slice internally (line 123 of insert_llm_histories.zig), so we own and free the envelope string after the call …
             defer allocator.free(placeholder);
 
             const created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
@@ -927,8 +835,7 @@ pub fn handle_tool(
             try list_id_that_was_loaded.append(allocator, id_llm_history);
         }
 
-        // 2026-09-01 fix: emit placeholder SSE immediately so the frontend
-        // has a tool message to attach live progress to.
+        // 2026-09-01 fix: emit placeholder SSE immediately so the frontend has a tool message to attach live progress to.
         for (list_id_that_was_loaded.items) |pid| {
             sendSSEForMessageById(allocator, db, session_id, cwd, current_agent_for_save, parent_session_id, agent_temperature.*, isThinking.*, false, true, pid) catch |err| {
                 logger.warnFmt("Failed to emit placeholder SSE for {s}: {s}", .{ pid, @errorName(err) });
@@ -957,8 +864,6 @@ pub fn handle_tool(
         };
 
         // ─── Phase 3: dispatch each tool & UPDATE placeholder in place ───
-        // For each tool_call, we run the tool (catching errors) and UPDATE
-        // the placeholder row with the actual result (or the error message).
         var idx: usize = 0;
         for (tc) |tool_call| {
             const id_llm_history = list_id_that_was_loaded.items[idx];
@@ -978,25 +883,20 @@ pub fn handle_tool(
                 tool_call.function.arguments,
             ) catch {};
 
-            // A name that reaches here is genuinely unknown: the tolerated
-            // alias (`run_command` → `command`) was already accepted by
-            // `isKnownToolOrMCP` above, and the retired shell names (`bash`,
+            // A name that reaches here is genuinely unknown: the tolerated alias (`run_command` → `command`) was already accepted by `isKnownToolOrMCP` above, and the …
             if (!isKnownToolOrMCP(tool_call.function.name, config)) {
                 logger.warnFmt("[HANDLE_TOOL] unknown tool '{s}' — not in the registry or the MCP catalog", .{tool_call.function.name});
                 const err_msg = try unknownToolMessage(allocator, tool_call.function.name);
                 defer allocator.free(err_msg);
                 tool_result = try wrapToolOutput(allocator, tool_call.function.name, tool_call.function.arguments, false, err_msg, "");
                 errdefer allocator.free(tool_result);
-                // Nothing was substituted on this path (there is no executor to
-                // substitute for), so `resolved` is empty.
+                // Nothing was substituted on this path (there is no executor to substitute for), so `resolved` is empty.
                 try persistRedacted(allocator, io, db, id_llm_history, session_id, cwd, tool_call, tool_result, &.{}, toolAgentTemp, toolIsThinking, current_agent_for_save, parent_session_id);
                 allocator.free(tool_result);
                 continue;
             }
 
-            // Check if this is an MCP tool. Lua hooks apply here too
-            // (same pre/post contract as dispatchTool below) so hook
-            // authors see every tool call, not just builtin ones.
+            // Check if this is an MCP tool.
             if (isMCPTool(config, tool_call.function.name)) {
                 var mcp_call = tool_call;
                 var mcp_modified_args: ?[]const u8 = null;
@@ -1017,9 +917,7 @@ pub fn handle_tool(
                     },
                 }
 
-                // ─── Workspace-secret substitution (MCP) ─── MCP tools are
-                // intercepted here and `continue`d, so they NEVER reach
-                // `dispatchTool`.
+                // ─── Workspace-secret substitution (MCP) ───
                 var mcp_resolver: SecretResolver = undefined;
                 var mcp_resolver_live = false;
                 defer if (mcp_resolver_live) mcp_resolver.deinit();
@@ -1041,8 +939,7 @@ pub fn handle_tool(
                         &mcp_resolver,
                         &mcp_sub,
                     ) catch |err| {
-                        // Never call the MCP server with a literal
-                        // placeholder or an empty credential.
+                        // Never call the MCP server with a literal placeholder or an empty credential.
                         const envelope = try secretSubstitutionError(allocator, mcp_call.function.name, mcp_call.function.arguments, &mcp_resolver, err);
                         tool_result = envelope;
                         errdefer allocator.free(tool_result);
@@ -1060,8 +957,7 @@ pub fn handle_tool(
                     logger,
                     mcp_call,
                     config,
-                    // Same session-scoped cancel as `dispatchMCP`: Stop must
-                    // break an MCP lease wait / child read, not just this loop.
+                    // Same session-scoped cancel as `dispatchMCP`: Stop must break an MCP lease wait / child read, not just this loop.
                     .{ .cancel_session = .{
                         .db = db,
                         .session_id = session_id,
@@ -1072,8 +968,7 @@ pub fn handle_tool(
                         mcp_call.function.name,
                         @errorName(err),
                     });
-                    // The envelope embeds `mcp_call.function.arguments`, which
-                    // now holds the substituted value, so this site scrubs it.
+                    // The envelope embeds `mcp_call.function.arguments`, which now holds the substituted value, so this site scrubs it.
                     tool_result = try wrapToolOutput(allocator, mcp_call.function.name, mcp_call.function.arguments, false, err_msg, "");
                     errdefer allocator.free(tool_result);
                     try persistRedacted(allocator, io, db, id_llm_history, session_id, cwd, mcp_call, tool_result, mcp_sub.resolved, toolAgentTemp, toolIsThinking, current_agent_for_save, parent_session_id);
@@ -1096,9 +991,7 @@ pub fn handle_tool(
                 });
                 tool_result = try wrapToolOutput(allocator, tool_call.function.name, tool_call.function.arguments, false, err_msg, "");
                 errdefer allocator.free(tool_result);
-                // `dispatchTool` reports a failed substitution as a result
-                // envelope rather than an error, so reaching here means it
-                // errored before or outside the substitution and `resolved`
+                // `dispatchTool` reports a failed substitution as a result envelope rather than an error, so reaching here means it errored before or outside the substitution …
                 try persistRedacted(allocator, io, db, id_llm_history, session_id, cwd, tool_call, tool_result, &.{}, toolAgentTemp, toolIsThinking, current_agent_for_save, parent_session_id);
                 allocator.free(tool_result);
                 continue;
@@ -1110,13 +1003,10 @@ pub fn handle_tool(
             // An image the model must SEE rides on the row, next to the text.
             const tool_image_url = exec_result.image_url;
             defer if (tool_image_url) |url| allocator.free(url);
-            // `exec_result.secrets` is ours to release once the result has been
-            // scrubbed; the catch above `continue`s, so nothing registers it
-            // on a path that never got a result.
+            // `exec_result.secrets` is ours to release once the result has been scrubbed; the catch above `continue`s, so nothing registers it on a path that never got a …
             defer freeResolvedSecrets(allocator, exec_result.secrets);
 
-            // The skill-evals ledger below persists this same string, so the
-            // scrub has to happen here as well as at the persist site.
+            // The skill-evals ledger below persists this same string, so the scrub has to happen here as well as at the persist site.
             var ledger_scrubbed: ?[]u8 = null;
             defer if (ledger_scrubbed) |scrubbed| allocator.free(scrubbed);
             if (exec_result.secrets.len > 0) {
@@ -1152,17 +1042,14 @@ pub fn handle_tool(
                 };
             }
 
-            // Progressive tool search: `use_tool` records the equip so the
-            // NEXT iteration's tool resolution includes it.
+            // Progressive tool search: `use_tool` records the equip so the NEXT iteration's tool resolution includes it.
             if (exec_result.progressive_tool_saved) |pt| {
                 _ = llm_history.saveProgressiveTool(allocator, db, logger, session_id, pt.name, pt.server_name) catch |err| {
                     logger.errFmt("Failed to equip progressive tool '{s}': {s}", .{ pt.name, @errorName(err) });
                 };
             }
 
-            // `tool_result` may already be the scrubbed copy if this call
-            // resolved a secret; `redactOutput` is idempotent, so passing the
-            // same `resolved` again is a no-op walk rather than a second copy.
+            // `tool_result` may already be the scrubbed copy if this call resolved a secret; `redactOutput` is idempotent, so passing the same `resolved` again is a no-op …
             try persistRedacted(allocator, io, db, id_llm_history, session_id, cwd, tool_call, tool_result, exec_result.secrets, toolAgentTemp, toolIsThinking, current_agent_for_save, parent_session_id);
             if (tool_image_url) |url| try llm_history.setToolResultImageUrl(allocator, db, id_llm_history, url);
         }
@@ -1173,9 +1060,7 @@ pub fn handle_tool(
     return outcome;
 }
 
-/// Persist a tool result with every resolved secret put back behind its
-/// placeholder, then release the scrubbed copy. This is the boundary that
-/// makes property B true.
+/// Persist a tool result with every resolved secret put back behind its placeholder, then release the scrubbed copy.
 fn persistRedacted(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1231,8 +1116,7 @@ fn updateAndSendToolResult(
         }
     }
 
-    // UPDATE the placeholder row in place (created in Phase 1 of
-    // handle_tool's 3-phase pattern).
+    // UPDATE the placeholder row in place (created in Phase 1 of handle_tool's 3-phase pattern).
     try llm_history.updateToolResultById(allocator, io, db, id, .{
         .content = content_modified,
         .diffview_before = diffview_before,
@@ -1247,13 +1131,10 @@ fn updateAndSendToolResult(
     if (diffview_after) |after| allocator.free(after);
 
     // 2026-08-23 B1 fix — emit the SSE for THIS tool's row by its known id.
-    // The old code called sendSSEForLatestMessage here, which reads
-    // getLatestMessage (last-created row in the session).
     try sendSSEForMessageById(allocator, db, session_id, cwd, agent_name, parent_session_id, temperature, is_thinking, false, true, id);
 }
 
-/// 2026-08-23 B1 fix — emit the SSE for ONE specific llm_history row,
-/// selected by its exact id.
+/// 2026-08-23 B1 fix — emit the SSE for ONE specific llm_history row, selected by its exact id.
 fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, id: []const u8) !void {
     const msgOpt = llm_history.getMessageById(allocator, db, session_id, id) catch |err| {
         logger_mod.debugPrint("SSE_DEBUG: getMessageById failed for session {s} id {s}: {s}\n", .{ session_id, id, @errorName(err) });
@@ -1294,9 +1175,7 @@ fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *database.Db, session
         allocator.free(skill.content);
     };
 
-    // DB may hold Option A envelopes; the wire stays plain `.msg`
-    // (same unwrap as the insert path + REST handler). Owned dupe —
-    // freed below; the emitter only borrows it.
+    // DB may hold Option A envelopes; the wire stays plain `.msg` (same unwrap as the insert path + REST handler).
     const wire_content_by_id = parsing.unwrapChatContent(allocator, msg.response_content) catch null;
     defer if (wire_content_by_id) |w| allocator.free(w);
 
@@ -1309,13 +1188,9 @@ fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *database.Db, session
         .reasoning_content = msg.reasoning_content,
         .role = msg.role,
         .finish_reason = msg.finish_reason,
-        // Tool-result rows carry NO tool_calls array — that field is the
-        // assistant message's wire format. The old code passed null here
-        // too (via sendSSEForLatestMessage's `null` argument).
+        // Tool-result rows carry NO tool_calls array — that field is the assistant message's wire format.
         .tool_calls_json = null,
-        // 2026-09-01 fix: tool_call_id on the wire is the ORIGINAL LLM id
-        // (e.g. "call_abc123"), NOT the row id. The row id is already in
-        // `msg.id` / `event.id`.
+        // 2026-09-01 fix: tool_call_id on the wire is the ORIGINAL LLM id (e.g.
         .tool_call_id = msg.tool_call_id orelse msg.id,
         .tool_name = msg.tool_name,
         .agent_name = agent_name,
@@ -1337,9 +1212,7 @@ fn sendSSEForMessageById(allocator: std.mem.Allocator, db: *database.Db, session
 }
 
 fn sendSSEForLatestMessage(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, cwd: []const u8, agent_name: []const u8, parent_session_id: []const u8, temperature: f32, is_thinking: bool, is_input: bool, is_output: bool, tool_calls_json: ?[]agent.ToolCall) !void {
-    // 2026-08-24 wire-shape fix (task_1787590621966_10): the raw array is
-    // passed through unchanged — on_event_sent.onEventSendLLMHistory now
-    // serializes tool_calls to a JSON STRING internally (single serialization
+    // 2026-08-24 wire-shape fix (task_1787590621966_10): the raw array is passed through unchanged — on_event_sent.onEventSendLLMHistory now serializes tool_calls to …
 
     const latestMessage = getLatestMessage(allocator, db, session_id) catch |err| {
         logger_mod.debugPrint("SSE_DEBUG: getLatestMessage failed for session {s}: {s}\n", .{ session_id, @errorName(err) });
@@ -1354,9 +1227,7 @@ fn sendSSEForLatestMessage(allocator: std.mem.Allocator, db: *database.Db, sessi
             allocator.free(skill.content);
         };
 
-        // DB may hold Option A envelopes; the wire stays plain `.msg`
-        // (same unwrap as the insert path + REST handler). Owned dupe —
-        // freed below; the emitter only borrows it.
+        // DB may hold Option A envelopes; the wire stays plain `.msg` (same unwrap as the insert path + REST handler).
         const wire_content_latest = parsing.unwrapChatContent(allocator, msg.response_content) catch null;
         defer if (wire_content_latest) |w| allocator.free(w);
 
@@ -1429,8 +1300,7 @@ test "parseDiffViewFromResult - extracts before and after content" {
     try std.testing.expect(result.after != null);
     try std.testing.expect(std.mem.eql(u8, result.after.?, "new content"));
 
-    // before / after are always allocated when diff_view_found=true
-    // (so xmlUnescape can transform entities).
+    // before / after are always allocated when diff_view_found=true (so xmlUnescape can transform entities).
     std.testing.allocator.free(result.before.?);
     std.testing.allocator.free(result.after.?);
     std.testing.allocator.free(result.content_without_diffview);
@@ -1554,13 +1424,10 @@ test "parseDiffViewFromResult - diff_view in middle of content" {
     std.testing.allocator.free(result.content_without_diffview);
 }
 
-// ============================================================================
 // XML unescape regression tests (bug: "diff view shows &quot; instead of \"")
-// ============================================================================
 
 test "parseDiffViewFromResult - unescapes &quot; in before/after (regression)" {
-    // XML-escaped content (as produced by xmlEscape) must be un-escaped before
-    // being stored, so the diff view renders the original characters.
+    // XML-escaped content (as produced by xmlEscape) must be un-escaped before being stored, so the diff view renders the original characters.
     const content =
         "<diff_view><before>const a = &quot;hello&quot;;</before>" ++
         "<after>const a = &quot;world&quot;;</after></diff_view>";
@@ -1598,8 +1465,7 @@ test "parseDiffViewFromResult - unescapes all 5 XML entities" {
 }
 
 test "parseDiffViewFromResult - no entities, content unchanged (fast path)" {
-    // When there's no `&` at all, before/after should be allocated copies
-    // with the original content unchanged (fast path in xmlUnescape).
+    // When there's no `&` at all, before/after should be allocated copies with the original content unchanged (fast path in xmlUnescape).
     const content =
         "<diff_view><before>plain text content</before>" ++
         "<after>more plain text</after></diff_view>";
@@ -1616,8 +1482,7 @@ test "parseDiffViewFromResult - no entities, content unchanged (fast path)" {
 }
 
 test "parseDiffViewFromResult - decodes &amp; LAST (no double-decoding)" {
-    // `&amp;quot;` is the literal 6-byte sequence representing the entity
-    // `&quot;` — NOT a double-encoded `"`.
+    // `&amp;quot;` is the literal 6-byte sequence representing the entity `&quot;` — NOT a double-encoded `"`.
     const content =
         "<diff_view><before>encoded &amp;quot;quote&amp;quot;</before></diff_view>";
     const result = try parseDiffViewFromResult(std.testing.allocator, content);
@@ -1655,14 +1520,10 @@ test "parseDiffViewFromResult - unescapes multiline content with entities" {
     std.testing.allocator.free(result.content_without_diffview);
 }
 
-// =============================================================================
-// Phase 1 placeholder envelope. 2026-08-24-better-tool-placeholder: Phase 1
-// inserts used to store raw text in `response_content` (`"unknown tools"` for
+// Phase 1 placeholder envelope. 2026-08-24-better-tool-placeholder: Phase 1 inserts used to store raw text in `response_content` (`"unknown tools"` for
 
 test "unknownToolMessage names the offending tool and offers the real ones" {
-    // A RETIRED name gets the targeted correction rather than the ~40-name
-    // menu: the model reached for `bash` because it was trained on it, and
-    // the one thing it needs is the name that replaced it.
+    // A RETIRED name gets the targeted correction rather than the ~40-name menu: the model reached for `bash` because it was trained on it, and the one thing it …
     const retired_msg = try unknownToolMessage(std.testing.allocator, "bash");
     defer std.testing.allocator.free(retired_msg);
 
@@ -1671,14 +1532,11 @@ test "unknownToolMessage names the offending tool and offers the real ones" {
     // ...states that the name is gone, so retrying it is pointless...
     try std.testing.expect(std.mem.indexOf(u8, retired_msg, "retired") != null);
     try std.testing.expect(std.mem.indexOf(u8, retired_msg, "do not call it again") != null);
-    // ...and names the replacement explicitly. This is the whole point of
-    // retiring the alias: "unknown tool" alone left the model with nothing
-    // to correct against and it re-emitted `bash` four turns running.
+    // ...and names the replacement explicitly.
     try std.testing.expect(std.mem.indexOf(u8, retired_msg, "`command`") != null);
     try std.testing.expect(std.mem.indexOf(u8, retired_msg, "Re-issue the same call as") != null);
 
-    // A name nobody ever had still gets the enumeration, so the model can
-    // pick a real one instead.
+    // A name nobody ever had still gets the enumeration, so the model can pick a real one instead.
     const made_up_msg = try unknownToolMessage(std.testing.allocator, "totally_made_up_tool");
     defer std.testing.allocator.free(made_up_msg);
     try std.testing.expect(std.mem.indexOf(u8, made_up_msg, "unknown tool 'totally_made_up_tool'") != null);
@@ -1687,8 +1545,7 @@ test "unknownToolMessage names the offending tool and offers the real ones" {
 }
 
 test "wrapToolOutput envelope is round-trip parseable (envelope shape vs frontend)" {
-    // Sanity: the known-tool branch envelope can be parsed by the frontend's
-    // `unwrapToolOutput` shape (name + parameters + success=true + data="").
+    // Sanity: the known-tool branch envelope can be parsed by the frontend's `unwrapToolOutput` shape (name + parameters + success=true + data="").
     const envelope = try wrapToolOutput(
         std.testing.allocator,
         "read_file",
@@ -1706,8 +1563,7 @@ test "wrapToolOutput envelope is round-trip parseable (envelope shape vs fronten
     try std.testing.expect(std.mem.indexOf(u8, envelope, "\"data\":null") != null);
     try std.testing.expect(std.mem.indexOf(u8, envelope, "\"error\":null") != null);
 
-    // Unknown tool branch envelope: success=false with the actionable message
-    // handle_tool actually writes (not the retired bare "unknown tools").
+    // Unknown tool branch envelope: success=false with the actionable message handle_tool actually writes (not the retired bare "unknown tools").
     const unknown_msg = try unknownToolMessage(std.testing.allocator, "totally_made_up_tool");
     defer std.testing.allocator.free(unknown_msg);
     const err_envelope = try wrapToolOutput(
@@ -1726,12 +1582,9 @@ test "wrapToolOutput envelope is round-trip parseable (envelope shape vs fronten
     try std.testing.expect(std.mem.indexOf(u8, err_envelope, "\"data\":null") != null);
 }
 
-// ============================================================================
 // Lua hook seam tests (plan 2026-09-12-hook-lua-pre-post-tool-use, Phase 3)
-// ============================================================================
 
-/// Minimal ToolContext for hook tests: only allocator/logger/environment
-/// (+ identity strings) are read by the hook path.
+/// Minimal ToolContext for hook tests: only allocator/logger/environment (+ identity strings) are read by the hook path.
 fn hookTestCtx(
     allocator: std.mem.Allocator,
     logger: *logger_mod.Logger,
@@ -1746,8 +1599,7 @@ fn hookTestCtx(
         .logger = logger,
         .session_id = "sess_hook_test",
         .model = "test-model",
-        // Nonexistent cwd isolates the project-hook tier: no stray
-        // <cwd>/.pabrik/hooks/register_hook.lua can interfere.
+        // Nonexistent cwd isolates the project-hook tier: no stray <cwd>/.pabrik/hooks/register_hook.lua can interfere.
         .cwd = "/tmp/pabrik-hook-test-no-such-dir-xyz",
         .api_key = "",
         .base_url = "",
@@ -1759,7 +1611,6 @@ fn hookTestCtx(
 }
 
 /// HOME=tmpdir with hooks/register_hook.lua containing `lua_source`.
-/// Returns the env map (caller frees map + tmpdir via cleanup).
 const HookFixture = struct {
     env_map: std.process.Environ.Map,
     tmp: std.testing.TmpDir,
@@ -1791,8 +1642,7 @@ test "hook seam: no hook file proceeds without touching exec deps" {
     var env_map = std.process.Environ.Map.init(allocator);
     defer env_map.deinit();
     try env_map.put("HOME", path_buf[0..n]);
-    // %APPDATA% backs the config dir on Windows; without it the resolve
-    // path logs (harmlessly) instead of cleanly resolving to null.
+    // %APPDATA% backs the config dir on Windows; without it the resolve path logs (harmlessly) instead of cleanly resolving to null.
     const appdata_abs = try std.fs.path.join(allocator, &.{ path_buf[0..n], "appdata" });
     defer allocator.free(appdata_abs);
     try env_map.put("APPDATA", appdata_abs);
@@ -1873,7 +1723,6 @@ test "hook seam: broken hook file fails open to proceed/keep" {
     try std.testing.expect(runPostHookOverride(ctx, "bash", "{}", "out") == null);
 }
 
-// ============================================================================
 // Lua hook dispatch tests: real registry + real read_file exec + real Lua.
 
 const HookDispatchCtx = struct {
@@ -1906,8 +1755,7 @@ fn hookDispatchCtx(
         .logger = logger,
         .session_id = "sess_hook_dispatch",
         .model = "test-model",
-        // Nonexistent cwd isolates the project-hook tier: no stray
-        // <cwd>/.pabrik/hooks/register_hook.lua can interfere.
+        // Nonexistent cwd isolates the project-hook tier: no stray <cwd>/.pabrik/hooks/register_hook.lua can interfere.
         .cwd = "/tmp/pabrik-hook-test-no-such-dir-xyz",
         .api_key = "",
         .base_url = "",
@@ -1919,14 +1767,10 @@ fn hookDispatchCtx(
 }
 
 fn readFileCall(allocator: std.mem.Allocator, path: []const u8) !agent.ToolCall {
-    // JSON-escape: Windows paths contain backslashes (`C:\...`) which are
-    // JSON escape leaders — embedding them raw yields invalid JSON (`\U`)
-    // that the tool arg parser rejects. No-op on POSIX paths.
+    // JSON-escape: Windows paths contain backslashes (`C:\...`) which are JSON escape leaders — embedding them raw yields invalid JSON (`\U`) that the tool arg …
     const escaped = try jsonEscapePath(allocator, path);
     defer allocator.free(escaped);
-    // `cwd` is required by read_file (the directory the call works in); its
-    // own directory is the honest value for a test that only cares which
-    // file was read.
+    // `cwd` is required by read_file (the directory the call works in); its own directory is the honest value for a test that only cares which file was read.
     const escaped_dir = try jsonEscapePath(allocator, std.fs.path.dirname(path) orelse path);
     defer allocator.free(escaped_dir);
     const args = try std.fmt.allocPrint(allocator, "{{\"path\":\"{s}\",\"cwd\":\"{s}\"}}", .{ escaped, escaped_dir });
@@ -1970,8 +1814,7 @@ test "hook dispatch: no hook runs real read_file" {
     var env_map = std.process.Environ.Map.init(dispatch_alloc);
     defer env_map.deinit();
     try env_map.put("HOME", home_buf[0..hn]);
-    // %APPDATA% backs the config dir on Windows; keep the test hermetic
-    // there too (unused on POSIX/macOS, resolve path stays clean).
+    // %APPDATA% backs the config dir on Windows; keep the test hermetic there too (unused on POSIX/macOS, resolve path stays clean).
     const appdata_abs = try std.fs.path.join(dispatch_alloc, &.{ home_buf[0..hn], "appdata" });
     try env_map.put("APPDATA", appdata_abs);
 
@@ -1995,8 +1838,7 @@ test "hook dispatch: pre deny skips exec (missing file still denies)" {
     defer fx.deinit();
 
     const ctx = hookDispatchCtx(dispatch_alloc, &setup, &lg, &fx.env_map);
-    // Points at a file that does not exist: without the hook this would
-    // be a read_file error envelope, with the hook it must be the deny.
+    // Points at a file that does not exist: without the hook this would be a read_file error envelope, with the hook it must be the deny.
     const tc = try readFileCall(dispatch_alloc, "/tmp/pabrik-hook-test-does-not-exist-12345.txt");
     const result = try dispatchTool(ctx, tc);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "\"success\":false") != null);
@@ -2019,13 +1861,9 @@ test "hook dispatch: pre modify rewrites args seen by exec" {
     const n = try tmp.dir.realPath(std.testing.io, &path_buf);
     const other_abs = try std.fs.path.join(dispatch_alloc, &.{ path_buf[0..n], "other.txt" });
 
-    // JSON-escape the path (Windows backslashes) + Lua long brackets
-    // ([[...]] disables Lua escape processing, so the JSON arrives
-    // verbatim and `\\` stays valid JSON for the tool arg parser).
+    // JSON-escape the path (Windows backslashes) + Lua long brackets ([[...]] disables Lua escape processing, so the JSON arrives verbatim and `\\` stays valid JSON …
     const escaped = try jsonEscapePath(dispatch_alloc, other_abs);
-    // The hook REPLACES the whole arguments object, so the replacement has to
-    // carry every field the tool requires — including `cwd` (the directory
-    // the call works in).
+    // The hook REPLACES the whole arguments object, so the replacement has to carry every field the tool requires — including `cwd` (the directory the call works in).
     const escaped_root = try jsonEscapePath(dispatch_alloc, path_buf[0..n]);
     const lua_source = try std.fmt.allocPrint(dispatch_alloc, "function init(event, data) if event == 'pre_tool_use' then return {{ arguments = [[{{\"path\":\"{s}\",\"cwd\":\"{s}\"}}]] }} end return nil end\n", .{ escaped, escaped_root });
     var fx = try hookFixture(dispatch_alloc, lua_source, &path_buf);
@@ -2119,8 +1957,7 @@ test "hook dispatch: a post-hook replacement envelope keeps the call's duration"
 
 test "jsonEscapePath escapes backslashes and quotes for JSON embedding" {
     const allocator = std.testing.allocator;
-    // Windows-style path: every backslash must double, or the tool arg
-    // parser rejects the JSON (`\U` is not a valid escape).
+    // Windows-style path: every backslash must double, or the tool arg parser rejects the JSON (`\U` is not a valid escape).
     const escaped = try jsonEscapePath(allocator, "C:\\Users\\x\\f.txt");
     defer allocator.free(escaped);
     try std.testing.expectEqualStrings("C:\\\\Users\\\\x\\\\f.txt", escaped);
@@ -2133,19 +1970,14 @@ test "jsonEscapePath escapes backslashes and quotes for JSON embedding" {
     defer allocator.free(quoted);
     try std.testing.expectEqualStrings("a\\\"b", quoted);
 }
-// ============================================================================
-// Workspace-secret substitution tests (plan 2026-10-02-workspace-secrets) Two
-// properties are under test and they pull in opposite directions.
+// Workspace-secret substitution tests (plan 2026-10-02-workspace-secrets) Two properties are under test and they pull in opposite directions.
 
 const secrets_test_workspace = "ws_secrets_test";
-/// Task-linked to a workspace item, so `resolveWorkspaceId` finds it through
-/// the exact-link branch.
+/// Task-linked to a workspace item, so `resolveWorkspaceId` finds it through the exact-link branch.
 const secrets_test_session = "sess_secrets_test";
-/// In `sessions` with a cwd that no `workspace_items` path prefixes, so it
-/// resolves to nothing. This is the fail-closed case.
+/// In `sessions` with a cwd that no `workspace_items` path prefixes, so it resolves to nothing.
 const secrets_test_orphan_session = "sess_secrets_orphan";
-/// Chosen to contain nothing JSON-significant, so a canary found in an output
-/// is the credential itself and not an artifact of escaping.
+/// Chosen to contain nothing JSON-significant, so a canary found in an output is the credential itself and not an artifact of escaping.
 const secrets_test_canary = "canary-4f1c9a-Zx7Q";
 
 const SecretsFixture = struct {
@@ -2164,8 +1996,7 @@ const SecretsFixture = struct {
 };
 
 fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
-    // The store seals on write and refuses a write with no key, so the fixture
-    // installs one — never the host's real key file.
+    // The store seals on write and refuses a write with no key, so the fixture installs one — never the host's real key file.
     var fixture_key: [secrets_at_rest.KEY_LEN]u8 = undefined;
     for (&fixture_key, 0..) |*b, i| b.* = @intCast(i + 1);
     secrets_at_rest.setKey(fixture_key);
@@ -2178,8 +2009,6 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
     try test_db.openMemory(&db, io);
 
     // The three shapes `resolveWorkspaceId` walks before giving up.
-    // `saveMessage` also runs `UPDATE sessions SET cwd = ?, updated_at = ...`,
-    // so `updated_at` has to exist for the property-B test to get that far.
     try db.exec(allocator,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
@@ -2204,9 +2033,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
         \\)
     , &.{});
 
-    // Migration 101, in the columns the store reads. `value` is here because
-    // this fixture is the secret's own home; nothing in handle_tool.zig
-    // selects it except through `loadSecretValues`.
+    // Migration 101, in the columns the store reads.
     try db.exec(allocator,
         \\CREATE TABLE workspace_secrets (
         \\  id TEXT PRIMARY KEY,
@@ -2282,9 +2109,7 @@ fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// `ToolContext` for the secrets tests. `config` stays `undefined` because
-/// every tool used here hits the registry, and the registry walk never reads
-/// it — the same posture as `hookDispatchCtx`.
+/// `ToolContext` for the secrets tests.
 fn secretsCtx(
     allocator: std.mem.Allocator,
     fx: *SecretsFixture,
@@ -2301,8 +2126,7 @@ fn secretsCtx(
         .logger = logger,
         .session_id = session_id,
         .model = "test-model",
-        // Nonexistent, so no stray <cwd>/.nalar/hooks/register_hook.lua can
-        // reach these dispatches and rewrite the arguments under test.
+        // Nonexistent, so no stray <cwd>/.nalar/hooks/register_hook.lua can reach these dispatches and rewrite the arguments under test.
         .cwd = "/tmp/nalar-secrets-test-no-such-dir-xyz",
         .api_key = "",
         .base_url = "",
@@ -2313,8 +2137,7 @@ fn secretsCtx(
     };
 }
 
-/// HOME pointing at an empty tmpdir, so the Lua hook tiers find no
-/// `register_hook.lua` and every dispatch below exercises the real path.
+/// HOME pointing at an empty tmpdir, so the Lua hook tiers find no `register_hook.lua` and every dispatch below exercises the real path.
 const SecretsEnv = struct {
     map: std.process.Environ.Map,
     tmp: std.testing.TmpDir,
@@ -2328,8 +2151,7 @@ fn secretsEnvMap(allocator: std.mem.Allocator) !SecretsEnv {
     var map = std.process.Environ.Map.init(allocator);
     errdefer map.deinit();
     try map.put("HOME", path_buf[0..n]);
-    // %APPDATA% backs the config dir on Windows; keeping the test hermetic
-    // there too means the resolve path stays clean instead of logging.
+    // %APPDATA% backs the config dir on Windows; keeping the test hermetic there too means the resolve path stays clean instead of logging.
     const appdata_abs = try std.fs.path.join(allocator, &.{ path_buf[0..n], "appdata" });
     defer allocator.free(appdata_abs);
     try map.put("APPDATA", appdata_abs);
@@ -2350,17 +2172,14 @@ fn writeFileCall(
     defer allocator.free(abs);
     const escaped = try jsonEscapePath(allocator, abs);
     defer allocator.free(escaped);
-    // `cwd` is required by write_file; the target's directory is the value
-    // that keeps these tests about the SECRETS substitution, not about cwd.
+    // `cwd` is required by write_file; the target's directory is the value that keeps these tests about the SECRETS substitution, not about cwd.
     const escaped_dir = try jsonEscapePath(allocator, path_buf[0..n]);
     defer allocator.free(escaped_dir);
     const args = try std.fmt.allocPrint(allocator, "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"content\":{s}}}", .{ escaped, escaped_dir, content_json });
     return agent.ToolCall{ .id = id, .function = .{ .name = "write_file", .arguments = args } };
 }
 
-/// Read one column out of `llm_history` by id, straight from SQL so an
-/// assertion about what was persisted cannot be satisfied by the same code
-/// that wrote it.
+/// Read one column out of `llm_history` by id, straight from SQL so an assertion about what was persisted cannot be satisfied by the same code that wrote it.
 fn storedColumn(fx: *SecretsFixture, allocator: std.mem.Allocator, id: []const u8, column: []const u8) !?[]const u8 {
     const sql = try std.fmt.allocPrint(allocator, "SELECT {s} FROM llm_history WHERE id = ?", .{column});
     defer allocator.free(sql);
@@ -2372,9 +2191,7 @@ fn storedColumn(fx: *SecretsFixture, allocator: std.mem.Allocator, id: []const u
 }
 
 test "secrets: the executor receives the real value (property A)" {
-    // Arena, like the `hook dispatch` tests above: `execWriteFile` hands the
-    // `data` payload it built to `wrapToolOutput` without freeing it, so the
-    // testing allocator would report a leak that has nothing to do with this
+    // Arena, like the `hook dispatch` tests above: `execWriteFile` hands the `data` payload it built to `wrapToolOutput` without freeing it, so the testing allocator …
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -2392,8 +2209,7 @@ test "secrets: the executor receives the real value (property A)" {
     const result = try dispatchTool(ctx, tc);
     defer freeResolvedSecrets(allocator, result.secrets);
 
-    // The write landed with the credential in it, so the executor really was
-    // handed the value and not the placeholder.
+    // The write landed with the credential in it, so the executor really was handed the value and not the placeholder.
     const written = try tmp.dir.readFileAlloc(std.testing.io, "out.txt", allocator, .limited(1 << 20));
     try std.testing.expectEqualStrings(secrets_test_canary, written);
 
@@ -2401,9 +2217,7 @@ test "secrets: the executor receives the real value (property A)" {
     try std.testing.expectEqualStrings("TOK", result.secrets[0].name);
     try std.testing.expectEqualStrings(secrets_test_canary, result.secrets[0].value);
 
-    // `execWriteFile` embeds the arguments in the envelope's `parameters`, so
-    // the value is in the result string too — which is precisely why
-    // redaction cannot be skipped.
+    // `execWriteFile` embeds the arguments in the envelope's `parameters`, so the value is in the result string too — which is precisely why redaction cannot be …
     try std.testing.expect(std.mem.indexOf(u8, result.output, secrets_test_canary) != null);
 
     // The caller's own tool_call is untouched: substitution writes to a copy.
@@ -2427,9 +2241,7 @@ test "secrets: llm_history keeps the placeholder, never the value (property B)" 
     const ctx = secretsCtx(allocator, &fx, &lg, &env.map, secrets_test_session);
     const tc = try writeFileCall(allocator, &tmp, "call_secrets_b", "out.txt", "\"{{SECRETS:TOK}}\"");
 
-    // Phase 2 of `handle_tool`, reproduced against the same database and in
-    // the same textual position — the assistant row is written with the RAW
-    // tool_calls BEFORE dispatch runs.
+    // Phase 2 of `handle_tool`, reproduced against the same database and in the same textual position — the assistant row is written with the RAW tool_calls BEFORE …
     var assistant_tool_calls = [_]agent.ToolCall{tc};
     try llm_history.saveMessage(allocator, fx.io(), &fx.db, .{
         .session_id = secrets_test_session,
@@ -2462,8 +2274,7 @@ test "secrets: llm_history keeps the placeholder, never the value (property B)" 
 
     const tool_calls_json = (try storedColumn(&fx, allocator, assistant_id, "tool_calls_json")).?;
 
-    // The model reads this column on the next turn. It must carry the
-    // placeholder and never the value.
+    // The model reads this column on the next turn.
     try std.testing.expect(std.mem.indexOf(u8, tool_calls_json, "{{SECRETS:TOK}}") != null);
     try std.testing.expect(std.mem.indexOf(u8, tool_calls_json, secrets_test_canary) == null);
 }
@@ -2512,9 +2323,7 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     defer env.tmp.cleanup();
 
     const ctx = secretsCtx(allocator, &fx, &lg, &env.map, secrets_test_session);
-    // `shell.zig`'s `result_to_json` serializes `result.command` into the
-    // result `data`, so the fully substituted command comes straight back —
-    // alongside the envelope's own `parameters` and the shell's stdout.
+    // `shell.zig`'s `result_to_json` serializes `result.command` into the result `data`, so the fully substituted command comes straight back — alongside the …
     var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const cwd_len = try env.tmp.dir.realPath(std.testing.io, &cwd_buf);
     const cwd_json = try std.json.Stringify.valueAlloc(allocator, cwd_buf[0..cwd_len], .{});
@@ -2530,17 +2339,14 @@ test "secrets: the shell echo case is scrubbed too (shell.zig puts the command i
     try std.testing.expectEqual(@as(usize, 1), result.secrets.len);
     try std.testing.expectEqualStrings("TOK", result.secrets[0].name);
 
-    // The value really is in the raw result, more than once. Without this the
-    // redaction assertions would pass vacuously.
+    // The value really is in the raw result, more than once.
     const raw_hits = std.mem.count(u8, result.output, secrets_test_canary);
     try std.testing.expect(raw_hits >= 2);
 
     const scrubbed = try secrets_substitution.redactOutput(allocator, result.output, result.secrets);
 
     try std.testing.expect(std.mem.indexOf(u8, scrubbed, secrets_test_canary) == null);
-    // EVERY occurrence became a placeholder, not just the first: redaction
-    // sweeps the whole output, which is what makes it safe to apply at a
-    // boundary rather than to each field the tool happens to echo.
+    // EVERY occurrence became a placeholder, not just the first: redaction sweeps the whole output, which is what makes it safe to apply at a boundary rather than to …
     try std.testing.expectEqual(raw_hits, std.mem.count(u8, scrubbed, "{{SECRETS:TOK}}"));
 }
 
@@ -2562,8 +2368,7 @@ test "secrets: an unknown placeholder fails with the key named and never dispatc
     const result = try dispatchTool(ctx, tc);
     defer freeResolvedSecrets(allocator, result.secrets);
 
-    // Actionable: the agent is told which key is missing, immediately, rather
-    // than being handed an empty credential that fails later as a 401.
+    // Actionable: the agent is told which key is missing, immediately, rather than being handed an empty credential that fails later as a 401.
     try std.testing.expect(std.mem.indexOf(u8, result.output, "\"success\":false") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "NOPE") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "Nothing was run") != null);
@@ -2587,8 +2392,7 @@ test "secrets: a session with no workspace fails closed, never passing the place
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Same shape as the passing tests, but nothing links this session to a
-    // workspace, so `resolveWorkspaceId` returns null.
+    // Same shape as the passing tests, but nothing links this session to a workspace, so `resolveWorkspaceId` returns null.
     const ctx = secretsCtx(allocator, &fx, &lg, &env.map, secrets_test_orphan_session);
     try std.testing.expect(
         try workspace_scope.resolveWorkspaceId(allocator, &fx.db, secrets_test_orphan_session) == null,
@@ -2598,15 +2402,13 @@ test "secrets: a session with no workspace fails closed, never passing the place
     const result = try dispatchTool(ctx, tc);
     defer freeResolvedSecrets(allocator, result.secrets);
 
-    // "No workspace" must not degrade to "no substitution needed": it is
-    // reported as a miss like any other unknown name.
+    // "No workspace" must not degrade to "no substitution needed": it is reported as a miss like any other unknown name.
     try std.testing.expect(std.mem.indexOf(u8, result.output, "\"success\":false") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "TOK") != null);
     try std.testing.expectEqual(@as(usize, 0), result.secrets.len);
     try std.testing.expect(std.mem.indexOf(u8, result.output, secrets_test_canary) == null);
 
-    // The outcome that matters: an un-resolved placeholder must never arrive
-    // at a tool as literal text to be used as a credential.
+    // The outcome that matters: an un-resolved placeholder must never arrive at a tool as literal text to be used as a credential.
     try std.testing.expectError(error.FileNotFound, tmp.dir.readFileAlloc(std.testing.io, "orphan.txt", allocator, .limited(1 << 20)));
 }
 
@@ -2623,8 +2425,7 @@ test "secrets: a call with no placeholder is untouched" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // The fast path that skips substitution entirely has to leave an ordinary
-    // call working, or the feature breaks every tool that does not use it.
+    // The fast path that skips substitution entirely has to leave an ordinary call working, or the feature breaks every tool that does not use it.
     const ctx = secretsCtx(allocator, &fx, &lg, &env.map, secrets_test_session);
     const tc = try writeFileCall(allocator, &tmp, "call_secrets_plain", "plain.txt", "\"no secrets here\"");
     const result = try dispatchTool(ctx, tc);
@@ -2638,8 +2439,7 @@ test "secrets: a call with no placeholder is untouched" {
 }
 
 test "secrets: the resolver queries the store once per distinct name and remembers a miss" {
-    // No dispatch here on purpose: this exercises the adapter's own memory
-    // handling, which the testing allocator can then actually police.
+    // No dispatch here on purpose: this exercises the adapter's own memory handling, which the testing allocator can then actually police.
     const allocator = std.testing.allocator;
     var fx = try secretsSetup(allocator);
     defer fx.deinit();
@@ -2649,23 +2449,18 @@ test "secrets: the resolver queries the store once per distinct name and remembe
 
     const first = resolver.resolve("TOK");
     try std.testing.expectEqualStrings(secrets_test_canary, first.?);
-    // The cache returns the same buffer, so the second resolve neither
-    // re-queried nor re-duped. Pointer identity is the observable difference;
-    // the values would compare equal either way.
+    // The cache returns the same buffer, so the second resolve neither re-queried nor re-duped.
     const second = resolver.resolve("TOK");
     try std.testing.expectEqualStrings(secrets_test_canary, second.?);
     try std.testing.expectEqual(@intFromPtr(first.?.ptr), @intFromPtr(second.?.ptr));
     try std.testing.expectEqual(@as(usize, 1), resolver.cache.count());
 
-    // A miss is refused and remembered, so the error envelope can name the
-    // key instead of saying only that something was missing.
+    // A miss is refused and remembered, so the error envelope can name the key instead of saying only that something was missing.
     try std.testing.expect(resolver.resolve("ABSENT") == null);
     try std.testing.expectEqualStrings("ABSENT", resolver.missing_name.?);
 }
 
-// ============================================================================
 // Worker activity heartbeat tests
-// ============================================================================
 
 fn workerActivityDb(allocator: std.mem.Allocator) !struct { db: database.Db, threaded: std.Io.Threaded } {
     var threaded = std.Io.Threaded.init(allocator, .{});
@@ -2708,9 +2503,7 @@ test "touchWorkerActivity stamps the timestamp and a tool-call description" {
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // Production keys the worker row by `id == session_id` (see
-    // `update_worker.zig`), which is why `touchWorkerActivity` takes the
-    // session id as its handle. Mirror that here or the probe finds nothing.
+    // Production keys the worker row by `id == session_id` (see `update_worker.zig`), which is why `touchWorkerActivity` takes the session id as its handle.
     try s.db.exec(allocator, "INSERT INTO worker (id, session_id, last_activity_nano, last_activity_description) VALUES ('s1', 's1', 0, '')", &.{});
 
     try touchWorkerActivity(allocator, &s.db, "s1", "bash", "{\"command\":\"ls -la\"}");
@@ -2718,9 +2511,7 @@ test "touchWorkerActivity stamps the timestamp and a tool-call description" {
     const got = try workerActivityRow(allocator, &s.db, "s1");
     defer allocator.free(got.desc);
 
-    // The description names the tool and carries the leading argument
-    // fragment, so the UI can say what the worker is doing rather than
-    // just that it is alive.
+    // The description names the tool and carries the leading argument fragment, so the UI can say what the worker is doing rather than just that it is alive.
     try std.testing.expectEqualStrings("Tool call: bash {\"command\":\"ls -la\"}", got.desc);
     // The heartbeat moved off the seeded 0.
     try std.testing.expect(got.activity > 0);
@@ -2732,8 +2523,7 @@ test "touchWorkerActivity is a no-op when no worker row exists" {
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // A sub-agent's parent row is deleted by the time the child dispatches,
-    // and tool calls also happen outside any worker. Neither is an error.
+    // A sub-agent's parent row is deleted by the time the child dispatches, and tool calls also happen outside any worker.
     try touchWorkerActivity(allocator, &s.db, "no_such_session", "bash", "{}");
 }
 
@@ -2752,8 +2542,7 @@ test "buildWorkerActivityDescription omits the argument fragment when there is n
 test "buildWorkerActivityDescription truncates a long argument blob on a char boundary" {
     const allocator = std.testing.allocator;
 
-    // Far past the cap, and with a multi-byte codepoint straddling the cut so
-    // a naive byte slice would write invalid UTF-8 into the TEXT column.
+    // Far past the cap, and with a multi-byte codepoint straddling the cut so a naive byte slice would write invalid UTF-8 into the TEXT column.
     const long = try allocator.alloc(u8, 4000);
     defer allocator.free(long);
     @memset(long, 'a');
@@ -2834,9 +2623,7 @@ test "touchWorkerActivity stores a capped description for a tool name the model 
     try std.testing.expect(got.activity > 0);
 }
 
-// ============================================================================
 // Stop reaches a running command — end to end, through the real row
-// ============================================================================
 
 fn stopTestDb(allocator: std.mem.Allocator) !struct { db: database.Db, threaded: std.Io.Threaded } {
     var threaded = std.Io.Threaded.init(allocator, .{});
@@ -2878,8 +2665,7 @@ fn stopTestCtx(
         .cwd = "/tmp",
         .api_key = "",
         .base_url = "",
-        // No `command` dispatch ever reaches the MCP branch, and the MCP
-        // branch is the only reader.
+        // No `command` dispatch ever reaches the MCP branch, and the MCP branch is the only reader.
         .config = undefined,
         .agent_temperature = temperature,
         .is_thinking = thinking,
@@ -2891,8 +2677,7 @@ fn commandCall(arguments: []const u8) agent.ToolCall {
     return .{ .id = "call_stop_command", .function = .{ .name = "command", .arguments = arguments } };
 }
 
-// The whole Stop path, with no fake hook in it: the flag the endpoint writes
-// into `worker.cancelled` is what has to kill the child.
+// The whole Stop path, with no fake hook in it: the flag the endpoint writes into `worker.cancelled` is what has to kill the child.
 test "dispatch: a cancelled session kills its running command" {
     if (@import("builtin").os.tag == .windows) return;
 
@@ -2924,8 +2709,7 @@ test "dispatch: a cancelled session kills its running command" {
     const data = parsed.value.object.get("data").?.object;
     try std.testing.expect(data.get("cancelled").?.bool);
     try std.testing.expect(!data.get("timeout").?.bool);
-    // SIGKILL, i.e. the process group really was terminated rather than the
-    // call merely giving up on the output pipes.
+    // SIGKILL, i.e. the process group really was terminated rather than the call merely giving up on the output pipes.
     try std.testing.expectEqual(@as(i64, -9), data.get("exit_code").?.integer);
 }
 

@@ -1,5 +1,4 @@
-/** Tests for BackgroundCommandsPopup.vue — the background-command pill + running-command dialog
- * mounted beside the Skills pill in ChatView's composer footer. */
+/** Tests for BackgroundCommandsPopup.vue — the background-command pill + running-command dialog mounted beside the Skills pill in ChatView's composer footer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -137,8 +136,7 @@ describe('dialog rows + status badges', () => {
   })
 
   it('shows the empty state when the dialog opens with no processes', async () => {
-    // Pill is hidden when empty, so open the dialog by seeding one
-    // running process, then refresh the list to empty.
+    // Pill is hidden when empty, so open the dialog by seeding one running process, then refresh the list to empty.
     listMock.mockResolvedValue({ processes: [RUNNING], count: 1 })
     wrapper = mountPopup()
     await flushPromises()

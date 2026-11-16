@@ -1,5 +1,4 @@
-//! `PATCH /api/workspaces/:workspace_id/documents/:document_id`. Partial
-//! update.
+//! `PATCH /api/workspaces/:workspace_id/documents/:document_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,9 +9,7 @@ const documents_store = @import("../modules/agent/loop/documents_store.zig");
 const document_events = @import("../modules/agent/loop/document_events.zig");
 const icon_name = @import("icon_name.zig");
 
-/// PATCH body. `"content": null` stays distinguishable from `"content": ""`,
-/// which is a real "clear the body". `move_folder` records that the KEY was
-/// present: `"folder_id": null` moves to the root; absent leaves it alone.
+/// PATCH body.
 const UpdateDocumentBody = struct {
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
@@ -20,13 +17,11 @@ const UpdateDocumentBody = struct {
     move_folder: bool = false,
     /// Migration 148 — a glyph name sets the override, `null` clears it.
     icon: ?[]const u8 = null,
-    /// `"icon"` was present at all. Without this, `icon: null` (clear) and an
-    /// absent key (keep) would be the same value.
+    /// `"icon"` was present at all.
     set_icon: bool = false,
 };
 
-/// Read one optional string field out of a parsed object. A present key whose
-/// value is neither a string nor null is a bad body, not a silent no-op.
+/// Read one optional string field out of a parsed object.
 fn optionalString(
     obj: std.json.ObjectMap,
     key: []const u8,
@@ -61,9 +56,7 @@ pub const DocumentsUpdateOutput = struct {
     document: documents_store.DocumentRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -86,8 +79,7 @@ fn useCase(
     );
     if (!input.body.set_icon) return .{ .document = updated };
 
-    // The icon is its own column, so it is its own statement. Applied after
-    // the body/title patch so one request can carry both.
+    // The icon is its own column, so it is its own statement.
     defer documents_store.freeDocumentRow(allocator, updated);
     return .{ .document = try store.updateDocumentIcon(
         allocator,
@@ -97,9 +89,7 @@ fn useCase(
     ) };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn documentsUpdateHandler(
     ctx: gserverz.HttpContext,
@@ -118,9 +108,7 @@ pub fn documentsUpdateHandler(
         });
     }
 
-    // Parsed as a generic object so "folder_id absent" and "folder_id: null"
-    // stay distinguishable: the first keeps the document where it is, the
-    // second moves it to the root.
+    // Parsed as a generic object so "folder_id absent" and "folder_id: null" stay distinguishable: the first keeps the document where it is, the second moves it to …
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, req.body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -180,9 +168,7 @@ pub fn documentsUpdateHandler(
     }) catch |err| {
         const status: u16 = switch (err) {
             error.IdsRequired => 400,
-            // A blank title is a 400 in spirit (the row would become
-            // unfindable in the sidebar); the store reports it as
-            // NotFound so it cannot be distinguished from a foreign id.
+            // A blank title is a 400 in spirit (the row would become unfindable in the sidebar); the store reports it as NotFound so it cannot be distinguished from a …
             error.NotFound => 400,
             error.ContentTooLarge => 413,
             error.FormatMismatch => 400,
@@ -294,8 +280,7 @@ test "useCase: a title-only PATCH leaves the body intact" {
     var ctx = try setupDb();
     defer ctx.deinit();
 
-    // The regression this guards: writing `content = ''` for an absent
-    // field would silently destroy the document body.
+    // The regression this guards: writing `content = ''` for an absent field would silently destroy the document body.
     const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
@@ -342,8 +327,7 @@ test "useCase: an empty patch is a no-op that still advances updated_at" {
     var ctx = try setupDb();
     defer ctx.deinit();
 
-    // Backdate so a same-second CURRENT_TIMESTAMP write is still
-    // detectable as a change.
+    // Backdate so a same-second CURRENT_TIMESTAMP write is still detectable as a change.
     try ctx.db.exec(
         alloc,
         "UPDATE documents SET updated_at = '2000-01-01 00:00:00' WHERE id = 'doc_a'",
@@ -399,8 +383,7 @@ test "useCase: another workspace's document cannot be edited" {
         }),
     );
 
-    // The owner's copy is unchanged — a rejected cross-workspace edit must
-    // not have half-applied.
+    // The owner's copy is unchanged — a rejected cross-workspace edit must not have half-applied.
     const owner = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",

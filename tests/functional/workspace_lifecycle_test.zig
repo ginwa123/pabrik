@@ -1,6 +1,4 @@
-// Functional tests for workspace lifecycle. Zig port of
-// `tests/functional/workspace_lifecycle_test.py` (same test names, same
-// order).
+// Functional tests for workspace lifecycle.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// POST /api/workspaces → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -53,8 +49,7 @@ fn createItem(h: *Harness, workspace_id: []const u8, name: []const u8, item_type
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python asserted the `item_` prefix plus an echo of name and item_type on
-    // the create response. All three are wire contract, so all three stay.
+    // Python asserted the `item_` prefix plus an echo of name and item_type on the create response.
     const id = doc.str("id") orelse {
         std.debug.print("item create response missing id: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -82,8 +77,7 @@ fn createItem(h: *Harness, workspace_id: []const u8, name: []const u8, item_type
     return gpa.dupe(u8, id);
 }
 
-/// What `GET /api/workspaces/:wid/items` yielded, reduced to the numbers and
-/// flags the assertions read.
+/// What `GET /api/workspaces/:wid/items` yielded, reduced to the numbers and flags the assertions read.
 const ItemsSummary = struct {
     /// Every row, including the workspace's DEFAULT project.
     total: usize,
@@ -123,9 +117,7 @@ fn listItems(h: *Harness, workspace_id: []const u8) !ItemsSummary {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python accepted `{"items": [...]}` OR a bare list. The handler emits the
-    // object form (`makeWorkspaceItemListObjectResponse`), but both are
-    // tolerated so a future wire reshape does not read as a regression here.
+    // Python accepted `{"items": [...]}` OR a bare list.
     const arr = switch (doc.value().*) {
         .array => |a| a,
         .object => blk: {
@@ -164,8 +156,7 @@ fn listItems(h: *Harness, workspace_id: []const u8) !ItemsSummary {
                 return error.TestUnexpectedResult;
             },
         };
-        // A missing `is_default` reads as 0 (a non-default row), which is the
-        // same default the server's own `WorkspaceItemFullResponse` declares.
+        // A missing `is_default` reads as 0 (a non-default row), which is the same default the server's own `WorkspaceItemFullResponse` declares.
         const is_default: i64 = switch (o.get("is_default") orelse std.json.Value{ .integer = 0 }) {
             .integer => |n| n,
             else => 0,
@@ -269,9 +260,7 @@ fn listWorkspaces(h: *Harness, include_items: bool) ![]WorkspaceRow {
     return rows;
 }
 
-// ============================================================================
 // Test 1: create returns 201 with a `ws_` id
-// ============================================================================
 
 // POST /api/workspaces returns 201 + an id starting with ws_.
 test "create_workspace_returns_201_with_id" {
@@ -282,9 +271,7 @@ test "create_workspace_returns_201_with_id" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // The Python helper asserted the `ws_` prefix inside itself; the id is
-    // returned here, and the NAME echo is asserted here because that is the
-    // one thing this test exists to pin.
+    // The Python helper asserted the `ws_` prefix inside itself; the id is returned here, and the NAME echo is asserted here because that is the one thing this test …
     const id = try createWorkspace(&h, "create-test");
     defer gpa.free(id);
 
@@ -332,9 +319,7 @@ test "create_workspace_returns_201_with_id" {
     }
 }
 
-// ============================================================================
 // Test 2: list includes every created workspace
-// ============================================================================
 
 // Create 3 workspaces, list, assert all 3 are present with right names.
 test "list_workspaces_returns_created" {
@@ -371,9 +356,7 @@ test "list_workspaces_returns_created" {
     }
 }
 
-// ============================================================================
 // Test 3: an empty name is a failure, and the body says why
-// ============================================================================
 
 // POST with {"name": ""} returns 500 (a bug, should be 400).
 test "create_workspace_rejects_empty_name" {
@@ -384,8 +367,7 @@ test "create_workspace_rejects_empty_name" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Accept either 400 (after fix) or 500 (current bug) — assert the
-    // response indicates failure, not success.
+    // Accept either 400 (after fix) or 500 (current bug) — assert the response indicates failure, not success.
     const body = "{\"name\":\"\"}";
     var r = try h.http(io, .POST, "/api/workspaces", .{
         .json_body = body,
@@ -402,9 +384,7 @@ test "create_workspace_rejects_empty_name" {
     }
 }
 
-// ============================================================================
 // Test 4: a missing name is a 400
-// ============================================================================
 
 // POST with {} returns 400.
 test "create_workspace_rejects_missing_name" {
@@ -419,9 +399,7 @@ test "create_workspace_rejects_missing_name" {
     defer r.deinit();
 }
 
-// ============================================================================
 // Test 5: rename round-trips
-// ============================================================================
 
 // Create, PUT new name, GET shows the new name.
 test "update_workspace_name_round_trips" {
@@ -475,20 +453,15 @@ test "update_workspace_name_round_trips" {
     }
 }
 
-// ============================================================================
 // Test 6: seven mixed-type items, plus the automatic default project
-// ============================================================================
 
 // 3 chat + 2 kanban + 2 design items; all 7 are listed back.
 test "create_seven_items_of_mixed_types" {
     try harness.requirePabrikBin(io, gpa);
 
-    // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a child
-    // of it — `makeScratchDir` gives the suite its own `pabrik-fix-`
-    // namespace that the orphan reaper (which only matches `pabrik-func-`)
+    // pytest's `tmp_path` was a SIBLING of the harness tempdir, never a child of it — `makeScratchDir` gives the suite its own `pabrik-fix-` namespace that the …
     const scratch = try harness.makeScratchDir(gpa);
-    // DEFER ORDER IS LIFO: `free` is registered FIRST so it runs LAST —
-    // `cleanupExtraDir` reads `scratch` to delete it.
+    // DEFER ORDER IS LIFO: `free` is registered FIRST so it runs LAST — `cleanupExtraDir` reads `scratch` to delete it.
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
 
@@ -530,8 +503,7 @@ test "create_seven_items_of_mixed_types" {
     }
     try testing.expectEqual(@as(usize, 7), created);
 
-    // 8, not 7: Migration 094 gives every workspace a DEFAULT project (an
-    // `agent` item rooted at $HOME).
+    // 8, not 7: Migration 094 gives every workspace a DEFAULT project (an `agent` item rooted at $HOME).
     var items = try listItems(&h, ws_id);
     defer items.deinit();
 
@@ -546,8 +518,7 @@ test "create_seven_items_of_mixed_types" {
         std.debug.print("expected all 3 item types among the created rows\n", .{});
         return error.TestUnexpectedResult;
     }
-    // And the default is an agent, which is what makes the New Chat action a
-    // single tap on both clients rather than a two-step picker.
+    // And the default is an agent, which is what makes the New Chat action a single tap on both clients rather than a two-step picker.
     const def_type = items.default_item_type orelse {
         std.debug.print("the default project row has no item_type\n", .{});
         return error.TestUnexpectedResult;
@@ -558,9 +529,7 @@ test "create_seven_items_of_mixed_types" {
     }
 }
 
-// ============================================================================
 // Test 7: deleting a workspace leaves its items as orphans
-// ============================================================================
 
 // Delete behavior: the workspace is removed, items become orphans.
 test "delete_workspace_orphans_items" {
@@ -591,9 +560,7 @@ test "delete_workspace_orphans_items" {
         gpa.free(id);
     }
 
-    // +1: the workspace's DEFAULT project (Migration 094), created with the
-    // workspace. It orphans along with the rest — the cascade gap documented
-    // in this test's header applies to it like any other item.
+    // +1: the workspace's DEFAULT project (Migration 094), created with the workspace.
     {
         var before = try listItems(&h, ws_id);
         defer before.deinit();
@@ -626,9 +593,7 @@ test "delete_workspace_orphans_items" {
         }
     }
 
-    // Items persist as orphans (current behavior — see header comment).
-    // 4 = the 3 created + the workspace's DEFAULT project (Migration 094),
-    // which orphaned with them.
+    // Items persist as orphans (current behavior — see header comment). 4 = the 3 created + the workspace's DEFAULT project (Migration 094), which orphaned with them.
     var after = try listItems(&h, ws_id);
     defer after.deinit();
     try testing.expectEqual(@as(usize, 4), after.total);
@@ -638,13 +603,9 @@ test "delete_workspace_orphans_items" {
     }
 }
 
-// ============================================================================
 // Test 8: reorder changes the listed position
-// ============================================================================
 
 // Create 3 workspaces, reorder to [c, a, b], list comes back in that order.
-// The reorder endpoint assigns positions such that `ORDER BY position DESC`
-// returns the input order. The first id in `ordered_ids` ends up at the top.
 test "reorder_workspaces_changes_position" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -688,8 +649,7 @@ test "reorder_workspaces_changes_position" {
     const listed = try listWorkspaces(&h, false);
     defer freeRows(listed);
 
-    // The reorder places c first, a second, b third. Only the PREFIX is
-    // checked: other workspaces (if any) may follow it.
+    // The reorder places c first, a second, b third.
     const want = [_][]const u8{ c_id, a_id, b_id };
     if (listed.len < want.len) {
         std.debug.print("listed only {d} workspaces, expected at least {d}\n", .{ listed.len, want.len });

@@ -18,51 +18,28 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * The change-server control, as a rendered tree.
- *
- * On the JVM under Robolectric, for the same reason the launch gate is: this is
- * Compose behaviour, and the only thing that has ever pinned it is what actually
- * gets composed. A unit test of a `validate`-style function would not have
- * caught the row being placed below the fold, the dialog opening over the
- * keyboard, or the error never reaching the screen.
- */
+/** The change-server control, as a rendered tree. */
 @RunWith(RobolectricTestRunner::class)
 class LoginServerAddressTest {
 
     @get:Rule
     val compose = createComposeRule()
 
-    /**
-     * Opens the change-server dialog, scrolling the row into view first.
-     *
-     * The login screen is a `verticalScroll` column and the server row is the
-     * last thing in it, so on the 320x470 screen Robolectric lays out, the row
-     * sits at y=640 — below the window. A `performClick` without this injects a
-     * touch at the node's centre, which is off-screen, the click reaches
-     * nothing, and every assertion after it fails for a reason that has nothing
-     * to do with the feature. Scrolling is also part of the contract: a row
-     * that cannot be scrolled to is a row nobody can reach.
-     */
+    /** Opens the change-server dialog, scrolling the row into view first. */
     private fun openServerDialog() {
         compose.onNodeWithTag("server_address_change").performScrollTo().performClick()
     }
 
     @Test
     fun `the row shows the host the app is pointed at, without the scheme`() {
-        // A self-hoster's first question after installing the app is "is this
-        // even talking to my server", and the answer has to be readable from the
-        // login screen without opening anything.
+        // A self-hoster's first question after installing the app is "is this even talking to my server", and the answer has to be readable from the login screen without …
         compose.setContent {
             PabrikTheme {
                 LoginScreen(serverBaseUrl = "https://self.hosted.example:8443")
             }
         }
 
-        // Exact, not "contains": the port has to survive (it is the difference
-        // between two deployments on one machine) and the scheme has to be gone
-        // (it is noise in a confirmation). Either half failing is the bug, and
-        // a substring check would only ever catch one of them.
+        // Exact, not "contains": the port has to survive (it is the difference between two deployments on one machine) and the scheme has to be gone (it is noise in a …
         compose.onNodeWithTag("server_address_host")
             .performScrollTo()
             .assertIsDisplayed()
@@ -80,18 +57,14 @@ class LoginServerAddressTest {
         openServerDialog()
 
         compose.onNodeWithTag("server_address_dialog").assertIsDisplayed()
-        // Seeded, not blank: re-typing a 40-character URL to fix one character
-        // of it is the other half of why this is a setting.
+        // Seeded, not blank: re-typing a 40-character URL to fix one character of it is the other half of why this is a setting.
         compose.onNodeWithTag("server_address_input")
             .assertTextContains("https://self.hosted.example")
     }
 
     @Test
     fun `saving hands the raw text back and closes on an accepted change`() {
-        // The dialog does not validate; the store owns the rule, and the dialog
-        // renders whatever sentence comes back. The raw text is what goes up, so
-        // a scheme-less `self.hosted.example` — valid, and the common case — is
-        // not rejected here as a missing domain.
+        // The dialog does not validate; the store owns the rule, and the dialog renders whatever sentence comes back.
         var received: String? = null
         compose.setContent {
             PabrikTheme {

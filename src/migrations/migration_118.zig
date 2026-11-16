@@ -6,8 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 118 — `worker.run_token`: the per-session run lease, claimed by one
-/// compare-and-swap statement (see `session_lock.zig`). Empty means unowned.
+/// Migration 118 — `worker.run_token`: the per-session run lease, claimed by one compare-and-swap statement (see `session_lock.zig`).
 pub const Migration118AddWorkerRunToken = struct {
     pub const version: u32 = 118;
     pub const name = "add_worker_run_token";
