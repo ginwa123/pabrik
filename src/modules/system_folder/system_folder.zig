@@ -576,10 +576,9 @@ pub const SystemFolder = struct {
         return true;
     }
 
-    /// Match rank: 0 = the entry's own name contains the query (best), 1 =
-    /// the path the picker renders contains it, 2 = subsequence of that
-    /// path. Null when nothing matches. Empty query matches everything at
-    /// rank 0 (top-N listing).
+    /// Match rank: 0 = the entry's name contains the query, 1 = the path the
+    /// picker renders contains it, 2 = a subsequence of that path. Null when
+    /// nothing matches; the empty query matches everything at rank 0.
     fn matchRank(name: []const u8, path_prefix: []const u8, query: []const u8) ?u8 {
         if (query.len == 0) return 0;
         if (containsIgnoreCase(name, query)) return 0;
