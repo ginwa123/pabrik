@@ -158,16 +158,6 @@ const handleSelectAgent = (name: string): void => {
   void addGroupMember(name)
 }
 
-// In a group chat only the roster can answer, so `@` offers exactly those
-// agents. A one-agent chat keeps the full configured list.
-const composerAgents = computed(() => {
-  if (!isGroupChat.value) return availableAgents.value
-  const byName = new Map(availableAgents.value.map((a) => [a.name, a]))
-  return groupMembers.value.map(
-    (m) => byName.get(m.name) ?? { name: m.name, model: '', base_url: '', url_style: '' },
-  )
-})
-
 // State
 const messages = ref<Message[]>([])
 // The grouped transcript and the raw table are two views of the same rows; the
@@ -451,7 +441,7 @@ const compactSession = async () => {
             :is-group="isGroupChat"
             :is-busy="isGroupBusy"
             :error="groupError"
-            :agents="composerAgents"
+            :agents="availableAgents"
             :own-agent="effectiveAgent || 'Default'"
             @add="addGroupMember"
             @remove="removeGroupMember"
