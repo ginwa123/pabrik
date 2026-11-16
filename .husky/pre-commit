@@ -53,9 +53,9 @@ python3 scripts/lint-no-dead-doc-refs.py
 echo "→ app path dependencies agree with the root pins"
 python3 scripts/check-app-path-deps.py
 
-echo "→ Kotlin comment blocks are at most two lines"
+echo "→ Kotlin comment blocks are at most one line"
 python3 scripts/lint-kt-comment-lines.py --selftest
-python3 scripts/lint-kt-comment-lines.py
+python3 scripts/lint-kt-comment-lines.py --strict
 
 echo "→ Kotlin files are at most 1000 code lines"
 python3 scripts/lint-kt-file-lines.py --selftest

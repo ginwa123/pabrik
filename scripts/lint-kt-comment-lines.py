@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Fail when a Kotlin comment block spans more than two lines.
+"""Fail when a Kotlin comment block spans more than one line.
 
 WHY THIS EXISTS
 ---------------
-CODING_STANDARDS.md §4 caps a Zig comment block at three lines and §5 caps
-the same block in Vue/TypeScript at three. The Android app had no cap at
-all, so a comment there could grow into a design document sitting between
-the reader and the function it describes.
-
-The ceiling here is TWO, one line tighter than §4/§5, because that is the
-number this app was asked to hold. Nothing else differs: the semantics are
+CODING_STANDARDS.md §4 caps a Zig comment block at one line and §5 caps the
+same block in Vue/TypeScript at one. This is the Android app's half. The
+ceiling here is ONE too, and the semantics are
 `local/max-comment-lines`'s, which are `zginlint/max-comment-lines`'s, so
 "a comment block is a paragraph" means the same thing in all three
 languages.
@@ -18,8 +14,8 @@ THE RULE
 --------
 * A **comment line** carries comment content and no code byte, so a blank
   line or a line with code on it ends the block.
-* A **comment block** is a run of consecutive comment lines. Two lines
-  pass, three fail, and the finding is reported at the block's first line.
+* A **comment block** is a run of consecutive comment lines. One line
+  passes, two fail, and the finding is reported at the block's first line.
 * A `/* ... */` comment counts by the lines it spans. In Kotlin the block
   form NESTS, so `/* a /* b */ c */` is one comment and its depth is
   tracked rather than assumed.
@@ -51,14 +47,15 @@ directory that does not exist). When it does, this script exits 2 and says
 so; it never reports the tree clean, because "clean" is the one answer that
 lets a violation merge.
 
-THE BASELINE, AND HOW IT GOES AWAY
-----------------------------------
-The tree carries 1,806 over-long blocks in 211 files — mostly KDoc that
-explains a real invariant in a paragraph, which is exactly the prose this
-rule is about. Converting them is not mechanical and it is not this
-change's job, so the rule ships the way §2 and §5 shipped: with a counted
-ceiling in `src/apps/android_mobile/comment-lines-baseline.json`, one pin
-per file.
+THE BASELINE, AND WHY IT IS EMPTY
+---------------------------------
+The rule landed with 1,806 baselined blocks in 211 files because converting
+them was not mechanical. They are converted now, so the pin in
+`src/apps/android_mobile/comment-lines-baseline.json` is EMPTY: one count
+per file, and there are no counts. The ratchet stays in the script rather
+than being deleted, so a `--pin` cannot silently grandfather new debt back
+in — but the gate CI runs is `--strict`, which ignores the pin and asks for
+zero. A finding is a finding.
 
 | | |
 |---|---|
@@ -69,16 +66,15 @@ per file.
 
 The count may only fall. `--pin` rewrites the baseline and is for AFTER
 fixing debt, never for silencing a new violation. `--strict` ignores the
-baseline entirely and asks for zero; it is the finish line and is tested
-today, so flipping the CI step to it is a one-word change.
+baseline entirely and asks for zero: that is the gate CI runs.
 
 USAGE
 -----
-  lint-kt-comment-lines.py             -> the gate: check against the pin
-  lint-kt-comment-lines.py --strict    -> the finish line: zero findings
+  lint-kt-comment-lines.py             -> check against the (empty) pin
+  lint-kt-comment-lines.py --strict    -> the gate CI runs: zero findings
   lint-kt-comment-lines.py --pin       -> re-pin to today's counts
   lint-kt-comment-lines.py --selftest  -> the scanner and the verdict, on fixtures
-  lint-kt-comment-lines.py --max 3     -> move the ceiling (needs a matching pin)
+  lint-kt-comment-lines.py --max 2     -> move the ceiling (needs a matching pin)
   lint-kt-comment-lines.py --root DIR  -> scan another tree (repeatable)
 
 Exit codes: 0 clean, 1 findings, 2 usage error or a scan that could not
@@ -93,7 +89,7 @@ import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DEFAULT_MAX = 2
+DEFAULT_MAX = 1
 DEFAULT_ROOT = os.path.join('src', 'apps', 'android_mobile')
 BASELINE = os.path.join(REPO_ROOT, 'src', 'apps', 'android_mobile',
                         'comment-lines-baseline.json')
@@ -462,17 +458,17 @@ def selftest():
         failures.append(name)
         print('  FAIL %s: expected %r, got %r' % (name, expected, actual))
 
-    check('a two-line block passes', '// one\n// two\nval x = 1\n', [])
+    check('a one-line block passes', '// one\nval x = 1\n', [])
     check('a three-line block fails at its first line',
           '// one\n// two\n// three\nval x = 1\n', [(1, 3)])
     check('a blank line splits two legal blocks',
-          '// one\n// two\n\n// three\n// four\n', [])
+          '// one\n\n// three\n', [])
     check('a code line splits two legal blocks',
-          '// one\n// two\nval x = 1\n// three\n// four\n', [])
+          '// one\nval x = 1\n// three\n', [])
     check('a trailing comment after code never joins a block',
-          'val x = 1 // note\n// one\n// two\n', [])
+          'val x = 1 // note\n// one\n', [])
     check('a trailing comment after code does not open one',
-          '// one\n// two\nval x = 1 // note\n// three\n// four\n', [])
+          '// one\nval x = 1 // note\n// three\n', [])
     check('a marker inside a string literal is text',
           'val s = "// one\\n// two"\nval t = 1\n', [])
     check('an escaped quote does not end the string',
@@ -483,12 +479,12 @@ def selftest():
           "val c = '/'\nval d = '\\n'\nval t = 1\n", [])
     check('a block comment counts the lines it spans',
           '/* one\n   two\n   three */\nval x = 1\n', [(1, 3)])
-    check('a two-line block comment passes',
-          '/* one\n   two */\nval x = 1\n', [])
+    check('a one-line block comment passes',
+          '/* one */\nval x = 1\n', [])
     check('a block comment opened after code does not count its first line',
-          'val x = 1 /* one\n   two\n   three */\n', [])
+          'val x = 1 /* one\n   two */\n', [])
     check('a block comment closed before code does not count its last line',
-          '/* one\n   two\n   three */ val x = 1\n', [])
+          '/* one\n   two */ val x = 1\n', [])
     check('KDoc counts like any other comment',
           '/** one\n * two\n * three */\nval x = 1\n', [(1, 3)])
     check('a nested block comment is one comment',

@@ -24,9 +24,8 @@ export default defineConfig({
   },
   optimizeDeps: {
     // Intentionally NOT including `monaco-editor` here. CodeEditor.vue
-    // loads it via `await import('monaco-editor')` inside onMounted (see
-    // the long comment block at the top of that file). Listing it in
-    // `include` would force Vite to pre-bundle the entire monaco-editor
+    // loads it via `await import('monaco-editor')` inside onMounted. Listing
+    // it in `include` would force Vite to pre-bundle the entire monaco-editor
     // tree — including ~30 language worker bundles totalling ~96 MB —
     // into the entry chunk. That bloats WebKitGTK's disk cache and
     // re-parses on every app start, pinning one CPU core at 80–100%

@@ -1,20 +1,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Win32 GetFileAttributesW — declared locally because std.os.windows 0.16
-// doesn't expose it (std.os.windows.kernel32 only ships the functions the std
-// lib's own files need).
+// Win32 GetFileAttributesW — declared locally because std.os.windows 0.16 doesn't expose it (std.os.windows.kernel32 only ships the functions the std lib's own …
 extern "kernel32" fn GetFileAttributesW(lpPathName: [*:0]const u16) callconv(.winapi) u32;
-// NTSTATUS-like sentinel: when the path is missing/inaccessible,
-// GetFileAttributesW returns `INVALID_FILE_ATTRIBUTES` (0xFFFFFFFF).
+// NTSTATUS-like sentinel: when the path is missing/inaccessible, GetFileAttributesW returns `INVALID_FILE_ATTRIBUTES` (0xFFFFFFFF).
 const INVALID_FILE_ATTRIBUTES: u32 = 0xFFFFFFFF;
-// File-sys flag bit (0x10 = bit 4) indicating the path is a directory,
-// not a regular file. Probe mirrors `test -f <path>` semantics, so
-// directories count as NOT-a-file.
+// File-sys flag bit (0x10 = bit 4) indicating the path is a directory, not a regular file.
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x00000010;
 
-/// Cross-platform, pure-Zig "does this file exist" check. Used by the
-/// system-deps probe (`dbs_uses_system`, `curl_uses_system`) below.
+/// Cross-platform, pure-Zig "does this file exist" check.
 fn callerSetsStaticDir(args: ?[]const []const u8) bool {
     const forwarded = args orelse return false;
     for (forwarded) |arg| {
@@ -33,16 +27,13 @@ fn fileExists(absolute_path: []const u8) bool {
             const rc = std.os.linux.faccessat(std.os.linux.AT.FDCWD, &buf, 0, 0);
             break :blk rc == 0;
         },
-        // macOS: libc `access()` — same F_OK check as `test -f`. (The build
-        // runner links libc, so the extern is always resolvable; no shell-out
-        // needed.
+        // macOS: libc `access()` — same F_OK check as `test -f`.
         .macos => blk: {
             const rc = std.c.access(&buf, 0); // F_OK = 0
             break :blk rc == 0;
         },
         .windows => blk: {
-            // WTF-8 (Zig's UTF-8 with surrogate-half support) → WTF-16
-            // little-endian (Win32's wide-char path) for the Win32 API call.
+            // WTF-8 (Zig's UTF-8 with surrogate-half support) → WTF-16 little-endian (Win32's wide-char path) for the Win32 API call.
             var wide: [std.fs.max_path_bytes]u16 = undefined;
             const written = std.unicode.wtf8ToWtf16Le(&wide, absolute_path) catch break :blk false;
             if (written >= wide.len) break :blk false;
@@ -56,8 +47,7 @@ fn fileExists(absolute_path: []const u8) bool {
     };
 }
 
-/// Return the first entry of `candidates` that exists as a file, or null when
-/// none match.
+/// Return the first entry of `candidates` that exists as a file, or null when none match.
 fn pickFirstExisting(candidates: []const []const u8) ?[]const u8 {
     for (candidates) |p| {
         if (fileExists(p)) return p;
@@ -65,23 +55,17 @@ fn pickFirstExisting(candidates: []const []const u8) ?[]const u8 {
     return null;
 }
 
-/// Locate MSVC's C++ standard-library headers (used by pabrik-desktop's
-/// pabrik_webview.cpp on Windows).
+/// Locate MSVC's C++ standard-library headers (used by pabrik-desktop's pabrik_webview.cpp on Windows).
 fn hasMsvcCppStllib(b: *std.Build, io: std.Io) bool {
     if (b.graph.host.result.os.tag != .windows) return false;
 
-    // vcvars64.bat sets these. `INCLUDE` is the primary env var that
-    // lists C/C++ system header search paths.
+    // vcvars64.bat sets these.
     if (b.graph.environ_map.get("INCLUDE")) |inc| {
-        // Quick check: does the INCLUDE list mention the MSVC `include/`
-        // directory? Even a partial match (any path under `VC\Tools\MSVC`)
-        // is good enough — we don't need to verify cstddef specifically.
+        // Quick check: does the INCLUDE list mention the MSVC `include/` directory?
         if (std.mem.indexOf(u8, inc, "MSVC") != null) return true;
     }
 
-    // Fallback: probe the canonical install path. This catches CI runners
-    // that sourced vcvars64.bat into a different env (some workflows
-    // import just INCLUDE; others also set VCToolsInstallDir).
+    // Fallback: probe the canonical install path.
     const candidates = [_][]const u8{
         "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC",
         "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC",
@@ -89,14 +73,11 @@ fn hasMsvcCppStllib(b: *std.Build, io: std.Io) bool {
         "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC",
     };
     for (candidates) |root| {
-        // Any subdir under `MSVC/` (e.g. `14.44.35207/`) means MSVC is
-        // installed.
+        // Any subdir under `MSVC/` (e.g.
         const d = std.Io.Dir.cwd().openDir(io, root, .{ .iterate = true }) catch continue;
         defer d.close(io);
         var it = d.iterate();
         // `it.next` returns `Error!?Entry` (error union of optional).
-        // Return true if the read succeeded AND there's an entry. Any
-        // other outcome (error or end-of-stream) means "not installed".
         if (it.next(io)) |maybe_entry| {
             if (maybe_entry) |_| return true;
         } else |_| {} // readdir error — assume not installed
@@ -104,8 +85,7 @@ fn hasMsvcCppStllib(b: *std.Build, io: std.Io) bool {
     return false;
 }
 
-/// Locate the MSVC include dirs needed by `zig cc` when compiling
-/// `platform/windows/pabrik_webview.cpp`.
+/// Locate the MSVC include dirs needed by `zig cc` when compiling `platform/windows/pabrik_webview.cpp`.
 const MsvcIncludePaths = struct {
     c_stddef: []const u8,
     msvc_include: []const u8,
@@ -116,8 +96,7 @@ const MsvcIncludePaths = struct {
 };
 
 fn findMsvcInclude(b: *std.Build) MsvcIncludePaths {
-    // Empty defaults — used if everything below fails so the caller
-    // still has well-typed string handles (even if empty).
+    // Empty defaults — used if everything below fails so the caller still has well-typed string handles (even if empty).
     const empty = &[_]u8{};
     var result = MsvcIncludePaths{
         .c_stddef = empty,
@@ -129,21 +108,15 @@ fn findMsvcInclude(b: *std.Build) MsvcIncludePaths {
     };
     if (b.graph.host.result.os.tag != .windows) return result;
 
-    // Find the MSVC root (the dir under `.../VC/Tools/MSVC/<version>/`).
-    // 1. Prefer `VCToolsInstallDir` env var (e.g.
-    //    `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207`).
+    // Find the MSVC root (the dir under `.../VC/Tools/MSVC/<version>/`). 1.
     const vc_root: []const u8 = if (b.graph.environ_map.get("VCToolsInstallDir")) |p|
         p
     else
-        // 2. Fallback: enumerate the canonical install locations and pick the
-        // first one with a `<ver>/include/` subdir. The version directory
-        // name is opaque (e.g. `14.44.35207`), so we don't hard-code it.
+        // 2.
         firstMsvcRoot(b) orelse &[_]u8{};
 
     if (vc_root.len == 0) {
-        // No MSVC STL root resolved (e.g. standalone Windows SDK
-        // install without VS). The Windows SDK dirs are independent of
-        // VS — still resolve them instead of bailing with six empties.
+        // No MSVC STL root resolved (e.g. standalone Windows SDK install without VS).
         fillWindowsSdkIncludes(b, &result);
         return result;
     }
@@ -153,8 +126,7 @@ fn findMsvcInclude(b: *std.Build) MsvcIncludePaths {
     return result;
 }
 
-/// Populate the four Windows SDK include subdirs in `result` (`ucrt`, `um`,
-/// `shared`, `winrt`). Resolution order: 1.
+/// Populate the four Windows SDK include subdirs in `result` (`ucrt`, `um`, `shared`, `winrt`).
 fn fillWindowsSdkIncludes(b: *std.Build, result: *MsvcIncludePaths) void {
     if (b.graph.environ_map.get("INCLUDE")) |inc| {
         var it = std.mem.splitScalar(u8, inc, ';');
@@ -195,18 +167,14 @@ fn fillWindowsSdkIncludes(b: *std.Build, result: *MsvcIncludePaths) void {
     }
 }
 
-/// Stage a pruned copy of MSVC's `msvcrt.lib` into the NuGet staging dir:
-/// satisfies `/DEFAULTLIB:MSVCRT` (emitted by msvcprt.lib members) without
-/// the CFG/TLS startup members that collide with mingw's (`duplicate symbol`
+/// Stage a pruned copy of MSVC's `msvcrt.lib` into the NuGet staging dir
 fn stagePrunedMsvcrt(b: *std.Build, msvc_lib_root: []const u8, stage_dir: []const u8) void {
     const src_path = b.fmt("{s}/msvcrt.lib", .{msvc_lib_root});
     const dst_path = b.fmt("{s}/msvcrt.lib", .{stage_dir});
     const bytes = std.Io.Dir.cwd().readFileAlloc(b.graph.io, src_path, b.allocator, .unlimited) catch return;
     defer b.allocator.free(bytes);
     std.Io.Dir.cwd().writeFile(b.graph.io, .{ .sub_path = dst_path, .data = bytes }) catch return;
-    // Prune list is evidence-driven: guard_support.obj (proven dup — lld
-    // names it against mingw's mingw_cfguard_support.obj) + the TLS-init
-    // family (dup set from the full-lib link).
+    // Prune list is evidence-driven: guard_support.obj (proven dup — lld names it against mingw's mingw_cfguard_support.obj) + the TLS-init family (dup set from the …
     const prune_members = [_][]const u8{
         "guard_support.obj",
         "dyn_tls_init.obj",
@@ -224,26 +192,21 @@ fn stagePrunedMsvcrt(b: *std.Build, msvc_lib_root: []const u8, stage_dir: []cons
     _ = b.run(ar_argv[0 .. 4 + prune_members.len]);
 }
 
-/// True when `dst` is missing or its size differs from `src` (used for the
-/// config-time MSVC runtime-lib staging copy). Size-only comparison: cheap,
-/// no hashing, and exact for these never-edited-in-place import libs.
+/// True when `dst` is missing or its size differs from `src` (used for the config-time MSVC runtime-lib staging copy).
 fn staleOrMissing(b: *std.Build, src_path: []const u8, dst_path: []const u8) bool {
     const src_stat = std.Io.Dir.cwd().statFile(b.graph.io, src_path, .{}) catch return true;
     const dst_stat = std.Io.Dir.cwd().statFile(b.graph.io, dst_path, .{}) catch return true;
     return src_stat.size != dst_stat.size;
 }
 
-/// Return true when `abs_path` exists and is a directory. Mirrors the
-/// openDir probe pattern used by `hasMsvcCppStllib` (fileExists only
-/// matches files — it explicitly rejects FILE_ATTRIBUTE_DIRECTORY).
+/// Return true when `abs_path` exists and is a directory.
 fn dirExists(b: *std.Build, abs_path: []const u8) bool {
     const d = std.Io.Dir.cwd().openDir(b.graph.io, abs_path, .{}) catch return false;
     d.close(b.graph.io);
     return true;
 }
 
-/// Resolve the MSVC toolset version root (`.../VC/Tools/MSVC/<ver>`) for the
-/// `-include` compat header below.
+/// Resolve the MSVC toolset version root (`.../VC/Tools/MSVC/<ver>`) for the `-include` compat header below.
 fn msvcVersionRoot(b: *std.Build) ?[]const u8 {
     if (b.graph.host.result.os.tag != .windows) return null;
     if (b.graph.environ_map.get("VCToolsInstallDir")) |p| {
@@ -252,9 +215,7 @@ fn msvcVersionRoot(b: *std.Build) ?[]const u8 {
     return firstMsvcRoot(b);
 }
 
-/// Walk the canonical VS install locations and return the first
-/// `<root>/VC/Tools/MSVC/<ver>` dir we find. Returns null on miss.
-/// Non-Windows always returns null.
+/// Walk the canonical VS install locations and return the first `<root>/VC/Tools/MSVC/<ver>` dir we find.
 fn firstMsvcRoot(b: *std.Build) ?[]const u8 {
     if (b.graph.host.result.os.tag != .windows) return null;
     const roots = [_][]const u8{
@@ -264,9 +225,7 @@ fn firstMsvcRoot(b: *std.Build) ?[]const u8 {
         "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC",
     };
     for (roots) |msvc_root| {
-        // Open the MSVC root and pick the first subdir (the version dir like
-        // `14.44.35207`). Without that subdir, MSVC isn't installed at this
-        // root.
+        // Open the MSVC root and pick the first subdir (the version dir like `14.44.35207`).
         const d = std.Io.Dir.openDirAbsolute(b.graph.io, msvc_root, .{ .iterate = true }) catch continue;
         defer d.close(b.graph.io);
         var it = d.iterate();
@@ -278,8 +237,7 @@ fn firstMsvcRoot(b: *std.Build) ?[]const u8 {
     return null;
 }
 
-/// Numeric dotted-version compare: true when `a` is a HIGHER version than
-/// `b`.
+/// Numeric dotted-version compare: true when `a` is a HIGHER version than `b`.
 fn versionGreater(a: []const u8, b: []const u8) bool {
     var ai = std.mem.splitScalar(u8, a, '.');
     var bi = std.mem.splitScalar(u8, b, '.');
@@ -293,9 +251,7 @@ fn versionGreater(a: []const u8, b: []const u8) bool {
     }
 }
 
-/// Return `<root>/<highest-versioned subdirectory that actually contains
-/// every name in `required_files`, or null when none does. Do NOT use
-/// `firstSubdir` for the Windows SDK.
+/// Return `<root>/<highest-versioned subdirectory that actually contains every name in `required_files`, or null when none does.
 fn newestSubdirWith(b: *std.Build, root: []const u8, required_files: []const []const u8) ?[]const u8 {
     if (b.graph.host.result.os.tag != .windows) return null;
     const d = std.Io.Dir.openDirAbsolute(b.graph.io, root, .{ .iterate = true }) catch return null;
@@ -303,9 +259,7 @@ fn newestSubdirWith(b: *std.Build, root: []const u8, required_files: []const []c
     var best_name: ?[]const u8 = null;
     var it = d.iterate();
     while (it.next(b.graph.io) catch null) |entry| {
-        // `.sym_link` counts: the real SDK leaves ship as links (the image
-        // has `wdf0.26100.0` alongside a plain `wdf`), and a dangling one
-        // is rejected by the file probe below anyway.
+        // `.sym_link` counts: the real SDK leaves ship as links (the image has `wdf0.26100.0` alongside a plain `wdf`), and a dangling one is rejected by the file probe …
         if (entry.kind != .directory and entry.kind != .sym_link) continue;
         const candidate = b.fmt("{s}/{s}", .{ root, entry.name });
         var complete = true;
@@ -317,21 +271,17 @@ fn newestSubdirWith(b: *std.Build, root: []const u8, required_files: []const []c
         }
         if (!complete) continue;
         if (best_name == null or versionGreater(entry.name, best_name.?)) {
-            // MUST dupe: `entry.name` points into the iterator's name buffer,
-            // which the next `it.next()` overwrites.
+            // MUST dupe: `entry.name` points into the iterator's name buffer, which the next `it.next()` overwrites.
             best_name = b.dupe(entry.name);
         }
     }
     return if (best_name) |n| b.fmt("{s}/{s}", .{ root, n }) else null;
 }
 
-/// Return `<root>/<first-subdirectory>`, or null when `root` doesn't
-/// exist or contains no subdirectories. Used to resolve opaque version
-/// directories (`14.44.35207`, `10.0.22621.0`) without hard-coding them.
+/// Return `<root>/<first-subdirectory>`, or null when `root` doesn't exist or contains no subdirectories.
 fn firstSubdir(b: *std.Build, root: []const u8) ?[]const u8 {
     if (b.graph.host.result.os.tag != .windows) return null;
-    // `OpenOptions.iterate` is required — without it `it.next` fails
-    // with AccessDenied on Windows (see hasMsvcCppStllib).
+    // `OpenOptions.iterate` is required — without it `it.next` fails with AccessDenied on Windows (see hasMsvcCppStllib).
     const d = std.Io.Dir.openDirAbsolute(b.graph.io, root, .{ .iterate = true }) catch return null;
     defer d.close(b.graph.io);
     var it = d.iterate();
@@ -346,9 +296,7 @@ fn firstSubdir(b: *std.Build, root: []const u8) ?[]const u8 {
 fn findLibstdcxxInclude(b: *std.Build) ?[]const u8 {
     if (b.graph.host.result.os.tag != .linux) return null;
 
-    // Run a small shell snippet via b.run() to find the highest-version gcc
-    // c++ include dir. b.run() is std.Build's synchronous configure-time exec
-    // helper — it returns stdout bytes and fails the build with a clear
+    // Run a small shell snippet via b.run() to find the highest-version gcc c++ include dir. b.run() is std.Build's synchronous configure-time exec helper — it …
     const stdout = b.run(&.{
         "/bin/sh", "-c",
         \\ls -1 /usr/include/c++ 2>/dev/null | sort -V | tail -1 | tr -d '\n'
@@ -357,8 +305,7 @@ fn findLibstdcxxInclude(b: *std.Build) ?[]const u8 {
     return b.allocator.dupe(u8, stdout) catch null;
 }
 
-/// Check that ALL WebView2 NuGet prerequisites sit next to
-/// pabrik_webview.cpp.
+/// Check that ALL WebView2 NuGet prerequisites sit next to pabrik_webview.cpp.
 fn webview2MissingPrereq(b: *std.Build) ?[]const u8 {
     const prereqs = [_][]const u8{
         "WebView2.h",
@@ -376,28 +323,20 @@ fn webview2MissingPrereq(b: *std.Build) ?[]const u8 {
 }
 
 /// Vendored Lua 5.4 sources compiled into a module.
-/// A `--test-filter` one shard gets compiled with, plus the cost weight the
-/// balancer assigns to it.
 const TestShardEntry = struct {
     filter: []const u8,
     weight: u64,
-    /// The test's real name, plus the filter shapes `name` can safely be
-    /// reduced to. Both are kept so `pickLeastOverlappingFilter` can compare
-    /// against every other name once the whole set is known.
+    /// The test's real name, plus the filter shapes `name` can safely be reduced to.
     name: []const u8,
     candidates: TestFilterCandidates,
 };
 
-/// Weight of a test whose runtime is close to the suite median, which is
-/// roughly 10 ms on this box.
+/// Weight of a test whose runtime is close to the suite median, which is roughly 10 ms on this box.
 const average_test_weight: u64 = 1;
 
-/// Tests whose runtime is orders of magnitude above that median, so a
-/// name-count-balanced split would still leave one shard holding all the wall
-/// clock.
+/// Tests whose runtime is orders of magnitude above that median, so a name-count-balanced split would still leave one shard holding all the wall clock.
 const slow_test_weights = [_]struct { name: []const u8, weight: u64 }{
     // ~21 s: spawns a command per subshell shape and waits out each timeout.
-    // By itself this is the floor for any parallel split.
     .{ .name = "bash_tool: timeout kills descendants across all common subshell shapes", .weight = 2_100 },
     // ~3 s / ~1 s each: same file, real process spawns with real timeouts.
     .{ .name = "bash_tool: no FD accumulation across 20 sequential calls", .weight = 300 },
@@ -414,14 +353,11 @@ fn testWeight(name: []const u8) u64 {
     return average_test_weight;
 }
 
-/// `haystack.contains(needle)`, but anchored on a SIMD `memchr` for the
-/// needle's first byte.
+/// `haystack.contains(needle)`, but anchored on a SIMD `memchr` for the needle's first byte.
 fn containsFast(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
     if (haystack.len < needle.len) return false;
-    // Stop early once too few bytes remain for the needle to fit — without
-    // that, a hit on the needle's first byte near the end of the haystack
-    // slices past it.
+    // Stop early once too few bytes remain for the needle to fit — without that, a hit on the needle's first byte near the end of the haystack slices past it.
     const last_start = haystack.len - needle.len;
     var offset: usize = 0;
     while (std.mem.indexOfScalarPos(u8, haystack[0 .. last_start + 1], offset, needle[0])) |pos| {
@@ -432,14 +368,11 @@ fn containsFast(haystack: []const u8, needle: []const u8) bool {
 }
 
 /// An inverted index from 2-byte sequence to the test names containing it.
-/// Sharding has to answer "which test names contain this filter?" a few
-/// million times.
 const PairIndex = struct {
     const pair_count = 1 << 16;
     const none = std.math.maxInt(u32);
 
-    /// Counting sort of every (2-byte sequence, name index) occurrence, so a
-    /// sequence's occurrences are the contiguous run `items[starts[p]..starts[p + 1]]`.
+    /// Counting sort of every (2-byte sequence, name index) occurrence, so a sequence's occurrences are the contiguous run `items[starts[p]..starts[p + 1]]`.
     starts: []u32,
     items: []u32,
     allocator: std.mem.Allocator,
@@ -496,8 +429,7 @@ const PairIndex = struct {
         return (@as(usize, name[i]) << 8) | name[i + 1];
     }
 
-    /// The needle's 2-byte sequence with the shortest candidate list, i.e.
-    /// the one that will send the fewest names to the exact compare.
+    /// The needle's 2-byte sequence with the shortest candidate list, i.e. the one that will send the fewest names to the exact compare.
     fn bestPair(self: *const PairIndex, needle: []const u8) u32 {
         var best: u32 = 0;
         var best_len: u32 = std.math.maxInt(u32);
@@ -518,14 +450,11 @@ const PairIndex = struct {
     }
 };
 
-/// Exactly how many of `all_names` contain `needle`, found by asking the
-/// index for candidates and confirming each one.
+/// Exactly how many of `all_names` contain `needle`, found by asking the index for candidates and confirming each one.
 fn countNamesContaining(all_names: []const []const u8, needle: []const u8, index: *const PairIndex) usize {
     if (needle.len == 0) return all_names.len;
     if (needle.len < 2) {
-        // No 2-byte sequence to index on. Rare, and answering 0 here instead
-        // of the truth is exactly how a one-character filter slipped past the
-        // fan-out guard below while re-running the entire suite.
+        // No 2-byte sequence to index on.
         var hits: usize = 0;
         for (all_names) |name| {
             if (std.mem.indexOf(u8, name, needle) != null) hits += 1;
@@ -539,8 +468,7 @@ fn countNamesContaining(all_names: []const []const u8, needle: []const u8, index
     return hits;
 }
 
-/// One pytest invocation for a Python functional suite, optionally pinned to
-/// a single shard.
+/// One pytest invocation for a Python functional suite, optionally pinned to a single shard.
 fn addPythonSuiteRun(
     b: *std.Build,
     argv: []const []const u8,
@@ -565,23 +493,19 @@ fn fatalConfig(comptime fmt: []const u8, args: anytype) noreturn {
     @panic("build configuration error");
 }
 
-/// Characters that cannot survive Zig's `@args-file` round trip. Zig writes
-/// each `zig test` argument into a generated args file and quotes it.
+/// Characters that cannot survive Zig's `@args-file` round trip.
 fn isUnsafeFilterByte(c: u8) bool {
     return c == '"' or c == '\'' or c == '\\' or c < 0x20;
 }
 
-/// The `--test-filter` shapes a test name can safely be reduced to. `whole`
-/// is non-null when the name has no byte the args file cannot carry, and is
-/// then always the right answer.
+/// The `--test-filter` shapes a test name can safely be reduced to.
 const TestFilterCandidates = struct {
     whole: ?[]const u8,
     head: []const u8,
     tail: []const u8,
 };
 
-/// Reduce a test name to the `--test-filter` shapes that survive the args
-/// file. See `TestFilterCandidates`.
+/// Reduce a test name to the `--test-filter` shapes that survive the args file.
 fn safeTestFilter(name: []const u8) TestFilterCandidates {
     for (name) |c| {
         if (isUnsafeFilterByte(c)) break;
@@ -604,8 +528,7 @@ fn safeTestFilter(name: []const u8) TestFilterCandidates {
     const head = std.mem.trim(u8, name[0..first], " \t");
     const tail = std.mem.trim(u8, name[last + 1 ..], " \t");
 
-    // Both sides empty means the whole name is unsafe bytes — almost
-    // certainly a machine-generated name.
+    // Both sides empty means the whole name is unsafe bytes — almost certainly a machine-generated name.
     if (head.len == 0 and tail.len == 0) {
         fatalConfig(
             "test name has no substring free of \" ' \\ or control bytes, so it " ++
@@ -618,8 +541,7 @@ fn safeTestFilter(name: []const u8) TestFilterCandidates {
     return .{ .whole = null, .head = head, .tail = tail };
 }
 
-/// Choose between a test's candidate filters by picking the one that is a
-/// substring of the FEWEST other test names. This is not cosmetic.
+/// Choose between a test's candidate filters by picking the one that is a substring of the FEWEST other test names.
 fn pickLeastOverlappingFilter(
     candidates: TestFilterCandidates,
     all_names: []const []const u8,
@@ -629,8 +551,7 @@ fn pickLeastOverlappingFilter(
 
     const head_hits = countNamesContaining(all_names, candidates.head, index);
     const tail_hits = countNamesContaining(all_names, candidates.tail, index);
-    // Ties go to the longer filter: a longer substring matches fewer names in
-    // practice, and if it does not help it cannot hurt either.
+    // Ties go to the longer filter: a longer substring matches fewer names in practice, and if it does not help it cannot hurt either.
     if (head_hits < tail_hits) return candidates.head;
     if (tail_hits < head_hits) return candidates.tail;
     return if (candidates.head.len >= candidates.tail.len) candidates.head else candidates.tail;
@@ -690,8 +611,7 @@ fn decodeZigStringBody(
     }
 }
 
-/// Collect one test name from the text starting at the `test` keyword's
-/// argument. Handles both `test "name" {` and `test ident {`.
+/// Collect one test name from the text starting at the `test` keyword's argument.
 fn parseTestName(
     alloc: std.mem.Allocator,
     arg: []const u8,
@@ -725,8 +645,7 @@ fn parseTestName(
     return null;
 }
 
-/// Walk `src/`, collect every named `test` decl, and return the de-duplicated
-/// set of filters to shard across.
+/// Walk `src/`, collect every named `test` decl, and return the de-duplicated set of filters to shard across.
 fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
     const alloc = b.allocator;
     var seen: std.StringHashMap(void) = .init(alloc);
@@ -753,13 +672,10 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
     }) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
-        // `test:db` runs this one in its own module, so sharding it here would
-        // schedule filters that match nothing.
+        // `test:db` runs this one in its own module, so sharding it here would schedule filters that match nothing.
         if (std.mem.endsWith(u8, entry.path, "db_tests.zig")) continue;
 
-        // `entry.dir` + `entry.basename`, not cwd + `entry.path`: the
-        // walker's paths are relative to the directory it was opened on
-        // (`src`), so `entry.path` alone does not resolve from cwd.
+        // `entry.dir` + `entry.basename`, not cwd + `entry.path`: the walker's paths are relative to the directory it was opened on (`src`), so `entry.path` alone does …
         const bytes = entry.dir.readFileAlloc(
             b.graph.io,
             entry.basename,
@@ -782,9 +698,7 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
                 alloc.free(name);
                 continue;
             }
-            // On success the hash map OWNS `name`, so it must not be freed
-            // here — freeing it left a dangling key and the next `put`
-            // aborted inside the map.
+            // On success the hash map OWNS `name`, so it must not be freed here — freeing it left a dangling key and the next `put` aborted inside the map.
             seen.put(name, {}) catch {
                 alloc.free(name);
                 continue;
@@ -802,8 +716,7 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
 
     const collected = entries.toOwnedSlice(alloc) catch return &.{};
 
-    // Second pass: now that every test name is known, narrow each truncated
-    // filter to the side that overlaps the fewest siblings.
+    // Second pass: now that every test name is known, narrow each truncated filter to the side that overlaps the fewest siblings.
     var names: std.ArrayList([]const u8) = .empty;
     defer names.deinit(alloc);
     for (collected) |entry| names.append(alloc, entry.name) catch return &.{};
@@ -815,9 +728,7 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
         entry.filter = pickLeastOverlappingFilter(entry.candidates, names.items, &index);
     }
 
-    // Guard the thing that actually goes wrong: a filter SO broad that its
-    // shard runs a slice of the whole suite. The filter for a name is
-    // normally the name.
+    // Guard the thing that actually goes wrong: a filter SO broad that its shard runs a slice of the whole suite.
     const max_filter_fanout = 64;
     var worst_fanout: usize = 0;
     for (collected) |entry| {
@@ -835,8 +746,7 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
         );
     }
 
-    // Invariant, checked before anything is scheduled: a test's filter must
-    // BE a substring of its own name.
+    // Invariant, checked before anything is scheduled: a test's filter must BE a substring of its own name.
     for (collected) |entry| {
         if (std.mem.indexOf(u8, entry.name, entry.filter) != null) continue;
         fatalConfig(
@@ -849,9 +759,7 @@ fn collectTestShardEntries(b: *std.Build) []const TestShardEntry {
     return collected;
 }
 
-/// Subtrees that ship as their own package. Their files are still listed when
-/// the mod_tests module imports them (`src/vmd` reaches it through
-/// `vm_runtime`), so this list can never silently drop a test that runs today.
+/// Subtrees that ship as their own package.
 const test_manifest_other_modules = [_][]const u8{
     "apps/",
     "helpers/",
@@ -868,8 +776,7 @@ fn testManifestOtherModule(path: []const u8) bool {
     return false;
 }
 
-/// A top-level `test` decl, named or anonymous, detected exactly the way
-/// `collectTestShardEntries` detects the named ones.
+/// A top-level `test` decl, named or anonymous, detected exactly the way `collectTestShardEntries` detects the named ones.
 fn hasTestDecl(bytes: []const u8) bool {
     var lines = std.mem.splitScalar(u8, bytes, '\n');
     while (lines.next()) |raw_line| {
@@ -882,8 +789,7 @@ fn hasTestDecl(bytes: []const u8) bool {
     return false;
 }
 
-/// Resolve `target` against `from_dir`, both relative to `src/`, and return the
-/// normalised path. Null when the target leaves `src/` or is a named module.
+/// Resolve `target` against `from_dir`, both relative to `src/`, and return the normalised path.
 fn resolveImport(alloc: std.mem.Allocator, from_dir: []const u8, target: []const u8) ?[]const u8 {
     if (target.len == 0 or target[0] == '/') return null;
     if (!std.mem.endsWith(u8, target, ".zig")) return null;
@@ -911,8 +817,7 @@ fn resolveImport(alloc: std.mem.Allocator, from_dir: []const u8, target: []const
     return out.toOwnedSlice(alloc) catch null;
 }
 
-/// `@import("…")` is a Zig string literal, so a host walker's `\\` separator
-/// would read as an escape. Every path in this manifest speaks '/'.
+/// `@import("…")` is a Zig string literal, so a host walker's `\\` separator would read as an escape.
 fn forwardSlashes(alloc: std.mem.Allocator, path: []const u8) []const u8 {
     const copy = alloc.dupe(u8, path) catch @panic("OOM");
     for (copy) |*c| {
@@ -934,9 +839,7 @@ fn internPath(
     return copy;
 }
 
-/// Write `src/test_manifest.zig`: one `_ = @import` per test-bearing file the
-/// mod_tests module can compile, so writing a test is the only step needed to
-/// run it. It lands in the source tree because an import cannot leave the module.
+/// Write `src/test_manifest.zig`: one `_ = @import` per test-bearing file the mod_tests module can compile, so writing a test is the only step needed to run it.
 fn emitTestManifest(b: *std.Build) void {
     const alloc = b.allocator;
 
@@ -1020,8 +923,7 @@ fn emitTestManifest(b: *std.Build) void {
     var listed: std.ArrayList([]const u8) = .empty;
     defer listed.deinit(alloc);
     for (test_files.items) |path| {
-        // `root.zig` is the import site; the manifest's own `test` block would
-        // make it import itself.
+        // `root.zig` is the import site; the manifest's own `test` block would make it import itself.
         if (std.mem.eql(u8, path, "root.zig")) continue;
         if (testManifestOtherModule(path) and !reachable.contains(path)) continue;
         listed.append(alloc, path) catch @panic("OOM");
@@ -1050,9 +952,7 @@ fn emitTestManifest(b: *std.Build) void {
     };
 }
 
-/// Group tests whose `--test-filter` would otherwise drag each other into two
-/// shards, then longest-processing-time-first across the groups. The grouping
-/// is what keeps the split safe.
+/// Group tests whose `--test-filter` would otherwise drag each other into two shards, then longest-processing-time-first across the groups.
 fn balanceTestShards(
     b: *std.Build,
     entries: []const TestShardEntry,
@@ -1083,8 +983,7 @@ fn balanceTestShards(
             const ra = find.f(p, a);
             const rb = find.f(p, b_);
             if (ra == rb) return;
-            // Deterministic: the lower index always wins, so two checkouts
-            // produce the same grouping.
+            // Deterministic: the lower index always wins, so two checkouts produce the same grouping.
             if (ra < rb) p[rb] = ra else p[ra] = rb;
         }
     };
@@ -1095,9 +994,7 @@ fn balanceTestShards(
     var index = PairIndex.init(alloc, names.items) catch @panic("OOM");
     defer index.deinit();
 
-    // No length cap and no O(filters x names) loop: the inverted index
-    // answers "which names could contain this filter" directly, and the exact
-    // compare confirms.
+    // No length cap and no O(filters x names) loop: the inverted index answers "which names could contain this filter" directly, and the exact compare confirms.
     for (entries, 0..) |entry, i| {
         if (entry.filter.len < 2) continue;
         for (index.candidates(index.bestPair(entry.filter))) |name_index| {
@@ -1108,8 +1005,7 @@ fn balanceTestShards(
         }
     }
 
-    // Collapse each group into one scheduling unit carrying the sum of its
-    // members' weights and all of their filters.
+    // Collapse each group into one scheduling unit carrying the sum of its members' weights and all of their filters.
     var group_weight = alloc.alloc(u64, entries.len) catch @panic("OOM");
     defer alloc.free(group_weight);
     @memset(group_weight, 0);
@@ -1138,8 +1034,7 @@ fn balanceTestShards(
         roots.append(alloc, root) catch @panic("OOM");
     }
 
-    // Heaviest group first; the group's first filter name breaks ties so the
-    // result is stable even when every weight is the default 1.
+    // Heaviest group first; the group's first filter name breaks ties so the result is stable even when every weight is the default 1.
     const Ctx = struct {
         entries: []const TestShardEntry,
         group_weight: []const u64,
@@ -1158,9 +1053,7 @@ fn balanceTestShards(
     );
 
     for (roots.items) |root| {
-        // Lightest by predicted time; ties broken by FEWEST FILTERS so equal
-        // -load shards still spread evenly. Picking the first minimum on a
-        // tie hands every tie to the lowest index and skews the split.
+        // Lightest by predicted time; ties broken by FEWEST FILTERS so equal -load shards still spread evenly.
         var lightest: usize = 0;
         for (loads, shard_sizes, 0..) |load, size, i| {
             if (load > loads[lightest]) continue;
@@ -1171,9 +1064,7 @@ fn balanceTestShards(
             if (size < shard_sizes[lightest]) lightest = i;
         }
         loads[lightest] += group_weight[root];
-        // `&shards.items[...]`, NOT `shards.items[...]`: std.ArrayList is
-        // unmanaged in Zig 0.16, so indexing yields a COPY of the struct and
-        // an append through it grows a buffer nobody ever reads back.
+        // `&shards.items[...]`, NOT `shards.items[...]`: std.ArrayList is unmanaged in Zig 0.16, so indexing yields a COPY of the struct and an append through it grows a …
         const shard = &shards.items[lightest];
         // Every member's filter goes into the group's shard.
         for (entries, 0..) |entry, i| {
@@ -1205,8 +1096,7 @@ fn linkVendoredLua(b: *std.Build, module: *std.Build.Module) void {
     });
 }
 
-/// Link platform-specific system libraries + include paths for a Compile step
-/// based on the COMPILE'S OWN target (NOT the global default target).
+/// Link platform-specific system libraries + include paths for a Compile step based on the COMPILE'S OWN target (NOT the global default target).
 fn linkPlatformDeps(
     _b: *std.Build,
     exe: *std.Build.Step.Compile,
@@ -1217,24 +1107,17 @@ fn linkPlatformDeps(
     exe.root_module.link_libc = true;
     switch (target.result.os.tag) {
         .linux => {
-            // Everything database-related (sqlite3 amalgamation + openssl +
-            // crypto + libpq + /usr/include + /usr/include/postgresql) is
-            // handled by the `databases` package — propagated to this Compile
+            // Everything database-related (sqlite3 amalgamation + openssl + crypto + libpq + /usr/include + /usr/include/postgresql) is handled by the `databases` package — …
             exe.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
         },
         .macos => {
-            // Everything database-related (sqlite3 amalgamation) is handled
-            // by the `databases` package. macOS doesn't need openssl/pq here
-            // (libpq is not currently used on macOS; openssl rides along via
+            // Everything database-related (sqlite3 amalgamation) is handled by the `databases` package. macOS doesn't need openssl/pq here (libpq is not currently used on …
         },
         .windows => {
-            // Everything database-related (sqlite3 amalgamation + bcrypt) is
-            // handled by the `databases` package. bcrypt.dll is needed by
-            // kabelweb repo src/server/security.zig (BCryptGenRandom — Zig's
+            // Everything database-related (sqlite3 amalgamation + bcrypt) is handled by the `databases` package. bcrypt.dll is needed by kabelweb repo …
         },
         else => {
-            // Cross-compile to non-Linux/macOS/Windows targets. The
-            // `databases` package covers everything — nothing extra to add.
+            // Cross-compile to non-Linux/macOS/Windows targets.
         },
     }
 }
@@ -1277,27 +1160,20 @@ fn createPlatformExe(
     return exe;
 }
 
-/// Prepend `C:\vcpkg\installed\x64-windows\bin` to the test process's PATH so
-/// the Windows DLL loader can find the runtime DLLs that the test executable
-/// depends on (`libcurl.dll`, `sqlite3.dll`, `libssl-3-x64.dll`,
+/// Prepend `C:\vcpkg\installed\x64-windows\bin` to the test process's PATH so the Windows DLL loader can find the runtime DLLs that the test executable depends on …
 fn prependVcpkgBinToPath(b: *std.Build, run: *std.Build.Step.Run) void {
     if (b.graph.host.result.os.tag != .windows) return;
     const vcpkg_bin = "C:/vcpkg/installed/x64-windows/bin";
-    // Only prepend if the dir actually exists — otherwise leave PATH
-    // alone (so we don't accidentally shadow a real vcpkg on PATH with
-    // a bogus one on a host that doesn't have vcpkg installed).
+    // Only prepend if the dir actually exists — otherwise leave PATH alone (so we don't accidentally shadow a real vcpkg on PATH with a bogus one on a host that …
     if (!dirExists(b, vcpkg_bin)) return;
     const env_map = run.getEnvMap();
     const current = env_map.get("PATH") orelse "";
     // Windows convention: separate paths with `;`, prepend the new one.
-    // If PATH is empty (rare), just use the new dir verbatim.
     const new_path = if (current.len == 0) vcpkg_bin else b.fmt("{s};{s}", .{ vcpkg_bin, current });
     env_map.put("PATH", new_path) catch @panic("OOM");
 }
 
-/// Stage the bundled object store beside the binary, so `./zig-out/bin/pabrik`
-/// starts rustfs the same way an installed copy does. Best-effort: a triple
-/// upstream has no build for, or an offline box, keeps the filesystem store.
+/// Stage the bundled object store beside the binary, so `./zig-out/bin/pabrik` starts rustfs the same way an installed copy does.
 fn stageBundledRustfs(b: *std.Build) ?*std.Build.Step {
     const host = b.graph.host.result;
     const triple = switch (host.os.tag) {
@@ -1319,8 +1195,7 @@ fn stageBundledRustfs(b: *std.Build) ?*std.Build.Step {
     const root = b.build_root.path orelse ".";
     const dest_abs = b.fmt("{s}/{s}", .{ root, dest });
     const script_abs = b.fmt("{s}/{s}", .{ root, script });
-    // The guard matters: the download is 115 MB, and a rebuild must not repeat
-    // it. The script's own cache makes the first one a one-off.
+    // The guard matters: the download is 115 MB, and a rebuild must not repeat it.
     const cmd = if (host.os.tag == .windows)
         b.fmt("if (-not (Test-Path '{s}')) {{ pwsh -NoProfile -File '{s}' -Target {s} -Dest '{s}' }}", .{ dest_abs, script_abs, triple, dest_abs })
     else
@@ -1330,15 +1205,12 @@ fn stageBundledRustfs(b: *std.Build) ?*std.Build.Step {
     else
         &.{ "sh", "-c", cmd };
     const run = b.addSystemCommand(argv);
-    // The guard is a filesystem probe, not a declared input, so the step must
-    // run every build: a cached "success" would never restore a deleted file.
+    // The guard is a filesystem probe, not a declared input, so the step must run every build: a cached "success" would never restore a deleted file.
     run.has_side_effects = true;
     return &run.step;
 }
 
 /// Bundle vcpkg runtime DLLs next to the exe so Explorer double-click works.
-/// WHY: `databases` + `kabelweb` link the vcpkg IMPORT `.lib` files
-/// (`sqlite3.lib`, `libcurl.lib`, `libssl.lib`, ...) on Windows.
 fn installVcpkgDlls(b: *std.Build, parent: *std.Build.Step) void {
     if (b.graph.host.result.os.tag != .windows) return;
     const vcpkg_bin = "C:/vcpkg/installed/x64-windows/bin";
@@ -1364,8 +1236,7 @@ fn installVcpkgDlls(b: *std.Build, parent: *std.Build.Step) void {
     }
 }
 
-/// Detect the Zig 0.16 aarch64-windows crash bug and abort the build early
-/// with a clear, actionable message.
+/// Detect the Zig 0.16 aarch64-windows crash bug and abort the build early with a clear, actionable message.
 fn detectAarch64ZigBug(b: *std.Build) void {
     if (b.graph.host.result.os.tag != .windows) return;
     const exe = b.graph.zig_exe;
@@ -1412,13 +1283,10 @@ fn detectAarch64ZigBug(b: *std.Build) void {
 }
 
 pub fn build(b: *std.Build) void {
-    // Hard-fail at config time if the active Zig binary is the known-bugged
-    // aarch64-windows 0.16.x variant.
+    // Hard-fail at config time if the active Zig binary is the known-bugged aarch64-windows 0.16.x variant.
     detectAarch64ZigBug(b);
 
-    // Target glibc 2.38 on Linux hosts — needed for vendored curl's
-    // references to `__isoc23_*` (glibc 2.38+) and `arc4random` (glibc 2.36+
-    // in weak-symbol form).
+    // Target glibc 2.38 on Linux hosts — needed for vendored curl's references to `__isoc23_*` (glibc 2.38+) and `arc4random` (glibc 2.36+ in weak-symbol form).
     const target = b.standardTargetOptions(.{
         .default_target = switch (b.graph.host.result.os.tag) {
             .linux => .{
@@ -1428,9 +1296,7 @@ pub fn build(b: *std.Build) void {
                 .glibc_version = .{ .major = 2, .minor = 38, .patch = 0 },
             },
             .windows => blk: {
-                // === Why default to x86_64-windows-gnu on Windows === The
-                // CI's self-hosted Windows runner installs all native deps
-                // (libcurl, libssl, libcrypto, libpq, sqlite3) via vcpkg
+                // === Why default to x86_64-windows-gnu on Windows ===
                 break :blk .{
                     .cpu_arch = .x86_64,
                     .os_tag = .windows,
@@ -1446,16 +1312,13 @@ pub fn build(b: *std.Build) void {
     });
     const optimize = b.standardOptimizeOption(.{});
 
-    // CLI flag: `--no-webapp-rebuild` / `-Dno-webapp-rebuild` skips the
-    // webapp-rebuild + mcp-hello-world chains.
+    // CLI flag: `--no-webapp-rebuild` / `-Dno-webapp-rebuild` skips the webapp-rebuild + mcp-hello-world chains.
     const no_webapp_rebuild = b.option(bool, "no-webapp-rebuild", "Skip the webapp-rebuild + mcp-hello-world chains (Windows CI OOM / no-pnpm workaround)") orelse false;
 
-    // CLI flag: `-Drequire-real-webview` turns the no-op webview stub
-    // fallback (see use_real_webview below) into a hard config-time error.
+    // CLI flag: `-Drequire-real-webview` turns the no-op webview stub fallback (see use_real_webview below) into a hard config-time error.
     const require_real_webview = b.option(bool, "require-real-webview", "Fail the build instead of falling back to the no-op webview stub") orelse false;
 
-    // `helpers` package (`src/helpers/`): project-wide portable sleep / time
-    // / file-existence helpers.
+    // `helpers` package (`src/helpers/`): project-wide portable sleep / time / file-existence helpers.
     const helpers_dep = b.dependency("helpers", .{
         .target = target,
         .optimize = optimize,
@@ -1482,8 +1345,6 @@ pub fn build(b: *std.Build) void {
     mod.addImport("pabrikcore", mod);
 
     // === Self-contained `databases` package (sqlite3 + openssl + libpq) ===
-    // The package (ruangsql, github.com/ginwa123/ruangsql, pinned by URL +
-    // hash in build.zig.zon) carries its own build.zig that wires sqlite3 /
     const db_used = b.option(
         []const u8,
         "db_used",
@@ -1497,9 +1358,7 @@ pub fn build(b: *std.Build) void {
     const databases_mod = databases_dep.module("databases");
     mod.addImport("databases", databases_mod);
 
-    // === `auth_core` (src/http_handlers/auth_core.zig) === The cookie, the
-    // token hash and the password hash as their own module: the standalone
-    // admin console links this one file instead of all of pabrik.
+    // === `auth_core` (src/http_handlers/auth_core.zig) ===
     const auth_core_mod = b.createModule(.{
         .root_source_file = b.path("src/http_handlers/auth_core.zig"),
         .target = target,
@@ -1510,8 +1369,7 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("auth_core", auth_core_mod);
 
-    // === Self-contained `kabelweb` package (vendored libcurl) === Mirrors
-    // the `databases` package pattern.
+    // === Self-contained `kabelweb` package (vendored libcurl) ===
     const kabelweb_dep = b.dependency("kabelweb", .{
         .target = target,
         .optimize = optimize,
@@ -1520,17 +1378,11 @@ pub fn build(b: *std.Build) void {
     mod.addImport("kabelweb", kabelweb_mod);
 
     // === Vendored Lua 5.4 (single-file hooks) ===
-    // Compiled into `mod` for every target, so all exes (native +
-    // install:* cross-compiles) embed Lua with no system dependency.
     linkVendoredLua(b, mod);
 
-    // === kabelweb module (libcurl-backed HTTP) === Exposed as a separate
-    // module so Agent2.zig (in src/modules/agent/) can `@import("kabelweb")`.
-    // Same libcurl deps as the sibling build in the kabelweb repo.
+    // === kabelweb module (libcurl-backed HTTP) ===
 
-    // === System-deps probe === Run the same probe as the `databases` and
-    // `kabelweb` packages to decide whether to attach the vendor fetch steps.
-    // The packages ALSO run their own probes (to decide their own link line).
+    // === System-deps probe ===
     const dbs_uses_system = blk: {
         if (target.result.os.tag != b.graph.host.result.os.tag) break :blk false;
         // Pure-Zig header probe (no shell, no `bash` dependency).
@@ -1569,13 +1421,10 @@ pub fn build(b: *std.Build) void {
         break :blk fileExists(sqlite_h) and fileExists(libpq_h) and fileExists(openssl_h);
     };
 
-    // Probe host for system libcurl + openssl. Same probe layout as
-    // dbs_uses_system but checks curl.h + openssl/ssl.h instead of
-    // sqlite3/libpq.
+    // Probe host for system libcurl + openssl.
     const curl_uses_system = blk: {
         if (target.result.os.tag != b.graph.host.result.os.tag) break :blk false;
-        // Pure-Zig probe mirroring the dbs_uses_system helper above. No
-        // shell, no bash dependency.
+        // Pure-Zig probe mirroring the dbs_uses_system helper above.
         const curl_h = switch (b.graph.host.result.os.tag) {
             .linux => "/usr/include/curl/curl.h",
             .macos => pickFirstExisting(&.{
@@ -1613,12 +1462,8 @@ pub fn build(b: *std.Build) void {
     );
 
     // === sqlite3 amalgamation: owned by the external `databases` package ===
-    // The package (ruangsql, github.com/ginwa123/ruangsql) probes the host
-    // for system sqlite3 + libpq + openssl and falls back to its own vendored
 
-    // Platform-specific link libs (sqlite3/ssl/crypto on Linux, vendored
-    // sqlite3.c on Windows/macOS) are added below in the
-    // test/dev-exe/inline-exe setup blocks.
+    // Platform-specific link libs (sqlite3/ssl/crypto on Linux, vendored sqlite3.c on Windows/macOS) are added below in the test/dev-exe/inline-exe setup blocks.
 
     const exe = b.addExecutable(.{
         .name = "pabrik",
@@ -1633,35 +1478,26 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // NOTE: there is no fetch-vendor-curl step anymore. kabelweb is an
-    // external URL dependency — its own package + CI own the vendored curl
-    // archive (see the kabelweb repo's scripts/build-vendor-curl.sh). pabrik
+    // NOTE: there is no fetch-vendor-curl step anymore. kabelweb is an external URL dependency — its own package + CI own the vendored curl archive (see the kabelweb …
 
     b.installArtifact(exe);
 
     exe.root_module.linkSystemLibrary("c", .{});
     exe.root_module.link_libc = true;
-    // Per-target platform deps (sqlite3/openssl/vendored amalgamation).
-    // linkPlatformDeps handles all 4 targets in one switch — replaces the
-    // old if/else chain that leaked Linux libs into cross-compile artifacts.
+    // Per-target platform deps (sqlite3/openssl/vendored amalgamation). linkPlatformDeps handles all 4 targets in one switch — replaces the old if/else chain that …
     linkPlatformDeps(b, exe, target);
-    // libcurl is linked via kabelweb_mod's transitive deps (the vendored
-    // prebuilt archive is added in the package's own build.zig).
+    // libcurl is linked via kabelweb_mod's transitive deps (the vendored prebuilt archive is added in the package's own build.zig).
     if (target.result.os.tag == .windows) {}
-    // === mcp-hello-world: TypeScript test MCP server === Self-test target
-    // for the MCP stdio transport.
+    // === mcp-hello-world: TypeScript test MCP server ===
     const mcp_hello_world_dir = "src/apps/mcp_hello_world";
     const mcp_hello_world_step = b.step("mcp-hello-world", "Build the mcp-hello-world test MCP server");
 
-    // Always run `pnpm install` — pnpm's content-addressed store makes this
-    // fast (~1s) when node_modules is already present. We avoid a statFile
-    // check because std.fs.cwd was removed in Zig 0.16.
+    // Always run `pnpm install` — pnpm's content-addressed store makes this fast (~1s) when node_modules is already present.
     const mcp_pnpm_install = b.addSystemCommand(&.{ "pnpm", "install", "--frozen-lockfile" });
     mcp_pnpm_install.setCwd(b.path(mcp_hello_world_dir));
     mcp_hello_world_step.dependOn(&mcp_pnpm_install.step);
 
-    // TDD: run the unit tests first. If they fail, the build fails
-    // before we waste time on the TS compile.
+    // TDD: run the unit tests first.
     const mcp_test = b.addSystemCommand(&.{ "pnpm", "test" });
     mcp_test.setCwd(b.path(mcp_hello_world_dir));
     mcp_test.step.dependOn(&mcp_pnpm_install.step);
@@ -1697,8 +1533,7 @@ pub fn build(b: *std.Build) void {
     );
     mcp_wrapper_install.step.dependOn(&mcp_wrapper_write.step);
 
-    // chmod 0755 on the installed path so `node dist/index.js` actually runs
-    // when invoked as `zig-out/bin/mcp-hello-world`.
+    // chmod 0755 on the installed path so `node dist/index.js` actually runs when invoked as `zig-out/bin/mcp-hello-world`.
     if (target.result.os.tag != .windows) {
         const mcp_wrapper_chmod = b.addSystemCommand(&.{
             "chmod",
@@ -1711,16 +1546,12 @@ pub fn build(b: *std.Build) void {
         mcp_hello_world_step.dependOn(&mcp_wrapper_install.step);
     }
 
-    // Make `zig build` (the default) include mcp-hello-world so
-    // functional tests can rely on it being present. Skipped when
-    // -Dno-webapp-rebuild (Windows CI: pnpm FileNotFound + OOM).
+    // Make `zig build` (the default) include mcp-hello-world so functional tests can rely on it being present.
     if (!no_webapp_rebuild) {
         b.getInstallStep().dependOn(mcp_hello_world_step);
     }
 
-    // === mcp-http-hello-world: TypeScript test MCP server (Streamable HTTP)
-    // === Sibling of mcp-hello-world: same 3 tools, different transport.
-    // Self-test target for the pabrik MCP Streamable HTTP client.
+    // === mcp-http-hello-world: TypeScript test MCP server (Streamable HTTP) === Sibling of mcp-hello-world: same 3 tools, different transport.
     const mcp_http_hello_world_dir = "src/apps/mcp_http_hello_world";
     const mcp_http_hello_world_step = b.step("mcp-http-hello-world", "Build the mcp-http-hello-world Streamable HTTP test MCP server");
 
@@ -1740,8 +1571,7 @@ pub fn build(b: *std.Build) void {
     mcp_http_test.step.dependOn(&mcp_http_build.step);
     mcp_http_hello_world_step.dependOn(&mcp_http_test.step);
 
-    // Install the shell wrapper. Mirrors the mcp-hello-world pattern:
-    // write the wrapper to .zig-cache, install it to bin/, chmod 0755.
+    // Install the shell wrapper. Mirrors the mcp-hello-world pattern
     const http_wrapper_body =
         "#!/bin/sh\n" ++
         \\# mcp-http-hello-world — pabrik's MCP Streamable HTTP self-test target.
@@ -1780,13 +1610,9 @@ pub fn build(b: *std.Build) void {
         mcp_http_hello_world_step.dependOn(&mcp_http_wrapper_install.step);
     }
 
-    // Don't include mcp-http-hello-world in the default `zig build` — it's
-    // not needed by the desktop binary. Users invoke it explicitly via `zig
-    // build mcp-http-hello-world`.
+    // Don't include mcp-http-hello-world in the default `zig build` — it's not needed by the desktop binary.
 
     // === mcp-oauth-hello-world: OAuth-protected MCP server (test fixture) ===
-    // Same 3 tools as mcp-http-hello-world, but /mcp needs a Bearer token and
-    // the process also plays the authorization server.
     const mcp_oauth_hello_world_dir = "src/apps/mcp_oauth_hello_world";
     const mcp_oauth_hello_world_step = b.step("mcp-oauth-hello-world", "Build the mcp-oauth-hello-world OAuth-protected test MCP server");
 
@@ -1839,19 +1665,14 @@ pub fn build(b: *std.Build) void {
         mcp_oauth_hello_world_step.dependOn(&mcp_oauth_wrapper_install.step);
     }
 
-    // === Build the Vue webapp (pnpm) === Chunk 3: this step is a dependency
-    // of the desktop_exe build so the embedded webapp_assets.zig is
-    // regenerated on every build.
+    // === Build the Vue webapp (pnpm) ===
     const build_webapp_step = b.step("build:webapp", "Build the Vue webapp with pnpm");
 
     const webapp_dir = "src/apps/desktop";
 
     // === Pre-flight: vue-tsc needs real Node, and pnpm must be on PATH ===
-    // `pnpm run build` invokes `vue-tsc --build` (via the type-check script)
-    // + `vite build` in parallel. vue-tsc 3.x relies on @volar/typescript
     const check_webapp_node = b.addSystemCommand(switch (b.graph.host.result.os.tag) {
-        // Windows: `sh` isn't on PATH (Git for Windows ships it under
-        // C:\Program Files\Git\bin\, not auto-added).
+        // Windows: `sh` isn't on PATH (Git for Windows ships it under C:\Program Files\Git\bin\, not auto-added).
         .windows => &.{
             "cmd.exe", "/c",
             \\
@@ -1876,8 +1697,7 @@ pub fn build(b: *std.Build) void {
             \\    )
             \\)
         },
-        // Linux + macOS: POSIX `command -v` loop. Same error message as
-        // the original pre-Windows-fix check.
+        // Linux + macOS: POSIX `command -v` loop.
         else => &.{
             "sh", "-c",
             \\
@@ -1905,8 +1725,7 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // Check if node_modules exists — if so, skip `pnpm install` (saves
-    // seconds per build).
+    // Check if node_modules exists — if so, skip `pnpm install` (saves seconds per build).
     const node_modules_path = b.pathJoin(&.{ webapp_dir, "node_modules" });
     const node_modules_exists = switch (builtin.os.tag) {
         .linux => blk: {
@@ -1926,14 +1745,11 @@ pub fn build(b: *std.Build) void {
         build_webapp_step.dependOn(&install_cmd.step);
     }
 
-    // Hoisted so the webapp-rebuild path can also depend on it (fresh
-    // checkout → `zig build pabrik-desktop` needs node_modules too).
+    // Hoisted so the webapp-rebuild path can also depend on it (fresh checkout → `zig build pabrik-desktop` needs node_modules too).
     const rebuild_install_cmd = b.addSystemCommand(&.{ "pnpm", "install", "--frozen-lockfile" });
     rebuild_install_cmd.setCwd(b.path(webapp_dir));
     if (node_modules_exists) {
-        // Mirror the cached path's skip: node_modules already present,
-        // so the install would be a wasted 1-2 s. Keep the step in the
-        // graph but never reached — nothing depends on it.
+        // Mirror the cached path's skip: node_modules already present, so the install would be a wasted 1-2 s.
         _ = &rebuild_install_cmd;
     }
 
@@ -1942,53 +1758,40 @@ pub fn build(b: *std.Build) void {
     pnpm_build.step.dependOn(&check_webapp_node.step);
     build_webapp_step.dependOn(&pnpm_build.step);
 
-    // === Webapp rebuild workflow === `b.addSystemCommand` caches based on
-    // (command string, cwd, watch inputs) only — it does NOT watch webapp
-    // source files.
+    // === Webapp rebuild workflow ===
     const webapp_rebuild_step = b.step(
         "webapp-rebuild",
         "Nuke stale webapp_assets.zig + dist/ and rebuild via pnpm run build + codegen",
     );
 
-    // Clean step — a small Zig CLI instead of `sh -c 'rm -rf ...'` so it
-    // works with native Windows shells too (no Git Bash dependency).
+    // Clean step — a small Zig CLI instead of `sh -c 'rm -rf ...'` so it works with native Windows shells too (no Git Bash dependency).
     const webapp_rebuild_clean = b.addRunArtifact(b.addExecutable(.{
         .name = "clean_webapp_cache",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/clean_webapp_cache.zig"),
-            // Same cross-compile rationale as codegen_webapp_assets below:
-            // avoid the Zig 0.16 + GCC 16 host-native link failure by using
-            // the main target's glibc (no .sframe section in its crt1.o).
+            // Same cross-compile rationale as codegen_webapp_assets below
             .target = target,
             .link_libc = true,
         }),
     }));
 
-    // Separate pnpm_build step for the rebuild path. Has the SAME
-    // command + cwd as the cached one, but chained AFTER the clean
-    // step, so the cache can't serve a stale result.
+    // Separate pnpm_build step for the rebuild path.
     const webapp_rebuild_pnpm = b.addSystemCommand(&.{ "pnpm", "run", "build" });
     webapp_rebuild_pnpm.setCwd(b.path(webapp_dir));
     webapp_rebuild_pnpm.step.dependOn(&webapp_rebuild_clean.step);
     webapp_rebuild_pnpm.step.dependOn(&check_webapp_node.step);
-    // Fresh-checkout fix: the cached path gets a conditional `pnpm install`
-    // via the node_modules_exists probe above, but that only attaches to
-    // build_webapp_step.
+    // Fresh-checkout fix: the cached path gets a conditional `pnpm install` via the node_modules_exists probe above, but that only attaches to build_webapp_step.
     if (!node_modules_exists) {
         webapp_rebuild_pnpm.step.dependOn(&rebuild_install_cmd.step);
     }
     webapp_rebuild_step.dependOn(&webapp_rebuild_pnpm.step);
 
-    // The codegen step is shared with the cached path — its output
-    // (webapp_assets.zig) was just deleted by the clean step, so it'll re-run
-    // to regenerate.
+    // The codegen step is shared with the cached path — its output (webapp_assets.zig) was just deleted by the clean step, so it'll re-run to regenerate.
     const webapp_rebuild_codegen = b.addRunArtifact(b.addExecutable(.{
         .name = "codegen_webapp_assets",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/codegen_webapp_assets.zig"),
-            // Cross-compile for the same target as the main binary (NOT
-            // b.graph.host) to avoid the Zig 0.16 + GCC 16 host-native link
-            // failure: GCC 16's crt1.o has a `.sframe` section with
+            // Cross-compile for the same target as the main binary (NOT b.graph.host) to avoid the Zig 0.16 + GCC 16 host-native link failure: GCC 16's crt1.o has a …
             .target = target,
             .link_libc = true,
         }),
@@ -1998,9 +1801,7 @@ pub fn build(b: *std.Build) void {
     webapp_rebuild_codegen.step.dependOn(&webapp_rebuild_pnpm.step);
     webapp_rebuild_step.dependOn(&webapp_rebuild_codegen.step);
 
-    // === Codegen: walk dist/, emit webapp_assets.zig === Chunk 3: this step
-    // runs the small Zig tool at tools/codegen_webapp_assets.zig to walk
-    // src/apps/desktop/dist/ and emit a Zig source file with every asset's
+    // === Codegen: walk dist/, emit webapp_assets.zig ===
     const codegen_step = b.step("codegen:webapp-assets", "Generate webapp_assets.zig from the built dist/");
     codegen_step.dependOn(build_webapp_step);
 
@@ -2008,9 +1809,7 @@ pub fn build(b: *std.Build) void {
         .name = "codegen_webapp_assets",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/codegen_webapp_assets.zig"),
-            // Cross-compile for the same target as the main binary (NOT
-            // b.graph.host) to avoid the Zig 0.16 + GCC 16 host-native link
-            // failure (see the webapp_rebuild_codegen step above for the full
+            // Cross-compile for the same target as the main binary (NOT b.graph.host) to avoid the Zig 0.16 + GCC 16 host-native link failure (see the webapp_rebuild_codegen …
             .target = target,
             .link_libc = true,
         }),
@@ -2019,8 +1818,7 @@ pub fn build(b: *std.Build) void {
     codegen.addArg(b.pathJoin(&.{ "src", "apps", "desktop_app", "embedded", "webapp_assets.zig" }));
     codegen_step.dependOn(&codegen.step);
 
-    // === pabrik-desktop (native webview wrapper) === Chunk 1: hello-world
-    // binary + build wiring.
+    // === pabrik-desktop (native webview wrapper) ===
     const desktop_exe = b.addExecutable(.{
         .name = "pabrik-desktop",
         .root_module = b.createModule(.{
@@ -2036,38 +1834,31 @@ pub fn build(b: *std.Build) void {
     });
     desktop_exe.root_module.linkSystemLibrary("c", .{});
 
-    // Windows application icon: the brand "P" mark (packaging/icons, same
-    // artwork as the web favicon.ico).
+    // Windows application icon: the brand "P" mark (packaging/icons, same artwork as the web favicon.ico).
     desktop_exe.root_module.addWin32ResourceFile(.{
         .file = b.path("packaging/windows/pabrik.rc"),
         .include_paths = &.{b.path("packaging/icons")},
     });
 
-    // Set by the `.windows` prong below when the real WebView2 build is
-    // taken: install step copying WebView2Loader.dll next to the exe.
+    // Set by the `.windows` prong below when the real WebView2 build is taken: install step copying WebView2Loader.dll next to the exe.
     var webview2_dll_install_step: ?*std.Build.Step = null;
     // Platform-specific system libraries (Chunks 5-7 add the real deps).
-    // Switch kept here so the pattern is validated by the Chunk 1 build.
     switch (target.result.os.tag) {
         .linux => {
-            // Linux webview: vendored webview/webview library
-            // (vendor/webview/webview.{h,cc}, upstream 0.12.0). webview.cc is
-            // a one-line TU that includes webview.h with
+            // Linux webview: vendored webview/webview library (vendor/webview/webview.{h,cc}, upstream 0.12.0). webview.cc is a one-line TU that includes webview.h with
             desktop_exe.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
             desktop_exe.root_module.linkSystemLibrary("webkit2gtk-4.1", .{});
             desktop_exe.root_module.linkSystemLibrary("gtk-3", .{});
             desktop_exe.root_module.linkSystemLibrary("soup-3.0", .{});
             desktop_exe.root_module.linkSystemLibrary("glib-2.0", .{});
             desktop_exe.root_module.linkSystemLibrary("javascriptcoregtk-4.1", .{});
-            // C++ runtime for webview.o (operator new, __cxa_begin_catch,
-            // ...). link_libcpp pulls in zig's bundled libc++/libc++abi.
+            // C++ runtime for webview.o (operator new, __cxa_begin_catch, ...). link_libcpp pulls in zig's bundled libc++/libc++abi.
             desktop_exe.root_module.link_libcpp = true;
 
             // Resolve system libstdc++ include dir once.
             const libstdc_dir = findLibstdcxxInclude(b);
 
-            // Build the cflags array. -nostdlibinc is always on (we
-            // explicitly choose the stdlib below).
+            // Build the cflags array. -nostdlibinc is always on (we explicitly choose the stdlib below).
             var cflags: [32][]const u8 = undefined;
             var cn: usize = 0;
             cflags[cn] = "-std=c++11";
@@ -2080,14 +1871,10 @@ pub fn build(b: *std.Build) void {
             cn += 1;
             cflags[cn] = "-nostdlibinc";
             cn += 1;
-            // System C headers MUST come via -isystem (not -I) so they sort
-            // AFTER the C++ stdlib headers — with plain -I/usr/include,
-            // clang's <cerrno> wrapper finds glibc's errno.h first and errors
+            // System C headers MUST come via -isystem (not -I) so they sort AFTER the C++ stdlib headers — with plain -I/usr/include, clang's <cerrno> wrapper finds glibc's …
             const isystem_c_args = [_][]const u8{
                 "-isystem/usr/include",
-                // Full pkg-config cflags for webkit2gtk-4.1 (zig c++ is
-                // stricter about transitive includes than the system cc was
-                // for the old C shim — e.g. pango's pango-coverage.h includes
+                // Full pkg-config cflags for webkit2gtk-4.1 (zig c++ is stricter about transitive includes than the system cc was for the old C shim — e.g. pango's …
                 "-isystem/usr/include/webkitgtk-4.1",
                 "-isystem/usr/include/gtk-3.0",
                 "-isystem/usr/include/pango-1.0",
@@ -2114,9 +1901,7 @@ pub fn build(b: *std.Build) void {
                 cflags[cn] = a;
                 cn += 1;
             }
-            // Debian/Ubuntu keep the glibc headers in a multiarch subdir and
-            // ship NO /usr/include/bits symlink, so with only /usr/include on
-            // the path the system headers' own `#include <bits/types.h>`
+            // Debian/Ubuntu keep the glibc headers in a multiarch subdir and ship NO /usr/include/bits symlink, so with only /usr/include on the path the system headers' own …
             const multiarch_include = b.fmt("/usr/include/{s}-linux-gnu", .{@tagName(target.result.cpu.arch)});
             if (dirExists(b, multiarch_include)) {
                 if (cn < cflags.len) {
@@ -2125,8 +1910,7 @@ pub fn build(b: *std.Build) void {
                 }
             }
             if (libstdc_dir) |cxx| {
-                // System libstdc++: pin to the highest-version c++ directory
-                // + its target-specific c++config.h.
+                // System libstdc++: pin to the highest-version c++ directory + its target-specific c++config.h.
                 if (cn < cflags.len) {
                     cflags[cn] = b.fmt("-isystem{s}", .{cxx});
                     cn += 1;
@@ -2153,9 +1937,7 @@ pub fn build(b: *std.Build) void {
             });
         },
         .macos => {
-            // macOS webview: vendored webview/webview library (same as the
-            // Linux branch above). webview.h auto-selects its Cocoa/WKWebView
-            // backend on __APPLE__ — no WEBVIEW_COCOA define needed.
+            // macOS webview: vendored webview/webview library (same as the Linux branch above). webview.h auto-selects its Cocoa/WKWebView backend on __APPLE__ — no …
             const sdk_path = getMacosSdkPath(b);
             desktop_exe.root_module.addSystemFrameworkPath(.{
                 .cwd_relative = b.fmt("{s}/System/Library/Frameworks", .{sdk_path}),
@@ -2175,29 +1957,19 @@ pub fn build(b: *std.Build) void {
                     "-Ivendor/webview",
                 },
             });
-            // C++ runtime for webview.o (operator new, __cxa_begin_catch,
-            // ...). On macOS the SDK's libc++ is used via the SDK lib
-            // path added above.
+            // C++ runtime for webview.o (operator new, __cxa_begin_catch, ...).
             desktop_exe.root_module.link_libcpp = true;
             desktop_exe.root_module.linkFramework("Cocoa", .{});
             desktop_exe.root_module.linkFramework("WebKit", .{});
-            // AppKit: linked explicitly so `otool -L` shows AppKit.framework
-            // (the vendored webview/webview library fetches NSApplication /
-            // NSWindow via runtime objc_getClass + dlopen, so without this
+            // AppKit: linked explicitly so `otool -L` shows AppKit.framework (the vendored webview/webview library fetches NSApplication /NSWindow via runtime objc_getClass …
             desktop_exe.root_module.linkFramework("AppKit", .{});
         },
         .windows => {
-            // Windows webview: vendored webview/webview library (same as the
-            // Linux + macOS branches above). webview.h auto-selects its
-            // WebView2 backend on _WIN32 — no WEBVIEW_EDGE define needed.
+            // Windows webview: vendored webview/webview library (same as the Linux + macOS branches above). webview.h auto-selects its WebView2 backend on _WIN32 — no …
             const use_real_webview = blk: {
-                // NOTE: -Dno-webapp-rebuild does NOT force the stub — it only
-                // skips the vite/pnpm chain (the OOM source). The cl.exe
-                // single-TU compile below is cheap.
+                // NOTE: -Dno-webapp-rebuild does NOT force the stub — it only skips the vite/pnpm chain (the OOM source).
                 if (!hasMsvcCppStllib(b, b.graph.io)) break :blk false;
-                // cl.exe path + MSVC lib dir below need the resolved
-                // version root (hasMsvc alone doesn't bind it, e.g.
-                // INCLUDE-env-only setups with custom install paths).
+                // cl.exe path + MSVC lib dir below need the resolved version root (hasMsvc alone doesn't bind it, e.g. INCLUDE-env-only setups with custom install paths).
                 if (msvcVersionRoot(b) == null) break :blk false;
                 if (webview2MissingPrereq(b)) |missing| {
                     std.log.warn(
@@ -2221,14 +1993,12 @@ pub fn build(b: *std.Build) void {
                 std.process.exit(1);
             }
             if (use_real_webview) {
-                // Compile vendor/webview/webview.cc with the REAL cl.exe
-                // (MSVC), not `zig cc`.
+                // Compile vendor/webview/webview.cc with the REAL cl.exe (MSVC), not `zig cc`.
                 const ver_root = msvcVersionRoot(b) orelse unreachable; // gate above guarantees this
                 const cl_exe = b.fmt("{s}/bin/Hostx64/x64/cl.exe", .{ver_root});
                 const cpp_src = "vendor/webview/webview.cc";
                 const msvc_include = findMsvcInclude(b);
-                // Skip dirs that failed to resolve (same rationale as
-                // before: a bare `/I ""` is a confusing no-op).
+                // Skip dirs that failed to resolve (same rationale as before: a bare `/I ""` is a confusing no-op).
                 const candidate_dirs = [_][]const u8{
                     msvc_include.c_stddef,
                     msvc_include.msvc_include,
@@ -2253,16 +2023,14 @@ pub fn build(b: *std.Build) void {
                 n += 1;
                 cpp_args[n] = "/Z7";
                 n += 1;
-                // No Control Flow Guard in this TU (`/guard:cf-`; cl.exe
-                // enables it by default since VS2022).
+                // No Control Flow Guard in this TU (`/guard:cf-`; cl.exe enables it by default since VS2022).
                 cpp_args[n] = "/guard:cf-";
                 n += 1;
                 cpp_args[n] = "/DWEBVIEW_STATIC";
                 n += 1;
                 cpp_args[n] = "/Ivendor/webview";
                 n += 1;
-                // WebView2.h + EventToken.h (NuGet-staged). webview.h pulls
-                // `"WebView2.h"` as a quoted include.
+                // WebView2.h + EventToken.h (NuGet-staged). webview.h pulls `"WebView2.h"` as a quoted include.
                 cpp_args[n] = "/Isrc/apps/desktop_app/platform/windows";
                 n += 1;
                 for (candidate_dirs) |dir| {
@@ -2272,9 +2040,7 @@ pub fn build(b: *std.Build) void {
                     cpp_args[n] = dir;
                     n += 1;
                 }
-                // NOTE: cl.exe only accepts the GLUED form (`/Fopath`, no
-                // space — the separate form warns D9027 `source file ignored`
-                // and emits nothing where addOutputFileArg expects it).
+                // NOTE: cl.exe only accepts the GLUED form (`/Fopath`, no space — the separate form warns D9027 `source file ignored` and emits nothing where addOutputFileArg …
                 cpp_args[n] = "/Fovendor/webview/webview.obj";
                 n += 1;
                 cpp_args[n] = cpp_src;
@@ -2286,27 +2052,19 @@ pub fn build(b: *std.Build) void {
                 // Win32 / COM / WebView2 link deps (same as the old shim used).
                 desktop_exe.root_module.linkSystemLibrary("ole32", .{});
                 desktop_exe.root_module.linkSystemLibrary("user32", .{});
-                // Zig's MinGW (gnu) link line doesn't auto-pull kernel32.dll
-                // / ws2_32.dll for raw `extern "kernel32"` / `extern
-                // "ws2_32"` decls in Zig code.
+                // Zig's MinGW (gnu) link line doesn't auto-pull kernel32.dll / ws2_32.dll for raw `extern "kernel32"` / `extern "ws2_32"` decls in Zig code.
                 desktop_exe.root_module.linkSystemLibrary("kernel32", .{});
                 desktop_exe.root_module.linkSystemLibrary("ws2_32", .{});
-                // WebView2Loader.lib lives next to pabrik_webview.cpp in the
-                // old layout; webview.h includes <WebView2.h> from
-                // src/apps/desktop_app/platform/windows/ (NuGet-staged
+                // WebView2Loader.lib lives next to pabrik_webview.cpp in the old layout; webview.h includes <WebView2.h> from src/apps/desktop_app/platform/windows/ (NuGet-staged
                 desktop_exe.root_module.addIncludePath(.{
                     .cwd_relative = "src/apps/desktop_app/platform/windows",
                 });
                 desktop_exe.root_module.addLibraryPath(.{
                     .cwd_relative = "src/apps/desktop_app/platform/windows",
                 });
-                // WebView2Loader.lib back in place: the bisection proved it
-                // innocent (same 2 duplicates without it — the CFG-table
-                // references come from msvcprt.lib's own members).
+                // WebView2Loader.lib back in place: the bisection proved it innocent (same 2 duplicates without it — the CFG-table references come from msvcprt.lib's own …
                 desktop_exe.root_module.linkSystemLibrary("WebView2Loader", .{}); // Link deps for the real webview object. `#pragma
-                // comment(lib, ...)` directives embedded in the TU (MSVC
-                // headers auto-link the C++ runtime; webview.h links ole32 /
-                // shell32 / shlwapi / version / advapi32 / user32) name libs
+                // comment(lib, ...)` directives embedded in the TU (MSVC headers auto-link the C++ runtime; webview.h links ole32 /shell32 / shlwapi / version / advapi32 / …
                 {
                     const runtime_libs = [_][]const u8{ "msvcprt.lib", "vcruntime.lib", "oldnames.lib" };
                     const msvc_lib_root = b.fmt("{s}/lib/x64", .{ver_root});
@@ -2328,14 +2086,10 @@ pub fn build(b: *std.Build) void {
                             ) catch break;
                         }
                     }
-                    // `msvcrt.lib`: PRUNE the CFG-table + TLS startup members
-                    // that collide with mingw's (`duplicate symbol` with a
-                    // full copy).
+                    // `msvcrt.lib`: PRUNE the CFG-table + TLS startup members that collide with mingw's (`duplicate symbol` with a full copy).
                     stagePrunedMsvcrt(b, msvc_lib_root, stage_dir);
                 }
                 // The exact libs `-luuid -lshlwapi -lversion` below need.
-                // Probing the FILES (not just the `um/x64` dir) is what skips
-                // the `wdf0.26100.0` decoy, whose um/x64 exists but is empty.
                 const kit_lib_root = newestSubdirWith(
                     b,
                     "C:/Program Files (x86)/Windows Kits/10/Lib",
@@ -2349,9 +2103,7 @@ pub fn build(b: *std.Build) void {
                     desktop_exe.root_module.addLibraryPath(.{
                         .cwd_relative = b.fmt("{s}/um/x64", .{kl}),
                     });
-                    // ucrt.lib lives in its own leaf (Lib/<ver>/ucrt/x64),
-                    // NOT under um/ — without this dir the link fails with
-                    // `unable to find dynamic system library 'ucrt'`.
+                    // ucrt.lib lives in its own leaf (Lib/<ver>/ucrt/x64), NOT under um/ — without this dir the link fails with `unable to find dynamic system library 'ucrt'`.
                     desktop_exe.root_module.addLibraryPath(.{
                         .cwd_relative = b.fmt("{s}/ucrt/x64", .{kl}),
                     });
@@ -2360,28 +2112,21 @@ pub fn build(b: *std.Build) void {
                 desktop_exe.root_module.linkSystemLibrary("uuid", .{});
                 desktop_exe.root_module.linkSystemLibrary("shlwapi", .{});
                 desktop_exe.root_module.linkSystemLibrary("version", .{});
-                // vcruntime: sole provider of `__CxxFrameHandler4` +
-                // `__security_cookie` for the cl.exe object. DLL import —
-                // no static-CRT heap risk.
+                // vcruntime: sole provider of `__CxxFrameHandler4` + `__security_cookie` for the cl.exe object.
                 desktop_exe.root_module.linkSystemLibrary("vcruntime", .{});
-                // Guard-table stubs (5 CFG/XFG symbols nothing else defines
-                // — see guard_tables_stub.c). Plain C, no includes: compiles
-                // through the normal Zig CC path, no MSVC involvement.
+                // Guard-table stubs (5 CFG/XFG symbols nothing else defines — see guard_tables_stub.c).
                 desktop_exe.root_module.addCSourceFile(.{
                     .file = b.path("src/apps/desktop_app/platform/windows/guard_tables_stub.c"),
                     .flags = &.{},
                 }); // The import lib only records the dependency — at RUNTIME the
-                // Windows loader resolves WebView2Loader.dll via the standard
-                // search order (exe dir first).
+                // Windows loader resolves WebView2Loader.dll via the standard search order (exe dir first).
                 const wv2_dll_install = b.addInstallBinFile(
                     b.path("src/apps/desktop_app/platform/windows/WebView2Loader.dll"),
                     "WebView2Loader.dll",
                 );
                 webview2_dll_install_step = &wv2_dll_install.step;
             } else {
-                // === Dev-box fallback: no MSVC + WebView2 === The
-                // webview/webview library hard-requires MSVC's C++ STL
-                // (webview.h's win32 path includes <wrl/client.h> which
+                // === Dev-box fallback: no MSVC + WebView2 ===
                 std.log.warn(
                     "pabrik-desktop: MSVC C++ toolchain and/or Microsoft.Web.WebView2 " ++
                         "NuGet headers not found on this host — using no-op stub " ++
@@ -2394,8 +2139,7 @@ pub fn build(b: *std.Build) void {
                     .file = b.path("src/apps/desktop_app/platform/windows/webview_stub.c"),
                     .flags = &.{},
                 });
-                // Win32 / WinSock2 deps for Zig's std extern decls
-                // (extraction.zig / subprocess.zig).
+                // Win32 / WinSock2 deps for Zig's std extern decls (extraction.zig / subprocess.zig).
                 desktop_exe.root_module.linkSystemLibrary("kernel32", .{});
                 desktop_exe.root_module.linkSystemLibrary("ws2_32", .{});
             }
@@ -2403,21 +2147,14 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    // Capture the InstallArtifact so `build:all` can dependOn its inner step
-    // (see the build banner section at the end of this file for why).
+    // Capture the InstallArtifact so `build:all` can dependOn its inner step (see the build banner section at the end of this file for why).
     const desktop_install = b.addInstallArtifact(desktop_exe, .{});
-    // Real-WebView2 Windows builds need WebView2Loader.dll beside the
-    // exe at runtime (see the `.windows` prong above). DependOn pulls
-    // the dll install into `build:all` via desktop_install's edge.
+    // Real-WebView2 Windows builds need WebView2Loader.dll beside the exe at runtime (see the `.windows` prong above).
     if (webview2_dll_install_step) |dll_step| desktop_install.step.dependOn(dll_step);
-    // Windows: bundle vcpkg runtime DLLs (libcurl.dll, sqlite3.dll, ...)
-    // next to pabrik-desktop.exe AND the pabrik service exe so Explorer
-    // double-click works with a clean PATH (see installVcpkgDlls doc).
+    // Windows: bundle vcpkg runtime DLLs (libcurl.dll, sqlite3.dll, ...) next to pabrik-desktop.exe AND the pabrik service exe so Explorer double-click works with a …
     installVcpkgDlls(b, &desktop_install.step);
     installVcpkgDlls(b, b.getInstallStep());
-    // Shipped webapp staging: src/apps/desktop/dist → zig-out/bin/html, which
-    // the release tarball `pabrik-html-<triple>.tar.gz` is built from. Do NOT
-    // gate this on the dist probe alone — it runs before the chain builds dist.
+    // Shipped webapp staging: src/apps/desktop/dist → zig-out/bin/html, which the release tarball `pabrik-html-<triple>.tar.gz` is built from.
     const dist_present = fileExists("src/apps/desktop/dist/index.html");
     if (dist_present or !no_webapp_rebuild) {
         const webapp_dir_install = b.addInstallDirectory(.{
@@ -2436,18 +2173,13 @@ pub fn build(b: *std.Build) void {
             .{},
         );
     }
-    // Late alias kept for comment continuity — actual flag is defined
-    // early (near target/optimize) so mcp/webapp sections could be gated.
-    // Reuse the early `no_webapp_rebuild` value here; do not re-parse.
+    // Late alias kept for comment continuity — actual flag is defined early (near target/optimize) so mcp/webapp sections could be gated.
 
-    // Make the desktop binary depend on the FRESH-ASSETS codegen chain: clean
-    // → `bun run build` → codegen.
+    // Make the desktop binary depend on the FRESH-ASSETS codegen chain: clean → `bun run build` → codegen.
     if (!no_webapp_rebuild) {
         desktop_exe.step.dependOn(&webapp_rebuild_codegen.step);
     } else {
-        // When skipping the webapp rebuild, ensure a stub exists so the
-        // @import("embedded/webapp_assets.zig") in main.zig doesn't fail with
-        // FileNotFound on a fresh checkout (gitignored file).
+        // When skipping the webapp rebuild, ensure a stub exists so the @import("embedded/webapp_assets.zig") in main.zig doesn't fail with FileNotFound on a fresh …
         const stub_path = "src/apps/desktop_app/embedded/webapp_assets.zig";
         if (!fileExists(stub_path)) {
             const stub_content =
@@ -2472,9 +2204,7 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // `zig build pabrik-desktop` alias — depends on: - the install step
-    // (which includes `pabrik` via b.installArtifact above, so the pabrik
-    // service binary that pabrik-desktop would auto-spawn ends up in
+    // `zig build pabrik-desktop` alias — depends on: - the install step (which includes `pabrik` via b.installArtifact above, so the pabrik service binary that …
     const build_pabrik_desktop = b.step("pabrik-desktop", "Build the pabrik-desktop binary (and the pabrik service binary it auto-spawns)");
     build_pabrik_desktop.dependOn(b.getInstallStep());
     build_pabrik_desktop.dependOn(&desktop_install.step);
@@ -2489,20 +2219,16 @@ pub fn build(b: *std.Build) void {
         .root_module = desktop_exe.root_module,
     });
     desktop_tests.root_module.linkSystemLibrary("c", .{});
-    // The test compile shares `desktop_exe.root_module`, which imports the
-    // gitignored `embedded/webapp_assets.zig`.
+    // The test compile shares `desktop_exe.root_module`, which imports the gitignored `embedded/webapp_assets.zig`.
     if (!no_webapp_rebuild) {
         desktop_tests.step.dependOn(&webapp_rebuild_codegen.step);
     }
     const run_desktop_tests = b.addRunArtifact(desktop_tests);
-    // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll, …) is on PATH
-    // at test runtime — see `prependVcpkgBinToPath` doc comment.
+    // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll, …) is on PATH at test runtime — see `prependVcpkgBinToPath` doc comment.
     prependVcpkgBinToPath(b, run_desktop_tests);
     test_desktop.dependOn(&run_desktop_tests.step);
 
     // === Cross-target compile check (desktop app's per-OS branches) ===
-    // `extraction.zig` / `subprocess.zig` fork on `builtin.os.tag`, and Zig
-    // only analyses the branch matching the TARGET — so running
     const check_desktop_cross = b.step(
         "check:desktop-cross",
         "Compile-check the desktop app's per-OS branches for Windows/macOS/Linux",
@@ -2536,8 +2262,6 @@ pub fn build(b: *std.Build) void {
     }
 
     // === Cross-target compile check (storage module's per-OS branches) ===
-    // The Windows data dir, the job object and the POSIX pid sweep fork on
-    // `builtin.os.tag`; this compiles the kabelweb-free half for all three.
     const check_storage_cross = b.step(
         "check:storage-cross",
         "Compile-check the storage module's per-OS branches for Windows/macOS/Linux",
@@ -2556,9 +2280,7 @@ pub fn build(b: *std.Build) void {
         check_storage_cross.dependOn(&obj.step);
     }
 
-    // =====================================================================
-    // CLI executable (`src/apps/cli/main.zig`) — wraps - POST
-    // /api/llm/session - GET /api/llm/session - GET
+    // CLI executable (`src/apps/cli/main.zig`) — wraps - POST /api/llm/session - GET /api/llm/session - GET
     const cli_module = b.addModule("cli", .{
         .root_source_file = b.path("src/apps/cli/src/root.zig"),
         .target = target,
@@ -2580,13 +2302,9 @@ pub fn build(b: *std.Build) void {
     });
     cli_exe.root_module.linkSystemLibrary("c", .{});
     cli_exe.root_module.link_libc = true;
-    // Same linkPlatformDeps treatment as the main exe: on Linux native
-    // builds, the linker needs `/usr/lib` on its search path to find the
-    // system libcurl / libssl / libcrypto .so files (the ones added by
+    // Same linkPlatformDeps treatment as the main exe: on Linux native builds, the linker needs `/usr/lib` on its search path to find the system libcurl / libssl / …
     linkPlatformDeps(b, cli_exe, target);
-    // libcurl is linked via kabelweb_mod's transitive deps (the vendored
-    // prebuilt archive is added in the package's own build.zig). No need to
-    // call linkCurlIncludePath here — the module graph handles it.
+    // libcurl is linked via kabelweb_mod's transitive deps (the vendored prebuilt archive is added in the package's own build.zig).
     const cli_install = b.addInstallArtifact(cli_exe, .{});
 
     const cli_step = b.step("run:cli", "Run the CLI");
@@ -2595,34 +2313,27 @@ pub fn build(b: *std.Build) void {
     run_cli_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cli_cmd.addArgs(args);
 
-    // === pabrikcli unit tests (`zig build test:cli`) === The CLI module
-    // re-exports test files via its `root.zig`, so a single `b.addTest({
-    // .root_module = cli_module })` step picks up every `_test.zig` under
+    // === pabrikcli unit tests (`zig build test:cli`) ===
     const cli_tests = b.addTest(.{ .root_module = cli_module });
     cli_tests.root_module.linkSystemLibrary("c", .{});
     cli_tests.root_module.link_libc = true;
     const test_cli = b.step("test:cli", "Run pabrikcli unit tests");
     const run_cli_tests = b.addRunArtifact(cli_tests);
-    // Windows: ensure vcpkg bin (libcurl.dll, …) is on PATH at test
-    // runtime — see `prependVcpkgBinToPath` doc comment.
+    // Windows: ensure vcpkg bin (libcurl.dll, …) is on PATH at test runtime — see `prependVcpkgBinToPath` doc comment.
     prependVcpkgBinToPath(b, run_cli_tests);
     test_cli.dependOn(&run_cli_tests.step);
 
     // === pabrikcli install-only (`zig build install:cli`) ===
-    // Skips the full `build:all` dance — just installs the cli binary.
     const install_cli_step = b.step("install:cli", "Install the pabrikcli binary only");
     install_cli_step.dependOn(&cli_install.step);
 
-    // =====================================================================
-    // TUI executable (`src/apps/cli/src/tui_main.zig`) — an interactive,
-    // streaming, Claude-Code-style chat client over the same backend
+    // TUI executable (`src/apps/cli/src/tui_main.zig`) — an interactive, streaming, Claude-Code-style chat client over the same backend
     const tui_module = b.addModule("tui", .{
         .root_source_file = b.path("src/apps/cli/src/tui/root.zig"),
         .target = target,
     });
     tui_module.addImport("kabelweb", kabelweb_mod);
-    // Let the app model reach the transport helpers through the same
-    // import surface used by pabrikcli.
+    // Let the app model reach the transport helpers through the same import surface used by pabrikcli.
     tui_module.addImport("cli", cli_module);
 
     const tui_exe = b.addExecutable(.{
@@ -2651,8 +2362,6 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_tui_cmd.addArgs(args);
 
     // === pabrik-tui unit tests (`zig build test:tui`) ===
-    // The tui module re-exports its test files via `tui/root.zig`, so a
-    // single addTest on the module picks up every test in the tree.
     const tui_tests = b.addTest(.{ .root_module = tui_module });
     tui_tests.root_module.linkSystemLibrary("c", .{});
     tui_tests.root_module.link_libc = true;
@@ -2664,9 +2373,7 @@ pub fn build(b: *std.Build) void {
     const install_tui_step = b.step("install:tui", "Install the pabrik-tui binary only");
     install_tui_step.dependOn(&tui_install.step);
 
-    // === pabrik-tui user-local install (`zig build install-tui`) === Builds
-    // pabrik-tui and copies it to the per-user bin directory: Linux:
-    // $HOME/.local/bin/pabrik-tui macOS: $HOME/.local/bin/pabrik-tui Windows:
+    // === pabrik-tui user-local install (`zig build install-tui`) ===
     const install_tui_tool = b.addExecutable(.{
         .name = "install_tui",
         .root_module = b.createModule(.{
@@ -2684,8 +2391,7 @@ pub fn build(b: *std.Build) void {
     const install_tui_user_step = b.step("install-tui", "Build pabrik-tui and install to user bin (~/.local/bin on Linux/macOS, %LOCALAPPDATA%\\pabrik\\bin on Windows)");
     install_tui_user_step.dependOn(&install_tui_run.step);
 
-    // `zig build run` serves the Vue webapp, and rebuilds it first. Two
-    // things differ from "build the binary, then run it": 1.
+    // `zig build run` serves the Vue webapp, and rebuilds it first.
     const run_step = b.step("run", "Run the app (rebuilds and serves the webapp; -Dno-webapp-rebuild for API only)");
 
     const run_cmd = b.addRunArtifact(exe);
@@ -2703,12 +2409,9 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    // Note on per-Compile platform deps (replaces old `mod.linkSystemLibrary`
-    // + target-based switches): previously, `mod` itself was the place where
-    // the build script added sqlite3/openssl/Linux system libs based on the
+    // Note on per-Compile platform deps (replaces old `mod.linkSystemLibrary` + target-based switches): previously, `mod` itself was the place where the build script …
 
-    // Tests need a SEPARATE module (not `mod`) so we can attach native
-    // platform deps without polluting `mod` for cross-compile consumers.
+    // Tests need a SEPARATE module (not `mod`) so we can attach native platform deps without polluting `mod` for cross-compile consumers.
     const test_target = target; // tests always run on the native host
     const mod_tests_module = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
@@ -2719,34 +2422,26 @@ pub fn build(b: *std.Build) void {
     mod_tests_module.addImport("kabelweb", kabelweb_mod);
     mod_tests_module.addImport("helpers", helpers_mod);
     mod_tests_module.addImport("vm_wire", wire_host);
-    // Same `databases` import as `mod` — tests that touch sqlite3 get the
-    // package's deps (link_libc + sqlite3.c amalgamation + openssl + libpq)
-    // via the module-graph dep propagation.
+    // Same `databases` import as `mod` — tests that touch sqlite3 get the package's deps (link_libc + sqlite3.c amalgamation + openssl + libpq) via the module-graph …
     mod_tests_module.addImport("databases", databases_mod);
     mod_tests_module.addImport("auth_core", auth_core_mod);
-    // Apply platform deps directly on the module (modules accumulate deps
-    // additively).
+    // Apply platform deps directly on the module (modules accumulate deps additively).
     {
         mod_tests_module.linkSystemLibrary("c", .{});
         mod_tests_module.link_libc = true;
         if (test_target.result.os.tag == .linux) {
             mod_tests_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
         }
-        // Vendored Lua for hooks tests (same sources as `mod` above;
-        // this is a separate root module so it needs its own attach).
+        // Vendored Lua for hooks tests (same sources as `mod` above; this is a separate root module so it needs its own attach).
         linkVendoredLua(b, mod_tests_module);
     }
 
-    // If the test module consumes vendored sqlite3 (Windows / cross-
-    // compile), make the test wait for the auto-fetch step so a fresh
-    // checkout doesn't fail with "file not found".
+    // If the test module consumes vendored sqlite3 (Windows / cross-compile), make the test wait for the auto-fetch step so a fresh checkout doesn't fail with "file …
     if (test_target.result.os.tag == .windows) {}
 
     const test_step = b.step("test", "Run tests");
 
-    // The mod_tests suite is SPLIT into `shard_count` independent test
-    // binaries so `zig build`'s step scheduler can compile and run them
-    // concurrently — one 4.4k-test binary executes its tests strictly in
+    // The mod_tests suite is SPLIT into `shard_count` independent test binaries so `zig build`'s step scheduler can compile and run them concurrently — one 4.4k-test …
     const host_cpus = std.Thread.getCpuCount() catch 4;
     const default_shards: usize = @max(1, @min(8, host_cpus / 2));
     const shard_count = b.option(
@@ -2757,9 +2452,7 @@ pub fn build(b: *std.Build) void {
 
     emitTestManifest(b);
     const shard_entries = collectTestShardEntries(b);
-    // One shard means "no filters at all": pass the whole suite through a
-    // single unfiltered compile, which is both faster (one compile) and the
-    // exact legacy behaviour. Filtering by name would only slow it down.
+    // One shard means "no filters at all": pass the whole suite through a single unfiltered compile, which is both faster (one compile) and the exact legacy …
     const use_filters = shard_count > 1 and shard_entries.len > 0;
     const shards = if (use_filters)
         balanceTestShards(b, shard_entries, shard_count)
@@ -2780,19 +2473,14 @@ pub fn build(b: *std.Build) void {
             .filters = filters,
         });
         const run_shard = b.addRunArtifact(shard_tests);
-        // A failure block is printed under the step NAME: unnamed, it says a
-        // bare `run test` and hides which shard failed. Name it after the
-        // shard so the block points at `zig build test:shard:<i>`.
+        // A failure block is printed under the step NAME: unnamed, it says a bare `run test` and hides which shard failed.
         run_shard.setName(b.fmt("test mod_tests shard {d}/{d} ({d} tests)", .{
             i + 1, shards.len, filters.len,
         }));
-        // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll,
-        // libssl-3-x64.dll, libcrypto-3-x64.dll, libpq.dll, …) is on PATH at
-        // test runtime — see `prependVcpkgBinToPath` doc comment.
+        // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll, libssl-3-x64.dll, libcrypto-3-x64.dll, libpq.dll, …) is on PATH at test runtime — see …
         prependVcpkgBinToPath(b, run_shard);
         test_step.dependOn(&run_shard.step);
-        // Per-shard step so a failure — or a re-measure for
-        // `slow_test_weights` above — can be reproduced in isolation.
+        // Per-shard step so a failure — or a re-measure for `slow_test_weights` above — can be reproduced in isolation.
         const shard_label = b.fmt("test:shard:{d}", .{i});
         b.step(
             shard_label,
@@ -2800,8 +2488,7 @@ pub fn build(b: *std.Build) void {
         ).dependOn(&run_shard.step);
     }
 
-    // sqlite3 comes from the external `databases` package (ruangsql) via the
-    // module graph — no in-tree fetch step needed.
+    // sqlite3 comes from the external `databases` package (ruangsql) via the module graph — no in-tree fetch step needed.
     if (!use_filters) {
         const mod_tests = b.addTest(.{ .root_module = mod_tests_module });
         const run_mod_tests = b.addRunArtifact(mod_tests);
@@ -2810,9 +2497,7 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run_mod_tests.step);
     }
 
-    // The backend-agnostic database tests, in a module of their own: it
-    // reaches only `boot/db_target.zig` + `testing/test_db.zig`, so the SAME
-    // step compiles under `-Ddb_used=sqlite` and `-Ddb_used=sqlite,postgres`.
+    // The backend-agnostic database tests, in a module of their own: it reaches only `boot/db_target.zig` + `testing/test_db.zig`, so the SAME step compiles under …
     const db_tests_module = b.createModule(.{
         .root_source_file = b.path("src/testing/db_tests.zig"),
         .target = test_target,
@@ -2836,9 +2521,7 @@ pub fn build(b: *std.Build) void {
     b.step("test:db", "Run the backend-agnostic database tests (--database=* resolution + temp-db harness); honours -Ddb_used")
         .dependOn(&run_db_tests.step);
 
-    // The referential-integrity gate: `PRAGMA foreign_key_check` over a
-    // freshly migrated database. Its own step so a violation names itself in
-    // CI instead of hiding inside a shard's counts.
+    // The referential-integrity gate: `PRAGMA foreign_key_check` over a freshly migrated database.
     const fk_check_tests = b.addTest(.{
         .root_module = mod_tests_module,
         .filters = &.{"foreign key check:"},
@@ -2849,9 +2532,7 @@ pub fn build(b: *std.Build) void {
     b.step("db:fk-check", "Run PRAGMA foreign_key_check over a freshly migrated database")
         .dependOn(&run_fk_check.step);
 
-    // `run_captured.zig` lives in the standalone `helpers` PACKAGE, so its
-    // inline tests are not reachable from `src/root.zig` and the mod_tests
-    // binary above never compiles them.
+    // `run_captured.zig` lives in the standalone `helpers` PACKAGE, so its inline tests are not reachable from `src/root.zig` and the mod_tests binary above never …
     const run_captured_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/helpers/run_captured.zig"),
@@ -2864,9 +2545,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_run_captured_tests.step);
     b.step("test:helpers:run_captured", "Run run_captured helper tests").dependOn(&run_run_captured_tests.step);
 
-    // Same story for `test_path.zig`: it is part of the standalone `helpers`
-    // PACKAGE (`@import("helpers").test_path.absPath` is how the agent tool
-    // tests build an absolute path), so its inline tests are not reachable
+    // Same story for `test_path.zig`: it is part of the standalone `helpers` PACKAGE (`@import("helpers").test_path.absPath` is how the agent tool tests build an …
     const test_path_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/helpers/test_path.zig"),
@@ -2881,9 +2560,7 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:test_path", "Run test_path helper tests")
         .dependOn(&run_test_path_tests.step);
 
-    // Same story for `ansi.zig`: the `helpers` PACKAGE is a separate module,
-    // so its inline tests are not reachable from `src/root.zig` and the
-    // `mod_tests` binary never compiles them.
+    // Same story for `ansi.zig`: the `helpers` PACKAGE is a separate module, so its inline tests are not reachable from `src/root.zig` and the `mod_tests` binary …
     const ansi_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/helpers/ansi.zig"),
@@ -2912,9 +2589,7 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
-    // `mod.zig` is the `helpers` PACKAGE root and its own `build.zig` declares
-    // no test step, so every `test` block in it was dead until this one. The
-    // Windows id generator is only reachable from a Windows build — hence here.
+    // `mod.zig` is the `helpers` PACKAGE root and its own `build.zig` declares no test step, so every `test` block in it was dead until this one.
     const helpers_mod_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/helpers/mod.zig"),
@@ -2929,9 +2604,7 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:mod", "Run the helpers package root tests")
         .dependOn(&run_helpers_mod_tests.step);
 
-    // === The VM trio: the guest agent (installed as /init), the probe
-    // fixture, and the manager. All three come out of `zig build`, so no
-    // script needs to know how to invoke the compiler on their behalf.
+    // === The VM trio: the guest agent (installed as /init), the probe fixture, and the manager.
     const vm_step = b.step("vm", "Build pabrik-vm-agent + pabrik-probe, and pabrik-vmd on Linux");
     const guest_target = b.resolveTargetQuery(.{
         .cpu_arch = .x86_64,
@@ -2952,9 +2625,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "vm_wire", .module = wire_guest }},
         }),
     });
-    // The guest's `/init`: it asks the host for the current agent and execs
-    // it, so a workspace's disk never carries the agent (see
-    // src/vm_agent/bootstrap.zig).
+    // The guest's `/init`: it asks the host for the current agent and execs it, so a workspace's disk never carries the agent (see src/vm_agent/bootstrap.zig).
     const vm_bootstrap_exe = b.addExecutable(.{
         .name = "pabrik-vm-bootstrap",
         .root_module = b.createModule(.{
@@ -2994,9 +2665,7 @@ pub fn build(b: *std.Build) void {
     vm_step.dependOn(&install_vm_netd.step);
     b.getInstallStep().dependOn(&install_vm_netd.step);
 
-    // The guest binaries run inside the VM, so their unit tests are compiled
-    // for the HOST: `test:vm` is the only place netd's and the egress env's
-    // tests ever run.
+    // The guest binaries run inside the VM, so their unit tests are compiled for the HOST: `test:vm` is the only place netd's and the egress env's tests ever run.
     if (target.result.os.tag == .linux) {
         const vm_tests = b.addTest(.{
             .root_module = b.createModule(.{
@@ -3014,8 +2683,6 @@ pub fn build(b: *std.Build) void {
     }
 
     // === pabrik-vmd (src/vmd/main.zig) — the workspace VM manager ===
-    // Linux-only: it speaks to a unix socket and forks a VMM, and the tests
-    // that drive it need /dev/kvm (scripts/vmd-smoke.sh, scripts/vmd-daemon-smoke.sh).
     const vmd_step = b.step("vmd", "Build pabrik-vmd into zig-out/bin/pabrik-vmd");
     const vmd_test_step = b.step("test:vmd", "Run the pabrik-vmd unit tests");
     var vmd_install: ?*std.Build.Step = null;
@@ -3064,8 +2731,6 @@ pub fn build(b: *std.Build) void {
     }
 
     // ── zginlint: the Zig linter (github.com/ginwa123/zglint) ───────────
-    // Moved out of this tree; its unit tests run in that repo's CI now, not
-    // here (a consumer build never runs a dependency's test blocks).
     const zginlint_dep = b.dependency("zginlint", .{
         .target = target,
         .optimize = optimize,
@@ -3075,36 +2740,30 @@ pub fn build(b: *std.Build) void {
     b.step("zginlint", "Build the zginlint CLI into zig-out/bin/zginlint")
         .dependOn(&install_zginlint.step);
 
-    // The gate's whole definition: the tree paths it covers. There is no
-    // baseline and no per-file ceiling — a finding is a finding, so the only
-    // way to make this step pass is to fix the comment.
+    // The gate's whole definition: the tree paths it covers.
     const zginlint_scope = [_][]const u8{ "src", "tests", "tools", "build.zig" };
 
-    // `has_side_effects` is load-bearing: a Run step is keyed by its binary
-    // and argv, NOT by the tree it reads, so without it a second run is
-    // "cached" and the gate silently skips the scan.
+    // `has_side_effects` is load-bearing: a Run step is keyed by its binary and argv, NOT by the tree it reads, so without it a second run is "cached" and the gate …
     const zginlint_check = b.step("zginlint:check", "Enforce the zginlint rules on the tree (zero findings)");
     const run_zginlint_check = b.addRunArtifact(zginlint_exe);
     run_zginlint_check.setCwd(b.path("."));
     run_zginlint_check.addArgs(&zginlint_scope);
+    // Stated here, not left to the linter's default: one line is this tree's ceiling (CODING_STANDARDS §4).
+    run_zginlint_check.addArgs(&.{ "--max-comment-lines", "1" });
     run_zginlint_check.has_side_effects = true;
     zginlint_check.dependOn(&run_zginlint_check.step);
 
-    // kabelweb's own suites (server + client) run in the kabelweb repo's CI
-    // (github.com/ginwa123/kabelweb), not here — it's an external URL
-    // dependency, and a consumer build never runs a dependency's test blocks.
+    // kabelweb's own suites (server + client) run in the kabelweb repo's CI (github.com/ginwa123/kabelweb), not here — it's an external URL dependency, and a …
 
     const agent_loop_test_mod = b.addTest(.{
         .root_module = mod_tests_module,
     });
 
     const run_agent_loop_tests = b.addRunArtifact(agent_loop_test_mod);
-    // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll, …) is on
-    // PATH at test runtime — see `prependVcpkgBinToPath` doc comment.
+    // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll, …) is on PATH at test runtime — see `prependVcpkgBinToPath` doc comment.
     prependVcpkgBinToPath(b, run_agent_loop_tests);
     const test_agent_loop_step = b.step("test:agent:loop", "Run the agent loop tests");
-    // The loop test reuses `mod_tests_module` (which transitively imports
-    // the external `databases` package) — no fetch wiring needed.
+    // The loop test reuses `mod_tests_module` (which transitively imports the external `databases` package) — no fetch wiring needed.
     test_agent_loop_step.dependOn(&run_agent_loop_tests.step);
 
     const linux_step = b.step("install:linux", "Build for Linux x86_64");
@@ -3117,8 +2776,7 @@ pub fn build(b: *std.Build) void {
     const linux_exe = createPlatformExe(b, mod, helpers_mod, linux_target, optimize, "pabrikcore-linux-x86_64");
     linux_exe.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     linux_exe.root_module.addIncludePath(.{ .cwd_relative = "/usr/include" });
-    // libcurl is linked via kabelweb_mod's transitive deps (the vendored
-    // prebuilt archive is added in the package's own build.zig).
+    // libcurl is linked via kabelweb_mod's transitive deps (the vendored prebuilt archive is added in the package's own build.zig).
     linux_exe.root_module.link_libc = true;
     const install_linux = b.addInstallArtifact(linux_exe, .{});
     linux_step.dependOn(&install_linux.step);
@@ -3129,12 +2787,9 @@ pub fn build(b: *std.Build) void {
         .os_tag = .windows,
         .abi = .gnu,
     });
-    // NB: don't include `.exe` in the name — Zig 0.16's `addExecutable`
-    // auto-appends `.exe` on Windows targets, so passing a name with `.exe`
-    // already produces the doubled suffix `pabrikcore-windows-x86_64.exe.exe`
+    // NB: don't include `.exe` in the name — Zig 0.16's `addExecutable` auto-appends `.exe` on Windows targets, so passing a name with `.exe` already produces the …
     const windows_exe = createPlatformExe(b, mod, helpers_mod, windows_target, optimize, "pabrikcore-windows-x86_64");
-    // libcurl is linked via kabelweb_mod's transitive deps (kabelweb
-    // package owns its Windows/vcpkg wiring).
+    // libcurl is linked via kabelweb_mod's transitive deps (kabelweb package owns its Windows/vcpkg wiring).
     windows_exe.root_module.link_libc = true;
     const install_windows = b.addInstallArtifact(windows_exe, .{});
     windows_step.dependOn(&install_windows.step);
@@ -3182,9 +2837,7 @@ pub fn build(b: *std.Build) void {
     copy_to_system.step.dependOn(&install_linux_system.step);
     linux_system_step.dependOn(&copy_to_system.step);
 
-    // =====================================================================
-    // install:linux:app — Linux desktop launcher entry (GNOME/KDE search)
-    // `zig build pabrik-desktop` only drops `zig-out/bin/pabrik-desktop`,
+    // install:linux:app — Linux desktop launcher entry (GNOME/KDE search) `zig build pabrik-desktop` only drops `zig-out/bin/pabrik-desktop`,
     const linux_app_step = b.step("install:linux:app", "Build pabrik-desktop and install launcher entry so it appears in GNOME/KDE search (requires sudo)");
     linux_app_step.dependOn(&desktop_install.step);
     linux_app_step.dependOn(b.getInstallStep());
@@ -3222,9 +2875,7 @@ pub fn build(b: *std.Build) void {
     refresh_desktop_db.step.dependOn(&install_desktop_icon.step);
     linux_app_step.dependOn(&refresh_desktop_db.step);
 
-    // =====================================================================
-    // install:windows:app — Windows user-local app install (Start Menu
-    // search) Windows-only (invoking on Linux/macOS fails at the powershell
+    // install:windows:app — Windows user-local app install (Start Menu search) Windows-only (invoking on Linux/macOS fails at the powershell
     const windows_app_step = b.step("install:windows:app", "Build pabrik-desktop + service and install user-local with Start Menu shortcut (Windows-only, no admin)");
     windows_app_step.dependOn(&desktop_install.step);
     windows_app_step.dependOn(b.getInstallStep());
@@ -3236,9 +2887,7 @@ pub fn build(b: *std.Build) void {
     run_windows_app_install.step.dependOn(b.getInstallStep());
     windows_app_step.dependOn(&run_windows_app_install.step);
 
-    // =====================================================================
-    // install:macos:app — macOS user-local app install (Spotlight/Launchpad)
-    // macOS-only at runtime (invoking on Linux/Windows fails at the sh spawn
+    // install:macos:app — macOS user-local app install (Spotlight/Launchpad) macOS-only at runtime (invoking on Linux/Windows fails at the sh spawn
     const macos_app_step = b.step("install:macos:app", "Build pabrik-desktop + service and install Pabrik.app to ~/Applications (macOS-only, no sudo)");
     macos_app_step.dependOn(&desktop_install.step);
     macos_app_step.dependOn(b.getInstallStep());
@@ -3279,13 +2928,10 @@ pub fn build(b: *std.Build) void {
     copy_dev_to_system.step.dependOn(&install_dev.step);
     dev_linux_system_step.dependOn(&copy_dev_to_system.step);
 
-    // =====================================================================
     // Functional tests (Python+pytest) — see tests/functional/README.md.
-    // Booting a real pabrik against an isolated tmpdir HOME.
     const python_exe = b.option([]const u8, "python", "Path to python3 binary (default: 'python3')") orelse "python3";
 
-    // The artifact `zig build`'s DEFAULT install step writes for this host —
-    // the binary the functional suites must exercise.
+    // The artifact `zig build`'s DEFAULT install step writes for this host — the binary the functional suites must exercise.
     const host_binary_name = switch (b.graph.host.result.os.tag) {
         .linux => "pabrikcore-linux-x86_64",
         .macos => if (b.graph.host.result.cpu.arch == .aarch64)
@@ -3297,9 +2943,7 @@ pub fn build(b: *std.Build) void {
     };
     const func_pabrik_bin = b.getInstallPath(.bin, host_binary_name);
 
-    // ── Splitting the Python suites across N disjoint shards ─────────── The
-    // shard CONTRACT (the two env vars, and "item index % total == index")
-    // lives in tests/func_shard.py + tests/conftest.py and is not touched
+    // ── Splitting the Python suites across N disjoint shards ───────────
     const python_shards: u32 = b.option(
         u32,
         "func-shards",
@@ -3326,12 +2970,9 @@ pub fn build(b: *std.Build) void {
         for (all, 0..) |*slot, i| slot.* = @intCast(i);
         break :blk all;
     };
-    // Venv location override (2026-08-25): CI relocates the venv OUTSIDE the
-    // workspace via PABRIK_FUNC_VENV_DIR because self-hosted runners `git
-    // clean` the workspace between runs — a workspace-relative .venv-func is
+    // Venv location override (2026-08-25): CI relocates the venv OUTSIDE the workspace via PABRIK_FUNC_VENV_DIR because self-hosted runners `git clean` the workspace …
     const venv_dir_raw = b.graph.environ_map.get("PABRIK_FUNC_VENV_DIR") orelse ".venv-func";
     // Normalize Windows mixed separators (runner.temp is C:\...\ _temp + "/pabrik-ci-venv" → "C:\...\ _temp/pabrik-ci-venv").
-    // Use forward slashes internally; Python on Windows handles both.
     const venv_dir = blk: {
         const dup = b.allocator.dupe(u8, venv_dir_raw) catch @panic("build.zig: dupe of PABRIK_FUNC_VENV_DIR failed");
         for (dup) |*c| {
@@ -3347,8 +2988,7 @@ pub fn build(b: *std.Build) void {
     // On Windows, `python` is the canonical exe; `python3` is often a shim.
     const default_python = if (is_windows_host) "python" else "python3";
     const effective_python = if (std.mem.eql(u8, python_exe, "python3") and is_windows_host) default_python else python_exe;
-    // Windows venv creation must survive the Microsoft Store `python` stub
-    // ("Python was not found") and must not redo an existing venv: 1.
+    // Windows venv creation must survive the Microsoft Store `python` stub ("Python was not found") and must not redo an existing venv: 1.
     const venv_python_name = if (is_windows_host) "python.exe" else "python";
     const venv_python_rel = std.fmt.allocPrint(b.allocator, "{s}/{s}", .{ venv_bin, venv_python_name }) catch @panic("build.zig: allocPrint of the venv python path failed");
     const have_venv = blk: {
@@ -3361,9 +3001,7 @@ pub fn build(b: *std.Build) void {
             break :blk b.addSystemCommand(&.{"true"});
         }
         if (!is_windows_host) break :blk b.addSystemCommand(&.{
-            // `--clear`: the venv dir may already exist with DANGLING
-            // interpreter symlinks -- e.g. a cached venv restored under a
-            // different Python patch version (bin/python points at a
+            // `--clear`: the venv dir may already exist with DANGLING interpreter symlinks -- e.g. a cached venv restored under a different Python patch version (bin/python …
             effective_python, "-m", "venv", "--clear", venv_dir,
         });
         var chosen: ?[]const u8 = null;
@@ -3401,9 +3039,7 @@ pub fn build(b: *std.Build) void {
     install_requirements.setCwd(b.path(""));
     install_requirements.step.dependOn(&install_venv.step);
 
-    // Probe python — skip the step if missing. Without a probe,
-    // `addSystemCommand` would error at config time on hosts that don't have
-    // python.
+    // Probe python — skip the step if missing.
     const python_probe = b.addSystemCommand(switch (b.graph.host.result.os.tag) {
         .windows => &.{
             "cmd.exe", "/c",
@@ -3425,18 +3061,13 @@ pub fn build(b: *std.Build) void {
         const run_functional = addPythonSuiteRun(b, &argv_functional, func_pabrik_bin, python_shards, maybe_shard);
         run_functional.step.dependOn(&install_requirements.step);
         run_functional.step.dependOn(&python_probe.step);
-        // Depend on the top-level `install` step (copies binary to
-        // zig-out/bin/pabrik) rather than `install:linux:system` which
-        // additionally tries to `cp` to /usr/local/bin/pabrik and fails on
+        // Depend on the top-level `install` step (copies binary to zig-out/bin/pabrik) rather than `install:linux:system` which additionally tries to `cp` to …
         run_functional.step.dependOn(b.getInstallStep());
-        // Depend on the MCP fixture build steps so both test servers are at
-        // zig-out/bin/ when the functional tests run.
+        // Depend on the MCP fixture build steps so both test servers are at zig-out/bin/ when the functional tests run.
         run_functional.step.dependOn(mcp_http_hello_world_step);
         run_functional.step.dependOn(mcp_oauth_hello_world_step);
         functional_test_step.dependOn(&run_functional.step);
-        // Per-shard step, mirroring `test:shard:<i>`: it is how a shard is
-        // reproduced in isolation, and it is the race-free way to run all N
-        // at once (one shell each, so the port pickers never draw
+        // Per-shard step, mirroring `test:shard:<i>`: it is how a shard is reproduced in isolation, and it is the race-free way to run all N at once (one shell each, so …
         if (maybe_shard) |shard_index| {
             _ = b.step(
                 b.fmt("functional-test:shard:{d}", .{shard_index}),
@@ -3445,7 +3076,6 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // =====================================================================
     // Functional tests (Zig) — tests/functional/, its OWN package.
     const func_tests_module = b.createModule(.{
         .root_source_file = b.path("tests/functional/root.zig"),
@@ -3454,39 +3084,32 @@ pub fn build(b: *std.Build) void {
     });
     const func_tests = b.addTest(.{ .root_module = func_tests_module });
     const run_func_zig = b.addRunArtifact(func_tests);
-    // The suite resolves `pabrik` through relative `zig-out/bin/*`
-    // paths, so it must run from the repo root.
+    // The suite resolves `pabrik` through relative `zig-out/bin/*` paths, so it must run from the repo root.
     run_func_zig.setCwd(b.path(""));
     // Same dependency the Python runner has: the suite boots this binary.
     run_func_zig.step.dependOn(b.getInstallStep());
-    // And the MCP fixture servers, for the `mcp_http_*` and `mcp_oauth_*`
-    // suites.
+    // And the MCP fixture servers, for the `mcp_http_*` and `mcp_oauth_*` suites.
     run_func_zig.step.dependOn(mcp_http_hello_world_step);
     run_func_zig.step.dependOn(mcp_oauth_hello_world_step);
 
     b.step("functional-test:zig", "Run the Zig functional test suite (tests/functional/)")
         .dependOn(&run_func_zig.step);
 
-    // =====================================================================
-    // Functional UI tests (Python+Playwright) — see
-    // tests/functional_ui/README.md.
+    // Functional UI tests (Python+Playwright) — see tests/functional_ui/README.md.
     const install_ui_requirements = b.addSystemCommand(&.{
         b.fmt("{s}/{s}", .{ venv_bin, pip_exe }), "install", "-q", "-r", "tests/functional_ui/requirements.txt",
     });
     install_ui_requirements.setCwd(b.path(""));
     install_ui_requirements.step.dependOn(&install_requirements.step);
 
-    // Install Playwright Chromium browser. ``playwright install chromium`` is
-    // idempotent — re-running it is a no-op if the browser is already cached.
+    // Install Playwright Chromium browser.
     const install_playwright_browsers = b.addSystemCommand(&.{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }), "-m", "playwright", "install", "chromium",
     });
     install_playwright_browsers.setCwd(b.path(""));
     install_playwright_browsers.step.dependOn(&install_ui_requirements.step);
 
-    // `-n` is safe for the port picker (`_xdist_port_slot`). Default 1: the
-    // firecracker-guest tests collide when two run at once. Opt in with
-    // `-Dfunc-ui-workers=4`.
+    // `-n` is safe for the port picker (`_xdist_port_slot`).
     const func_ui_workers: u32 = b.option(
         u32,
         "func-ui-workers",
@@ -3518,7 +3141,6 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // =====================================================================
     // functional-test-all — BOTH suites in ONE pytest invocation.
     const argv_functional_all = [_][]const u8{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }),
@@ -3532,14 +3154,11 @@ pub fn build(b: *std.Build) void {
     const functional_test_all_step = b.step("functional-test-all", "Run BOTH functional suites (API + Playwright UI) in one pytest invocation");
     for (python_shard_indices) |maybe_shard| {
         const run_functional_all = addPythonSuiteRun(b, &argv_functional_all, func_pabrik_bin, python_shards, maybe_shard);
-        // install_playwright_browsers -> install_ui_requirements -> install_venv,
-        // so this one edge covers the venv, both requirements files AND the
-        // browser download.
+        // install_playwright_browsers -> install_ui_requirements -> install_venv, so this one edge covers the venv, both requirements files AND the browser download.
         run_functional_all.step.dependOn(&install_playwright_browsers.step);
         run_functional_all.step.dependOn(&python_probe.step);
         run_functional_all.step.dependOn(b.getInstallStep());
-        // Same reason as run_functional: the MCP suites spawn these sibling
-        // binaries, and without the dep the suite fails on a missing file.
+        // Same reason as run_functional: the MCP suites spawn these sibling binaries, and without the dep the suite fails on a missing file.
         run_functional_all.step.dependOn(mcp_http_hello_world_step);
         run_functional_all.step.dependOn(mcp_oauth_hello_world_step);
         functional_test_all_step.dependOn(&run_functional_all.step);
@@ -3551,9 +3170,7 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // =====================================================================
     // End-of-build success/failure banner
-    // =====================================================================
     const desktop_binary_name = switch (b.graph.host.result.os.tag) {
         .windows => "pabrik-desktop.exe",
         else => "pabrik-desktop",
@@ -3563,8 +3180,7 @@ pub fn build(b: *std.Build) void {
         else => "pabrikcli",
     };
 
-    // Build the banner script with host-specific binary names spliced in via
-    // std.fmt.allocPrint.
+    // Build the banner script with host-specific binary names spliced in via std.fmt.allocPrint.
     var banner_args: []const []const u8 = &.{};
     if (b.graph.host.result.os.tag == .windows) {
         const script = std.fmt.allocPrint(
@@ -3632,9 +3248,7 @@ pub fn build(b: *std.Build) void {
 
     const build_banner = b.addSystemCommand(banner_args);
     const build_all_step = b.step("build:all", "Build pabrik service + pabrik-desktop, with end-of-build summary");
-    // The binaries live on different top-level install steps: - host-specific
-    // pabrikcore binary → install:<host> (Linux / macOS-arm / macOS /
-    // Windows) - pabrik-desktop → install (native target, includes
+    // The binaries live on different top-level install steps: - host-specific pabrikcore binary → install:<host> (Linux / macOS-arm / macOS /Windows) - …
     const host_install_step = switch (b.graph.host.result.os.tag) {
         .linux => &install_linux.step,
         .macos => if (b.graph.host.result.cpu.arch == .aarch64)
@@ -3647,28 +3261,20 @@ pub fn build(b: *std.Build) void {
     build_all_step.dependOn(host_install_step);
     build_all_step.dependOn(&desktop_install.step);
     build_all_step.dependOn(&cli_install.step);
-    // pabrik-tui is POSIX-only: src/apps/cli/src/tui/terminal.zig passes
-    // integer fds (std.posix.STDIN_FILENO) where Windows' fd_t is *anyopaque,
-    // so it cannot compile on Windows.
+    // pabrik-tui is POSIX-only: src/apps/cli/src/tui/terminal.zig passes integer fds (std.posix.STDIN_FILENO) where Windows' fd_t is *anyopaque, so it cannot compile …
     if (b.graph.host.result.os.tag != .windows) {
         build_all_step.dependOn(&tui_install.step);
     }
     build_all_step.dependOn(&build_banner.step);
-    // `build:all` is a step of its own, so hooking only `install` left
-    // `zig build` producing none of the trio. The agent and the probe are
-    // fixed-target musl, so every host compiles them; `pabrik-vmd` is Linux-only.
+    // `build:all` is a step of its own, so hooking only `install` left `zig build` producing none of the trio.
     build_all_step.dependOn(&install_vm_agent.step);
     build_all_step.dependOn(&install_vm_probe.step);
     build_all_step.dependOn(&install_vm_netd.step);
     if (tap_install) |step| build_all_step.dependOn(step);
     if (vmd_install) |step| build_all_step.dependOn(step);
-    // Make `zig build` (default) auto-fetch the vendored curl archive
-    // when missing. The fetch script is idempotent — re-running on a
-    // populated vendor/ is a fast no-op.
+    // Make `zig build` (default) auto-fetch the vendored curl archive when missing.
 
-    // The object store is opt-in: staging it downloads a 115 MB upstream
-    // archive. `-Dwith-fs` / PABRIK_WITH_FS=1 puts `pabrik-fs` beside the
-    // binary so `./zig-out/bin/pabrik` starts rustfs.
+    // The object store is opt-in: staging it downloads a 115 MB upstream archive.
     const with_fs = b.option(
         bool,
         "with-fs",
@@ -3680,8 +3286,7 @@ pub fn build(b: *std.Build) void {
             b.getInstallStep().dependOn(step);
         }
     }
-    // Default: same as `build:all`. Without this, `zig build` (no args) runs
-    // the `install` step alone, which prints no summary on success.
+    // Default: same as `build:all`.
     b.default_step = build_all_step;
 }
 
