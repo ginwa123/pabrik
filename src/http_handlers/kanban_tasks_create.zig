@@ -25,19 +25,15 @@ pub const KanbanTaskCreateBody = struct {
     cwd: ?[]const u8 = null,
     is_auto_retry_until_stop: ?[]const u8 = null,
     selected_profile_model: ?[]const u8 = null,
-    /// Skill names for this task (Migration 112), a real JSON array. Empty =
-    /// no skill. Also baked into the create_and_run queue_message, one
-    /// `#Skill <name>` line per name.
+    /// Skill names for this task (Migration 112), a real JSON array.
     skill_names: ?[]const []const u8 = null,
-    /// Migration 110's single-name field, accepted for older clients and read
-    /// only when `skill_names` is absent.
+    /// Migration 110's single-name field, accepted for older clients and read only when `skill_names` is absent.
     skill_name: ?[]const u8 = null,
     /// Migration 111 — tasks this new card waits for (ids on the same board).
     depends_on: ?[]const []const u8 = null,
 };
 
-/// Thin orchestrator over `task_create.zig::useCase` + the create_and_run
-/// side-effects.
+/// Thin orchestrator over `task_create.zig::useCase` + the create_and_run side-effects.
 pub fn kanbanTasksCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -47,13 +43,9 @@ pub fn kanbanTasksCreateHandler(
 
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
-    // The per-user LLM config is resolved further down, once `:workspace_id`
-    // is parsed: the seeding below needs the EFFECTIVE config for THIS
-    // workspace (the user config layered under the workspace overlay), and
+    // The per-user LLM config is resolved further down, once `:workspace_id` is parsed: the seeding below needs the EFFECTIVE config for THIS workspace (the user …
 
     // Owner for the `sessions` row this request creates (plan 2026-09-25).
-    // Server-derived from the `pabrik_session` cookie only — never a body
-    // field.
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
 
@@ -83,9 +75,7 @@ pub fn kanbanTasksCreateHandler(
         });
     };
 
-    // 2. Validate the `mode` discriminator. The two valid values are
-    // 'create' (just make the card) and 'create_and_run' (make the
-    // card AND kick off an agent turn via the session_created SSE).
+    // 2.
     if (parsed.mode.len == 0) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -131,15 +121,12 @@ pub fn kanbanTasksCreateHandler(
         row.deinit(allocator);
     }
 
-    // 4. Build the standard `TaskCreateInput` and delegate to the task_create
-    // use-case for the INSERT + auto-assign + kanban_task SSE.
+    // 4.
     const std_req = http_response.TaskCreateRequest{
         .name = parsed.name,
         .description = parsed.description,
         .task_type = "standard",
-        // Only legacy mode='create' forwards the unattended flag into the
-        // use-case (its bare sessions INSERT is the ONLY sessions write on
-        // that path).
+        // Only legacy mode='create' forwards the unattended flag into the use-case (its bare sessions INSERT is the ONLY sessions write on that path).
         .is_auto_retry_until_stop = if (is_create_only) parsed.is_auto_retry_until_stop else null,
         .tags = parsed.tags,
         .image_urls = parsed.image_urls,
@@ -194,8 +181,7 @@ pub fn kanbanTasksCreateHandler(
         },
     };
 
-    // 5. If mode='create_session' OR mode='create_and_run', insert the
-    // sessions row keyed by task.id and emit the session_created SSE.
+    // 5.
     if (is_create_and_run or is_create_session) {
         const normalized: []const u8 = blk: {
             if (parsed.is_auto_retry_until_stop) |f| {
@@ -204,9 +190,7 @@ pub fn kanbanTasksCreateHandler(
             break :blk "0";
         };
         var profile: []const u8 = parsed.selected_profile_model orelse "";
-        // Per-user LLM config under `--auth` — the active-profile default and
-        // the model seed below both belong to the REQUESTING user, resolved
-        // through the one config-resolution module
+        // Per-user LLM config under `--auth` — the active-profile default and the model seed below both belong to the REQUESTING user, resolved through the one …
         const user_cfg = pabrikcore.session_llm_config.forOwnerAndWorkspace(
             allocator,
             di.io,
@@ -222,9 +206,7 @@ pub fn kanbanTasksCreateHandler(
                 profile = ap;
             }
         }
-        // Migration 112 — the agent only sees queue_message on its first turn,
-        // so every skill must ride there as a `#Skill <name>` line. The
-        // frontend no longer bakes it: it used to, so one skill arrived twice.
+        // Migration 112 — the agent only sees queue_message on its first turn, so every skill must ride there as a `#Skill <name>` line.
         const queue_message = blk: {
             const base = parsed.queue_message orelse "";
             const joined = task_skills.normalize(
@@ -236,13 +218,11 @@ pub fn kanbanTasksCreateHandler(
             if (block.len == 0) break :blk base;
             break :blk std.fmt.allocPrint(allocator, "{s}{s}", .{ base, block }) catch base;
         };
-        // image_urls/video_urls on the wire are `||`-joined (Migration
-        // 069/090 shapes); pass through to the worker pool verbatim.
+        // image_urls/video_urls on the wire are `||`-joined (Migration 069/090 shapes); pass through to the worker pool verbatim.
         const image_urls_wire = parsed.image_urls orelse "";
         const video_urls_wire = parsed.video_urls orelse "";
 
-        // Under `--saas` the workspace tree lives at the guest's root, so that
-        // is the session's cwd: a host path names a directory the VM never has.
+        // Under `--saas` the workspace tree lives at the guest's root, so that is the session's cwd: a host path names a directory the VM never has.
         const session_cwd: []const u8 = if (runtime_mode.currentMode() == .saas)
             vmd_policy.guest_root
         else
@@ -268,9 +248,7 @@ pub fn kanbanTasksCreateHandler(
             });
         };
 
-        // Claim an ownerless row when the INSERT OR IGNORE above no-opped on
-        // a pre-existing row (e.g. legacy mode='create' wrote a bare sessions
-        // row first without `user_id`).
+        // Claim an ownerless row when the INSERT OR IGNORE above no-opped on a pre-existing row (e.g. legacy mode='create' wrote a bare sessions row first without …
         if (di.auth_enabled and owner.len > 0) {
             sqlite_db.exec(
                 allocator,
@@ -292,17 +270,14 @@ pub fn kanbanTasksCreateHandler(
                 .video_urls = video_urls_wire,
                 .selected_profile_model = profile,
                 .is_auto_retry_until_stop = normalized,
-                // Owner rides along so the concurrent insert_worker task
-                // stamps the session row at INSERT time (plan 2026-09-25).
+                // Owner rides along so the concurrent insert_worker task stamps the session row at INSERT time (plan 2026-09-25).
                 .user_id = owner,
             }) catch |err| {
                 std.log.warn("kanban_tasks_create: emit_run_agent failed (non-fatal): {s}", .{@errorName(err)});
             };
         }
 
-        // FIX (bug: "create task still not insert user llm history role"):
-        // for create_session (plain "Create task" button) the sessions row is
-        // inserted but NO user-role row is added to llm_history — so the
+        // FIX (bug: "create task still not insert user llm history role")
         if (is_create_session) {
             const description = parsed.description orelse "";
             // image_urls on the wire is `||`-joined (Migration 069).
@@ -314,9 +289,7 @@ pub fn kanbanTasksCreateHandler(
             const now_ns = std.Io.Timestamp.now(ctx.io, .real).nanoseconds;
             const id_str = try std.fmt.allocPrint(allocator, "{}", .{now_ns});
             const created_at_str = try std.fmt.allocPrint(allocator, "{}", .{now_ns});
-            // Direct INSERT (vs. inserLLMHistories) — keeps the patch minimal
-            // and avoids relying on the helper's SSE/FTS plumbing for what is
-            // effectively a one-shot wire-side message.
+            // Direct INSERT (vs. inserLLMHistories) — keeps the patch minimal and avoids relying on the helper's SSE/FTS plumbing for what is effectively a one-shot …
             const seed_model = model_guard.resolve(
                 user_cfg.resolveEffectiveAgent(profile).model,
             );
@@ -343,8 +316,7 @@ pub fn kanbanTasksCreateHandler(
             };
         }
 
-        // Emit the session_created SSE so the sidebar's ChatsList gets the
-        // new session without a manual refetch.
+        // Emit the session_created SSE so the sidebar's ChatsList gets the new session without a manual refetch.
         if (sqlite_db.changes() > 0) {
             const on_event_sent = pabrikcore.ai_mod.on_event_sent;
             on_event_sent.onEventSendSessions(allocator, .{
@@ -379,8 +351,7 @@ pub fn kanbanTasksCreateHandler(
         .name = standard_result.name,
         .description = parsed.description,
         .completed = false,
-        // Media-flags change — echo media-presence flags so the frontend knows
-        // whether to lazy-fetch via the media endpoint.
+        // Media-flags change — echo media-presence flags so the frontend knows whether to lazy-fetch via the media endpoint.
         .is_have_image = standard_result.is_have_image,
         .is_have_video = standard_result.is_have_video,
     };

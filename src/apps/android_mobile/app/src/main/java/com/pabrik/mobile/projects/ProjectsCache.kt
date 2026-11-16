@@ -9,47 +9,9 @@ import com.pabrik.mobile.recents.orNull
 import com.pabrik.mobile.storage.KeystoreSealingCipher
 import com.pabrik.mobile.storage.SealingCipher
 
-/**
- * Last-known project data, so a cold boot or an offline launch paints real
- * project rows instead of an empty section.
- *
- * **A separate interface from [com.pabrik.mobile.recents.RecentsCache], on
- * purpose.** That one's KDoc scopes it to exactly two endpoints and says adding
- * a third "should be a deliberate change to this interface, not a side effect of
- * some new caller". This is that deliberate change — so it arrives as a new,
- * honestly-scoped interface rather than as a quiet widening of one that promised
- * otherwise. The reasoning behind the rules below is the same; only the scope
- * is different.
- *
- * The four rules, all load-bearing on a phone:
- *
- * 1. **Namespaced per user.** `logout()` only clears the session cookie, so an
- *    unscoped cache would put the previous account's project names on screen for
- *    the next person who signs in on a shared device. Every read and write
- *    requires a non-blank `userId`.
- * 2. **Partitioned per workspace, then per project.** A project's chats are only
- *    meaningful next to the project they belong to, and the drawer's section is
- *    scoped to one workspace at a time. Painting workspace A's projects under
- *    workspace B's name is the failure this prevents.
- * 3. **Encrypted at rest.** A project name and a chat title are the most
- *    identifying strings in the app, and a SQLite file is plaintext on disk, so
- *    both are sealed with a Keystore AES-GCM key under its own alias. The
- *    `item_type` and timestamp columns stay in the clear because the query needs
- *    them — `ORDER BY position` cannot run on ciphertext.
- * 4. **Fail-silent.** A corrupt payload, an undecryptable entry or a Keystore
- *    that refuses to open degrades to a plain cache miss. A broken cache must
- *    never be the reason the app fails.
- *
- * There is **no TTL**, matching `RecentsCache`: that is only safe because every
- * paint is immediately followed by a live fetch, an invariant
- * [com.pabrik.mobile.recents.HomeViewModel] enforces by construction.
- */
+/** Last-known project data, so a cold boot or an offline launch paints real project rows instead of an empty section. */
 interface ProjectsCache {
-    /**
-     * A null or blank `userId` is a miss, never an unscoped read — see
-     * [com.pabrik.mobile.recents.RecentsCache.readWorkspaces] for why the
-     * desktop's looser fallback is the wrong default on a phone.
-     */
+    /** A null or blank `userId` is a miss, never an unscoped read — see [com.pabrik.mobile.recents.RecentsCache.readWorkspaces] for why the desktop's looser fallback … */
     fun readProjects(userId: String?, workspaceId: String): List<ProjectSummary>?
 
     fun writeProjects(userId: String?, workspaceId: String, projects: List<ProjectSummary>)
@@ -71,14 +33,7 @@ interface ProjectsCache {
     fun clear()
 }
 
-/**
- * [ProjectsCache] on Room, one row per project and per project chat, sealed
- * with a Keystore key wherever the content is user text.
- *
- * A read therefore decrypts one column per row. That is the price of keeping the
- * database a plain SQLite file the JVM tests can open for real; see
- * [SealingCipher] for why SQLCipher was not used instead.
- */
+/** [ProjectsCache] on Room, one row per project and per project chat, sealed with a Keystore key wherever the content is user text. */
 class RoomProjectsCache(
     private val dao: ProjectsCacheDao,
     private val cipher: SealingCipher,
@@ -98,15 +53,10 @@ class RoomProjectsCache(
         return quietly(null) {
             val rows = dao.projectsFor(user, workspace)
             when {
-                // A row store cannot tell "never fetched" from "this workspace
-                // has no projects", and `HomeViewModel` cannot either: it treats
-                // both as "nothing to paint, go and fetch", and the fetch is
-                // what decides which of the two it was.
+                // A row store cannot tell "never fetched" from "this workspace has no projects", and `HomeViewModel` cannot either: it treats both as "nothing to paint, go and …
                 rows.isEmpty() -> null
 
-                // One unopenable row invalidates the whole list. A half-readable
-                // section would paint a subset and call it truth; a miss shows
-                // the loading state until the fetch lands.
+                // One unopenable row invalidates the whole list.
                 else -> {
                     val names = rows.map { cipher.open(it.nameSealed) }
                     if (names.any { it == null }) {
@@ -119,9 +69,7 @@ class RoomProjectsCache(
                                 workspaceId = row.workspaceId,
                                 itemType = row.itemType,
                                 name = names[index].orEmpty(),
-                                // The path is not stored. Nothing in this feature
-                                // reads it, and a filesystem path is user
-                                // content on a shared device.
+                                // The path is not stored.
                                 path = "",
                             )
                         }
@@ -139,8 +87,7 @@ class RoomProjectsCache(
         val user = userId.orNull() ?: return
         val workspace = workspaceId.orNull() ?: return
         val rows = quietly(null) { projects.toEntities(user, workspace) } ?: return
-        // This deletes the chats of projects that have just disappeared, in the
-        // same transaction — see ProjectsCacheDao.deleteChatsForWorkspace.
+        // This deletes the chats of projects that have just disappeared, in the same transaction — see ProjectsCacheDao.deleteChatsForWorkspace.
         quietly(Unit) { dao.deleteChatsForWorkspace(user, workspace, rows) }
     }
 
@@ -191,16 +138,7 @@ class RoomProjectsCache(
 
     override fun clear() = quietly(Unit) { dao.clearAll() }
 
-    /**
-     * Sealing, all-or-nothing.
-     *
-     * A list where one row failed to seal would paint a project under its real
-     * name next to one under a blank, and the correction would then depend on
-     * the user noticing rather than on the next fetch. Half a list is worse than
-     * none, so one failure drops the whole write — and returning null rather
-     * than throwing is what turns that into "skip this write", the fail-silent
-     * contract above.
-     */
+    /** Sealing, all-or-nothing. */
     private fun List<ProjectSummary>.toEntities(
         userId: String,
         workspaceId: String,
@@ -252,12 +190,7 @@ class RoomProjectsCache(
     }
 
     private companion object {
-        /**
-         * Its own alias, distinct from the recents cache's and the session
-         * cookie's. A suspected project-cache leak and a suspected credential
-         * leak have to stay separate investigations that can be rotated
-         * separately, and project names are their own third kind of thing.
-         */
+        /** Its own alias, distinct from the recents cache's and the session cookie's. */
         const val KEY_ALIAS = "pabrik_projects_cache_key_v1"
     }
 }

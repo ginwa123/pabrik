@@ -42,8 +42,6 @@ const WS_ID = 'ws_new_chat'
 const DEFAULT_ID = 'item_default'
 const OTHER_ID = 'item_other'
 
-// The default project, as the server sends it: `is_default: 1` and a path of $HOME. The `selected`
-// item is the one the user happens to have open — the action must NOT create the chat there.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeItem(id: string, itemType: string, isDefault: number): any {
   return {
@@ -59,7 +57,6 @@ function makeItem(id: string, itemType: string, isDefault: number): any {
   }
 }
 
-/** A workspace holding both the default and an ordinary project. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeWorkspace(id = WS_ID): any {
   return {
@@ -69,13 +66,10 @@ function makeWorkspace(id = WS_ID): any {
   }
 }
 
-// See the note on `replaceMock` in Sidebar.agentDirectChat.spec.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let replaceMock: any
 
-// `collapsed` is a PROP (`computed(() => props.collapsed ?? false)`),
-// so the collapsed state has to be set at mount time — assigning to
-// `wrapper.vm.isCollapsed` would write to a read-only computed.
+// `collapsed` is a PROP (`computed(() => props.collapsed ?? false)`), so the collapsed state has to be set at mount time — assigning to `wrapper.vm.isCollapsed` …
 function mountSidebar(collapsed = false) {
   return mount(Sidebar, {
     attachTo: document.body,
@@ -137,8 +131,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspace()]
     store.setActiveWorkspace(WS_ID)
-    // The user happens to have the ORDINARY project open. The action must
-    // ignore that — that is the entire point of having a default.
+    // The user happens to have the ORDINARY project open.
     store.setActiveWorkspaceItem(OTHER_ID)
     const ensureSpy = vi
       .spyOn(store, 'ensureDefaultProject')
@@ -157,9 +150,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     expect(addSpy).toHaveBeenCalledWith(WS_ID, DEFAULT_ID, { name: 'New Chat' })
     expect(activeSpy).toHaveBeenCalledWith('task_new_1')
 
-    // The URL is the state: deep-linkable, refresh-safe, Back/Forward
-    // correct. Asserted because a local-only ref here would make the new
-    // chat unreachable by reload.
+    // The URL is the state: deep-linkable, refresh-safe, Back/Forward correct.
     expect(replaceMock).toHaveBeenCalledTimes(1)
     const target = replaceMock.mock.calls[0][0]
     expect(target.path).toBe(`/app/${WS_ID}/projects/${DEFAULT_ID}/chat/task_new_1`)
@@ -170,16 +161,14 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspace()]
     store.setActiveWorkspace(WS_ID)
-    // The real action, not a mock — the point is that the store's own
-    // lookup finds the default and never reaches the fallback endpoint.
+    // The real action, not a mock — the point is that the store's own lookup finds the default and never reaches the fallback endpoint.
     const endpointSpy = vi.spyOn(api, 'getOrCreateDefaultProject')
     const addSpy = vi.spyOn(store, 'addTask').mockResolvedValue('task_new_1')
     vi.spyOn(store, 'setActiveTask').mockImplementation(() => {})
 
     const found = await store.ensureDefaultProject(WS_ID)
     expect(found?.id).toBe(DEFAULT_ID)
-    // The server guarantees exactly one default per workspace, so the
-    // client must never pay for a round trip to learn what it already has.
+    // The server guarantees exactly one default per workspace, so the client must never pay for a round trip to learn what it already has.
     expect(endpointSpy).not.toHaveBeenCalled()
 
     const wrapper = mountSidebar()
@@ -195,8 +184,6 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
 
   it('cold start: the list predates the migration, so the fallback endpoint runs once', async () => {
     const store = useWorkspacesStore()
-    // A workspace with ordinary projects but NO default — the shape a
-    // client holds if it was already open when Migration 094 ran.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store.workspaces = [{ id: WS_ID, name: 'WS', items: [makeItem(OTHER_ID, 'agent', 0)] }] as any
     store.setActiveWorkspace(WS_ID)
@@ -216,8 +203,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     expect(endpointSpy).toHaveBeenCalledTimes(1)
     expect(endpointSpy).toHaveBeenCalledWith(WS_ID)
     expect(addSpy).toHaveBeenCalledWith(WS_ID, DEFAULT_ID, { name: 'New Chat' })
-    // And the new default was adopted into the store, so the Projects list
-    // shows it without a refetch.
+    // And the new default was adopted into the store, so the Projects list shows it without a refetch.
     expect(store.workspaces[0]?.items.some((i) => i.id === DEFAULT_ID)).toBe(true)
     wrapper.unmount()
   })
@@ -235,8 +221,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     await sidebar.handleNewChat()
     await flushAsync()
 
-    // A chat cannot exist without a workspace, and quietly creating one
-    // from a sidebar click would be a surprising side effect.
+    // A chat cannot exist without a workspace, and quietly creating one from a sidebar click would be a surprising side effect.
     expect(ensureSpy).not.toHaveBeenCalled()
     expect(addSpy).not.toHaveBeenCalled()
     expect(replaceMock).not.toHaveBeenCalled()
@@ -252,9 +237,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspace()]
     store.setActiveWorkspace(WS_ID)
-    // A slow resolve, so both clicks land while the first is still in the gap between "resolve the
-    // default" and "create the task". The database's partial unique index protects the *project*;
-    // this guard protects the *chat*.
+    // A slow resolve, so both clicks land while the first is still in the gap between "resolve the default" and "create the task".
     let releaseResolve: (() => void) | undefined
     vi.spyOn(store, 'ensureDefaultProject').mockImplementation(
       () =>
@@ -282,8 +265,6 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
 
   it('a failed ensure does NOT navigate and does NOT fabricate a local project', async () => {
     const store = useWorkspacesStore()
-    // NO default in the store, so the local find misses and the endpoint is actually reached —
-    // otherwise this test would pass without ever exercising the failure path.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store.workspaces = [{ id: WS_ID, name: 'WS', items: [makeItem(OTHER_ID, 'agent', 0)] }] as any
     store.setActiveWorkspace(WS_ID)
@@ -297,8 +278,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     await sidebar.handleNewChat()
     await flushAsync()
 
-    // Doing nothing is the right outcome. A fabricated id would navigate to
-    // a project that does not exist, which is worse than a no-op.
+    // Doing nothing is the right outcome.
     expect(addSpy).not.toHaveBeenCalled()
     expect(replaceMock).not.toHaveBeenCalled()
     // Still just the one ordinary project: no fabricated row.
@@ -314,9 +294,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
 
     const wrapper = mountSidebar()
     const toggle = document.body.querySelector('[data-testid="sidebar-collapse-toggle"]')
-    // Absolutely positioned, so inserting the 40px row above the content
-    // does NOT move it. At `top-16` (64px) it would sit on top of the New
-    // Chat row (which ends at 88px) and swallow its clicks.
+    // Absolutely positioned, so inserting the 40px row above the content does NOT move it.
     expect(toggle?.className).toContain('top-24')
     expect(toggle?.className).not.toContain('top-16')
     wrapper.unmount()
@@ -324,9 +302,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
 
   it('fresh boot with no explicit selection: falls back to first workspace instead of staying disabled', async () => {
     const store = useWorkspacesStore()
-    // Fresh boot: workspaces loaded but `activeWorkspaceId` ref never set (no dropdown pick, no
-    // ?workspaceId= URL). The header already shows the first workspace via the `activeWorkspace`
-    // computed — the button must follow the same precedence instead of staying disabled.
+    // Fresh boot: workspaces loaded but `activeWorkspaceId` ref never set (no dropdown pick, no ?workspaceId= URL).
     store.workspaces = [makeWorkspace()]
     // NOTE: no setActiveWorkspace call — this is the regression.
     const addSpy = vi.spyOn(store, 'addTask').mockResolvedValue('task_new_1')
@@ -363,8 +339,7 @@ describe('Sidebar.handleNewChat — creates a chat in the workspace default proj
     await nextTick()
 
     const btn = newChatButton() as HTMLButtonElement | null
-    // A 64px rail must not drop the only always-visible chat affordance —
-    // the word does not fit, so the label moves to the accessible name.
+    // A 64px rail must not drop the only always-visible chat affordance — the word does not fit, so the label moves to the accessible name.
     expect(btn).not.toBeNull()
     expect(btn?.getAttribute('aria-label')).toBe('New Chat')
     expect(btn?.textContent).not.toContain('New Chat')

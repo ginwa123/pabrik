@@ -1,6 +1,4 @@
 // ─── Helpers ───────────────────────────────────────────────────────────────
-// ── Cross-platform path helpers (Windows fix, 2026-09-05) ────────────── POSIX inputs produce
-// byte-identical results to the old POSIX-only implementations; see the file header for the rest.
 export function isWindowsAbs(path: string): boolean {
   if (!path) return false
   if (/^[A-Za-z]:[\\/]/.test(path)) return true
@@ -34,9 +32,7 @@ export function isRootPath(path: string): boolean {
 
 export function parentPath(path: string): string {
   if (!path || path === '/') return '/'
-  // Windows drive root (`C:\`, `C:/`, `C:`) and UNC share roots have no
-  // parent in this picker — step out to the system root (''), which the
-  // callers resolve via getSystemFolder (backend home / USERPROFILE).
+  // Windows drive root (`C:\`, `C:/`, `C:`) and UNC share roots have no parent in this picker — step out to the system root (''), which the callers resolve via …
   if (/^[A-Za-z]:[\\/]?$/.test(path)) return ''
   if (/^[\\/]{2}[^\\/]+[\\/]+[^\\/]+\/?$/.test(path)) return ''
   // Strip ONE trailing run of separators (never the root itself).
@@ -46,16 +42,14 @@ export function parentPath(path: string): string {
   const idx = Math.max(stripped.lastIndexOf('/'), stripped.lastIndexOf('\\'))
   if (idx <= 0) return '/'
   const parent = stripped.substring(0, idx)
-  // A bare drive (`C:`) isn't navigable — surface the drive root instead
-  // so the ancestor chain keeps the `C:\` level.
+  // A bare drive (`C:`) isn't navigable — surface the drive root instead so the ancestor chain keeps the `C:\` level.
   if (/^[A-Za-z]:$/.test(parent)) return `${parent}\\`
   return parent || '/'
 }
 
 export function parseBreadcrumb(path: string): Array<{ name: string; path: string }> {
   if (!path || path === '/') return []
-  // Windows drive: preserve the drive root and join with backslashes so
-  // every crumb stays a valid absolute the backend can list.
+  // Windows drive: preserve the drive root and join with backslashes so every crumb stays a valid absolute the backend can list.
   const driveMatch = /^[A-Za-z]:/.exec(path)
   if (driveMatch) {
     const drive = driveMatch[0]!
@@ -93,17 +87,13 @@ export function parseBreadcrumb(path: string): Array<{ name: string; path: strin
   return segments
 }
 
-// ─── Address-bar normalization ──────────────────────────────────────────── Accepts whatever the
-// user typed in the address input and returns a canonical absolute path, or `null` when the input
-// is unusable.
+// ─── Address-bar normalization ────────────────────────────────────────────
 export function normalizeAddressInput(raw: string, currentPath: string): string | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
   if (trimmed === '~' || trimmed === '~/') return '/'
 
-  // Windows absolute (drive or UNC). Previously these fell through to the
-  // relative branch and came out as `/C:\...` garbage — the exact mixed
-  // shape that ended up persisted as workspace_items.path on Windows.
+  // Windows absolute (drive or UNC).
   if (isWindowsAbs(trimmed)) {
     let out: string
     if (trimmed.startsWith('\\\\') || trimmed.startsWith('//')) {
@@ -116,15 +106,13 @@ export function normalizeAddressInput(raw: string, currentPath: string): string 
     return out || null
   }
 
-  // Already absolute (starts with '/'). Collapse runs of slashes and
-  // strip a trailing slash unless the result would be empty.
+  // Already absolute (starts with '/').
   if (trimmed.startsWith('/')) {
     const collapsed = trimmed.replace(/\/+/g, '/').replace(/(.)\/$/, '$1')
     return collapsed || '/'
   }
 
-  // Relative path: resolve against currentPath so a bare "docs" jumps into "./docs" inside the
-  // current view instead of being treated as invalid.
+  // Relative path: resolve against currentPath so a bare "docs" jumps into "./docs" inside the current view instead of being treated as invalid.
   const base = currentPath
   if (trimmed.startsWith('./') || trimmed.startsWith('../')) {
     const rel = trimmed.replace(/^\.\//, '')
@@ -133,9 +121,7 @@ export function normalizeAddressInput(raw: string, currentPath: string): string 
   return joinRelative(base, trimmed)
 }
 
-// Relative-path join with `..` support. Preserves a Windows drive/UNC prefix on the base so `notes`
-// from `C:\Users\ginwa` resolves to `C:\Users\ginwa\notes` (not `/notes`). Purely lexical — no
-// filesystem access. POSIX inputs behave exactly like the old POSIX-only version.
+// Relative-path join with `..` support.
 export function joinRelative(base: string, rel: string): string {
   const driveMatch = /^[A-Za-z]:/.exec(base)
   const uncMatch = !driveMatch ? /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+/.exec(base) : null

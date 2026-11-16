@@ -1,6 +1,4 @@
-/** SkillDetail.vue — the frontmatter metadata strip: it renders `skill_metadata` rows and never
- * re-parses the `---` fence out of `content`, so a body full of keys with an empty read renders
- * nothing. */
+/** SkillDetail.vue — the frontmatter metadata strip: it renders `skill_metadata` rows and never re-parses the `---` fence out of `content`, so a body full of keys … */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -102,9 +100,7 @@ describe('SkillDetail — frontmatter metadata', () => {
 
   it('renders no strip at all when the read reports no metadata', async () => {
     seedWorkspace()
-    // The body STILL carries `origin`/`tags`. Rendering them here would mean
-    // this pane had re-parsed the fence, which is the thing the table exists
-    // to stop.
+    // The body STILL carries `origin`/`tags`.
     getSkillDetailMock.mockResolvedValue(detail([]))
     const wrapper = await mountDetail()
 

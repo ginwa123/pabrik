@@ -1,6 +1,4 @@
-/** CodeEditor git gutter — change bars, Code/Diff toggle, change navigator,
- * blame annotation. The diff and blame travel as props (presentational, like
- * `content`): the spec pins rendering, not fetching. */
+/** CodeEditor git gutter — change bars, Code/Diff toggle, change navigator, blame annotation. */
 import { describe, expect, it } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import CodeEditor from '../CodeEditor.vue'

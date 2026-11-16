@@ -1,5 +1,4 @@
-/** The compact view folds one agent turn into ONE chain: the calls AND the
- * thoughts between them. A thought that leaks out below the card is the bug. */
+/** The compact view folds one agent turn into ONE chain: the calls AND the thoughts between them. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'

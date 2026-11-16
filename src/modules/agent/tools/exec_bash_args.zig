@@ -3,33 +3,26 @@ const pabrikcore = @import("pabrikcore");
 
 const tool_models = pabrikcore.tool_models;
 
-/// Lenient argument parser for the bash + pwsh tools (which share
-/// `tool_models.BashInput`); the field tables below drive its XML-tag recovery
-/// and its error text.
+/// Lenient argument parser for the bash + pwsh tools (which share `tool_models.BashInput`); the field tables below drive its XML-tag recovery and its error text.
 pub const TIMEOUT_ALIASES: []const []const u8 = &.{ "timeout", "mandatory_timeout" };
 
 pub const NUMERIC_U32_FIELDS = TIMEOUT_ALIASES;
 pub const NUMERIC_USIZE_FIELDS = [_][]const u8{ "max_output", "max_lines" };
 
-/// Boolean fields on `ShellInput` whose values the LLM may have
-/// contaminated with stray XML closing tags.
+/// Boolean fields on `ShellInput` whose values the LLM may have contaminated with stray XML closing tags.
 pub const BOOL_FIELDS = [_][]const u8{ "background", "do_encoding", "is_stop" };
 
-/// String fields on `ShellInput` whose values the LLM may have
-/// contaminated with stray XML closing tags.
+/// String fields on `ShellInput` whose values the LLM may have contaminated with stray XML closing tags.
 pub const STRING_FIELDS = [_][]const u8{ "command", "cwd", "stdin_data" };
 
 /// The three accepted `mode` spellings, in the order the schema lists them.
-/// Kept as a constant so the error message and the schema cannot disagree
-/// about what is legal.
 pub const MODE_VALUES: []const []const u8 = &.{
     "foreground",
     "background",
     "background_persistence",
 };
 
-/// "foreground", "background" or "background_persistence" — the `expected`
-/// text for a bad `mode`, built once from `MODE_VALUES`.
+/// "foreground", "background" or "background_persistence" — the `expected` text for a bad `mode`, built once from `MODE_VALUES`.
 const MODE_EXPECTED = "one of \"foreground\", \"background\", \"background_persistence\"";
 
 pub const KNOWN_FIELDS: []const []const u8 = &.{
@@ -38,8 +31,7 @@ pub const KNOWN_FIELDS: []const []const u8 = &.{
     "background", "do_encoding", "is_stop",
 };
 
-/// Spelled the way the payload has to carry them, so the repair hint is
-/// copy-pasteable.
+/// Spelled the way the payload has to carry them, so the repair hint is copy-pasteable.
 pub const REQUIRED_HINT =
     "\"command\" (string), \"cwd\" (absolute path), \"timeout\" (seconds, 1-600)";
 
@@ -49,14 +41,10 @@ pub const EXAMPLE_CALL =
 const CLIP_VALUE = 120;
 const CLIP_PAYLOAD = 300;
 
-/// A call that parses but cannot run, described well enough for the model to
-/// repair it without guessing. Every optional slice is owned; release the lot
-/// with `freeInvalidField`.
+/// A call that parses but cannot run, described well enough for the model to repair it without guessing.
 pub const InvalidField = struct {
     field: []const u8,
-    /// The offending value as the LLM emitted it (verbatim, including any
-    /// stray XML closing tags), or the whole payload when the failure is at
-    /// the JSON level.
+    /// The offending value as the LLM emitted it (verbatim, including any stray XML closing tags), or the whole payload when the failure is at the JSON level.
     got: []const u8,
     /// The wire-shape the field accepts (e.g. `"number (u32)"`).
     expected: []const u8,
@@ -71,16 +59,13 @@ pub const InvalidField = struct {
     pub const Kind = enum { wrong_type, missing, bad_json, not_object };
 };
 
-/// Result of `parseShellArgs`. Either a typed BashInput on success or
-/// structured failure info. Use `formatInvalidField` to render the
-/// `InvalidField` into the envelope's error text.
+/// Result of `parseShellArgs`.
 pub const Result = union(enum) {
     success: tool_models.BashInput,
     failure: InvalidField,
 };
 
-/// Render an `InvalidField` as the error text of a tool envelope: what went
-/// wrong, what the call actually carried, and a payload that would work.
+/// Render an `InvalidField` as the error text of a tool envelope: what went wrong, what the call actually carried, and a payload that would work.
 pub fn formatInvalidField(allocator: std.mem.Allocator, info: InvalidField) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -150,22 +135,19 @@ fn appendQuotedClipped(allocator: std.mem.Allocator, out: *std.ArrayList(u8), te
     try out.append(allocator, '"');
 }
 
-/// Parse the JSON `arguments` string from a bash / pwsh tool call into a
-/// tagged-union result.
+/// Parse the JSON `arguments` string from a bash / pwsh tool call into a tagged-union result.
 pub fn parseShellArgs(
     allocator: std.mem.Allocator,
     arguments: []const u8,
 ) Result {
-    // 1. Lenient parse as std.json.Value. Any well-formed JSON object
-    //    succeeds here — the type check happens per-field below.
+    // 1.
     const parsed_value = std.json.parseFromSlice(
         std.json.Value,
         allocator,
         arguments,
         .{},
     ) catch {
-        // Malformed JSON — surface the raw payload so the LLM can see
-        // exactly what bytes it sent.
+        // Malformed JSON — surface the raw payload so the LLM can see exactly what bytes it sent.
         const got_dup = allocator.dupe(u8, arguments) catch arguments;
         return .{ .failure = .{
             .field = "<json>",
@@ -198,9 +180,7 @@ pub fn parseShellArgs(
         };
         out.command = s;
     } else {
-        // No allocator-needed slice was produced yet (command is the
-        // first field we coerce), so a duped "<missing>" literal is
-        // safe — the caller frees via `freeInvalidField`.
+        // No allocator-needed slice was produced yet (command is the first field we coerce), so a duped "<missing>" literal is safe — the caller frees via …
         const got_dup = allocator.dupe(u8, "<missing>") catch "<missing>";
         var failure = InvalidField{
             .field = "command",
@@ -213,8 +193,6 @@ pub fn parseShellArgs(
     }
 
     // timeout (?u32) — or its pre-rename spelling, see `TIMEOUT_ALIASES`.
-    // The error names whichever spelling the caller actually used, so a model
-    // that sent `mandatory_timeout` is told about `mandatory_timeout`.
     for (TIMEOUT_ALIASES) |field| {
         const v = obj.get(field) orelse continue;
         const n = coerceU32(allocator, v, field) orelse {
@@ -223,8 +201,7 @@ pub fn parseShellArgs(
         out.timeout = n;
         break;
     }
-    // else: leave as null. The execute_bash validator will return
-    // TimeoutMissing if still null.
+    // else: leave as null.
 
     // cwd (?string)
     if (obj.get("cwd")) |v| {
@@ -282,9 +259,7 @@ pub fn parseShellArgs(
         out.is_stop = b;
     }
 
-    // ─── mode (string enum) + the legacy `background` boolean ─── Resolved
-    // TOGETHER, because they are two spellings of one decision and the only
-    // input that cannot be resolved is `background=true` alongside an
+    // ─── mode (string enum) + the legacy `background` boolean ───
     var explicit_mode: ?tool_models.RunMode = null;
     if (obj.get("mode")) |v| {
         const raw = coerceString(allocator, v, "mode") orelse {
@@ -299,8 +274,7 @@ pub fn parseShellArgs(
 
     if (explicit_mode) |m| {
         if (out.background and m == .foreground) {
-            // Rendered as a `background` problem because that is the field
-            // whose value is wrong once `mode` is explicit.
+            // Rendered as a `background` problem because that is the field whose value is wrong once `mode` is explicit.
             return returnFail(
                 allocator,
                 &out,
@@ -310,8 +284,7 @@ pub fn parseShellArgs(
                 "false, when you also pass mode=\"foreground\" (or drop mode to mean background)",
             );
         }
-        // An explicit non-foreground mode keeps the legacy boolean's meaning
-        // for the benefit of anything reading `.background` directly.
+        // An explicit non-foreground mode keeps the legacy boolean's meaning for the benefit of anything reading `.background` directly.
         out.mode = m;
         out.background = m.isDetached();
     } else if (out.background) {
@@ -321,9 +294,7 @@ pub fn parseShellArgs(
     return .{ .success = out };
 }
 
-/// Build a `Result.failure` and synchronously free any slices already
-/// duped into `*out` (so the caller doesn't leak on the failure path).
-/// Returns the tagged-union failure variant.
+/// Build a `Result.failure` and synchronously free any slices already duped into `*out` (so the caller doesn't leak on the failure path).
 fn returnFail(
     allocator: std.mem.Allocator,
     out: *tool_models.BashInput,
@@ -333,8 +304,7 @@ fn returnFail(
     expected: []const u8,
 ) Result {
     freeInput(allocator, out.*);
-    // Reset the command field to "" so freeInput doesn't double-free if
-    // it's called again on the same struct.
+    // Reset the command field to "" so freeInput doesn't double-free if it's called again on the same struct.
     out.command = "";
     out.cwd = null;
     out.stdin_data = null;
@@ -348,9 +318,7 @@ const MAX_UNKNOWN_LISTED = 3;
 const MAX_SUGGESTION_DISTANCE = 2;
 const MAX_FIELD_NAME = 32;
 
-/// Record which fields the payload carried and which of them the tool does
-/// not accept, so the error text can name the model's typo instead of only
-/// reporting the field that went missing because of it.
+/// Record which fields the payload carried and which of them the tool does not accept, so the error text can name the model's typo instead of only reporting the …
 fn describeArgs(allocator: std.mem.Allocator, obj: std.json.ObjectMap, failure: *InvalidField) void {
     const keys = obj.keys();
     failure.sent = joinQuoted(allocator, keys, keys.len, MAX_LISTED_FIELDS) catch null;
@@ -459,8 +427,7 @@ fn editDistance(a: []const u8, b: []const u8, max: usize) ?usize {
     return if (distance <= max) distance else null;
 }
 
-/// Strip a single trailing `</fieldname>` substring from `s` IF `s` ends with
-/// `</fieldname>`.
+/// Strip a single trailing `</fieldname>` substring from `s` IF `s` ends with `</fieldname>`.
 fn stripFieldCloseTag(allocator: std.mem.Allocator, s: []const u8, field: []const u8) ![]u8 {
     const close = "</";
     if (s.len < close.len + field.len + 1) return try allocator.dupe(u8, s);
@@ -478,8 +445,6 @@ fn stripFieldCloseTag(allocator: std.mem.Allocator, s: []const u8, field: []cons
 }
 
 /// Render a JSON value as a short display string suitable for error messages.
-/// For strings: the verbatim content. For numbers / bools: the JSON literal.
-/// For null: the literal "null". For arrays / objects: a placeholder.
 fn jsonValueDisplay(allocator: std.mem.Allocator, v: std.json.Value) ![]u8 {
     return switch (v) {
         .string => |s| try allocator.dupe(u8, s),
@@ -508,9 +473,7 @@ fn coerceString(
 ) ?[]u8 {
     switch (v) {
         .string => |s| {
-            // Field-aware XML-close-tag cleanup: strip a single trailing
-            // `</field>` from string fields too — the LLM may have polluted a
-            // string like `"echo a > /tmp/x</command>"` by accidentally
+            // Field-aware XML-close-tag cleanup: strip a single trailing `</field>` from string fields too — the LLM may have polluted a string like `"echo a > …
             return stripFieldCloseTag(allocator, s, field) catch null;
         },
         else => return null,
@@ -572,8 +535,7 @@ fn coerceBool(
     switch (v) {
         .bool => |b| return b,
         .string => |s| {
-            // Field-aware XML-close-tag cleanup: same recovery as the
-            // numeric coercers. `true</do_encoding>` → "true" → true.
+            // Field-aware XML-close-tag cleanup: same recovery as the numeric coercers.
             const cleaned = stripFieldCloseTag(allocator, s, field) catch return null;
             defer allocator.free(cleaned);
             if (std.mem.eql(u8, cleaned, "true")) return true;
@@ -584,15 +546,11 @@ fn coerceBool(
     }
 }
 
-// ============================================================================
 // Tests — regression coverage for the user's bug + the common variations.
-// ============================================================================
 
 const testing = std.testing;
 
 /// Free every owned slice in a `BashInput` returned by `parseShellArgs`.
-/// Use with `defer freeInput(testing.allocator, input);` at the top of
-/// every success-arm test body.
 fn freeInput(allocator: std.mem.Allocator, input: tool_models.BashInput) void {
     allocator.free(input.command);
     if (input.cwd) |c| allocator.free(c);
@@ -600,8 +558,6 @@ fn freeInput(allocator: std.mem.Allocator, input: tool_models.BashInput) void {
 }
 
 /// Free every owned slice in an `InvalidField` returned by `parseShellArgs`.
-/// Use with `defer freeInvalidField(testing.allocator, info);` at the top of
-/// every failure-arm test body.
 pub fn freeInvalidField(allocator: std.mem.Allocator, info: InvalidField) void {
     allocator.free(info.got);
     if (info.sent) |sent| allocator.free(sent);
@@ -685,9 +641,7 @@ test "parseShellArgs: truly garbage timeout returns failure with rich info" {
 }
 
 test "parseShellArgs: failure message renders cleanly for the envelope" {
-    // Use a value that's not a recoverable XML-fragment (no matching
-    // close tag) so the parser genuinely fails. The envelope-rendering
-    // helper surfaces the bad value verbatim.
+    // Use a value that's not a recoverable XML-fragment (no matching close tag) so the parser genuinely fails.
     const args = "{\"command\":\"ls\",\"timeout\":\"not-a-number\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
@@ -823,9 +777,7 @@ test "parseShellArgs: bool from string 'false'" {
 }
 
 test "parseShellArgs: is_stop defaults to false when absent" {
-    // Every existing caller (and every transcript written before this field
-    // existed) omits `is_stop`. Absent must mean "keep looping" — not
-    // "unset in a way that has to be guarded at each read site".
+    // Every existing caller (and every transcript written before this field existed) omits `is_stop`.
     const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
@@ -850,9 +802,7 @@ test "parseShellArgs: is_stop reads a JSON boolean" {
 }
 
 test "parseShellArgs: is_stop reads a string boolean" {
-    // The lenient path that exists for `background` must cover `is_stop`
-    // too: a model that learned the bool-as-string shape from an old
-    // transcript must not get an error it cannot act on.
+    // The lenient path that exists for `background` must cover `is_stop` too: a model that learned the bool-as-string shape from an old transcript must not get an …
     const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":\"true\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
@@ -865,9 +815,7 @@ test "parseShellArgs: is_stop reads a string boolean" {
 }
 
 test "parseShellArgs: a garbage is_stop names the field instead of guessing" {
-    // The dangerous alternative is coercing `"yes"`-ish input to true or
-    // false. Either guess ends the user's turn (or keeps it running) on a
-    // value the model never sent, so this must be a structured failure.
+    // The dangerous alternative is coercing `"yes"`-ish input to true or false.
     const args = "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"is_stop\":\"maybe\"}";
     const result = parseShellArgs(testing.allocator, args);
     switch (result) {
@@ -881,9 +829,7 @@ test "parseShellArgs: a garbage is_stop names the field instead of guessing" {
 }
 
 test "parseShellArgs: is_stop is documented as a lenient bool field" {
-    // BOOL_FIELDS is what the header promises covers every boolean the LLM
-    // may contaminate with a stray XML close tag. A boolean added to the
-    // struct but not to this table silently loses that recovery.
+    // BOOL_FIELDS is what the header promises covers every boolean the LLM may contaminate with a stray XML close tag.
     var found = false;
     for (BOOL_FIELDS) |name| {
         if (std.mem.eql(u8, name, "is_stop")) found = true;
@@ -911,9 +857,7 @@ test "parseShellArgs: mode reads each of the three wire spellings" {
 }
 
 test "parseShellArgs: an unknown mode names the field instead of picking a default" {
-    // The dangerous alternative is falling back to `foreground`: the model
-    // asked for a detached dev server and would instead get a call that blocks
-    // for 60 s and then gets killed.
+    // The dangerous alternative is falling back to `foreground`: the model asked for a detached dev server and would instead get a call that blocks for 60 s and then …
     const args = "{\"command\":\"pnpm run dev\",\"cwd\":\"/w\",\"mode\":\"persistent\"}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
@@ -926,8 +870,7 @@ test "parseShellArgs: an unknown mode names the field instead of picking a defau
 }
 
 test "parseShellArgs: background=true still means mode=background" {
-    // Every transcript written before `mode` existed uses this, and so does
-    // every in-tree caller. It has to keep meaning exactly what it meant.
+    // Every transcript written before `mode` existed uses this, and so does every in-tree caller.
     const args = "{\"command\":\"zig build\",\"background\":true}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => |input| {
@@ -940,9 +883,7 @@ test "parseShellArgs: background=true still means mode=background" {
 }
 
 test "parseShellArgs: background=true with mode=foreground is rejected, not guessed" {
-    // Both readings are defensible, so neither may win silently: one ends in
-    // a detached `pnpm run dev` the caller wanted blocked, the other in a 60
-    // s-murdered dev server.
+    // Both readings are defensible, so neither may win silently: one ends in a detached `pnpm run dev` the caller wanted blocked, the other in a 60 s-murdered dev …
     const args = "{\"command\":\"x\",\"background\":true,\"mode\":\"foreground\"}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
@@ -956,9 +897,7 @@ test "parseShellArgs: background=true with mode=foreground is rejected, not gues
 }
 
 test "parseShellArgs: background=true alongside a detached mode is not a contradiction" {
-    // Both fields say "detach", so the modern one simply wins. Rejecting this
-    // would break a caller that is adding `mode` to a call site that still
-    // passes the boolean.
+    // Both fields say "detach", so the modern one simply wins.
     const args = "{\"command\":\"pnpm run dev\",\"background\":true,\"mode\":\"background_persistence\"}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => |input| {
@@ -982,8 +921,7 @@ test "parseShellArgs: mode=foreground with background=false is just foreground" 
 }
 
 test "parseShellArgs: the pre-rename `mandatory_timeout` spelling still parses" {
-    // Old transcripts carry it, and so does any cached tool schema. Dropping
-    // the spelling would turn a previously-valid turn into `TimeoutMissing`.
+    // Old transcripts carry it, and so does any cached tool schema.
     const args = "{\"command\":\"ls\",\"mandatory_timeout\":45}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => |input| {
@@ -1006,8 +944,7 @@ test "parseShellArgs: `timeout` wins when both spellings are present" {
 }
 
 test "parseShellArgs: a bad alias value is reported under the name the caller used" {
-    // Naming it `timeout` when the caller wrote `mandatory_timeout` would send
-    // the model looking for a field it never sent.
+    // Naming it `timeout` when the caller wrote `mandatory_timeout` would send the model looking for a field it never sent.
     const args = "{\"command\":\"ls\",\"mandatory_timeout\":\"soon\"}";
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
@@ -1118,9 +1055,7 @@ test "parseShellArgs: do_encoding with stray XML fragment" {
 }
 
 test "parseShellArgs: complex XML fragment that resists parseInt returns rich failure" {
-    // Even after stripping `</timeout>`, the value still contains `<timeout>`
-    // opener — parseInt fails. The helper surfaces the ORIGINAL value (with
-    // the tag) so the LLM sees the corruption, not a stripped cleaned value.
+    // Even after stripping `</timeout>`, the value still contains `<timeout>` opener — parseInt fails.
     const args = "{\"command\":\"ls\",\"timeout\":\"5<timeout>5</timeout>\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);

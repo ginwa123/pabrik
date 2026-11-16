@@ -48,9 +48,7 @@ import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import ToolParameters from './_shared/ToolParameters.vue'
 import { tryUnwrapToolOutput } from '../../helpers/unwrapToolOutput'
 
-// Minimal shape we need from the parent. ChatView.vue defines a LOCAL `Message` interface
-// (different from `api.Message`) so we declare just the fields we read — this keeps the component
-// decoupled from whichever Message type the parent uses.
+// Minimal shape we need from the parent.
 interface ToolMessageLike {
   id?: string
   role?: string
@@ -82,8 +80,7 @@ const props = defineProps<{
 
 const isExpanded = ref(true)
 
-/** Envelope `<parameters>` for this tool message (Task 6). `get_plan` takes no input, so this is
- * `{}` on the real wire and <ToolParameters> renders nothing (its hasArgs guard skips '' / '{}'). */
+/** Envelope `<parameters>` for this tool message (Task 6). */
 const envelopeParams = computed(() => tryUnwrapToolOutput(props.message.content)?.parameters ?? '{}')
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -109,9 +106,7 @@ function strOrNull(v: unknown): string | null {
   return null
 }
 
-/**  * Unwrap the message content to the inner `data` record. Accepts the full JSON envelope string
- * (normal wire shape) or a bare data-object JSON string (defensive fallback for direct callers).
- * Returns null when the content is not parseable JSON at all. */
+/** Unwrap the message content to the inner `data` record. */
 function innerDataOf(content: string): { data: Record<string, unknown>; error: string | null } | null {
   const unwrapped = tryUnwrapToolOutput(content)
   if (unwrapped) {
@@ -203,8 +198,7 @@ const totals = computed(() => {
 const primaryLabel = computed((): string => {
   if (!parsed.value.success) return 'error'
   if (parsed.value.isEmpty) return '(empty)'
-  // Show "N items" as the primary label so the user sees the scope
-  // of the plan at a glance without expanding.
+  // Show "N items" as the primary label so the user sees the scope of the plan at a glance without expanding.
   const t = totals.value
   if (t.total === 0) return '(no checklist)'
   return `${t.total} ${t.total === 1 ? 'item' : 'items'}`

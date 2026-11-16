@@ -15,23 +15,17 @@ const store = @import("../modules/agent/loop/workspace_settings_store.zig");
 pub const WorkspaceConfigError = error{
     WorkspaceIdRequired,
     InvalidBody,
-    /// The body is a well-formed config but carries no workspace-scoped key,
-    /// so accepting it would silently mean "inherit everything" when the
-    /// caller believed they were saving something.
+    /// The body is a well-formed config but carries no workspace-scoped key, so accepting it would silently mean "inherit everything" when the caller believed they …
     NothingScoped,
-    /// The host has no master key, so the row cannot be sealed. Refusing beats
-    /// storing one more plaintext config.
+    /// The host has no master key, so the row cannot be sealed.
     SealingUnavailable,
     QueryFailed,
     OutOfMemory,
 };
 
-// =====================================================================
 // Use cases (no HTTP, no io - so every rule below is testable)
-// =====================================================================
 
-/// The effective config TEXT: `base` with `overlay` merged over it. Owned by
-/// the caller.
+/// The effective config TEXT: `base` with `overlay` merged over it.
 pub fn effectiveConfig(
     allocator: std.mem.Allocator,
     base_json: ?[]const u8,
@@ -49,9 +43,7 @@ pub fn overlayFromPutBody(
     allocator: std.mem.Allocator,
     body: []const u8,
 ) WorkspaceConfigError![]u8 {
-    // Parse first: a malformed body must be a 400, never a stored blob. This
-    // is the same parser the user-scope PUT uses, so the two surfaces accept
-    // the same shapes.
+    // Parse first: a malformed body must be a 400, never a stored blob.
     _ = pabrik_config_put.parseConfigInput(allocator, body) catch return error.InvalidBody;
 
     const overlay = workspace_config.workspaceScopedOverlay(allocator, body) catch return error.OutOfMemory;
@@ -60,9 +52,7 @@ pub fn overlayFromPutBody(
     return overlay;
 }
 
-// =====================================================================
 // Error mapping (exhaustive, so a new variant breaks the build here)
-// =====================================================================
 
 fn statusFor(err: WorkspaceConfigError) u16 {
     return switch (err) {
@@ -82,13 +72,9 @@ fn messageFor(err: WorkspaceConfigError) []const u8 {
     };
 }
 
-// =====================================================================
 // Handler plumbing
-// =====================================================================
 
-/// The `owner` half of the overlay key. * `--auth` OFF -> `FILE_MODE_OWNER`
-/// (`""`), one overlay per workspace. * `--auth` ON -> the request's user,
-/// exactly like `users.config_json`.
+/// The `owner` half of the overlay key.
 fn ownerForRequest(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,
@@ -99,9 +85,7 @@ fn ownerForRequest(
     return allocator.dupe(u8, store.ownerKey(di.auth_enabled, user_id)) catch null;
 }
 
-/// A minimal success body. Shaped like the other write handlers' responses
-/// (`{"success":true,...}`) rather than a bare 204, so a caller that only
-/// checks the body still sees that the write landed.
+/// A minimal success body.
 fn okResponse(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{{\"success\":true,\"message\":\"{s}\"}}", .{message});
 }
@@ -153,9 +137,7 @@ fn errorResponse(
     });
 }
 
-// =====================================================================
 // Handlers
-// =====================================================================
 
 pub fn workspaceConfigGetHandler(
     ctx: gserverz.HttpContext,
@@ -181,9 +163,7 @@ pub fn workspaceConfigGetHandler(
         return errorResponse(res, allocator, err);
     defer allocator.free(effective);
 
-    // The SAME parse struct and the SAME response builder as
-    // `GET /api/config/pabrik`, so the two surfaces cannot drift on the field
-    // set or on masking `web_search`.
+    // The SAME parse struct and the SAME response builder as `GET /api/config/pabrik`, so the two surfaces cannot drift on the field set or on masking `web_search`.
     const cfg = std.json.parseFromSliceLeaky(pabrik_config_get.ConfigJson, allocator, effective, .{
         .ignore_unknown_fields = true,
     }) catch return errorResponse(res, allocator, error.InvalidBody);
@@ -209,11 +189,9 @@ pub fn workspaceConfigPutHandler(
         return errorResponse(res, allocator, error.OutOfMemory);
     defer allocator.free(owner);
 
-    // `req.body` is `[]const u8` here (an absent body is the empty slice),
-    // not an optional - do not reach for `orelse`.
+    // `req.body` is `[]const u8` here (an absent body is the empty slice), not an optional - do not reach for `orelse`.
     const body = req.body;
-    // An empty body means "this workspace has NO scoped settings": the row is
-    // kept (so the state is a decision, not an accident) with a NULL body.
+    // An empty body means "this workspace has NO scoped settings": the row is kept (so the state is a decision, not an accident) with a NULL body.
     if (std.mem.trim(u8, body, " \t\r\n").len == 0) {
         store.clear(allocator, di.db, owner, workspace_id) catch
             return errorResponse(res, allocator, error.QueryFailed);
@@ -236,13 +214,9 @@ pub fn workspaceConfigPutHandler(
     });
 }
 
-// =====================================================================
 // DELETE /api/workspaces/:workspace_id/config/profiles/:name
-// =====================================================================
 
-/// Delete one profile from this workspace's own row. The user document is
-/// never touched: profiles are workspace-scoped, and deleting one here must
-/// not remove it from anywhere else.
+/// Delete one profile from this workspace's own row.
 pub fn workspaceConfigProfileDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -262,8 +236,7 @@ pub fn workspaceConfigProfileDeleteHandler(
     const owner = ownerForRequest(allocator, di, req) orelse
         return profile_delete.makeErrorResponse(allocator, res, 500, name, "Out of memory");
 
-    // A malformed overlay is already ignored by the merge, so there is
-    // nothing here to remove either - not a new failure.
+    // A malformed overlay is already ignored by the merge, so there is nothing here to remove either - not a new failure.
     var active_cleared = false;
     var removed = false;
     if (loadOverlay(allocator, di, owner, workspace_id)) |overlay| {
@@ -285,9 +258,7 @@ pub fn workspaceConfigProfileDeleteHandler(
     return profile_delete.makeSuccessResponse(allocator, res, name, active_cleared, null);
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -338,9 +309,7 @@ test "effectiveConfig: an overlay wins and the base survives underneath" {
     const e = try effectiveConfig(alloc, USER_CONFIG, "{\"tools\":[\"read_file\"]}");
     defer alloc.free(e);
 
-    // `parseFromSlice` + deinit, NOT the leaky variant: the leaky one exists
-    // for an arena-backed request allocator, and under `testing.allocator` it
-    // reports every allocation as a leak (which is how CI caught this file).
+    // `parseFromSlice` + deinit, NOT the leaky variant: the leaky one exists for an arena-backed request allocator, and under `testing.allocator` it reports every …
     var parsed = try std.json.parseFromSlice(pabrik_config_get.ConfigJson, alloc, e, .{
         .ignore_unknown_fields = true,
     });
@@ -348,8 +317,7 @@ test "effectiveConfig: an overlay wins and the base survives underneath" {
     const cfg = parsed.value;
     // The overlay's list replaced the user's two-entry list...
     try testing.expectEqual(@as(usize, 1), cfg.tools.?.len);
-    // ...and the profile the workspace never mentioned - with its credential
-    // - is still there.
+    // ...and the profile the workspace never mentioned - with its credential - is still there.
     try testing.expect(std.mem.indexOf(u8, e, "sk-user") != null);
     try testing.expectEqual(@as(u32, 2000), cfg.retry_delay_ms);
 }
@@ -362,9 +330,7 @@ test "effectiveConfig: no base at all still applies the overlay" {
 }
 
 test "overlayFromPutBody keeps only the workspace-scoped keys" {
-    // An arena, because `overlayFromPutBody` runs the same `parseConfigInput`
-    // the HTTP handler does - and that parser is `parseFromSliceLeaky` on
-    // purpose, since the handler gives it the request arena.
+    // An arena, because `overlayFromPutBody` runs the same `parseConfigInput` the HTTP handler does - and that parser is `parseFromSliceLeaky` on purpose, since the …
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
@@ -380,8 +346,7 @@ test "overlayFromPutBody keeps only the workspace-scoped keys" {
     var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, overlay, .{});
     defer parsed.deinit();
     const obj = parsed.value.object;
-    // `profiles` is normalised to the on-disk `profiles_models` - see
-    // `workspace_config.ScopedKey`.
+    // `profiles` is normalised to the on-disk `profiles_models` - see `workspace_config.ScopedKey`.
     try testing.expect(obj.get("profiles_models") != null);
     try testing.expect(obj.get("tools") != null);
     try testing.expectEqual(@as(i64, 2000), obj.get("retry_delay_ms").?.integer);
@@ -402,13 +367,11 @@ test "overlayFromPutBody clamps a retry delay the user PUT would clamp" {
 }
 
 test "overlayFromPutBody refuses a body with nothing scoped, and malformed JSON" {
-    // Arena for the same reason as the test above: the parse that REFUSES also
-    // goes through the leaky parser.
+    // Arena for the same reason as the test above: the parse that REFUSES also goes through the leaky parser.
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
-    // Refusing beats storing `{}`: storing it would look like a successful
-    // save while every setting the user typed silently stayed user-level.
+    // Refusing beats storing `{}`: storing it would look like a successful save while every setting the user typed silently stayed user-level.
     try testing.expectError(error.NothingScoped, overlayFromPutBody(alloc, "{\"notify_on_complete\":true}"));
     try testing.expectError(error.NothingScoped, overlayFromPutBody(alloc, "{}"));
     try testing.expectError(error.InvalidBody, overlayFromPutBody(alloc, "{\"tools\":"));
@@ -424,9 +387,7 @@ test "statusFor/messageFor map every variant (a new one breaks this switch)" {
 }
 
 test "the GET response masks the web_search key, like the user-scope GET" {
-    // An ARENA, exactly like the equivalent test in `pabrik_config_get.zig`:
-    // `maskProviders` builds a whole masked copy of the providers map and the
-    // response builder serialises it, and neither hands ownership back.
+    // An ARENA, exactly like the equivalent test in `pabrik_config_get.zig`
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
@@ -441,14 +402,12 @@ test "the GET response masks the web_search key, like the user-scope GET" {
     defer parsed.deinit();
     const cfg = parsed.value;
 
-    // Positive control: the unmasked field really does hold the secret, so
-    // the absence assertion below cannot pass vacuously.
+    // Positive control: the unmasked field really does hold the secret, so the absence assertion below cannot pass vacuously.
     try testing.expect(std.mem.indexOf(u8, cfg.web_search.?.object.get("brave").?.object.get("key").?.string, secret) != null);
 
     const wire = try pabrik_config_get.makeConfigResponse(alloc, cfg);
     try testing.expect(std.mem.indexOf(u8, wire, secret) == null);
-    // The section still ships - masking redacts the key, it does not drop the
-    // block the Settings UI renders.
+    // The section still ships - masking redacts the key, it does not drop the block the Settings UI renders.
     try testing.expect(std.mem.indexOf(u8, wire, "\"web_search\":{") != null);
 }
 
@@ -461,8 +420,7 @@ test "a workspace's overlay is invisible to another workspace over the store pat
 
     try store.saveRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a", "{\"active_profile\":\"a\"}");
 
-    // Captured and freed: `loadRaw` returns an OWNED slice, and passing it
-    // straight into the call leaked it (CI: "leaked 1 allocations").
+    // Captured and freed: `loadRaw` returns an OWNED slice, and passing it straight into the call leaked it (CI: "leaked 1 allocations").
     const overlay_a = store.loadRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a") catch null;
     defer if (overlay_a) |o| alloc.free(o);
     const for_a = try effectiveConfig(alloc, USER_CONFIG, overlay_a);

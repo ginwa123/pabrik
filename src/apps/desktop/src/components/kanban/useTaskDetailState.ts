@@ -1,5 +1,4 @@
-/** Reactive state and derived values for the KanbanTaskDetail panel. Split out of the SFC so the
- * panel stays readable; behaviour (handlers, emitters) lives in useTaskDetailActions.ts. */
+/** Reactive state and derived values for the KanbanTaskDetail panel. */
 import { computed, inject, ref } from 'vue'
 import {
   browserSkillDefaultsStorage,
@@ -18,22 +17,16 @@ import type {
 } from './kanbanTaskDetailTypes'
 
 export function useTaskDetailState(props: TaskDetailProps, tagSuggestions: TaskTagSuggestions) {
-// True when the dialog is rendering the create flow (rather than
-// edit-in-place). Drives header copy / icon, save-button text, the
-// form-state reset rule, and which emit fires on submit.
+// True when the dialog is rendering the create flow (rather than edit-in-place).
 const isCreateMode = computed<boolean>(() => props.mode === 'create')
 
 // ─── Form state ──────────────────────────────────────────────────────────
 const name = ref('')
 const description = ref('')
 const unattended = ref<'0' | '1'>('1')
-// "Use git worktree" toggle (create mode only, default OFF). When ON,
-// the host bakes `#Notes UseGitWorktree` into the create_and_run
-// queue_message. Plain create ignores it (no queue_message there).
+// "Use git worktree" toggle (create mode only, default OFF).
 const useGitWorktree = ref(false)
-// Worktree path input (create mode only, visible when the toggle is ON). Canonical root is
-// $HOME/.config/pabrik/.worktrees (Option A) — prefilled on toggle-on as <slug>-<timestamp> from
-// the task name plus Date.now() so concurrent tasks never collide; the user can accept or edit it.
+// Worktree path input (create mode only, visible when the toggle is ON).
 const WORKTREE_DIR_SUFFIX = '.config/pabrik/.worktrees'
 const homeDir = ref('')
 const resolveWorktreeDir = (): string => {
@@ -54,13 +47,9 @@ const expandWorktreePath = (raw: string): string => {
   return trimmed
 }
 const worktreePath = ref('')
-// Base ref the new worktree branches FROM (create mode only, visible when the toggle is ON). Empty
-// = no `Base:` line in the queue_message, so the agent branches from the repo's current HEAD (the
-// pre-existing behavior).
+// Base ref the new worktree branches FROM (create mode only, visible when the toggle is ON).
 const worktreeBaseBranch = ref('')
-// "Auto merge" toggle (create mode only, default OFF). When ON, the host bakes
-// `#Notes AutoMerge` + `Method:` into the create_and_run queue_message, which is
-// what tells the agent to wait for CI and merge the PR itself.
+// "Auto merge" toggle (create mode only, default OFF).
 const autoMerge = ref(false)
 const autoMergeMethod = ref<MergeMethod>('squash')
 const slugifyWorktreeName = (raw: string): string => {
@@ -73,16 +62,11 @@ const slugifyWorktreeName = (raw: string): string => {
   return slug || 'task'
 }
 const tags = ref<string[]>([])
-// NEW (kanban task dependencies). Chosen dependency ids, edited via KanbanDependsInput and
-// persisted through the same save path as tags (no second save mechanism).
+// NEW (kanban task dependencies).
 const dependsOn = ref<string[]>([])
-// Template ref for the chip input — handleSave calls commitDraft() imperatively before reading
-// `tags.value` so a draft tag typed but not yet committed (Enter/comma not pressed) isn't dropped
-// on Save.
+// Template ref for the chip input — handleSave calls commitDraft() imperatively before reading `tags.value` so a draft tag typed but not yet committed …
 const tagsInputRef = ref<{ commitDraft: () => void } | null>(null)
-// Template ref for the description editor — used in CREATE MODE to read the staged image files
-// (pendingFiles) so the dialog can hand them to the host's create-then-upload orchestrator. The
-// editor exposes pendingFiles via defineExpose; see KanbanDescriptionEditor.vue for the contract.
+// Template ref for the description editor — used in CREATE MODE to read the staged image files (pendingFiles) so the dialog can hand them to the host's …
 const descriptionEditorRef = ref<{ pendingFiles: PreviewFile[] } | null>(null)
 
 const selectedAgent = ref('')
@@ -91,16 +75,13 @@ const availableAgents = ref<AgentEntry[]>([])
 const agentsLoading = ref(false)
 
 
-// Skills picker (create only, Migration 112). Source is api.getSkills — the
-// same rows search_skills reads, so a picked name always resolves in
-// use_skill({ name }).
+// Skills picker (create only, Migration 112).
 const selectedSkills = ref<string[]>([])
 const skillSearch = ref('')
 const isSkillPickerOpen = ref(false)
 const availableSkills = ref<SkillEntry[]>([])
 const skillsLoading = ref(false)
-// True once the human touched the picker in this dialog session. Auto-fill
-// stops there so a stored default never overwrites a deliberate choice.
+// True once the human touched the picker in this dialog session.
 const skillsUserEdited = ref(false)
 
 const skillDefaultsKey = (): string =>
@@ -124,16 +105,13 @@ const prefillSkillsIfUntouched = (availableNames: string[]): void => {
 }
 
 
-// NEW (plan: 2026-08-06-kanban-add-task-button-placement). Column dropdown state (create mode
-// only). selectedColumnId mirrors the parent's `column` prop on dialog open; the picker emits
-// `column-change` so the host updates its activeCreateColumnId in real-time.
+// NEW (plan: 2026-08-06-kanban-add-task-button-placement).
 const selectedColumnId = ref<string | null>(props.column?.id ?? null)
 const isColumnPickerOpen = ref(false)
 const columnPickerRef = ref<HTMLElement | null>(null)
 
 
-// NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd picker state (create mode
-// only).
+// NEW (Migration 070 — kanban-cwd-session-optional plan).
 const cwdSession = ref<string>('')
 const isCwdPickerOpen = ref(false)
 const cwdPickerRef = ref<HTMLElement | null>(null)
@@ -151,29 +129,21 @@ const setCwdPickerEl = (el: unknown) => {
   cwdPickerRef.value = el as HTMLElement | null
 }
 
-// Which commit the user actually pressed. Declared ahead of openDialog below so the open handler
-// can clear it. `creating` is one host flag covering both create paths, so on its own the footer
-// cannot tell "Create task" from "Create task & run agent".
+// Which commit the user actually pressed.
 const pendingAction = ref<'create' | 'create_and_run' | null>(null)
 
-// File preview modal state. Opened when the user clicks a file-path
-// chip in either the inline MarkdownDescription (display mode) or the
-// editor's preview.
+// File preview modal state.
 const previewFilePath = ref<string | null>(null)
 // Persisted-image gallery preview.
 const imagePopupUrl = ref<string | null>(null)
 
-// Dirty tracking — the Save button enables only when the form is
-// ready to submit. Two semantics:
-//     (the task doesn't exist yet so there's nothing to compare to).
+// Dirty tracking — the Save button enables only when the form is ready to submit.
 const isDirty = computed<boolean>(() => {
   if (isCreateMode.value) return isValid.value
   if (!props.task) return false
   const nameChanged = name.value.trim() !== props.task.name
   const descChanged = description.value !== (props.task.description ?? '')
-  // Migration 067 — tags dirty check. Compare arrays via JSON.stringify (cheap for ≤ 30 tags).
-  // Stable order matters: the chip input preserves the user's add order, but if the backend ever
-  // returns a different order, the dialog will treat the row as "dirty" and push a no-op update.
+  // Migration 067 — tags dirty check.
   const tagsBefore = props.task.tags ?? []
   const tagsAfter = tags.value
   const tagsEqual =
@@ -190,14 +160,11 @@ const isDirty = computed<boolean>(() => {
 const isValid = computed<boolean>(() => name.value.trim().length > 0)
 const canSave = computed<boolean>(() => isDirty.value && isValid.value)
 
-// "Create task & run agent" requires only a name (description is
-// optional — empty description degrades to a queued message that is
-// just the title). The unattended toggle flows through separately.
+// "Create task & run agent" requires only a name (description is optional — empty description degrades to a queued message that is just the title).
 const canRunAgent = computed<boolean>(() => isValid.value)
 
 
-// In-flight gate for the create-mode commit controls. While the host's create request is in flight
-// (`creating` prop true) every commit control is disabled.
+// In-flight gate for the create-mode commit controls.
 const isCreating = computed<boolean>(() => props.creating === true)
 const canCommitCreate = computed<boolean>(() => !isCreating.value && isValid.value)
 
@@ -208,8 +175,7 @@ const pendingCommitLabel = computed<string | null>(() => {
 })
 
 
-// Inject the processingState map (provided by App.vue; populated via SSE worker events). The Start
-// agent menu item is `:disabled` when a worker is already running for this task's session.
+// Inject the processingState map (provided by App.vue; populated via SSE worker events).
 const processingState = inject<Record<string, boolean> | undefined>('processingState', undefined)
 const isWorkerRunning = computed<boolean>(() => {
   if (!props.task?.id) return false
@@ -228,7 +194,6 @@ const skillLabel = computed<string>(() => {
 const selectedSkillCount = computed<number>(() => selectedSkills.value.length)
 
 // The dropdown rows: a case-insensitive match on the name or the description.
-// Picked skills stay listed (checked) so an untick is one click away.
 const filteredSkills = computed<SkillEntry[]>(() => {
   const q = skillSearch.value.trim().toLowerCase()
   if (q === '') return availableSkills.value
@@ -249,9 +214,7 @@ const columnLabel = computed<string | null>(() => {
   return props.column?.name ?? null
 })
 
-// NEW (Task 2.7): Filter the suggestions composable's tags down to the names that are NOT already
-// on the current task's draft chips. The model can't know about an unsaved draft, so we hide
-// already-committed chips client-side.
+// NEW (Task 2.7): Filter the suggestions composable's tags down to the names that are NOT already on the current task's draft chips.
 const filteredTagSuggestions = computed<string[]>(() => {
   const excludeLower = new Set(tags.value.map((t) => t.toLowerCase()))
   return tagSuggestions.tags.value
@@ -259,21 +222,16 @@ const filteredTagSuggestions = computed<string[]>(() => {
     .filter((n) => !excludeLower.has(n.toLowerCase()))
 })
 
-// NEW (kanban task dependencies). Picker candidates: same-board tasks as {id, name} pairs (the
-// picker filters out self via selfTaskId). Incomplete dep ids mark blocked chips distinctly.
+// NEW (kanban task dependencies).
 const dependsCandidates = computed<Array<{ id: string; name: string }>>(() =>
   (props.tasks ?? []).map((t) => ({ id: t.id, name: t.name })),
 )
 const blockedDepIds = computed<string[]>(() => (props.task?.blocked_by ?? []).map((b) => b.task_id))
 
 
-// NEW (Migration 069 — kanban image urls column). The dialog's image gallery reads from the task
-// row's `imageUrls` array. In edit mode this is the persisted column (loaded via the store's
-// normalizeTaskTags from the `||`-joined wire string).
+// NEW (Migration 069 — kanban image urls column).
 const imageUrls = computed<string[]>(() => props.task?.imageUrls ?? [])
-// Media-flags change — async lazy media: flags true but arrays still empty means the background
-// fetchTaskMedia hasn't resolved yet. Shows a lightweight loading hint instead of a blank gap.
-// Non-blocking: the fetch runs fire-and-forget via `void` (see openDialog above).
+// Media-flags change — async lazy media: flags true but arrays still empty means the background fetchTaskMedia hasn't resolved yet.
 const isMediaLoading = computed<boolean>(() => {
   const t = props.task
   if (!t || isCreateMode.value) return false

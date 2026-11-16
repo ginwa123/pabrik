@@ -1,5 +1,4 @@
-// src/http_routes.zig Every HTTP route pabrik serves, in the ONE place they
-// are registered.
+// src/http_routes.zig Every HTTP route pabrik serves, in the ONE place they are registered.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,8 +9,7 @@ const metrics_mod = pabrikcore.metrics_mod;
 const Group = gserverz.router.Group;
 const testing = std.testing;
 
-/// Register every route pabrik serves on `gs`. Call this exactly once, after
-/// `GinwaServer.init` and before `listen()`.
+/// Register every route pabrik serves on `gs`.
 pub fn registerAll(gs: *gserverz.GinwaServer) !void {
     try registerAllOn(&gs.router);
     try installMetrics(gs);
@@ -39,14 +37,12 @@ pub fn registerAllOn(router: *gserverz.router.Router) !void {
     var instrumented = router.group("");
     try instrumented.use(ai_mod.http_handlers.metricsMiddleware);
 
-    // Opt-in `--auth`: all `/api` routes registered via `authed` run
-    // `authMiddleware` (401 when no valid `pabrik_session` cookie).
+    // Opt-in `--auth`: all `/api` routes registered via `authed` run `authMiddleware` (401 when no valid `pabrik_session` cookie).
     var authed = router.group("");
     try authed.use(ai_mod.http_handlers.metricsMiddleware);
     try authed.use(ai_mod.http_handlers.authMiddleware);
 
-    // Order is load-bearing: a literal must register before its `:param`
-    // sibling, or `matchRoute` serves the param route for the literal path.
+    // Order is load-bearing: a literal must register before its `:param` sibling, or `matchRoute` serves the param route for the literal path.
     try registerAuthRoutes(&instrumented, &authed);
     try registerSessionRoutes(&authed);
     try registerWorkerRoutes(&authed);
@@ -72,43 +68,33 @@ fn registerAuthRoutes(instrumented: *Group, authed: *Group) !void {
     try instrumented.post("/api/auth/login", ai_mod.http_handlers.authLoginHandler);
     try instrumented.post("/api/auth/logout", ai_mod.http_handlers.authLogoutHandler);
     try instrumented.get("/api/auth/me", ai_mod.http_handlers.authMeHandler);
-    // On `authed`: a password change needs the session it is rotating, so the
-    // middleware rejects an expired cookie before the handler re-checks it.
+    // On `authed`: a password change needs the session it is rotating, so the middleware rejects an expired cookie before the handler re-checks it.
     try authed.post("/api/auth/password", ai_mod.http_handlers.authChangePasswordHandler);
 }
 
 fn registerSessionRoutes(authed: *Group) !void {
     try authed.post("/api/session", ai_mod.http_handlers.sessionCreateHandler);
     try authed.put("/api/session/:session_id", ai_mod.http_handlers.sessionUpdateHandler);
-    // Mark-as-seen (yellow stale-dot fix): stamping
-    // `sessions.last_human_touched_at_nano` when the user opens a chat.
+    // Mark-as-seen (yellow stale-dot fix): stamping `sessions.last_human_touched_at_nano` when the user opens a chat.
     try authed.post("/api/session/:session_id/touched", ai_mod.http_handlers.sessionMarkTouchedHandler);
     try authed.get("/api/session", ai_mod.http_handlers.sessionListHandler);
     try authed.get("/api/session/:session_id/messages", ai_mod.http_handlers.sessionMessagesHandler);
-    // Token usage + cache hit rate, derived from `llm_history` (the
-    // `sessions` table stores no token column).
+    // Token usage + cache hit rate, derived from `llm_history` (the `sessions` table stores no token column).
     try authed.get("/api/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
-    // Manual compaction — the same `maybeCompactMessagesNew` the agentic loop
-    // runs, against the same target.
+    // Manual compaction — the same `maybeCompactMessagesNew` the agentic loop runs, against the same target.
     try authed.post("/api/session/:session_id/compact", ai_mod.http_handlers.sessionCompactHandler);
-    // try authed.get("/api/session/exists/:session_id",
-    // http_handlers.sessionExistHandler, ctxParent); try
-    // authed.get("/api/session/latest", http_handlers.sessionLatestHandler,
+    // try authed.get("/api/session/exists/:session_id", http_handlers.sessionExistHandler, ctxParent); try authed.get("/api/session/latest" …
 }
 
 fn registerWorkerRoutes(authed: *Group) !void {
     try authed.get("/api/workers", ai_mod.http_handlers.workerListHandler);
-    //
     // // LLM API aliases (desktop app uses /api/llm/*)
     try authed.post("/api/llm/session", ai_mod.http_handlers.sessionCreateHandler);
     try authed.put("/api/llm/session/:session_id", ai_mod.http_handlers.sessionUpdateHandler);
     // Migration 104 - session pin for PINNED section above RECENT.
-    // Literal-first ordering: `reorder_pinned` before `:session_id/pin`
-    // so the literal never resolves as a param (route-order rule).
     try authed.post("/api/llm/session/reorder_pinned", ai_mod.http_handlers.sessionReorderPinnedHandler);
     try authed.post("/api/llm/session/:session_id/pin", ai_mod.http_handlers.sessionPinHandler);
-    // LLM-alias prefix of the mark-as-seen endpoint above (desktop app
-    // uses /api/llm/*). Same no-shadowing argument as above.
+    // LLM-alias prefix of the mark-as-seen endpoint above (desktop app uses /api/llm/*).
     try authed.post("/api/llm/session/:session_id/touched", ai_mod.http_handlers.sessionMarkTouchedHandler);
     try authed.post("/api/llm/session/:session/stop", ai_mod.http_handlers.sessionStopHandler);
     // The pending-question answer route.
@@ -118,65 +104,46 @@ fn registerWorkerRoutes(authed: *Group) !void {
     // Session detail incl. `workspace_id` (workspace-scoped sessions).
     try authed.get("/api/llm/session/:session_id", ai_mod.http_handlers.sessionGetHandler);
     try authed.get("/api/llm/session/:session_id/messages", ai_mod.http_handlers.sessionMessagesHandler);
-    // Single-message admin: delete ONE llm_history row, put it back, or drop
-    // it from the model's context. `restore` is a literal, so it is registered
-    // before the `:message_id` routes (route-order rule).
+    // Single-message admin: delete ONE llm_history row, put it back, or drop it from the model's context.
     try authed.post("/api/llm/message/restore", ai_mod.http_handlers.messageRestoreHandler);
     try authed.delete("/api/llm/message/:message_id", ai_mod.http_handlers.messageDeleteHandler);
     try authed.patch("/api/llm/message/:message_id", ai_mod.http_handlers.messagePatchHandler);
-    // Token usage + cache hit rate (same handler as the `/api/session/` alias
-    // above).
+    // Token usage + cache hit rate (same handler as the `/api/session/` alias above).
     try authed.get("/api/llm/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
     try authed.get("/api/llm/session/:session_id/queue_messages", ai_mod.http_handlers.queueMessagesGetHandler);
-    // The roster of a multi-agent chat. A session becomes a group when an
-    // agent joins it; the loop then takes each turn's speaker from the roster.
+    // The roster of a multi-agent chat.
     try authed.get("/api/llm/session/:session_id/group", ai_mod.http_handlers.sessionGroupGetHandler);
     try authed.post("/api/llm/session/:session_id/group/members", ai_mod.http_handlers.sessionGroupMemberAddHandler);
     try authed.delete("/api/llm/session/:session_id/group/members/:agent", ai_mod.http_handlers.sessionGroupMemberRemoveHandler);
     try authed.post("/api/llm/session/:session_id/group/lead", ai_mod.http_handlers.sessionGroupLeadHandler);
-    // Session background-process endpoints (bg-completion): list + log tail
-    // for `command background=true` rows. Registered next to queue_messages.
+    // Session background-process endpoints (bg-completion): list + log tail for `command background=true` rows.
     try authed.get("/api/llm/session/:session_id/background_processes", ai_mod.http_handlers.backgroundProcessesListHandler);
     try authed.get("/api/llm/session/:session_id/background_processes/:pid/log", ai_mod.http_handlers.backgroundProcessLogGetHandler);
 }
 
 fn registerTerminalRoutes(authed: *Group, router: *gserverz.router.Router) !void {
-    // Right-sidebar terminal (PTY over REST + poll). Fresh `/api/terminal/`
-    // prefix — no `:param` siblings exist under it, so no matchRoute
-    // shadowing risk (router walks registration order).
+    // Right-sidebar terminal (PTY over REST + poll).
     try authed.post("/api/terminal/sessions", ai_mod.http_handlers.terminalCreateHandler);
-    // The live session list: a window-level footer reads it to show the
-    // shells grouped per workspace. Registered before the `:id` routes so
-    // the exact path is matched first.
+    // The live session list: a window-level footer reads it to show the shells grouped per workspace.
     try authed.get("/api/terminal/sessions", ai_mod.http_handlers.terminalListHandler);
     try authed.post("/api/terminal/sessions/:id/input", ai_mod.http_handlers.terminalInputHandler);
     try authed.get("/api/terminal/sessions/:id/output", ai_mod.http_handlers.terminalOutputHandler);
     try authed.post("/api/terminal/sessions/:id/resize", ai_mod.http_handlers.terminalResizeHandler);
     try authed.delete("/api/terminal/sessions/:id", ai_mod.http_handlers.terminalDeleteHandler);
-    // Duplex PTY socket — attaches to a live session id (?id=) for binary
-    // output frames + JSON control frames.
+    // Duplex PTY socket — attaches to a live session id (?id=) for binary output frames + JSON control frames.
     try router.ws("/api/terminal/ws", ai_mod.http_handlers.terminalWsHandler);
 }
 
 fn registerStreamRoutes(authed: *Group, router: *gserverz.router.Router) !void {
-    // In-flight stream snapshot (task_1787673548905_0 stream-resume-on-
-    // reselect) — serves `{ active, content }` from the in-memory
-    // stream_snapshot registry so a re-mounted ChatView can resume a
+    // In-flight stream snapshot (task_1787673548905_0 stream-resume-on-reselect) — serves `{ active, content }` from the in-memory stream_snapshot registry so a …
     try authed.get("/api/llm/session/:session_id/stream", ai_mod.http_handlers.streamGetHandler);
-    // Live spawn-batch snapshot (task_1788505292766_1
-    // spawn-subagent-refresh-persist) — serves `{ tool_call_id, progress[] }`
-    // from the in-memory subagent_progress registry so a refreshed ChatView
+    // Live spawn-batch snapshot (task_1788505292766_1 spawn-subagent-refresh-persist) — serves `{ tool_call_id, progress[] }` from the in-memory subagent_progress …
     try authed.get("/api/subagent/progress/:tool_call_id", ai_mod.http_handlers.subAgentProgressGetHandler);
-    // Unified SSE endpoint — single EventSource for all event families
-    // (workers, sessions, kanban_column, kanban_task, per-session llm +
-    // queue_messages).
+    // Unified SSE endpoint — single EventSource for all event families (workers, sessions, kanban_column, kanban_task, per-session llm + queue_messages).
     try router.sse("/api/events", ai_mod.http_handlers.unifiedEventsStreamHandler);
-    // Test-only SSE emit (dev_sse_emit.zig) — gated by PABRIK_TEST_SSE_EMIT=1,
-    // 404 when off. Functional UI tests use it to drive the chatview's
-    // SSE streaming path without a real LLM.
+    // Test-only SSE emit (dev_sse_emit.zig) — gated by PABRIK_TEST_SSE_EMIT=1, 404 when off.
     try authed.post("/api/dev/sse/emit_llm", ai_mod.http_handlers.devSseEmitLlmHandler);
-    // Benchmark seeding (bench_seed.zig) — gated by PABRIK_BENCH_SEED=1, 404
-    // when off. `benchmark/run.sh` uses it to give the list routes rows to read.
+    // Benchmark seeding (bench_seed.zig) — gated by PABRIK_BENCH_SEED=1, 404 when off.
     try authed.post("/api/bench/seed/sessions", ai_mod.http_handlers.benchSeedSessionsHandler);
     try authed.post("/api/bench/seed/documents", ai_mod.http_handlers.benchSeedDocumentsHandler);
 }
@@ -190,9 +157,7 @@ fn registerSystemRoutes(authed: *Group, instrumented: *Group) !void {
     // Skill Evals — the READ surface for the eval the agent runs on itself.
     try authed.get("/api/skill-evals/runs", ai_mod.http_handlers.skillEvalsRunsHandler);
     try authed.get("/api/skill-evals/summary", ai_mod.http_handlers.skillEvalsSummaryHandler);
-    // The apply endpoint. `result_id` is a QUERY parameter, not a path segment,
-    // so this stays a literal and there is still no `:param` under this prefix
-    // to shadow a later route.
+    // The apply endpoint.
     try authed.post("/api/skill-evals/results/apply", ai_mod.http_handlers.skillEvalsApplyHandler);
 }
 
@@ -223,26 +188,19 @@ fn registerConfigRoutes(authed: *Group) !void {
     try authed.get("/api/models/resolve", ai_mod.http_handlers.modelsResolveHandler);
     try authed.post("/api/models/refresh", ai_mod.http_handlers.modelsRefreshHandler);
 
-    // OS notification test endpoint — fires a real OS notification so
-    // the user can verify their system can display them.
+    // OS notification test endpoint — fires a real OS notification so the user can verify their system can display them.
     try authed.post("/api/notify/test", ai_mod.http_handlers.notifyTestHandler);
 
-    // Browser-mode (web launch) status — read-only: reports the
-    // `web_launch_enabled` flag + live bound port/URL for the settings
-    // General tab pill.
+    // Browser-mode (web launch) status — read-only: reports the `web_launch_enabled` flag + live bound port/URL for the settings General tab pill.
     try authed.get("/api/web/status", ai_mod.http_handlers.webStatusHandler);
 
-    // MCP server "Test" probe — fires a tools/list request against a
-    // candidate config without persisting anything.
+    // MCP server "Test" probe — fires a tools/list request against a candidate config without persisting anything.
     try authed.post("/api/mcp/test", ai_mod.http_handlers.mcpTestHandler);
 
-    // LLM profile "Test" probe — fires one minimal non-streaming chat call
-    // against a candidate profile without persisting anything.
+    // LLM profile "Test" probe — fires one minimal non-streaming chat call against a candidate profile without persisting anything.
     try authed.post("/api/llm/test", ai_mod.http_handlers.llmTestHandler);
 
-    // Frontend error log endpoints — POST /api/logs is DISABLED (noisy: the
-    // desktop log client spammed it on every console.error/warn). GET
-    // /api/logs stays as a read-only debug endpoint for `curl`.
+    // Frontend error log endpoints — POST /api/logs is DISABLED (noisy: the desktop log client spammed it on every console.error/warn).
     try authed.get("/api/logs", ai_mod.http_handlers.frontendLogGetHandler);
 }
 
@@ -264,27 +222,22 @@ fn registerGitRoutes(authed: *Group) !void {
     try authed.get("/api/git/commit/file", ai_mod.http_handlers.gitCommitFileDiffHandler);
     try authed.post("/api/git/pr", ai_mod.http_handlers.gitPrCreateHandler);
     try authed.get("/api/git/pr/status", ai_mod.http_handlers.gitPrStatusHandler);
-    // Literal path, no `:param` sibling under `/api/git/pr/` (asserted by a
-    // test in git_pr_checks.zig), so matchRoute cannot shadow it.
+    // Literal path, no `:param` sibling under `/api/git/pr/` (asserted by a test in git_pr_checks.zig), so matchRoute cannot shadow it.
     try authed.get("/api/git/pr/checks", ai_mod.http_handlers.gitPrChecksHandler);
     try authed.get("/api/git/pr/diff", ai_mod.http_handlers.gitPrDiffHandler);
     try authed.get("/api/git/pr/conversation", ai_mod.http_handlers.gitPrConversationHandler);
     try authed.get("/api/git/pr/conflicts", ai_mod.http_handlers.gitPrConflictsHandler);
-    // POST, and the only mutating forge endpoint: `gh pr merge` / `glab mr
-    // merge` change a remote branch, so it is never reachable unauthenticated.
+    // POST, and the only mutating forge endpoint: `gh pr merge` / `glab mr merge` change a remote branch, so it is never reachable unauthenticated.
     try authed.post("/api/git/pr/merge", ai_mod.http_handlers.gitPrMergeHandler);
-    // Literal paths under `/api/git/pr/` (no `:param` sibling exists, so
-    // matchRoute cannot shadow them — the router walks registration order).
+    // Literal paths under `/api/git/pr/` (no `:param` sibling exists, so matchRoute cannot shadow them — the router walks registration order).
     try authed.get("/api/git/pr/list", ai_mod.http_handlers.gitPrListHandler);
-    // The second mutating forge endpoint: `gh pr close` / `glab mr close`
-    // write to a remote, so it is never reachable unauthenticated.
+    // The second mutating forge endpoint: `gh pr close` / `glab mr close` write to a remote, so it is never reachable unauthenticated.
     try authed.post("/api/git/pr/close", ai_mod.http_handlers.gitPrCloseHandler);
 }
 
 fn registerFileRoutes(authed: *Group) !void {
     try authed.get("/api/system/folder", ai_mod.http_handlers.systemFolderHandler);
-    // File download for the `present_files` agent tool card
-    // (PresentFiles.vue).
+    // File download for the `present_files` agent tool card (PresentFiles.vue).
     try authed.get("/api/files/download", ai_mod.http_handlers.filesDownloadHandler);
 }
 
@@ -297,14 +250,10 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
     try authed.delete("/api/workspaces/:id", ai_mod.http_handlers.workspaceDeleteHandler);
     // Id-only task PUT — MUST stay ABOVE every `:workspace_id` route below.
     try authed.put("/api/workspaces/tasks/:task_id", ai_mod.http_handlers.tasksUpdateByIdHandler);
-    // Idempotent: returns the workspace's default project, creating it
-    // (item_type='agent', path=$HOME) when there is none. This is the
-    // COLD-START FALLBACK.
+    // Idempotent: returns the workspace's default project, creating it (item_type='agent', path=$HOME) when there is none.
     try authed.post("/api/workspaces/:workspace_id/default-project", ai_mod.http_handlers.workspaceDefaultProjectHandler);
 
-    // Membership (Migration 100). Reading needs a member row, writing needs
-    // owner/admin — see workspace_members_gate.zig. There is no POST here: a
-    // member row is only written by an invitation being ACCEPTED.
+    // Membership (Migration 100).
     try authed.get("/api/workspaces/:workspace_id/members", ai_mod.http_handlers.workspaceMembersListHandler);
     try authed.patch("/api/workspaces/:workspace_id/members/:user_id", ai_mod.http_handlers.workspaceMembersUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/members/:user_id", ai_mod.http_handlers.workspaceMembersRemoveHandler);
@@ -314,8 +263,7 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
     try authed.post("/api/workspaces/:workspace_id/invitations", ai_mod.http_handlers.workspaceInvitationsCreateHandler);
     try authed.delete("/api/workspaces/:workspace_id/invitations/:invitation_id", ai_mod.http_handlers.workspaceInvitationsRevokeHandler);
 
-    // The invitee's own inbox. Not workspace-scoped: the rows are chosen by the
-    // resolved caller, so a workspace id here would only be a way to probe.
+    // The invitee's own inbox.
     try authed.get("/api/invitations", ai_mod.http_handlers.invitationsMineHandler);
     try authed.post("/api/invitations/:invitation_id/accept", ai_mod.http_handlers.invitationsAcceptHandler);
     try authed.post("/api/invitations/:invitation_id/decline", ai_mod.http_handlers.invitationsDeclineHandler);
@@ -331,21 +279,17 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
     // Design workspace-item endpoint (item_type='design').
     try authed.post("/api/workspaces/:workspace_id/items/design", ai_mod.http_handlers.workspaceItemsCreateDesignHandler);
 
-    // Token, cache and tool totals for one workspace, derived from llm_history
-    // at request time. A `usage` tail cannot be captured by `:id` above.
+    // Token, cache and tool totals for one workspace, derived from llm_history at request time.
     try authed.get("/api/workspaces/:workspace_id/usage", ai_mod.http_handlers.workspaceUsageHandler);
 }
 
 fn registerAgentRoutes(authed: *Group) !void {
     // Agent Mode workspace-item endpoint (item_type='agent') + sub-resources.
-    // Task: task_1786962724740_0
     try authed.post("/api/workspaces/:workspace_id/items/agent", ai_mod.http_handlers.workspaceItemsCreateAgentHandler);
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/agent", ai_mod.http_handlers.agentsGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/agent", ai_mod.http_handlers.agentsUpdateHandler);
     try authed.post("/api/agents/:agent_id/knowledge", ai_mod.http_handlers.agentKnowledgeCreateHandler);
-    // ORDER MATTERS: the literal `/knowledge/reorder` route MUST be
-    // registered BEFORE `/knowledge/:knowledge_id` — matchRoute walks routes
-    // in registration order, so the param route would otherwise capture PATCH
+    // ORDER MATTERS: the literal `/knowledge/reorder` route MUST be registered BEFORE `/knowledge/:knowledge_id` — matchRoute walks routes in registration order, so …
     try authed.patch("/api/agents/:agent_id/knowledge/reorder", ai_mod.http_handlers.agentKnowledgeReorderHandler);
     try authed.patch("/api/agents/:agent_id/knowledge/:knowledge_id", ai_mod.http_handlers.agentKnowledgeUpdateHandler);
     try authed.delete("/api/agents/:agent_id/knowledge/:knowledge_id", ai_mod.http_handlers.agentKnowledgeDeleteHandler);
@@ -362,19 +306,15 @@ fn registerAgentRoutes(authed: *Group) !void {
 }
 
 fn registerAgentKanbanRoutes(authed: *Group) !void {
-    // Agent-Kanbans mirror CRUD (Migration 081) — mirrors the agent block
-    // above onto kanban boards.
+    // Agent-Kanbans mirror CRUD (Migration 081) — mirrors the agent block above onto kanban boards.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/agent_kanban", ai_mod.http_handlers.agentKanbansGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/agent_kanban", ai_mod.http_handlers.agentKanbansUpdateHandler);
     try authed.post("/api/agent-kanbans/:kanban_id/knowledge", ai_mod.http_handlers.agentKanbanKnowledgeCreateHandler);
-    // ORDER MATTERS: the literal `/knowledge/reorder` route MUST be
-    // registered BEFORE `/knowledge/:knowledge_id` — matchRoute walks routes
-    // in registration order (same shadowing trap as the agent knowledge
+    // ORDER MATTERS: the literal `/knowledge/reorder` route MUST be registered BEFORE `/knowledge/:knowledge_id` — matchRoute walks routes in registration order …
     try authed.patch("/api/agent-kanbans/:kanban_id/knowledge/reorder", ai_mod.http_handlers.agentKanbanKnowledgeReorderHandler);
     try authed.patch("/api/agent-kanbans/:kanban_id/knowledge/:knowledge_id", ai_mod.http_handlers.agentKanbanKnowledgeUpdateHandler);
     try authed.delete("/api/agent-kanbans/:kanban_id/knowledge/:knowledge_id", ai_mod.http_handlers.agentKanbanKnowledgeDeleteHandler);
-    // NOTE: `reorder` literal MUST be registered BEFORE `:prompt_id`
-    // (same shadowing trap as knowledge above).
+    // NOTE: `reorder` literal MUST be registered BEFORE `:prompt_id` (same shadowing trap as knowledge above).
     try authed.post("/api/agent-kanbans/:kanban_id/system_prompt", ai_mod.http_handlers.agentKanbanSystemPromptCreateHandler);
     try authed.patch("/api/agent-kanbans/:kanban_id/system_prompt/reorder", ai_mod.http_handlers.agentKanbanSystemPromptReorderHandler);
     try authed.patch("/api/agent-kanbans/:kanban_id/system_prompt/:prompt_id", ai_mod.http_handlers.agentKanbanSystemPromptUpdateHandler);
@@ -385,13 +325,11 @@ fn registerAgentKanbanRoutes(authed: *Group) !void {
 }
 
 fn registerAgentRoutineRoutes(authed: *Group) !void {
-    // Agent-Routines mirror CRUD (Migration 087) — mirrors the agent-kanbans
-    // block above onto routines. Routine mode task_1789505553300_1.
+    // Agent-Routines mirror CRUD (Migration 087) — mirrors the agent-kanbans block above onto routines.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/agent_routine", ai_mod.http_handlers.agentRoutinesGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/agent_routine", ai_mod.http_handlers.agentRoutinesUpdateHandler);
     try authed.post("/api/agent-routines/:routine_id/knowledge", ai_mod.http_handlers.agentRoutineKnowledgeCreateHandler);
-    // ORDER MATTERS: literal `/knowledge/reorder` BEFORE
-    // `/knowledge/:knowledge_id` (route-order shadowing — see kanban block).
+    // ORDER MATTERS: literal `/knowledge/reorder` BEFORE `/knowledge/:knowledge_id` (route-order shadowing — see kanban block).
     try authed.patch("/api/agent-routines/:routine_id/knowledge/reorder", ai_mod.http_handlers.agentRoutineKnowledgeReorderHandler);
     try authed.patch("/api/agent-routines/:routine_id/knowledge/:knowledge_id", ai_mod.http_handlers.agentRoutineKnowledgeUpdateHandler);
     try authed.delete("/api/agent-routines/:routine_id/knowledge/:knowledge_id", ai_mod.http_handlers.agentRoutineKnowledgeDeleteHandler);
@@ -406,9 +344,7 @@ fn registerAgentRoutineRoutes(authed: *Group) !void {
 }
 
 fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
-    // Workspace-level routines (Migration 084, plan
-    // 2026-09-10-workspace-items-routines) — first-class
-    // `item_type='routine'`.
+    // Workspace-level routines (Migration 084, plan 2026-09-10-workspace-items-routines) — first-class `item_type='routine'`.
     try authed.post("/api/workspaces/:workspace_id/items/routine", ai_mod.http_handlers.workspaceItemsCreateRoutineHandler);
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/routine", ai_mod.http_handlers.workspaceRoutinesGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/routine", ai_mod.http_handlers.workspaceRoutinesUpdateHandler);
@@ -417,16 +353,14 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     try authed.get("/api/workspaces/:workspace_id/documents", ai_mod.http_handlers.documentsListHandler);
     try authed.post("/api/workspaces/:workspace_id/documents", ai_mod.http_handlers.documentsCreateHandler);
     try authed.patch("/api/workspaces/:workspace_id/documents/reorder", ai_mod.http_handlers.documentsReorderHandler);
-    // Export. The zip route is registered before the `:document_id` routes so
-    // `documents/export` can never be read as a document id.
+    // Export.
     try authed.post("/api/workspaces/:workspace_id/documents/export", ai_mod.http_handlers.documentsExportZipHandler);
     try authed.get("/api/workspaces/:workspace_id/documents/:document_id/export", ai_mod.http_handlers.documentsExportHandler);
     try authed.get("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsDeleteHandler);
 
-    // Document folders (Migration 140). A separate prefix from `documents`, so
-    // there is no route-order shadowing to get wrong.
+    // Document folders (Migration 140).
     try authed.post("/api/workspaces/:workspace_id/document-folders", ai_mod.http_handlers.documentFoldersCreateHandler);
     try authed.patch("/api/workspaces/:workspace_id/document-folders/:folder_id", ai_mod.http_handlers.documentFoldersUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/document-folders/:folder_id", ai_mod.http_handlers.documentFoldersDeleteHandler);
@@ -443,19 +377,16 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     try authed.post("/api/workspaces/:workspace_id/secrets", ai_mod.http_handlers.secretsCreateHandler);
     try authed.patch("/api/workspaces/:workspace_id/secrets/:secret_id", ai_mod.http_handlers.secretsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/secrets/:secret_id", ai_mod.http_handlers.secretsDeleteHandler);
-    // The ONE route that returns a credential. Member-only (`workspace_members_gate`),
-    // 404 for anybody else, and `Cache-Control: no-store` on the answer.
+    // The ONE route that returns a credential.
     try authed.get("/api/workspaces/:workspace_id/secrets/:secret_id/reveal", ai_mod.http_handlers.secretsRevealHandler);
 
-    // Workspace-scoped memories — the `agent_memories` rows the
-    // `save_memory` / `load_memory` tools write (Migration 070 / 095).
+    // Workspace-scoped memories — the `agent_memories` rows the `save_memory` / `load_memory` tools write (Migration 070 / 095).
     try authed.get("/api/workspaces/:workspace_id/memories", ai_mod.http_handlers.workspaceMemoriesListHandler);
     try authed.post("/api/workspaces/:workspace_id/memories", ai_mod.http_handlers.workspaceMemoryCreateHandler);
     try authed.get("/api/workspaces/:workspace_id/memories/:memory_id", ai_mod.http_handlers.workspaceMemoryGetHandler);
     try authed.delete("/api/workspaces/:workspace_id/memories/:memory_id", ai_mod.http_handlers.workspaceMemoryDeleteHandler);
 
-    // Per-workspace config overlay (Migration 105): the config sections that
-    // moved out of the User-scope Pabrik page into Workspace settings.
+    // Per-workspace config overlay (Migration 105): the config sections that moved out of the User-scope Pabrik page into Workspace settings.
     try authed.get("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigGetHandler);
     try authed.put("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigPutHandler);
     try authed.delete("/api/workspaces/:workspace_id/config/profiles/:name", ai_mod.http_handlers.workspaceConfigProfileDeleteHandler);
@@ -468,55 +399,40 @@ fn registerKanbanRoutes(authed: *Group) !void {
     try authed.delete("/api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id", ai_mod.http_handlers.kanbanColumnsDeleteHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/run_all_agents", ai_mod.http_handlers.runAllAgentsHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/kanban/columns/:column_id/stop_all_agents", ai_mod.http_handlers.stopAllAgentsHandler);
-    // Copy a kanban spec (column structure) from one kanban to another
-    // (Chunk 2 of copy-kanban plan). Body: `{mode: "replace" | "append"}`.
+    // Copy a kanban spec (column structure) from one kanban to another (Chunk 2 of copy-kanban plan).
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/kanban/copy_spec_from/:source_item_id", ai_mod.http_handlers.kanbanCopySpecHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/move", ai_mod.http_handlers.tasksMoveHandler);
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/tasks", ai_mod.http_handlers.tasksListHandler);
     // Single-task GET for the kanban Task details dialog.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id", ai_mod.http_handlers.tasksGetHandler);
-    // Lazy media fetch (media-flags change) — full `image_urls` / `video_urls`
-    // only when `is_have_image` / `is_have_video` is true. Longer path
-    // (extra `/media` segment) so no shadowing vs the `:task_id` route.
+    // Lazy media fetch (media-flags change) — full `image_urls` / `video_urls` only when `is_have_image` / `is_have_video` is true.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/media", ai_mod.http_handlers.tasksMediaHandler);
     // Kanban task tag autocomplete.
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/kanban/tags", ai_mod.http_handlers.kanbanTagsListHandler);
     // Kanban-scoped task create endpoint with mode='create' | mode='create_and_run' discriminator.
-    // Mirrors the generic /tasks POST but rejects 404 when the parent item is not a kanban.
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/kanban/tasks", ai_mod.http_handlers.kanbanTasksCreateHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/tasks", ai_mod.http_handlers.tasksCreateHandler);
-    // Migration 069 (2026-08-06) removed the filesystem-backed kanban-task
-    // attachment endpoints (POST + GET wildcard).
+    // Migration 069 (2026-08-06) removed the filesystem-backed kanban-task attachment endpoints (POST + GET wildcard).
     try authed.put("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id", ai_mod.http_handlers.tasksUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id", ai_mod.http_handlers.tasksDeleteHandler);
-    // NOTE: the per-task routine fire route (`POST .../tasks/:task_id/run`)
-    // was deleted with the per-task `routines` table (Migration 084, plan
-    // 2026-09-10-workspace-items-routines).
+    // NOTE: the per-task routine fire route (`POST .../tasks/:task_id/run`) was deleted with the per-task `routines` table (Migration 084, plan …
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/start_agent", ai_mod.http_handlers.startAgentHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/pin", ai_mod.http_handlers.taskPinHandler);
-    // Chunk 3 of kanban-task-notification-icon: stamp the
-    // `last_human_touched_at` column so the kanban card UI flips the "AI
-    // finished — awaiting review" dot to the green "reviewed" checkmark the
+    // Chunk 3 of kanban-task-notification-icon: stamp the `last_human_touched_at` column so the kanban card UI flips the "AI finished — awaiting review" dot to the …
     try authed.put("/api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/touched", ai_mod.http_handlers.taskMarkHumanTouchedHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/tasks/reorder_pinned", ai_mod.http_handlers.tasksReorderPinnedHandler);
-    // NOTE: `GET /api/routines` (per-task global listing) was deleted with
-    // the per-task `routines` table (Migration 084, plan
-    // 2026-09-10-workspace-items-routines). It now 404s.
+    // NOTE: `GET /api/routines` (per-task global listing) was deleted with the per-task `routines` table (Migration 084, plan 2026-09-10-workspace-items-routines).
 }
 
 fn registerDesignRoutes(authed: *Group) !void {
-    // Design workspace-item endpoints (item_type='design') — v6 GET
-    // /design/pages — list pages POST /design/pages — create page GET
-    // /design/pages/:pid — get page + elements PATCH /design/pages/:pid —
+    // Design workspace-item endpoints (item_type='design') — v6 GET /design/pages — list pages POST /design/pages — create page GET /design/pages/:pid — get page + …
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/design/pages", ai_mod.http_handlers.designPagesListHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages", ai_mod.http_handlers.designPagesCreateHandler);
     try authed.get("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id", ai_mod.http_handlers.designPagesGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id", ai_mod.http_handlers.designPagesUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id", ai_mod.http_handlers.designPagesDeleteHandler); // 2026-07-25-design-page-delete-button (Chunk 1)
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements", ai_mod.http_handlers.designElementsCreateHandler);
-    // Group 2+ elements into a new group/frame parent. Single transactional
-    // endpoint that creates the parent + reparents the children atomically.
-    // See docs/superpowers/plans/ 2026-07-28-grouped-layers.md (Chunk 3).
+    // Group 2+ elements into a new group/frame parent.
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/group", ai_mod.http_handlers.designElementsGroupHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reorder", ai_mod.http_handlers.designElementsReorderHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/reparent-batch", ai_mod.http_handlers.designElementsReparentBatchHandler);
@@ -528,22 +444,16 @@ fn registerDesignRoutes(authed: *Group) !void {
     // DEPRECATED — see design_elements_translate.zig + design_elements_resize.zig.
     try authed.patch("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/geometry", ai_mod.http_handlers.designElementsGeometryUpdateHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/geometry-batch", ai_mod.http_handlers.designElementsGeometryBatchHandler);
-    // NEW (2026-08-06) — replaces /geometry with two distinct endpoints:
-    // /translate (move) and /resize.
+    // NEW (2026-08-06) — replaces /geometry with two distinct endpoints
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/translate", ai_mod.http_handlers.designElementsTranslateHandler);
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/resize", ai_mod.http_handlers.designElementsResizeHandler);
-    // Server-side cascade move. Each item's (dx, dy) recursively applies to
-    // every transitive descendant of that item's element in one SQL
-    // transaction.
+    // Server-side cascade move.
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/move-batch", ai_mod.http_handlers.designElementsMoveBatchHandler);
-    // Cross-page element relocate. Changes the element's `page_id` from
-    // `:page_id` (path) to a target page in the body.
+    // Cross-page element relocate.
     try authed.post("/api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id/move-to-page", ai_mod.http_handlers.designElementsMoveToPageHandler);
 }
 
-/// The preview proxy: the ONE route that reaches a port inside a workspace's
-/// VM. It is a mutation-capable endpoint on purpose (a tenant dev server sees
-/// POSTs), so it sits on `authed` like every other `/api` route.
+/// The preview proxy: the ONE route that reaches a port inside a workspace's VM.
 fn registerPreviewRoutes(authed: *Group) !void {
     try authed.get("/api/preview", ai_mod.http_handlers.previewProxyHandler);
     try authed.post("/api/preview", ai_mod.http_handlers.previewProxyHandler);
@@ -557,15 +467,12 @@ fn registerTestRoutes(authed: *Group) !void {
     try authed.get("/test/sessions/client_ids", ai_mod.http_handlers.sessionToClientIdsHandler);
     try authed.get("/test/system-prompt/:session_id", ai_mod.http_handlers.systemPromptGetHandler);
 }
-// ---------------------------------------------------------------------------
 // Behavioural route contracts.
 
 const HandlerFn = gserverz.router.HandlerFn;
 const MiddlewareFn = gserverz.router.MiddlewareFn;
 
-/// What `matchRoute` resolved: the handler it selected plus the `:params` it
-/// wrote into the request. `params` carries the real signal — a literal that
-/// got captured by a `:param` sibling shows up as an unexpected key.
+/// What `matchRoute` resolved: the handler it selected plus the `:params` it wrote into the request.
 const Resolved = struct {
     handler: HandlerFn,
     params: std.StringHashMap([]const u8),
@@ -578,9 +485,7 @@ fn buildRouteTable(arena: std.mem.Allocator) !gserverz.router.Router {
     return router;
 }
 
-/// Resolve one (method, path) against a built table. Null when nothing
-/// matched, or when the hit was an SSE / WS route rather than a request
-/// handler.
+/// Resolve one (method, path) against a built table.
 fn resolve(arena: std.mem.Allocator, router: *gserverz.router.Router, method: []const u8, path: []const u8) !?Resolved {
     var req = gserverz.HttpRequest{
         .method = method,
@@ -608,8 +513,7 @@ test "route table: every /knowledge/reorder literal wins over its :id sibling" {
     const a = arena.allocator();
     var router = try buildRouteTable(a);
 
-    // Three families register the same `.../knowledge/reorder` +
-    // `.../knowledge/:knowledge_id` pair.
+    // Three families register the same `.../knowledge/reorder` + `.../knowledge/:knowledge_id` pair.
     const families = [_]struct { prefix: []const u8, param: []const u8 }{
         .{ .prefix = "/api/agents/ag_1/knowledge", .param = "agent_id" },
         .{ .prefix = "/api/agent-kanbans/kb_1/knowledge", .param = "kanban_id" },
@@ -654,8 +558,7 @@ test "route table: PUT /api/workspaces/tasks/:task_id resolves with no workspace
     const a = arena.allocator();
     var router = try buildRouteTable(a);
 
-    // `api.updateTaskSimple` (chat rename + kanban card rename) PUTs
-    // /api/workspaces/tasks/<id> with no workspace scope.
+    // `api.updateTaskSimple` (chat rename + kanban card rename) PUTs /api/workspaces/tasks/<id> with no workspace scope.
     const rename = (try resolve(a, &router, "PUT", "/api/workspaces/tasks/task_1")) orelse
         return error.IdOnlyTaskRouteNotRegistered;
     const want: HandlerFn = ai_mod.http_handlers.tasksUpdateByIdHandler;
@@ -664,8 +567,7 @@ test "route table: PUT /api/workspaces/tasks/:task_id resolves with no workspace
     try testing.expect(rename.params.get("workspace_id") == null);
     try testing.expect(rename.params.get("item_id") == null);
 
-    // The workspace-scoped sibling still binds its own scope, so the
-    // assertion above is about THIS literal not stealing anything.
+    // The workspace-scoped sibling still binds its own scope, so the assertion above is about THIS literal not stealing anything.
     const scoped = (try resolve(a, &router, "PUT", "/api/workspaces/ws_1/items/item_1")) orelse
         return error.WorkspaceItemPutRouteNotRegistered;
     try testing.expectEqualStrings("ws_1", scoped.params.get("workspace_id").?);
@@ -691,9 +593,7 @@ test "route table: no POST /api/workspaces/:workspace_id/:param sibling exists" 
     const a = arena.allocator();
     const router = try buildRouteTable(a);
 
-    // The collision has to be IMPOSSIBLE, not merely absent today: a bare
-    // `:param` in the 4th segment would swallow `default-project` (and any
-    // future 4th-segment literal) whenever matchRoute reached it first.
+    // The collision has to be IMPOSSIBLE, not merely absent today: a bare `:param` in the 4th segment would swallow `default-project` (and any future 4th-segment …
     const prefix = "/api/workspaces/:workspace_id/";
     for (router.routes.items) |route| {
         if (!std.mem.eql(u8, route.method, "POST")) continue;
@@ -764,8 +664,6 @@ test "route table: the documents verbs resolve, and the /reorder literal beats :
 
 test "route table: the five skills verbs resolve to their handlers" {
     // Replaces four `@embedFile("http_routes.zig")` greps in skills_list.zig.
-    // Those could only compare byte offsets; this asks `matchRoute` which
-    // handler each path actually lands on, which is what a 404 depends on.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -820,8 +718,7 @@ test "route table: the five skills verbs resolve to their handlers" {
 }
 
 test "route table: the four secrets verbs resolve to their handlers" {
-    // Mirrors the skills route test above: asks `matchRoute` which handler
-    // each path actually lands on, which is what a 404 depends on.
+    // Mirrors the skills route test above: asks `matchRoute` which handler each path actually lands on, which is what a 404 depends on.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -875,8 +772,7 @@ test "route table: every /api route except the open ones carries authMiddleware"
     const a = arena.allocator();
     const router = try buildRouteTable(a);
 
-    // `use` only affects routes registered AFTER it, and every `/api` route
-    // must carry authMiddleware.
+    // `use` only affects routes registered AFTER it, and every `/api` route must carry authMiddleware.
     const open = [_][]const u8{
         "/api/auth/login",
         "/api/auth/logout",
@@ -933,8 +829,7 @@ test "route table: POST /api/llm/session/reorder_pinned wins over :session_id/pi
     const a = arena.allocator();
     var router = try buildRouteTable(a);
 
-    // The literal reorder route must resolve to its own handler, not be
-    // captured as session_id="reorder_pinned" by a param sibling.
+    // The literal reorder route must resolve to its own handler, not be captured as session_id="reorder_pinned" by a param sibling.
     const reorder = (try resolve(a, &router, "POST", "/api/llm/session/reorder_pinned")) orelse {
         return error.ReorderRouteNotRegistered;
     };
@@ -981,9 +876,7 @@ test "route table: GET session usage resolves on both prefixes and shadows no si
     const a = arena.allocator();
     var router = try buildRouteTable(a);
 
-    // Both prefixes the desktop app may use land on the usage handler, with
-    // the id intact. `:session_id` matches exactly one segment, so the
-    // `usage` tail can neither be captured by `/messages` nor capture it.
+    // Both prefixes the desktop app may use land on the usage handler, with the id intact.
     const expectations = [_][]const u8{
         "/api/session/sess_1/usage",
         "/api/llm/session/sess_1/usage",
@@ -997,8 +890,7 @@ test "route table: GET session usage resolves on both prefixes and shadows no si
         try testing.expectEqualStrings("sess_1", hit.params.get("session_id").?);
     }
 
-    // The `messages` sibling keeps its own handler on both prefixes — the
-    // new route must not have taken over the prefix.
+    // The `messages` sibling keeps its own handler on both prefixes — the new route must not have taken over the prefix.
     const siblings = [_][]const u8{
         "/api/session/sess_1/messages",
         "/api/llm/session/sess_1/messages",
@@ -1011,8 +903,7 @@ test "route table: GET session usage resolves on both prefixes and shadows no si
         try testing.expect(hit.handler == ai_mod.http_handlers.sessionMessagesHandler);
     }
 
-    // And the detail route is untouched: `usage` must not have made the
-    // bare `:session_id` pattern stop matching a single-segment path.
+    // And the detail route is untouched: `usage` must not have made the bare `:session_id` pattern stop matching a single-segment path.
     const detail = (try resolve(a, &router, "GET", "/api/llm/session/sess_1")) orelse {
         return error.SessionDetailRouteNotRegistered;
     };

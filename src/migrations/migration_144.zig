@@ -6,9 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const dropColumnIfExists = common.dropColumnIfExists;
 
-/// Migration 144 — the body lives in the object store, so the column that used
-/// to hold it goes. IRREVERSIBLE: run `pabrik headless documents backfill`
-/// first, and only after every row reports `content_key` set.
+/// Migration 144 — the body lives in the object store, so the column that used to hold it goes.
 pub const Migration144DropDocumentContent = struct {
     pub const version: u32 = 144;
     pub const name = "drop_document_content";

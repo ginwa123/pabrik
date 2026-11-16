@@ -1,5 +1,4 @@
-// Functional wire tests for the read-only commits history endpoints. Zig port
-// of `tests/functional/git_commits_test.py` (same test names, same order).
+// Functional wire tests for the read-only commits history endpoints.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Run `git` with a fixed identity so the fixture never depends on the
-/// machine's global git config (which CI does not set).
+/// Run `git` with a fixed identity so the fixture never depends on the machine's global git config (which CI does not set).
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
     defer full.deinit(gpa);
@@ -46,8 +42,7 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Build the `commits-proj` fixture inside `scratch`. Returns the owned
-/// repo path; the caller frees it and cleans `scratch` itself.
+/// Build the `commits-proj` fixture inside `scratch`.
 fn buildCommitsCwd(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "commits-proj" });
     errdefer gpa.free(repo);
@@ -56,8 +51,7 @@ fn buildCommitsCwd(scratch: []const u8) ![]u8 {
     var repo_dir = try std.Io.Dir.cwd().openDir(io, repo, .{});
     defer repo_dir.close(io);
 
-    // `--initial-branch=main` is what makes the fixture deterministic
-    // across git versions.
+    // `--initial-branch=main` is what makes the fixture deterministic across git versions.
     try git(scratch, &.{ "init", "--initial-branch=main", "--quiet", repo });
 
     try writeFileAt(repo_dir, "a.txt", "one\n");
@@ -67,8 +61,7 @@ fn buildCommitsCwd(scratch: []const u8) ![]u8 {
     try writeFileAt(repo_dir, "a.txt", "two\n");
     try writeFileAt(repo_dir, "b.txt", "new\n");
     try git(repo, &.{ "add", "-A" });
-    // A QUOTED subject plus a multi-line body — the detail endpoint has
-    // to hand both back unmodified.
+    // A QUOTED subject plus a multi-line body — the detail endpoint has to hand both back unmodified.
     try git(repo, &.{
         "commit", "--quiet",
         "-m",     "second \"quoted\" subject",
@@ -82,8 +75,7 @@ fn buildCommitsCwd(scratch: []const u8) ![]u8 {
     return repo;
 }
 
-/// Boot a harness plus a fixture repo, with both cleaned up on the way
-/// out. `*h`, `*scratch` and `*repo` are for the caller's `defer`s.
+/// Boot a harness plus a fixture repo, with both cleaned up on the way out.
 fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -99,8 +91,7 @@ fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
     };
 }
 
-/// Boot a harness plus a bare scratch dir (no repo). For the non-repo
-/// and param-validation cases.
+/// Boot a harness plus a bare scratch dir (no repo).
 fn bootWithScratch(h: *Harness, scratch: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -111,8 +102,7 @@ fn bootWithScratch(h: *Harness, scratch: *[]u8) !void {
 }
 
 
-/// `GET /api/git/commits?path=<repo>` (+ optional limit/skip). Caller owns
-/// the Response.
+/// `GET /api/git/commits?path=<repo>` (+ optional limit/skip).
 fn getCommits(
     h: *Harness,
     repo: []const u8,
@@ -193,9 +183,7 @@ fn commitSha(doc: *const harness.Json, index: usize) ![]u8 {
     return gpa.dupe(u8, sha);
 }
 
-// ============================================================================
 // Test 1: commits list newest-first
-// ============================================================================
 
 // GET /commits returns newest-first rows with sha/author/subject.
 test "commits_list_newest_first" {
@@ -268,9 +256,7 @@ test "commits_list_newest_first" {
     }
 }
 
-// ============================================================================
 // Test 2: skip/limit paging
-// ============================================================================
 
 // skip/limit pages through history for infinite scroll.
 test "commits_pagination" {
@@ -305,9 +291,7 @@ test "commits_pagination" {
     }
 }
 
-// ============================================================================
 // Test 3: commit detail
-// ============================================================================
 
 // GET /commit returns the full message + touched files for a SHA.
 test "commit_detail" {
@@ -386,9 +370,7 @@ test "commit_detail" {
     }
 }
 
-// ============================================================================
 // Test 4: non-repo is 200 + is_git_repo=false
-// ============================================================================
 
 // A non-git path returns 200 with is_git_repo=false (changes convention).
 test "commits_non_repo_is_200_not_found" {
@@ -428,9 +410,7 @@ test "commits_non_repo_is_200_not_found" {
     try testing.expectEqual(@as(usize, 0), commits.items.len);
 }
 
-// ============================================================================
 // Test 5: param validation
-// ============================================================================
 
 // Missing path and non-hex sha are 400s, never a git subprocess.
 test "commits_param_validation" {
@@ -450,8 +430,7 @@ test "commits_param_validation" {
         try testing.expectEqual(@as(u16, 400), r.status);
     }
     {
-        // `--help` is the flag-injection probe: a handler that forwarded
-        // it straight to `git` would print usage and exit 0, not 400.
+        // `--help` is the flag-injection probe: a handler that forwarded it straight to `git` would print usage and exit 0, not 400.
     const help = "--help";
         var r = try h.http(io, .GET, "/api/git/commit", .{
             .params = &.{
@@ -466,9 +445,7 @@ test "commits_param_validation" {
     }
 }
 
-// ============================================================================
 // Test 6: per-commit file diff
-// ============================================================================
 
 // GET /commit/file returns the unified diff of one file at one commit.
 test "commit_file_diff" {
@@ -527,9 +504,7 @@ test "commit_file_diff" {
     }
 }
 
-// ============================================================================
 // Test 7: root-commit fallback
-// ============================================================================
 
 // The first commit has no parent — the show-fallback still renders.
 test "commit_file_diff_root_commit" {
@@ -577,9 +552,7 @@ test "commit_file_diff_root_commit" {
     }
 }
 
-// ============================================================================
 // Test 8: commit/file param validation
-// ============================================================================
 
 // Missing file, flag-like file, and traversal are 400s.
 test "commit_file_diff_validation" {

@@ -110,15 +110,13 @@ describe('useWorkspacesStore task cache — mutation coherence', () => {
     vi.restoreAllMocks()
   })
 
-  // Populate the cache through the public fetch path (first page,
-  // complete — has_more=false).
+  // Populate the cache through the public fetch path (first page, complete — has_more=false).
   async function populateCache(ws: Store, tasks: ReturnType<typeof wireTask>[]) {
     getTasksMock.mockResolvedValueOnce({ tasks, has_more: false, next_cursor: null })
     await ws.fetchKanbanTasks('ws_1', 'item_1a', 'col_a', 10, undefined, undefined)
   }
 
-  // Wipe in-memory state, then re-fetch with the network down — the
-  // repaint can only come from the local cache.
+  // Wipe in-memory state, then re-fetch with the network down — the repaint can only come from the local cache.
   async function offlineRepaint(ws: Store, columnId = 'col_a') {
     ws.workspaces[0]!.items[0]!.tasks = []
     getTasksMock.mockRejectedValueOnce(new Error('offline'))

@@ -123,8 +123,7 @@ describe('LayersPanel context menu', () => {
     })
     await nextTick()
 
-    // No @contextmenu listener is bound in readonly mode; dispatching
-    // a contextmenu event should have no effect.
+    // No @contextmenu listener is bound in readonly mode; dispatching a contextmenu event should have no effect.
     const row = wrapper.find('[data-testid="design-layer-elem_a"]')
     await row.trigger('contextmenu', { clientX: 100, clientY: 100 })
     await nextTick()
@@ -197,8 +196,7 @@ describe('LayersPanel context menu', () => {
   })
 
   it('opens the menu with the full selection as targetIds when right-clicking an already-selected row (no shift required)', async () => {
-    // Figma parity: right-click on a row that's already in the multi-selection — regardless of
-    // shift — opens the menu against the FULL selection.
+    // Figma parity: right-click on a row that's already in the multi-selection — regardless of shift — opens the menu against the FULL selection.
     const elements = [
       makeElement({ id: 'elem_a', z_index: 2, position: 0 }),
       makeElement({ id: 'elem_b', z_index: 1, position: 1 }),
@@ -218,13 +216,9 @@ describe('LayersPanel context menu', () => {
     expect(vm.props('targetIds')).toEqual(['elem_a', 'elem_b', 'elem_c'])
   })
 
-  // ─── Leave group (2026-08-06, design-leave-group plan) ──────────────── The LayersPanel forwards
-  // the menu's @leave-group emit upward as the @leaveGroup emit. The test confirms the forward
-  // works — the actual reparent is in DesignView (out of scope here).
+  // ─── Leave group (2026-08-06, design-leave-group plan) ────────────────
   it('forwards the menu leaveGroup click as a top-level @leaveGroup emit with the single id', async () => {
-    // `elem_b` is a child of `elem_a` (parent_id set). Right-click,
-    // then click the menu's Leave-group button. LayersPanel must
-    // emit `leaveGroup` with ['elem_b'].
+    // `elem_b` is a child of `elem_a` (parent_id set).
     const elements = [
       makeElement({ id: 'elem_a', z_index: 1 }),
       makeElement({ id: 'elem_b', z_index: 0, parent_id: 'elem_a' }),

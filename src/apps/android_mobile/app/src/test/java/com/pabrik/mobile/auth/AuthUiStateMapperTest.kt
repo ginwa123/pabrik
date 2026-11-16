@@ -6,16 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The sign-out feature hangs off two pieces of state this file pins down: the
- * sidebar's "Log out" row is gated on [AuthUiState.isAuthEnabled] and labelled
- * with [AuthUiState.userEmail], so a mapping that dropped either would not
- * crash — it would quietly render a sidebar with no way out, or one naming the
- * wrong person.
- *
- * Plain JVM: both mappers are free of Android, which is the reason they were
- * lifted out of the ViewModel in the first place.
- */
+/** The sign-out feature hangs off two pieces of state this file pins down: the sidebar's "Log out" row is gated on [AuthUiState.isAuthEnabled] and labelled with … */
 class AuthUiStateMapperTest {
     private val user = AuthUser(
         id = "user-1",
@@ -37,8 +28,7 @@ class AuthUiStateMapperTest {
 
     @Test
     fun anOpenServerHasNothingToSignOutOf() {
-        // `auth_enabled=false` is the only result that produces this phase with
-        // no user. The sidebar must read the flag, not infer it from a null id.
+        // `auth_enabled=false` is the only result that produces this phase with no user.
         val state = authUiStateFor(AuthResult.AuthDisabled)
 
         assertEquals(SessionPhase.Authenticated, state.phase)
@@ -49,9 +39,7 @@ class AuthUiStateMapperTest {
 
     @Test
     fun aUserIdOfOnlyWhitespaceStillCountsAsAuthenticated() {
-        // `parseUser` never yields a blank email, so an authenticated result with
-        // one cannot be constructed by the real client — but a blank *id* can,
-        // and the sidebar must not lose its sign-out row because of it.
+        // `parseUser` never yields a blank email, so an authenticated result with one cannot be constructed by the real client — but a blank *id* can, and the sidebar …
         val state = authUiStateFor(AuthResult.Authenticated(user.copy(id = "   ")))
 
         assertTrue(state.isAuthEnabled)
@@ -70,8 +58,7 @@ class AuthUiStateMapperTest {
 
     @Test
     fun anUnreachableServerDuringRestoreOffersARetry() {
-        // NeedsRetry, not NeedsLogin: the saved session may still be good, and
-        // the retry screen is the only place that can find out.
+        // NeedsRetry, not NeedsLogin: the saved session may still be good, and the retry screen is the only place that can find out.
         val state = authUiStateFor(AuthResult.Unavailable("Could not reach Pabrik."))
 
         assertEquals(SessionPhase.NeedsRetry, state.phase)
@@ -103,17 +90,14 @@ class AuthUiStateMapperTest {
             assertFalse("no account survives a sign-out: $result", state.isAuthEnabled)
             assertNull("the outgoing account must not linger in state: $result", state.userEmail)
             assertNull("nor its cache namespace: $result", state.userId)
-            // A finished sign-out has to hand the button back, or the login
-            // screen it returns to would arrive with a dead control still latched.
+            // A finished sign-out has to hand the button back, or the login screen it returns to would arrive with a dead control still latched.
             assertFalse(state.isLoggingOut)
         }
     }
 
     @Test
     fun aFailedLocalSignOutTellsTheUserOnTheLoginForm() {
-        // The cookie is still on disk in this case, so the next launch would
-        // restore the session. That is a failure to sign out, and it has to be
-        // said out loud rather than discovered on relaunch.
+        // The cookie is still on disk in this case, so the next launch would restore the session.
         val state = signedOutUiStateFor(AuthResult.Unavailable("Could not clear the saved session."))
 
         assertEquals(SessionPhase.NeedsLogin, state.phase)

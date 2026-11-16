@@ -1,6 +1,4 @@
-/** Behavioural tests for the no-default-sort-by behavior of `api.getTasks` (kanban default-URL,
- * 2026-08-06). Why. The frontend used to send `sort_by=updated_at&direction=desc` on every
- * task-fetch — even when the URL had no `sorts` param and the user hadn't picked a sort. */
+/** Behavioural tests for the no-default-sort-by behavior of `api.getTasks` (kanban default-URL, 2026-08-06). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 
@@ -8,9 +6,7 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
   let fetchSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    // Spy on the globally-patched fetch so we can read the URL
-    // and the saved params. Each test sets the response so the
-    // call doesn't throw.
+    // Spy on the globally-patched fetch so we can read the URL and the saved params.
     fetchSpy = vi.spyOn(globalThis, 'fetch')
   })
 
@@ -44,9 +40,7 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
       ),
     )
 
-    // Type-assert to bypass the optional parameter narrowing — the
-    // contract under test is the runtime behaviour when one of the
-    // pair is undefined.
+    // Type-assert to bypass the optional parameter narrowing — the contract under test is the runtime behaviour when one of the pair is undefined.
     await api.getTasks(
       'ws_1',
       'item_1',
@@ -57,8 +51,7 @@ describe('api.getTasks — sort params (2026-08-06 no-default behavior)', () => 
     )
 
     const calledUrl = fetchSpy.mock.calls[0]![0] as string
-    // Backend requires both together — we DON'T send sort_by
-    // without direction (cursor format depends on the sort field).
+    // Backend requires both together — we DON'T send sort_by without direction (cursor format depends on the sort field).
     expect(calledUrl).not.toContain('sort_by=')
     expect(calledUrl).not.toContain('direction=')
   })

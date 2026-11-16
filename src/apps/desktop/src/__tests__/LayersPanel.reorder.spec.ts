@@ -1,6 +1,4 @@
-/** Wire-up regression test for LayersPanel.vue ▲/▼ buttons. Pre-fix symptom (silent-drop bug):
- * clicking ▲ or ▼ on a layer row emits `reorder` upward → DesignView re-emits as `reorderElements`
- * → AppLayout has no `@reorder-elements` listener → nothing happens. */
+/** Wire-up regression test for LayersPanel.vue ▲/▼ buttons. Pre-fix symptom (silent-drop bug) */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -53,8 +51,7 @@ describe('LayersPanel ▲/▼ wire-up (Chunk 1 of undo/redo plan)', () => {
 
   it('▲ button on layer row triggers reorderDesignElements with mode: "bring_forward"', async () => {
     const store = useWorkspacesStore()
-    // Seed an active workspace/item/page so the store can resolve them
-    // from activeWorkspace / activeWorkspaceItem / activeDesignPageId.
+    // Seed an active workspace/item/page so the store can resolve them from activeWorkspace / activeWorkspaceItem / activeDesignPageId.
     store.workspaces.push({
       id: 'ws_1',
       name: 'WS',
@@ -73,9 +70,7 @@ describe('LayersPanel ▲/▼ wire-up (Chunk 1 of undo/redo plan)', () => {
       ],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
-    // The workspace is derived from the active item — no separate
-    // setActiveWorkspace exists in the store. Setting the active
-    // workspace item id is sufficient to resolve both ids.
+    // The workspace is derived from the active item — no separate setActiveWorkspace exists in the store.
     store.setActiveWorkspaceItem('item_1')
     store.setActiveDesignPage('page_1')
 
@@ -85,8 +80,7 @@ describe('LayersPanel ▲/▼ wire-up (Chunk 1 of undo/redo plan)', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .mockResolvedValue([] as any)
 
-    // Render with 3 elements (z_index DESC: top to bottom). The panel
-    // shows them top-down. Click ▲ on the middle one (z_index 1).
+    // Render with 3 elements (z_index DESC: top to bottom).
     const elements = [
       makeElement({ id: 'elem_a', z_index: 2, position: 0 }),
       makeElement({ id: 'elem_b', z_index: 1, position: 1 }),
@@ -109,9 +103,7 @@ describe('LayersPanel ▲/▼ wire-up (Chunk 1 of undo/redo plan)', () => {
     expect(itemId).toBe('item_1')
     expect(pageId).toBe('page_1')
     expect(mode).toBe('bring_forward')
-    // The store action takes just the moved id (mirrors the keyboard
-    // shortcut path which passes `selectedIds`); the server applies
-    // the mode to each id and returns the reordered rows.
+    // The store action takes just the moved id (mirrors the keyboard shortcut path which passes `selectedIds`); the server applies the mode to each id and returns …
     expect(ids).toEqual(['elem_b'])
   })
 

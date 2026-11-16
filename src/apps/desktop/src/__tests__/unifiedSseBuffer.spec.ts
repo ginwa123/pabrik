@@ -1,5 +1,4 @@
-/** unifiedSseBuffer.spec.ts Regression test for Plan Reviewer finding #1: The unified factory's default-message
- * handler MUST use a SINGLE shared buffer for the 3 default-`message` event families (workers. */
+/** unifiedSseBuffer.spec.ts Regression test for Plan Reviewer finding #1: The unified factory's default-message handler MUST use a SINGLE shared buffer for the 3 … */
 import { assert, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'
@@ -7,8 +6,6 @@ import * as sseClient from '../helpers/sseClient'
 
 describe('createUnifiedSseConnection: single-buffer design (regression for Plan Reviewer #1)', () => {
   // Mock the SseClient so we capture the onEvent callback without needing a real EventSource.
-  // Returns a stub SseClient (we never call .close() etc. in these tests). Spy lifecycle note:
-  // vi.spyOn() returns a live spy.
   const spy = vi.spyOn(sseClient, 'createSseClient')
   let capturedOnEvent: ((raw: string, eventType: string) => void) | null = null
 
@@ -56,9 +53,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     // All 100 worker events dispatched.
     expect(workersCb).toHaveBeenCalledTimes(100)
 
-    // Now fire 1 session-shape event. If the buffer were leaked (per- channel buffers), this event
-    // would be appended to a "session buffer" that already contains 100 worker events, and the
-    // parser would produce malformed JSON → session cb fires 0 times.
+    // Now fire 1 session-shape event.
     const sessionEvent = JSON.stringify({
       action: 'updated',
       id: 'session-final',
@@ -70,9 +65,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     })
     capturedOnEvent!(sessionEvent, 'message')
 
-    // With the correct (1-buffer) design: session cb fires exactly 1
-    // time, and the dispatched object is the session event — not
-    // garbage, not a worker event.
+    // With the correct (1-buffer) design: session cb fires exactly 1 time, and the dispatched object is the session event — not garbage, not a worker event.
     expect(sessionsCb).toHaveBeenCalledTimes(1)
     const dispatchedSession = sessionsCb.mock.calls[0]![0] as { id: string; action: string; status: string }
     expect(dispatchedSession.id).toBe('session-final')
@@ -107,9 +100,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     }
     expect(workersCb).toHaveBeenCalledTimes(100)
 
-    // Fire an llm chunk event. The llm discriminator requires `type === 'chunk' | 'full'`. If the
-    // buffer were leaked, this would never dispatch (parse throws on malformed multi-object
-    // string).
+    // Fire an llm chunk event.
     const llmChunk = JSON.stringify({
       type: 'chunk',
       content: 'hello world',
@@ -174,8 +165,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
       )
     }
 
-    // Each channel cb fires exactly the expected number of times —
-    // and only for events matching its shape.
+    // Each channel cb fires exactly the expected number of times — and only for events matching its shape.
     expect(workersCb).toHaveBeenCalledTimes(100)
     expect(sessionsCb).toHaveBeenCalledTimes(100)
     expect(llmCb).toHaveBeenCalledTimes(100)
@@ -196,9 +186,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
 
     expect(capturedOnEvent).not.toBeNull()
 
-    // Simulate the server sending a 'connected' event mid-stream
-    // (e.g. reconnect). This MUST reset the buffer — leftover bytes
-    // from a previous connection would corrupt the next parse.
+    // Simulate the server sending a 'connected' event mid-stream (e.g. reconnect).
     capturedOnEvent!('{"connected":true}', 'connected')
 
     // After connected, fire a worker event. Should dispatch.
@@ -221,9 +209,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
   })
 
   it('does not dispatch a worker event to the sessions channel (shape discrimination is correct)', () => {
-    // Defense against the obvious footgun: an event with `action`
-    // should NEVER be dispatched to sessions if it doesn't have
-    // `status + cwd`. The discriminator checks all 3 fields.
+    // Defense against the obvious footgun: an event with `action` should NEVER be dispatched to sessions if it doesn't have `status + cwd`.
     const sessionsCb = vi.fn()
     const workersCb = vi.fn()
 
@@ -267,13 +253,9 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     expect(workersCb).toHaveBeenCalledTimes(1)
   })
 
-  /** Regression for Code Reviewer Critical Fix (2026-06-30): when the caller's `channels` set does
-   * NOT include a consumer for a default-message event shape the backend emits, the buffer MUST
-   * still advance past the event. Otherwise the buffer grows unboundedly on every dropped event. */
+  /** Regression for Code Reviewer Critical Fix (2026-06-30): when the caller's `channels` set does NOT include a consumer for a default-message event shape the … */
   it('advances the buffer past default-message events with no matching consumer', () => {
-    // Re-spy with a fresh mockImplementation (the describe-level
-    // spy already exists; just update its impl to capture the new
-    // onEvent arg from this test's createUnifiedSseConnection call).
+    // Re-spy with a fresh mockImplementation (the describe-level spy already exists; just update its impl to capture the new onEvent arg from this test's …
     spy.mockImplementation(((opts: sseClient.SseClientOptions) => {
       capturedOnEvent = opts.onEvent
       return {
@@ -290,8 +272,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
       channels: { kanban: kanbanCb },
     })
 
-    // Fire 50 worker-shaped default-message events. None should
-    // dispatch (no workers consumer), but the buffer MUST advance.
+    // Fire 50 worker-shaped default-message events.
     for (let i = 0; i < 50; i++) {
       capturedOnEvent!(
         JSON.stringify({
@@ -319,8 +300,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     )
 
     expect(kanbanCb).toHaveBeenCalledTimes(1)
-    // The bug doesn't fire the kanban cb with the right payload if
-    // the buffer had been corrupted. Verify the payload is intact.
+    // The bug doesn't fire the kanban cb with the right payload if the buffer had been corrupted.
     expect(kanbanCb).toHaveBeenCalledWith(
       expect.objectContaining({ column_id: 'col-1', action: 'created' }),
     )
@@ -335,8 +315,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
     })
     void client2
 
-    // Drop a worker event (no workers consumer — sessions-cb
-    // shouldn't fire either since neither discriminator matches).
+    // Drop a worker event (no workers consumer — sessions-cb shouldn't fire either since neither discriminator matches).
     capturedOnEvent!(
       JSON.stringify({
         action: 'updated',
@@ -368,8 +347,7 @@ describe('createUnifiedSseConnection: single-buffer design (regression for Plan 
   })
 })
 
-/** Regression tests for:
- * The `UnifiedChannels.llm` / `.queue` shapes now accept an OPTIONAL `sessionId`. */
+/** Regression tests for */
 describe('createUnifiedSseConnection: bare vs per-session tokens (Chunk 4)', () => {
   const spy = vi.spyOn(sseClient, 'createSseClient')
   let capturedUrl: string | null = null
@@ -456,8 +434,7 @@ describe('createUnifiedSseConnection: bare vs per-session tokens (Chunk 4)', () 
   })
 })
 
-/** Regression tests for the granular `event:` names commit. See SseClient JSDoc + the project
- * memory browser-eventsource-named-events.md. */
+/** Regression tests for the granular `event:` names commit. */
 describe('createUnifiedSseConnection: pre-registers all granular event names', () => {
   const REQUIRED_EVENT_TYPES = [
     'kanban_column',
@@ -472,9 +449,7 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
     'session_created',
     'session_deleted',
     'session_updated', // task_1786507100896 — auto-rename on first user message + unattended toggle
-    // Design-mode events (src/ai_workflow/tui/on_event_sent_design.zig): - design_element_created /
-    // _updated / _deleted — single - design_elements_geometry_batch_updated — batch (emitted by
-    // `updateElementsBatch` AND `moveElementsWithDescendantsBatch`).
+    // Design-mode events (src/ai_workflow/tui/on_event_sent_design.zig): - design_element_created /_updated / _deleted — single - …
     'design_element_created',
     'design_element_updated',
     'design_element_deleted',
@@ -514,9 +489,7 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
   })
 
   it('does NOT register the obsolete "queue_message" event name', () => {
-    // Belt-and-braces: the queue event name was renamed from
-    // `queue_message` to `queue_queued` for parity with `queue_deleted`.
-    // The old name must NOT appear in additionalEventTypes anymore.
+    // Belt-and-braces: the queue event name was renamed from `queue_message` to `queue_queued` for parity with `queue_deleted`.
     createUnifiedSseConnection({
       channels: { queue: { onEvent: () => {} } },
     })
@@ -526,9 +499,7 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
   })
 
   it('dispatches design_elements_geometry_batch_updated to opts.channels.design', () => {
-    // Bug history (2026-08-06): the move-batch endpoint emitted
-    // `design_elements_geometry_batch_updated` SSE events, but the dispatcher's if-chain only
-    // handled the three singular event names.
+    // Bug history (2026-08-06): the move-batch endpoint emitted `design_elements_geometry_batch_updated` SSE events, but the dispatcher's if-chain only handled the …
     let capturedOnEvent: ((raw: string, type: string) => void) | null = null
     spy.mockImplementation(((opts: sseClient.SseClientOptions) => {
       capturedOnEvent = opts.onEvent
@@ -566,8 +537,7 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
     )
   })
 
-  /** Regression test for task_1786507100896: when the backend emits a session rename on first user
-   * message (LLM auto-name), the downstream consumer's `sessions` callback MUST fire. */
+  /** Regression test for task_1786507100896: when the backend emits a session rename on first user message (LLM auto-name), the downstream consumer's `sessions` … */
   it('routes session_updated wire events to the sessions channel callback', () => {
     const sessionsCb = vi.fn()
     let capturedOnEvent: ((raw: string, eventType: string) => void) | null = null
@@ -588,9 +558,7 @@ describe('createUnifiedSseConnection: pre-registers all granular event names', (
 
     expect(capturedOnEvent).not.toBeNull()
 
-    // Simulate the wire-format payload the backend emits on updateSessionName cascade (see
-    // agentic_loop/update_session_name.zig:24-34 + the OnEventInputSessions struct in
-    // sse_on_event_send_session.zig:7-17).
+    // Simulate the wire-format payload the backend emits on updateSessionName cascade (see agentic_loop/update_session_name.zig:24-34 + the OnEventInputSessions …
     const payload = JSON.stringify({
       action: 'updated',
       id: 'session_abc',

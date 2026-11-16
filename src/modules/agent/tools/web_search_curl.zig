@@ -1,6 +1,4 @@
 //! `web_search_curl` — a GET-only parser for the curl string the agent sends.
-//! The agent is handed a template by `list_web_search_providers` and edits
-//! it: it replaces the search text and may adjust other parameters.
 
 const std = @import("std");
 
@@ -27,14 +25,12 @@ pub const KeySite = union(enum) {
 pub const Parsed = struct {
     /// Everything before the first `?` — scheme, host, port, path.
     url_base: []const u8,
-    /// The raw query string without its leading `?`. Empty when the URL
-    /// had none.
+    /// The raw query string without its leading `?`.
     url_query: []const u8,
     headers: []const Header,
     key_site: KeySite,
 
-    /// Host (and optional `:port`) taken from `url_base`. IPv6 literals
-    /// keep their brackets so a pin can be written the same way.
+    /// Host (and optional `:port`) taken from `url_base`.
     pub fn hostOf(self: Parsed) []const u8 {
         return hostOfUrl(self.url_base);
     }
@@ -43,8 +39,7 @@ pub const Parsed = struct {
 pub const ParseError = error{
     /// The string was empty, or contained only whitespace and flags.
     Empty,
-    /// The input began with something other than `curl` or a URL — e.g.
-    /// `wget …`, `sh -c …`. Only `curl` may be stripped, silently.
+    /// The input began with something other than `curl` or a URL — e.g. `wget …`, `sh -c …`.
     UnsupportedCommand,
     /// A flag that changes the meaning of the request (or writes files).
     UnsupportedFlag,
@@ -70,9 +65,7 @@ pub const ParseError = error{
 
 /// Extract the `host[:port]` portion of a URL that has no query.
 pub fn hostOfUrl(url: []const u8) []const u8 {
-    // Strip the scheme FIRST. Cutting at the first delimiter before this
-    // turns "https://e.com/a" into "https:" — the very next line then
-    // finds no "://" and returns the scheme as the host.
+    // Strip the scheme FIRST.
     const scheme_end = std.mem.indexOf(u8, url, "://");
     var rest = if (scheme_end) |i| url[i + 3 ..] else url;
 
@@ -80,17 +73,14 @@ pub fn hostOfUrl(url: []const u8) []const u8 {
     const end = std.mem.indexOfAny(u8, rest, "/?#") orelse rest.len;
     rest = rest[0..end];
 
-    // Userinfo (`user:pass@host`) is not part of the host. It is stripped
-    // here and REJECTED by the caller — see `checkHostPolicy`.
+    // Userinfo (`user:pass@host`) is not part of the host.
     if (std.mem.lastIndexOfScalar(u8, rest, '@')) |at| rest = rest[at + 1 ..];
 
-    // A bare `host:port/path` with no scheme: the scheme is required by
-    // `parse`, so anything reaching here already has one.
+    // A bare `host:port/path` with no scheme: the scheme is required by `parse`, so anything reaching here already has one.
     return rest;
 }
 
-/// True when `host` names a loopback, link-local, private, or otherwise
-/// non-public address.
+/// True when `host` names a loopback, link-local, private, or otherwise non-public address.
 pub fn isNonPublicHost(host: []const u8) bool {
     var h = host;
     // Strip an explicit port. Bracketed IPv6 keeps its brackets until here.
@@ -99,8 +89,7 @@ pub fn isNonPublicHost(host: []const u8) bool {
         return isNonPublicHost(h[1..close]);
     }
     if (std.mem.lastIndexOfScalar(u8, h, ':')) |colon| {
-        // More than one colon and no brackets = a bare IPv6 literal, which
-        // this tool never accepts (an https URL must bracket it).
+        // More than one colon and no brackets = a bare IPv6 literal, which this tool never accepts (an https URL must bracket it).
         if (std.mem.count(u8, h, ":") > 1) return true;
         h = h[0..colon];
     }
@@ -116,8 +105,7 @@ pub fn isNonPublicHost(host: []const u8) bool {
     if (std.mem.eql(u8, h, "::1")) return true;
     if (std.mem.eql(u8, h, "::")) return true;
 
-    // IPv4 dotted quad. Anything not four decimal octets is a hostname,
-    // which is not decidable here.
+    // IPv4 dotted quad.
     var octets: [4]u16 = undefined;
     var count: usize = 0;
     var it = std.mem.splitScalar(u8, h, '.');
@@ -163,15 +151,13 @@ fn checkHostPolicy(url: []const u8, require_public: bool) ParseError!void {
     if (require_public and isNonPublicHost(host)) return error.NonPublicHost;
 }
 
-/// A tokenised argument: either a literal piece of text, or one that was
-/// quoted (and so had its quotes stripped).
+/// A tokenised argument: either a literal piece of text, or one that was quoted (and so had its quotes stripped).
 const Token = struct {
     text: []const u8,
     was_quoted: bool,
 };
 
-/// Split `input` into tokens, honouring `"…"` and `'…'` and stripping a
-/// trailing `\` line continuation. All slices borrow from `input`.
+/// Split `input` into tokens, honouring `"…"` and `'…'` and stripping a trailing `\` line continuation.
 fn tokenize(allocator: std.mem.Allocator, input: []const u8) (ParseError || std.mem.Allocator.Error)![]Token {
     var out: std.ArrayList(Token) = .empty;
     errdefer out.deinit(allocator);
@@ -206,7 +192,6 @@ fn tokenize(allocator: std.mem.Allocator, input: []const u8) (ParseError || std.
 }
 
 /// Flags that would change the request's method, body, or effect on disk.
-/// Matched on the long form and on the unambiguous short forms.
 const BANNED_SHORT = [_][]const u8{ "-X", "-x", "-d", "-T", "-o", "-O", "-F", "-K", "-E", "-D", "-U", "-P", "-Q", "-r" };
 const BANNED_LONG = [_][]const u8{
     "--request",     "--data",       "--data-raw",     "--data-binary",
@@ -234,19 +219,15 @@ fn bannedFlag(token: []const u8) bool {
     return false;
 }
 
-/// The owned result of `parse`. Exactly two allocations, both released by
-/// `deinit`; `parsed` borrows from them and from `input`.
+/// The owned result of `parse`.
 pub const Owned = struct {
     tokens: []Token,
     headers: []Header,
-    /// Owns the query string ONLY when `-G`/`--data-urlencode` made us
-    /// synthesise one.
+    /// Owns the query string ONLY when `-G`/`--data-urlencode` made us synthesise one.
     query_buf: ?[]u8,
     parsed: Parsed,
 
-    /// Free every allocation. `parsed` is a view and owns nothing. Takes
-    /// `self` by value: releasing does not mutate the owner, so a `const`
-    /// binding can still `defer r.deinit(alloc)`.
+    /// Free every allocation.
     pub fn deinit(self: Owned, allocator: std.mem.Allocator) void {
         allocator.free(self.tokens);
         allocator.free(self.headers);
@@ -263,15 +244,12 @@ pub fn parse(
     errdefer allocator.free(tokens);
 
     var headers: std.ArrayList(Header) = .empty;
-    // Cleared by `toOwnedSlice` on the success path, so this only ever
-    // fires while `headers` still owns its buffer.
+    // Cleared by `toOwnedSlice` on the success path, so this only ever fires while `headers` still owns its buffer.
     errdefer headers.deinit(allocator);
 
     var url_text: ?[]const u8 = null;
     var extra_query: std.ArrayList(u8) = .empty;
-    // The fold result is COPIED into `merged` below, so this list keeps
-    // ownership of its own buffer for the whole function — the `defer`
-    // is safe on every path, including the early error returns.
+    // The fold result is COPIED into `merged` below, so this list keeps ownership of its own buffer for the whole function — the `defer` is safe on every path …
     defer extra_query.deinit(allocator);
 
     var key_header_index: ?usize = null;
@@ -282,13 +260,10 @@ pub fn parse(
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
 
-        // A leading bare `curl` is the program name, not a URL. Stripping it
-        // is what lets the model paste a whole command from a provider's
-        // docs.
+        // A leading bare `curl` is the program name, not a URL.
         if (i == 0 and !tok.was_quoted) {
             if (std.mem.eql(u8, tok.text, "curl")) {
-                // No `i += 1` here: the loop's own `: (i += 1)` runs on
-                // `continue`, and incrementing twice swallowed the URL.
+                // No `i += 1` here: the loop's own `: (i += 1)` runs on `continue`, and incrementing twice swallowed the URL.
                 continue;
             }
             if (tok.text.len > 0 and tok.text[0] != '-' and
@@ -299,9 +274,7 @@ pub fn parse(
             }
         }
 
-        // Accepted flags are handled BEFORE the ban check. `--data-urlencode`
-        // used to appear in both lists, and because the ban ran first the
-        // accepted branch was unreachable dead code.
+        // Accepted flags are handled BEFORE the ban check.
         if (std.mem.eql(u8, tok.text, "-G") or std.mem.eql(u8, tok.text, "--get")) {
             query_flag = true;
             continue;
@@ -339,24 +312,21 @@ pub fn parse(
         }
 
         if (tok.text.len > 0 and tok.text[0] == '-') {
-            // An unknown-but-harmless flag (`--compressed`, `--silent` is
-            // banned, `-s` is not). Ignore it rather than guessing.
+            // An unknown-but-harmless flag (`--compressed`, `--silent` is banned, `-s` is not).
             continue;
         }
 
         if (url_text == null) {
             url_text = tok.text;
         } else if (std.mem.indexOf(u8, tok.text, "://") != null) {
-            // A second bare URL is ambiguous — we would be guessing which
-            // one the model meant.
+            // A second bare URL is ambiguous — we would be guessing which one the model meant.
             return error.AmbiguousUrl;
         }
     }
 
     const raw_url = url_text orelse return error.MissingUrl;
 
-    // `-G`/`--data-urlencode` put their arguments in the query, so a `-G`
-    // run may have data but no `?` in the URL.
+    // `-G`/`--data-urlencode` put their arguments in the query, so a `-G` run may have data but no `?` in the URL.
     var base: []const u8 = raw_url;
     var query: []const u8 = "";
     if (std.mem.indexOfScalar(u8, raw_url, '?')) |q| {
@@ -365,9 +335,7 @@ pub fn parse(
     }
     var query_buf: ?[]u8 = null;
     if (extra_query.items.len > 0) {
-        // curl's `-G` APPENDS its data arguments to whatever query the URL
-        // already had, so `?count=10` + `--data-urlencode q=FIFA` becomes
-        // `count=10&q=FIFA` — not the other way round.
+        // curl's `-G` APPENDS its data arguments to whatever query the URL already had, so `?count=10` + `--data-urlencode q=FIFA` becomes `count=10&q=FIFA` — not the …
         var merged: std.ArrayList(u8) = .empty;
         errdefer merged.deinit(allocator);
         try merged.appendSlice(allocator, query);
@@ -376,21 +344,17 @@ pub fn parse(
         query_buf = try merged.toOwnedSlice(allocator);
         query = query_buf.?;
     }
-    // `-G` means "append the data to the URL", which for us is simply that
-    // the folded query is the query. Nothing else to do.
+    // `-G` means "append the data to the URL", which for us is simply that the folded query is the query.
 
     try checkHostPolicy(base, true);
 
-    // `{key}` in the URL query counts too — SerpApi and Google CSE take
-    // the credential as a query parameter.
+    // `{key}` in the URL query counts too — SerpApi and Google CSE take the credential as a query parameter.
     if (std.mem.indexOf(u8, query, key_placeholder) != null) {
         if (key_header_index != null or key_in_query) return error.DuplicateKeyPlaceholder;
         key_in_query = true;
     }
 
-    // No `{key}` is NOT a parse error — see `KeySite.none`. Whether it is
-    // acceptable is a policy question about the config entry, and that
-    // check lives in `web_search_request.validateKeySite`.
+    // No `{key}` is NOT a parse error — see `KeySite.none`.
     const key_site: KeySite = if (key_header_index) |idx|
         .{ .header = idx }
     else if (key_in_query)
@@ -444,8 +408,7 @@ const Expect = struct {
     want_err: ?ParseError = null,
     want_headers: usize = 0,
     want_url_contains: ?[]const u8 = null,
-    /// Success row whose template carries no placeholder — valid only for a
-    /// provider that needs no credential.
+    /// Success row whose template carries no placeholder — valid only for a provider that needs no credential.
     want_no_key_site: bool = false,
 };
 
@@ -505,8 +468,7 @@ test "web_search_curl: parse matrix" {
             std.debug.print("FAIL {s}: unexpected {s}\n", .{ c.name, @errorName(err) });
             return err;
         };
-        // A success row must either carry the placeholder or declare that it
-        // is a no-credential fixture. Anything else is a broken test row.
+        // A success row must either carry the placeholder or declare that it is a no-credential fixture.
         const has_placeholder = std.mem.indexOf(u8, c.input, key_placeholder) != null;
         testing.expect(has_placeholder or c.want_no_key_site) catch |err| {
             std.debug.print("BAD ROW {s}: success fixture has no key placeholder and did not declare one\n", .{c.name});
@@ -535,21 +497,16 @@ test "web_search_curl: parse matrix" {
 
 test "web_search_curl: a leading non-curl word is rejected BY NAME" {
     const alloc = testing.allocator;
-    // `wget …` and `sh -c …` are refused as UnsupportedCommand rather than
-    // as MissingUrl: the paste contained a URL, so "no URL found" would be
-    // actively misleading about what went wrong.
+    // `wget …` and `sh -c …` are refused as UnsupportedCommand rather than as MissingUrl: the paste contained a URL, so "no URL found" would be actively misleading …
     testing.expectError(error.UnsupportedCommand, parse(alloc, "wget -q https://e.com?q=X -H \"a: {key}\"")) catch |err| return err;
     testing.expectError(error.UnsupportedCommand, parse(alloc, "sh -c curl")) catch |err| return err;
     testing.expectError(error.UnsupportedCommand, parse(alloc, "python -c \"print(1)\" -H \"a: {key}\"")) catch |err| return err;
-    // The word must be LEADING. A bare non-URL word later on lands in
-    // the URL slot and fails scheme validation, which names the actual
-    // problem rather than pretending there was no URL.
+    // The word must be LEADING.
     testing.expectError(error.InvalidUrl, parse(alloc, "curl -H \"a: {key}\" whatever")) catch |err| return err;
 }
 
 test "web_search_curl: rows 1-4 all produce the same request" {
-    // The four variants differ only in how the user (or the model) quoted
-    // and wrapped them, so all four must parse to the same request.
+    // The four variants differ only in how the user (or the model) quoted and wrapped them, so all four must parse to the same request.
     const alloc = testing.allocator;
     const variants = [_][]const u8{
         tinyfish_curl,
@@ -558,9 +515,7 @@ test "web_search_curl: rows 1-4 all produce the same request" {
         "https://api.search.tinyfish.ai?query=latest+FIFA+World+Cup+news+today&location=US&language=en \\\n-H \"X-API-Key: {key}\" \\\n-H \"X-TF-Request-Origin: api\" \\\n-H \"X-TF-API-Source: onboarding\"",
     };
 
-    // The baseline `Owned` is held for the WHOLE test: `Parsed` borrows
-    // from its allocation, so releasing it at the end of iteration one
-    // leaves `first` pointing at freed memory.
+    // The baseline `Owned` is held for the WHOLE test: `Parsed` borrows from its allocation, so releasing it at the end of iteration one leaves `first` pointing at …
     var first = try parse(alloc, variants[0]);
     defer first.deinit(alloc);
     try testing.expectEqualStrings("https://api.search.tinyfish.ai", first.parsed.url_base);
@@ -676,16 +631,13 @@ test "web_search_curl: isNonPublicHost covers the literal private ranges" {
     try testing.expect(!isNonPublicHost("8.8.8.8"));
     try testing.expect(!isNonPublicHost("api.search.tinyfish.ai"));
     try testing.expect(!isNonPublicHost("api.search.tinyfish.ai:443"));
-    // A hostname is not decidable without DNS — it must not be false-
-    // positive into "private", which would block every real provider.
+    // A hostname is not decidable without DNS — it must not be false-positive into "private", which would block every real provider.
     try testing.expect(!isNonPublicHost("notanip"));
     try testing.expect(!isNonPublicHost("999.1.1.1"));
 }
 
 test "web_search_curl: every emitted piece came verbatim from the input" {
-    // The structural claim "this module cannot leak a credential" rests on it
-    // inventing nothing: a `Parsed` holds only slices of the input plus one
-    // index.
+    // The structural claim "this module cannot leak a credential" rests on it inventing nothing: a `Parsed` holds only slices of the input plus one index.
     const alloc = testing.allocator;
     const input =
         "https://api.search.tinyfish.ai?query=FIFA&location=US" ++

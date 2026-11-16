@@ -12,8 +12,7 @@ pub const Cmd = msg_mod.Cmd;
 /// Poll cadence for the internal tick that drives the spinner (ms).
 const TICK_MS: u64 = 100;
 
-/// Milliseconds to hand to the model for a tick that was last serviced at
-/// `last_tick_ms` (wall clock, ms).
+/// Milliseconds to hand to the model for a tick that was last serviced at `last_tick_ms` (wall clock, ms).
 fn tickElapsedMs(now: u64, last: u64) u64 {
     return @max(1, @min(now -| last, 1000));
 }
@@ -25,8 +24,7 @@ pub fn Program(comptime Model: type) type {
         model: *Model,
         allocator: std.mem.Allocator,
         io: std.Io,
-        /// Set by the model returning `Cmd.send_msg` etc.; executed by
-        /// the app-specific executor callback.
+        /// Set by the model returning `Cmd.send_msg` etc.; executed by the app-specific executor callback.
         exec_cmd: ?*const fn (self: *Model, cmd: Cmd) void = null,
 
         prev_frame: ?frame_mod.Frame = null,
@@ -44,8 +42,7 @@ pub fn Program(comptime Model: type) type {
             if (self.prev_frame) |*f| f.deinit(self.allocator);
         }
 
-        /// Run the event loop until a `Msg.quit` is processed or stdin
-        /// yields Ctrl-C. Always restores the terminal.
+        /// Run the event loop until a `Msg.quit` is processed or stdin yields Ctrl-C.
         pub fn run(self: *Self) !void {
             if (!terminal.isTty()) {
                 std.log.err("pabrik-tui requires a TTY (stdin is not a terminal)", .{});
@@ -64,14 +61,10 @@ pub fn Program(comptime Model: type) type {
             }
 
             self.writeOut("\x1b[?1049h\x1b[?25l"); // enter alt-screen, hide cursor
-            // Round-2 (Task 5): enable SGR mouse tracking so the terminal
-            // sends `\x1b[<button;col;rowM` sequences when the user scrolls
-            // the wheel. 1000 = basic mouse tracking (press/release), 1006 =
+            // Round-2 (Task 5): enable SGR mouse tracking so the terminal sends `\x1b[<button;col;rowM` sequences when the user scrolls the wheel. 1000 = basic mouse …
             self.writeOut("\x1b[?1000h\x1b[?1006h");
 
-            // Round-3 fix (mouse-wheel leak): keep a persistent input buffer
-            // that accumulates bytes across reads. Without this, an SGR mouse
-            // event split across two reads (e.g.
+            // Round-3 fix (mouse-wheel leak): keep a persistent input buffer that accumulates bytes across reads.
             self.input_len = 0;
 
             var size = terminal.size();
@@ -84,8 +77,7 @@ pub fn Program(comptime Model: type) type {
             var last_tick_ms = nowMs(self.io);
 
             while (!self.quit_requested) {
-                // Wait for the next stdin byte OR the next tick, whichever
-                // comes first.
+                // Wait for the next stdin byte OR the next tick, whichever comes first.
                 const now = nowMs(self.io);
                 const wait_ms: i32 = if (now >= next_tick_ms)
                     0
@@ -122,12 +114,9 @@ pub fn Program(comptime Model: type) type {
                                         },
                                     }
                                 }
-                                // key=null + len>0 → unhandled but consumed
-                                // (e.g. button-27 movement event). We just
-                                // advanced past it — no dispatch.
+                                // key=null + len>0 → unhandled but consumed (e.g. button-27 movement event).
                             }
-                            // Shift any leftover (incomplete) bytes to the
-                            // start of the buffer for the next iteration.
+                            // Shift any leftover (incomplete) bytes to the start of the buffer for the next iteration.
                             if (consumed > 0) {
                                 const leftover = self.input_len - consumed;
                                 if (leftover > 0) std.mem.copyForwards(u8, self.input_buf[0..leftover], self.input_buf[consumed..self.input_len]);
@@ -137,18 +126,13 @@ pub fn Program(comptime Model: type) type {
                             try self.draw(size.width, size.height);
                         }
                     }
-                    // stdin hung up / errored (e.g. the pty closed) — exit
-                    // rather than spinning on a permanently-ready fd.
+                    // stdin hung up / errored (e.g. the pty closed) — exit rather than spinning on a permanently-ready fd.
                     if ((poll_fds[0].revents & (std.posix.POLL.HUP | std.posix.POLL.ERR | std.posix.POLL.NVAL)) != 0) break;
-                    // A redraw (or a still-buffered partial key sequence)
-                    // already happened; a due tick is picked up on the next
-                    // iteration (wait_ms goes to 0), so the tick cadence
+                    // A redraw (or a still-buffered partial key sequence) already happened; a due tick is picked up on the next iteration (wait_ms goes to 0), so the tick cadence
                     continue;
                 }
 
-                // 2. No input within the wait window — emit TickMsg with the
-                //    REAL elapsed time (was a hardcoded TICK_MS, which let
-                //    the 500 ms poll cadence drift).
+                // 2.
                 const tick_now = nowMs(self.io);
                 const elapsed = tickElapsedMs(tick_now, last_tick_ms);
                 last_tick_ms = tick_now;
@@ -186,8 +170,7 @@ pub fn Program(comptime Model: type) type {
             self.writeOut(bytes);
         }
 
-        /// Renders the model, diffs it against the previous frame and returns
-        /// the bytes that bring the terminal up to date.
+        /// Renders the model, diffs it against the previous frame and returns the bytes that bring the terminal up to date.
         fn renderDiff(self: *Self, width: u16, height: u16) ![]u8 {
             var next = self.model.view(self.allocator, width, height) catch |e| {
                 std.log.err("model.view failed: {s}", .{@errorName(e)});
@@ -200,8 +183,7 @@ pub fn Program(comptime Model: type) type {
                 if (self.prev_frame) |*p| p else null,
                 &next,
             );
-            // Swap: the frame we just rendered becomes the reference for the
-            // next diff.
+            // Swap: the frame we just rendered becomes the reference for the next diff.
             if (self.prev_frame) |*p| p.deinit(self.allocator);
             self.prev_frame = next;
             return bytes;
@@ -221,9 +203,7 @@ pub fn Program(comptime Model: type) type {
     };
 }
 
-// ----------------------------------------------------------------------------
 // Tests — the loop itself needs a tty, so we test the pure parts.
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -254,9 +234,7 @@ test "Program: init/deinit without run is clean" {
     try testing.expectEqual(@as(usize, 0), model.ticks);
 }
 
-// The 2026-09-13 audit finding #2: draw() allocated a second frame buffer per
-// draw (`Frame.init` + `@memcpy`) and freed neither the previous reference
-// frame nor the just-rendered one in a way any arena could reclaim.
+// The 2026-09-13 audit finding #2: draw() allocated a second frame buffer per draw (`Frame.init` + `@memcpy`) and freed neither the previous reference frame nor …
 test "Program: repeated draws release every frame buffer (no leak)" {
     var model = TestModel{};
     var p = Program(TestModel).init(&model, testing.allocator, undefined);
@@ -283,9 +261,7 @@ test "Program: frame swap means a second draw of an unchanged model is empty" {
     try testing.expect(std.mem.indexOf(u8, first, "\x1b[2J") != null);
     try testing.expect(first.len > "\x1b[3;1H".len);
 
-    // Second draw of an identical model: nothing changed, so only the cursor
-    // park is emitted. This only holds because the swap keeps the *rendered*
-    // frame (not a blank one) as the diff reference.
+    // Second draw of an identical model: nothing changed, so only the cursor park is emitted.
     const second = try p.renderDiff(10, 3);
     defer testing.allocator.free(second);
     try testing.expectEqualStrings("\x1b[3;1H", second);

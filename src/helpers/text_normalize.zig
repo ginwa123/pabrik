@@ -2,12 +2,9 @@
 
 const std = @import("std");
 
-/// Replace every `\r\n` in `source` with `\n`. The returned buffer is
-/// heap-allocated and owned by the caller; `source` is read-only.
+/// Replace every `\r\n` in `source` with `\n`.
 pub fn normalizeLineEndings(allocator: std.mem.Allocator, source: []const u8) ![]u8 {
-    // Count the `\r\n` pairs so we know exactly how much to allocate. Bare
-    // `\r` (not followed by `\n`) is preserved — Mac Classic-era files use
-    // bare `\r` as a line ending and we should not corrupt them.
+    // Count the `\r\n` pairs so we know exactly how much to allocate.
     var crlf_count: usize = 0;
     var i: usize = 0;
     while (i + 1 < source.len) {
@@ -24,8 +21,7 @@ pub fn normalizeLineEndings(allocator: std.mem.Allocator, source: []const u8) ![
         return try allocator.dupe(u8, source);
     }
 
-    // Output is shorter by `crlf_count` bytes (one `\r` removed per
-    // CRLF pair; the `\n` stays). Bare `\r` adds back its own byte.
+    // Output is shorter by `crlf_count` bytes (one `\r` removed per CRLF pair; the `\n` stays).
     const out = try allocator.alloc(u8, source.len - crlf_count);
     errdefer allocator.free(out);
 
@@ -48,14 +44,10 @@ pub fn normalizeLineEndings(allocator: std.mem.Allocator, source: []const u8) ![
 
 // ─── The impl/tests boundary ───────────────────────────────────────────────
 
-/// The first marker a test suite carries once it is merged into its
-/// implementation file. Must stay byte-identical to the marker the 2026-09-29
-/// flatten writes (`// ===== Tests merged from <file> (YYYY-MM-DD flatten) =====`).
+/// The first marker a test suite carries once it is merged into its implementation file.
 pub const merged_tests_marker = "// ===== Tests merged from";
 
-/// Slice a source file down to its IMPLEMENTATION half: everything before the
-/// first `merged_tests_marker`. A static-contract test greps its own file's
-/// source for a needle.
+/// Slice a source file down to its IMPLEMENTATION half: everything before the first `merged_tests_marker`.
 pub fn implementationOnly(allocator: std.mem.Allocator, source: []const u8) ![]u8 {
     const end = std.mem.indexOf(u8, source, merged_tests_marker) orelse source.len;
     return try allocator.dupe(u8, source[0..end]);
@@ -102,7 +94,6 @@ test "normalizeLineEndings: empty input" {
 
 test "normalizeLineEndings: trailing \\r without following \\n" {
     // Stray \r at end of file (some Mac Classic-era files have this).
-    // Should be preserved as-is.
     const allocator = std.testing.allocator;
     const input = "hello\r";
     const result = try normalizeLineEndings(allocator, input);
@@ -152,7 +143,6 @@ test "implementationOnly: the test half is what it removes" {
         "const needle = \"needle\";\n";
     const result = try implementationOnly(allocator, input);
     defer allocator.free(result);
-    // The point of the helper: a needle that only appears in the test half
-    // must NOT be findable in the sliced result.
+    // The point of the helper: a needle that only appears in the test half must NOT be findable in the sliced result.
     try std.testing.expect(std.mem.indexOf(u8, result, "needle") == null);
 }

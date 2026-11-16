@@ -3,8 +3,7 @@
 const std = @import("std");
 const config_mod = @import("../../config/Config.zig");
 
-/// Canonical `backend` values, re-exported from the config layer so there is
-/// one definition. `Config.zig` owns the names because it owns the parser.
+/// Canonical `backend` values, re-exported from the config layer so there is one definition.
 pub const Backend = config_mod.LlmConfig.Backend;
 
 /// Default binary name, resolved through `PATH`.
@@ -15,24 +14,19 @@ pub fn isClaudeCodeBackend(backend: []const u8) bool {
     return std.mem.eql(u8, backend, Backend.claude_code);
 }
 
-/// True when `backend` is one this build understands. An empty value means
-/// "unset", which the cascade resolves to `http`.
+/// True when `backend` is one this build understands.
 pub fn isKnownBackend(backend: []const u8) bool {
     return backend.len == 0 or
         std.mem.eql(u8, backend, Backend.http) or
         isClaudeCodeBackend(backend);
 }
 
-/// Validation for a Claude Code agent. Unlike HTTP agents, `base_url` and
-/// `api_key` are NOT required — auth comes from `claude login`, not from
-/// config. Only `model` must be non-empty (it becomes the CLI's `--model`).
+/// Validation for a Claude Code agent.
 pub fn validateClaudeCodeAgent(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
 
-/// Resolve the `claude` binary to execute. * Empty `configured` →
-/// `DEFAULT_BINARY` (`"claude"`, via `PATH`). * Otherwise the configured
-/// value verbatim (absolute path or alias).
+/// Resolve the `claude` binary to execute.
 pub fn resolveBinaryPath(configured: []const u8) []const u8 {
     if (configured.len == 0) return DEFAULT_BINARY;
     return configured;
@@ -42,20 +36,15 @@ pub fn resolveBinaryPath(configured: []const u8) []const u8 {
 pub const PrintOptions = struct {
     /// Model/alias passed as `--model`. Empty = omit (CLI default).
     model: []const u8 = "",
-    /// Working directory passed as `--add-dir` so the CLI's file tools stay
-    /// scoped to the session cwd. Empty = omit.
+    /// Working directory passed as `--add-dir` so the CLI's file tools stay scoped to the session cwd.
     workdir: []const u8 = "",
     /// Maximum agentic turns (`--max-turns`). Null = omit (CLI default).
     max_turns: ?u32 = null,
-    /// When true, emit `--verbose --output-format stream-json` (the shape
-    /// `parseResultLine` understands). Always true in production; exposed so
-    /// tests can assert the non-streaming shape.
+    /// When true, emit `--verbose --output-format stream-json` (the shape `parseResultLine` understands).
     stream_json: bool = true,
 };
 
-/// Build argv for a non-interactive Claude Code run: `claude -p <prompt>
-/// [--model m] [--add-dir dir] [--max-turns n] [--verbose --output-format
-/// stream-json]`.
+/// Build argv for a non-interactive Claude Code run: `claude -p <prompt> [--model m] [--add-dir dir] [--max-turns n] [--verbose --output-format stream-json]`.
 pub fn buildPrintArgs(
     allocator: std.mem.Allocator,
     binary: []const u8,
@@ -175,20 +164,15 @@ pub fn describeVersionProbe(
 
 /// Result extracted from one `stream-json` output line.
 pub const ParsedLine = struct {
-    /// Raw `type` field (e.g. `"result"`, `"assistant"`, `"system"`).
-    /// Empty when the line has no string `type`.
+    /// Raw `type` field (e.g.
     line_type: []const u8,
-    /// For `type == "result"`: the `result` text (borrowed from the parsed
-    /// JSON value — valid while `parsed` lives) or the `subtype` fallback.
-    /// Empty otherwise.
+    /// For `type == "result"`: the `result` text (borrowed from the parsed JSON value — valid while `parsed` lives) or the `subtype` fallback.
     result_text: []const u8 = "",
     /// True iff this line is the terminal `type == "result"` message.
     is_result: bool = false,
 };
 
-/// Parse one `claude -p --output-format stream-json` output line. Returns
-/// `.is_result == true` only for the terminal
-/// `{"type":"result","result":"..."}` message.
+/// Parse one `claude -p --output-format stream-json` output line.
 pub fn parseResultLine(
     parsed_value: std.json.Value,
 ) ParsedLine {
@@ -209,8 +193,7 @@ pub fn parseResultLine(
     return .{ .line_type = t, .result_text = text, .is_result = true };
 }
 
-/// Actionable error text surfaced when a Claude Code agent reaches the
-/// workflow before Phase 2 execution wiring lands.
+/// Actionable error text surfaced when a Claude Code agent reaches the workflow before Phase 2 execution wiring lands.
 pub fn notWiredMessage(
     allocator: std.mem.Allocator,
     model: []const u8,
@@ -225,8 +208,6 @@ pub fn notWiredMessage(
 }
 
 // ─── Behaviour tests ─────────────────────────────────────────────
-// These call the module's functions and assert return values — never source
-// text (see AGENTS.md "Tests — Assert Behaviour").
 
 const testing = std.testing;
 
@@ -296,8 +277,7 @@ test "buildPrintArgs includes workdir and max-turns when set" {
 }
 
 test "buildPrintArgs never puts the prompt in a shell-interpreted position" {
-    // The prompt travels as a single argv element, so shell metacharacters
-    // in a user message stay literal.
+    // The prompt travels as a single argv element, so shell metacharacters in a user message stay literal.
     const alloc = testing.allocator;
     const args = try buildPrintArgs(alloc, "claude", "rm -rf /; echo $(whoami)", .{});
     defer freeArgs(alloc, args);

@@ -1,5 +1,4 @@
-/** SkillsSettings.vue — the create path. The panel was read-only + delete; this pins the insert
- * half. The assertions that matter are the ones a read-only panel could not get wrong: 1. */
+/** SkillsSettings.vue — the create path. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -118,8 +117,7 @@ describe('SkillsSettings — creating a skill', () => {
     await openCreateForm(wrapper)
     await submit(wrapper, { name: '  my-skill  ' })
 
-    // The name is the UNIQUE key and the URL path segment, so a padded
-    // name would create a row nobody can address.
+    // The name is the UNIQUE key and the URL path segment, so a padded name would create a row nobody can address.
     expect(createSkillMock).toHaveBeenCalledWith(WS_ID, {
       name: 'my-skill',
       description: '',
@@ -169,8 +167,7 @@ describe('SkillsSettings — creating a skill', () => {
     await openCreateForm(wrapper)
     await submit(wrapper, { name: 'pdf', description: 'dupe', content: 'body' })
 
-    // The user is mid-entry: the reason belongs beside the fields, and the
-    // form must stay open with what they typed.
+    // The user is mid-entry: the reason belongs beside the fields, and the form must stay open with what they typed.
     expect(wrapper.find('[data-testid="skill-create-error"]').text()).toContain('HTTP 409')
     expect(wrapper.find('[data-testid="skill-create-form"]').exists()).toBe(true)
     expect((wrapper.find('[data-testid="new-skill-name"]').element as HTMLInputElement).value).toBe(
@@ -219,9 +216,7 @@ describe('SkillsSettings — creating a skill', () => {
       skill: { name: 'my-skill', description: '', content: '', asset_count: 0 },
     })
 
-    // The settings page binds the ROUTE workspace, which may differ from
-    // the active one. A create that used the active workspace would put
-    // the row somewhere the user is not looking.
+    // The settings page binds the ROUTE workspace, which may differ from the active one.
     const wrapper = mount(SkillsSettings, { props: { workspaceId: 'ws_2' } })
     await flushPromises()
     await openCreateForm(wrapper)

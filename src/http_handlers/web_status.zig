@@ -5,8 +5,7 @@ const pabrikcore = @import("pabrikcore");
 const auth_common = @import("auth_common.zig");
 const gserverz = pabrikcore.gserverz;
 
-/// Build the browser-mode URL for `port`. Pure (no singleton) so it is
-/// unit-testable without a live server.
+/// Build the browser-mode URL for `port`.
 pub fn buildWebUrl(allocator: std.mem.Allocator, port: u16) ![]u8 {
     return std.fmt.allocPrint(allocator, "http://127.0.0.1:{d}/", .{port});
 }
@@ -19,9 +18,7 @@ pub fn webStatusHandler(
     const allocator = ctx.allocator;
 
     const di = try pabrikcore.getSingleton();
-    // `web_launch_enabled` is a per-user setting under `--auth`; resolve it
-    // through the one config-resolution module and fall back to the
-    // singleton when the database is not authoritative.
+    // `web_launch_enabled` is a per-user setting under `--auth`; resolve it through the one config-resolution module and fall back to the singleton when the database …
     const cfg = auth_common.requestUserConfig(allocator, di.db, di.auth_enabled, req.headers) orelse
         pabrikcore.getLlmConfig(di);
     const port: u16 = di.server.address.port;

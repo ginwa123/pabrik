@@ -1,5 +1,4 @@
-/** URL contract pair for the header workspace switcher: 1. click-writes: Sidebar emits
- * select-workspace → AppLayout.handleSelectWorkspace PUSHES `?view=workspace&workspaceId=X`. */
+/** URL contract pair for the header workspace switcher: 1. click-writes: Sidebar emits select-workspace → AppLayout.handleSelectWorkspace PUSHES … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -131,8 +130,7 @@ describe('AppLayout — workspace switcher URL contract', () => {
       path: '/app/ws_2',
       query: {},
     })
-    // User decision log: switches must create history entries — a
-    // replace here would erase the previous workspace from Back.
+    // User decision log: switches must create history entries — a replace here would erase the previous workspace from Back.
     expect(replaceMock).not.toHaveBeenCalled()
     expect(ws.activeWorkspaceId).toBe('ws_2')
     wrapper.unmount()

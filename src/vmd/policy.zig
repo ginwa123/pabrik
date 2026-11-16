@@ -1,6 +1,4 @@
-//! The rules that make `pabrik-vmd`'s RPC safe: the request names a workspace
-//! id and an action, and every path is derived from that id by these functions.
-//! Pure and platform-free, so the policy is tested on every host.
+//! The rules that make `pabrik-vmd`'s RPC safe: the request names a workspace id and an action, and every path is derived from that id by these functions.
 
 const std = @import("std");
 const wire = @import("vm_wire");
@@ -9,16 +7,12 @@ pub const max_workspace_id_len = 64;
 pub const max_cwd_rel_len = 1024;
 pub const guest_root = "/workspace";
 pub const guest_shell = "/bin/sh";
-/// The git and ripgrep the sealed image ships. `execve` searches no PATH, so
-/// a guest program is named by its absolute path or not at all.
+/// The git and ripgrep the sealed image ships.
 pub const guest_git = "/usr/bin/git";
-/// The BUNDLED ripgrep, the hash-pinned artifact the host release ships
-/// (scripts/stage-bundled-ripgrep.sh): a distro `ripgrep` moves version with the
-/// release, and `search` parses one version's output. Named like the host copy.
+/// The BUNDLED ripgrep, the hash-pinned artifact the host release ships (scripts/stage-bundled-ripgrep.sh): a distro `ripgrep` moves version with the release, and …
 pub const guest_rg = "/usr/bin/rg-pabrik";
 
-/// The id arrives from outside and is the ONLY input that reaches a path, so it
-/// must be inert: letters, digits, `_` and `-`, and never `.` or `..`.
+/// The id arrives from outside and is the ONLY input that reaches a path, so it must be inert: letters, digits, `_` and `-`, and never `.` or `..`.
 pub fn workspaceIdValid(id: []const u8) bool {
     if (id.len == 0 or id.len > max_workspace_id_len) return false;
     for (id) |c| {
@@ -28,9 +22,7 @@ pub fn workspaceIdValid(id: []const u8) bool {
     return true;
 }
 
-/// A guest working directory, relative to the workspace root. Absolute paths
-/// and any `.`/`..` segment are refused: the caller may only name a place
-/// *inside* the workspace it already owns.
+/// A guest working directory, relative to the workspace root.
 pub fn cwdRelValid(rel: []const u8) bool {
     if (rel.len > max_cwd_rel_len) return false;
     if (rel.len == 0) return true;
@@ -46,21 +38,18 @@ pub fn cwdRelValid(rel: []const u8) bool {
     return true;
 }
 
-/// `<root>` for the workspace root itself, `<root>/<rel>` below it. Errors
-/// rather than guessing when `rel` is not a legal relative path.
+/// `<root>` for the workspace root itself, `<root>/<rel>` below it.
 pub fn guestCwd(allocator: std.mem.Allocator, root: []const u8, rel: []const u8) ![]u8 {
     if (!cwdRelValid(rel)) return error.InvalidCwdRel;
     if (rel.len == 0) return allocator.dupe(u8, root);
     return std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, rel });
 }
 
-/// The guest directory detached jobs log into. Outside `/workspace`, because a
-/// job's log is not part of the tenant's tree.
+/// The guest directory detached jobs log into.
 pub const guest_job_log_dir = "/tmp/pabrik";
 pub const max_log_name_len = 64;
 
-/// A job's log NAME, not its path: the daemon derives the directory, so the
-/// caller can only name a file inside `guestJobLogDir`.
+/// A job's log NAME, not its path: the daemon derives the directory, so the caller can only name a file inside `guestJobLogDir`.
 pub fn logNameValid(name: []const u8) bool {
     if (name.len == 0 or name.len > max_log_name_len) return false;
     if (!std.ascii.isAlphanumeric(name[0])) return false;
@@ -72,15 +61,13 @@ pub fn logNameValid(name: []const u8) bool {
     return true;
 }
 
-/// `<dir>/<name>` in the guest. Errors rather than guessing when `name` is not
-/// a legal log name.
+/// `<dir>/<name>` in the guest.
 pub fn guestJobLogPath(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     if (!logNameValid(name)) return error.InvalidLogName;
     return std.fmt.allocPrint(allocator, "{s}/{s}", .{ guest_job_log_dir, name });
 }
 
-/// The name half of a guest log path a previous `spawn` reported, or null when
-/// the path is not one this daemon could have minted.
+/// The name half of a guest log path a previous `spawn` reported, or null when the path is not one this daemon could have minted.
 pub fn logNameFromPath(path: []const u8) ?[]const u8 {
     const prefix = guest_job_log_dir ++ "/";
     if (!std.mem.startsWith(u8, path, prefix)) return null;
@@ -89,9 +76,7 @@ pub fn logNameFromPath(path: []const u8) ?[]const u8 {
     return name;
 }
 
-/// The host-side half of the same rule: `cwd` must sit at or under the
-/// workspace's root, and the result is what crosses the RPC. A `cwd` outside it
-/// is refused rather than silently rewritten to the root.
+/// The host-side half of the same rule: `cwd` must sit at or under the workspace's root, and the result is what crosses the RPC.
 pub fn relativeToRoot(root: []const u8, cwd: []const u8) ?[]const u8 {
     const trimmed = std.mem.trimEnd(u8, root, "/");
     if (trimmed.len == 0) return null;
@@ -103,8 +88,7 @@ pub fn relativeToRoot(root: []const u8, cwd: []const u8) ?[]const u8 {
     return rel;
 }
 
-/// A cwd in EITHER vocabulary: the guest's own root (`/workspace…`) or a host
-/// path under `root`. Anything else is refused, never rewritten.
+/// A cwd in EITHER vocabulary: the guest's own root (`/workspace…`) or a host path under `root`.
 pub fn relativeWorkspace(root: []const u8, cwd: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, cwd, guest_root)) return "";
     const prefix = guest_root ++ "/";
@@ -117,14 +101,11 @@ pub fn relativeWorkspace(root: []const u8, cwd: []const u8) ?[]const u8 {
 
 // ─── interactive terminals ───────────────────────────────────────────────
 
-/// A tty gets its OWN vsock port (`tty_port_base + tty_id`): the agent serves one
-/// connection at a time, so a terminal sharing it would freeze behind any `exec`.
+/// A tty gets its OWN vsock port (`tty_port_base + tty_id`): the agent serves one connection at a time, so a terminal sharing it would freeze behind any `exec`.
 pub const tty_port_base: u32 = 5100;
-/// Concurrent terminals per VM. Each one is a guest process plus a vsock
-/// listener, so the ceiling is about fds, not taste.
+/// Concurrent terminals per VM.
 pub const max_ttys: u32 = 8;
-/// One read or write piece. The guest's frame cap is 64 KiB and base64 costs
-/// four bytes per three, so a piece this size always fits.
+/// One read or write piece.
 pub const max_tty_chunk: usize = 32 * 1024;
 pub const min_tty_dim: u16 = 2;
 pub const max_tty_dim: u16 = 1000;
@@ -133,8 +114,7 @@ pub fn ttyIdValid(id: i64) bool {
     return id >= 0 and id < @as(i64, @intCast(max_ttys));
 }
 
-/// The guest port a tty id listens on, or null when the id is not one this
-/// daemon could have handed out.
+/// The guest port a tty id listens on, or null when the id is not one this daemon could have handed out.
 pub fn ttyPort(id: i64) ?u32 {
     if (!ttyIdValid(id)) return null;
     return tty_port_base + @as(u32, @intCast(id));
@@ -147,8 +127,7 @@ pub fn ttyDimValid(cols: u16, rows: u16) bool {
 
 // ─── guest duplexes (an MCP server's two byte streams) ───────────────────
 
-/// A duplex gets its own vsock port for the same reason a terminal does, and
-/// the ceiling is the same kind of resource: one guest process plus a listener.
+/// A duplex gets its own vsock port for the same reason a terminal does, and the ceiling is the same kind of resource: one guest process plus a listener.
 pub const duplex_port_base: u32 = wire.duplex_port_base;
 pub const max_duplex: u32 = wire.max_duplex;
 pub const max_duplex_chunk: usize = wire.max_duplex_chunk;
@@ -157,15 +136,13 @@ pub fn duplexIdValid(id: i64) bool {
     return id >= 0 and id < @as(i64, @intCast(max_duplex));
 }
 
-/// The guest port a duplex id answers on, or null when the id is not one this
-/// daemon could have handed out.
+/// The guest port a duplex id answers on, or null when the id is not one this daemon could have handed out.
 pub fn duplexPort(id: i64) ?u32 {
     if (!duplexIdValid(id)) return null;
     return duplex_port_base + @as(u32, @intCast(id));
 }
 
-/// The credential the kernel reports for a unix-socket peer. Only the uid is
-/// load-bearing; the pid is carried so a refusal can name who was refused.
+/// The credential the kernel reports for a unix-socket peer.
 pub const Peer = struct {
     pid: i32,
     uid: u32,
@@ -176,8 +153,7 @@ pub fn peerAllowed(peer: Peer, expected_uid: u32) bool {
     return peer.uid == expected_uid;
 }
 
-/// The argv a shell command becomes in the guest. Built here so the daemon and
-/// its tests agree on exactly one spelling.
+/// The argv a shell command becomes in the guest.
 pub fn shellArgv(allocator: std.mem.Allocator, command: []const u8) ![]const []const u8 {
     const argv = try allocator.alloc([]const u8, 3);
     errdefer allocator.free(argv);

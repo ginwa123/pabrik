@@ -1,6 +1,4 @@
-/** Floating composer — structural contract. The composer used to be the LAST flex child of the chat
- * column: a `p-4` block with a `border-top` and an opaque `--semantic-sidebar-bg` fill, so the
- * transcript lost that slice of its height and messages ended on a hard 1px rule. */
+/** Floating composer — structural contract. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -39,9 +37,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-/** A ResizeObserver the test can fire by hand. The global stub in `setup.ts` is inert
- * (observe/disconnect only), which is right for the other suites but useless here: the whole point
- * is to prove the dock's observer publishes a height. */
+/** A ResizeObserver the test can fire by hand. */
 class ControllableRO {
   static instances: ControllableRO[] = []
   observed: Element[] = []
@@ -106,9 +102,7 @@ function installBaseMocks() {
   } as any)
 }
 
-/**  * Three groups: short enough that the scroller's initial window covers all of them (jsdom reports a
- * 0-height container, so the window is `buffer` rows wide), which lets the spec see the real last
- * row. */
+/** Three groups: short enough that the scroller's initial window covers all of them (jsdom reports a 0-height container, so the window is `buffer` rows wide) … */
 function historyWithMessages() {
   const messages = [
     { role: 'user', content: 'first question' },
@@ -138,8 +132,7 @@ describe('ChatView floating composer', () => {
   let app: VueApp | null = null
 
   async function mountChat(props: Record<string, unknown> = {}) {
-    // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-    // it, so the transcript stayed empty and no row ever rendered.
+    // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the transcript stayed empty and no row ever rendered.
     vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(historyWithMessages()))
     wrapper = mount(ChatView, {
       props: { chatId: 's_float', chatName: 'Float Chat', ...props },
@@ -187,8 +180,7 @@ describe('ChatView floating composer', () => {
 
     const dock = wrapper!.find('[data-testid="composer-dock"]')
     expect(dock.exists()).toBe(true)
-    // Overlay classes — the dock must not be a flex sibling of the
-    // transcript any more.
+    // Overlay classes — the dock must not be a flex sibling of the transcript any more.
     expect(dock.classes()).toContain('composer-dock')
     expect(dock.attributes('style')).toBeUndefined()
     // The gradient that replaced the `border-top` + opaque fill.
@@ -204,8 +196,7 @@ describe('ChatView floating composer', () => {
   it('the transcript width control lives in the composer row, not in the session strip', async () => {
     await mountChat()
 
-    // The strip took over the session's title bar, so the width control moved to the row of the
-    // thing it widens: the composer.
+    // The strip took over the session's title bar, so the width control moved to the row of the thing it widens: the composer.
     const toggle = wrapper!.find('[data-testid="composer-width-toggle"]')
     expect(toggle.exists()).toBe(true)
     expect(toggle.attributes('title')).toContain('Transcript width')
@@ -235,8 +226,6 @@ describe('ChatView floating composer', () => {
     expect(column.style.getPropertyValue('--chat-composer-inset')).toBe('128px')
 
     // `v-show` on the dock makes it 0×0 while the centre diff is open.
-    // Zeroing here would drop the newest message's clearance for the
-    // whole time the diff is open.
     dockObserver().emit(0)
     await nextTick()
     expect(column.style.getPropertyValue('--chat-composer-inset')).toBe('128px')
@@ -254,12 +243,10 @@ describe('ChatView floating composer', () => {
   it('read-only peek mode (hideInput) renders no dock and no inset', async () => {
     await mountChat({ hideInput: true })
     expect(wrapper!.find('[data-testid="composer-dock"]').exists()).toBe(false)
-    // No dock → no observer → nothing published. The CSS default (0px)
-    // degrades the last row to a plain 1rem, matching the old flow layout.
+    // No dock → no observer → nothing published.
     const column = wrapper!.element.querySelector('.chat-column') as HTMLElement
     expect(column.style.getPropertyValue('--chat-composer-inset')).toBe('')
-    // The newest row is still the padded one, so a peek panel's last
-    // message is not jammed against the window edge either.
+    // The newest row is still the padded one, so a peek panel's last message is not jammed against the window edge either.
     const rows = wrapper!.findAll('[data-group-key]')
     expect(rows.filter((r) => r.classes().includes('last-transcript-row'))).toHaveLength(1)
   })
@@ -276,8 +263,7 @@ describe('ChatView floating composer — source contract', () => {
   })
 
   it('lifts the composer card above the scrim so the input stays visible', () => {
-    // The scrim is a POSITIONED descendant of the dock (`position: absolute`, `z-index: auto`), and
-    // CSS paints positioned descendants AFTER in-flow, non-positioned content.
+    // The scrim is a POSITIONED descendant of the dock (`position: absolute`, `z-index: auto`), and CSS paints positioned descendants AFTER in-flow, non-positioned …
     const cardRule = chatViewSrc.match(/\.composer-dock\s+:deep\(\.composer-card\)\s*\{[^}]*\}/)
     expect(cardRule).not.toBeNull()
     expect(cardRule![0]).toMatch(/position:\s*relative;/)
@@ -285,16 +271,14 @@ describe('ChatView floating composer — source contract', () => {
   })
 
   it('fades the scrim to the transcript background, not the old bar fill', () => {
-    // Fading to --semantic-sidebar-bg (#12120f) against a --semantic-content-bg
-    // (#181616) transcript would show a 1-shade seam.
+    // Fading to --semantic-sidebar-bg (#12120f) against a --semantic-content-bg (#181616) transcript would show a 1-shade seam.
     expect(chatViewSrc).toContain('.composer-scrim {')
     const scrimIdx = chatViewSrc.indexOf('.composer-scrim {')
     const scrim = chatViewSrc.slice(scrimIdx, scrimIdx + 500)
     expect(scrim).toContain('linear-gradient(')
     expect(scrim).toContain('var(--semantic-content-bg)')
     expect(scrim).not.toContain('--semantic-sidebar-bg')
-    // pointer-events:none so the fade never swallows a click meant for the
-    // transcript behind it.
+    // pointer-events:none so the fade never swallows a click meant for the transcript behind it.
     expect(scrim).toContain('pointer-events: none')
   })
 
@@ -307,9 +291,7 @@ describe('ChatView floating composer — source contract', () => {
   })
 
   it('keys the bottom clearance on the group INDEX, never :last-child', () => {
-    // `:last-child` pads whichever row the virtual window happens to end
-    // on — a mid-transcript row whenever the window does not cover the
-    // tail, leaving a ~200px hole in the middle of the conversation.
+    // `:last-child` pads whichever row the virtual window happens to end on — a mid-transcript row whenever the window does not cover the tail, leaving a ~200px hole …
     expect(chatViewSrc).toContain("isLastGroup(groupIndex) ? 'last-transcript-row'")
     expect(chatViewSrc).not.toMatch(/\.last-transcript-row:last-child/)
     expect(chatViewSrc).toMatch(

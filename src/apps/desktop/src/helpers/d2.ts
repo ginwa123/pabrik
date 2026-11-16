@@ -1,12 +1,10 @@
-/** D2 has no in-browser renderer either, so a `<d2>` block becomes an `<img>` whose src is a
- * D2-capable server URL. Kroki is the public one; it takes base64url(zlib-deflate(source)). */
+/** D2 has no in-browser renderer either, so a `<d2>` block becomes an `<img>` whose src is a D2-capable server URL. */
 export const D2_DEFAULT_SERVER = 'https://kroki.io'
 
 /** A trailing slash on the configured value would produce `//d2` — a 404 from most servers. */
 const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, '')
 
-/** `VITE_D2_SERVER` points this at a self-hosted Kroki (or any server serving `/d2/svg/<encoded>`) so
- * diagram source need not leave the box. */
+/** `VITE_D2_SERVER` points this at a self-hosted Kroki (or any server serving `/d2/svg/<encoded>`) so diagram source need not leave the box. */
 export const resolveD2Server = (): string => {
   const env = (import.meta as { env?: Record<string, string | undefined> }).env
   const value = (env?.VITE_D2_SERVER ?? '').trim()
@@ -20,9 +18,7 @@ const toBase64Url = (bytes: Uint8Array): string => {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/** Kroki's encoding: base64url of a ZLIB deflate, not PlantUML's raw deflate. The deflate runs
- * through `CompressionStream`, which every current browser has; where it is missing the promise
- * rejects and the caller shows the source instead. */
+/** Kroki's encoding: base64url of a ZLIB deflate, not PlantUML's raw deflate. */
 const deflate = async (source: string): Promise<Uint8Array> => {
   const compressor = new CompressionStream('deflate')
   const writer = compressor.writable.getWriter()

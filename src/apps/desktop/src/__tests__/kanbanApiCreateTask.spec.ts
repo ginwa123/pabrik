@@ -1,5 +1,4 @@
-/** Tests for api.createKanbanTask — POST /api/workspaces/:wid/items/:iid/kanban/tasks with
- * mode='create' | mode='create_and_run' discriminator. */
+/** Tests for api.createKanbanTask — POST /api/workspaces/:wid/items/:iid/kanban/tasks with mode='create' | mode='create_and_run' discriminator. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -104,17 +103,13 @@ describe('api.createKanbanTask', () => {
   it('propagates non-2xx as a thrown ApiError', async () => {
     mockFetchOnce(404, { error: 'Workspace item not found or is not a kanban' })
 
-    // The apiFetch wrapper bubbles the server message via the notification store; the rejected
-    // ApiError carries the HTTP status. The 404 IS what we care about — the server correctly
-    // rejected because the parent item is not a kanban.
+    // The apiFetch wrapper bubbles the server message via the notification store; the rejected ApiError carries the HTTP status.
     await expect(
       createKanbanTask('ws_x', 'i_x', { mode: 'create', name: 't' }),
     ).rejects.toThrow(/HTTP 404/)
   })
 
-  // =====================================================================
   // mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session)
-  // =====================================================================
   it("POSTs with mode='create_session' + selected_profile_model + NO queue_message", async () => {
     const fakeTask = {
       id: 'task_new',
@@ -146,9 +141,7 @@ describe('api.createKanbanTask', () => {
     expect(body.cwd).toBe('/home/u/proj')
     expect(body.is_auto_retry_until_stop).toBe('1')
     expect(body.selected_profile_model).toBe('fast')
-    // Critical: create_session must NOT include queue_message — no agent run on this path. The
-    // backend would 400 with "queue_message is required when mode='create_and_run'" if the wrong
-    // mode ever sent one, so the frontend MUST omit it.
+    // Critical: create_session must NOT include queue_message — no agent run on this path.
     expect(body.queue_message).toBeUndefined()
 
     expect(response.task).toEqual(fakeTask)

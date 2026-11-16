@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id`
-//! Single-task fetch for the kanban Task details dialog.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id` Single-task fetch for the kanban Task details dialog.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -10,20 +9,15 @@ const ai_mod = pabrikcore.ai_mod;
 
 pub const TasksGetError = error{
     QueryFailed,
-    /// The task does not exist under the given item — the handler
-    /// maps this to 404.
+    /// The task does not exist under the given item — the handler maps this to 404.
     TaskNotFound,
     /// `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
-    /// Unreachable on the per-request arena, but the type system
-    /// requires the variant.
     OutOfMemory,
 };
 
 pub const TasksGetResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -55,9 +49,7 @@ fn useCase(
         git_branch.resolve(allocator, io, cwd) orelse "";
     defer if (branch.len > 0) allocator.free(branch);
 
-    // Migration 111 — this task's dependencies, each resolved against its
-    // current column. Freed by the `defer` at the end of the function, i.e.
-    // AFTER the response JSON has copied the borrowed slices.
+    // Migration 111 — this task's dependencies, each resolved against its current column.
     const dep_edges = ai_mod.kanban_deps.listEdgesForTask(allocator, db, task_id) catch
         return error.QueryFailed;
     defer ai_mod.kanban_deps.freeEdges(allocator, dep_edges);
@@ -88,15 +80,11 @@ fn useCase(
         .is_blocked = dep_fields.is_blocked,
     };
 
-    // Wrap in `{ "task": {...} }` — the frontend's getTask() reads
-    // data.task. Stringify deep-copies the borrowed slices into the
-    // response JSON, so the outer task.deinit above is safe.
+    // Wrap in `{ "task": {...} }` — the frontend's getTask() reads data.task.
     return std.json.Stringify.valueAlloc(allocator, .{ .task = resp }, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn tasksGetHandler(
     ctx: gserverz.HttpContext,
@@ -117,9 +105,7 @@ pub fn tasksGetHandler(
         });
     }
 
-    // Empty-slice-as-NULL binding rule: Backend binds "" as SQL
-    // NULL, which would turn `WHERE t.id = ?` into `WHERE t.id IS
-    // NULL` (always false, silently). Guard before any DB call.
+    // Empty-slice-as-NULL binding rule: Backend binds "" as SQL NULL, which would turn `WHERE t.id = ?` into `WHERE t.id IS NULL` (always false, silently).
     const task_id = req.params.get("task_id") orelse "";
     if (task_id.len == 0) {
         return res.jsonResponse(.{
@@ -148,12 +134,9 @@ pub fn tasksGetHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-// =====================================================================
 // Git branch resolution (kanban-task-git-branch plan, 2026-08-06)
-// =====================================================================
 
-/// Look up the parent workspace item's `path`. Used as the fallback cwd for
-/// the git_branch lookup when a task has no worktree bound.
+/// Look up the parent workspace item's `path`.
 fn fetchWorkspaceItemPath(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,

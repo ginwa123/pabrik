@@ -20,22 +20,17 @@ pub const Role = enum {
     }
 };
 
-/// `?Role`, or null for text the column's CHECK constraint should have
-/// rejected. Callers treat null as "this row is not usable" rather than
-/// guessing a default.
+/// `?Role`, or null for text the column's CHECK constraint should have rejected.
 pub fn parseRole(raw: []const u8) ?Role {
     return std.meta.stringToEnum(Role, raw);
 }
 
-/// `user_system` is the shared/legacy bucket, not a person: it has no
-/// password and is never invited.
+/// `user_system` is the shared/legacy bucket, not a person: it has no password and is never invited.
 pub const reserved_user_id = "user_system";
 
-/// One membership joined with its account. Every owned slice is freed by
-/// `freeMemberRow`.
+/// One membership joined with its account.
 pub const MemberRow = struct {
-    /// The workspace this membership is IN — the client needs it to navigate
-    /// to the workspace an invitation was just accepted for.
+    /// The workspace this membership is IN — the client needs it to navigate to the workspace an invitation was just accepted for.
     workspace_id: []const u8,
     user_id: []const u8,
     email: []const u8,
@@ -78,16 +73,13 @@ pub const MembersError = error{
     OutOfMemory,
 };
 
-/// The one projection every read uses, so no call site can return a
-/// different column order. `LEFT JOIN` because a `user_system` member row
-/// (auth-off backfill) has no account behind it.
+/// The one projection every read uses, so no call site can return a different column order.
 const SELECT_MEMBERS =
     "SELECT m.workspace_id, m.user_id, COALESCE(CAST(u.email AS TEXT), ''), COALESCE(CAST(u.name AS TEXT), ''), " ++
     "m.role, COALESCE(CAST(m.joined_at AS TEXT), ''), COALESCE(CAST(m.invited_by AS TEXT), '') " ++
     "FROM workspace_members m LEFT JOIN users u ON u.id = m.user_id ";
 
-/// Owners first, then admins, editors, viewers; ties broken by email so the
-/// list is stable across calls.
+/// Owners first, then admins, editors, viewers; ties broken by email so the list is stable across calls.
 const ORDER_MEMBERS =
     "ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 " ++
     "WHEN 'editor' THEN 2 ELSE 3 END, COALESCE(u.email, ''), m.user_id";
@@ -135,8 +127,7 @@ pub fn listMembers(
     defer q.deinit();
 
     var list: std.ArrayList(MemberRow) = .empty;
-    // A mid-iteration failure would strand the rows already built; the
-    // buffer belongs to the list, so unwind both here.
+    // A mid-iteration failure would strand the rows already built; the buffer belongs to the list, so unwind both here.
     errdefer {
         for (list.items) |row| freeMemberRow(allocator, row);
         list.deinit(allocator);
@@ -170,9 +161,7 @@ pub fn getMember(
     return rowFromValues(allocator, r.values);
 }
 
-/// The role `user_id` holds in `workspace_id`, or null when they are not a
-/// member at all. A null is the "not allowed" answer, and it is different
-/// from a role that happens to be weak.
+/// The role `user_id` holds in `workspace_id`, or null when they are not a member at all.
 pub fn callerRole(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -210,8 +199,7 @@ fn ownerCount(
     return std.fmt.parseInt(u64, r.values[0], 10) catch return error.QueryFailed;
 }
 
-/// Resolve an email to the account id an invite would admit. Active accounts
-/// only — a disabled login must not gain a new workspace.
+/// Resolve an email to the account id an invite would admit.
 fn userIdForEmail(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -247,8 +235,7 @@ fn membershipExists(
     return true;
 }
 
-/// Add an existing account to a workspace. The invite is by EMAIL because
-/// that is what the person inviting knows; the id is what the row stores.
+/// Add an existing account to a workspace.
 pub fn addMember(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -272,8 +259,7 @@ pub fn addMember(
     return getMember(allocator, db, args.workspace_id, user_id);
 }
 
-/// Change one member's role. Refuses the change that would leave the
-/// workspace ownerless, which is unrecoverable from inside the product.
+/// Change one member's role.
 pub fn setRole(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -414,8 +400,7 @@ test "listMembers returns one row per member, owners first, each with its accoun
     defer freeMemberRows(alloc, rows);
 
     try testing.expectEqual(@as(usize, 3), rows.len);
-    // Owner first regardless of insertion order — the owner is who you look
-    // for when the list opens.
+    // Owner first regardless of insertion order — the owner is who you look for when the list opens.
     try testing.expectEqualStrings("user_amy", rows[0].user_id);
     try testing.expectEqualStrings("owner", rows[0].role);
     try testing.expectEqualStrings("amy@example.com", rows[0].email);
@@ -487,8 +472,7 @@ test "addMember answers NotFound for an email no active account carries" {
         .email = "nobody@example.com",
     }));
 
-    // A disabled account is not invitable either, so the refusal does not
-    // depend on the account existing.
+    // A disabled account is not invitable either, so the refusal does not depend on the account existing.
     try ctx.db.exec(alloc, "UPDATE users SET is_active = 0 WHERE id = 'user_cid'", &.{});
     try testing.expectError(error.NotFound, addMember(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
@@ -517,8 +501,7 @@ test "addMember refuses the shared system account" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // `user_system` has a row in `users`, so email resolution alone would
-    // admit it — that row is the "visible to everyone" marker, not a person.
+    // `user_system` has a row in `users`, so email resolution alone would admit it — that row is the "visible to everyone" marker, not a person.
     try testing.expectError(error.ReservedUser, addMember(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .email = "system@local",

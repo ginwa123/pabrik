@@ -1,14 +1,11 @@
-/**  * Unit tests for the `useAgentDelete` composable. Mocks the `api.deleteAgent` module function
- * (NOT `global.fetch`) so we can assert the composable's optimistic-update + rollback behavior in
- * isolation. */
+/** Unit tests for the `useAgentDelete` composable. */
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAgentDelete } from '../composables/useAgentDelete'
 import * as api from '../api'
 
-// Mock the whole `../api` module so we control the return value of
-// `api.deleteAgent` without hitting the network.
+// Mock the whole `../api` module so we control the return value of `api.deleteAgent` without hitting the network.
 vi.mock('../api', () => ({
   deleteAgent: vi.fn(),
 }))

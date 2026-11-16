@@ -1,6 +1,4 @@
-// ─── Mock EventSource ──────────────────────────────────────────────────── A controllable
-// replacement for the browser-native EventSource. Captures every listener registered, every close()
-// call, and lets tests fire synthetic events.
+// ─── Mock EventSource ────────────────────────────────────────────────────
 export interface MockEventSource {
   url: string
   readyState: number
@@ -9,8 +7,7 @@ export interface MockEventSource {
   addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void
   emit(type: 'open' | 'error' | 'message' | string, data?: string): void
-  /** Simulate the server's `connected` named event. This is what the SseClient uses as the
-   * canonical "stream is live" signal (per the backend convention). */
+  /** Simulate the server's `connected` named event. */
   simulateOpen(payload?: string): void
   /** All listeners, by type. */
   _listeners: Map<string, Set<EventListenerOrEventListenerObject>>
@@ -47,12 +44,8 @@ export function createMockCtor(): {
       },
       emit(type: string, data?: string) {
         // Build a real MessageEvent if the type is message-like.
-        // Using `new MessageEvent` requires a real DOM env; jsdom
-        // provides one, so this works.
         const ev = data !== undefined ? new MessageEvent(type, { data }) : new Event(type)
-        // Fire addEventListener-style listeners, if any. The native EventSource fires BOTH
-        // addEventListener listeners AND the `onerror` property — they are independent — so we must
-        // do the same.
+        // Fire addEventListener-style listeners, if any.
         const set = this._listeners.get(type)
         if (set) {
           for (const listener of set) {
@@ -60,8 +53,7 @@ export function createMockCtor(): {
             else listener.handleEvent(ev)
           }
         }
-        // Also fire onerror (the property, not the listener) for
-        // parity with the native EventSource behavior.
+        // Also fire onerror (the property, not the listener) for parity with the native EventSource behavior.
         if (type === 'error' && this.onerror) {
           this.onerror(ev)
         }
@@ -147,9 +139,7 @@ export function createMockOnlineTarget(): {
   }
 }
 
-// Mock `window` for the `pagehide` / `beforeunload` listeners. Same shape as the online target —
-// both `addEventListener` and `removeEventListener` accounting, plus a `fire(type)` helper to
-// simulate the browser firing the unload event.
+// Mock `window` for the `pagehide` / `beforeunload` listeners.
 export function createMockUnloadTarget(): {
   target: Pick<Window, 'addEventListener' | 'removeEventListener'> & {
     _listeners: Map<string, Set<EventListenerOrEventListenerObject>>

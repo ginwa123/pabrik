@@ -76,27 +76,21 @@ const emit = defineEmits<{
   openDesignPageInBackground: [page: DesignPage]
 }>()
 
-// URL-driven "what is the main content area showing?". The active styling is now sourced from the
-// URL (?view=workspace&pageId=X) rather than the `isActivePage` prop (which is still passed by the
-// parent for backwards-compat with other consumers).
+// URL-driven "what is the main content area showing?".
 const currentMainView = useCurrentMainView()
 const isCurrentMainView = computed(
   () =>
     currentMainView.value.kind === 'workspace' && currentMainView.value.pageId === props.page.id,
 )
 
-// ⋮ menu state — mirrors the kanban-column ⋮ menu pattern (kanban-sort-by plan, 2026-08-06). The
-// dropdown closes when the user clicks anywhere outside the menuRef container (document mousedown
-// handler attached on open, removed on close).
+// ⋮ menu state — mirrors the kanban-column ⋮ menu pattern (kanban-sort-by plan, 2026-08-06).
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 
 const toggleMenu = () => {
   menuOpen.value = !menuOpen.value
   if (menuOpen.value) {
-    // Attach the document listener lazily so the menu works even when the component is mounted with
-    // menuOpen=false (the default). Removed on close to avoid leaking global listeners across the
-    // row list.
+    // Attach the document listener lazily so the menu works even when the component is mounted with menuOpen=false (the default).
     document.addEventListener('mousedown', handleClickOutside)
   } else {
     document.removeEventListener('mousedown', handleClickOutside)
@@ -122,9 +116,7 @@ const handleSelect = (): void => {
   emit('selectPage', props.page)
 }
 
-// Right-click "Open in new tab" on a design page row. The row only
-// knows the page — WorkspaceItem fills in workspaceId/itemId so
-// Sidebar can build the page URL without touching store state.
+// Right-click "Open in new tab" on a design page row.
 const { menuPos, openAt, close: closePageMenu } = useContextMenu()
 
 const onPageRowContextMenu = (event: MouseEvent): void => {
@@ -150,18 +142,14 @@ const openPageMenuInBackground = (): void => {
   emit('openDesignPageInBackground', props.page)
 }
 
-// "Rename" item in the ⋮ menu. Closes the menu and emits the
-// renamePage event (the parent — WorkspaceItem → Sidebar — owns the
-// rename modal lifecycle).
+// "Rename" item in the ⋮ menu.
 const handleMenuRename = (event: Event): void => {
   event.stopPropagation()
   closeMenu()
   emit('renamePage', props.page)
 }
 
-// "Delete" item in the ⋮ menu. Closes the menu first (else the
-// menu's mousedown listener would race with the delete's confirm
-// dialog), then emits deletePage.
+// "Delete" item in the ⋮ menu.
 const handleMenuDelete = (event: Event): void => {
   event.stopPropagation()
   closeMenu()
@@ -170,16 +158,13 @@ const handleMenuDelete = (event: Event): void => {
 
 // Direct × delete button on hover. Same emit as the menu path.
 const handleDelete = (event: Event): void => {
-  // Stop propagation so the click doesn't ALSO fire `selectPage`
-  // (the outer row handler runs on click — clicking × would
-  // otherwise navigate to this page right before deleting it).
+  // Stop propagation so the click doesn't ALSO fire `selectPage` (the outer row handler runs on click — clicking × would otherwise navigate to this page right …
   event.stopPropagation()
   emit('deletePage', props.page)
 }
 
 const handleKeydown = (event: KeyboardEvent): void => {
-  // Enter / Space activate the row (matches the <button> keyboard
-  // contract without using a real <button> — see the header comment).
+  // Enter / Space activate the row (matches the <button> keyboard contract without using a real <button> — see the header comment).
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     handleSelect()

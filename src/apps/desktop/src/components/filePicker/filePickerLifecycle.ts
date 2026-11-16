@@ -40,15 +40,12 @@ export function useFilePickerLifecycle<T>(deps: FilePickerLifecycleDeps<T>) {
     deps.isPathEditing.value = false
     deps.pathDraft.value = ''
     deps.loadError.value = null
-    // Reset to the Recent tab on every open. The user always re-enters
-    // through Recent — the Browse tab is one click away when they need it.
+    // Reset to the Recent tab on every open.
     deps.activeTab.value = 'recent'
 
     await deps.expandAncestors(startPath)
 
-    // Windows first-open fallback: the POSIX default '/' doesn't exist on Windows, so the chain above
-    // loads nothing and sets loadError. Retry once at the system root ('') which the callers resolve
-    // via getSystemFolder (backend home / USERPROFILE).
+    // Windows first-open fallback: the POSIX default '/' doesn't exist on Windows, so the chain above loads nothing and sets loadError.
     if (startPath === '/' && deps.contentEntries.value.length === 0 && deps.loadError.value) {
       deps.loadError.value = null
       await deps.expandAncestors('')
@@ -67,8 +64,7 @@ export function useFilePickerLifecycle<T>(deps: FilePickerLifecycleDeps<T>) {
 
   let previouslyFocused: HTMLElement | null = null
 
-  // Open guard: run openDialog on mount when the parent created this dialog with modelValue already
-  // true (the common v-if + v-model="show" pattern) plus closed->open updates.
+  // Open guard: run openDialog on mount when the parent created this dialog with modelValue already true (the common v-if + v-model="show" pattern) plus …
   const wasOpen = ref(deps.modelValue())
   const syncModelValue = (show: boolean) => {
     if (show) {

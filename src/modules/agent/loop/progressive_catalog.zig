@@ -6,31 +6,25 @@ const agent = pabrikcore.agent;
 const AgentTool = agent.AgentTool;
 const tool_eligibility = @import("tool_eligibility.zig");
 const progressive_regex = @import("progressive_regex.zig");
-// `MAIN_AGENT_ONLY_NAMES` — the tools a sub-agent must never discover its
-// way back to. Same list the strip uses.
+// `MAIN_AGENT_ONLY_NAMES` — the tools a sub-agent must never discover its way back to.
 const main_agent_only = pabrikcore.main_agent_only;
 
 pub const Kind = enum { builtin, mcp };
 
-/// Whether the entry is already enabled for this session. `no` means
-/// `use_tool` would actually insert a row. A natively-enabled tool never
-/// reaches the catalog, so it has no variant here.
+/// Whether the entry is already enabled for this session.
 pub const Equipped = enum { session, no };
 
 pub const Entry = struct {
     name: []const u8,
     kind: Kind,
-    /// MCP server id parsed from `mcp_<server>_<tool>` (same split as
-    /// `handle_mcp_tool.zig`). Empty for built-ins.
+    /// MCP server id parsed from `mcp_<server>_<tool>` (same split as `handle_mcp_tool.zig`).
     server: []const u8,
     equipped: Equipped,
     /// Borrowed from the registered tool definition.
     tool: AgentTool,
 };
 
-/// The server segment of an MCP tool name. Mirrors
-/// `handle_mcp_tool.zig:35-43` exactly: everything between the `mcp_` prefix
-/// and the FIRST underscore.
+/// The server segment of an MCP tool name.
 pub fn serverOf(name: []const u8) []const u8 {
     if (!std.mem.startsWith(u8, name, "mcp_")) return "";
     const after_mcp = name["mcp_".len..];
@@ -42,8 +36,7 @@ pub fn isMcpName(name: []const u8) bool {
     return std.mem.startsWith(u8, name, "mcp_");
 }
 
-/// One-line summary for the search index: whitespace-collapsed and
-/// truncated to `max` bytes on a word boundary where possible.
+/// One-line summary for the search index: whitespace-collapsed and truncated to `max` bytes on a word boundary where possible.
 pub fn summaryOf(description: []const u8, max: usize) []const u8 {
     // Collapse leading whitespace/newlines so the summary is one line.
     var start: usize = 0;
@@ -67,9 +60,7 @@ fn containsName(names: []const []const u8, name: []const u8) bool {
     return false;
 }
 
-/// The meta-tools are infrastructure for browsing the catalog; offering them
-/// AS catalog entries would let the agent "discover" search_tool with
-/// search_tool.
+/// The meta-tools are infrastructure for browsing the catalog; offering them AS catalog entries would let the agent "discover" search_tool with search_tool.
 fn isProgressiveMetaTool(name: []const u8) bool {
     return containsName(&pabrikcore.progressive_tools.PROGRESSIVE_TOOL_NAMES, name);
 }
@@ -86,8 +77,7 @@ pub fn buildCatalog(
 ) ![]Entry {
     const enabled = try tool_eligibility.allowlistFilter(allocator, registered, allowed_tools, is_sub_agent);
 
-    // Candidates = registered but NOT enabled, i.e. the built-ins this
-    // session could add. Enabled names are already in the LLM's tool list.
+    // Candidates = registered but NOT enabled, i.e. the built-ins this session could add.
     var candidates: std.ArrayList(AgentTool) = .empty;
     for (registered) |tool| {
         var is_enabled = false;
@@ -100,15 +90,13 @@ pub fn buildCatalog(
         if (!is_enabled) try candidates.append(allocator, tool);
     }
 
-    // Apply the same item-type policy the prompt filtering uses, so the
-    // catalog can never offer a tool the item type is not allowed to have.
+    // Apply the same item-type policy the prompt filtering uses, so the catalog can never offer a tool the item type is not allowed to have.
     const allowed_candidates = tool_eligibility.itemTypeStrip(candidates.items, self_item_type);
 
     var out: std.ArrayList(Entry) = .empty;
     for (allowed_candidates) |tool| {
         const name = tool.function.name;
-        // Anti-recursion invariant: a sub-agent must not be able to
-        // discover its way back to spawn_sub_agent.
+        // Anti-recursion invariant: a sub-agent must not be able to discover its way back to spawn_sub_agent.
         if (is_sub_agent and main_agent_only.isMainAgentOnly(name)) continue;
         // Never offer the browsing meta-tools as things to browse.
         if (isProgressiveMetaTool(name)) continue;
@@ -137,9 +125,7 @@ pub fn buildCatalog(
         }
     }
 
-    // Names that are already session-equipped are excluded above, but mark
-    // the ones that a previous iteration recorded so the agent does not
-    // re-request them unnecessarily when they appear via another route.
+    // Names that are already session-equipped are excluded above, but mark the ones that a previous iteration recorded so the agent does not re-request them …
     for (out.items) |*entry| {
         if (containsName(equipped_names, entry.name)) entry.equipped = .session;
     }
@@ -147,8 +133,7 @@ pub fn buildCatalog(
     return try out.toOwnedSlice(allocator);
 }
 
-/// How a query was interpreted. Rendered into the result so the model can tell
-/// a real regex hit from a literal fallback without guessing.
+/// How a query was interpreted.
 pub const QueryMode = enum {
     /// No query given: the whole catalog (server filter only).
     all,
@@ -156,23 +141,19 @@ pub const QueryMode = enum {
     regex,
     /// `literal: true` was passed: case-insensitive substring.
     literal,
-    /// The query did not compile as a regex and was matched as a literal
-    /// substring instead. `QueryResult.warning` says why.
+    /// The query did not compile as a regex and was matched as a literal substring instead.
     regex_fallback,
 };
 
 pub const MatchOptions = struct {
-    /// Mirror of the `search` agent tool's flag: treat the query as opaque
-    /// text instead of a pattern. The escape hatch for code-shaped queries
-    /// (`fn(`, `*.zig`, `.json`).
+    /// Mirror of the `search` agent tool's flag: treat the query as opaque text instead of a pattern.
     literal: bool = false,
 };
 
 pub const QueryResult = struct {
     entries: []const Entry,
     mode: QueryMode,
-    /// Non-empty only when the query was reinterpreted or the match ran out of
-    /// budget. Rendered as `pattern_warning`.
+    /// Non-empty only when the query was reinterpreted or the match ran out of budget.
     warning: []const u8 = "",
 };
 
@@ -256,8 +237,7 @@ pub fn findByName(entries: []const Entry, name: []const u8) ?Entry {
     return null;
 }
 
-/// Look up a tool definition by name across BOTH the registered built-ins and
-/// the MCP catalog, regardless of whether it is enabled or already equipped.
+/// Look up a tool definition by name across BOTH the registered built-ins and the MCP catalog, regardless of whether it is enabled or already equipped.
 pub fn findAnyByName(
     registered: []const AgentTool,
     mcp: ?[]const AgentTool,
@@ -290,8 +270,7 @@ pub fn findAnyByName(
     return null;
 }
 
-/// Drop any entry whose name is not in `names`. Used by the adapters to build
-/// the "already equipped" lookup from the full registered+MCP set.
+/// Drop any entry whose name is not in `names`.
 pub fn findAnyByNameFiltered(
     registered: []const AgentTool,
     mcp: ?[]const AgentTool,
@@ -302,9 +281,7 @@ pub fn findAnyByNameFiltered(
     return findAnyByName(registered, mcp, name);
 }
 
-/// Cheap "did you mean" candidates for an unknown name: ASCII
-/// case-insensitive, separators (`_`/`-`) folded away, then a substring sweep
-/// in both directions.
+/// Cheap "did you mean" candidates for an unknown name: ASCII case-insensitive, separators (`_`/`-`) folded away, then a substring sweep in both directions.
 pub fn didYouMean(
     allocator: std.mem.Allocator,
     entries: []const Entry,
@@ -339,8 +316,7 @@ pub fn didYouMean(
     return try hits.toOwnedSlice(allocator);
 }
 
-/// Lowercase with `_` and `-` removed, so `mcp_context7_query-docs` and
-/// `mcp_context7_query_docs` compare equal.
+/// Lowercase with `_` and `-` removed, so `mcp_context7_query-docs` and `mcp_context7_query_docs` compare equal.
 fn normalize(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     var out = try allocator.alloc(u8, name.len);
     var n: usize = 0;
@@ -366,9 +342,7 @@ fn normalizedEqual(a: []const u8, b: []const u8) bool {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
@@ -389,9 +363,7 @@ fn makeToolList(allocator: std.mem.Allocator, specs: []const [2][]const u8) ![]A
     return out;
 }
 
-// "Nothing enabled" cannot be expressed with "" — an empty allowed_tools
-// means NO FILTERING (every tool enabled), which is the pre-existing
-// semantics tool_eligibility.allowlistFilter deliberately preserves.
+// "Nothing enabled" cannot be expressed with "" — an empty allowed_tools means NO FILTERING (every tool enabled), which is the pre-existing semantics …
 const NONE_ENABLED = "zzz_nothing_enabled";
 
 const registered_specs = [_][2][]const u8{
@@ -472,8 +444,7 @@ test "buildCatalog: item-type policy strips design tools for a kanban item" {
     const a = arena.allocator();
 
     const registered = try makeToolList(a, &registered_specs);
-    // kanban item with only read_file enabled → kanban_list is discoverable,
-    // set_design_page must NOT be.
+    // kanban item with only read_file enabled → kanban_list is discoverable, set_design_page must NOT be.
     const catalog = try buildCatalog(a, registered, "read_file", false, null, &.{}, "kanban");
     var found_design = false;
     var found_kanban = false;
@@ -522,9 +493,7 @@ test "buildCatalog: the browsing meta-tools are never offered as catalog entries
     defer arena.deinit();
     const a = arena.allocator();
 
-    // The real registry: it CONTAINS the three meta-tools (they are injected
-    // by the workflow), so without an explicit exclusion they would show up
-    // as things to discover — letting the agent find search_tool with
+    // The real registry: it CONTAINS the three meta-tools (they are injected by the workflow), so without an explicit exclusion they would show up as things to …
     const registered = @import("../tools/tools_equipped.zig").equips(a);
     const catalog = try buildCatalog(a, registered, NONE_ENABLED, false, null, &.{}, "agent");
     try testing.expect(catalog.len > 0);
@@ -613,8 +582,7 @@ test "matchQuery: a regex query, not just a substring" {
     try testing.expectEqual(QueryMode.regex, creates.mode);
     try testing.expectEqualStrings("mcp_linear_create-issue,mcp_github_create-pr", try matchedNamesJoined(a, creates));
 
-    // Alternation catches a capability under several spellings in ONE call —
-    // the whole reason for the feature.
+    // Alternation catches a capability under several spellings in ONE call — the whole reason for the feature.
     const either = try matchQuery(a, entries, "docs|documentation", "", .{});
     try testing.expectEqualStrings("mcp_ctx_query-docs", try matchedNamesJoined(a, either));
 
@@ -622,16 +590,13 @@ test "matchQuery: a regex query, not just a substring" {
     const both = try matchQuery(a, entries, "create.*(issue|pr)", "", .{});
     try testing.expectEqualStrings("mcp_linear_create-issue,mcp_github_create-pr", try matchedNamesJoined(a, both));
 
-    // A word, not a fragment: \bsearch\b removes the "Searcher" noise that the
-    // plain substring keeps — the A/B is the point.
+    // A word, not a fragment: \bsearch\b removes the "Searcher" noise that the plain substring keeps — the A/B is the point.
     const word = try matchQuery(a, entries, "\\bsearch\\b", "", .{});
     try testing.expectEqualStrings("read_workspace_session", try matchedNamesJoined(a, word));
     const fragment = try matchQuery(a, entries, "search", "", .{});
     try testing.expectEqualStrings("read_workspace_session,crawl_web", try matchedNamesJoined(a, fragment));
 
-    // `_` is a word byte, exactly like rg's -w: \blist\b cannot match the NAME
-    // `kanban_list` (the underscore is a word byte on its left), and no
-    // description in this fixture carries the standalone word either.
+    // `_` is a word byte, exactly like rg's -w: \blist\b cannot match the NAME `kanban_list` (the underscore is a word byte on its left), and no description in this …
     const underscored = try matchQuery(a, entries, "\\blist\\b", "", .{});
     try testing.expectEqual(@as(usize, 0), underscored.entries.len);
     // The unanchored fragment does find it, which is the noise \b removes.
@@ -660,15 +625,12 @@ test "matchQuery: literal:true disables the pattern language" {
     try testing.expectEqual(@as(usize, 1), as_literal.entries.len);
     try testing.expectEqualStrings("", as_literal.warning);
 
-    // …but as a regex the parens are a GROUP, so the pattern means
-    // "element design" and finds nothing. This is exactly why the escape hatch
-    // exists — and why regex-by-default must be documented.
+    // …but as a regex the parens are a GROUP, so the pattern means "element design" and finds nothing.
     const as_regex = try matchQuery(a, entries, "element (design)", "", .{});
     try testing.expectEqual(QueryMode.regex, as_regex.mode);
     try testing.expectEqual(@as(usize, 0), as_regex.entries.len);
 
-    // A bare '*' is not a regex at all → fallback; as a literal it matches only
-    // a real asterisk (no tool has one).
+    // A bare '*' is not a regex at all → fallback; as a literal it matches only a real asterisk (no tool has one).
     const star = try matchQuery(a, entries, "*", "", .{ .literal = true });
     try testing.expectEqual(@as(usize, 0), star.entries.len);
     const star_regex = try matchQuery(a, entries, "*", "", .{});
@@ -761,16 +723,12 @@ test "findByName + didYouMean: fuzzy recovery for a mistyped name" {
     try testing.expectEqual(@as(usize, 0), none.len);
 }
 
-// ============================================================================
-// Result renderers These produce the INNER body of each tool result; the
-// standard `wrapToolOutput` envelope is applied by the exec adapter, exactly
+// Result renderers These produce the INNER body of each tool result; the standard `wrapToolOutput` envelope is applied by the exec adapter, exactly
 
 pub const MAX_SEARCH_ROWS: usize = 40;
 pub const SUMMARY_MAX: usize = 120;
 
-/// Default page size (== the pre-paging cap) and the hard ceiling. The catalog
-/// can be large once an MCP server is connected, and the result rides in the
-/// context window, so a single call may never return the whole thing.
+/// Default page size (== the pre-paging cap) and the hard ceiling.
 pub const DEFAULT_SEARCH_LIMIT: usize = MAX_SEARCH_ROWS;
 pub const MAX_SEARCH_LIMIT: usize = 200;
 
@@ -788,8 +746,7 @@ pub const SearchPageParams = struct {
     warning: []const u8,
 };
 
-/// The `offset`/`limit` window of `entries`. Paging is applied HERE rather than
-/// in `matchQuery` so the pre-page `total` stays available to the renderer.
+/// The `offset`/`limit` window of `entries`.
 pub fn pageSlice(entries: []const Entry, offset: usize, limit: usize) []const Entry {
     if (offset >= entries.len or limit == 0) return &.{};
     const end = if (limit > entries.len - offset) entries.len else offset + limit;
@@ -818,8 +775,7 @@ fn jsonEscapeInto(out: *std.ArrayList(u8), allocator: std.mem.Allocator, s: []co
     }
 }
 
-/// The tool's parameter schema as compact JSON:
-/// `{"type":"object","properties":{...},"required":[...]}`.
+/// The tool's parameter schema as compact JSON
 fn appendToolJsonSchema(out: *std.ArrayList(u8), allocator: std.mem.Allocator, tool: AgentTool) !void {
     const params = tool.function.parameters;
     try out.appendSlice(allocator, "{\"type\":");
@@ -889,8 +845,7 @@ fn toolRowJson(entry: Entry) ToolRowJson {
     };
 }
 
-/// The tool's parameter schema as a JSON value:
-/// `{"type":"object","properties":{...},"required":[...]}`.
+/// The tool's parameter schema as a JSON value
 fn schemaValue(allocator: std.mem.Allocator, tool: AgentTool) !std.json.Value {
     const params = tool.function.parameters;
     var props = try std.json.ObjectMap.init(allocator, &.{}, &.{});
@@ -999,8 +954,7 @@ pub fn renderViewToolNotFound(
     }, .{});
 }
 
-/// `use_tool` result. `inserted` must come from the caller's real DB outcome
-/// (a `saveProgressiveTool` that returned true) — never guessed.
+/// `use_tool` result.
 pub fn renderUseTool(
     allocator: std.mem.Allocator,
     entry: Entry,
@@ -1024,8 +978,7 @@ pub fn renderUseTool(
     }, .{});
 }
 
-/// `use_tool` result for an unknown name. Never writes anything — this is
-/// the "never fails open" guard.
+/// `use_tool` result for an unknown name.
 pub fn renderUseToolNotFound(
     allocator: std.mem.Allocator,
     name: []const u8,
@@ -1145,8 +1098,7 @@ test "renderSearchResult: capped rows report truncated with the real total" {
     try testing.expectEqual(true, obj.get("truncated").?.bool);
     try testing.expectEqual(@as(i64, MAX_SEARCH_ROWS), obj.get("count").?.integer);
     try testing.expectEqual(@as(i64, MAX_SEARCH_ROWS + 2), obj.get("total").?.integer);
-    // The hint must name the offset that continues the listing, not merely say
-    // "narrow it" — a big catalog is browsed page by page.
+    // The hint must name the offset that continues the listing, not merely say "narrow it" — a big catalog is browsed page by page.
     try testing.expectEqual(@as(i64, MAX_SEARCH_ROWS), obj.get("next_offset").?.integer);
     const expect_next = try std.fmt.allocPrint(a, "offset={d}", .{MAX_SEARCH_ROWS});
     try testing.expect(std.mem.indexOf(u8, obj.get("hint").?.string, expect_next) != null);
@@ -1249,8 +1201,7 @@ test "renderSearchResult: paging walks the matches and ends without truncation" 
         try testing.expect(std.mem.indexOf(u8, obj.get("hint").?.string, "NOT listed here") != null);
     }
 
-    // An offset past the end is an empty page that still reports the total,
-    // so the model can recover instead of guessing.
+    // An offset past the end is an empty page that still reports the total, so the model can recover instead of guessing.
     const past = try renderSearchResult(a, pageSlice(entries, 7, 2), .{
         .total = entries.len,
         .offset = 7,
@@ -1338,8 +1289,7 @@ test "renderUseTool: inserted=true is just the equip signal, no repeated schema"
         // The agent already saw the full spec via view_tool — no repeat here.
         try testing.expect(obj.get("parameters") == null);
         try testing.expect(obj.get("description") == null);
-        // The equip signal still points at view_tool for spec help: the
-        // agent may have skipped view (search -> use directly).
+        // The equip signal still points at view_tool for spec help: the agent may have skipped view (search -> use directly).
         try testing.expect(std.mem.indexOf(u8, obj.get("hint").?.string, "view_tool") != null);
         try testing.expect(std.mem.indexOf(u8, obj.get("hint").?.string, "spec") != null);
     }

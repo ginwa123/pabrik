@@ -1,6 +1,4 @@
-/** Behavioural tests for `Sidebar.handleDeleteDesignPage` confirmation flow (task 1785912441877,
- * 2026-08-06). **Bug fixed (2026-08-06):** Clicking × on a design page in the sidebar tree
- * immediately called `workspacesStore.deleteDesignPage` — too easy to nuke a page by accident. */
+/** Behavioural tests for `Sidebar.handleDeleteDesignPage` confirmation flow (task 1785912441877, 2026-08-06). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -66,9 +64,7 @@ function mountSidebar() {
   })
 }
 
-// The <ConfirmDialog> uses <Teleport to="body">, so its DOM lives in
-// document.body. The sidebar's wrapper.find does NOT see teleported
-// nodes. Use document.querySelector to assert dialog visibility.
+// The <ConfirmDialog> uses <Teleport to="body">, so its DOM lives in document.body.
 function dialogInDom(): Element | null {
   return document.body.querySelector('.fixed.inset-0')
 }
@@ -122,8 +118,7 @@ describe('Sidebar.handleDeleteDesignPage — confirmation dialog (2026-08-06)', 
     const wrapper = mountSidebar()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sidebar = wrapper.vm as any
-    // simulate the @delete-design-page emit chain from DesignPageRow →
-    // WorkspaceItem → ProjectsList → Sidebar's `handleDeleteDesignPage`.
+    // simulate the @delete-design-page emit chain from DesignPageRow → WorkspaceItem → ProjectsList → Sidebar's `handleDeleteDesignPage`.
     sidebar.handleDeleteDesignPage(WS_ID, ITEM_ID, PAGE_ID)
     await nextTick()
 
@@ -202,8 +197,7 @@ describe('Sidebar.handleDeleteDesignPage — confirmation dialog (2026-08-06)', 
 
     const outerWrap = dialogInDom()
     expect(outerWrap).not.toBeNull()
-    // The dialog wrapper listens for click.self — clicking the outer
-    // backdrop div closes the dialog without firing the confirm path.
+    // The dialog wrapper listens for click.self — clicking the outer backdrop div closes the dialog without firing the confirm path.
     outerWrap!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
 
@@ -212,9 +206,7 @@ describe('Sidebar.handleDeleteDesignPage — confirmation dialog (2026-08-06)', 
   })
 
   it('onConfirm error path surfaces the failure via notifyError (no unhandled rejection)', async () => {
-    // Regression guard for the only piece of new logic in this diff: the try/catch around
-    // `workspacesStore.deleteDesignPage` MUST call `useNotificationStore().notifyError('Failed to
-    // delete page', ...)` on rejection so a failed backend DELETE isn't a silent UX failure.
+    // Regression guard for the only piece of new logic in this diff: the try/catch around `workspacesStore.deleteDesignPage` MUST call …
     const store = useWorkspacesStore()
     const { useNotificationStore } = await import('../stores/notifications')
     vi.spyOn(store, 'deleteDesignPage').mockRejectedValue(new Error('boom'))
@@ -232,8 +224,7 @@ describe('Sidebar.handleDeleteDesignPage — confirmation dialog (2026-08-06)', 
     expect(confirmBtn).toBeDefined()
     confirmBtn!.click()
     await nextTick()
-    // Flush the microtask queue so the onConfirm async catches its
-    // rejection and calls notifyError.
+    // Flush the microtask queue so the onConfirm async catches its rejection and calls notifyError.
     await Promise.resolve()
     await nextTick()
 

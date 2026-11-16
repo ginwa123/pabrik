@@ -1,6 +1,4 @@
 //! Per-session resolution of the `web_search` provider map.
-//! `ToolExecContext.config` (`src/agentic_loop/tools.zig:101`) is the
-//! `LlmConfig` SINGLETON.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -12,15 +10,11 @@ const workspace_settings_store = @import("workspace_settings_store.zig");
 pub const Providers = config_mod.LlmConfig.WebSearchProvidersMap;
 
 /// Just enough of the user's stored config to reach the block.
-/// `ignore_unknown_fields` keeps every unrelated key from being a parse
-/// error — the stored document is the whole `config.json`, not a fragment.
 const UserConfigHolder = struct {
     web_search: ?std.json.Value = null,
 };
 
-/// The providers in force for `session_id`, read from the session's workspace
-/// row. `null` means the singleton in `ctx.config` is authoritative: no auth,
-/// no workspace, or a workspace that saved none.
+/// The providers in force for `session_id`, read from the session's workspace row.
 pub fn resolve(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -63,9 +57,7 @@ pub fn providersFrom(allocator: std.mem.Allocator, content: []const u8) ?Provide
     return config_mod.LlmConfig.parseWebSearchProvidersMap(allocator, ws) catch null;
 }
 
-/// The providers stored for one user, or null when they have none. Only a
-/// session with no workspace still resolves here — everywhere else the
-/// workspace row is the source.
+/// The providers stored for one user, or null when they have none.
 pub fn resolveForOwner(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -150,8 +142,7 @@ test "web_search_config: row 61 — a malformed stored config yields null, not a
     defer deinitDb(&t, alloc);
     try seedUser(&t, alloc, "u2", "{ this is not json");
 
-    // A broken document must fall back to the pre-existing behaviour, not
-    // take the tool down.
+    // A broken document must fall back to the pre-existing behaviour, not take the tool down.
     try testing.expect(resolveForOwner(alloc, &t.db, "u2") == null);
 }
 
@@ -161,8 +152,7 @@ test "web_search_config: a user with no stored config yields null" {
     defer deinitDb(&t, alloc);
     try seedUser(&t, alloc, "u3", null);
 
-    // An absent row is not a request to remove their providers — the
-    // caller falls back to the singleton.
+    // An absent row is not a request to remove their providers — the caller falls back to the singleton.
     try testing.expect(resolveForOwner(alloc, &t.db, "u3") == null);
 }
 
@@ -205,8 +195,7 @@ test "web_search_config: an absent web_search key yields null, not an empty map"
     const alloc = testing.allocator;
     var t = try setupDb();
     defer deinitDb(&t, alloc);
-    // The distinction matters: null means "fall back to the singleton",
-    // where an empty map would mean "the user has no providers".
+    // The distinction matters: null means "fall back to the singleton", where an empty map would mean "the user has no providers".
     try seedUser(&t, alloc, "u5", "{\"active_profile\":\"x\"}");
     try testing.expect(resolveForOwner(alloc, &t.db, "u5") == null);
 }

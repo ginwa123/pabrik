@@ -35,7 +35,6 @@ import GitBranchMenu from '../shell/GitBranchMenu.vue'
 
 const router = useRouter()
 
-// Props
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const props = defineProps<{
   collapsed?: boolean
@@ -50,9 +49,7 @@ const navigationStore = useNavigationStore()
 const sidebarStore = useSidebarStore()
 const workspacesStore = useWorkspacesStore()
 
-// Same Pinia store the kanban card and ChatView read. It outlives
-// ChatView remounts, so the badge stays in sync across session
-// switches without a second fetch.
+// Same Pinia store the kanban card and ChatView read.
 const agentErrorStore = useAgentErrorStore()
 
 const rowAgentError = (id: string) => agentErrorStore.bySession[id] ?? null
@@ -61,13 +58,10 @@ const rowErrorRetryLabel = (id: string): string | null => {
   return entry ? parseAgentErrorHeadline(entry.content).retryLabel : null
 }
 
-// URL-driven "what is the main content area showing?". See useCurrentMainView for the full
-// contract. See useCurrentMainView for the full contract.
+// URL-driven "what is the main content area showing?".
 const currentMainView = useCurrentMainView()
 
-// Workspace scope for the CHATS list (plan: 2026-09-22-revamp-ui-chats). The list shows ONLY this
-// workspace's sessions — the backend filters via `?workspace_id=`. Source: the URL path workspace
-// when present, else the store's active workspace (landing / transition windows).
+// Workspace scope for the CHATS list (plan: 2026-09-22-revamp-ui-chats).
 const scopedWorkspaceId = computed(() => {
   const v = currentMainView.value
   if (v.kind === 'chat' && v.workspaceId) return v.workspaceId
@@ -75,9 +69,7 @@ const scopedWorkspaceId = computed(() => {
   return workspacesStore.activeWorkspace?.id
 })
 
-// Reactive active check for a chat row. Called from the template on every render so the row's
-// highlight stays in sync with URL changes (pre-fix, `active` was set as a one-shot flag inside
-// `loadChats()` — leaving it stale after a chat → workspace navigation).
+// Reactive active check for a chat row.
 const isCurrentChat = (sessionId: string): boolean =>
   currentMainView.value.kind === 'chat' && currentMainView.value.sessionId === sessionId
 
@@ -85,9 +77,7 @@ const isCurrentChat = (sessionId: string): boolean =>
 const processingState = inject<Ref<Record<string, boolean>>>('processingState', ref({}))
 
 
-// Helper to check if a session is processing. Reads the injected
-// processingState live so rows reflect spinner state without mirroring
-// it onto each row object.
+// Helper to check if a session is processing.
 const isProcessing = (id: string): boolean => !!processingState.value[id]
 
 
@@ -117,15 +107,11 @@ const { prStatuses, prConflicts, burstChatPrStatus } = useChatsPrStatus({
 })
 
 
-// Right-click action menu for a chat row. Position state + dismiss
-// wiring live in useContextMenu; the row payload lives here so the menu
-// can label itself and so each emit knows WHICH row was picked.
+// Right-click action menu for a chat row.
 const { menuPos, openAt, close: closeContextMenu } = useContextMenu()
 const contextMenuChatId = ref<string | null>(null)
 
-// Mirrors `navItems`'s element shape. Kept as a separate ref rather
-// than re-reading navItems on every emit so the menu keeps rendering
-// the row it was opened on even if the list reloads underneath it.
+// Mirrors `navItems`'s element shape.
 const contextMenuChat = ref<{
   id: string
   name: string
@@ -134,8 +120,7 @@ const contextMenuChat = ref<{
   is_pinned?: boolean
 } | null>(null)
 
-// Re-entry lock for "Stop agent": the row stays actionable while the
-// POST is in flight otherwise, and a double-click fires it twice.
+// Re-entry lock for "Stop agent": the row stays actionable while the POST is in flight otherwise, and a double-click fires it twice.
 const isStoppingChat = ref(false)
 
 const onChatRowContextMenu = (
@@ -147,9 +132,7 @@ const onChatRowContextMenu = (
   openAt(event)
 }
 
-// Read the picked row straight off navItems so handlers always see the
-// freshest `selected_profile_model` / `is_auto_retry_until_stop`, falling
-// back to the snapshot taken at open time.
+// Read the picked row straight off navItems so handlers always see the freshest `selected_profile_model` / `is_auto_retry_until_stop`, falling back to the …
 const pickedChat = () => {
   const id = contextMenuChatId.value
   if (!id) return null
@@ -165,9 +148,7 @@ const openContextMenuInBackground = () => {
   openChatInNewTab({ id })
 }
 
-// ─── Rename ──────────────────────────────────────────────────────────────── Goes through
-// `api.updateTaskSimple`, NOT `api.updateSession`, and the difference is load-bearing:
-// updateTaskSimple → PUT /api/workspaces/tasks/:task_id → task_update.updateTaskName → cascade to.
+// ─── Rename ────────────────────────────────────────────────────────────────
 const renameModalOpen = ref(false)
 const renameModalName = ref('')
 
@@ -185,25 +166,20 @@ const confirmRename = async (name: string) => {
   const targetId = id ?? navItems.value.find((item) => item.name === renameModalName.value)?.id
   if (!targetId) return
 
-  // Optimistic paint so the row doesn't flicker back to the old name
-  // while the PUT is in flight. The SSE reload replaces this a moment
-  // later regardless of the outcome.
+  // Optimistic paint so the row doesn't flicker back to the old name while the PUT is in flight.
   const row = navItems.value.find((item) => item.id === targetId)
   if (row) row.name = name
 
   try {
     await api.updateTaskSimple(targetId, { name })
   } catch (err) {
-    // Revert: the server is the source of truth and the SSE reload will
-    // restore it, but do not leave a name on screen that was never saved.
+    // Revert: the server is the source of truth and the SSE reload will restore it, but do not leave a name on screen that was never saved.
     if (row) row.name = renameModalName.value
     console.error('Failed to rename chat:', err)
   }
 }
 
 // ─── Unattended mode ───────────────────────────────────────────────────────
-// `is_auto_retry_until_stop` lives on `sessions`, so this one genuinely has to go through
-// updateSession — which means selectedAgent must be sent back explicitly.
 const isUnattended = (chat: { is_auto_retry_until_stop?: string }): boolean =>
   chat.is_auto_retry_until_stop === '1'
 
@@ -215,9 +191,7 @@ const toggleUnattendedFromMenu = async () => {
   const next = isUnattended(chat) ? '0' : '1'
   const row = navItems.value.find((item) => item.id === chat.id)
   const previous = row?.is_auto_retry_until_stop
-  // Optimistic flip; reverted on failure. KanbanView.handleUnattendedToggle
-  // lets SSE repaint instead, but a context-menu pick reads as a toggle
-  // and an un-flipped switch under the cursor looks broken.
+  // Optimistic flip; reverted on failure.
   if (row) row.is_auto_retry_until_stop = next
 
   try {
@@ -240,16 +214,14 @@ const stopAgentFromMenu = async () => {
   try {
     await api.stopSession(chat.id)
   } catch (err) {
-    // stopSession already swallows transport failures into
-    // {success:false}; this only fires on a programming error.
+    // stopSession already swallows transport failures into {success:false}; this only fires on a programming error.
     console.error('Failed to stop agent:', err)
   } finally {
     isStoppingChat.value = false
   }
 }
 
-// Right-click menu on the git icon: open GitHub branch / PR URLs in a new tab. Separate position
-// state from the row menu so a git-icon right-click never opens the chat menu.
+// Right-click menu on the git icon: open GitHub branch / PR URLs in a new tab.
 const { menuPos: gitMenuPos, openAt: openGitMenuAt, close: closeGitMenu } = useContextMenu()
 const gitMenuBranch = ref('')
 const gitMenuBranchUrl = ref('')
@@ -267,8 +239,7 @@ const onGitIconContextMenu = async (event: MouseEvent, item: ChatRow) => {
   if (!branch || !cwd) return
   try {
     const info = await fetchPrInfoCached(cwd, branch)
-    // Stale guard: user may have right-clicked another icon while
-    // this fetch was in flight.
+    // Stale guard: user may have right-clicked another icon while this fetch was in flight.
     if (gitMenuBranch.value !== branch) return
     gitMenuPrUrl.value = info.prUrl || ''
     gitMenuBranchUrl.value = branchUrlFromPrUrl(info.prUrl || '', branch)
@@ -301,9 +272,7 @@ const onSortToggle = () => {
 // ChatsList maintains its OWN navItems mirror of workspacesStore state, populated by loadChats().
 
 
-// Migration 104 — PINNED section above RECENT. Pinned rows sort by
-// `pinned_position` DESC (first pinned = highest position = top);
-// recents exclude pinned rows entirely so a session never renders twice.
+// Migration 104 — PINNED section above RECENT.
 const pinnedItems = computed(() =>
   navItems.value
     .filter((i) => i.is_pinned)
@@ -313,9 +282,7 @@ const pinnedItems = computed(() =>
 const recentItems = computed(() => navItems.value.filter((i) => !i.is_pinned))
 const recentTotal = computed(() => Math.max(0, chatsTotal.value - pinnedItems.value.length))
 
-// Right-click pin/unpin (Migration 104). Optimistic flip + cache
-// write-through; reverted on failure. The SSE reload revalidates
-// totals/cursors a moment later regardless of outcome.
+// Right-click pin/unpin (Migration 104).
 const togglePinFromMenu = async () => {
   const chat = pickedChat()
   closeContextMenu()
@@ -349,9 +316,7 @@ const togglePinFromMenu = async () => {
   }
 }
 
-// PINNED drag-drop reorder (Migration 104). HTML5 DnD on the pinned rows only (small list, no
-// virtualization): dragstart captures the id, dragover tracks the target + before/after half, drop
-// splices + POSTs the full top-to-bottom order.
+// PINNED drag-drop reorder (Migration 104).
 const dragPinnedId = ref<string | null>(null)
 const dragPinnedOverId = ref<string | null>(null)
 const dragPinnedBefore = ref(false)
@@ -410,9 +375,7 @@ const onPinnedDragEnd = () => {
   dragPinnedOverId.value = null
 }
 
-// Empty-refresh resilience. A rejected fetch, a timed-out request or a non-2xx lands in
-// `api.getChats`'s catch as `{ sessions: [], total: 0, failed: true }`; `loadDelta` turns that flag
-// into a failed Effect, and this backoff is what keeps the RECENT list from settling on zero.
+// Empty-refresh resilience.
 const LOAD_RETRY_DELAYS_MS = [1_000, 3_000, 8_000, 20_000]
 let loadRetryTimer: ReturnType<typeof setTimeout> | undefined
 let loadRetryAttempt = 0
@@ -441,9 +404,7 @@ const scheduleLoadRetry = (ctx: string) => {
 const loadChats = async () => {
   chatsLoading.value = true
   chatsNextCursor.value = null
-  // Local-first mount (mirrors ChatView): paint the workspace cache
-  // instantly, then revalidate page 1 in the background. The ctx guard
-  // drops late paints after a fast workspace switch.
+  // Local-first mount (mirrors ChatView): paint the workspace cache instantly, then revalidate page 1 in the background.
   const ctx = sessionCacheKey()
   const isCurrentCtx = () => sessionCacheKey() === ctx
   try {
@@ -463,8 +424,7 @@ const loadChats = async () => {
     if (delta && isCurrentCtx()) {
       const rows = delta.items.map((r) => toNavItem(r.raw))
       if (rows.length === 0 && navItems.value.length > 0) {
-        // Failed refresh wearing a successful response's clothes. Keep
-        // what the user can see and try again shortly.
+        // Failed refresh wearing a successful response's clothes.
         console.error(
           `[ChatsList] refresh for ${ctx} returned no sessions; keeping ${navItems.value.length} painted row(s) and retrying`,
         )
@@ -479,13 +439,11 @@ const loadChats = async () => {
       clearLoadRetry()
       restoreActiveFromUrl()
     } else if (isCurrentCtx()) {
-      // A delta that never arrived is a failed revalidate, not an empty
-      // scope: keep whatever is painted and come back for it.
+      // A delta that never arrived is a failed revalidate, not an empty scope: keep whatever is painted and come back for it.
       scheduleLoadRetry(ctx)
     }
   } catch (err) {
-    // A thrown load must not blank painted rows either — same reasoning as
-    // the empty-page guard above. The console entry is the diagnosis.
+    // A thrown load must not blank painted rows either — same reasoning as the empty-page guard above.
     console.error('Failed to load chats:', err)
   } finally {
     console.log(
@@ -499,9 +457,7 @@ const loadChats = async () => {
   burstChatPrStatus()
 }
 
-// Deep-link / refresh cover, extracted so both the cache paint and the delta paint can run it: if
-// the URL already shows a chat, optimistic-clear its dot + fire the touch so the dot clears without
-// waiting for the next SSE refresh. fireSessionTouched is once-per-lifetime guarded, so the double.
+// Deep-link / refresh cover, extracted so both the cache paint and the delta paint can run it: if the URL already shows a chat, optimistic-clear its dot + fire …
 const restoreActiveFromUrl = () => {
   // If we found and activated a saved chat, restore it in AppLayout
   const activeItem = navItems.value.find((item) => item.active)
@@ -512,9 +468,7 @@ const restoreActiveFromUrl = () => {
 
   const current = currentMainView.value
   if (current.kind === 'chat' && current.sessionId) {
-    // Fresh-tab title: a deep link never left-clicks, so activeChatName is empty/stale and the
-    // browser tab would read plain "Pabrik". The name is usually already in this list — fall back
-    // to a single-session fetch past page 1.
+    // Fresh-tab title: a deep link never left-clicks, so activeChatName is empty/stale and the browser tab would read plain "Pabrik".
     const match = navItems.value.find((i) => i.id === current.sessionId)
     if (match && match.name && match.name !== 'New Chat') {
       navigationStore.setActiveChatName(match.name)
@@ -535,9 +489,7 @@ const restoreActiveFromUrl = () => {
 const loadMoreChats = async () => {
   if (!chatsHasMore.value || chatsLoading.value || !chatsNextCursor.value) return
   const ctx = sessionCacheKey()
-  // Cache-first scroll-back in desc mode (mirrors ChatView.fetchOlderPage): the write-through below
-  // accumulates every fetched page, so older rows are usually already local. Cursor unchanged,
-  // id-dedupe covers overlap.
+  // Cache-first scroll-back in desc mode (mirrors ChatView.fetchOlderPage): the write-through below accumulates every fetched page, so older rows are usually …
   if (chatsSortDirection.value === 'desc' && navItems.value.length > 0) {
     const oldest = navItems.value[navItems.value.length - 1]?.sortKey ?? ''
     const cached = await runSyncEffectOr(
@@ -588,15 +540,12 @@ const toggleNavSection = () => {
   }
 }
 
-// Workspace switch refetch (plan: 2026-09-22-revamp-ui-chats). The list is scoped per workspace, so
-// a scope change clears the old workspace's rows FIRST (no stale frame) and refetches.
+// Workspace switch refetch (plan: 2026-09-22-revamp-ui-chats).
 const switchWorkspaceScope = () => {
   navItems.value = []
   chatsNextCursor.value = null
   chatsHasMore.value = false
-  // The old workspace's total is a lie for the new scope: it drives the
-  // scroller's `loadMore` gate (`items.length < totalCount`), so a stale
-  // value from a bigger workspace makes the list page past its end.
+  // The old workspace's total is a lie for the new scope: it drives the scroller's `loadMore` gate (`items.length < totalCount`), so a stale value from a bigger …
   chatsTotal.value = 0
   // A pending retry belongs to the scope that scheduled it.
   clearLoadRetry()
@@ -613,9 +562,7 @@ onUpdated(() => {
   }
 })
 
-/**  * Ctrl/Cmd+click, middle click and the context menu open a chat in a real browser tab (window.open)
- * instead of navigating — the browser gesture. A plain click keeps the previous behaviour.
- * Path-based (plan: 2026-09-22-revamp-ui-chats): /app/{ws}/chat/{sid}. */
+/** Ctrl/Cmd+click, middle click and the context menu open a chat in a real browser tab (window.open) instead of navigating — the browser gesture. */
 const openChatInNewTab = (item: { id: string }) => {
   const wsId = scopedWorkspaceId.value
   if (wsId) {
@@ -657,8 +604,7 @@ const setActive = async (id: string) => {
   } else {
     router.replace({ path: '/app', query: { view: 'chat', session: id } })
   }
-  // 2) Optimistic clear: align human time to updated_at so isStale()
-  // flips false immediately (no wait for the next list refresh).
+  // 2) Optimistic clear: align human time to updated_at so isStale() flips false immediately (no wait for the next list refresh).
   optimisticClearStaleDot(id)
   // 3) Best-effort backend stamp (don't await navigation).
   fireSessionTouched(id)
@@ -677,8 +623,7 @@ const removeChat = async (chatId: string) => {
     // Clear from navigation store if this was the active chat
     if (wasActive) {
       navigationStore.clearActiveChat()
-      // Mutually exclusive active state: deleting the active chat drops us
-      // back to "no chat selected" — also clear the workspace item.
+      // Mutually exclusive active state: deleting the active chat drops us back to "no chat selected" — also clear the workspace item.
       workspacesStore.setActiveWorkspaceItem(null)
       // ...and clear any active task (inverse direction: task → chat).
       workspacesStore.setActiveTask(null)
@@ -702,8 +647,7 @@ const removeChat = async (chatId: string) => {
   }
 }
 
-// Migration 063 — the unattended-mode toggle USED to live as a clickable badge in this list. See
-// Chunk 6 of the unify-frontend-sse plan.
+// Migration 063 — the unattended-mode toggle USED to live as a clickable badge in this list.
 let sseReloadTimer: ReturnType<typeof setTimeout> | undefined
 const scheduleSseReload = () => {
   if (sseReloadTimer !== undefined) return // burst already coalesced
@@ -714,8 +658,7 @@ const scheduleSseReload = () => {
 }
 const unsubSession = workspacesStore.onSessionEvent((event) => {
   if (event.action === 'deleted') {
-    // Instant evict: drop the row from the cache and the list now,
-    // then let the debounced reload revalidate totals/cursors.
+    // Instant evict: drop the row from the cache and the list now, then let the debounced reload revalidate totals/cursors.
     void runSyncVoid(
       sessionEngineDb.removeSession(sessionCacheKey(), event.id),
       'sessions.removeSession',
@@ -751,9 +694,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // No SSE teardown needed — ChatsList no longer owns a session-
-  // event stream. The canonical subscription lives in the
-  // workspaces store and persists for the app's lifetime.
+  // No SSE teardown needed — ChatsList no longer owns a session-event stream.
 })
 
 // Cleanup on unmount

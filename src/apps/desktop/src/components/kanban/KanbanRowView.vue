@@ -51,9 +51,7 @@ const props = withDefaults(
     collapsedIds: string[]
     runAllBusyByColumn?: Record<string, boolean>
     stopAllBusyByColumn?: Record<string, boolean>
-    /**      * Row height. `comfortable` is the two-line record (name + metadata); `compact` drops back to a
-     * single line for boards with hundreds of tasks. The parent owns persistence — this component
-     * only forwards it, so the preference survives a layout switch. */
+    /** Row height. */
     density?: KanbanRowDensity
   }>(),
   {
@@ -85,16 +83,14 @@ const emit = defineEmits<{
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
   viewTaskDetail: [taskId: string]
-  // Right-click "Run agent" from a row. Pass-through — the row emits
-  // the task id and KanbanView makes the startAgentOnTask call.
+  // Right-click "Run agent" from a row.
   runAgent: [payload: { taskId: string }]
   toggleCollapse: [columnId: string]
 }>()
 
 const workspacesStore = useWorkspacesStore()
 
-// ─── Grouping ────────────────────────────────────────────────────────────── Same filter
-// <KanbanColumn> applies per column (cardsInColumn), hoisted so one pass produces every group.
+// ─── Grouping ──────────────────────────────────────────────────────────────
 const groups = computed(() =>
   props.columns.map((column) => ({
     column,
@@ -104,9 +100,7 @@ const groups = computed(() =>
 
 const isCollapsed = (columnId: string): boolean => props.collapsedIds.includes(columnId)
 
-// ─── Per-column pagination ───────────────────────────────────────────────── Mirrors
-// <KanbanColumn>: the parent WorkspaceItem carries `columnPagination[colId]`, populated by
-// fetchKanbanTasks and reset on SSE refetch / search / sort.
+// ─── Per-column pagination ─────────────────────────────────────────────────
 const parentItem = computed(() => {
   if (!props.workspaceId || !props.itemId) return null
   return (
@@ -121,9 +115,7 @@ const moreTasksAvailable = (columnId: string): boolean =>
 const loadingMoreTasks = (columnId: string): boolean =>
   parentItem.value?.columnPagination?.[columnId]?.isLoading ?? false
 
-// True while this column's FIRST page is in flight — see the note in
-// KanbanColumn.vue. Gates the skeleton so the group does not render a
-// false "No tasks yet" while the fetch is outstanding.
+// True while this column's FIRST page is in flight — see the note in KanbanColumn.vue.
 const isFirstPageLoading = (columnId: string): boolean =>
   workspacesStore.isFirstPageLoading(props.itemId, columnId)
 
@@ -134,8 +126,6 @@ const handleLoadMore = (columnId: string) => {
 }
 
 // ─── Per-group ⋮ menu ──────────────────────────────────────────────────────
-// One open menu at a time, keyed by column id. Click-outside + Esc close
-// it — same lifecycle as <KanbanColumn>'s menu.
 const openMenuColumnId = ref<string | null>(null)
 const menuRef = ref<HTMLElement | null>(null)
 
@@ -163,9 +153,7 @@ const handleMenuStopAll = (columnId: string) => {
   emit('requestStopAllAgents', columnId)
 }
 
-// ─── Per-group sort modal ────────────────────────────────────────────────── The sort state is
-// local to this view (the URL is the source of truth for persistence — <KanbanView> writes
-// `?sorts=` on the sortChange emit).
+// ─── Per-group sort modal ──────────────────────────────────────────────────
 const sortModalColumnId = ref<string | null>(null)
 const sortBy = ref<SortField>('position')
 const direction = ref<SortDirection>('asc')
@@ -177,8 +165,7 @@ const handleMenuSort = (columnId: string) => {
   sortModalColumnId.value = columnId
 }
 
-// <KanbanSortMenu> has no custom `click` emit — its `@click` is a native DOM listener that fires on
-// ANY click inside the menu (that is how <KanbanColumn> uses it).
+// <KanbanSortMenu> has no custom `click` emit — its `@click` is a native DOM listener that fires on ANY click inside the menu (that is how <KanbanColumn> uses …
 const onSortPicked = () => {
   const columnId = sortModalColumnId.value
   if (!columnId) return
@@ -204,13 +191,9 @@ const handleSortModalBackdrop = () => {
 }
 
 // ─── Inline column rename ──────────────────────────────────────────────────
-// Single-clicking a group name starts an edit-in-place, matching
-// <KanbanColumn>. Enter commits, Escape/blur cancels.
 const renamingColumnId = ref<string | null>(null)
 const renameValue = ref('')
-// A `ref` inside a `v-for` collects an ARRAY of elements (one per
-// rendered group), so this is typed as such and indexed by the group
-// being renamed.
+// A `ref` inside a `v-for` collects an ARRAY of elements (one per rendered group), so this is typed as such and indexed by the group being renamed.
 const renameInputs = ref<HTMLInputElement[]>([])
 
 const startInlineRename = async (column: KanbanColumn) => {

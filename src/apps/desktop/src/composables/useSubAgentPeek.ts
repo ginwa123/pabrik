@@ -1,6 +1,4 @@
-/** useSubAgentPeek — composable for the sub-agent peek panel. Owns the lifecycle of a "peek" into a
- * sub-agent session: 1. Fetch the sub-agent's initial message history via `GET
- * /llm/session/{sid}/messages`. 2. */
+/** useSubAgentPeek — composable for the sub-agent peek panel. */
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { apiFetch, type SseEvent, type Message } from '../api'
 import { useSseBus } from '../helpers/sseBus'
@@ -37,12 +35,9 @@ function applyChunkToMessages(
     totalTokens.value = ev.total_tokens
   }
 
-  // Tool-result chunks — always create a NEW message keyed by
-  // tool_call_id (the panel groups them with the assistant call).
+  // Tool-result chunks — always create a NEW message keyed by tool_call_id (the panel groups them with the assistant call).
   if (ev.role === 'tool' && ev.tool_call_id) {
-    // Cast role='tool' through unknown — the public Message interface
-    // doesn't list 'tool' as a role (only user/assistant/system), but
-    // tool-result messages do arrive on the wire in practice.
+    // Cast role='tool' through unknown — the public Message interface doesn't list 'tool' as a role (only user/assistant/system), but tool-result messages do arrive …
     const newMsg = {
       id: ev.id ?? `tool-${ev.tool_call_id}`,
       role: 'tool',
@@ -65,9 +60,7 @@ function applyChunkToMessages(
         ...existing,
         content: (existing.content ?? '') + (ev.content ?? ''),
         finish_reason: ev.finish_reason ?? existing.finish_reason,
-        // tool_calls_json / tool_name arrive on the assistant turn that emits a tool call; preserve
-        // them across subsequent content chunks. 2026-08-24 wire-shape fix: only copy STRING values
-        // into tool_calls_json.
+        // tool_calls_json / tool_name arrive on the assistant turn that emits a tool call; preserve them across subsequent content chunks. 2026-08-24 wire-shape fix …
         tool_calls_json:
           typeof (ev as { tool_calls?: unknown }).tool_calls === 'string'
             ? (ev as { tool_calls: string }).tool_calls
@@ -88,8 +81,7 @@ function applyChunkToMessages(
           content: ev.content ?? '',
           created_at: ev.created_at ?? Math.floor(Date.now() / 1000),
           tool_name: ev.tool_name,
-          // 2026-08-24 wire-shape fix: only accept STRING tool_calls —
-          // legacy array-shaped values are dropped (see applyChunkToMessages).
+          // 2026-08-24 wire-shape fix: only accept STRING tool_calls — legacy array-shaped values are dropped (see applyChunkToMessages).
           tool_calls_json:
             typeof (ev as { tool_calls?: unknown }).tool_calls === 'string'
               ? (ev as { tool_calls: string }).tool_calls
@@ -101,8 +93,7 @@ function applyChunkToMessages(
     }
   }
 
-  // Completion detection — applied to any chunk that carries a finish_reason. 2026-09-04
-  // subagent-peek fix: `tool_calls` means "assistant stopped to await a tool result".
+  // Completion detection — applied to any chunk that carries a finish_reason. 2026-09-04 subagent-peek fix: `tool_calls` means "assistant stopped to await a tool …
   if (
     ev.finish_reason === 'stop' ||
     ev.finish_reason === 'length' ||
@@ -137,9 +128,7 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
       )
       messages.value = Array.isArray(data.messages) ? data.messages : []
 
-      // If the most recent message has a finish_reason, the
-      // sub-agent already finished before we opened the panel.
-      // Otherwise we need the SSE for live updates.
+      // If the most recent message has a finish_reason, the sub-agent already finished before we opened the panel.
       const last = messages.value[messages.value.length - 1]
       if (last && last.finish_reason) {
         status.value = 'complete'
@@ -158,9 +147,7 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
     const bus = useSseBus()
     const sid = opts.sessionId
     offLlm = bus.on('llm', (event: SseEvent) => {
-      // 2026-09-04 subagent-peek P2: completion signals are parent-scoped (progress events carry
-      // session_id=parent + subagent_session_id=child). When OUR child completes, refetch — the
-      // panel may have opened mid-run with 0 rows committed and missed the live chunks.
+      // 2026-09-04 subagent-peek P2: completion signals are parent-scoped (progress events carry session_id=parent + subagent_session_id=child).
       if (event.role === 'subagent_progress') {
         if (
           event.subagent_session_id === sid &&
@@ -170,8 +157,7 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
         }
         return
       }
-      // Listener-side filter — the bus's single global EventSource carries all sessions' llm
-      // events, so we drop events for other sessions here.
+      // Listener-side filter — the bus's single global EventSource carries all sessions' llm events, so we drop events for other sessions here.
       if (event.session_id !== sid) return
       applyChunkToMessages(messages, event, totalTokens, status)
     })
@@ -188,9 +174,7 @@ export function useSubAgentPeek(opts: UseSubAgentPeekOptions): UseSubAgentPeekRe
     void fetchInitial()
   })
 
-  // 2026-09-04 subagent-peek P1: eye-click from agent A -> agent B remounts the host (keyed by
-  // sessionId), and `opts` is a plain snapshot object — so observing `opts.sessionId` never fires
-  // (the source never changes).
+  // 2026-09-04 subagent-peek P1: eye-click from agent A -> agent B remounts the host (keyed by sessionId), and `opts` is a plain snapshot object — so observing …
   onUnmounted(() => {
     closeSse()
   })

@@ -45,8 +45,7 @@ async function mountInput(propsOverride: Record<string, unknown> = {}) {
   return wrapper
 }
 
-/**  * Set the textarea value, park the cursor at the end, dispatch `input` so `autoResize` updates
- * `cursorPos`, then wait out the 150ms detect debounce plus promise flushes. */
+/** Set the textarea value, park the cursor at the end, dispatch `input` so `autoResize` updates `cursorPos`, then wait out the 150ms detect debounce plus promise … */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -513,9 +512,7 @@ describe('FileInput — /tool picker', () => {
     })
   })
 
-  // The two slash commands share one composer. Typing one must not leave
-  // the other's surface open, and the `/skill-` specs must keep meaning
-  // what they say when a `/tool-` token is in the same message.
+  // The two slash commands share one composer.
   describe('the two slash pickers do not collide', () => {
     it('typing /tool- closes an open /skill- picker', async () => {
       seedWorkspace()

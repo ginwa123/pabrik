@@ -1,7 +1,6 @@
 import { apiFetch } from './client'
 
-// ─── models.dev catalog (Migration 106) ───────────────────────────────── The catalog is a
-// machine-wide snapshot, cached in the DB and synced hourly in the background.
+// ─── models.dev catalog (Migration 106) ─────────────────────────────────
 export type ModelCatalogState = 'fresh' | 'stale' | 'absent'
 
 export interface ModelCatalogEntry {
@@ -13,8 +12,7 @@ export interface ModelCatalogEntry {
   output_tokens: number | null
   reasoning: string
   temperature: boolean
-  /** True when the model costs nothing to run — from the catalog's zero prices, or, for a model
-   * the catalog does not know, from its `-free`/`contributor` name. */
+  /** True when the model costs nothing to run — from the catalog's zero prices, or, for a model the catalog does not know, from its `-free`/`contributor` name. */
   free?: boolean
   cost?: { input: number; output: number } | null
 }
@@ -23,16 +21,13 @@ export interface ModelCatalogResponse {
   total: number
   returned: number
   catalog: ModelCatalogState
-  /** `opencode-cli` = the list the local CLI reports (asked for with `backend=opencode`), which is
-   * already sorted free-first; `models.dev` = the machine-wide catalog. */
+  /** `opencode-cli` = the list the local CLI reports (asked for with `backend=opencode`), which is already sorted free-first; `models.dev` = the machine-wide … */
   source?: 'models.dev' | 'opencode-cli'
-  /** Why the CLI source was unavailable, when the caller asked for it and it could not answer. The
-   * rows then come from the catalog instead, so the picker stays usable. */
+  /** Why the CLI source was unavailable, when the caller asked for it and it could not answer. */
   cli_error?: string
   fetched_at_ms?: number
   models: ModelCatalogEntry[]
-  /** The last background sync's failure, when it failed. ABSENT when the last
-   * attempt succeeded or none has run yet — so its presence is itself the news. */
+  /** The last background sync's failure, when it failed. */
   last_sync_error?: string
   last_sync_at_ms?: number
 }
@@ -60,9 +55,7 @@ export interface ModelResolve {
   fetched_at_ms?: number
   /** Present only when the model could not be resolved. */
   reason?: string
-  /** The last sync attempt failed with this error name (e.g. `InvalidPayloadJson`).
-   * Absent otherwise. Without it the UI can only report a state, never a cause —
-   * which is how "no catalog yet" stayed unexplained. */
+  /** The last sync attempt failed with this error name (e.g. */
   last_sync_error?: string
   last_sync_at_ms?: number
 }
@@ -102,9 +95,7 @@ export async function refreshModelCatalog(): Promise<{
   return await apiFetch('/models/refresh', { method: 'POST' })
 }
 
-/** Best-effort `resolveModel`. The failure is a DISCRIMINATED RESULT, not a swallowed value:
- * `{kind:'error', message}` is not something a caller can mistake for `context_window: 0`, which is
- * exactly the bug the Effect-style rule exists to prevent. */
+/** Best-effort `resolveModel`. The failure is a DISCRIMINATED RESULT, not a swallowed value */
 export type ModelResolveOutcome =
   { kind: 'ok'; value: ModelResolve } | { kind: 'error'; message: string }
 

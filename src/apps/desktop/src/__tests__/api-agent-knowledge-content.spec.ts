@@ -1,6 +1,4 @@
-// Behavioural tests for addAgentKnowledge's `content` param (plan
-// 2026-08-21-agent-knowledge-manual-text, Task 5). Mocking pattern: stub `global.fetch` — same
-// approach as workspacesStoreUngroup.spec.ts.
+// Behavioural tests for addAgentKnowledge's `content` param (plan 2026-08-21-agent-knowledge-manual-text, Task 5).
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
@@ -10,8 +8,7 @@ describe('addAgentKnowledge with content', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch touches useNotificationStore() on the error path —
-    // give it an active Pinia (same pattern as kanbanStore.spec.ts).
+    // apiFetch touches useNotificationStore() on the error path — give it an active Pinia (same pattern as kanbanStore.spec.ts).
     setActivePinia(createPinia())
   })
 

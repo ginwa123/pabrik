@@ -6,8 +6,6 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 
 /// Migration 116 — ONE agent-config table set for the three item families.
-/// The twelve old per-item-type tables collapse into four; `item_type` on
-/// the parent row tells the families apart. See the plan doc for the why.
 pub const Migration116UnifyAgentConfigTables = struct {
     pub const version: u32 = 116;
     pub const name = "unify_agent_config_tables";
@@ -33,9 +31,7 @@ pub const Migration116UnifyAgentConfigTables = struct {
         return dialect.tableExists(.{ .db = db }, allocator, table_name) catch false;
     }
 
-    /// Run `copy_sql` only when `source_table` exists — a fresh install has
-    /// none of the old tables. The dialect supplies the verb and the end:
-    /// `INSERT OR IGNORE`, or `INSERT ... ON CONFLICT DO NOTHING`.
+    /// Run `copy_sql` only when `source_table` exists — a fresh install has none of the old tables.
     fn copyFrom(db: *Backend, allocator: std.mem.Allocator, source_table: []const u8, copy_sql: []const u8) !void {
         if (!tableExists(db, allocator, source_table)) return;
         const sql = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ dialect.insert_ignore_prefix, copy_sql, dialect.conflict_ignore });
@@ -104,8 +100,6 @@ pub const Migration116UnifyAgentConfigTables = struct {
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_agent_config_system_prompt_config_position ON agent_config_system_prompt(config_id, position DESC)", &[_][]const u8{});
 
         // ─── Backfill: the three parents ──────────────────────────────
-        // `id` and `workspace_item_id` are copied verbatim (spec D3: they
-        // are the same string); the UNIQUE on `workspace_item_id` stays.
         try copyFrom(db, allocator, "agents",
             \\ INTO agent_configs (id, workspace_item_id, item_type, description, created_at, updated_at)
             \\SELECT id, workspace_item_id, 'agent', description, created_at, updated_at FROM agents
@@ -120,8 +114,6 @@ pub const Migration116UnifyAgentConfigTables = struct {
         );
 
         // ─── Backfill: the children ──────────────────────────────────
-        // The old owner column (`agent_id` / `kanban_id` / `routine_id`)
-        // becomes `config_id`.
         try copyFrom(db, allocator, "agent_knowledge",
             \\ INTO agent_config_knowledge (id, config_id, file_path, label, content, position, created_at, updated_at)
             \\SELECT id, agent_id, file_path, label, content, position, created_at, updated_at FROM agent_knowledge
@@ -162,8 +154,6 @@ pub const Migration116UnifyAgentConfigTables = struct {
         );
 
         // ─── Park the old tables under a `_legacy_v116` name ──────────
-        // Not dropped: a rollback is a rename back, and the data stays
-        // there while the new set proves itself.
         for (legacy_tables) |pair| {
             const source = pair[0];
             const legacy = pair[1];

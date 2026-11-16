@@ -15,8 +15,7 @@ import { __dispatchSseBus, __resetSseBus, installSseBus, useSseBus } from '../he
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/** Task 2 of the tab-mode plan. The invariants asserted here are the ones the reviewer signed off
- * on: 1. the list is never empty; 2. closing the active tab activates right-then-left; 3. */
+/** Task 2 of the tab-mode plan. */
 const WINDOW_ID = 'w_testwindow'
 
 const chat = (session: string) => ({ view: 'chat', session })

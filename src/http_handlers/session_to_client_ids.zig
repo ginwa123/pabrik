@@ -1,5 +1,4 @@
-//! `GET /api/sessions/to-client-ids` — map every active session to the SSE
-//! client IDs currently listening on it.
+//! `GET /api/sessions/to-client-ids` — map every active session to the SSE client IDs currently listening on it.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,13 +6,9 @@ const gserverz = pabrikcore.gserverz;
 
 pub const SessionToClientIdsError = error{
     ServerContextNotInitialized,
-    /// `std.json.Stringify.valueAlloc` returns `error{Canceled}` on
-    /// the Io runtime. Effectively unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` returns `error{Canceled}` on the Io runtime.
     Canceled,
     /// `std.json.Stringify.valueAlloc` returns `error{OutOfMemory}`.
-    /// Same as above — unreachable on arena, required by the
-    /// type system.
     OutOfMemory,
 };
 
@@ -30,9 +25,7 @@ pub const SessionToClientIdsResponse = struct {
 
 pub const SessionToClientIdsResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Convert a [16]u8 client ID to a 32-char lowercase hex string.
 fn clientIdToHex(client_id: [16]u8, allocator: std.mem.Allocator) ![]u8 {
@@ -88,9 +81,7 @@ fn useCase(
     return try std.json.Stringify.valueAlloc(allocator, response_data, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn sessionToClientIdsHandler(
     ctx: gserverz.HttpContext,

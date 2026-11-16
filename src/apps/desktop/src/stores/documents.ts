@@ -18,8 +18,7 @@ import {
 export { folderCacheKey, folderPath, isAtOrBelow, mergeLevel } from './documentTree'
 export type { TreeEntry } from './documentTree'
 
-/** Wrap one remote write so its failure reaches the rendered `error` ref
- * instead of an `unknown` binding. */
+/** Wrap one remote write so its failure reaches the rendered `error` ref instead of an `unknown` binding. */
 function remote<T>(op: string, run: () => Promise<T>) {
   return Effect.tryPromise({
     try: run,
@@ -47,9 +46,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   const saving = ref(false)
   /** Last failure message, or null. Rendered by the view — never write-only. */
   const error = ref<string | null>(null)
-  /**    * True once a list has been fetched for SOME workspace. Distinguishes "not loaded yet" (render
-   * nothing) from "loaded, and there are none" (render the empty state) — without it a fresh
-   * sidebar shows a misleading "No documents yet" before the first request returns. */
+  /** True once a list has been fetched for SOME workspace. */
   const loaded = ref(false)
 
   const count = computed(() => documents.value.length)
@@ -65,17 +62,13 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   const toMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-  /** Cache-first list load, then revalidate — the shape ChatsList uses for the sidebar's Recent
-   * chats. The cache paint comes first and clears `loading`, so a returning user sees document
-   * titles immediately instead of an empty section while the network answers. */
+  /** Cache-first list load, then revalidate — the shape ChatsList uses for the sidebar's Recent chats. */
   async function fetchDocuments(workspaceId: string): Promise<void> {
     if (!workspaceId) return
     loading.value = true
     error.value = null
     try {
-      // 1. Paint from cache. A cache failure is not the caller's problem —
-      //    `runSyncEffectOr` reports it in dev and degrades to no rows, so a
-      //    broken IndexedDB just means "no instant paint", never a hard stop.
+      // 1.
       const cached = await runSyncEffectOr(
         documentEngineDb.primeFromCache(workspaceId, Number.MAX_SAFE_INTEGER),
         [],
@@ -88,17 +81,14 @@ export const useDocumentsStore = defineStore('documents', () => {
         loading.value = false
       }
 
-      // 2. Revalidate in the background and replace with the server's truth. `runSyncResult` (not
-      //    `runSyncEffect`) because this failure is RENDERED: the section shows `error` instead of
-      //    the empty state, so the reason has to survive to the UI.
+      // 2.
       const result = await runSyncResult(
         documentEngineDb.loadDelta(workspaceId),
         'documents.loadDelta',
       )
       if (result.ok) {
         documents.value = result.value.items.map((r) => r.raw)
-        // The list read returns the whole tree, so this is the one place the
-        // folder cache is written. A cached paint keeps its placement.
+        // The list read returns the whole tree, so this is the one place the folder cache is written.
         const listed = result.value.folders ?? readCachedFolders(workspaceId)
         folders.value = listed
         writeCachedFolders(workspaceId, listed)
@@ -106,9 +96,7 @@ export const useDocumentsStore = defineStore('documents', () => {
       } else {
         error.value = result.reason
         if (cached.length === 0) {
-          // Cold miss AND a revalidation that never arrived: there is nothing painted to protect,
-          // so the list stays empty and the error block carries the reason. A populated list is
-          // NEVER blanked here — the cached rows stay on screen above it.
+          // Cold miss AND a revalidation that never arrived: there is nothing painted to protect, so the list stays empty and the error block carries the reason.
           documents.value = []
         }
       }
@@ -129,13 +117,10 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null
     try {
       const { document } = await api.createDocument(workspaceId, title, content, folderId, format)
-      // Prepend rather than refetch: the backend positions a new document above
-      // every existing one, so the prepend IS the saved order.
+      // Prepend rather than refetch: the backend positions a new document above every existing one, so the prepend IS the saved order.
       documents.value = [document, ...documents.value]
       loaded.value = true
-      // Write through so the next cold boot paints this document without
-      // waiting for the revalidation. Best-effort: `putLocal` cannot fail
-      // the caller, and the in-memory list above is already correct.
+      // Write through so the next cold boot paints this document without waiting for the revalidation.
       await runSyncVoid(documentEngineDb.putDocument(workspaceId, document), 'documents.put')
       return document
     } catch (e) {
@@ -157,9 +142,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     try {
       const { document } = await api.updateDocument(workspaceId, documentId, patch)
       documents.value = documents.value.map((d) => (d.id === document.id ? document : d))
-      // Write through the edited row. Matters more here than for sessions:
-      // the cached row carries the BODY, so without this an offline reload
-      // would show the pre-edit document under the post-edit title.
+      // Write through the edited row. Matters more here than for sessions
       await runSyncVoid(documentEngineDb.putDocument(workspaceId, document), 'documents.put')
       return document
     } catch (e) {
@@ -177,9 +160,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     try {
       await api.deleteDocument(workspaceId, documentId)
       documents.value = documents.value.filter((d) => d.id !== documentId)
-      // Evict from the cache too. Without this the deleted row survives in
-      // IndexedDB and the next cold boot paints a document that no longer
-      // exists — and clicking it would open a 404.
+      // Evict from the cache too.
       await runSyncVoid(
         documentEngineDb.removeDocument(workspaceId, documentId),
         'documents.remove',
@@ -225,9 +206,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /** Move one document into `folderId` (null = the root). Optimistic: the row
-   * takes its new place at once, and goes back where it was if the write
-   * fails. */
+  /** Move one document into `folderId` (null = the root). */
   async function moveDocument(
     workspaceId: string,
     documentId: string,
@@ -314,9 +293,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /** Set (or clear) a document's glyph; `null` is "Reset to default".
-   * Optimistic, with a rollback: a row that keeps a glyph the server never
-   * stored is worse than one that flickers. */
+  /** Set (or clear) a document's glyph; `null` is "Reset to default". */
   async function setDocumentIcon(
     workspaceId: string,
     documentId: string,
@@ -350,8 +327,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /** Set (or clear) a folder's glyph. Same optimistic + rollback contract as
-   * `setDocumentIcon`. */
+  /** Set (or clear) a folder's glyph. */
   async function setFolderIcon(
     workspaceId: string,
     folderId: string,
@@ -382,9 +358,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /** Nest a folder, or send it back to the root with `parentId = null`. A
-   * cycle is refused HERE, before the request: the server refuses it too, but
-   * a round trip for a drop the UI can already see is wrong is still wrong. */
+  /** Nest a folder, or send it back to the root with `parentId = null`. */
   async function moveFolder(
     workspaceId: string,
     folderId: string,
@@ -421,8 +395,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /** Delete a folder ONLY. Its children move up one level, documents included:
-   * the count the server returns says how many were kept, never deleted. */
+  /** Delete a folder ONLY. Its children move up one level, documents included */
   async function deleteFolder(workspaceId: string, folderId: string): Promise<boolean> {
     if (!workspaceId) return false
     const existing = folders.value.find((f) => f.id === folderId)
@@ -462,29 +435,23 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /**    * Fetch a single document for the editor, body included. A list row carries metadata and
-   * `preview` only, so a cached row is usable only when it already holds a body — otherwise this
-   * reaches the network and merges the body into the row, keeping the sidebar's placement. */
+  /** Fetch a single document for the editor, body included. */
   async function loadDocument(workspaceId: string, documentId: string): Promise<Document | null> {
     if (!workspaceId || !documentId) return null
     error.value = null
     const cached = findById(documentId)
     try {
       const { document } = await api.getDocument(workspaceId, documentId)
-      // Merge rather than replace: the list row may carry a newer position or
-      // folder than the single read, and the sidebar must not jump.
+      // Merge rather than replace: the list row may carry a newer position or folder than the single read, and the sidebar must not jump.
       const merged: Document = cached ? { ...cached, ...document } : document
       documents.value = cached
         ? documents.value.map((d) => (d.id === merged.id ? merged : d))
         : [merged, ...documents.value]
-      // Write through so an offline reload of an OPENED document still has its
-      // body. A document never opened has no cached body, and that is fine.
+      // Write through so an offline reload of an OPENED document still has its body.
       await runSyncVoid(documentEngineDb.putDocument(workspaceId, merged), 'documents.put')
       return merged
     } catch (e) {
-      // Offline: a cached body is still better than a blank page. The list is
-      // cache-first, but the OPEN document must be the server's — a cached body
-      // is what made an agent edit invisible and a cleared body render blank.
+      // Offline: a cached body is still better than a blank page.
       error.value = toMessage(e)
       if (cached && typeof cached.content === 'string') return cached
       return null

@@ -1,5 +1,4 @@
-/** The chat's file attachments: what the client accepts, what it puts on the wire, and what it
- * reads back from the read path. */
+/** The chat's file attachments: what the client accepts, what it puts on the wire, and what it reads back from the read path. */
 import { describe, it, expect } from 'vitest'
 import {
   encodeFileAttachmentsWire,

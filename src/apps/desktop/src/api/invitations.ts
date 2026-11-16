@@ -1,9 +1,7 @@
 import { apiFetch } from './client'
 import type { WorkspaceRole } from './members'
 
-// ─── Workspace invitations (Migration 123) ────────────────────────────── An invite is a PENDING
-// ask: the server writes no membership until the invitee accepts, so nothing can appear in
-// someone's sidebar because a stranger typed their address.
+// ─── Workspace invitations (Migration 123) ──────────────────────────────
 export interface WorkspaceInvitation {
   id: string
   workspace_id: string
@@ -18,8 +16,7 @@ export interface WorkspaceInvitation {
   created_at: string
 }
 
-/** GET /api/workspaces/:workspaceId/invitations — pending asks for ONE workspace. Owner/admin
- * only: each row carries an email address. */
+/** GET /api/workspaces/:workspaceId/invitations — pending asks for ONE workspace. */
 export async function listWorkspaceInvitations(
   workspaceId: string,
 ): Promise<{ invitations: WorkspaceInvitation[]; count: number }> {
@@ -29,9 +26,7 @@ export async function listWorkspaceInvitations(
   )
 }
 
-/** POST /api/workspaces/:workspaceId/invitations Body: `{ email, role }`. 201 with the PENDING
- * row — not a member. 404 names an address no account carries; 409 when the account is already a
- * member or already has an unanswered invitation. */
+/** POST /api/workspaces/:workspaceId/invitations Body: `{ email, role }`. 201 with the PENDING row — not a member. 404 names an address no account carries; 409 … */
 export async function createInvitation(
   workspaceId: string,
   email: string,
@@ -64,8 +59,7 @@ export async function listMyInvitations(): Promise<{
   })
 }
 
-/** POST /api/invitations/:invitationId/accept — THIS call is what creates the membership. 404 when
- * the invitation is somebody else's, 409 when the account is already a member. */
+/** POST /api/invitations/:invitationId/accept — THIS call is what creates the membership. 404 when the invitation is somebody else's, 409 when the account is … */
 export async function acceptInvitation(
   invitationId: string,
 ): Promise<{ member: { workspace_id: string; user_id: string; role: WorkspaceRole } }> {

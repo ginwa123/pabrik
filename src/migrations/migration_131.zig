@@ -6,9 +6,7 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 131 — `sessions.transcript_archived_at`: when a session's
-/// `llm_history` rows were moved to the sibling `archive.db`. NULL means the
-/// transcript is still in this database.
+/// Migration 131 — `sessions.transcript_archived_at`: when a session's `llm_history` rows were moved to the sibling `archive.db`.
 pub const Migration131AddSessionTranscriptArchivedAt = struct {
     pub const version: u32 = 131;
     pub const name = "add_session_transcript_archived_at";

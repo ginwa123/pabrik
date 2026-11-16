@@ -10,25 +10,17 @@ const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
 // ── What this is for ──────────────────────────────────────────────────────
-// The PR tab knows a PR is `mergeable=CONFLICTING` but nothing about *which*
-// files stop it merging, so the user gets a red badge and a link to the
 
-/// Cap on the returned conflict list. A pathological history (two branches
-/// that both rewrote the whole tree) can produce thousands of paths; the
-/// payload is a UI list, not a report.
+/// Cap on the returned conflict list.
 pub const MAX_CONFLICT_FILES: usize = 500;
 
 /// Wall-clock budget per git invocation.
 pub const GIT_TIMEOUT_MS: u32 = 20_000;
 
-/// Per-stream capture cap. The conflicted-file section is bounded by
-/// MAX_CONFLICT_FILES; the informational section is the only unbounded part
-/// and is discarded during parsing.
+/// Per-stream capture cap.
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 
-/// How much of git's stderr rides along in the HTTP 502 `error` field. The
-/// real causes are one line (`unknown option --write-tree` on git < 2.38,
-/// `fatal: Not a valid object name …`), but a hook stack trace is not.
+/// How much of git's stderr rides along in the HTTP 502 `error` field.
 const MAX_DETAIL_BYTES: usize = 300;
 
 const PrConflictsError = error{
@@ -45,9 +37,7 @@ pub const ConflictPaths = struct {
     truncated: bool,
 };
 
-/// Outcome of one git invocation: exit code + both streams. `stdout`/`stderr`
-/// stay owned by the caller. Free every buffer [`parseConflictPaths`]
-/// allocated.
+/// Outcome of one git invocation: exit code + both streams.
 pub fn deinitConflictPaths(allocator: std.mem.Allocator, parsed: ConflictPaths) void {
     for (parsed.files) |f| allocator.free(f);
     allocator.free(parsed.files);
@@ -68,16 +58,14 @@ const GitRun = struct {
     }
 };
 
-/// The guest's exit code as the `u8` the host's own term reports. A signal
-/// (negative) is not 0 or 1, so every caller above still sees a git error.
+/// The guest's exit code as the `u8` the host's own term reports.
 fn exitByte(code: i64) u8 {
     if (code < 0) return 255;
     if (code > 255) return 255;
     return @intCast(code);
 }
 
-/// Which git may answer about `path`, decided by the process's own database in
-/// `--saas` and by nothing at all in local mode.
+/// Which git may answer about `path`, decided by the process's own database in `--saas` and by nothing at all in local mode.
 fn routeForPath(allocator: std.mem.Allocator, path: []const u8) workspace_fs.Route {
     const di = pabrik_core.getSingleton() catch null;
     return workspace_fs.routeForPath(allocator, if (di) |d| d.db else null, path);
@@ -91,8 +79,7 @@ fn runGit(
     path: []const u8,
     args: []const []const u8,
 ) !GitRun {
-    // Under `--saas` the merge is computed by the workspace's VM. Its streams
-    // are the host path's own, so every caller above needs no other change.
+    // Under `--saas` the merge is computed by the workspace's VM.
     if (route.guestFs()) |fs| {
         const exec = fs.runGit(path, args, GIT_TIMEOUT_MS, MAX_OUTPUT_BYTES) catch return error.MergeTreeFailed;
         if (exec.timed_out) {
@@ -120,9 +107,7 @@ fn runGit(
         return error.MergeTreeFailed;
     }
 
-    // A child killed by a signal reports as `.exited` on some platforms and
-    // as a signal term on others; only a self-reported exit code 0/1/other
-    // is meaningful to us.
+    // A child killed by a signal reports as `.exited` on some platforms and as a signal term on others; only a self-reported exit code 0/1/other is meaningful to us.
     const code: u8 = switch (res.term) {
         .exited => |c| c,
         else => {
@@ -133,8 +118,7 @@ fn runGit(
     return .{ .code = code, .stdout = res.stdout, .stderr = res.stderr };
 }
 
-/// Does `<ref>^{commit}` resolve in this repo? `rev-parse --verify --quiet`
-/// exits 1 (printing nothing) for a missing ref, so the stderr is irrelevant.
+/// Does `<ref>^{commit}` resolve in this repo?
 fn refExists(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -177,7 +161,6 @@ fn resolveBaseRef(
 }
 
 /// Short (10-hex) commit a ref points at, for the response's provenance line.
-/// Best effort: an empty string is cosmetic, never a failure.
 fn revParseShort(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -195,7 +178,6 @@ fn revParseShort(
 }
 
 /// Split `git merge-tree -z --write-tree --name-only` stdout into paths.
-/// Record 0 is the resulting tree OID and is skipped.
 pub fn parseConflictPaths(allocator: std.mem.Allocator, stdout: []const u8) !ConflictPaths {
     var files = std.ArrayList([]const u8).empty;
     errdefer {
@@ -229,9 +211,7 @@ const PrConflictsResult = struct {
     truncated: bool,
 };
 
-/// Release every buffer [`useCase`] allocated. The handler has no arena of
-/// its own to lean on (the result escapes into the JSON writer), so the
-/// ownership rule is stated once here and mirrored by the inline tests.
+/// Release every buffer [`useCase`] allocated.
 pub fn deinitResult(allocator: std.mem.Allocator, result: PrConflictsResult) void {
     for (result.conflicting_files) |f| allocator.free(f);
     allocator.free(result.conflicting_files);
@@ -261,8 +241,7 @@ fn useCaseVia(
     head_override: ?[]const u8,
     detail: *?[]u8,
 ) !PrConflictsResult {
-    // 1) Must be a git work tree. Probed first so every later failure can be
-    // reported as a ref problem rather than a missing-repo 404.
+    // 1) Must be a git work tree.
     {
         const check = runGit(allocator, io, route, path, &.{ "rev-parse", "--git-dir" }) catch return error.NotARepository;
         defer check.deinit(allocator);
@@ -271,9 +250,7 @@ fn useCaseVia(
 
     // 2) Resolve the two refs the merge runs over.
     const base_ref = try resolveBaseRef(allocator, io, route, path, base_override);
-    // The panel is bound to the PR's own worktree, so the local HEAD is the
-    // actionable answer: "what would conflict if I merged what I have right
-    // now", which stays correct while the user is mid-resolution.
+    // The panel is bound to the PR's own worktree, so the local HEAD is the actionable answer: "what would conflict if I merged what I have right now", which stays …
     const head: []const u8 = if (head_override) |h| (if (h.len > 0) h else "HEAD") else "HEAD";
 
     // 3) The three-way merge. This is the whole feature.
@@ -290,9 +267,7 @@ fn useCaseVia(
     };
     defer merge.deinit(allocator);
 
-    // exit 0 → clean merge, exit 1 → conflicts. Anything else is a git error
-    // (unknown flag on git < 2.38, bad object, unrelated histories refused);
-    // its stderr is the only useful thing we can tell the user.
+    // exit 0 → clean merge, exit 1 → conflicts.
     if (merge.code != 0 and merge.code != 1) {
         const errtext = merge.trimmedStderr();
         setDetail(allocator, detail, if (errtext.len > 0) errtext else "git merge-tree failed");
@@ -319,9 +294,7 @@ fn setDetail(allocator: std.mem.Allocator, slot: *?[]u8, msg: []const u8) void {
     slot.* = allocator.dupe(u8, trimmed[0..take]) catch null;
 }
 
-/// `GET
-/// /api/git/pr/conflicts?path=<cwd>&pr_url=<url>[&provider=][&base=][&head=]`
-/// Returns the paths a three-way merge of `<base>` into `<head>` refuses to
+/// `GET /api/git/pr/conflicts?path=<cwd>&pr_url=<url>[&provider=][&base=][&head=]` Returns the paths a three-way merge of `<base>` into `<head>` refuses to
 pub fn gitPrConflictsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -336,8 +309,7 @@ pub fn gitPrConflictsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     if (pr_url_param.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "pr_url cannot be empty") });
     }
-    // `pr_url` identifies the PR for the caller but the computation is purely
-    // local.
+    // `pr_url` identifies the PR for the caller but the computation is purely local.
     if (query.get("provider")) |pv| {
         if (pv.len > 0 and pr_provider.PrProvider.fromString(pv) == null) {
             return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "provider must be \"github\", \"gitlab\", or \"generic\"") });
@@ -393,8 +365,7 @@ test "parseConflictPaths: clean merge returns an empty list" {
 
 test "parseConflictPaths: names before the empty record are the conflicting files" {
     const allocator = testing.allocator;
-    // One OID record, two paths, the empty terminator, then git's
-    // informational section — which must NOT be read as file names.
+    // One OID record, two paths, the empty terminator, then git's informational section — which must NOT be read as file names.
     const parsed = try parseConflictPaths(
         allocator,
         "aaa\x00src/a.zig\x00src/b b.py\x00\x00Auto-merging src/a.zig\x00CONFLICT (content): Merge conflict in src/a.zig\x00",
@@ -461,8 +432,7 @@ fn makeFixtureDir(allocator: std.mem.Allocator) !FixtureDir {
     return makeFixtureDirIn(allocator, raw_root);
 }
 
-/// The body of [`makeFixtureDir`], with the temp root passed in rather than
-/// read from the environment.
+/// The body of [`makeFixtureDir`], with the temp root passed in rather than read from the environment.
 fn makeFixtureDirIn(allocator: std.mem.Allocator, raw_root: []const u8) !FixtureDir {
     // macOS's $TMPDIR is `/var/folders/…/T/` — note the TRAILING SLASH.
     const root = std.mem.trimEnd(u8, raw_root, "/");
@@ -486,8 +456,7 @@ fn makeFixtureDirIn(allocator: std.mem.Allocator, raw_root: []const u8) !Fixture
     const path = try allocator.dupe(u8, real_buf[0..real_len]);
     errdefer allocator.free(path);
 
-    // Re-open on the canonical path so `writeFixture`'s sub_path writes land
-    // in the same directory the string names.
+    // Re-open on the canonical path so `writeFixture`'s sub_path writes land in the same directory the string names.
     dir.close(testing.io);
     dir = std.Io.Dir.cwd().openDir(testing.io, path, .{}) catch |err| {
         allocator.free(path);
@@ -546,9 +515,7 @@ fn git(path: []const u8, args: []const []const u8) !void {
         .exited => |c| c,
         else => return error.GitFailed,
     };
-    // Every fixture git step must succeed. Discarding the exit code is how a
-    // broken fixture becomes a test that "passes" against whatever repository
-    // it happened to land in.
+    // Every fixture git step must succeed.
     if (code != 0) {
         std.debug.print(
             "\n!! fixture git step ({d} args) in {s} exited {d}: {s}\n",
@@ -558,8 +525,7 @@ fn git(path: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// Fresh self-contained repo on `main` with one commit. The temp dir has no
-/// user identity, so `commit` fails without the three `config` writes first.
+/// Fresh self-contained repo on `main` with one commit.
 fn makeRepo(fx: *const FixtureDir) ![]const u8 {
     try git(fx.path, &.{ "init", "-q", "-b", "main" });
     try requireSelfContainedRepo(fx.path);
@@ -574,12 +540,9 @@ fn makeRepo(fx: *const FixtureDir) ![]const u8 {
 }
 
 test "fixture dir survives a symlinked temp root with a trailing slash (macOS shape)" {
-    // Regression guard, 2026-10-03: macOS failed every one of these tests
-    // with `FixtureInsideRealRepo` because $TMPDIR is BOTH a symlink into
-    // /private AND ends in a slash, so `<link>/pabrik-prconflicts-…` builds.
+    // Regression guard, 2026-10-03: macOS failed every one of these tests with `FixtureInsideRealRepo` because $TMPDIR is BOTH a symlink into /private AND ends in a …
     const allocator = testing.allocator;
-    // Windows has the same shape, built here: %TEMP% is a plain path, so the
-    // link is ours, and a directory JUNCTION needs no privilege to make.
+    // Windows has the same shape, built here: %TEMP% is a plain path, so the link is ours, and a directory JUNCTION needs no privilege to make.
     const sep: u8 = switch (builtin.os.tag) {
         .windows => '\\',
         else => '/',
@@ -609,15 +572,13 @@ test "fixture dir survives a symlinked temp root with a trailing slash (macOS sh
     var fx = try makeFixtureDirIn(allocator, with_slash);
     defer fx.deinit();
 
-    // The fixture must be its OWN git repo, or every `git -C fx.path` walks up
-    // and rewrites the enclosing repository.
+    // The fixture must be its OWN git repo, or every `git -C fx.path` walks up and rewrites the enclosing repository.
     try git(fx.path, &.{ "init", "-q" });
     try requireSelfContainedRepo(fx.path);
 }
 
 test "requireSelfContainedRepo accepts a path git spells with forward slashes" {
-    // Regression guard, 2026-10-03 (Windows). git reports `/` separators on
-    // every platform; `Dir.realPath` returns `\` on Windows.
+    // Regression guard, 2026-10-03 (Windows). git reports `/` separators on every platform; `Dir.realPath` returns `\` on Windows.
     const want = try toGitSeparators(testing.allocator, "D:\\a\\b");
     defer testing.allocator.free(want);
     try testing.expectEqualStrings("D:/a/b", want);
@@ -633,8 +594,7 @@ test "useCase names the file both sides changed" {
     defer fx.deinit();
     const path = try makeRepo(&fx);
 
-    // main edits line 2 of shared.txt; feature edits the SAME line
-    // differently.
+    // main edits line 2 of shared.txt; feature edits the SAME line differently.
     try git(path, &.{ "checkout", "-q", "-b", "feature" });
     try writeFixture(&fx, "shared.txt", "a\nFEATURE\nc\n");
     try writeFixture(&fx, "feat.txt", "feature\n");
@@ -690,8 +650,7 @@ test "useCase honours an explicit base ref" {
     defer fx.deinit();
     const path = try makeRepo(&fx);
 
-    // `trunk` is the initial commit — an ancestor of feature, so merging it
-    // into feature is clean.
+    // `trunk` is the initial commit — an ancestor of feature, so merging it into feature is clean.
     try git(path, &.{ "branch", "trunk" });
     try git(path, &.{ "checkout", "-q", "-b", "feature" });
     try writeFixture(&fx, "shared.txt", "a\nFEATURE\nc\n");
@@ -722,8 +681,7 @@ test "useCase reports NotARepository for a directory that is not a work tree" {
     var fx = try makeFixtureDir(allocator);
     defer fx.deinit();
 
-    // The OS temp dir has no enclosing repository, so a bare directory here
-    // is genuinely not a work tree — the case the handler maps to 404.
+    // The OS temp dir has no enclosing repository, so a bare directory here is genuinely not a work tree — the case the handler maps to 404.
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
     try testing.expectError(
@@ -757,8 +715,7 @@ test "useCase: --saas answers NotARepository rather than asking the host's git" 
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
 
-    // Local mode reads the repository the fixture just built — the control
-    // that makes the refusal below about the substrate, not the fixture.
+    // Local mode reads the repository the fixture just built — the control that makes the refusal below about the substrate, not the fixture.
     const local = try useCase(allocator, testing.io, fx.path, null, null, &detail);
     deinitResult(allocator, local);
 
@@ -766,8 +723,7 @@ test "useCase: --saas answers NotARepository rather than asking the host's git" 
     defer runtime_mode.setCurrent(.local);
     if (!runtime_mode.vm_backend_available) return;
 
-    // The same tree, on the same disk: with no VM answering, "not a
-    // repository" is the honest answer and the host's git is not the fallback.
+    // The same tree, on the same disk: with no VM answering, "not a repository" is the honest answer and the host's git is not the fallback.
     try testing.expectError(
         error.NotARepository,
         useCase(allocator, testing.io, fx.path, null, null, &detail),

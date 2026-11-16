@@ -19,7 +19,6 @@ describe('computeLoadMoreThreshold', () => {
 
   it('falls back to the floor on a 0×0 container (initial-mount flicker)', () => {
     // Real DOM event: the container reads 0×0 for one frame after mount.
-    // We must not derive a 0 threshold from that — use the floor instead.
     expect(computeLoadMoreThreshold(200, 0.5, 0)).toBe(200)
   })
 
@@ -28,8 +27,7 @@ describe('computeLoadMoreThreshold', () => {
   })
 
   it('falls back to the floor when containerHeight is negative', () => {
-    // Defensive: a stale or malformed DOM read should never produce a
-    // negative threshold. Use the floor.
+    // Defensive: a stale or malformed DOM read should never produce a negative threshold.
     expect(computeLoadMoreThreshold(200, 0.5, -100)).toBe(200)
   })
 
@@ -43,15 +41,13 @@ describe('computeLoadMoreThreshold', () => {
   })
 
   it('honors a custom absolute floor (e.g. 400px)', () => {
-    // A consumer raising the floor for slow APIs should still get the
-    // proportional bonus layered on top.
+    // A consumer raising the floor for slow APIs should still get the proportional bonus layered on top.
     expect(computeLoadMoreThreshold(400, 0.5, 1000)).toBe(500) // max(400, 500)
     expect(computeLoadMoreThreshold(400, 0.5, 300)).toBe(400)  // max(400, 150)
   })
 
   it('uses a defensive default of 200px when the floor itself is NaN', () => {
-    // A malformed prop value must not produce NaN downstream. The helper
-    // returns a sane number so the caller can always compare to it.
+    // A malformed prop value must not produce NaN downstream.
     expect(computeLoadMoreThreshold(Number.NaN, 0.5, 1000)).toBe(500)
   })
 })

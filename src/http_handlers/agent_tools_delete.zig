@@ -1,5 +1,4 @@
-//! `DELETE /api/agents/:agent_id/tools/:tool_name`. Removes a tool from the
-//! agent's allowlist. Returns `{ok: true}` on success, 404 if not found.
+//! `DELETE /api/agents/:agent_id/tools/:tool_name`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -22,9 +21,7 @@ pub const ToolDeleteInput = struct {
     tool_name: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Delete a tool row for the given agent.
 fn useCase(
@@ -40,13 +37,9 @@ fn useCase(
         return error.DeleteFailed;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentToolsDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -83,8 +76,6 @@ pub fn agentToolsDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -104,9 +95,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
@@ -114,8 +103,7 @@ fn setupDb() !TestCtx {
 
     try Migration116.up(&db, testing.allocator);
 
-    // Seed: 2 agents (so the scoped test can verify cross-agent
-    // isolation) + 1 tool on each.
+    // Seed: 2 agents (so the scoped test can verify cross-agent isolation) + 1 tool on each.
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'agent', 'Agent 1')",
         &[_][]const u8{},
@@ -189,14 +177,11 @@ test "useCase: matches scoped by both tool_name AND agent_id (no cross-agent del
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Sanity: each agent has 1 tool. Seed: agent 1 -> 'bash',
-    // agent 2 -> 'read_file'.
+    // Sanity: each agent has 1 tool.
     try testing.expectEqual(@as(u32, 1), try countToolsForAgent(&ctx.db, alloc, "ws_item_1"));
     try testing.expectEqual(@as(u32, 1), try countToolsForAgent(&ctx.db, alloc, "ws_item_2"));
 
-    // Try to delete agent 2's 'read_file' but lie and say agent_id is
-    // ws_item_1. Should be a no-op because the WHERE clause requires
-    // both tool_name AND agent_id to match.
+    // Try to delete agent 2's 'read_file' but lie and say agent_id is ws_item_1.
     useCase(alloc, &ctx.db, .{ .agent_id = "ws_item_1", .tool_name = "read_file" }) catch {};
     try testing.expectEqual(@as(u32, 1), try countToolsForAgent(&ctx.db, alloc, "ws_item_1"));
     try testing.expectEqual(@as(u32, 1), try countToolsForAgent(&ctx.db, alloc, "ws_item_2"));

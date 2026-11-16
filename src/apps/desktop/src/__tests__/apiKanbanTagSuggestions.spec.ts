@@ -10,8 +10,6 @@ describe('getKanbanTagSuggestions', () => {
 
   beforeEach(() => {
     // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
-    // Without an active Pinia the call throws. setActivePinia(createPinia()) mounts a fresh store
-    // for each test so the toast path can run without crashing.
     setActivePinia(createPinia())
   })
 
@@ -25,9 +23,7 @@ describe('getKanbanTagSuggestions', () => {
       ok: status >= 200 && status < 300,
       status,
       json: () => Promise.resolve(body),
-      // text() is what apiFetch calls on every non-OK response to
-      // extract the body for the error notification — see the
-      // apiFetch-mock-must-include-text-and-pinia memory.
+      // text() is what apiFetch calls on every non-OK response to extract the body for the error notification — see the apiFetch-mock-must-include-text-and-pinia …
       text: () => Promise.resolve(JSON.stringify(body)),
     } as Response)
     global.fetch = fetchMock as unknown as typeof fetch

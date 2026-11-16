@@ -1,6 +1,4 @@
-/** Tests for the Task type + `addTask` params signature (post-Migration 084): `task_type` is
- * 'standard' | 'memory' (the per-task 'routine' value was deleted — routines are first-class
- * workspace items now), plus the `runRoutineItem` + `addRoutineItem` store actions. */
+/** Tests for the Task type + `addTask` params signature (post-Migration 084): `task_type` is 'standard' | 'memory' (the per-task 'routine' value was deleted — … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -76,9 +74,7 @@ describe('useWorkspacesStore.addTask — standard/memory only', () => {
     const ws = seedStore()
     createTaskMock.mockResolvedValueOnce({ id: 'task_std_2', name: 'Old way', task_type: 'standard' })
 
-    // Existing call sites pass {name, description} and rely on the
-    // legacy signature. The modified signature must accept this
-    // shape and forward taskType: 'standard'.
+    // Existing call sites pass {name, description} and rely on the legacy signature.
     await ws.addTask('ws_1', 'item_a', {
       name: 'Old way',
       description: 'legacy call',

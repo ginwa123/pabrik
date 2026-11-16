@@ -1,6 +1,4 @@
-//! The host-side client for `pabrik-vmd`: connect to its unix socket, send one
-//! framed request, decode one framed reply. Every method takes a workspace id
-//! and that action's arguments — a path never crosses this boundary.
+//! The host-side client for `pabrik-vmd`: connect to its unix socket, send one framed request, decode one framed reply.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -13,15 +11,11 @@ pub const Error = error{
     ProtocolViolation,
     Timeout,
     ServerFailure,
-    /// The caller's probe asked to stop while the reply was outstanding. The
-    /// socket is closed, so the daemon's job is left to its own `timeout_ms`;
-    /// nothing on the host waits for it.
+    /// The caller's probe asked to stop while the reply was outstanding.
     Cancelled,
 } || rpc.Error;
 
-/// A "should I stop waiting?" callback, erased the same way `shell.CancelHook`
-/// is. Kept local so this transport module stays independent of the tool
-/// modules (and of the import cycle that reaching back into them would make).
+/// A "should I stop waiting?" callback, erased the same way `shell.CancelHook` is.
 pub const CancelProbe = struct {
     ctx: *const anyopaque,
     is_cancelled: *const fn (ctx: *const anyopaque) bool,
@@ -34,16 +28,13 @@ pub const CancelProbe = struct {
 const unix_af: u32 = 1;
 const sock_stream: u32 = 1;
 const poll_slice_ms: i32 = 200;
-/// The same slice while a cancel probe is attached: 200 ms of latency on a
-/// Stop is felt, 50 ms is not, and a probe-less call keeps the long slice.
+/// The same slice while a cancel probe is attached: 200 ms of latency on a Stop is felt, 50 ms is not, and a probe-less call keeps the long slice.
 const cancel_poll_slice_ms: i32 = 50;
-/// Extra wall-clock beyond a request's own deadline before the client gives up
-/// on a reply the daemon should already have produced.
+/// Extra wall-clock beyond a request's own deadline before the client gives up on a reply the daemon should already have produced.
 pub const reply_guard_ms: u32 = 15_000;
 
 pub const failure_message_max = 256;
-/// A write is many guest round-trips and a walk is many frames, so both get a
-/// longer deadline than a call that does no work in the guest.
+/// A write is many guest round-trips and a walk is many frames, so both get a longer deadline than a call that does no work in the guest.
 pub const long_call_guard_ms: u32 = 120_000;
 
 pub const Failure = struct {
@@ -76,8 +67,7 @@ pub const WorkspaceState = struct {
     /// The size the VM boots with. 0 when the daemon predates this field.
     vcpus: u32 = 0,
     mem_mib: u32 = 0,
-    /// The workspace's disk image in MiB. 0 when the daemon predates the field,
-    /// or when the workspace has never booted and so has no image.
+    /// The workspace's disk image in MiB. 0 when the daemon predates the field, or when the workspace has never booted and so has no image.
     disk_mib: u32 = 0,
 
     pub fn deinit(self: WorkspaceState, allocator: std.mem.Allocator) void {
@@ -157,15 +147,13 @@ pub const WalkEntry = struct {
     kind: []u8,
 };
 
-/// A terminal the workspace's VM opened: the id the daemon minted (its position
-/// in the guest's tty table) and the pid of the shell it runs there.
+/// A terminal the workspace's VM opened: the id the daemon minted (its position in the guest's tty table) and the pid of the shell it runs there.
 pub const TtyOpened = struct {
     tty_id: i64,
     pid: i64,
 };
 
-/// A duplex the workspace's VM opened: the id the agent minted (its slot in
-/// the guest's duplex table) and the pid of the server it runs there.
+/// A duplex the workspace's VM opened: the id the agent minted (its slot in the guest's duplex table) and the pid of the server it runs there.
 pub const DuplexOpened = struct {
     duplex_id: i64,
     pid: i64,
@@ -183,8 +171,7 @@ pub const DuplexChunk = struct {
     }
 };
 
-/// One piece of a terminal's output. An empty `data` with `eof` means the
-/// terminal had nothing to say right now, which is not the same as an end.
+/// One piece of a terminal's output.
 pub const TtyChunk = struct {
     data: []u8,
     eof: bool,
@@ -214,12 +201,9 @@ pub const Client = struct {
     allocator: std.mem.Allocator,
     socket_path: []const u8,
     next_id: i64 = 1,
-    /// How long to wait for a reply beyond the request's own deadline. A
-    /// preflight probe sets it low: a wedged daemon must not stall a boot.
+    /// How long to wait for a reply beyond the request's own deadline.
     guard_ms: u32 = reply_guard_ms,
-    /// The daemon's own reason for refusing the most recent call. Copied, not
-    /// borrowed: the response it came from is released before the caller reads
-    /// it, and a message that outlives its arena is a dangling read.
+    /// The daemon's own reason for refusing the most recent call.
     last_failure: ?Failure = null,
 
     pub fn init(allocator: std.mem.Allocator, socket_path: []const u8) Client {
@@ -258,8 +242,6 @@ pub const Client = struct {
     }
 
     /// Change the size a workspace's machine runs with, and how big its disk is.
-    /// The daemon stops it and starts it again, so this returns when the guest is
-    /// up (or has failed, with its reason). `disk_mib` 0 leaves the image alone.
     pub fn resize(self: *Client, workspace_id: []const u8, vcpus: u32, mem_mib: u32, disk_mib: u32) !WorkspaceState {
         var response = try self.call(.{
             .action = .resize,
@@ -360,8 +342,7 @@ pub const Client = struct {
         };
     }
 
-    /// Write a whole file into the guest. The daemon pages it, so the body
-    /// this call carries is the only ceiling.
+    /// Write a whole file into the guest.
     pub fn writeFile(
         self: *Client,
         workspace_id: []const u8,
@@ -464,8 +445,7 @@ pub const Client = struct {
         return Error.ServerFailure;
     }
 
-    /// Start a detached command in the workspace's VM. The pid that comes back
-    /// is the GUEST's, and `log_path` is a path inside the guest.
+    /// Start a detached command in the workspace's VM.
     pub fn spawn(self: *Client, request: SpawnRequest) !SpawnOutcome {
         var response = try self.call(.{
             .action = .spawn,
@@ -551,8 +531,7 @@ pub const Client = struct {
         };
     }
 
-    /// Open a terminal inside the workspace's VM. `cwd_rel` is workspace
-    /// relative and the daemon joins it under the guest's `/workspace`.
+    /// Open a terminal inside the workspace's VM.
     pub fn ttyOpen(
         self: *Client,
         workspace_id: []const u8,
@@ -675,8 +654,7 @@ pub const Client = struct {
         };
     }
 
-    /// Open a duplex inside the workspace's VM: the agent forks the MCP server
-    /// and answers on the duplex's own vsock port.
+    /// Open a duplex inside the workspace's VM: the agent forks the MCP server and answers on the duplex's own vsock port.
     pub fn duplexOpen(
         self: *Client,
         workspace_id: []const u8,
@@ -773,8 +751,7 @@ pub const Client = struct {
         };
     }
 
-    /// The daemon's reason for the last `ServerFailure`, or null when the last
-    /// call did not reach a decision.
+    /// The daemon's reason for the last `ServerFailure`, or null when the last call did not reach a decision.
     pub fn lastFailure(self: *const Client) ?*const Failure {
         if (self.last_failure) |*f| return f;
         return null;
@@ -803,8 +780,7 @@ pub const Client = struct {
         return self.callCancelable(request, guard_ms, null);
     }
 
-    /// `call`, with the Stop button: a true answer closes the socket and
-    /// returns `Error.Cancelled`; the daemon keeps its own deadline.
+    /// `call`, with the Stop button: a true answer closes the socket and returns `Error.Cancelled`; the daemon keeps its own deadline.
     fn callCancelable(self: *Client, request: rpc.Request, guard_ms: u32, cancel_probe: ?CancelProbe) !rpc.OwnedResponse {
         const fd = try connectUnix(self.socket_path);
         defer _ = linux.close(fd);
@@ -843,9 +819,7 @@ const SockaddrUn = extern struct {
 };
 
 fn connectUnix(path: []const u8) !linux.fd_t {
-    // No pabrik-vmd exists off Linux (the VM runtime is Linux-only) and the raw
-    // `std.os.linux` syscalls below are meaningless on another kernel: issuing
-    // them there is signal SYS, not a failed connect.
+    // No pabrik-vmd exists off Linux (the VM runtime is Linux-only) and the raw `std.os.linux` syscalls below are meaningless on another kernel: issuing them there …
     if (comptime @import("builtin").os.tag != .linux) return Error.ConnectFailed;
     if (path.len + 1 > 108) return Error.ConnectFailed;
     const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
@@ -902,9 +876,7 @@ const StopRequested = struct {
 test "exec: a probe that asks to stop gives up on the reply instead of waiting out the guard" {
     if (@import("builtin").os.tag != .linux) return;
 
-    // A listener that never accepts: the connection sits in the backlog, so
-    // the reply never arrives and `call` would otherwise poll for the whole
-    // request deadline + guard. No thread is needed to prove the host's side.
+    // A listener that never accepts: the connection sits in the backlog, so the reply never arrives and `call` would otherwise poll for the whole request deadline + …
     var path_buf: [96]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buf, "/tmp/pabrik-vmd-cancel-{d}.sock", .{linux.getpid()});
     std.Io.Dir.cwd().deleteFile(std.testing.io, path) catch {};

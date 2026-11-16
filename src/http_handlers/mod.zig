@@ -1,6 +1,4 @@
-//! HTTP Handlers module - one file per endpoint for better organization This
-//! module exports all HTTP handlers used by the TUI HTTP server. Each handler
-//! is in its own file for maintainability.
+//! HTTP Handlers module - one file per endpoint for better organization This module exports all HTTP handlers used by the TUI HTTP server.
 
 const std = @import("std");
 pub const pabrikcore = @import("pabrikcore");
@@ -12,16 +10,12 @@ const loggermod = pabrikcore.loggermod;
 const config = pabrikcore.config;
 pub const http_response = pabrikcore.http_response;
 
-// =============================================================================
 // Re-exports
-// =============================================================================
 
 // Re-export all handlers
 pub const corsPreflightHandler = @import("cors.zig").corsPreflightHandler;
 pub const sessionCreateHandler = @import("session_create.zig").sessionCreateHandler;
-/// The session-create funnel without the transport. `pabrik headless run`
-/// calls this so a CLI turn and a browser turn execute the same code —
-/// see the doc comment on `useCase` for why that matters.
+/// The session-create funnel without the transport.
 pub const sessionCreateUseCase = @import("session_create.zig").useCase;
 pub const RequestSession = @import("session_create.zig").RequestSession;
 pub const sessionUpdateHandler = @import("session_update.zig").sessionUpdateHandler;
@@ -29,24 +23,19 @@ pub const sessionPinHandler = @import("session_pin.zig").sessionPinHandler;
 pub const sessionReorderPinnedHandler = @import("session_reorder_pinned.zig").sessionReorderPinnedHandler;
 pub const sessionMarkTouchedHandler = @import("session_mark_touched.zig").sessionMarkTouchedHandler;
 pub const sessionListHandler = @import("session_list.zig").sessionListHandler;
-// GET /api/llm/session/:session_id — single-session detail incl.
-// workspace_id (workspace-scoped sessions plan).
+// GET /api/llm/session/:session_id — single-session detail incl. workspace_id (workspace-scoped sessions plan).
 pub const sessionGetHandler = @import("session_get.zig").sessionGetHandler;
-// GET /api/llm/session/:session_id/usage — token usage + cache hit rate,
-// derived from one aggregate over `llm_history` (the `sessions` table
-// stores no token column).
+// GET /api/llm/session/:session_id/usage — token usage + cache hit rate, derived from one aggregate over `llm_history` (the `sessions` table stores no token …
 pub const sessionUsageHandler = @import("session_usage_get.zig").sessionUsageHandler;
 pub const sessionStopHandler = @import("session_stop.zig").sessionStopHandler;
-// POST /api/llm/session/:session_id/answer — resolve a pending question
-// question (Migration 087), rewrite its tool-result row and resume the run.
+// POST /api/llm/session/:session_id/answer — resolve a pending question question (Migration 087), rewrite its tool-result row and resume the run.
 pub const askUserAnswerHandler = @import("ask_user_answer.zig").askUserAnswerHandler;
 pub const sessionExistHandler = @import("session_exist.zig").sessionExistHandler;
 pub const sessionMessagesHandler = @import("session_messages_get.zig").sessionMessagesHandler;
 pub const messageDeleteHandler = @import("message_delete.zig").messageDeleteHandler;
 pub const messageRestoreHandler = @import("message_restore.zig").messageRestoreHandler;
 pub const messagePatchHandler = @import("message_patch.zig").messagePatchHandler;
-// The roster of a multi-agent chat: GET/POST/DELETE
-// /api/llm/session/:session_id/group...
+// The roster of a multi-agent chat: GET/POST/DELETE /api/llm/session/:session_id/group...
 pub const sessionGroupGetHandler = @import("session_group.zig").sessionGroupGetHandler;
 pub const sessionGroupMemberAddHandler = @import("session_group.zig").sessionGroupMemberAddHandler;
 pub const sessionGroupMemberRemoveHandler = @import("session_group.zig").sessionGroupMemberRemoveHandler;
@@ -58,11 +47,9 @@ pub const sessionGroupSetLeadUseCase = @import("session_group.zig").setLeadUseCa
 pub const sessionGroupEncodeRoster = @import("session_group.zig").encodeRoster;
 pub const sessionGroupFreeRoster = @import("session_group.zig").freeRoster;
 pub const SessionGroupRoster = @import("session_group.zig").Roster;
-// GET /api/llm/session/:session_id/stream — in-flight stream snapshot
-// (task_1787673548905_0 stream-resume-on-reselect).
+// GET /api/llm/session/:session_id/stream — in-flight stream snapshot (task_1787673548905_0 stream-resume-on-reselect).
 pub const streamGetHandler = @import("stream_get.zig").streamGetHandler;
-// GET /api/subagent/progress/:tool_call_id — live spawn-batch snapshot
-// (task_1788505292766_1 spawn-subagent-refresh-persist).
+// GET /api/subagent/progress/:tool_call_id — live spawn-batch snapshot (task_1788505292766_1 spawn-subagent-refresh-persist).
 pub const subAgentProgressGetHandler = @import("subagent_progress_get.zig").subAgentProgressGetHandler;
 pub const sessionLatestHandler = @import("session_latest.zig").sessionLatestHandler;
 pub const sseDisconnectHandler = @import("sse_disconnect.zig").sseDisconnectHandler;
@@ -89,8 +76,7 @@ pub const authIsAuthorized = @import("auth_middleware.zig").isAuthorized;
 // Workspace handlers (stub implementations for desktop app compatibility)
 pub const workspacesListHandler = @import("workspaces_list.zig").workspacesListHandler;
 pub const workspacesCreateHandler = @import("workspaces_create.zig").workspacesCreateHandler;
-// The single workspace-create path: id generation, the `position = MAX + 1`
-// INSERT, the `workspace_members` grant and the attached default project.
+// The single workspace-create path: id generation, the `position = MAX + 1` INSERT, the `workspace_members` grant and the attached default project.
 pub const workspace_provisioning = @import("workspace_provisioning.zig");
 pub const workspacesReorderHandler = @import("workspaces_reorder.zig").workspacesReorderHandler;
 pub const workspaceGetHandler = @import("workspace_get.zig").workspaceGetHandler;
@@ -100,8 +86,7 @@ pub const workspaceDeleteHandler = @import("workspace_delete.zig").workspaceDele
 pub const workspaceMembersListHandler = @import("workspace_members_list.zig").workspaceMembersListHandler;
 pub const workspaceMembersUpdateHandler = @import("workspace_members_update.zig").workspaceMembersUpdateHandler;
 pub const workspaceMembersRemoveHandler = @import("workspace_members_remove.zig").workspaceMembersRemoveHandler;
-// Invitations (Migration 123): the ask an invitee answers, and the only path
-// to a membership row that a human did not type into the members list.
+// Invitations (Migration 123): the ask an invitee answers, and the only path to a membership row that a human did not type into the members list.
 pub const workspaceInvitationsListHandler = @import("workspace_invitations_list.zig").workspaceInvitationsListHandler;
 pub const workspaceInvitationsCreateHandler = @import("workspace_invitations_create.zig").workspaceInvitationsCreateHandler;
 pub const workspaceInvitationsRevokeHandler = @import("workspace_invitations_revoke.zig").workspaceInvitationsRevokeHandler;
@@ -121,8 +106,7 @@ pub const workspace_items_delete = @import("workspace_items_delete.zig");
 pub const workspaceItemsDeleteHandler = @import("workspace_items_delete.zig").workspaceItemsDeleteHandler;
 pub const workspaceItemsCreateKanbanHandler = @import("workspace_items_create_kanban.zig").workspaceItemsCreateKanbanHandler;
 pub const workspaceItemsCreateDesignHandler = @import("design_items_create.zig").workspaceItemsCreateDesignHandler;
-// Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0) — 4th
-// workspace-item type. See workspace_items_create_agent.zig.
+// Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0) — 4th workspace-item type.
 pub const workspaceItemsCreateAgentHandler = @import("workspace_items_create_agent.zig").workspaceItemsCreateAgentHandler;
 pub const agentsGetHandler = @import("agents_get.zig").agentsGetHandler;
 pub const agentsUpdateHandler = @import("agents_update.zig").agentsUpdateHandler;
@@ -131,15 +115,11 @@ pub const agentKnowledgeCreateHandler = @import("agent_knowledge_create.zig").ag
 pub const agentKnowledgeUpdateHandler = @import("agent_knowledge_update.zig").agentKnowledgeUpdateHandler;
 pub const agentKnowledgeDeleteHandler = @import("agent_knowledge_delete.zig").agentKnowledgeDeleteHandler;
 pub const agentKnowledgeReorderHandler = @import("agent_knowledge_reorder.zig").agentKnowledgeReorderHandler;
-// Test-only SSE emit (dev_sse_emit.zig) — gated by PABRIK_TEST_SSE_EMIT=1,
-// returns 404 when the gate is off. Used by functional UI tests to drive
-// the chatview's SSE streaming path without a real LLM.
+// Test-only SSE emit (dev_sse_emit.zig) — gated by PABRIK_TEST_SSE_EMIT=1, returns 404 when the gate is off.
 pub const devSseEmitLlmHandler = @import("dev_sse_emit.zig").emitLlmHandler;
 pub const benchSeedSessionsHandler = @import("bench_seed.zig").benchSeedSessionsHandler;
 pub const benchSeedDocumentsHandler = @import("bench_seed.zig").benchSeedDocumentsHandler;
-// MCP server "Test" probe — fires a tools/list request against a candidate
-// config (without persisting anything) so the user can verify their command /
-// args / env / cwd (or URL + headers) before clicking Save in the MCP server
+// MCP server "Test" probe — fires a tools/list request against a candidate config (without persisting anything) so the user can verify their command /args / env …
 pub const agentToolsRegistryHandler = @import("agent_tools_registry.zig").agentToolsRegistryHandler;
 pub const agentToolsListHandler = @import("agent_tools_list.zig").agentToolsListHandler;
 pub const agentProfileInUseHandler = @import("agent_profile_in_use.zig").agentProfileInUseHandler;
@@ -166,8 +146,7 @@ pub const agentKanbanToolsListHandler = @import("agent_kanban_tools_list.zig").a
 pub const agentKanbanToolsCreateHandler = @import("agent_kanban_tools_create.zig").agentKanbanToolsCreateHandler;
 pub const agentKanbanToolsDeleteHandler = @import("agent_kanban_tools_delete.zig").agentKanbanToolsDeleteHandler;
 
-// Agent-Routines mirror (Migration 087, Routine mode task_1789505553300_1
-// option A — mirrors the agent-kanbans block above onto routines).
+// Agent-Routines mirror (Migration 087, Routine mode task_1789505553300_1 option A — mirrors the agent-kanbans block above onto routines).
 pub const agentRoutinesGetHandler = @import("agent_routines_get.zig").agentRoutinesGetHandler;
 pub const agentRoutinesUpdateHandler = @import("agent_routines_update.zig").agentRoutinesUpdateHandler;
 pub const agentRoutineKnowledgeCreateHandler = @import("agent_routine_knowledge_create.zig").agentRoutineKnowledgeCreateHandler;
@@ -182,17 +161,13 @@ pub const agentRoutineToolsListHandler = @import("agent_routine_tools_list.zig")
 pub const agentRoutineToolsCreateHandler = @import("agent_routine_tools_create.zig").agentRoutineToolsCreateHandler;
 pub const agentRoutineToolsDeleteHandler = @import("agent_routine_tools_delete.zig").agentRoutineToolsDeleteHandler;
 
-// Workspace-level routines (Migration 084, plan
-// 2026-09-10-workspace-items-routines) — first-class `item_type='routine'`
-// beside `agent`.
+// Workspace-level routines (Migration 084, plan 2026-09-10-workspace-items-routines) — first-class `item_type='routine'` beside `agent`.
 pub const workspaceItemsCreateRoutineHandler = @import("workspace_items_create_routine.zig").workspaceItemsCreateRoutineHandler;
 pub const workspaceRoutinesGetHandler = @import("workspace_routines_get.zig").workspaceRoutinesGetHandler;
 pub const workspaceRoutinesUpdateHandler = @import("workspace_routines_update.zig").workspaceRoutinesUpdateHandler;
 pub const workspaceRoutinesRunHandler = @import("workspace_routines_run.zig").workspaceRoutinesRunHandler;
 
-// Workspace-scoped documents (Migration 098). One file per HTTP verb,
-// each carrying its own private `useCase` + inline tests — the house
-// shape (mirrors the routines block above).
+// Workspace-scoped documents (Migration 098).
 pub const documentsListHandler = @import("documents_list.zig").documentsListHandler;
 pub const documentFoldersCreateHandler = @import("document_folders_create.zig").documentFoldersCreateHandler;
 pub const documentFoldersUpdateHandler = @import("document_folders_update.zig").documentFoldersUpdateHandler;
@@ -205,9 +180,7 @@ pub const documentsReorderHandler = @import("documents_reorder.zig").documentsRe
 pub const documentsExportHandler = @import("documents_export.zig").documentsExportHandler;
 pub const documentsExportZipHandler = @import("documents_export.zig").documentsExportZipHandler;
 
-// Workspace-scoped secrets (Migration 103). Same house shape as the documents
-// block above: one file per HTTP verb, each carrying its own private
-// `useCase` + inline tests.
+// Workspace-scoped secrets (Migration 103).
 pub const secretsListHandler = @import("secrets_list.zig").secretsListHandler;
 pub const secretsCreateHandler = @import("secrets_create.zig").secretsCreateHandler;
 pub const secretsUpdateHandler = @import("secrets_update.zig").secretsUpdateHandler;
@@ -217,55 +190,44 @@ pub const secretsRevealHandler = @import("secrets_reveal.zig").secretsRevealHand
 // Kanban column CRUD handlers (item_type='kanban' sub-resources).
 pub const kanbanColumnsListHandler = @import("kanban_columns_list.zig").kanbanColumnsListHandler;
 pub const kanbanColumnsCreateHandler = @import("kanban_columns_create.zig").kanbanColumnsCreateHandler;
-// POST /api/workspaces/:workspace_id/items/:item_id/kanban/tasks with
-// `mode` discriminator ('create' | 'create_and_run').
+// POST /api/workspaces/:workspace_id/items/:item_id/kanban/tasks with `mode` discriminator ('create' | 'create_and_run').
 pub const kanbanTasksCreateHandler = @import("kanban_tasks_create.zig").kanbanTasksCreateHandler;
 pub const kanbanColumnsUpdateHandler = @import("kanban_columns_update.zig").kanbanColumnsUpdateHandler;
 pub const kanbanColumnsDeleteHandler = @import("kanban_columns_delete.zig").kanbanColumnsDeleteHandler;
-// Copy a kanban's column spec (names + descriptions, preserving order) from a
-// source kanban to a target kanban. Tasks are NOT copied.
+// Copy a kanban's column spec (names + descriptions, preserving order) from a source kanban to a target kanban.
 pub const kanbanCopySpecHandler = @import("kanban_copy_spec.zig").kanbanCopySpecHandler;
 pub const tasksMoveHandler = @import("tasks_move.zig").tasksMoveHandler;
 pub const tasksListHandler = @import("tasks_list.zig").tasksListHandler;
 // Single-task GET endpoint.
 pub const tasksGetHandler = @import("tasks_get.zig").tasksGetHandler;
-// Lazy media fetch (media-flags change) — full `image_urls` / `video_urls`
-// only when `is_have_image` / `is_have_video` is true.
+// Lazy media fetch (media-flags change) — full `image_urls` / `video_urls` only when `is_have_image` / `is_have_video` is true.
 pub const tasksMediaHandler = @import("tasks_media.zig").tasksMediaHandler;
 // Kanban tag autocomplete endpoint.
-// Stub-only in this commit — Task 1.4 implements the useCase body.
 pub const kanbanTagsListHandler = @import("kanban_tags_list.zig").kanbanTagsListHandler;
 pub const tasksCreateHandler = @import("task_create.zig").tasksCreateHandler;
 pub const tasksUpdateHandler = @import("task_update.zig").tasksUpdateHandler;
 pub const tasksUpdateByIdHandler = @import("task_update.zig").tasksUpdateByIdHandler;
 pub const tasksDeleteHandler = @import("task_delete.zig").tasksDeleteHandler;
-// Use-case + outcome type live in the same file as the handler (DELETE
-// /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id).
+// Use-case + outcome type live in the same file as the handler (DELETE /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id).
 pub const deleteTaskUseCase = @import("task_delete.zig").deleteTaskUseCase;
 pub const TaskDeleteOutcome = @import("task_delete.zig").TaskDeleteOutcome;
 pub const taskPinHandler = @import("task_pin.zig").taskPinHandler;
-// Chunk 3 of kanban-task-notification-icon: thin handler that stamps
-// `last_human_touched_at` and emits the `kanban_task.human_touched`
-// SSE event.
+// Chunk 3 of kanban-task-notification-icon: thin handler that stamps `last_human_touched_at` and emits the `kanban_task.human_touched` SSE event.
 pub const taskMarkHumanTouchedHandler = @import("task_mark_human_touched.zig").taskMarkHumanTouchedHandler;
 pub const tasksReorderPinnedHandler = @import("tasks_reorder_pinned.zig").tasksReorderPinnedHandler;
-// Task attachment upload/download handlers — REMOVED 2026-08-06 (Migration
-// 069 / kanban-image-urls-column plan).
+// Task attachment upload/download handlers — REMOVED 2026-08-06 (Migration 069 / kanban-image-urls-column plan).
 pub const startAgentHandler = @import("start_agent.zig").startAgentHandler;
 // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
 pub const startAgentUseCase = @import("start_agent.zig").startAgentUseCase;
 pub const runAllAgentsHandler = @import("run_all_agents.zig").runAllAgentsHandler;
 pub const stopAllAgentsHandler = @import("stop_all_agents.zig").stopAllAgentsHandler;
-// NOTE: routinesListHandler deleted with the per-task `routines` table
-// (Migration 084, plan 2026-09-10-workspace-items-routines).
+// NOTE: routinesListHandler deleted with the per-task `routines` table (Migration 084, plan 2026-09-10-workspace-items-routines).
 
 // Worker API handlers
 pub const workerGetHandler = @import("worker_get.zig").workerGetHandler;
 pub const workerListHandler = @import("worker_list.zig").workerListHandler;
 
 // Unified SSE handler — single endpoint that fans out all event families.
-// Replaces the 5 dedicated routes registered in main.zig. See
-// unified_events_sse.zig for the channel grammar (?channels=).
 pub const unifiedEventsStreamHandler = @import("unified_events_sse.zig").unifiedEventsStreamHandler;
 
 // Skills API handlers Workspace-scoped skills (Migration 101).
@@ -286,9 +248,7 @@ pub const memoryCreateHandler = @import("memories_create.zig").memoryCreateHandl
 pub const memoryUpdateHandler = @import("memories_update.zig").memoryUpdateHandler;
 pub const memoryDeleteHandler = @import("memories_delete.zig").memoryDeleteHandler;
 
-// Local Memories API handlers — same CRUD shape as the global memories
-// handlers above but operating on `<cwd>/.pabrik/memories/` instead of
-// `~/.config/pabrik/memories/`.
+// Local Memories API handlers — same CRUD shape as the global memories handlers above but operating on `<cwd>/.pabrik/memories/` instead of …
 pub const localMemoriesListHandler = @import("local_memories_list.zig").localMemoriesListHandler;
 pub const localMemoryDetailHandler = @import("local_memories_detail.zig").localMemoryDetailHandler;
 pub const localMemoryCreateHandler = @import("local_memories_create.zig").localMemoryCreateHandler;
@@ -319,36 +279,25 @@ pub const gitPrDiffHandler = @import("git_pr_diff.zig").gitPrDiffHandler;
 pub const gitPrStatusHandler = @import("git_pr_status.zig").gitPrStatusHandler;
 pub const gitPrConflictsHandler = @import("git_pr_conflicts.zig").gitPrConflictsHandler;
 
-/// GET /api/git/pr/conversation — the change request's body, its comments
-/// and its review verdicts. Shares provider resolution with the status
-/// endpoint.
+/// GET /api/git/pr/conversation — the change request's body, its comments and its review verdicts.
 pub const gitPrConversationHandler = @import("git_pr_conversation.zig").gitPrConversationHandler;
-/// POST /api/git/pr/merge — merge a PR/MR through the forge CLI. Returns the
-/// status payload RE-READ after the command, because a zero exit code is not
-/// proof that anything merged (see git_pr_merge.zig).
+/// POST /api/git/pr/merge — merge a PR/MR through the forge CLI.
 pub const gitPrMergeHandler = @import("git_pr_merge.zig").gitPrMergeHandler;
 
-/// GET /api/git/pr/checks — CI jobs for a PR plus the steps inside each
-/// failed one. Registered next to the status handler because the two
-/// share provider resolution (`git_pr_status.resolveProvider`).
+/// GET /api/git/pr/checks — CI jobs for a PR plus the steps inside each failed one.
 pub const gitPrChecksHandler = @import("git_pr_checks.zig").gitPrChecksHandler;
-/// GET /api/git/pr/list — the repo's change requests (the kanban board's PR
-/// list). Shares provider resolution with the status endpoint.
+/// GET /api/git/pr/list — the repo's change requests (the kanban board's PR list).
 pub const gitPrListHandler = @import("git_pr_list.zig").gitPrListHandler;
-/// POST /api/git/pr/close — close a PR/MR through the forge CLI. Mutating,
-/// so it is only ever reachable authenticated; the answer is a re-read of the
-/// forge's status, never the CLI's exit code.
+/// POST /api/git/pr/close — close a PR/MR through the forge CLI.
 pub const gitPrCloseHandler = @import("git_pr_close.zig").gitPrCloseHandler;
 
 // Queue messages handlers
 pub const queueMessagesGetHandler = @import("queue_messages_get.zig").queueMessagesGetHandler;
-// Session background-process handlers — list + log tail for
-// `command background=true` rows (no new SSE event, no migration).
+// Session background-process handlers — list + log tail for `command background=true` rows (no new SSE event, no migration).
 pub const backgroundProcessesListHandler = @import("background_processes_list.zig").backgroundProcessesListHandler;
 pub const backgroundProcessLogGetHandler = @import("background_process_log_get.zig").backgroundProcessLogGetHandler;
 
-// Right-sidebar terminal (PTY over REST + poll — no WebSocket, no
-// kabelweb changes). In-memory session registry, no migration.
+// Right-sidebar terminal (PTY over REST + poll — no WebSocket, no kabelweb changes).
 pub const terminalCreateHandler = @import("terminal_create.zig").terminalCreateHandler;
 pub const terminalInputHandler = @import("terminal_input.zig").terminalInputHandler;
 pub const terminalOutputHandler = @import("terminal_output.zig").terminalOutputHandler;
@@ -357,8 +306,7 @@ pub const terminalDeleteHandler = @import("terminal_delete.zig").terminalDeleteH
 pub const terminalListHandler = @import("terminal_list.zig").terminalListHandler;
 pub const terminalWsHandler = @import("terminal_ws.zig").terminalWsHandler;
 
-// Design-mode HTTP handlers (item_type='design') — v6 of the design-mode
-// redesign.for the full route table.
+// Design-mode HTTP handlers (item_type='design') — v6 of the design-mode redesign.for the full route table.
 pub const designPagesListHandler = @import("design_pages_list.zig").designPagesListHandler;
 pub const designPagesCreateHandler = @import("design_pages_create.zig").designPagesCreateHandler;
 pub const designPagesGetHandler = @import("design_pages_get.zig").designPagesGetHandler;
@@ -369,27 +317,19 @@ pub const designElementsUpdateHandler = @import("design_elements_update.zig").de
 pub const designElementsDeleteHandler = @import("design_elements_delete.zig").designElementsDeleteHandler;
 pub const designElementsHtmlGetHandler = @import("design_elements_html_get.zig").designElementsHtmlGetHandler;
 pub const designElementsHtmlUpdateHandler = @import("design_elements_html_update.zig").designElementsHtmlUpdateHandler;
-// DEPRECATED — PATCH .../geometry. Use POST .../translate (move) or
-// POST .../resize (resize) instead. Kept for back-compat with
-// any client still wired to the old single endpoint.
+// DEPRECATED — PATCH .../geometry.
 pub const designElementsGeometryUpdateHandler = @import("design_elements_geometry_update.zig").designElementsGeometryUpdateHandler;
-// DEPRECATED — POST .../geometry-batch. Replaced by POST .../move-batch
-// (server-side cascade) for multi-element translation. Kept for
-// back-compat with any client still wired to the old endpoint.
+// DEPRECATED — POST .../geometry-batch.
 pub const designElementsGeometryBatchHandler = @import("design_elements_geometry_batch.zig").designElementsGeometryBatchHandler;
-// NEW (2026-08-06) — POST .../translate. Single-element move with
-// delta. Cascades to descendants when the element is a group/frame.
+// NEW (2026-08-06) — POST .../translate.
 pub const designElementsTranslateHandler = @import("design_elements_translate.zig").designElementsTranslateHandler;
 pub const designElementsTranslateUseCase = @import("design_elements_translate.zig").useCase;
 pub const designElementsTranslateError = @import("design_elements_translate.zig").DesignElementTranslateError;
-// NEW (2026-08-06) — POST .../resize. Single-element resize with absolute
-// x/y/width/height/rotation. No cascade (resize is per-element by Figma
-// convention).
+// NEW (2026-08-06) — POST .../resize.
 pub const designElementsResizeHandler = @import("design_elements_resize.zig").designElementsResizeHandler;
 pub const designElementsResizeUseCase = @import("design_elements_resize.zig").useCase;
 pub const designElementsResizeError = @import("design_elements_resize.zig").DesignElementResizeError;
-// Group 2+ elements into a new `group`/`frame` parent. POST
-// /api/workspaces/:w/items/:i/design/pages/:p/elements/group
+// Group 2+ elements into a new `group`/`frame` parent.
 pub const designElementsGroupHandler = @import("design_elements_group.zig").designElementsGroupHandler;
 pub const designElementsReorderHandler = @import("design_elements_reorder.zig").designElementsReorderHandler;
 pub const designElementsReparentBatchHandler = @import("design_elements_reparent.zig").designElementsReparentBatchHandler;
@@ -402,15 +342,13 @@ pub const designElementsUngroupHandler = @import("design_elements_ungroup.zig").
 // Session to client IDs monitoring
 pub const sessionToClientIdsHandler = @import("session_to_client_ids.zig").sessionToClientIdsHandler;
 
-// Debug/inspection endpoint — returns the rendered system prompt for a
-// session. See `system_prompt_get.zig` for the full contract.
+// Debug/inspection endpoint — returns the rendered system prompt for a session.
 pub const systemPromptGetHandler = @import("system_prompt_get.zig").systemPromptGetHandler;
 
 // Pabrik config handlers
 pub const pabrikConfigGetHandler = @import("pabrik_config_get.zig").pabrikConfigGetHandler;
 
-// models.dev catalog (Migration 106): the picker's data, the profile dialog's
-// one resolve call, and a manual refresh.
+// models.dev catalog (Migration 106): the picker's data, the profile dialog's one resolve call, and a manual refresh.
 pub const modelsCatalogHandler = @import("models_catalog.zig").modelsCatalogHandler;
 pub const modelsResolveHandler = @import("models_catalog.zig").modelsResolveHandler;
 pub const modelsRefreshHandler = @import("models_catalog.zig").modelsRefreshHandler;
@@ -427,22 +365,16 @@ pub const removeProfileFromUserConfig = @import("pabrik_config_profile_delete.zi
 pub const ConfigInput = @import("pabrik_config_put.zig").ConfigInput;
 pub const parseConfigInput = @import("pabrik_config_put.zig").parseConfigInput;
 
-// OS notification test handler — fires a real OS notification so the user can
-// verify their system can display them without running a full LLM stream.
+// OS notification test handler — fires a real OS notification so the user can verify their system can display them without running a full LLM stream.
 
-// Browser-mode (web launch) status — read-only report of the
-// `web_launch_enabled` flag + live bound port/URL.
+// Browser-mode (web launch) status — read-only report of the `web_launch_enabled` flag + live bound port/URL.
 pub const webStatusHandler = @import("web_status.zig").webStatusHandler;
 
-// Frontend error log handlers — persist and query the window.error /
-// unhandledrejection / console.error / console.warn events in the `logs`
-// table.
+// Frontend error log handlers — persist and query the window.error /unhandledrejection / console.error / console.warn events in the `logs` table.
 pub const frontendLogPostHandler = @import("frontend_log_post.zig").frontendLogPostHandler;
 pub const frontendLogGetHandler = @import("frontend_log_get.zig").frontendLogGetHandler;
 
-// =============================================================================
 // Shared Types & Helpers
-// =============================================================================
 
 /// Response format types
 pub const ResponseFormat = enum { json, xml };
@@ -486,15 +418,11 @@ pub const SseStreamCtx = struct {
     session_id: []const u8,
 };
 
-// ===== Tests merged from notify_test.zig (2026-09-29 flatten) ===== This
-// file held no `test` blocks — it is the OS-notification probe endpoint whose
-// name merely ends in `_test`.
+// ===== Tests merged from notify_test.zig (2026-09-29 flatten) =====
 
 const notifications = pabrikcore.notifications_mod;
 
-/// POST /api/notify/test Fires a fixed test OS notification so the user can
-/// verify their system can display notifications without running a full LLM
-/// stream.
+/// POST /api/notify/test Fires a fixed test OS notification so the user can verify their system can display notifications without running a full LLM stream.
 pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     _ = req;
     const allocator = ctx.allocator;
@@ -518,9 +446,7 @@ pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 
 // HTTP handler + use-case for `POST /api/llm/test`.
 
-// kabelweb is the unified web-framework package imported
-// directly via `@import("kabelweb").client` (see root.zig:509),
-// not a member of `pabrikcore`.
+// kabelweb is the unified web-framework package imported directly via `@import("kabelweb").client` (see root.zig:509), not a member of `pabrikcore`.
 const custom_http_client = @import("kabelweb").client;
 const helpers = @import("helpers");
 const claude_code = @import("../modules/agent/loop/claude_code.zig");
@@ -534,36 +460,29 @@ const TEST_LLM_TIMEOUT_MS: u32 = 15_000;
 /// Output budget for a probe.
 const PROBE_MAX_OUTPUT_TOKENS: u32 = 2048;
 
-/// Budget for the single retry after the provider says the first probe ran
-/// out of output mid-reasoning.
+/// Budget for the single retry after the provider says the first probe ran out of output mid-reasoning.
 const PROBE_MAX_OUTPUT_TOKENS_RETRY: u32 = 8192;
 
-/// The probe prompt. Short + deterministic so the modal can show the
-/// reply verbatim as proof the model answered.
+/// The probe prompt.
 const PROBE_PROMPT: []const u8 = "Reply with exactly: ok";
 
-/// Max reply bytes carried on the wire. The probe asks for a one-word
-/// answer; 200 bytes is plenty and keeps the modal payload small.
+/// Max reply bytes carried on the wire.
 const MAX_REPLY_LEN: usize = 200;
 
 /// Stable session id sent as `x-opencode-session` on every Test probe.
 const PROBE_SESSION_ID: []const u8 = "pabrik-llm-test-probe";
 
-/// Candidate profile fields. Mirrors the frontend's `LlmTestRequest` shape in
-/// `src/apps/desktop/src/api/index.ts`.
+/// Candidate profile fields.
 const LlmTestRequest = struct {
     model: []const u8 = "",
     base_url: []const u8 = "",
     api_key: []const u8 = "",
     url_style: []const u8 = "openai",
-    /// Transport discriminator, mirroring a profile's `backend` key: `"http"`
-    /// (default) | `"claude-code"` | `"opencode"`.
+    /// Transport discriminator, mirroring a profile's `backend` key: `"http"` (default) | `"claude-code"` | `"opencode"`.
     backend: []const u8 = "http",
-    /// Claude Code only: `CLAUDE_CONFIG_DIR`, so the probe checks the same
-    /// login the run would use.
+    /// Claude Code only: `CLAUDE_CONFIG_DIR`, so the probe checks the same login the run would use.
     config_dir: []const u8 = "",
-    /// The workspace whose secrets `api_key` may reference. Empty means the
-    /// request named none, so a placeholder cannot be resolved.
+    /// The workspace whose secrets `api_key` may reference.
     workspace_id: []const u8 = "",
 };
 
@@ -579,8 +498,7 @@ const LlmTestError = error{
     HttpError,
     JsonParseFailed,
     InvalidResponse,
-    /// The provider returned no visible text AND said it stopped because the
-    /// output budget ran out.
+    /// The provider returned no visible text AND said it stopped because the output budget ran out.
     ReasoningBudgetExhausted,
     OutOfMemory,
 };
@@ -593,8 +511,7 @@ const LlmTestOutcome = struct {
 
 // ─── Pure helpers (unit-testable, no network) ───────────────────────────────
 
-/// Validate the candidate without touching the network. Empty api_key is
-/// ALLOWED (keyless local endpoints + stub upstreams in tests).
+/// Validate the candidate without touching the network.
 fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
     if (req.model.len == 0) return LlmTestError.MissingModel;
 
@@ -611,8 +528,7 @@ fn llmTestValidate(req: LlmTestRequest) LlmTestError!void {
         return LlmTestError.UnsupportedStyle;
 }
 
-/// Build the minimal probe body for the request's url_style, asking for
-/// `max_output_tokens` tokens. Caller owns the returned slice.
+/// Build the minimal probe body for the request's url_style, asking for `max_output_tokens` tokens.
 fn llmTestBuildProbeBody(
     allocator: std.mem.Allocator,
     req: LlmTestRequest,
@@ -639,8 +555,7 @@ fn llmTestBuildProbeBody(
     ) catch return LlmTestError.OutOfMemory;
 }
 
-/// Extract the assistant reply text from a probe response body, per
-/// url_style. Returns an owned slice truncated to MAX_REPLY_LEN.
+/// Extract the assistant reply text from a probe response body, per url_style.
 fn llmTestExtractReply(
     allocator: std.mem.Allocator,
     url_style: []const u8,
@@ -663,18 +578,14 @@ fn llmTestExtractReply(
     };
 
     const trimmed = std.mem.trim(u8, reply, " \t\r\n");
-    // A truncated reasoning-only reply can still carry an empty text block
-    // (`content: ""` on the chat-completions style), which is the same
-    // failure wearing different JSON.
+    // A truncated reasoning-only reply can still carry an empty text block (`content: ""` on the chat-completions style), which is the same failure wearing different …
     if (trimmed.len == 0 and llmTestBudgetExhausted(root, url_style))
         return LlmTestError.ReasoningBudgetExhausted;
     const capped = trimmed[0..@min(trimmed.len, MAX_REPLY_LEN)];
     return allocator.dupe(u8, capped) catch return LlmTestError.OutOfMemory;
 }
 
-/// The assistant reply text in a probe response, or null when the body
-/// carries none — a wrong url_style, an error envelope, or a reasoning-only
-/// response where the model never produced a text item. anthropic:
+/// The assistant reply text in a probe response, or null when the body carries none — a wrong url_style, an error envelope, or a reasoning-only response where the …
 fn llmTestFindReplyText(root: std.json.ObjectMap, url_style: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, url_style, "anthropic")) {
         const content_v = root.get("content") orelse return null;
@@ -759,9 +670,7 @@ fn llmTestFindReplyText(root: std.json.ObjectMap, url_style: []const u8) ?[]cons
     };
 }
 
-/// True when the provider says it stopped because the output budget ran out,
-/// i.e. the model may have spent every allowed token on hidden reasoning
-/// before writing any visible text. openai-response: `"status": "incomplete"`
+/// True when the provider says it stopped because the output budget ran out, i.e. the model may have spent every allowed token on hidden reasoning before writing …
 fn llmTestBudgetExhausted(root: std.json.ObjectMap, url_style: []const u8) bool {
     if (std.mem.eql(u8, url_style, "openai-response")) {
         const status = switch (root.get("status") orelse return false) {
@@ -808,8 +717,7 @@ fn llmTestBudgetExhausted(root: std.json.ObjectMap, url_style: []const u8) bool 
 
 // ─── Use-case (network) ────────────────────────────────────────────────────
 
-/// Probe a CLI backend profile by running `<binary> --version`. Goes through
-/// `helpers.run_captured` — the only sanctioned spawn path in this codebase.
+/// Probe a CLI backend profile by running `<binary> --version`.
 fn llmTestProbeCli(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -835,9 +743,7 @@ fn llmTestProbeCli(
         argv,
         .{ .timeout_ms = TEST_LLM_TIMEOUT_MS },
     ) catch |err| {
-        // Spawn-level failure is the normal "not installed" case, not an
-        // exceptional one: report it as a readable message rather than
-        // surfacing a bare error name the modal cannot explain.
+        // Spawn-level failure is the normal "not installed" case, not an exceptional one: report it as a readable message rather than surfacing a bare error name the …
         logger.warnFmt("[llm_test] {s} probe could not spawn '{s}': {s}", .{ backend_label, binary, @errorName(err) });
         const reply = describe(allocator, binary, true, false, "", "") catch
             return LlmTestError.OutOfMemory;
@@ -890,9 +796,7 @@ fn llmTestProbeClaudeCode(
     );
 }
 
-/// Probe an OpenCode profile by making the CLI answer a real prompt with the
-/// profile's own model — a `--version` check says nothing about whether the
-/// model routes, and the modal exists to answer exactly that.
+/// Probe an OpenCode profile by making the CLI answer a real prompt with the profile's own model — a `--version` check says nothing about whether the model …
 fn llmTestProbeOpencode(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -989,8 +893,7 @@ fn llmTestProbeOpencode(
     };
 }
 
-/// Probe the candidate, retrying once with a bigger output budget when the
-/// provider reports the first attempt was cut off mid-reasoning.
+/// Probe the candidate, retrying once with a bigger output budget when the provider reports the first attempt was cut off mid-reasoning.
 fn llmTestUseCase(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -1000,8 +903,7 @@ fn llmTestUseCase(
 ) LlmTestError!LlmTestOutcome {
     try llmTestValidate(req);
 
-    // Claude Code is a local CLI backend, not an HTTP endpoint: there is no
-    // POST to make.
+    // Claude Code is a local CLI backend, not an HTTP endpoint: there is no POST to make.
     if (std.mem.eql(u8, req.backend, "claude-code")) {
         return llmTestProbeClaudeCode(allocator, logger, io, req);
     }
@@ -1025,9 +927,7 @@ fn llmTestUseCase(
             "[llm_test] output budget exhausted by reasoning; retrying with {d} tokens",
             .{PROBE_MAX_OUTPUT_TOKENS_RETRY},
         );
-        // The first attempt left a body snippet in `out_err_detail`; it
-        // describes an attempt we are about to supersede, and the retry owns
-        // the outcome from here.
+        // The first attempt left a body snippet in `out_err_detail`; it describes an attempt we are about to supersede, and the retry owns the outcome from here.
         if (out_err_detail.*) |detail| {
             allocator.free(detail);
             out_err_detail.* = null;
@@ -1043,8 +943,7 @@ fn llmTestUseCase(
     };
 }
 
-/// One probe: build the body at `max_output_tokens`, POST it, decode the
-/// reply. Owns nothing the caller must free except the outcome's reply.
+/// One probe: build the body at `max_output_tokens`, POST it, decode the reply.
 fn llmTestProbeOnce(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -1056,8 +955,7 @@ fn llmTestProbeOnce(
     const body = try llmTestBuildProbeBody(allocator, req, max_output_tokens);
     defer allocator.free(body);
 
-    // Auth header buffer: only the Bearer/x-api-key value is owned;
-    // names + static values are string literals.
+    // Auth header buffer: only the Bearer/x-api-key value is owned; names + static values are string literals.
     var auth_value: ?[]u8 = null;
     defer if (auth_value) |v| allocator.free(v);
 
@@ -1078,8 +976,7 @@ fn llmTestProbeOnce(
         header_buf[header_count] = .{ .name = "Authorization", .value = auth_value.? };
         header_count += 1;
     }
-    // Console Go / Zen routing requires `x-opencode-session` on every request
-    // (see PROBE_SESSION_ID).
+    // Console Go / Zen routing requires `x-opencode-session` on every request (see PROBE_SESSION_ID).
     header_buf[header_count] = .{ .name = "x-opencode-session", .value = PROBE_SESSION_ID };
     header_count += 1;
 
@@ -1100,9 +997,7 @@ fn llmTestProbeOnce(
 
     if (result.status_code != 200) {
         logger.warnFmt("[llm_test] upstream returned status {d}", .{result.status_code});
-        // Surface the server's error body (e.g. 401 `{"error": ...}`)
-        // so the modal shows WHY instead of a generic message.
-        // Truncated to 200 bytes to keep the wire small.
+        // Surface the server's error body (e.g. 401 `{"error": ...}`) so the modal shows WHY instead of a generic message.
         const snippet_len: usize = @min(result.body.len, 200);
         out_err_detail.* = std.fmt.allocPrint(
             allocator,
@@ -1115,9 +1010,7 @@ fn llmTestProbeOnce(
     const reply = llmTestExtractReply(allocator, req.url_style, result.body) catch |err| {
         logger.warnFmt("[llm_test] reply parse failed: {s}", .{@errorName(err)});
         if (err == error.JsonParseFailed) return LlmTestError.JsonParseFailed;
-        // Include a body snippet: both a wrong-style success (an HTML login
-        // page from a bad base_url) and a reasoning-only truncation are
-        // diagnosable from the bytes the provider actually sent.
+        // Include a body snippet: both a wrong-style success (an HTML login page from a bad base_url) and a reasoning-only truncation are diagnosable from the bytes the …
         const snippet_len: usize = @min(result.body.len, 200);
         out_err_detail.* = std.fmt.allocPrint(
             allocator,
@@ -1219,9 +1112,7 @@ pub fn llmTestHandler(
             error.HttpError => "LLM server returned an error status",
             error.JsonParseFailed => "LLM server response was not valid JSON",
             error.InvalidResponse => "LLM server response did not contain a reply",
-            // Not the same failure: the body WAS a valid reply, the model just
-            // never got to write any text because its hidden reasoning used up
-            // the whole output budget. "Your key is broken" would be a lie.
+            // Not the same failure: the body WAS a valid reply, the model just never got to write any text because its hidden reasoning used up the whole output budget.
             error.ReasoningBudgetExhausted => "model returned only reasoning and no reply text — the output budget ran out",
             error.OutOfMemory => "out of memory",
         };
@@ -1240,8 +1131,7 @@ pub fn llmTestHandler(
         return res.jsonResponse(.{ .status_code = 200, .data = data });
     };
     defer allocator.free(outcome.reply);
-    // The provider's reply is somebody else's text: put the placeholder back
-    // over any credential this probe resolved, so the modal cannot echo one.
+    // The provider's reply is somebody else's text: put the placeholder back over any credential this probe resolved, so the modal cannot echo one.
     const reply = secrets_substitution.redactOutput(allocator, outcome.reply, credentials.resolved) catch
         try allocator.dupe(u8, outcome.reply);
     defer allocator.free(reply);
@@ -1304,8 +1194,7 @@ test "llm_test validate: claude-code backend needs model only, no base_url" {
 }
 
 test "llm_test validate: url_style is irrelevant to the claude-code backend" {
-    // Claude Code never builds a wire body, so a garbage url_style must not
-    // fail the probe — the discriminator is `backend`, not `url_style`.
+    // Claude Code never builds a wire body, so a garbage url_style must not fail the probe — the discriminator is `backend`, not `url_style`.
     const req: LlmTestRequest = .{
         .model = "sonnet",
         .base_url = "not-a-url",
@@ -1316,9 +1205,7 @@ test "llm_test validate: url_style is irrelevant to the claude-code backend" {
 }
 
 test "llm_test validate: claude-code in url_style is just an unknown style" {
-    // The old overload is gone: with backend=http (the default), a
-    // "claude-code" url_style is an unsupported WIRE FORMAT, and base_url is
-    // still required.
+    // The old overload is gone: with backend=http (the default), a "claude-code" url_style is an unsupported WIRE FORMAT, and base_url is still required.
     const req: LlmTestRequest = .{
         .model = "m",
         .base_url = "http://127.0.0.1:9/x",
@@ -1335,8 +1222,7 @@ test "llm_test validate: opencode backend needs model only, no base_url" {
 }
 
 test "llm_test validate: url_style is irrelevant to the opencode backend" {
-    // OpenCode never builds a wire body, so a garbage url_style must not
-    // fail the probe — the discriminator is `backend`, not `url_style`.
+    // OpenCode never builds a wire body, so a garbage url_style must not fail the probe — the discriminator is `backend`, not `url_style`.
     const req: LlmTestRequest = .{
         .model = "opencode-go/deepseek-flash",
         .base_url = "not-a-url",
@@ -1371,9 +1257,7 @@ test "llm_test buildProbeBody: anthropic body uses max_tokens + messages" {
     try testing.expect(std.mem.indexOf(u8, body, PROBE_PROMPT) != null);
 }
 
-// The budget is the fix for "Test says the profile is broken, the profile
-// works in a chat turn": the output budget is shared with the model's hidden
-// reasoning tokens, so a handful of them is spent thinking and the probe gets
+// The budget is the fix for "Test says the profile is broken, the profile works in a chat turn": the output budget is shared with the model's hidden reasoning …
 test "llm_test buildProbeBody: the requested budget leaves room for reasoning (all styles)" {
     const styles = [_][]const u8{ "openai", "openai-response", "anthropic" };
     const budgets = [_]u32{ PROBE_MAX_OUTPUT_TOKENS, PROBE_MAX_OUTPUT_TOKENS_RETRY };
@@ -1394,22 +1278,19 @@ test "llm_test buildProbeBody: the requested budget leaves room for reasoning (a
                 .integer => |i| i,
                 else => return error.TestUnexpectedResult,
             };
-            // 16 was the old value; anything the model could spend entirely on
-            // thinking reproduces the bug.
+            // 16 was the old value; anything the model could spend entirely on thinking reproduces the bug.
             try testing.expect(value > 100);
             try testing.expectEqual(@as(i64, @intCast(budget)), value);
         }
     }
 }
 
-// The retry only helps if it offers MORE room; a second identical probe is a
-// second wasted call.
+// The retry only helps if it offers MORE room; a second identical probe is a second wasted call.
 test "llm_test retry budget is bigger than the first probe's" {
     try testing.expect(PROBE_MAX_OUTPUT_TOKENS_RETRY > PROBE_MAX_OUTPUT_TOKENS);
 }
 
-// Regression, in the unit layer: the exact body the Test button got back from
-// a Responses gateway whose model spent the whole 16-token budget thinking.
+// Regression, in the unit layer: the exact body the Test button got back from a Responses gateway whose model spent the whole 16-token budget thinking.
 test "llm_test extractReply: reasoning-only truncation is a budget exhaustion, not a missing reply" {
     const raw =
         \\{"id":"resp_1","object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"rs_1","type":"reasoning","summary":[]}]}
@@ -1420,8 +1301,7 @@ test "llm_test extractReply: reasoning-only truncation is a budget exhaustion, n
     );
 }
 
-// An `incomplete` response with no stated reason is still a truncation: the
-// signal we need to stay silent is a DIFFERENT reason, not an absent one.
+// An `incomplete` response with no stated reason is still a truncation: the signal we need to stay silent is a DIFFERENT reason, not an absent one.
 test "llm_test extractReply: incomplete with no reason is still a budget exhaustion" {
     const raw =
         \\{"id":"resp_1","object":"response","status":"incomplete","output":[{"id":"rs_1","type":"reasoning"}]}
@@ -1432,8 +1312,7 @@ test "llm_test extractReply: incomplete with no reason is still a budget exhaust
     );
 }
 
-// A different incomplete reason (content filter) is NOT a budget problem, and
-// must not be retried as one.
+// A different incomplete reason (content filter) is NOT a budget problem, and must not be retried as one.
 test "llm_test extractReply: incomplete from a content filter is not a budget exhaustion" {
     const raw =
         \\{"id":"resp_1","object":"response","status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}
@@ -1462,8 +1341,7 @@ test "llm_test extractReply: truncated non-responses styles report a budget exha
     );
 }
 
-// A plain "there is no reply in here" body is unchanged: an error envelope or
-// a wrong-style success still reads as `InvalidResponse`.
+// A plain "there is no reply in here" body is unchanged: an error envelope or a wrong-style success still reads as `InvalidResponse`.
 test "llm_test extractReply: a body with no reply and no truncation stays InvalidResponse" {
     const raw =
         \\{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
@@ -1515,31 +1393,25 @@ test "llm_test extractReply: rejects non-JSON body" {
     );
 }
 
-// ===== Tests merged from mcp_test.zig (2026-09-29 flatten) ===== `POST
-// /api/mcp/test` — try a candidate MCP server config WITHOUT saving.
+// ===== Tests merged from mcp_test.zig (2026-09-29 flatten) =====
 
 const builtin = @import("builtin");
 const mcp_stdio = pabrikcore.mcp_stdio;
 const tool_models = pabrikcore.tool_models;
 
-/// Per-call deadline for HTTP probes (libcurl has OS-level timeout
-/// support). See the "Timeout model" comment at the top.
+/// Per-call deadline for HTTP probes (libcurl has OS-level timeout support).
 const TEST_HTTP_TIMEOUT_MS: u32 = 10_000;
 
-/// Per-call deadline for stdio probes (mcp_stdio.zig polls this between bytes
-/// read).
+/// Per-call deadline for stdio probes (mcp_stdio.zig polls this between bytes read).
 const TEST_STDIO_TIMEOUT_MS: u64 = 10_000;
 
 /// Maximum attempts for the stdio probe.
 const TEST_STDIO_MAX_ATTEMPTS: u8 = 20;
 
-/// Sleep between cold-start retries. 500 ms gives the SDK enough time to
-/// finish `mcp.connect(transport)` + attach its `'data'` listener on the
-/// fresh spawn; small enough that the worst-case user latency is ~2s (cold
+/// Sleep between cold-start retries. 500 ms gives the SDK enough time to finish `mcp.connect(transport)` + attach its `'data'` listener on the fresh spawn; small …
 const TEST_STDIO_RETRY_DELAY_MS: i64 = 500;
 
-/// Tagged request body. Mirrors the frontend's `McpServerModalValue`
-/// shape minus the `name` field (we don't persist anything here).
+/// Tagged request body.
 const McpTestRequest = struct {
     transport: []const u8 = "",
     /// stdio-only fields
@@ -1550,8 +1422,7 @@ const McpTestRequest = struct {
     /// http-only fields
     url: []const u8 = "",
     headers: ?std.json.Value = null,
-    /// The workspace whose secrets the headers and env may reference. Empty
-    /// means the request named none, so a placeholder cannot be resolved.
+    /// The workspace whose secrets the headers and env may reference.
     workspace_id: []const u8 = "",
 };
 
@@ -1583,8 +1454,7 @@ const McpTestOutcome = struct {
     tools: []const McpToolPreview,
 };
 
-/// Try a single MCP server candidate. Returns either the parsed tools (on
-/// success) or a `McpTestError`.
+/// Try a single MCP server candidate.
 fn mcpTestUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1606,8 +1476,7 @@ fn mcpTestUseCase(
 
 // ─── stdio ────────────────────────────────────────────────────────────────
 
-/// Try a stdio candidate: spawn the child, send `tools/list` as raw NDJSON,
-/// parse the response.
+/// Try a stdio candidate: spawn the child, send `tools/list` as raw NDJSON, parse the response.
 fn mcpTestStdio(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1655,8 +1524,7 @@ fn mcpTestStdio(
     // Via the singleton struct (see root.zig `mcpStdioRegistry`).
     const reg = pabrikcore.mcpStdioRegistry(allocator);
 
-    // Build the MCP handshake + tools/list bodies once. The SDK expects
-    // line-delimited JSON on stdin. Wire sequence (per MCP spec): 1.
+    // Build the MCP handshake + tools/list bodies once.
     const init_body = std.fmt.allocPrint(
         allocator,
         "{{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"initialize\",\"params\":{{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{{}},\"clientInfo\":{{\"name\":\"pabrik-mcp-test\",\"version\":\"0.0.1\"}}}}}}\n",
@@ -1676,15 +1544,12 @@ fn mcpTestStdio(
     ) catch return McpTestError.OutOfMemory;
     defer allocator.free(tools_list_body);
 
-    // Cold-start race retry: CI (macOS, Linux, Windows) sees intermittent
-    // `UnexpectedEof` because `process.spawn` returns BEFORE the child (sh
-    // wrapper → exec node → SDK connect → attach `_stdin.on('data')`) has
+    // Cold-start race retry: CI (macOS, Linux, Windows) sees intermittent `UnexpectedEof` because `process.spawn` returns BEFORE the child (sh wrapper → exec node → …
     var attempts_codes: [20 * 8]u8 = undefined;
     var stderrs_buf: [20][]const u8 = .{""} ** 20;
     var attempts_used: usize = 0;
 
-    // `recordAttempt` appends the attempt's outcome to the diagnostic
-    // buffers.
+    // `recordAttempt` appends the attempt's outcome to the diagnostic buffers.
     const freeStderrs = struct {
         fn call(a: std.mem.Allocator, stderrs: []const []const u8, count: usize) void {
             for (stderrs[0..count]) |s| a.free(s);
@@ -1693,9 +1558,7 @@ fn mcpTestStdio(
 
     var attempt: u8 = 1;
     while (true) : (attempt += 1) {
-        // Bounded + cancellable lease: one child per server, shared with the
-        // agent sessions, and the retry loop below would multiply an unbounded
-        // wait by TEST_STDIO_MAX_ATTEMPTS.
+        // Bounded + cancellable lease: one child per server, shared with the agent sessions, and the retry loop below would multiply an unbounded wait by …
         var lease = reg.acquire(preview_name, argv, .{
             .wait_ns = 60 * std.time.ns_per_s,
         }) catch |err| {
@@ -1741,8 +1604,7 @@ fn mcpTestStdio(
                 return McpTestError.SendFailed;
             }
             lease.markStale();
-            // Hand the child back before the backoff: `defer` alone
-            // would keep the per-server lease for the whole sleep.
+            // Hand the child back before the backoff: `defer` alone would keep the per-server lease for the whole sleep.
             lease.release();
             std.Io.Clock.Duration.sleep(
                 .{ .raw = std.Io.Duration.fromMilliseconds(TEST_STDIO_RETRY_DELAY_MS), .clock = .real },
@@ -1751,8 +1613,7 @@ fn mcpTestStdio(
             continue;
         };
 
-        // Read the initialize response (1st response). If we get
-        // EOF, the SDK is dead → cold-start race → retry.
+        // Read the initialize response (1st response).
         const init_deadline_ns: u64 = if (attempt == 1)
             TEST_STDIO_TIMEOUT_MS * std.time.ns_per_ms
         else
@@ -1781,9 +1642,7 @@ fn mcpTestStdio(
                 ) catch null;
                 freeStderrs(allocator, &stderrs_buf, attempts_used);
                 out_err_detail.* = detail;
-                // Silent-but-alive child (e.g. bare `python` with empty args,
-                // waiting on stdin for EOF): it started fine but never
-                // answered `initialize`.
+                // Silent-but-alive child (e.g. bare `python` with empty args, waiting on stdin for EOF): it started fine but never answered `initialize`.
                 if (err == error.RecvTimeout) return McpTestError.Timeout;
                 return McpTestError.RecvFailed;
             }
@@ -1792,8 +1651,7 @@ fn mcpTestStdio(
                 .{ @errorName(err), attempt, TEST_STDIO_MAX_ATTEMPTS },
             );
             lease.markStale();
-            // Hand the child back before the backoff: `defer` alone
-            // would keep the per-server lease for the whole sleep.
+            // Hand the child back before the backoff: `defer` alone would keep the per-server lease for the whole sleep.
             lease.release();
             std.Io.Clock.Duration.sleep(
                 .{ .raw = std.Io.Duration.fromMilliseconds(TEST_STDIO_RETRY_DELAY_MS), .clock = .real },
@@ -1801,12 +1659,9 @@ fn mcpTestStdio(
             ) catch {};
             continue;
         };
-        // NOTE: no `defer free` — inside `while(true)`, defer runs at
-        // function exit. Free explicitly on every path below.
+        // NOTE: no `defer free` — inside `while(true)`, defer runs at function exit.
 
-        // The server has answered `initialize`, so the session is live. NOW
-        // send `notifications/initialized` followed by the `tools/list`
-        // request.
+        // The server has answered `initialize`, so the session is live.
         const post_init_payload = std.fmt.allocPrint(
             allocator,
             "{s}{s}",
@@ -1816,8 +1671,7 @@ fn mcpTestStdio(
             allocator.free(init_resp);
             return McpTestError.OutOfMemory;
         };
-        // No `defer` — this is inside `while(true)`, so free explicitly
-        // on every path below (success, error-return).
+        // No `defer` — this is inside `while(true)`, so free explicitly on every path below (success, error-return).
         std.Io.File.writeStreamingAll(stdin_file, io, post_init_payload) catch |err| {
             logger.warnFmt(
                 "[mcp_test] stdio post-init send failed: {s}",
@@ -1847,8 +1701,7 @@ fn mcpTestStdio(
                 return McpTestError.SendFailed;
             }
             lease.markStale();
-            // Hand the child back before the backoff: `defer` alone
-            // would keep the per-server lease for the whole sleep.
+            // Hand the child back before the backoff: `defer` alone would keep the per-server lease for the whole sleep.
             lease.release();
             allocator.free(post_init_payload);
             allocator.free(init_resp);
@@ -1860,8 +1713,7 @@ fn mcpTestStdio(
         };
         allocator.free(post_init_payload);
 
-        // We got the initialize response — SDK is alive. Read the
-        // tools/list response (2nd response). Same retry semantics.
+        // We got the initialize response — SDK is alive.
         const tools_deadline_ns: u64 = if (attempt == 1)
             TEST_STDIO_TIMEOUT_MS * std.time.ns_per_ms
         else
@@ -1898,8 +1750,7 @@ fn mcpTestStdio(
                 .{ @errorName(err), attempt, TEST_STDIO_MAX_ATTEMPTS },
             );
             lease.markStale();
-            // Hand the child back before the backoff: `defer` alone
-            // would keep the per-server lease for the whole sleep.
+            // Hand the child back before the backoff: `defer` alone would keep the per-server lease for the whole sleep.
             lease.release();
             allocator.free(init_resp);
             std.Io.Clock.Duration.sleep(
@@ -1927,13 +1778,9 @@ fn mcpTestStdio(
     }
 }
 
-/// Drain whatever is available on the child's stderr pipe. ALWAYS returns a
-/// HEAP-allocated slice (caller frees), even when the pipe is empty or the
-/// read failed.
+/// Drain whatever is available on the child's stderr pipe.
 fn drainStderr(allocator: std.mem.Allocator, io: std.Io, stderr: ?std.Io.File) []u8 {
-    // Always heap-allocate so the caller can uniformly `free` the
-    // returned slice. The empty fallback is also heap so `free` is
-    // safe even when no bytes were captured.
+    // Always heap-allocate so the caller can uniformly `free` the returned slice.
     const empty = allocator.dupe(u8, "") catch allocator.dupe(u8, "") catch @panic("dupe failed for the empty mcp_test stderr slot");
     const f = stderr orelse return empty;
     if (comptime builtin.os.tag != .windows) {
@@ -1946,13 +1793,11 @@ fn drainStderr(allocator: std.mem.Allocator, io: std.Io, stderr: ?std.Io.File) [
         const ready = std.posix.poll(&pfds, 200) catch 1;
         // Timeout (0): child alive but stderr-silent — do NOT block.
         if (ready == 0) return empty;
-        // ready > 0: bytes OR EOF/HUP waiting — the read below returns
-        // immediately either way.
+        // ready > 0: bytes OR EOF/HUP waiting — the read below returns immediately either way.
     }
     var buf: [4096]u8 = undefined;
     var reader = std.Io.File.reader(f, io, &buf);
-    // Single-shot read: whatever is in the kernel pipe buffer RIGHT NOW (up
-    // to 4 KiB).
+    // Single-shot read: whatever is in the kernel pipe buffer RIGHT NOW (up to 4 KiB).
     const n = std.Io.Reader.readSliceShort(&reader.interface, &buf) catch return empty;
     if (n == 0) return empty;
     return allocator.dupe(u8, buf[0..n]) catch empty;
@@ -1987,8 +1832,7 @@ fn formatAttemptsDetail(
         try buf.appendSlice(allocator, "|last_stderr=");
         const last = stderrs[attempts_used - 1];
         const truncated = if (last.len > 512) last[0..512] else last;
-        // Sanitize: replace control chars with their backslash-escaped form
-        // so the resulting JSON is parseable.
+        // Sanitize: replace control chars with their backslash-escaped form so the resulting JSON is parseable.
         var i: usize = 0;
         while (i < truncated.len) : (i += 1) {
             const c = truncated[i];
@@ -2002,7 +1846,6 @@ fn formatAttemptsDetail(
                 0x5C => try buf.appendSlice(allocator, "\\\\"), // backslash
                 0x00...0x07, 0x0B, 0x0E...0x1F => {
                     // Other C0 control chars: strip (they break JSON).
-                    // Includes 0x1B (ESC), 0x07 (BEL), etc.
                 },
                 else => try buf.append(allocator, c),
             }
@@ -2011,9 +1854,7 @@ fn formatAttemptsDetail(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Try an HTTP candidate: POST `tools/list` to the URL with the headers,
-/// parse `result.tools[]`. Uses libcurl's built-in 10s timeout via
-/// `timeout_ms`.
+/// Try an HTTP candidate: POST `tools/list` to the URL with the headers, parse `result.tools[]`.
 fn mcpTestHttp(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -2038,9 +1879,7 @@ fn mcpTestHttp(
     header_count += 1;
     header_buf[header_count] = .{ .name = "Content-Type", .value = "application/json" };
     header_count += 1;
-    // Spec headers (tolerated 200 on context7 per 2026-09-10 bisect;
-    // required by strict Streamable HTTP servers). Sent BEFORE user
-    // headers so libcurl's first-match-wins prefers the spec value.
+    // Spec headers (tolerated 200 on context7 per 2026-09-10 bisect; required by strict Streamable HTTP servers).
     header_buf[header_count] = .{ .name = "MCP-Protocol-Version", .value = "2025-11-25" };
     header_count += 1;
     header_buf[header_count] = .{ .name = "Mcp-Method", .value = "tools/list" };
@@ -2079,9 +1918,7 @@ fn mcpTestHttp(
 
     if (result.status_code != 200) {
         logger.warnFmt("[mcp_test] http server returned status {d}", .{result.status_code});
-        // Surface the server's error body (e.g. a 400 JSON-RPC envelope
-        // error) so the modal shows WHY instead of a generic message.
-        // Truncated to 200 bytes to keep the wire small.
+        // Surface the server's error body (e.g. a 400 JSON-RPC envelope error) so the modal shows WHY instead of a generic message.
         const snippet_len: usize = @min(result.body.len, 200);
         out_err_detail.* = std.fmt.allocPrint(
             allocator,
@@ -2106,9 +1943,7 @@ fn unwrapSsePayload(allocator: std.mem.Allocator, body: []const u8) McpTestError
     // Fast path: plain JSON object — no SSE framing to strip.
     if (trimmed[0] == '{') return allocator.dupe(u8, trimmed) catch return McpTestError.OutOfMemory;
 
-    // SSE path: walk `\n\n`-separated events, keep the LAST event that
-    // carries at least one `data:` line. Field names are
-    // case-insensitive; `:` comment lines are skipped.
+    // SSE path: walk `\n\n`-separated events, keep the LAST event that carries at least one `data:` line.
     var last: ?[]const u8 = null;
     var owned_last: ?[]u8 = null;
     defer if (owned_last) |o| allocator.free(o);
@@ -2141,9 +1976,7 @@ fn unwrapSsePayload(allocator: std.mem.Allocator, body: []const u8) McpTestError
         const out = allocator.dupe(u8, d) catch return McpTestError.OutOfMemory;
         return out;
     }
-    // No `data:` line found (e.g. legacy single-line `data: {...}` without
-    // event framing is already covered above, but keep the old prefix-strip
-    // as a last resort) — fall back to the trimmed body so the JSON parser
+    // No `data:` line found (e.g. legacy single-line `data: {...}` without event framing is already covered above, but keep the old prefix-strip as a last resort) — …
     if (std.mem.startsWith(u8, trimmed, "data:"))
         return allocator.dupe(u8, std.mem.trim(u8, trimmed["data:".len..], " \t")) catch return McpTestError.OutOfMemory;
     return allocator.dupe(u8, trimmed) catch return McpTestError.OutOfMemory;
@@ -2313,8 +2146,7 @@ pub fn mcpTestHandler(
     }
     try buf.appendSlice(allocator, "]}");
     var data = try buf.toOwnedSlice(allocator);
-    // Tool names and descriptions are the server's own text: put the
-    // placeholder back over any credential this probe resolved.
+    // Tool names and descriptions are the server's own text: put the placeholder back over any credential this probe resolved.
     if (credentials.resolved.len > 0) {
         if (secrets_substitution.redactOutput(allocator, data, credentials.resolved) catch null) |scrubbed| {
             allocator.free(data);
@@ -2328,16 +2160,13 @@ pub fn mcpTestHandler(
 // ─── Inline tests ──────────────────────────────────────────────────────────
 
 test "formatAttemptsDetail: sanitizes C0 control chars from stderr (JSON-safe)" {
-    // Regression guard for CI macOS ARM64 (commit 76d03d6d + this fix): the
-    // SDK's mcp.connect failure path writes ANSI-coloured stack traces to
-    // stderr containing \\x1b (ESC) and \\n bytes.
+    // Regression guard for CI macOS ARM64 (commit 76d03d6d + this fix): the SDK's mcp.connect failure path writes ANSI-coloured stack traces to stderr containing …
     const allocator = testing.allocator;
 
     // Build a stderr blob with: ESC, newline, NUL, BEL, printable.
     const dirty_stderr = "\x1b[31mfatal\x1b[0m: \nmcp.connect failed\n\x00\x07";
     var stderrs = [_][]const u8{dirty_stderr};
-    // Mirror production code: codes buffer is 8 bytes per attempt, padded
-    // with SPACE (0x20) after the short code.
+    // Mirror production code: codes buffer is 8 bytes per attempt, padded with SPACE (0x20) after the short code.
     var codes = [_]u8{' '} ** (1 * 8);
     @memcpy(codes[0..3], "EOF");
 
@@ -2350,18 +2179,14 @@ test "formatAttemptsDetail: sanitizes C0 control chars from stderr (JSON-safe)" 
     );
     defer allocator.free(detail);
 
-    // formatAttemptsDetail returns a custom format string, NOT JSON:
-    // "<err>|attempts=N/M codes=[<codes>]|last_stderr=<sanitized>" The
-    // response handler then embeds this into the JSON response body via
+    // formatAttemptsDetail returns a custom format string, NOT JSON
     try testing.expect(std.mem.indexOf(u8, detail, "\\n") != null);
     // ESC (0x1b) was stripped entirely (not even present in escape form).
     try testing.expect(std.mem.indexOf(u8, detail, "\x1b") == null);
     // Printable text preserved.
     try testing.expect(std.mem.indexOf(u8, detail, "fatal") != null);
 
-    // CRITICAL: embed `detail` into a JSON document and parse it back. If any
-    // control char survived, std.json will raise SyntaxError (which on the
-    // Python test client is `json.loads: Invalid control character`).
+    // CRITICAL: embed `detail` into a JSON document and parse it back.
     const wrapped = try std.fmt.allocPrint(
         allocator,
         "{{\"details\":\"{s}\"}}",

@@ -1,5 +1,4 @@
-/** Tests for GitBaseBranchSelect — the searchable base-branch dropdown in the kanban "New task"
- * dialog's git-worktree block. */
+/** Tests for GitBaseBranchSelect — the searchable base-branch dropdown in the kanban "New task" dialog's git-worktree block. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
@@ -227,8 +226,7 @@ describe('GitBaseBranchSelect', () => {
   })
 
   it('survives a backend failure with an empty list (never blocks the form)', async () => {
-    // listGitBranches already swallows errors and resolves the empty
-    // response — model that contract here.
+    // listGitBranches already swallows errors and resolves the empty response — model that contract here.
     vi.spyOn(api, 'listGitBranches').mockResolvedValue({
       is_git_repo: false,
       current_branch: '',

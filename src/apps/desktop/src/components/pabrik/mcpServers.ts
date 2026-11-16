@@ -12,9 +12,7 @@ export function parseMcpServers(
   const out: McpServer[] = []
   for (const [name, server] of Object.entries(raw)) {
     if (!server) continue
-    // Transport discriminator: presence of `command` ⇒ stdio,
-    // presence of `url` ⇒ http. Legacy entries (url-only) hydrate as
-    // http. Entries with neither are silently dropped.
+    // Transport discriminator: presence of `command` ⇒ stdio, presence of `url` ⇒ http.
     if ('command' in server && typeof server.command === 'string' && server.command.length > 0) {
       out.push({
         name,
@@ -64,8 +62,7 @@ export function serializeMcpServers(
       if (server.enabled === false) (entry as { enabled?: boolean }).enabled = false
       out[server.name] = entry
     } else {
-      // Default to http for legacy entries that lack an explicit
-      // transport field.
+      // Default to http for legacy entries that lack an explicit transport field.
       const url = server.url ?? ''
       if (!url) continue
       const headers: Record<string, string> = {}

@@ -43,12 +43,10 @@ const SseEventLLMHistory = struct {
     diffview_after: ?[]const u8 = null,
     image_url: ?[]const u8 = null,
     video_url: ?[]const u8 = null,
-    /// The attached files as metadata only (name, mime, bytes) — never the
-    /// bytes, which would dwarf the event.
+    /// The attached files as metadata only (name, mime, bytes) — never the bytes, which would dwarf the event.
     file_attachments: ?[]const u8 = null,
     session_skills: ?[]const SkillInfo = null,
-    /// True when this event is an agentic-loop diagnostic (retry attempt or
-    /// TooManyRetries bail) rather than a real chat turn.
+    /// True when this event is an agentic-loop diagnostic (retry attempt or TooManyRetries bail) rather than a real chat turn.
     is_error: bool = false,
 };
 
@@ -80,8 +78,7 @@ pub const OnEventInputLLMHistory = struct {
     video_url: ?[]const u8 = null,
     file_attachments: ?[]const u8 = null,
     session_skills: []const SkillInfo,
-    /// See SseEventLLMHistory.is_error — threaded through from
-    /// InsertLLMHistoriesInput by insert_llm_histories.zig.
+    /// See SseEventLLMHistory.is_error — threaded through from InsertLLMHistoriesInput by insert_llm_histories.zig.
     is_error: bool = false,
 };
 
@@ -113,8 +110,7 @@ pub fn onEventSendLLMHistory(
         log.?.warnFmt("on_event_send_new[{s}]: NO CONTENT!", .{session_id});
     }
 
-    // Sanitize content + reasoning_content to valid UTF-8 before JSON
-    // serialization.
+    // Sanitize content + reasoning_content to valid UTF-8 before JSON serialization.
     const sanitized_content: ?[]u8 = blk: {
         const c = input.content orelse break :blk null;
         break :blk try helpers.sanitize.sanitizeUtf8(allocator, c);
@@ -182,8 +178,7 @@ pub fn onEventSendLLMHistory(
         .whitespace = .indent_4,
     })});
 
-    // The owned skills slice has served its purpose (serialized into buf
-    // above) — free it now.
+    // The owned skills slice has served its purpose (serialized into buf above) — free it now.
     if (session_skills_json) |sk| {
         if (sk.len > 0) allocator.free(sk);
     }
@@ -196,18 +191,13 @@ pub fn onEventSendLLMHistory(
         .data = data_copy,
         .event_type = "llm_full",
     };
-    // Per-session emit (kept for any future server-side fan-out that
-    // needs only this session's events).
+    // Per-session emit (kept for any future server-side fan-out that needs only this session's events).
     event_bus.emit(SseEvent, input.session_id, event);
-    // Central broadcast: subscribers to bare "llm" receive ALL sessions'
-    // LLM events. The frontend listener filter narrows to the current
-    // session_id on the JS side.
+    // Central broadcast: subscribers to bare "llm" receive ALL sessions' LLM events.
     event_bus.emit(SseEvent, "llm", event);
 }
 
-// ─── Tests
-// ──────────────────────────────────────────────────────────────────
-// `onEventSendLLMHistory` dereferences `logger.?` at line 89, so passing
+// ─── Tests `onEventSendLLMHistory` dereferences `logger.?` at line 89, so passing
 
 var captured_llm_event: ?SseEvent = null;
 
@@ -326,17 +316,13 @@ test "onEventSendLLMHistory: JSON payload includes the standard field set" {
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"is_thinking\"") != null);
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"is_input\"") != null);
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"is_output\"") != null);
-    // Note: std.json.fmt does NOT escape the inner quotes around field
-    // values, so the substring looks like `"type":"full"`, not
-    // `"type":"full"` (no double-quotes around `full`).
+    // Note: std.json.fmt does NOT escape the inner quotes around field values, so the substring looks like `"type":"full"`, not `"type":"full"` (no double-quotes …
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"type\":") != null);
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"full\"") != null);
 }
 
 test "onEventSendLLMHistory: invalid UTF-8 in content is sanitized (no byte-array in JSON)" {
-    // Regression guard for the bug documented at
-    // sse_on_event_send_llm_history.zig:101 — without sanitizeUtf8,
-    // std.json.fmt emits invalid-UTF-8 strings as ARRAYS of bytes.
+    // Regression guard for the bug documented at sse_on_event_send_llm_history.zig:101 — without sanitizeUtf8, std.json.fmt emits invalid-UTF-8 strings as ARRAYS of …
     var s = try setupLlmBusAndIo();
     defer teardownLlmBus(&s);
     defer freeCapturedLlmEventData();
@@ -371,9 +357,7 @@ test "onEventSendLLMHistory: invalid UTF-8 in content is sanitized (no byte-arra
     });
 
     const ev = captured_llm_event orelse return error.NoEventCaptured;
-    // The fix is correct if `content` is JSON-stringified (quoted)
-    // rather than JSON-array-ified. Specifically: "content": should be
-    // present, NOT "content":[.
+    // The fix is correct if `content` is JSON-stringified (quoted) rather than JSON-array-ified.
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"content\":") != null);
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"content\":[") == null);
 }
@@ -449,11 +433,9 @@ test "onEventSendLLMHistory: content=null produces a valid empty-string content 
     });
 
     const ev = captured_llm_event orelse return error.NoEventCaptured;
-    // Empty string content — the JSON contains `"content": ""` (note the
-    // space after `:` because the payload uses `.whitespace = .indent_4`).
+    // Empty string content — the JSON contains `"content": ""` (note the space after `:` because the payload uses `.whitespace = .indent_4`).
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"content\":") != null);
-    // The value should be an empty JSON string. With indent_4 whitespace,
-    // it appears as `"content": ""` (space + empty quoted string).
+    // The value should be an empty JSON string.
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"content\": \"\"") != null);
 }
 
@@ -462,9 +444,7 @@ test "onEventSendLLMHistory: emits on both session_id and 'llm' keys (central br
     defer teardownLlmBus(&s);
     defer freeCapturedLlmEventData();
     captured_llm_event = null;
-    // Subscribe only to "llm" — the session_id key gets a separate emit
-    // that we won't capture. The test verifies the central "llm" emit
-    // fires (which is what the frontend filter pattern relies on).
+    // Subscribe only to "llm" — the session_id key gets a separate emit that we won't capture.
     try s.bus.subscribe(SseEvent, "llm", captureLlmFn);
 
     try onEventSendLLMHistory(.{
@@ -497,8 +477,6 @@ test "onEventSendLLMHistory: emits on both session_id and 'llm' keys (central br
 }
 
 // ─── is_error flag (agent error card, task_1787663566535_2) ────────────────
-// Agentic-loop diagnostics (retry attempts + TooManyRetries bails) are
-// emitted over the SAME `llm_full` event as normal messages.
 
 test "onEventSendLLMHistory: is_error=true serializes into the JSON payload" {
     var s = try setupLlmBusAndIo();
@@ -570,8 +548,7 @@ test "onEventSendLLMHistory: is_error defaults to false in the JSON payload" {
     });
 
     const ev = captured_llm_event orelse return error.NoEventCaptured;
-    // Default path must NOT claim to be an error — the frontend routes on
-    // this exact field.
+    // Default path must NOT claim to be an error — the frontend routes on this exact field.
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"is_error\": false") != null);
 }
 

@@ -1,6 +1,4 @@
-/** SearchSkills.vue — the `search_skills` card. Pins the paged-search result shape: flat `skills[]`
- * rows of `name` / `description` only, plus `count`/`total`/`offset`/`limit`/`truncated`/
- * `next_offset`/`pattern_warning`. */
+/** SearchSkills.vue — the `search_skills` card. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import SearchSkills from '../SearchSkills.vue'
@@ -59,8 +57,7 @@ describe('SearchSkills.vue — header names the tool and the paging facts', () =
   })
 
   it('still renders names from a payload carrying the retired scope / path keys', () => {
-    // A transcript recorded before the table refactor. The rows must not
-    // collapse to blanks just because the extra keys are gone.
+    // A transcript recorded before the table refactor.
     const legacy = {
       ...page,
       skills: [

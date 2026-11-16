@@ -1,6 +1,4 @@
-//! End-to-end test for pabrik's MCP OAuth client: boots the real
-//! `mcp-oauth-hello-world` fixture and drives `pabrik headless mcp-oauth`
-//! through discover → authorize-url → 302 → exchange → status → refresh → logout.
+//! End-to-end test for pabrik's MCP OAuth client: boots the real `mcp-oauth-hello-world` fixture and drives `pabrik headless mcp-oauth` through discover → …
 
 const std = @import("std");
 const testing = std.testing;
@@ -298,9 +296,7 @@ test "headless mcp-oauth authorizes against a real oauth-protected mcp server" {
     }
 }
 
-/// The "browser" step: GET the authorization URL without following the
-/// redirect, and pull `code` out of the `Location` header. The fixture
-/// auto-approves, so this is the whole consent interaction.
+/// The "browser" step: GET the authorization URL without following the redirect, and pull `code` out of the `Location` header.
 fn approveAuthorization(authorization_url: []const u8, expected_state: []const u8) ![]u8 {
     var reply = try httpGetNoRedirect(authorization_url);
     defer reply.deinit();

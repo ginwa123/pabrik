@@ -20,16 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * What the chat stream's own state transitions do to `isStreaming`.
- *
- * `isChatWorking` is `isRunning || isStreaming`, so a turn left flagged as
- * streaming keeps the "Working…" label and the Stop button on screen after the
- * agent has gone. The two events that can end a turn — `chunk_final` and
- * `llm_full` — are both ordinary frames, and neither can arrive once the socket
- * has given up for good, so the *terminal* transition has to clear the flag
- * itself.
- */
+/** What the chat stream's own state transitions do to `isStreaming`. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelStreamStateTest {
 
@@ -110,15 +101,7 @@ class ChatViewModelStreamStateTest {
         return model
     }
 
-    /**
-     * No row may still claim to be mid-sentence.
-     *
-     * Separate from `uiState.isStreaming` because the two are read by different
-     * screens: the header and the Stop button read the state's flag, while the
-     * "streaming…" line under a turn reads the row's. Clearing one and not the
-     * other produces a screen that contradicts itself, which reads to a person
-     * as a second, unrelated bug.
-     */
+    /** No row may still claim to be mid-sentence. */
     private fun assertNoRowClaimsToStream(model: ChatViewModel) {
         assertTrue(
             "no transcript row may still render the streaming hint",
@@ -132,18 +115,14 @@ class ChatViewModelStreamStateTest {
             val bus = FakeSseBus()
             val model = openStreamingTurn(schedulers, bus)
 
-            // The pump `return`s on a rejected handshake instead of retrying, so
-            // neither `chunk_final` nor `llm_full` is ever coming for this turn.
+            // The pump `return`s on a rejected handshake instead of retrying, so neither `chunk_final` nor `llm_full` is ever coming for this turn.
             bus.state(ChatStreamState.Failed("The event stream is unavailable (401)."))
             schedulers.drain()
 
             assertFalse(model.uiState.value.isStreaming)
             assertFalse(isChatWorking(isRunning = false, isStreaming = model.uiState.value.isStreaming))
             assertEquals("The event stream is unavailable (401).", model.uiState.value.errorMessage)
-            // The row flag too, not just the state's: `StreamingHint` reads the
-            // row, so clearing only `ChatUiState.isStreaming` leaves a
-            // "streaming…" line under a turn that can never finish — the header
-            // says the run is over and the transcript says it is mid-sentence.
+            // The row flag too, not just the state's: `StreamingHint` reads the row, so clearing only `ChatUiState.isStreaming` leaves a "streaming…" line under a turn that …
             assertNoRowClaimsToStream(model)
         }
 
@@ -153,10 +132,7 @@ class ChatViewModelStreamStateTest {
             val bus = FakeSseBus()
             val model = openStreamingTurn(schedulers, bus)
 
-            // `llm_full` with `is_error` is an agentic-loop diagnostic ("a retry
-            // notice", "TooManyRetries"), not a turn, and it already cleared the
-            // flag before this change. The two must not disagree about whether a
-            // run that has given up is still running.
+            // `llm_full` with `is_error` is an agentic-loop diagnostic ("a retry notice", "TooManyRetries"), not a turn, and it already cleared the flag before this change.
             bus.emit(
                 ChatStreamEvent.Failed("The agent hit TooManyRetries and gave up."),
             )
@@ -172,8 +148,7 @@ class ChatViewModelStreamStateTest {
         val bus = FakeSseBus()
         val model = openStreamingTurn(schedulers, bus)
 
-        // A reconnect is not the end of the run — the refetch it triggers is
-        // what may settle it — so this transition must not clear anything.
+        // A reconnect is not the end of the run — the refetch it triggers is what may settle it — so this transition must not clear anything.
         bus.state(ChatStreamState.Reconnecting)
         schedulers.drain()
 

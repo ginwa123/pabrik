@@ -24,8 +24,7 @@ export interface InlineDiagramLayout {
   overflow: boolean
 }
 
-/** Floor that keeps the renderer's 14px labels readable: below this a diagram scrolls instead of
- * shrinking. 0.75 keeps them at ~10.5px, which is the smallest legible step. */
+/** Floor that keeps the renderer's 14px labels readable: below this a diagram scrolls instead of shrinking. 0.75 keeps them at ~10.5px, which is the smallest … */
 export const MIN_INLINE_SCALE = 0.75
 
 /** Ceiling for the viewer — past 8x an SVG is all pixels and an <img> is all blur. */
@@ -33,8 +32,7 @@ export const MAX_ZOOM = 8
 
 export const ZOOM_STEP = 1.25
 
-/** How much the viewer may ENLARGE a small drawing on open. SVG is lossless, but past 2x the line
- * weights read as fat rather than as a bigger diagram. */
+/** How much the viewer may ENLARGE a small drawing on open. */
 export const MAX_OPEN_UPSCALE = 2
 
 export const KEYBOARD_PAN_PX = 96
@@ -54,9 +52,7 @@ const pxAttribute = (markup: string, name: string): number | null => {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
-/** Read the drawing's intrinsic size out of its own markup, so the inline layout never needs a
- * laying-out browser. A `viewBox` wins: mermaid and PlantUML both publish `width="100%"` with the
- * real numbers only in the viewBox. */
+/** Read the drawing's intrinsic size out of its own markup, so the inline layout never needs a laying-out browser. */
 export function parseDiagramSize(markup: string): DiagramSize | null {
   const box = /viewBox\s*=\s*["']([^"']+)["']/i.exec(markup)?.[1]
   if (box) {
@@ -71,8 +67,7 @@ export function parseDiagramSize(markup: string): DiagramSize | null {
   return { width, height }
 }
 
-/** How wide to lay a drawing out inside a column: 1:1 while it fits, then step down only as far as
- * the legibility floor — past that it keeps its width and the frame scrolls. */
+/** How wide to lay a drawing out inside a column: 1:1 while it fits, then step down only as far as the legibility floor — past that it keeps its width and the … */
 export function inlineDiagramLayout(
   natural: DiagramSize | null,
   available: number,
@@ -91,9 +86,7 @@ export function fitZoom(natural: DiagramSize | null, stage: DiagramSize): number
   return Math.min(1, Math.max(floorZoom(), fit))
 }
 
-/** The zoom a viewer OPENS at (and returns to with "Fit"): the whole drawing, floating between the
- * inline legibility floor and `MAX_OPEN_UPSCALE` — a fitted 5% view is as unreadable as the column
- * was, and a fitted 600% view of a two-node sketch is a joke. */
+/** The zoom a viewer OPENS at (and returns to with "Fit"): the whole drawing, floating between the inline legibility floor and `MAX_OPEN_UPSCALE` — a fitted 5% … */
 export function openZoom(natural: DiagramSize | null, stage: DiagramSize): number {
   if (!natural || natural.width <= 0 || natural.height <= 0) return 1
   if (stage.width <= 0 || stage.height <= 0) return 1
@@ -126,8 +119,7 @@ export function clampViewport(
   }
 }
 
-/** Zoom while holding the point under the pointer still — the difference between a diagram that
- * grows away from the cursor and one that grows where you are looking. */
+/** Zoom while holding the point under the pointer still — the difference between a diagram that grows away from the cursor and one that grows where you are … */
 export function zoomAround(
   state: DiagramViewport,
   nextZoom: number,

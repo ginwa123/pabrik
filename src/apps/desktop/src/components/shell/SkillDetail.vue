@@ -38,9 +38,7 @@ import { runSyncResult } from '../../sync/runtime'
 
 const props = defineProps<{
   skillName: string | null
-  /** Explicit workspace binding. When set, detail reads/deletes in this
-   * workspace instead of the active one — the workspace settings page binds
-   * the route workspace. Absent = previous behaviour (active workspace). */
+  /** Explicit workspace binding. */
   workspaceId?: string | null
 }>()
 
@@ -51,9 +49,7 @@ const emit = defineEmits<{
   error: [message: string]
 }>()
 
-// The RESOLVED workspace, not the raw `activeWorkspaceId` ref — see
-// RightSideBarSkillList.vue / DocumentsView.vue for why. An explicit prop
-// wins over the store so a page can show a non-active workspace.
+// The RESOLVED workspace, not the raw `activeWorkspaceId` ref — see RightSideBarSkillList.vue / DocumentsView.vue for why.
 const workspacesStore = useWorkspacesStore()
 const workspaceId = computed(() => props.workspaceId ?? workspacesStore.activeWorkspace?.id ?? null)
 
@@ -64,16 +60,13 @@ const isSaving = ref(false)
 const error = ref<string | null>(null)
 const showDeleteConfirm = ref(false)
 
-// Edit mode. `draft*` are the form's own state, seeded from the loaded row
-// when the form opens — never bound straight to `skillDetail`, or a
-// half-typed description would render in the read-only header above it.
+// Edit mode.
 const isEditing = ref(false)
 const draftDescription = ref('')
 const draftContent = ref('')
 const saveError = ref<string | null>(null)
 
-/** A load needs both halves of the identity; either one missing means
- *  "nothing to show", which is not the same as "nothing there". */
+/** A load needs both halves of the identity; either one missing means "nothing to show", which is not the same as "nothing there". */
 const loadTarget = computed(() => {
   const name = props.skillName
   const ws = workspaceId.value
@@ -82,8 +75,7 @@ const loadTarget = computed(() => {
 
 const fail = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason))
 
-// Reload when the skill identity changes (prev-value guard on update —
-// same fetch the watcher did; the mount call covers the initial load).
+// Reload when the skill identity changes (prev-value guard on update — same fetch the watcher did; the mount call covers the initial load).
 async function syncSkillTarget(target: { name: string; workspaceId: string } | null) {
   if (!target) {
     skillDetail.value = null
@@ -120,8 +112,7 @@ async function syncSkillTarget(target: { name: string; workspaceId: string } | n
     skillDetail.value = result.value.skill
     return
   }
-  // Neither a skill nor a reason: say so rather than leaving a blank
-  // pane that reads like the load failed.
+  // Neither a skill nor a reason: say so rather than leaving a blank pane that reads like the load failed.
   skillDetail.value = null
   error.value = `Skill "${target.name}" not found in this workspace`
 }
@@ -140,9 +131,7 @@ onUpdated(() => {
   void syncSkillTarget(loadTarget.value)
 })
 
-/** The frontmatter keys the columns do not hold. Empty hides the row, so a
- *  skill whose fence is just `name`/`description` does not render a strip of
- *  nothing. */
+/** The frontmatter keys the columns do not hold. */
 const metadataRows = computed(() => {
   const rows = skillDetail.value?.metadata
   return Array.isArray(rows) ? rows.filter((entry) => entry && entry.key) : []
@@ -156,8 +145,6 @@ const assetCount = computed(() => {
 })
 
 // ─── Body navigation ───────────────────────────────────────────────────
-// The body was one `<pre>`, so a long skill had no way in but scrolling.
-// The outline jumps to a `##` section; the find box lists matching lines.
 const bodyQuery = ref('')
 const bodyRef = ref<HTMLElement | null>(null)
 
@@ -209,9 +196,7 @@ const cancelEdit = () => {
   saveError.value = null
 }
 
-/** A save with nothing changed is refused by the server (409), so the
- * button is disabled rather than letting the user discover that from a
- * toast. Both fields are compared, because either one alone is a change. */
+/** A save with nothing changed is refused by the server (409), so the button is disabled rather than letting the user discover that from a toast. */
 const canSave = computed(() => {
   const detail = skillDetail.value
   if (!detail) return false
@@ -239,13 +224,11 @@ const handleSave = async () => {
   isSaving.value = false
 
   if (!result.ok) {
-    // Kept in the form, not emitted: the user is mid-edit and the reason
-    // belongs next to the fields that caused it.
+    // Kept in the form, not emitted: the user is mid-edit and the reason belongs next to the fields that caused it.
     saveError.value = result.reason
     return
   }
-  // The stored row replaces the draft, so the read-only header above
-  // shows what was actually written rather than what was typed.
+  // The stored row replaces the draft, so the read-only header above shows what was actually written rather than what was typed.
   skillDetail.value = result.value.skill
   isEditing.value = false
   emit('skillSaved', detail.name)
@@ -255,8 +238,7 @@ const handleAutoImproveChanged = (isCanAutoImprove: boolean) => {
   const detail = skillDetail.value
   if (!detail) return
   detail.is_can_auto_improve = isCanAutoImprove
-  // The list row owns its own copy of the flag, so the left pane has to
-  // re-read or the two halves disagree about who may edit this skill.
+  // The list row owns its own copy of the flag, so the left pane has to re-read or the two halves disagree about who may edit this skill.
   emit('skillSaved', detail.name)
 }
 

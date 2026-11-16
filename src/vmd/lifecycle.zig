@@ -1,6 +1,4 @@
 //! The manager this process started, and the stop that takes it down with us.
-//! The manager is forked into its own session, so it is not in our process
-//! group: only its pid reaches it, and a graceful stop is the only way out.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -9,9 +7,7 @@ const linux = std.os.linux;
 /// How long the manager gets to leave on its own before it is killed.
 pub const default_stop_timeout_ms: u32 = 5_000;
 
-/// Linux's SIGUSR1: the manager reads it as "the service that owns me is
-/// going away", so it takes the workspace VMs it owns down with it. SIGTERM
-/// only stops the manager — a manager that is restarted adopts its VMs.
+/// Linux's SIGUSR1: the manager reads it as "the service that owns me is going away", so it takes the workspace VMs it owns down with it.
 pub const sig_usr1: u8 = 10;
 pub const sig_term: u8 = 15;
 pub const sig_kill: u8 = 9;
@@ -23,8 +19,7 @@ pub const Outcome = enum {
     survived,
 };
 
-/// The system calls the stop needs, so the order of the calls can be
-/// asserted without a process.
+/// The system calls the stop needs, so the order of the calls can be asserted without a process.
 pub const Env = struct {
     ctx: *anyopaque = undefined,
     nowMs: *const fn (ctx: *anyopaque) i64,
@@ -34,8 +29,7 @@ pub const Env = struct {
     sleepMs: *const fn (ctx: *anyopaque, ms: u32) void,
 };
 
-/// The manager THIS process forked. Null when we adopted one that was
-/// already running.
+/// The manager THIS process forked.
 var spawned: ?i32 = null;
 
 pub fn rememberSpawned(pid: i32) void {
@@ -46,8 +40,7 @@ pub fn spawnedPid() ?i32 {
     return spawned;
 }
 
-/// SIGUSR1 first — the service is going away, so the manager takes its VMs
-/// with it — then SIGTERM, then SIGKILL for a manager that will not go.
+/// SIGUSR1 first — the service is going away, so the manager takes its VMs with it — then SIGTERM, then SIGKILL for a manager that will not go.
 pub fn stop(env: Env, pid: ?i32, timeout_ms: u32) Outcome {
     const target = pid orelse return .nothing_to_stop;
     env.signal(env.ctx, target, sig_usr1);
@@ -100,8 +93,7 @@ fn realSignal(_: *anyopaque, pid: i32, sig: u8) void {
     _ = linux.syscall2(.kill, @intCast(pid), sig);
 }
 
-/// A child we forked stays a zombie until it is reaped, and a zombie still
-/// answers `kill(pid, 0)`, so the reap is part of the liveness answer.
+/// A child we forked stays a zombie until it is reaped, and a zombie still answers `kill(pid, 0)`, so the reap is part of the liveness answer.
 fn realGone(_: *anyopaque, pid: i32) bool {
     var status: u32 = 0;
     const rc = linux.wait4(pid, &status, 1, null);
@@ -173,9 +165,7 @@ fn fakeEnv(fake: *Fake) Env {
     };
 }
 
-/// A child that waits to be signalled. `deaf` is a wedged manager: it ignores
-/// every signal until SIGKILL. The pipe is the handshake, so the parent never
-/// signals a child that has not armed its dispositions yet.
+/// A child that waits to be signalled.
 fn forkWaiter(deaf: bool) !i32 {
     var fds: [2]i32 = undefined;
     if (linux.errno(linux.pipe2(&fds, .{ .CLOEXEC = true })) != .SUCCESS) return error.PipeFailed;
@@ -211,8 +201,7 @@ fn goneForReal(pid: i32) bool {
     return err == .SUCCESS or err == .PERM;
 }
 
-/// Off Linux there is no manager to signal: the pid is forgotten and the stop
-/// reports nothing_to_stop without touching another process.
+/// Off Linux there is no manager to signal: the pid is forgotten and the stop reports nothing_to_stop without touching another process.
 fn expectSpawnedStopIsANoOp(timeout_ms: u32) !void {
     rememberSpawned(4242);
     try testing.expectEqual(Outcome.nothing_to_stop, stopSpawned(timeout_ms));

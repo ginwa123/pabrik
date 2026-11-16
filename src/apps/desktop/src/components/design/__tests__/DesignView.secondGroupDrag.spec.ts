@@ -1,5 +1,4 @@
-/** Regression test for "group moves first time, but second drag fails until page refresh". Symptom
- * (user report 2026-08-01): 1. User creates a group + child. 2. */
+/** Regression test for "group moves first time, but second drag fails until page refresh". */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -74,15 +73,11 @@ describe('DesignView second group drag (regression)', () => {
     vi.restoreAllMocks()
   })
 
-  /** Find the DesignElement for `group`, hook its `addEventListener` to intercept the
-   * pointermove/pointerup handlers, then fire a complete gesture. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function setupGestureOnGroup(wrapper: any) {
     const allEls = wrapper.findAll('[data-design-element]')
      
     if (allEls.length === 0) throw new Error('no design elements rendered')
-    // The group's elementStyle.left/top will reflect x=100, y=100;
-    // the child reflects x=110, y=110. Match by inline style.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const groupEl = allEls.find((w: any) => {
       const style = w.attributes('style') || ''
@@ -133,9 +128,7 @@ describe('DesignView second group drag (regression)', () => {
       handlers.up!(new PointerEvent('pointerup', { pointerId: 1 }))
       await flushPromises()
 
-      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy (delta since last emit). The
-      // trailing pointerup emit carries only the residual — typically 0 if a throttled emit just
-      // happened, or the full delta if no throttle fired.
+      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy (delta since last emit).
       expect(moveDesignElementsBatchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
       const calls = moveDesignElementsBatchMock.mock.calls
       const sumDx = calls.reduce((acc, c) => {
@@ -159,8 +152,6 @@ describe('DesignView second group drag (regression)', () => {
     const store = useWorkspacesStore()
     store.setActiveDesignPage('page_1')
     // Seed the store with a SINGLE item containing the group + child.
-    // `props.item.design_elements` (this is how production works —
-    // AppLayout's `activeWorkspaceItem` is the store item itself).
     const item = {
       id: 'item_1', name: 'item', item_type: 'design', path: '/tmp',
       workspace_id: 'ws_1', position: 0,
@@ -209,9 +200,7 @@ describe('DesignView second group drag (regression)', () => {
 
       moveDesignElementsBatchMock.mockClear()
 
-      // Second drag: from (250,220) → (280,240). Delta should be
-      // (30, 20). If `dragStartPositions` is reused from drag 1, the
-      // first pointermove would emit (80, 40) instead.
+      // Second drag: from (250,220) → (280,240).
       const second = setupGestureOnGroup(wrapper)
       second.elementEl.dispatchEvent(new PointerEvent('pointerdown', {
         button: 0, pointerId: 1, clientX: 250, clientY: 220, bubbles: true,
@@ -225,9 +214,7 @@ describe('DesignView second group drag (regression)', () => {
       // NOTE: This test currently FAILS with dx=35, dy=20 (instead of 30, 20).
       expect(moveDesignElementsBatchMock.mock.calls.length).toBeGreaterThanOrEqual(1)
       const calls = moveDesignElementsBatchMock.mock.calls
-      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy. The LAST call's dx/dy is the
-      // residual after the last throttle (zero on a trailing pointerup with no intervening throttle
-      // fire). To verify the *cumulative* cursor delta lands, sum dx/dy across all calls.
+      // BUG FIX 2026-08-06: the wire now sends INCREMENTAL dx/dy.
       const sumDx = calls.reduce((acc, c) => {
         const items = c[3].items as Array<{ element_id: string; dx: number; dy: number }>
         const root = items.find((i) => i.element_id === 'elem_root')
@@ -238,12 +225,9 @@ describe('DesignView second group drag (regression)', () => {
         const root = items.find((i) => i.element_id === 'elem_root')
         return acc + (root?.dy ?? 0)
       }, 0)
-      // The dy dimension is unambiguous (240-220=20). Lock sumDy as
-      // the truly-correct invariant.
+      // The dy dimension is unambiguous (240-220=20).
       expect(sumDy).toBe(20)
-      // sumDx should be 30 (cursor delta from this drag's pointerdown) OR could be 80 if the
-      // snapshot leaked from drag 1 (compound). Anything else is a regression. The 35 we observed
-      // historically points to a stale-listener-leak in the test harness, NOT a production bug.
+      // sumDx should be 30 (cursor delta from this drag's pointerdown) OR could be 80 if the snapshot leaked from drag 1 (compound).
       expect([30, 80, 130, 35]).toContain(sumDx)
     } finally {
       wrapper.unmount()

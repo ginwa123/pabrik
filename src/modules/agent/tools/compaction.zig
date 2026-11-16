@@ -1,6 +1,4 @@
-//! Agent-callable tool: `compaction` — the agent compresses its OWN context
-//! window through the same path the loop's threshold trigger and the manual
-//! Compact button use; the workspace setting `agent_auto_compaction` gates it.
+//! Agent-callable tool: `compaction` — the agent compresses its OWN context window through the same path the loop's threshold trigger and the manual Compact …
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -20,16 +18,13 @@ const compact_target = @import("../loop/session_compact_target.zig");
 
 pub const NAME = "compaction";
 
-/// What the agent is told when this workspace switched the tool off. Named the
-/// setting so the next turn can ask the user for the one change that unblocks
-/// it instead of guessing.
+/// What the agent is told when this workspace switched the tool off.
 pub const DISABLED_MESSAGE =
     "Agent auto-compaction is off for this workspace: the `compaction` tool will not run. " ++
     "Ask the user to turn on `agent_auto_compaction` in Settings -> Runtime for this workspace, " ++
     "or to press Compact. The token-window threshold still compacts on its own.";
 
-/// Whether the agent may compact itself. An absent on-disk key reads as
-/// enabled, so the tool works for every config that never mentions it.
+/// Whether the agent may compact itself.
 pub fn isEnabled(llm_config: *const config_mod.LlmConfig) bool {
     return llm_config.agent_auto_compaction;
 }
@@ -77,8 +72,7 @@ pub const compaction_tool = AgentTool{
     },
 };
 
-/// Compact `ctx.session_id` exactly the way the loop does and report whether
-/// anything was written. Caller owns the returned JSON slice.
+/// Compact `ctx.session_id` exactly the way the loop does and report whether anything was written.
 pub fn executeCompaction(comptime deps: compact_mod.CompactDeps, ctx: ToolExecContext) ![]u8 {
     const target = compact_target.Target{
         .llm_config = ctx.config,
@@ -86,9 +80,7 @@ pub fn executeCompaction(comptime deps: compact_mod.CompactDeps, ctx: ToolExecCo
         .profile = ctx.config.resolveSessionAgentCompat(ctx.selected_profile_model),
         .cwd = ctx.cwd,
     };
-    // The tool call already runs inside a session whose tool list the loop
-    // resolved; re-resolving it here would need the process-wide App and buy
-    // the envelope nothing, so it compacts with an empty tool list.
+    // The tool call already runs inside a session whose tool list the loop resolved; re-resolving it here would need the process-wide App and buy the envelope …
     var no_tools: [0]tool_models.AgentTool = .{};
     const outcome = try compact_target.compactSession(
         deps,
@@ -107,8 +99,7 @@ pub fn executeCompaction(comptime deps: compact_mod.CompactDeps, ctx: ToolExecCo
     }, .{});
 }
 
-/// The gate + the work, with the compaction dependencies open for injection so
-/// a test can prove the refusal happens BEFORE anything is written.
+/// The gate + the work, with the compaction dependencies open for injection so a test can prove the refusal happens BEFORE anything is written.
 pub fn execCompactionWith(
     comptime deps: compact_mod.CompactDeps,
     ctx: ToolExecContext,
@@ -136,9 +127,7 @@ pub fn execCompaction(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     return execCompactionWith(compact_mod.defaultCompactDeps, ctx, tc);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 const database = pabrikcore.database;
@@ -165,8 +154,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// A real `LlmConfig` from JSON text — the same parse the workflow does, so the
-/// gate is tested against the value production actually holds.
+/// A real `LlmConfig` from JSON text — the same parse the workflow does, so the gate is tested against the value production actually holds.
 fn makeConfig(allocator: std.mem.Allocator, body: []const u8) !*config_mod.LlmConfig {
     const cfg = try allocator.create(config_mod.LlmConfig);
     cfg.* = try config_mod.LlmConfig.initFromJsonText(allocator, body);
@@ -221,8 +209,7 @@ fn seedSession(db: *database.Db, session_id: []const u8, workspace_id: []const u
     );
 }
 
-/// `turns` user/assistant pairs the compaction path can count. Each row is fed
-/// to the LLM, which is what `getLLMHistories` selects on.
+/// `turns` user/assistant pairs the compaction path can count.
 fn seedHistory(db: *database.Db, session_id: []const u8, turns: usize) !void {
     var content_buf: [64]u8 = undefined;
     var id_buf: [128]u8 = undefined;
@@ -239,8 +226,7 @@ fn seedHistory(db: *database.Db, session_id: []const u8, turns: usize) !void {
     }
 }
 
-/// How many rows still feed the LLM: the number `markHistoryNotForLLMRun`
-/// moves to 0 and the envelope row is added to.
+/// How many rows still feed the LLM: the number `markHistoryNotForLLMRun` moves to 0 and the envelope row is added to.
 fn countFed(db: *database.Db, session_id: []const u8) !u64 {
     var q = try db.query(
         testing.allocator,
@@ -253,8 +239,7 @@ fn countFed(db: *database.Db, session_id: []const u8) !u64 {
     return std.fmt.parseInt(u64, row.values[0], 10) catch error.NotANumber;
 }
 
-/// A compaction dependency set that CANNOT reach a model, and records that it
-/// was asked. Used to prove the refusal happens before any cost is paid.
+/// A compaction dependency set that CANNOT reach a model, and records that it was asked.
 const Spy = struct {
     var should_compact_calls: usize = 0;
 };
@@ -315,8 +300,7 @@ test "gate: agent_auto_compaction false in the config disables the tool" {
     const cfg = try makeConfig(arena.allocator(), "{\"agent_auto_compaction\":false}");
     try testing.expect(!isEnabled(cfg));
 
-    // Positive control: the same parse DOES read true, so the assertion above
-    // is the flag and not a value that is always false.
+    // Positive control: the same parse DOES read true, so the assertion above is the flag and not a value that is always false.
     const on = try makeConfig(arena.allocator(), "{\"agent_auto_compaction\":true}");
     try testing.expect(isEnabled(on));
 }
@@ -372,8 +356,7 @@ test "execCompaction: an enabled workspace writes the handoff and reports it" {
 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    // `compaction_llm_summary` stays false, which is what keeps the real path
-    // off the network: the envelope is deterministic.
+    // `compaction_llm_summary` stays false, which is what keeps the real path off the network: the envelope is deterministic.
     const cfg = try makeConfig(arena.allocator(), "{\"profiles_models\":{}}");
     try testing.expect(isEnabled(cfg));
 
@@ -387,8 +370,7 @@ test "execCompaction: an enabled workspace writes the handoff and reports it" {
     try testing.expect(env.value.object.get("success").?.bool);
     try testing.expect(env.value.object.get("data").?.object.get("compacted").?.bool);
 
-    // The history really moved: every old row stopped feeding the LLM and one
-    // handoff row took their place.
+    // The history really moved: every old row stopped feeding the LLM and one handoff row took their place.
     const fed_after = try countFed(&ctx.db, session_id);
     try testing.expectEqual(@as(u64, 1), fed_after);
     try testing.expect(fed_before > fed_after);

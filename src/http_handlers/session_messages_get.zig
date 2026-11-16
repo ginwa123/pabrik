@@ -55,9 +55,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    // 2026-08-21-fix-ui-context-window — resolve the session's selected
-    // profile so the response's `max_capacity_total_tokens` honors the
-    // profile's `max_capacity_tokens` override (cascade step 2 in
+    // 2026-08-21-fix-ui-context-window — resolve the session's selected profile so the response's `max_capacity_total_tokens` honors the profile's …
     const cfg = session_llm_config.forSession(allocator, di.db, session_id) orelse
         pabrikcore.getLlmConfig(di);
     const profile_name = llm_history.getSessionProfileName(allocator, sqlite_db, session_id) catch "";
@@ -68,13 +66,9 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Database query failed" }) });
     };
 
-    // 2026-08-24-fix-flaky-create-and-run-profile-test — when the session has
-    // ZERO llm_history rows (fresh create_and_run session: the worker drains
-    // the queued user message asynchronously), the LEFT JOIN in
+    // 2026-08-24-fix-flaky-create-and-run-profile-test — when the session has ZERO llm_history rows (fresh create_and_run session: the worker drains the queued user …
     const selected_profile_model_final: ?[]const u8 = blk: {
-        // Already-corrupted rows (0xAA poison) are invalid UTF-8, which
-        // std.json would emit as a byte array ([170, ...]) instead of a
-        // string — the frontend then renders the array literally.
+        // Already-corrupted rows (0xAA poison) are invalid UTF-8, which std.json would emit as a byte array ([170, ...]) instead of a string — the frontend then renders …
         if (msg_response.selected_profile_model) |spm| {
             if (std.unicode.utf8ValidateSlice(spm)) break :blk spm;
             break :blk null;
@@ -83,9 +77,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         break :blk null;
     };
 
-    // Zero-message fallback for the attached-PR binding (same race as the
-    // profile chip above): the JOIN yields no rows before the first message,
-    // so read the sessions row directly.
+    // Zero-message fallback for the attached-PR binding (same race as the profile chip above): the JOIN yields no rows before the first message, so read the sessions …
     const pr_fields: llm_history.SessionPrFields = llm_history.getSessionPrFields(allocator, sqlite_db, session_id) catch .{ .pr_url = "", .pr_provider = "" };
     const pr_url_final: ?[]const u8 = msg_response.pr_url orelse (if (pr_fields.pr_url.len > 0) pr_fields.pr_url else null);
     const pr_provider_final: ?[]const u8 = msg_response.pr_provider orelse (if (pr_fields.pr_provider.len > 0) pr_fields.pr_provider else null);
@@ -123,8 +115,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             .id = msg.id,
             .session_id = msg.session_id,
             .role = msg.role,
-            // DB may hold Option A envelopes; wire stays plain `.msg` for
-            // current frontend bubbles. Unwrap with legacy fallback.
+            // DB may hold Option A envelopes; wire stays plain `.msg` for current frontend bubbles.
             .content = blk: {
                 const unwrapped = chat_parsing.unwrapChatContent(allocator, msg.content) catch break :blk try helpers.sanitize.sanitizeUtf8(allocator, msg.content);
                 defer allocator.free(unwrapped);
@@ -157,9 +148,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         .pr_url = pr_url_final,
         .pr_provider = pr_provider_final,
         .transcript_archived_at = transcript_archived_at,
-        // 2026-08-07-profile-persist-read — pass the per-session selected
-        // profile name through so the frontend's profile chip survives a page
-        // refresh.
+        // 2026-08-07-profile-persist-read — pass the per-session selected profile name through so the frontend's profile chip survives a page refresh.
         .selected_profile_model = selected_profile_model_final,
         // Migration 091 — sub-agent identity passthrough.
         .sub_agent_name = msg_response.sub_agent_name,
@@ -173,9 +162,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeSessionMessagesResponse(allocator, http_resp) });
 }
 
-// ===== Tests merged from session_messages_get_test.zig (2026-09-11 flatten)
-// ===== Behavioural tests for `getSessionMessagesSorted` carrying
-// `selected_profile_model` through to its response.
+// ===== Tests merged from session_messages_get_test.zig (2026-09-11 flatten) ===== Behavioural tests for `getSessionMessagesSorted` carrying …
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -185,9 +172,7 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables
-/// that match the production schema columns the `getSessionMessagesSorted`
-/// query reads (plus `selected_profile_model`, which is what we're testing).
+/// Open a fresh in-memory sqlite DB with `llm_history` and `sessions` tables that match the production schema columns the `getSessionMessagesSorted` query reads …
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -225,9 +210,7 @@ fn setupDb() !TestCtx {
         \\)
     , &.{});
 
-    // sessions — full canonical schema (post-Migration-063 shape) so
-    // the COALESCE-on-NULL convention used by the production query
-    // matches reality. selected_profile_model is the field under test.
+    // sessions — full canonical schema (post-Migration-063 shape) so the COALESCE-on-NULL convention used by the production query matches reality. …
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\    id TEXT PRIMARY KEY,
@@ -250,7 +233,6 @@ fn setupDb() !TestCtx {
 }
 
 /// Insert a minimal session row with the given `selected_profile_model`.
-/// (Empty string → SQL NULL — matches the production COALESCE.)
 fn seedSession(
     ctx: *TestCtx,
     allocator: std.mem.Allocator,
@@ -270,8 +252,7 @@ fn seedSession(
     }
 }
 
-/// Insert a minimal message for `session_id` so the
-/// `getSessionMessagesSorted` query returns at least one row.
+/// Insert a minimal message for `session_id` so the `getSessionMessagesSorted` query returns at least one row.
 fn seedMessage(
     ctx: *TestCtx,
     allocator: std.mem.Allocator,
@@ -286,8 +267,7 @@ fn seedMessage(
 }
 
 test "getSessionMessagesSorted: returns selected_profile_model from joined sessions row" {
-    // Mirrors the production handler's allocator lifecycle: the per- request
-    // arena is reclaimed by the HTTP server.
+    // Mirrors the production handler's allocator lifecycle: the per- request arena is reclaimed by the HTTP server.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -316,9 +296,7 @@ test "getSessionMessagesSorted: returns selected_profile_model from joined sessi
 }
 
 test "getSessionMessagesSorted: returns null when session has no profile set" {
-    // See the lifecycle note in test #1 — arena allocator matches the
-    // production handler's per-request arena so we don't need to track
-    // individual `m.deinit` calls.
+    // See the lifecycle note in test #1 — arena allocator matches the production handler's per-request arena so we don't need to track individual `m.deinit` calls.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -348,9 +326,7 @@ test "getSessionMessagesSorted: returns null when session has no profile set" {
 }
 
 test "getSessionMessagesSorted: profile override flows into max_capacity_total_tokens" {
-    // 2026-08-21-fix-ui-context-window — the chat footer's context window
-    // readout must honor the session's selected profile's
-    // `max_capacity_tokens` override.
+    // 2026-08-21-fix-ui-context-window — the chat footer's context window readout must honor the session's selected profile's `max_capacity_tokens` override.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -363,9 +339,7 @@ test "getSessionMessagesSorted: profile override flows into max_capacity_total_t
     try seedSession(&ctx, arena_alloc, "s_cap", "900ribu");
     try seedMessage(&ctx, arena_alloc, "m1", "s_cap", "x");
 
-    // Build a minimal LlmConfig via the same JSON round-trip the
-    // config tests use, with one profile carrying an explicit
-    // max_capacity_tokens override.
+    // Build a minimal LlmConfig via the same JSON round-trip the config tests use, with one profile carrying an explicit max_capacity_tokens override.
     const config_json =
         \\{ "api_key": "k", "model": "MiniMax-M3", "base_url": "b",
         \\  "profiles_models": { "900ribu": { "model": "m", "max_capacity_tokens": 950000 } } }
@@ -421,8 +395,7 @@ test "getSessionProfileName: returns selected_profile_model for a session" {
 }
 
 test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes selected_profile_model" {
-    // The frontend reads `data.selected_profile_model` from the JSON
-    // response.
+    // The frontend reads `data.selected_profile_model` from the JSON response.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -445,12 +418,10 @@ test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes sele
         null,
     );
 
-    // Build the wire response exactly the way sessionMessagesHandler
-    // does — convert llm_history.SessionMessage → http_response.SessionMessage.
+    // Build the wire response exactly the way sessionMessagesHandler does — convert llm_history.SessionMessage → http_response.SessionMessage.
     var wire_messages = try arena_alloc.alloc(http_response.SessionMessage, resp.messages.len);
     for (resp.messages, 0..) |msg, i| {
         // The handler joins image_urls into a pipe-separated string.
-        // For this test (no images seeded) the joined string is empty.
         var image_url_buf = std.ArrayList(u8).empty;
         defer image_url_buf.deinit(arena_alloc);
         if (msg.image_urls) |urls| {
@@ -497,15 +468,11 @@ test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes sele
 
     const json = try http_response.makeSessionMessagesResponse(arena_alloc, wire);
 
-    // The frontend reads this exact key. If the field is missing from
-    // SessionMessagesResponse, std.json.Stringify.valueAlloc will NOT
-    // emit the key, and the assertion fails.
+    // The frontend reads this exact key.
     try testing.expect(std.mem.indexOf(u8, json, "\"selected_profile_model\":\"900ribu\"") != null);
 }
 
 // ─── 2026-08-24-fix-flaky-create-and-run-profile-test ──────────────────────
-// A fresh create_and_run session has ZERO llm_history rows until the worker
-// drains the queued user message (asynchronous).
 
 test "getSessionMessagesSorted: selected_profile_model is NULL when session has zero messages (fallback precondition)" {
     const alloc = testing.allocator;
@@ -517,8 +484,7 @@ test "getSessionMessagesSorted: selected_profile_model is NULL when session has 
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Session row WITH a profile but NO messages — the exact state a
-    // fresh create_and_run session is in before the worker drains.
+    // Session row WITH a profile but NO messages — the exact state a fresh create_and_run session is in before the worker drains.
     try seedSession(&ctx, arena_alloc, "s_fresh", "stub");
 
     const resp = try llm_history.getSessionMessagesSorted(
@@ -531,9 +497,7 @@ test "getSessionMessagesSorted: selected_profile_model is NULL when session has 
         null,
     );
 
-    // Data-layer contract: no JOINed rows → null. This is WHY the
-    // handler needs the sessions-table fallback — assert it so a
-    // future change to the JOIN semantics fails loudly here first.
+    // Data-layer contract: no JOINed rows → null.
     try testing.expectEqual(@as(usize, 0), resp.messages.len);
     try testing.expect(resp.selected_profile_model == null);
 

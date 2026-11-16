@@ -1,5 +1,4 @@
-// src/apps/desktop_app/attach.zig Desktop's "find pabrik" logic (Chunk 4 of
-// the decoupled-pabrik-service plan).
+// src/apps/desktop_app/attach.zig Desktop's "find pabrik" logic (Chunk 4 of the decoupled-pabrik-service plan).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,27 +10,18 @@ const port = @import("port.zig");
 
 pub const AttachOptions = struct {
     /// Path to the pabrik state file (from `state_file.defaultStatePath`).
-    /// The desktop reads this to find an existing daemon's host+port.
     state_path: []const u8,
     /// Port to probe as a fallback if no state file exists. Default 8081.
     default_port: u16 = 8081,
-    /// When true, refuse to auto-spawn pabrik if none is running; the
-    /// caller surfaces an actionable error to the user.
+    /// When true, refuse to auto-spawn pabrik if none is running; the caller surfaces an actionable error to the user.
     no_auto_start: bool = false,
     /// Path to the pabrik binary (used by the auto-spawn path).
-    /// Optional — when null, we attempt to spawn using `path_resolve`
-    /// against the desktop's own location.
     pabrik_path: ?[]const u8 = null,
-    /// The desktop's own executable path. Used by `path_resolve` to check if
-    /// `pabrik` lives next to the desktop binary.
+    /// The desktop's own executable path.
     self_exe_path: ?[]const u8 = null,
-    /// $PATH string (colon-separated on Unix). Required for the $PATH
-    /// resolution strategy when `pabrik_path` is null AND there's no
-    /// pabrik next to the desktop binary.
+    /// $PATH string (colon-separated on Unix).
     path_env: []const u8 = "",
-    /// Absolute path to the extracted webapp assets. When the auto-spawn path
-    /// fires, the spawned pabrik is started with `--static-dir <this>` so it
-    /// serves the desktop's webapp at `/`.
+    /// Absolute path to the extracted webapp assets.
     static_dir: []const u8 = "",
 };
 
@@ -39,11 +29,8 @@ pub const AttachTarget = struct {
     host: []const u8,
     port: u16,
     /// Whether the desktop spawned a fresh daemon to satisfy this attach.
-    /// `we_spawned = true` means the daemon outlives the desktop; `false`
-    /// means we attached to one the user started independently.
     we_spawned: bool,
-    /// Pid of the daemon this desktop spawned (0 when it spawned none, and
-    /// on platforms that do not expose one). Only ever a process we own.
+    /// Pid of the daemon this desktop spawned (0 when it spawned none, and on platforms that do not expose one).
     pid: i32 = 0,
 };
 
@@ -55,7 +42,6 @@ pub const AttachError = error{
 };
 
 /// Probe state.json, then the default port, then auto-spawn as needed.
-/// Returns the AttachTarget.
 pub fn resolveAttachTarget(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -65,9 +51,7 @@ pub fn resolveAttachTarget(
     if (try pabrikcore.state_file.readStateFile(allocator, io, opts.state_path)) |state| {
         defer pabrikcore.state_file.freeState(allocator, state);
         if (isUsableWebappServer(state.host, state.port, io)) {
-            // Caller now owns state.host — it outlives this function. We
-            // can't pass a slice into a returned struct without making a
-            // copy; for v1, copy the strings.
+            // Caller now owns state.host — it outlives this function.
             const host_dup = try allocator.dupe(u8, state.host);
             errdefer allocator.free(host_dup);
             return .{
@@ -90,9 +74,7 @@ pub fn resolveAttachTarget(
     return try autoSpawnAndWaitForHealth(allocator, io, opts);
 }
 
-/// True when `port` hosts a pabrik that actually serves the webapp. Logs
-/// (loudly) why a merely-healthy server was rejected, because the user's next
-/// question is always "my pabrik is running, why did it start a second one?".
+/// True when `port` hosts a pabrik that actually serves the webapp.
 fn isUsableWebappServer(host: []const u8, backend_port: u16, io: std.Io) bool {
     if (!probeHealth(host, backend_port, io)) return false;
     if (subprocess.probeWebapp(backend_port)) return true;
@@ -106,9 +88,7 @@ fn isUsableWebappServer(host: []const u8, backend_port: u16, io: std.Io) bool {
 fn probeHealth(host: []const u8, backend_port: u16, io: std.Io) bool {
     _ = host;
     _ = io;
-    // 1-second connect+GET /health probe. Returns true on 2xx, false
-    // otherwise. Health alone is NOT enough to attach — see
-    // `isUsableWebappServer`.
+    // 1-second connect+GET /health probe.
     return subprocess.probeHealth(backend_port);
 }
 
@@ -117,8 +97,7 @@ fn autoSpawnAndWaitForHealth(
     io: std.Io,
     opts: AttachOptions,
 ) AttachError!AttachTarget {
-    // 1. Resolve pabrik's absolute path. Order is: explicit
-    //    `--pabrik-path` flag → next to self → $PATH lookup.
+    // 1.
     const pabrik_path = blk: {
         const explicit = opts.pabrik_path orelse null;
         const self_exe = opts.self_exe_path orelse ".";
@@ -148,8 +127,7 @@ fn autoSpawnAndWaitForHealth(
         if (opts.static_dir.len > 0) opts.static_dir else "(none)",
     });
 
-    // 3. Spawn the child process. Pass `opts.static_dir` so the spawned
-    // pabrik serves the webapp at `/`.
+    // 3.
     var child = subprocess.spawn(
         allocator,
         io,
@@ -182,8 +160,7 @@ fn autoSpawnAndWaitForHealth(
         return error.AutoSpawnFailed;
     }
 
-    // 6. Persist state.json so the NEXT launch finds this daemon via step 1
-    // instead of spawning a duplicate.
+    // 6.
     const state: pabrikcore.state_file.State = .{
         .pid = child.pid,
         .port = spawn_port,
@@ -207,20 +184,16 @@ fn autoSpawnAndWaitForHealth(
     };
 }
 
-/// Prefer `preferred` unless something is already listening there, in
-/// which case hand back an ephemeral free port.
+/// Prefer `preferred` unless something is already listening there, in which case hand back an ephemeral free port.
 fn chooseSpawnPort(allocator: std.mem.Allocator, io: std.Io, preferred: u16) u16 {
     if (port.isFree(allocator, io, preferred)) return preferred;
     const free = port.findFree(allocator, io) catch {
-        // Couldn't probe for a free port — try the preferred one anyway
-        // rather than refusing to start at all.
+        // Couldn't probe for a free port — try the preferred one anyway rather than refusing to start at all.
         std.log.warn("Could not allocate a free port; trying {d} anyway", .{preferred});
         return preferred;
     };
     if (free.port == preferred) return preferred;
-    // Tell the user how to get back to the well-known port — otherwise every
-    // launch keeps spawning a fresh daemon on a random port because the
-    // squatter never goes away.
+    // Tell the user how to get back to the well-known port — otherwise every launch keeps spawning a fresh daemon on a random port because the squatter never goes …
     std.log.warn(
         "Port {d} is already in use by a server that does not serve the webapp; spawning on {d} instead",
         .{ preferred, free.port },
@@ -232,8 +205,7 @@ fn chooseSpawnPort(allocator: std.mem.Allocator, io: std.Io, preferred: u16) u16
     return free.port;
 }
 
-// ===== Tests merged from attach_test.zig (2026-09-29 flatten) ===== Tests
-// for the desktop's "find pabrik" logic.
+// ===== Tests merged from attach_test.zig (2026-09-29 flatten) =====
 
 const testing = std.testing;
 
@@ -251,9 +223,7 @@ const MockServer = struct {
     thread: std.Thread,
     stop_flag: *std.atomic.Value(bool),
 
-    /// Stop the accept loop deterministically. The loop polls the listening
-    /// socket with a timeout and checks the flag, so this always returns
-    /// (no relying on shutdown()/close() to wake a blocked accept()).
+    /// Stop the accept loop deterministically.
     fn stop(self: *MockServer) void {
         self.stop_flag.store(true, .release);
         self.thread.join();
@@ -262,8 +232,7 @@ const MockServer = struct {
     }
 };
 
-/// Bind 127.0.0.1:0, listen, and serve requests in a background thread
-/// according to `kind`. Returns the kernel-picked port + the thread handle.
+/// Bind 127.0.0.1:0, listen, and serve requests in a background thread according to `kind`.
 fn bindMockServer(kind: MockKind) !MockServer {
     const fd_rc = std.os.linux.socket(
         std.os.linux.AF.INET,
@@ -273,8 +242,7 @@ fn bindMockServer(kind: MockKind) !MockServer {
     if (fd_rc > std.math.maxInt(i32)) return error.TestSetupFailed;
     const fd: i32 = @intCast(fd_rc);
 
-    // SO_REUSEADDR so the kernel doesn't hold the port in TIME_WAIT after
-    // the test exits (lets consecutive test runs reuse the port).
+    // SO_REUSEADDR so the kernel doesn't hold the port in TIME_WAIT after the test exits (lets consecutive test runs reuse the port).
     const one: c_int = 1;
     _ = std.os.linux.setsockopt(
         fd,
@@ -298,9 +266,7 @@ fn bindMockServer(kind: MockKind) !MockServer {
     var assigned: std.os.linux.sockaddr.in = undefined;
     var addr_len: std.os.linux.socklen_t = @sizeOf(std.os.linux.sockaddr.in);
     _ = std.os.linux.getsockname(fd, @ptrCast(&assigned), &addr_len);
-    // Named `bound_port`, not `port`: this file's module scope already has
-    // `const port = @import("port.zig")` and Zig rejects a local that
-    // shadows a container-level declaration.
+    // Named `bound_port`, not `port`: this file's module scope already has `const port = @import("port.zig")` and Zig rejects a local that shadows a container-level …
     const bound_port = std.mem.bigToNative(u16, assigned.port);
 
     const listen_rc = std.os.linux.listen(fd, 8);
@@ -315,8 +281,7 @@ fn bindMockServer(kind: MockKind) !MockServer {
     const thread = try std.Thread.spawn(.{}, struct {
         fn run(server_fd: i32, mock_kind: MockKind, flag: *std.atomic.Value(bool)) void {
             while (!flag.load(.acquire)) {
-                // Poll first so the stop flag is observed even when no
-                // client ever connects again.
+                // Poll first so the stop flag is observed even when no client ever connects again.
                 var pfd = [_]std.posix.pollfd{.{
                     .fd = server_fd,
                     .events = std.posix.POLL.IN,
@@ -330,8 +295,7 @@ fn bindMockServer(kind: MockKind) !MockServer {
                     .SUCCESS => {},
                     // Spurious wakeups: keep serving.
                     .INTR, .AGAIN => continue,
-                    // Anything else (including the loop being torn down):
-                    // give up rather than spin.
+                    // Anything else (including the loop being torn down)
                     else => return,
                 }
                 const conn_fd: i32 = @intCast(conn_rc);
@@ -341,18 +305,14 @@ fn bindMockServer(kind: MockKind) !MockServer {
         }
     }.run, .{ fd, kind, stop_flag });
 
-    // Give the thread time to enter poll()/accept() before the client
-    // attempts to connect (without this, a fast client can win the race
-    // against listen()).
+    // Give the thread time to enter poll()/accept() before the client attempts to connect (without this, a fast client can win the race against listen()).
     var ts: std.posix.timespec = .{ .sec = 0, .nsec = 50 * std.time.ns_per_ms };
     _ = std.c.nanosleep(&ts, null);
 
     return .{ .fd = fd, .port = bound_port, .thread = thread, .stop_flag = stop_flag };
 }
 
-/// Read the request line, then answer according to `kind`. `/health` is
-/// always 200 — the point of these fixtures is that health alone is not
-/// a sufficient signal.
+/// Read the request line, then answer according to `kind`.
 fn serveOne(conn_fd: i32, kind: MockKind) void {
     var req: [512]u8 = undefined;
     var req_len: usize = 0;
@@ -434,8 +394,7 @@ const fake_pabrik_script =
     \\
 ;
 
-/// Materialise `fake_pabrik_script` in `tmp`'s dir, mark it executable, and
-/// return its owned absolute path.
+/// Materialise `fake_pabrik_script` in `tmp`'s dir, mark it executable, and return its owned absolute path.
 fn writeFakePabrik(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir) ![]u8 {
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const dir_len = try tmp.dir.realPath(testing.io, &dir_buf);
@@ -488,9 +447,7 @@ test "resolveAttachTarget attaches to a daemon that serves the webapp" {
     const state_path = try writeStateFile(allocator, &tmp, srv.port);
     defer allocator.free(state_path);
 
-    // --no-auto-start short-circuits the spawn fallback so the test needs
-    // no pabrik binary on disk; a successful attach is the only way to get
-    // a target back.
+    // --no-auto-start short-circuits the spawn fallback so the test needs no pabrik binary on disk; a successful attach is the only way to get a target back.
     const result = try resolveAttachTarget(allocator, testing.io, .{
         .state_path = state_path,
         .default_port = srv.port,
@@ -506,8 +463,7 @@ test "resolveAttachTarget refuses a daemon whose static dir is gone (health 200,
     if (builtin.os.tag == .windows) return;
     const allocator = testing.allocator;
 
-    // This is the exact shape of the reported bug: a detached pabrik whose
-    // --static-dir was deleted. /health is 200, / is 404 Not Found.
+    // This is the exact shape of the reported bug: a detached pabrik whose --static-dir was deleted.
     var srv = try bindMockServer(.health_only);
     defer srv.stop();
 
@@ -516,8 +472,7 @@ test "resolveAttachTarget refuses a daemon whose static dir is gone (health 200,
     const state_path = try writeStateFile(allocator, &tmp, srv.port);
     defer allocator.free(state_path);
 
-    // With auto-start disabled the only acceptable outcomes are "error" —
-    // attaching would mean opening the webview onto a 404 page.
+    // With auto-start disabled the only acceptable outcomes are "error" — attaching would mean opening the webview onto a 404 page.
     const result = resolveAttachTarget(allocator, testing.io, .{
         .state_path = state_path,
         .default_port = srv.port,
@@ -539,9 +494,7 @@ test "resolveAttachTarget falls through to a fresh spawn when the only daemon 40
     const state_path = try writeStateFile(allocator, &tmp, srv.port);
     defer allocator.free(state_path);
 
-    // Stand-in for the real pabrik binary: a script that binds the --port it
-    // is given and answers everything with 200 + HTML, then exits on its own
-    // so the test can't leak a process.
+    // Stand-in for the real pabrik binary: a script that binds the --port it is given and answers everything with 200 + HTML, then exits on its own so the test can't …
     const fake_pabrik = try writeFakePabrik(allocator, &tmp);
     defer allocator.free(fake_pabrik);
 
@@ -557,8 +510,7 @@ test "resolveAttachTarget falls through to a fresh spawn when the only daemon 40
     try testing.expect(result.we_spawned);
     try testing.expect(result.port != srv.port);
 
-    // The returned target must actually serve the app — that is the whole
-    // contract: the webview is only ever pointed at an app-serving URL.
+    // The returned target must actually serve the app — that is the whole contract: the webview is only ever pointed at an app-serving URL.
     try testing.expect(subprocess.probeWebapp(result.port));
 
     // The unusable daemon must have been left alone, not killed.
@@ -572,9 +524,7 @@ test "resolveAttachTarget refuses a 404-ing daemon on the fallback port too" {
     var srv = try bindMockServer(.health_only);
     defer srv.stop();
 
-    // No state file at all: the code falls back to probing the well-known
-    // port, which is where the leftover daemon from the previous launch
-    // lives.
+    // No state file at all: the code falls back to probing the well-known port, which is where the leftover daemon from the previous launch lives.
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -595,7 +545,6 @@ test "resolveAttachTarget returns AutoStartDisabled when --no-auto-start and no 
     const allocator = testing.allocator;
 
     // Use a tmp path that does NOT exist; the read returns null immediately.
-    // The fallback port (65535) is unreachable.
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -616,9 +565,7 @@ test "auto-spawn persists state.json so the next launch attaches instead of spaw
     if (!fileExists("/usr/bin/env")) return error.SkipZigTest; // fake pabrik needs python3
     const allocator = testing.allocator;
 
-    // Squatter on the well-known port: healthy but serves no webapp, so the
-    // first launch must skip it and spawn its own daemon on an ephemeral
-    // port (the :51165 half of the reported bug).
+    // Squatter on the well-known port: healthy but serves no webapp, so the first launch must skip it and spawn its own daemon on an ephemeral port (the :51165 half …
     var squatter = try bindMockServer(.health_only);
     defer squatter.stop();
 
@@ -643,17 +590,14 @@ test "auto-spawn persists state.json so the next launch attaches instead of spaw
     try testing.expect(first.we_spawned);
     try testing.expect(first.port != squatter.port);
 
-    // The spawn must have recorded itself: the state file on disk points at
-    // the freshly spawned port.
+    // The spawn must have recorded itself: the state file on disk points at the freshly spawned port.
     const recorded = try pabrikcore.state_file.readStateFile(allocator, testing.io, state_path);
     try testing.expect(recorded != null);
     const state = recorded.?;
     defer pabrikcore.state_file.freeState(allocator, state);
     try testing.expectEqual(first.port, state.port);
 
-    // Second launch: with auto-start disabled (so a spawn is impossible),
-    // the desktop must attach to the recorded daemon — proving the state
-    // file alone is enough to avoid a duplicate.
+    // Second launch: with auto-start disabled (so a spawn is impossible), the desktop must attach to the recorded daemon — proving the state file alone is enough to …
     const second = try resolveAttachTarget(allocator, testing.io, .{
         .state_path = state_path,
         .default_port = squatter.port,

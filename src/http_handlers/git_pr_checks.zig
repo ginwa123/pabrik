@@ -1,5 +1,4 @@
-//! `GET /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=github]` Two
-//! hops, because the question has two levels: 1.
+//! `GET /api/git/pr/checks?path=<repo>[&pr=<n|url>][&provider=github]` Two hops, because the question has two levels: 1.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -9,9 +8,7 @@ const git_route = @import("git_route.zig");
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
-// Provider resolution + the error-detail helper are shared with the status
-// endpoint: two endpoints that disagree about which forge a repo is on would
-// show a GitHub user GitLab error text.
+// Provider resolution + the error-detail helper are shared with the status endpoint: two endpoints that disagree about which forge a repo is on would show a …
 const pr_status = @import("git_pr_status.zig");
 
 const ChecksError = error{
@@ -24,17 +21,13 @@ const ChecksError = error{
 };
 
 pub const CHECKS_TIMEOUT_MS: u32 = 20_000;
-/// Shorter than hop 1: the panel waits on the whole request, and degrading one
-/// job's steps beats degrading every row.
+/// Shorter than hop 1: the panel waits on the whole request, and degrading one job's steps beats degrading every row.
 pub const RUN_VIEW_TIMEOUT_MS: u32 = 10_000;
 
-/// `run view --json jobs` is the big one (every job × every step). 1 MiB is past
-/// any real workflow and still bounds one request.
+/// `run view --json jobs` is the big one (every job × every step). 1 MiB is past any real workflow and still bounds one request.
 const CHECKS_MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 
-/// Each run lookup is a network round trip. Past this we return what we have
-/// and set `steps_truncated` so the panel says "partial" instead of showing a
-/// quietly short list.
+/// Each run lookup is a network round trip.
 pub const MAX_RUN_LOOKUPS: usize = 6;
 
 /// gh prints this for a job that has not finished. It is not a timestamp.
@@ -88,27 +81,21 @@ fn cleanTime(s: []const u8) []const u8 {
     return s;
 }
 
-/// Only red jobs get a run lookup: a passing job's steps are noise in a panel
-/// about what broke, and a pending job's last step is still running, so the
-/// "failing step" would be a moving target.
+/// Only red jobs get a run lookup: a passing job's steps are noise in a panel about what broke, and a pending job's last step is still running, so the "failing …
 fn wantsSteps(bucket: []const u8) bool {
     return std.ascii.eqlIgnoreCase(bucket, "fail") or
         std.ascii.eqlIgnoreCase(bucket, "cancel");
 }
 
-/// A run we looked up (or failed to). `stdout` is the DUPED `gh run view`
-/// payload, parsed later in `buildResponse`.
+/// A run we looked up (or failed to).
 const RunLookup = struct {
     run_id: []const u8,
     stdout: []u8 = "",
-    /// Non-empty renders on every failed entry in this run, so "could not read
-    /// the steps" never looks like "there were none".
+    /// Non-empty renders on every failed entry in this run, so "could not read the steps" never looks like "there were none".
     err: []const u8 = "",
 };
 
-/// `gh pr checks` in `path`. Returns stdout (owned), or "" when the PR has no
-/// checks — gh exits non-zero with "no checks reported…" there, and that is a
-/// real answer, not a failure.
+/// `gh pr checks` in `path`.
 fn runChecks(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -142,8 +129,7 @@ fn runChecks(
         return error.FetchFailed;
     }
 
-    // gh exits 8 ("checks pending") WITH a usable payload, so the exit code is
-    // only read when stdout is empty.
+    // gh exits 8 ("checks pending") WITH a usable payload, so the exit code is only read when stdout is empty.
     var no_checks = false;
     switch (res.term) {
         .exited => |code| {
@@ -175,9 +161,7 @@ fn runChecks(
     return allocator.dupe(u8, if (no_checks) "" else res.stdout);
 }
 
-/// `gh run view <run_id> --json jobs`. Never fails the request: a bad run id, a
-/// network blip, or a collected run all come back as a `RunLookup.err` the panel
-/// renders next to the job. Losing one step list must not lose 40 check rows.
+/// `gh run view <run_id> --json jobs`.
 fn lookupRun(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -225,8 +209,7 @@ fn lookupRun(
     return .{ .run_id = run_id, .stdout = owned };
 }
 
-/// By id, not by name: a matrix workflow can repeat a name across runs, and a
-/// wrong job's steps are worse than no steps.
+/// By id, not by name: a matrix workflow can repeat a name across runs, and a wrong job's steps are worse than no steps.
 fn findJob(jobs: []const GhRunJob, database_id: i64) ?GhRunJob {
     for (jobs) |j| {
         if (j.databaseId == database_id) return j;
@@ -245,8 +228,7 @@ fn tally(summary: *http_response.GitPrChecksSummary, bucket: []const u8) void {
     } else if (std.ascii.eqlIgnoreCase(bucket, "cancel")) {
         summary.cancelled += 1;
     } else {
-        // `skipping` plus anything a future gh invents. Counting the unknown as
-        // skipped keeps total == sum(parts), which the panel's badge assumes.
+        // `skipping` plus anything a future gh invents.
         summary.skipped += 1;
     }
 }
@@ -268,8 +250,7 @@ fn buildResponse(
         };
     }
 
-    // parseFromSliceLeaky BORROWS strings from `trimmed`, which the caller
-    // frees — so every string is duped below. Numbers copy by value.
+    // parseFromSliceLeaky BORROWS strings from `trimmed`, which the caller frees — so every string is duped below.
     const rows = try std.json.parseFromSliceLeaky([]const GhCheckRow, allocator, trimmed, .{ .ignore_unknown_fields = true });
 
     var entries: std.ArrayList(http_response.GitPrCheckEntry) = .empty;
@@ -296,8 +277,7 @@ fn buildResponse(
 
     for (entries.items) |*entry| {
         if (!wantsSteps(entry.bucket)) continue;
-        // An external checker has no Actions run: no steps is a fact about the
-        // check, not a lookup failure, so it is skipped silently.
+        // An external checker has no Actions run: no steps is a fact about the check, not a lookup failure, so it is skipped silently.
         const run_id = pr_cli.runIdFromJobLink(entry.link) orelse continue;
 
         var seen = false;
@@ -331,8 +311,7 @@ fn buildResponse(
             }
         }
         if (lookup == null) {
-            // The run was never fetched — budget. Say so rather than show a red
-            // job with no steps and no explanation.
+            // The run was never fetched — budget.
             entry.steps_error = if (budget_exhausted)
                 "step details were not fetched — too many failing workflows for one lookup"
             else
@@ -429,8 +408,7 @@ fn useCaseWithPrograms(
         return error.ForgeUnsupported;
     };
 
-    // Real buffer, not `&.{}`: checksArgv also returns null for an undersized
-    // buffer, so probing with an empty slice would reject GitHub too.
+    // Real buffer, not `&.{}`: checksArgv also returns null for an undersized buffer, so probing with an empty slice would reject GitHub too.
     var probe_buf: [pr_cli.checks_argv_max][]const u8 = undefined;
     if (pr_cli.checksArgv(&probe_buf, provider, programs.forProvider(provider), pr_arg) == null) {
         pr_status.setFetchDetail(allocator, fetch_detail, "CI checks are available for GitHub pull requests only");
@@ -443,8 +421,7 @@ fn useCaseWithPrograms(
     return try buildResponse(allocator, io, programs.forProvider(provider), path, pr_arg, std.mem.trim(u8, raw, " \n\r"));
 }
 
-/// `pr` is optional; when omitted gh resolves the PR for the current branch,
-/// matching `/api/git/pr/status`.
+/// `pr` is optional; when omitted gh resolves the PR for the current branch, matching `/api/git/pr/status`.
 pub fn gitPrChecksHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -472,9 +449,7 @@ pub fn gitPrChecksHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
         error.CliMissing => {
             return res.jsonResponse(.{ .status_code = 422, .data = try http_response.makeGitStatusErrorResponse(allocator, "gh CLI not found on PATH (install gh to see pull request CI checks)") });
         },
-        // 422, not 404 and not 200-with-no-rows: the panel has to be able to say
-        // "not available for this forge", which is a different message from
-        // "this PR has no CI".
+        // 422, not 404 and not 200-with-no-rows: the panel has to be able to say "not available for this forge", which is a different message from "this PR has no CI".
         error.ForgeUnsupported => {
             return res.jsonResponse(.{ .status_code = 422, .data = try http_response.makeGitStatusErrorResponse(allocator, fetch_detail orelse "CI checks are not available for this provider") });
         },
@@ -525,8 +500,7 @@ test "tally keeps total equal to the sum of the parts, including unknown buckets
     try testing.expectEqual(@as(u32, 1), s.failed);
     try testing.expectEqual(@as(u32, 1), s.pending);
     try testing.expectEqual(@as(u32, 1), s.cancelled);
-    // Unknown buckets land in `skipped` rather than vanishing — the badge adds
-    // the parts up and a dropped row breaks it.
+    // Unknown buckets land in `skipped` rather than vanishing — the badge adds the parts up and a dropped row breaks it.
     try testing.expectEqual(@as(u32, 2), s.skipped);
 }
 
@@ -541,8 +515,7 @@ test "findJob matches on databaseId, not on name" {
 }
 
 test "buildResponse parses rows, tallies them, and reports the pr ref" {
-    // buildResponse dups into the caller's allocator — in production a
-    // per-request arena. An arena here so the test can free the lot.
+    // buildResponse dups into the caller's allocator — in production a per-request arena.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -562,8 +535,7 @@ test "buildResponse parses rows, tallies them, and reports the pr ref" {
     try testing.expectEqualStrings("2026-10-03T19:11:04Z", out.checks[0].started_at);
     // ZERO_TIME must not reach the wire as year 1.
     try testing.expectEqualStrings("", out.checks[1].completed_at);
-    // An external check has no Actions run: no steps, and NO steps_error either
-    // — there was nothing to fail.
+    // An external check has no Actions run: no steps, and NO steps_error either — there was nothing to fail.
     try testing.expectEqualStrings("", out.checks[1].steps_error);
     try testing.expectEqual(@as(usize, 0), out.checks[1].steps.len);
     try testing.expect(!out.steps_truncated);
@@ -583,8 +555,7 @@ test "buildResponse treats an empty payload as zero checks, not as a failure" {
 test "buildResponse rejects a payload that is not the checks array" {
     const allocator = testing.allocator;
     const io = testing.io;
-    // `gh pr checks` without `--json` prints a table. Parsing it as a list must
-    // fail loudly, not yield "0 checks, all good".
+    // `gh pr checks` without `--json` prints a table.
     if (buildResponse(allocator, io, "gh", "/tmp", "42", "path filter\tsuccess\t1m2s")) |_| {
         return error.ExpectedParseFailure;
     } else |_| {}
@@ -620,9 +591,7 @@ test "makeGitPrChecksResponse serializes the documented wire shape" {
     try testing.expect(std.mem.indexOf(u8, body, "\"bucket\":\"fail\"") != null);
     try testing.expect(std.mem.indexOf(u8, body, "\"conclusion\":\"failure\"") != null);
     try testing.expect(std.mem.indexOf(u8, body, "\"steps_truncated\":false") != null);
-    // Keys the frontend reads must be present even when empty: a missing
-    // `steps_error` would read as "no error" and a missing `steps` as "no
-    // steps", which are the same thing today only by luck.
+    // Keys the frontend reads must be present even when empty: a missing `steps_error` would read as "no error" and a missing `steps` as "no steps", which are the …
     try testing.expect(std.mem.indexOf(u8, body, "\"steps\":[]") != null);
     try testing.expect(std.mem.indexOf(u8, body, "\"steps_error\":\"\"") != null);
 }

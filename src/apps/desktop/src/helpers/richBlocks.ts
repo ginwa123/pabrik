@@ -1,13 +1,10 @@
-/** One renderable slice of an assistant turn. `payload` is markdown text, `<html>` inner markup, or
- * Mermaid/PlantUML/D2 source — never the wrapper tags themselves. */
+/** One renderable slice of an assistant turn. */
 export interface RichSegment {
   kind: 'markdown' | 'html' | 'mermaid' | 'plantuml' | 'd2'
   payload: string
 }
 
-/** Every wrapper the prompt teaches plus the fences models reach for anyway. Each alternative pairs
- * a whole-match group with a body group, so one scan yields the kind AND the payload; an opening tag
- * may carry attributes (`<html lang="en">`) — a bare-tag-only pattern lost that whole block. */
+/** Every wrapper the prompt teaches plus the fences models reach for anyway. */
 const RICH_BLOCK_SOURCE =
   '(<html(?:\\s[^>]*)?>([\\s\\S]*?)<\\/html>)' +
   '|(<mermaid(?:\\s[^>]*)?>([\\s\\S]*?)<\\/mermaid>)' +
@@ -34,14 +31,11 @@ const DETECT_RE = new RegExp(RICH_BLOCK_SOURCE, 'i')
 
 const prose = (payload: string): RichSegment => ({ kind: 'markdown', payload })
 
-/** True when the turn carries at least one CLOSED rich block or fence. An unclosed tag mid-stream
- * does not count — it falls through to the legacy markdown path. */
+/** True when the turn carries at least one CLOSED rich block or fence. */
 export const hasRichBlocks = (content: string | undefined): boolean =>
   !!content && DETECT_RE.test(content)
 
-/**  * Split a turn into segments in document order, so prose and rich blocks alternate exactly as the
- * model wrote them. Text between (and around) the blocks becomes a `markdown` segment; content with
- * no block yields one markdown segment, so the result is never an empty array. */
+/** Split a turn into segments in document order, so prose and rich blocks alternate exactly as the model wrote them. */
 export const extractRichBlocks = (content: string): RichSegment[] => {
   const segments: RichSegment[] = []
   let cursor = 0

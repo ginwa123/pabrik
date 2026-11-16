@@ -31,14 +31,10 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     showCenterDiff,
   } = deps
 
-  // ── Centre-diff view state: two axes, one owner ─────────────────────────── mode          — LAYOUT
-  // (unified | split). Global, so it lives in the URL (?diffmode=) with a localStorage fallback for
-  // "I always read split". The code editor's diff tab reads the same stored preference.
+  // ── Centre-diff view state: two axes, one owner ───────────────────────────
   const readStoredDiffMode = readDiffMode
 
-  /** Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler). That makes the read
-   * optional-router-safe: ~30 specs mount with no router, where a bare `route.query` would throw
-   * inside setup and fail the whole mount. */
+  /** Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler). */
   const readDiffModeParam = (): 'unified' | 'split' | null => {
     const v = route?.query?.diffmode
     return v === 'unified' || v === 'split' ? v : null
@@ -56,12 +52,9 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     () => centerFiles.value.length > 0 && collapsedCount.value === centerFiles.value.length,
   )
 
-  /**  * Write one of the diff view's params, skipping stale writes during a chat switch (the same guard
-   * `syncDiffParam` needs: ChatsList replaces the URL at the same time, and a second replace from the
-   * dying view corrupts the patch). */
+  /** Write one of the diff view's params, skipping stale writes during a chat switch (the same guard `syncDiffParam` needs: ChatsList replaces the URL at the same … */
   function syncDiffQuery(mutate: (query: LocationQueryRaw) => void) {
-    // Same optional-router guard as `syncDiffParam`: a ChatView mounted outside
-    // the router tree has no URL to write to.
+    // Same optional-router guard as `syncDiffParam`: a ChatView mounted outside the router tree has no URL to write to.
     if (!route) return
     if (route.query.view !== undefined && route.query.view !== 'chat') return
     const routeSession = route.query.session
@@ -79,8 +72,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     })
   }
 
-  /** Replace-all rather than per-file: the bulk button is one user gesture, and
-   * `?diffcollapse=1` can only mean "all of them". */
+  /** Replace-all rather than per-file: the bulk button is one user gesture, and `?diffcollapse=1` can only mean "all of them". */
   function setAllCollapsed(collapsed: boolean, paths: DiffSelection[] = centerFiles.value) {
     collapsedPaths.clear()
     if (collapsed) for (const f of paths) collapsedPaths.add(f.path)
@@ -93,9 +85,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     syncCollapseParam()
   }
 
-  /**  * Whole file is per section — 40 whole-file requests and a wall of text is not what "show me this
-   * file" means. The untracked case is refused UP FRONT: a new file's diff already IS the whole file,
-   * so the control stays locked at "Whole file" and no request is ever made. */
+  /** Whole file is per section — 40 whole-file requests and a wall of text is not what "show me this file" means. */
   function toggleWholeFile(path: string) {
     if (wholeFilePaths.has(path)) wholeFilePaths.delete(path)
     else wholeFilePaths.add(path)
@@ -109,13 +99,9 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     })
   }
 
-  /** The code viewer's open file, shared by `AppLayout` (which owns the session). Non-null ⇒ this
-   * chat renders the file in its center column, exactly where the stacked center diff goes, so the
-   * chat-owned right sidebar — the Explorer the user just clicked a file in — stays on screen. */
+  /** The code viewer's open file, shared by `AppLayout` (which owns the session). */
   const codeViewer = useInjectCodeViewer()
-  /**  * Plain (never-null) view model for the template: the injected session unwrapped, or an empty model
-   * when there is no provider (unit tests) / no open file. One object, so the template needs no
-   * null-narrowing. */
+  /** Plain (never-null) view model for the template: the injected session unwrapped, or an empty model when there is no provider (unit tests) / no open file. */
   const codeViewerModel = computed<CodeViewerView>(() => ({
     file: codeViewer?.file.value ?? null,
     content: codeViewer?.content.value ?? '',
@@ -136,8 +122,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     // Click on an already-loaded file scrolls instead of refetching.
     currentPath.value = path
     if (showCenterDiff.value) syncDiffParam(path)
-    // Expand before scrolling: landing on a collapsed section would scroll to a
-    // one-line stub and look like the click did nothing.
+    // Expand before scrolling: landing on a collapsed section would scroll to a one-line stub and look like the click did nothing.
     if (collapsedPaths.has(path)) {
       collapsedPaths.delete(path)
       syncCollapseParam()
@@ -157,8 +142,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
   }
 
   function onChatSidebarShowDiffList(files: DiffSelection[]) {
-    // Union by path, incoming list order wins — the panel just fetched
-    // everything, so its entries are the freshest.
+    // Union by path, incoming list order wins — the panel just fetched everything, so its entries are the freshest.
     const incoming = new Map(files.map((f) => [f.path, f]))
     const merged = [...files]
     for (const existing of centerFiles.value) {
@@ -166,13 +150,11 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     }
     centerFiles.value = merged
     syncCenterSpy()
-    // A file that arrived WHILE the bulk state was "all collapsed" must arrive
-    // collapsed too, or the next poll would silently expand one row.
+    // A file that arrived WHILE the bulk state was "all collapsed" must arrive collapsed too, or the next poll would silently expand one row.
     if (allCollapsed.value) {
       for (const f of merged) collapsedPaths.add(f.path)
     }
-    // Refresh an open selection in place when the list reloads, but never
-    // auto-open from a background list load — refresh must land on chat.
+    // Refresh an open selection in place when the list reloads, but never auto-open from a background list load — refresh must land on chat.
     if (centerDiff.value) {
       const refresh = incoming.get(centerDiff.value.path)
       if (refresh) centerDiff.value = refresh
@@ -191,14 +173,11 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
       delete query.diffcollapse
     })
     stopCenterSpy()
-    // Back exits the diff view: drop the param so reload lands on chat,
-    // not a stale file. The currentPath watcher skips while hidden, so
-    // clear it explicitly here (replace, not push).
+    // Back exits the diff view: drop the param so reload lands on chat, not a stale file.
     syncDiffParam(null)
   }
 
-  // Scroll-spy: the most-visible section (middle band of the center
-  // scroll container) owns currentPath, which syncs to ?diff= below.
+  // Scroll-spy: the most-visible section (middle band of the center scroll container) owns currentPath, which syncs to ?diff= below.
   let centerSpy: IntersectionObserver | null = null
 
   function startCenterSpy() {
@@ -207,9 +186,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     if (!root || typeof IntersectionObserver === 'undefined') return
     centerSpy = new IntersectionObserver(
       (entries) => {
-        // Ignore late callbacks after stop (chat switch unmounts the
-        // scroll container mid-navigation; writing currentPath then
-        // would fire a stale router.replace racing ChatsList).
+        // Ignore late callbacks after stop (chat switch unmounts the scroll container mid-navigation; writing currentPath then would fire a stale router.replace racing …
         if (!centerSpy) return
         let best: string | null = null
         let bestRatio = 0
@@ -238,13 +215,9 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
   }
 
   function syncDiffParam(path: string | null) {
-    // No router = nothing to keep in sync. Unit mounts (and any host that renders ChatView outside
-    // the router tree) have `useRoute() === undefined`, where a bare `route.query` throws from the
-    // currentPath watcher and fails the mount. There is no URL to be stale in that case.
+    // No router = nothing to keep in sync.
     if (!route) return
-    // Skip stale writes during chat switch: ChatsList replaces the URL
-    // with the new session at the same time; a second replace from the
-    // dying view races it and corrupts Vue's patch (null vnode).
+    // Skip stale writes during chat switch: ChatsList replaces the URL with the new session at the same time; a second replace from the dying view races it and …
     if (route.query.view !== undefined && route.query.view !== 'chat') return
     const routeSession = route.query.session
     if (typeof routeSession === 'string' && routeSession !== sessionId.value) return
@@ -255,9 +228,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     router.replace({ path: route.path, query }).catch(() => {})
   }
 
-  // (The old currentPath watcher lived here — every assignment site below now calls syncDiffParam
-  // explicitly. Replace, not push — scrolling must not spam history entries.) Start/stop the
-  // scroll-spy to match the file list (replaces the old centerFiles.length watcher).
+  // (The old currentPath watcher lived here — every assignment site below now calls syncDiffParam explicitly.
   const syncCenterSpy = () => {
     if (centerFiles.value.length === 0) stopCenterSpy()
     else void nextTick(() => startCenterSpy())

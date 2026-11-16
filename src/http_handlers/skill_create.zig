@@ -1,5 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/skills`. Creates one workspace-scoped
-//! skill.
+//! `POST /api/workspaces/:workspace_id/skills`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,9 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const skills_store = @import("../modules/agent/loop/skills_store.zig");
 
-/// Request body. Both fields default to "" so an empty body parses and is
-/// then refused by validation rather than answering "Invalid JSON body" —
-/// a blank form submission is a caller error, not a malformed request.
+/// Request body.
 const CreateSkillBody = struct {
     name: []const u8 = "",
     description: []const u8 = "",
@@ -36,15 +33,11 @@ pub const SkillCreateInput = struct {
 pub const SkillCreateOutput = struct {
     /// Owned; free with `skills_store.freeSkillRow`.
     skill: skills_store.SkillRow,
-    /// Owned; free with `skills_store.freeSkillMetadataRows`. A create whose
-    /// body carries a frontmatter block already has metadata, so this is not
-    /// always empty.
+    /// Owned; free with `skills_store.freeSkillMetadataRows`.
     metadata: []skills_store.SkillMetadataRow = &.{},
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -53,17 +46,14 @@ fn useCase(
 ) SkillCreateError!SkillCreateOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
 
-    // Trimmed, not rejected: a name pasted with a trailing newline is the
-    // same name, and the UNIQUE key is what the URL path segment has to
-    // spell.
+    // Trimmed, not rejected: a name pasted with a trailing newline is the same name, and the UNIQUE key is what the URL path segment has to spell.
     const name = std.mem.trim(u8, input.body.name, " \t\r\n");
     if (name.len == 0) return error.NameRequired;
     if (!skills_store.isValidSkillName(name)) return error.InvalidName;
 
     // A create must not silently overwrite.
     if (skills_store.getSkillByName(allocator, db, input.workspace_id, name)) |existing| {
-        // Freed here, not discarded: the row is only read to learn that
-        // the name is taken, and `|_|` would drop every string it owns.
+        // Freed here, not discarded: the row is only read to learn that the name is taken, and `|_|` would drop every string it owns.
         skills_store.freeSkillRow(allocator, existing);
         return error.NameTaken;
     } else |err| switch (err) {
@@ -96,9 +86,7 @@ fn useCase(
     return .{ .skill = row, .metadata = metadata };
 }
 
-// ===================================================================== Error
-// mapping
-// ===================================================================== Two
+// ===================================================================== Error mapping ===================================================================== Two
 
 fn statusFor(err: SkillCreateError) u16 {
     return switch (err) {
@@ -109,9 +97,7 @@ fn statusFor(err: SkillCreateError) u16 {
     };
 }
 
-/// `requested_name` is only read for the duplicate answer, which names the
-/// offending skill so the UI can say which row to change instead of
-/// "conflict".
+/// `requested_name` is only read for the duplicate answer, which names the offending skill so the UI can say which row to change instead of "conflict".
 fn messageFor(
     err: SkillCreateError,
     allocator: std.mem.Allocator,
@@ -132,9 +118,7 @@ fn messageFor(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn skillCreateHandler(
     ctx: gserverz.HttpContext,
@@ -148,8 +132,7 @@ pub fn skillCreateHandler(
 
     const workspace_id = req.params.get("workspace_id") orelse "";
 
-    // An empty body is legal on the wire so the validation errors below are
-    // what a blank submission sees; only unparseable JSON is a 400 here.
+    // An empty body is legal on the wire so the validation errors below are what a blank submission sees; only unparseable JSON is a 400 here.
     var body = CreateSkillBody{};
     if (req.body.len > 0) {
         body = std.json.parseFromSliceLeaky(CreateSkillBody, allocator, req.body, .{}) catch {
@@ -195,8 +178,7 @@ pub fn skillCreateHandler(
     return res.jsonResponse(.{ .status_code = 201, .data = data });
 }
 
-// See the note in `skill_delete.zig`: the test binary has no HTTP server,
-// so nothing else in `zig build test` would analyse this handler's body.
+// See the note in `skill_delete.zig`: the test binary has no HTTP server, so nothing else in `zig build test` would analyse this handler's body.
 comptime {
     _ = &skillCreateHandler;
 }
@@ -243,9 +225,7 @@ fn countRows(ctx: *TestCtx) !usize {
     return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
 }
 
-/// Read the stored body straight from SQL, bypassing the store, so an
-/// assertion about what was persisted cannot be satisfied by the same code
-/// path it is testing.
+/// Read the stored body straight from SQL, bypassing the store, so an assertion about what was persisted cannot be satisfied by the same code path it is testing.
 fn storedContent(ctx: *TestCtx, name: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
@@ -273,8 +253,7 @@ test "useCase: creates a skill and returns the stored row" {
     defer skills_store.freeSkillRow(alloc, output.skill);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    // Trimmed, so the URL path segment and the workspace's one skill by
-    // that name both spell it without its padding.
+    // Trimmed, so the URL path segment and the workspace's one skill by that name both spell it without its padding.
     try testing.expectEqualStrings("pdf", output.skill.name);
     try testing.expectEqualStrings("ws_1", output.skill.workspace_id);
     try testing.expectEqualStrings("Work with PDFs", output.skill.description);
@@ -289,8 +268,7 @@ test "useCase: an empty description round-trips as empty, not as a missing field
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A model routinely writes the body first and the one-line description
-    // second, so "" is a legal skill state.
+    // A model routinely writes the body first and the one-line description second, so "" is a legal skill state.
     const output = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .body = .{ .name = "half-written", .description = "", .content = "body" },
@@ -349,9 +327,7 @@ test "useCase: a name the grammar cannot spell is InvalidName, a 400" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // `name` is joined onto a materialisation directory by `use_skill`, so
-    // `..` and `a/b` would escape it. The grammar is the guard, and it runs
-    // on the TRIMMED value so " pdf " cannot smuggle a space past it.
+    // `name` is joined onto a materialisation directory by `use_skill`, so `..` and `a/b` would escape it.
     for ([_][]const u8{ "..", "../../etc", "a/b", "has space", ".hidden", "trailing.", "a" ** 129 }) |bad| {
         try testing.expectError(
             error.InvalidName,
@@ -384,8 +360,7 @@ test "useCase: a duplicate name in one workspace is NameTaken, a 409" {
     );
     try testing.expectEqual(@as(u16, 409), statusFor(error.NameTaken));
 
-    // The duplicate must not have overwritten the stored body — a 409 that
-    // half-applied would be worse than no answer at all.
+    // The duplicate must not have overwritten the stored body — a 409 that half-applied would be worse than no answer at all.
     const kept = try storedContent(&ctx, "pdf");
     defer alloc.free(kept);
     try expectBodyIs(kept, "first body");
@@ -412,8 +387,7 @@ test "useCase: the same name in a second workspace is not a duplicate" {
     defer skills_store.freeSkillRow(alloc, in_ws1.skill);
     defer skills_store.freeSkillMetadataRows(alloc, in_ws1.metadata);
 
-    // Names are unique per workspace, not per database — two workspaces
-    // are two different tenants and each keeps its own `pdf`.
+    // Names are unique per workspace, not per database — two workspaces are two different tenants and each keeps its own `pdf`.
     const in_ws2 = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_2",
         .body = .{ .name = "pdf", .content = "B's copy" },
@@ -439,8 +413,7 @@ test "useCase: a create may arrive already locked" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The checkbox is on the create form too, so a pinned skill can be
-    // written once instead of created and then immediately toggled.
+    // The checkbox is on the create form too, so a pinned skill can be written once instead of created and then immediately toggled.
     const output = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .body = .{ .name = "pinned", .description = "d", .content = "body", .is_can_auto_improve = false },

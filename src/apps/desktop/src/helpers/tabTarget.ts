@@ -5,9 +5,7 @@ import { parseItemIdWithChat } from './buildItemIdWithChat'
 
 export type TabQuery = Record<string, string>
 
-/**  * Display hint only — drives the glyph and the close tooltip. It is deliberately coarse: a pure
- * function cannot know a workspace item's `item_type`, and a wrong icon must never affect
- * behaviour. */
+/** Display hint only — drives the glyph and the close tooltip. */
 export type TabKind =
   | 'home'
   | 'chat'
@@ -36,16 +34,11 @@ export interface Tab {
   path: string
   query: TabQuery
   createdAt: number
-  /**    * The session this tab was opened in. A strip is `tabs.filter(t => t.owner === owner)`, so two
-   * sessions never share one row. `''` (or absent) is the window's own row: the destinations picked
-   * from the rail — settings, a board, a document — belong to the window, not to a session. */
+  /** The session this tab was opened in. */
   owner?: string
-  /**    * The session's own tab: always first in its row and never closable, so closing the last file
-   * still leaves the session on screen. */
+  /** The session's own tab: always first in its row and never closable, so closing the last file still leaves the session on screen. */
   pinned?: boolean
-  /**    * True when the tab's identity was decided without knowing the workspace item's type (a cold-boot
-   * deep link, before the tree loaded). Such a tab may be adopted — i.e. re-keyed — once the real
-   * type arrives, so the strip does not end up with two tabs for one target. */
+  /** True when the tab's identity was decided without knowing the workspace item's type (a cold-boot deep link, before the tree loaded). */
   provisional?: boolean
 }
 
@@ -60,20 +53,16 @@ const SETTINGS_PATH = '/app/settings'
 const KANBAN_SETTINGS_RE = /^\/app\/kanban\/([^/]+)\/settings\/?$/
 const PROJECT_SETTINGS_RE = /^\/app\/[^/]+\/projects\/([^/]+)\/settings\/?$/
 
-/** The board a kanban-settings URL names — the workspace-scoped project shape or the legacy
- * kanban shape. Empty when the path is not a settings page. */
+/** The board a kanban-settings URL names — the workspace-scoped project shape or the legacy kanban shape. */
 export function kanbanSettingsItemId(path: string): string {
   const match = KANBAN_SETTINGS_RE.exec(path) ?? PROJECT_SETTINGS_RE.exec(path)
   return match?.[1] ?? ''
 }
 
-/**  * Views that are full-surface overlays over whatever was there before (`AppLayout.vue` mounts them
- * `absolute inset-0 z-10` with their own Back button). They are not destinations, so they never
- * become tabs — the strip stays behind them untouched. */
+/** Views that are full-surface overlays over whatever was there before (`AppLayout.vue` mounts them `absolute inset-0 z-10` with their own Back button). */
 const OVERLAY_VIEWS = ['gitfile', 'skill']
 
-/** The read-only file viewer. It is a tab target now, not an overlay: a file opened inside a session
- * keeps its place in that session's row. */
+/** The read-only file viewer. */
 export const CODE_EDITOR_VIEW = 'code-editor'
 
 /** `?mode=diff` on a code-editor target is the same file's changes, as its own tab. */
@@ -92,8 +81,7 @@ function sameNormalized(left: TabQuery, right: TabQuery): boolean {
   return true
 }
 
-/** Same target? Ignores `tab`, because the tab's stored target must not
- * change just because it became active. */
+/** Same target? */
 export function sameTabTarget(
   a: Record<string, unknown> | null | undefined,
   b: Record<string, unknown> | null | undefined,
@@ -101,8 +89,7 @@ export function sameTabTarget(
   return sameNormalized(stripTabParam(a ?? {}), stripTabParam(b ?? {}))
 }
 
-/** Same URL? Includes `tab` — used to decide whether a navigation is
- * actually needed, so naming a different tab IS a difference. */
+/** Same URL? */
 export function sameRouteQuery(
   a: Record<string, unknown> | null | undefined,
   b: Record<string, unknown> | null | undefined,
@@ -110,8 +97,7 @@ export function sameRouteQuery(
   return sameNormalized(normalizeQuery(a, true), normalizeQuery(b, true))
 }
 
-/**  * The URL contract is flat strings. Values that are arrays/objects (or empty) are dropped so two
- * URLs that mean the same thing produce the same key. */
+/** The URL contract is flat strings. */
 export function stripTabParam(query: Record<string, unknown> | null | undefined): TabQuery {
   return normalizeQuery(query, false)
 }
@@ -145,9 +131,7 @@ export function withTabParam(
   return out
 }
 
-/** Dedupe identity. `tab` and `sorts` are excluded: the first names a tab rather than a target, the
- * second is per-column kanban UI state that changes without the user going anywhere. */
-/** `?mode=diff` marks a code-editor target as that file's changes. */
+// Dedupe identity.
 export function isDiffQuery(query: Record<string, unknown> | null | undefined): boolean {
   return stripTabParam(query).mode === DIFF_MODE
 }
@@ -174,8 +158,7 @@ export function pathTarget(path: string): { owner: string; key: string; kind: Ta
   if (parsed.kind === 'projectSettings') {
     return { owner: '', key: `ks:${parsed.projectId}`, kind: 'kanban-settings' }
   }
-  // A document is a page picked from the rail, not an artifact of a session: it belongs to the
-  // window's own row, and its id is what makes it a tab of its own rather than a second `home`.
+  // A document is a page picked from the rail, not an artifact of a session: it belongs to the window's own row, and its id is what makes it a tab of its own …
   if (parsed.kind === 'doc') {
     return { owner: '', key: `doc:${parsed.documentId}`, kind: 'document' }
   }
@@ -198,8 +181,7 @@ export function ownerOfTarget(
   return ''
 }
 
-/** Whether this target has an identity a tab can be named after: an ARTEFACT (a file, its diff), a
- * session, a settings page, or a document page. */
+/** Whether this target has an identity a tab can be named after: an ARTEFACT (a file, its diff), a session, a settings page, or a document page. */
 export function hasTabIdentity(
   path: string,
   query: Record<string, unknown> | null | undefined,
@@ -234,8 +216,7 @@ export function tabKeyOf(
   if (kanbanSettings) return `ks:${kanbanSettings}`
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return 'settings'
   const byPath = pathTarget(path)
-  // Any path target names itself — a session by its id, a document by its id. `projectSettings` is
-  // already claimed above by `kanbanSettingsItemId`, so it never reaches here.
+  // Any path target names itself — a session by its id, a document by its id.
   if (byPath) return byPath.key
 
   const view = q.view || 'chat'
@@ -245,9 +226,7 @@ export function tabKeyOf(
     const parsed = parseItemIdWithChat(q.itemId ?? '')
     const parts = ['ws', q.workspaceId ?? '', parsed.itemId]
     if (q.pageId) parts.push(q.pageId)
-    // A task chat is its own session, and WHERE it renders decides whether it gets its own tab. A
-    // kanban card click opens the chat as its own view, so it gets its own tab; design opens it as
-    // a dialog INSIDE the canvas view, so that item keeps one tab total.
+    // A task chat is its own session, and WHERE it renders decides whether it gets its own tab.
     if (parsed.chatTaskId && !taskChatRendersInItemTab(itemType)) {
       parts.push(`chat:${parsed.chatTaskId}`)
     }
@@ -256,17 +235,14 @@ export function tabKeyOf(
   return `view:${view}`
 }
 
-/** Item types whose task chat renders as a dialog *inside* the item's view (`DesignChatDialog`) —
- * those items keep ONE tab no matter how many chats you open. Every other type — kanban included —
- * renders the chat as its own view, so each chat is a tab of its own. */
+/** Item types whose task chat renders as a dialog *inside* the item's view (`DesignChatDialog`) — those items keep ONE tab no matter how many chats you open. */
 const DIALOG_ITEM_TYPES = ['design', 'kanban-settings']
 
 export function taskChatRendersInItemTab(itemType?: string | null): boolean {
   return typeof itemType === 'string' && DIALOG_ITEM_TYPES.includes(itemType)
 }
 
-/** The identities the same URL can have: the canonical one, plus the readings a tab created before
- * its target was resolved still carries — the opposite item type, or a file's unresolved spelling. */
+/** The identities the same URL can have: the canonical one, plus the readings a tab created before its target was resolved still carries — the opposite item type … */
 export function tabKeyVariants(
   path: string,
   query: Record<string, unknown> | null | undefined,
@@ -282,8 +258,7 @@ export function tabKeyVariants(
   return canonical === other ? [canonical] : [canonical, other]
 }
 
-/** `Ctrl/Cmd+click` or a middle click means "open this in a background
- * tab" — the gesture users already have in their fingers from a browser. */
+/** `Ctrl/Cmd+click` or a middle click means "open this in a background tab" — the gesture users already have in their fingers from a browser. */
 export function isBackgroundOpenEvent(event: {
   ctrlKey?: boolean
   metaKey?: boolean
@@ -363,8 +338,7 @@ export function titleForTarget(
   return fallbackTitle(kind)
 }
 
-/** Legacy kanban-settings deep links used `?tab=<section>` for the inner Columns/Agent switch
- * (`columns|agent`, plus the pre-unified `tools|knowledge|memories`). */
+/** Legacy kanban-settings deep links used `?tab=<section>` for the inner Columns/Agent switch (`columns|agent`, plus the pre-unified `tools|knowledge|memories`). */
 const KANBAN_SETTINGS_LEGACY_TABS = new Set(['columns', 'agent', 'tools', 'knowledge', 'memories'])
 
 export function migrateLegacySettingsTab(
@@ -398,8 +372,7 @@ export function newTabId(): string {
   return `tab_${Date.now().toString(36)}${idSequence.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
-/** The "new tab page": the chats list. Reused both for the initial tab
- * and whenever the last tab is closed, so the strip is never empty. */
+/** The "new tab page": the chats list. */
 export function homeTab(): Tab {
   return {
     id: newTabId(),

@@ -14,16 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The database *builder*, as opposed to the caches on top of it.
- *
- * The other three test classes build an in-memory database directly, which is
- * the right way to test the DAOs and the wrong way to test this: everything
- * they share is the schema, and everything specific to production — the file,
- * the singleton, the three DAOs being wired to the same connection — lives in
- * exactly the code path they skip. Two caches opening two connections to two
- * files would pass every DAO test and lose half its writes on device.
- */
+/** The database *builder*, as opposed to the caches on top of it. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PabrikCacheDatabaseTest {
@@ -37,18 +28,11 @@ class PabrikCacheDatabaseTest {
         assertNotNull(database.chatCacheDao())
         assertNotNull(database.recentsCacheDao())
         assertNotNull(database.authMeCacheDao())
-        // The point of a single database: the two ViewModels that write caches
-        // and the auth flow that writes the third are not racing two file
-        // handles at the same WAL.
+        // The point of a single database: the two ViewModels that write caches and the auth flow that writes the third are not racing two file handles at the same WAL.
         assertSame(database, PabrikCacheDatabase.get(context))
     }
 
-    /**
-     * The singleton is process-wide, so one test's rows would otherwise be
-     * visible to the next. The caches never let that matter — a write replaces
-     * its partition — but a leftover row in a test that counts rows would be a
-     * flake, so the file is emptied between methods.
-     */
+    /** The singleton is process-wide, so one test's rows would otherwise be visible to the next. */
     @After
     fun tearDown() {
         PabrikCacheDatabase.get(context).openHelper.writableDatabase.apply {
@@ -63,10 +47,7 @@ class PabrikCacheDatabaseTest {
 
     @Test
     fun theFileDatabaseReallyIsAFileAndNotAnInMemoryStandIn() {
-        // The production builder is what the caches in the other three test
-        // classes deliberately do not exercise, so at least one of them has to
-        // open the real thing — otherwise an `inMemoryDatabaseBuilder` typo in
-        // `PabrikCacheDatabase` would be invisible to the whole suite.
+        // The production builder is what the caches in the other three test classes deliberately do not exercise, so at least one of them has to open the real thing — …
         val tables = mutableListOf<String>()
         PabrikCacheDatabase.get(context)
             .openHelper.readableDatabase
@@ -76,12 +57,7 @@ class PabrikCacheDatabaseTest {
             }
 
         assertEquals(
-            // `chat_cursors` is absent by design: it does not match the
-            // `cached_%` filter, and this test is about the *cached* tables
-            // specifically. The two project tables are here because the real
-            // builder is the only thing that proves they exist at all — a
-            // missing `projectsCacheDao` would otherwise only surface as a
-            // runtime failure on first launch.
+            // `chat_cursors` is absent by design: it does not match the `cached_%` filter, and this test is about the *cached* tables specifically.
             listOf(
                 "cached_auth_me",
                 "cached_chat_summaries",
@@ -96,9 +72,7 @@ class PabrikCacheDatabaseTest {
 
     @Test
     fun aWriteThroughOneCacheIsReadableThroughTheSharedFile() {
-        // A round trip that only makes sense when it is one file: the sidebar
-        // and the transcript are written by different ViewModels, and a
-        // sign-out has to be able to purge both.
+        // A round trip that only makes sense when it is one file: the sidebar and the transcript are written by different ViewModels, and a sign-out has to be able to …
         val database = PabrikCacheDatabase.get(context)
         RoomRecentsCache(database.recentsCacheDao(), Base64CacheCipher)
             .writeWorkspaces("user_a", listOf(WorkspaceOption("ws_1", "One")))

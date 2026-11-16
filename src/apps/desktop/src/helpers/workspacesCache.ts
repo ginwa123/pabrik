@@ -1,6 +1,4 @@
-/** Persistent cache for `GET /api/workspaces?is_include_items=false`. Stale-while-revalidate: the
- * workspaces store paints the last-known list synchronously on init so the dropdown/sidebar shows
- * rows immediately, then the network fetch revalidates in the background. */
+/** Persistent cache for `GET /api/workspaces?is_include_items=false`. */
 import type { Workspace } from '../api'
 import { userScopedKey } from './userScope'
 
@@ -59,8 +57,7 @@ export function writeWorkspacesCache(workspaces: Workspace[]): void {
     }))
     localStorage.setItem(userScopedKey(WORKSPACES_CACHE_KEY), JSON.stringify(slim))
   } catch {
-    // quota / private mode / no storage — the live fetch still works,
-    // only the next init's instant paint is lost.
+    // quota / private mode / no storage — the live fetch still works, only the next init's instant paint is lost.
   }
 }
 

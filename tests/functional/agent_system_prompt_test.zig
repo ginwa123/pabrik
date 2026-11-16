@@ -19,9 +19,7 @@ const AgentBody = struct {
     path: []const u8,
 };
 
-// ============================================================================
-// Helpers (Python `_create_workspace` / `_create_agent` / `_create_prompt` /
-// `_get_bundle`)
+// Helpers (Python `_create_workspace` / `_create_agent` / `_create_prompt` /`_get_bundle`)
 
 /// `_create_workspace` — create a fresh workspace, return its OWNED id.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -40,8 +38,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `_create_agent` — create an Agent workspace item, return its OWNED id
-/// (= `workspace_item.id` per the agents/workspace_items 1-1 invariant).
+/// `_create_agent` — create an Agent workspace item, return its OWNED id (= `workspace_item.id` per the agents/workspace_items 1-1 invariant).
 fn createAgent(h: *Harness, workspace_id: []const u8) ![]u8 {
     const path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-system-prompt-test"});
     defer gpa.free(path);
@@ -78,8 +75,7 @@ fn createAgent(h: *Harness, workspace_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `_create_prompt` — POST a create; the caller owns the `Response`. The
-/// Python returned `r.json()`, which in Zig would be a borrowed `Json`.
+/// `_create_prompt` — POST a create; the caller owns the `Response`.
 fn createPrompt(
     h: *Harness,
     agent_id: []const u8,
@@ -110,9 +106,7 @@ fn getBundle(h: *Harness, workspace_id: []const u8, item_id: []const u8) !harnes
     return h.http(io, .GET, url, .{ .expect = &.{200} });
 }
 
-/// The `position` of the system-prompt row `prompt_id` inside a bundle body,
-/// or a test failure. Python built `{p["id"]: p["position"] ...}` and indexed
-/// it.
+/// The `position` of the system-prompt row `prompt_id` inside a bundle body, or a test failure.
 fn bundlePosition(bundle_body: []const u8, prompt_id: []const u8) !i64 {
     var doc: harness.Json = .{
         .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bundle_body, .{}),
@@ -176,9 +170,7 @@ fn bundleContains(bundle_body: []const u8, prompt_id: []const u8) !bool {
     return false;
 }
 
-// ============================================================================
 // TestCreateSystemPrompt
-// ============================================================================
 
 // CREATE — 201 with the stored row, at position 0.
 test "create_returns_201_with_row" {
@@ -262,8 +254,7 @@ test "empty_content_returns_400" {
     }
 }
 
-// VALIDATE — whitespace-only content is a 400 too (the trim, not just
-// the length check, is what rejects it).
+// VALIDATE — whitespace-only content is a 400 too (the trim, not just the length check, is what rejects it).
 test "whitespace_content_returns_400" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -306,9 +297,7 @@ test "unknown_agent_returns_404" {
     }
 }
 
-// ============================================================================
 // TestUpdateSystemPrompt
-// ============================================================================
 
 // UPDATE — PATCH title + content, both change on the wire.
 test "patch_updates_title_and_content" {
@@ -350,9 +339,7 @@ test "patch_updates_title_and_content" {
     try testing.expectEqualStrings("new body", doc.str("content") orelse return error.TestUnexpectedResult);
 }
 
-// EMPTYSTR — `content: ""` is legal and must NOT become SQL NULL. Regression:
-// `SqliteBackend.exec` binds `""` as SQL NULL, which trips `content`'s NOT
-// NULL constraint without `COALESCE(?, '')`.
+// EMPTYSTR — `content: ""` is legal and must NOT become SQL NULL. Regression
 test "patch_empty_string_content_is_legal_not_null" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -411,8 +398,7 @@ test "patch_unknown_row_returns_404" {
 
     const url = try std.fmt.allocPrint(gpa, "/api/agents/{s}/system_prompt/asp_404", .{agent_id});
     defer gpa.free(url);
-    // The Python made the call and discarded the response — the 404 IS
-    // the assertion (`expect=404` raises in the harness).
+    // The Python made the call and discarded the response — the 404 IS the assertion (`expect=404` raises in the harness).
     var r = try h.http(io, .PATCH, url, .{
         .json_body = "{\"title\":\"X\"}",
         .expect = &.{404},
@@ -420,9 +406,7 @@ test "patch_unknown_row_returns_404" {
     defer r.deinit();
 }
 
-// ============================================================================
 // TestDeleteSystemPrompt
-// ============================================================================
 
 // DELETE — 200 {ok:true}, and the row disappears from the bundle.
 test "delete_removes_row_from_bundle" {
@@ -468,8 +452,7 @@ test "delete_removes_row_from_bundle" {
     }
 }
 
-// DELETE of a row that was never there is a no-op 200, not a 404 — the
-// frontend's list does not race the server on this.
+// DELETE of a row that was never there is a no-op 200, not a 404 — the frontend's list does not race the server on this.
 test "delete_unknown_row_is_noop_200" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -491,9 +474,7 @@ test "delete_unknown_row_is_noop_200" {
     try testing.expectEqual(true, doc.boolean("ok") orelse return error.TestUnexpectedResult);
 }
 
-// ============================================================================
 // TestReorderSystemPrompt
-// ============================================================================
 
 // REORDER — reversing the list renumbers `position` to match.
 test "reorder_updates_positions" {
@@ -508,8 +489,7 @@ test "reorder_updates_positions" {
     const agent_id = try createAgent(&h, ws);
     defer gpa.free(agent_id);
 
-    // Owned ids: the PATCH body below outlives the responses that minted
-    // them, and the bundle assertions outlive everything.
+    // Owned ids: the PATCH body below outlives the responses that minted them, and the bundle assertions outlive everything.
     var id_a = try createPrompt(&h, agent_id, "A", "body a", &.{201});
     defer id_a.deinit();
     const a = blk: {
@@ -574,12 +554,9 @@ test "reorder_updates_positions" {
     }
 }
 
-// ============================================================================
 // TestGetBundleIncludesSystemPrompts
-// ============================================================================
 
-// BUNDLE — a fresh agent carries `system_prompts: []`, PRESENT and empty
-// (the frontend renders an empty-state list off this exact key).
+// BUNDLE — a fresh agent carries `system_prompts: []`, PRESENT and empty (the frontend renders an empty-state list off this exact key).
 test "fresh_agent_has_empty_system_prompts_array" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

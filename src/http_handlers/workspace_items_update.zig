@@ -5,8 +5,7 @@ const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 const icon_name = @import("icon_name.zig");
 
-/// PUT /api/workspaces/:workspace_id/items/:item_id - Update a workspace item
-/// Accepts an optional `path` field.
+/// PUT /api/workspaces/:workspace_id/items/:item_id - Update a workspace item Accepts an optional `path` field.
 pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -29,8 +28,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
 
     const root = parsed.object;
 
-    // Optional item_type. Mirror the path/name branch's presence vs absence
-    // semantics.
+    // Optional item_type.
     const item_type_present = root.get("item_type") != null;
     const item_type_in_body: ?[]const u8 = blk: {
         const v = root.get("item_type") orelse break :blk null;
@@ -65,13 +63,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         if (v == .string) break :blk v.string;
         break :blk null;
     };
-    // `name_valid` is true when name is present AND non-empty; the
-    // handler uses this to decide whether to UPDATE or 400.
+    // `name_valid` is true when name is present AND non-empty; the handler uses this to decide whether to UPDATE or 400.
     const name_valid: bool = name_present and name_value != null;
 
-    // Optional icon (Migration 147). A string sets the override, `null` or ""
-    // clears it. Unlike `path`, a non-string is a 400 rather than a silent
-    // clear.
+    // Optional icon (Migration 147).
     const icon_present = root.get("icon") != null;
     const icon_value: ?[]const u8 = blk: {
         const v = root.get("icon") orelse break :blk null;
@@ -103,9 +98,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     }
     defer existing.?.deinit(allocator);
 
-    // If the caller sent `name` but it was null or empty, reject
-    // before hitting the DB. Empty names break the UI rendering
-    // (`{{ item.name }}` shows nothing).
+    // If the caller sent `name` but it was null or empty, reject before hitting the DB.
     if (name_present and !name_valid) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -119,16 +112,13 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     // Get the current workspace_id for the update
     const current_workspace_id = existing.?.workspace_id;
 
-    // Effective item_type: prefer the value sent in the body, fall back to
-    // the existing row's type. The fallback makes rename-only calls (e.g.
+    // Effective item_type: prefer the value sent in the body, fall back to the existing row's type.
     const effective_item_type: []const u8 = blk: {
         if (item_type_in_body) |v| break :blk v;
         break :blk existing.?.item_type;
     };
 
-    // If the caller sent NOTHING updatable, return 400. Without this, the
-    // handler would silently no-op when the body is `{name: ""}` (rejected
-    // earlier anyway) or completely empty.
+    // If the caller sent NOTHING updatable, return 400.
     if (!item_type_present and !name_valid and !path_present and !icon_present) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(
             allocator,
@@ -136,12 +126,9 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         ) });
     }
 
-    // Update the item — if path is present in the body, run the dedicated
-    // path-update SQL (preserves `path` semantics from the create endpoint:
-    // NULL for empty / null, the string for a non-empty value).
+    // Update the item — if path is present in the body, run the dedicated path-update SQL (preserves `path` semantics from the create endpoint: NULL for empty / …
     if (path_present and name_valid) {
-        // Caller wants BOTH path + name updated. We update name first
-        // (separate SQL) then path (separate SQL).
+        // Caller wants BOTH path + name updated.
         ai_mod.workspace_items.updateWorkspaceItemName(
             allocator,
             sqlite_db,
@@ -188,8 +175,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             };
         }
     } else if (name_valid) {
-        // Name-only update (the rename path). Common case for the
-        // KanbanSettingsDialog and KanbanView pencil.
+        // Name-only update (the rename path).
         ai_mod.workspace_items.updateWorkspaceItemName(
             allocator,
             sqlite_db,
@@ -205,9 +191,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             });
         };
     } else if (path_present) {
-        // Path-only update (preserves the original "PUT /items/:id
-        // {item_type: 'kanban'}" path-set behavior). The branch is the same
-        // as the old code, but renamed for readability and inlined.
+        // Path-only update (preserves the original "PUT /items/:id {item_type: 'kanban'}" path-set behavior).
         if (path_clear or path_value == null) {
             ai_mod.workspace_items.updateWorkspaceItemPath(
                 allocator,
@@ -257,8 +241,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         };
     }
 
-    // Icon is its own column and its own statement, so it composes with any
-    // of the branches above (rename + icon in one PUT is a normal call).
+    // Icon is its own column and its own statement, so it composes with any of the branches above (rename + icon in one PUT is a normal call).
     if (icon_present) {
         ai_mod.workspace_items.updateWorkspaceItemIcon(
             allocator,
@@ -282,14 +265,11 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             .id = item_id,
             .workspace_id = current_workspace_id,
             .item_type = effective_item_type,
-            // When the body didn't mention path, leave the response field as
-            // `null` so callers can distinguish "field not in body" from "field
-            // cleared to NULL".
+            // When the body didn't mention path, leave the response field as `null` so callers can distinguish "field not in body" from "field cleared to NULL".
             .path = null,
             .created_at = null,
             .updated_at = null,
-            // Echo the icon the caller asked for, so a client that only sent
-            // `{icon}` sees its own value back. Absent from the body → null.
+            // Echo the icon the caller asked for, so a client that only sent `{icon}` sees its own value back.
             .icon = icon_value,
         }),
     });

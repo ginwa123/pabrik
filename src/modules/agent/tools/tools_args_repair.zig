@@ -1,11 +1,8 @@
-//! Repair for tool-call `arguments` that a model emitted with RAW backslashes
-//! inside a JSON string literal.
+//! Repair for tool-call `arguments` that a model emitted with RAW backslashes inside a JSON string literal.
 const std = @import("std");
 const testing = std.testing;
 
-/// True when `c` is one of the escape introducers RFC 8259 §7 accepts as a
-/// single-character escape. `u` is handled separately because it is a
-/// four-hex-digit escape, not a single-character one.
+/// True when `c` is one of the escape introducers RFC 8259 §7 accepts as a single-character escape.
 fn isSimpleEscape(c: u8) bool {
     return switch (c) {
         '"', '\\', '/', 'b', 'f', 'n', 'r', 't' => true,
@@ -17,12 +14,10 @@ fn isHexDigit(c: u8) bool {
     return (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
-/// Rewrite every backslash inside a JSON string literal that does not
-/// introduce a legal escape into `\\`.
+/// Rewrite every backslash inside a JSON string literal that does not introduce a legal escape into `\\`.
 pub fn escapeRawBackslashes(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
     var changed = false;
-    // First pass: decide whether a rewrite is needed at all, so the common
-    // (already-valid) case costs no allocation.
+    // First pass: decide whether a rewrite is needed at all, so the common (already-valid) case costs no allocation.
     {
         var in_string = false;
         var i: usize = 0;
@@ -87,9 +82,7 @@ pub fn escapeRawBackslashes(allocator: std.mem.Allocator, raw: []const u8) !?[]u
                 i += 2;
                 continue;
             }
-            // Stray backslash: the next byte is a literal character (the
-            // first letter of a directory name, usually), so emit `\\` and
-            // let the loop handle that byte as ordinary content.
+            // Stray backslash: the next byte is a literal character (the first letter of a directory name, usually), so emit `\\` and let the loop handle that byte as …
             try out.append(allocator, '\\');
             try out.append(allocator, '\\');
             i += 1;
@@ -101,9 +94,7 @@ pub fn escapeRawBackslashes(allocator: std.mem.Allocator, raw: []const u8) !?[]u
     return try out.toOwnedSlice(allocator);
 }
 
-/// Result of `repairToolCallArguments`. The borrow is spelled out rather
-/// than left to the caller to infer from pointer identity, because getting
-/// that wrong is a use-after-free on a 100 KB arguments string.
+/// Result of `repairToolCallArguments`.
 pub const RepairedArgs = union(enum) {
     /// The caller's own slice, unchanged. Do not free.
     borrowed: []const u8,
@@ -125,9 +116,7 @@ pub const RepairedArgs = union(enum) {
     }
 };
 
-/// `raw` if it already parses as JSON, otherwise the backslash-repaired
-/// form if that parses, otherwise `null` (nothing to repair — report the
-/// real error rather than substituting a fake empty object).
+/// `raw` if it already parses as JSON, otherwise the backslash-repaired form if that parses, otherwise `null` (nothing to repair — report the real error rather …
 pub fn repairToolCallArguments(allocator: std.mem.Allocator, raw: []const u8) !?RepairedArgs {
     if (parsesAsJson(raw)) return RepairedArgs{ .borrowed = raw };
 
@@ -137,9 +126,7 @@ pub fn repairToolCallArguments(allocator: std.mem.Allocator, raw: []const u8) !?
     return null;
 }
 
-/// The letter RFC 8259 pairs with each control-character escape, so a
-/// decoded control byte can be read back as the two characters the model
-/// actually wrote.
+/// The letter RFC 8259 pairs with each control-character escape, so a decoded control byte can be read back as the two characters the model actually wrote.
 fn escapeLetterForControl(c: u8) ?u8 {
     return switch (c) {
         0x08 => 'b',
@@ -151,9 +138,7 @@ fn escapeLetterForControl(c: u8) ?u8 {
     };
 }
 
-/// Re-expand control characters in a decoded file path back into the literal
-/// backslash + letter the model wrote. `escapeRawBackslashes` only rewrites
-/// backslashes JSON rejects.
+/// Re-expand control characters in a decoded file path back into the literal backslash + letter the model wrote.
 pub fn reexpandPathControlChars(allocator: std.mem.Allocator, value: []const u8) !?[]u8 {
     const has_control = for (value) |c| {
         if (escapeLetterForControl(c) != null) break true;
@@ -179,26 +164,19 @@ fn parsesAsJson(raw: []const u8) bool {
     return true;
 }
 
-// ---------------------------------------------------------------------------
 // The reported failure: a real Windows path, unescaped by the model.
-// ---------------------------------------------------------------------------
 
 test "reported Windows path round-trips: raw backslashes in, real path out" {
-    // The segment letters are load-bearing: `\n` and `\t` are LEGAL JSON
-    // escapes (so the repaired value decodes to an embedded newline + tab
-    // that step 2 must re-expand) while `\p`, `\o`, `\s` and `\c` are
+    // The segment letters are load-bearing: `\n` and `\t` are LEGAL JSON escapes (so the repaired value decodes to an embedded newline + tab that step 2 must …
     const raw =
         \\{"path":"C:\Users\gilang.trisetya\.config\pabrik\notes\src\test.go","old_str":"a","new_str":"b"}
     ;
     const want = "C:\\Users\\gilang.trisetya\\.config\\pabrik\\notes\\src\\test.go";
 
-    // Precondition: this is exactly what the model emitted, and it does NOT
-    // parse. This is the byte sequence behind the "works on Linux, breaks on
-    // Windows" report.
+    // Precondition: this is exactly what the model emitted, and it does NOT parse.
     try testing.expect(!parsesAsJson(raw));
 
-    // Step 1 — the illegal escapes (`\U`, `\.`, `\w`, `\s`, `\i`, `\d`)
-    // become legal ones, so the arguments parse at all.
+    // Step 1 — the illegal escapes (`\U`, `\.`, `\w`, `\s`, `\i`, `\d`) become legal ones, so the arguments parse at all.
     const repaired = (try escapeRawBackslashes(testing.allocator, raw)).?;
     defer testing.allocator.free(repaired);
     {
@@ -208,9 +186,7 @@ test "reported Windows path round-trips: raw backslashes in, real path out" {
         try testing.expectEqualStrings("b", parsed.value.object.get("new_str").?.string);
     }
 
-    // Step 2 — `.config\pabrik\notes` decoded to a real newline + tab,
-    // because `\n` and `\t` are legal escapes the repair must not touch (a
-    // multi-line `new_str` needs them).
+    // Step 2 — `.config\pabrik\notes` decoded to a real newline + tab, because `\n` and `\t` are legal escapes the repair must not touch (a multi-line `new_str` …
     {
         var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, repaired, .{});
         defer parsed.deinit();
@@ -229,9 +205,7 @@ test "reexpandPathControlChars: a clean path is returned as null (no allocation)
 }
 
 test "reexpandPathControlChars: a genuine multi-line value is left to its caller" {
-    // Re-expansion is for PATHS only. A `new_str` that really is two lines
-    // must stay two lines, which is why exec applies this to `path` and
-    // never to the replacement text.
+    // Re-expansion is for PATHS only.
     const decoded = "line1\nline2";
     const out = (try reexpandPathControlChars(testing.allocator, decoded)).?;
     defer testing.allocator.free(out);
@@ -247,8 +221,7 @@ test "escapeRawBackslashes: already-valid arguments are left byte-identical (no 
 }
 
 test "escapeRawBackslashes: legal escapes inside strings survive untouched" {
-    // \n and \t here are REAL escapes the model meant (a multi-line
-    // new_str). Rewriting them to \\n would corrupt the replacement text.
+    // \n and \t here are REAL escapes the model meant (a multi-line new_str).
     const raw =
         \\{"path":"/tmp/a.go","old_str":"x","new_str":"line1\nline2\ttabbed \"quoted\" c:\\slash"}
     ;
@@ -265,9 +238,7 @@ test "escapeRawBackslashes: \\uXXXX is left alone (four hex digits, not a separa
 }
 
 test "escapeRawBackslashes: lowercase \\users is repaired, not mistaken for a \\u escape" {
-    // `C:\users\...` looks like the start of a `\uXXXX` escape to a naive
-    // scanner, but `sers` is not four hex digits — so the backslash is a
-    // literal separator and must be escaped.
+    // `C:\users\...` looks like the start of a `\uXXXX` escape to a naive scanner, but `sers` is not four hex digits — so the backslash is a literal separator and …
     const raw =
         \\{"path":"C:\users\me\a.go","old_str":"x","new_str":"y"}
     ;
@@ -293,8 +264,7 @@ test "escapeRawBackslashes: a Windows UNC path is repaired" {
 }
 
 test "escapeRawBackslashes: backslashes OUTSIDE a string literal are not touched" {
-    // `\d` between two top-level tokens is not inside a string; repairing
-    // it would corrupt the structure rather than fix it.
+    // `\d` between two top-level tokens is not inside a string; repairing it would corrupt the structure rather than fix it.
     const raw =
         \\{"a":"C:\x","b":1}
     ;
@@ -324,8 +294,7 @@ test "repairToolCallArguments: repairable Windows arguments come back fixed" {
 }
 
 test "repairToolCallArguments: unrepairable arguments return null instead of a fake {}" {
-    // A truncated object (max_tokens cut mid-call) and a markdown fence are
-    // not backslash problems.
+    // A truncated object (max_tokens cut mid-call) and a markdown fence are not backslash problems.
     try testing.expect((try repairToolCallArguments(testing.allocator, "{\"path\":\"/tmp/a.go\",\"old_str\":")) == null);
     try testing.expect((try repairToolCallArguments(testing.allocator, "```json\n{\"path\":\"/tmp/a.go\"}\n```")) == null);
 }

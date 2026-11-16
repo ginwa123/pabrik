@@ -1,14 +1,11 @@
-/**  * The Checks tab's URL contract. Every view switch must land in the URL, or refresh / Back-Forward
- * / shared links lose the view. The commits tab first shipped as a local boolean and had exactly
- * that bug; the Checks tab reuses the same `?panel=` union rather than inventing a second param. */
+/** The Checks tab's URL contract. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../components/views/chat_right_sidebar/SidebarDiffPanel.vue'
 import { clearFolderDiffCache } from '../helpers/folderDiffCache'
 
-// The panel's children fetch on mount; stub them so the spec is about the
-// tab contract, not about the network.
+// The panel's children fetch on mount; stub them so the spec is about the tab contract, not about the network.
 vi.mock('../components/git/GitCommits.vue', () => ({
   default: { name: 'GitCommits', template: '<div data-testid="git-commits-stub" />' },
 }))
@@ -27,8 +24,7 @@ vi.mock('../components/views/chat_right_sidebar/SkillEvalsPanel.vue', () => ({
   },
 }))
 vi.mock('../api', async () => {
-  // Spreads the real module: SidebarDiffPanel reaches for `api.ApiError`, and
-  // a partial mock without it throws from inside a catch block.
+  // Spreads the real module: SidebarDiffPanel reaches for `api.ApiError`, and a partial mock without it throws from inside a catch block.
   const actual = await vi.importActual<typeof import('../api')>('../api')
   return {
     ...actual,
@@ -92,8 +88,7 @@ describe('SidebarDiffPanel — the Checks tab', () => {
   })
 
   it('is reachable without an attached PR', async () => {
-    // CI is about the forge, not about the diff, so the tab must not be
-    // gated behind PR mode.
+    // CI is about the forge, not about the diff, so the tab must not be gated behind PR mode.
     const w = await mountPanel(await makeRouter())
     expect(w.find('[data-testid="sidebar-tab-checks"]').exists()).toBe(true)
   })

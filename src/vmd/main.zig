@@ -1,6 +1,4 @@
-//! `pabrik-vmd` — the VM manager. `run` boots a workspace's VM for one command
-//! and stops it; `serve` is the daemon the Pabrik server calls over a unix
-//! socket. Every path comes from the workspace id, never from the caller.
+//! `pabrik-vmd` — the VM manager.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -84,8 +82,7 @@ const Options = struct {
     /// Whether the operator named them, so `resize` can require both.
     mem_set: bool = false,
     vcpus_set: bool = false,
-    /// `resize`: the size the workspace's disk image must grow to. 0 leaves it
-    /// alone, which is what every caller but an explicit `--disk` wants.
+    /// `resize`: the size the workspace's disk image must grow to. 0 leaves it alone, which is what every caller but an explicit `--disk` wants.
     disk_mib: u32 = 0,
     cwd: []const u8 = policy.guest_root,
     cwd_rel: []const u8 = "",
@@ -251,8 +248,7 @@ fn parse(args: []const []const u8, options: *Options) void {
     }
 }
 
-/// `run` boots one VM for one command, so its cwd is a guest path. Allowing an
-/// arbitrary one would hand the VMM a working directory outside the workspace.
+/// `run` boots one VM for one command, so its cwd is a guest path.
 fn cwdInsideWorkspace(cwd: []const u8) bool {
     if (std.mem.eql(u8, cwd, policy.guest_root)) return true;
     return policy.relativeToRoot(policy.guest_root, cwd) != null;
@@ -269,9 +265,7 @@ fn resolveRoot(init: std.process.Init, options: *Options, arena: std.mem.Allocat
         fail("out of memory", .{});
 }
 
-/// The ports no workspace may dial. `PABRIK_EGRESS_DENY_PORTS` names the rest,
-/// because only the operator knows what else listens here; 8081, the control
-/// plane, is refused whether or not the variable is set.
+/// The ports no workspace may dial.
 fn resolveDeniedPorts(init: std.process.Init, arena: std.mem.Allocator) []const u16 {
     const text = init.environ_map.get("PABRIK_EGRESS_DENY_PORTS") orelse return &.{8081};
     const parsed = egress_proxy.parsePortList(arena, text) catch {
@@ -353,8 +347,7 @@ fn run(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !voi
         std.process.exit(1);
     };
     emit(2, "pabrik-vmd: vm up (pid={d}) disk={s}\n", .{ vm.pid, vm.layout.disk });
-    // The guest's bootstrap asks for the agent here; without a listener it
-    // falls back to the one on its own disk.
+    // The guest's bootstrap asks for the agent here; without a listener it falls back to the one on its own disk.
     agent_service.ensure(arena, vm.layout, readAgentBytes(arena, options.agent));
 
     vm_client.waitReady(vm.layout, vm_client.boot_timeout_ms) catch |err| {
@@ -469,9 +462,7 @@ fn stopCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Optio
     emit(1, "stopped {s}\n", .{options.workspace_id});
 }
 
-/// `resize` stops the workspace's VM, records the size it must boot with, and
-/// starts it again: Firecracker takes vCPUs and RAM only at InstanceStart. A
-/// `--disk` also grows the disk image, which needs the VM stopped as well.
+/// `resize` stops the workspace's VM, records the size it must boot with, and starts it again: Firecracker takes vCPUs and RAM only at InstanceStart.
 fn resizeCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
     _ = arena;
     resolveSocket(init, options);
@@ -571,8 +562,7 @@ fn logCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Option
     });
 }
 
-/// Write a body into the workspace's VM. The bytes are the caller's; the
-/// file is the guest's.
+/// Write a body into the workspace's VM.
 fn fsWriteCommand(init: std.process.Init, arena: std.mem.Allocator, options: *Options) !void {
     _ = arena;
     resolveSocket(init, options);
@@ -650,8 +640,7 @@ fn reportClientError(client: *const vmd_client.Client) noreturn {
     std.process.exit(1);
 }
 
-// `zig test` only reaches a file's `test` blocks through a reference from the
-// test root, and this binary is the root of the vmd suite.
+// `zig test` only reaches a file's `test` blocks through a reference from the test root, and this binary is the root of the vmd suite.
 test {
     _ = @import("egress.zig");
     _ = @import("activity.zig");

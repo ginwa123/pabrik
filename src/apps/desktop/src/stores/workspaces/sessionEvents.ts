@@ -24,22 +24,17 @@ interface SessionEventsParams {
 export function createSessionEvents(p: SessionEventsParams) {
   const { workspaces, activeTaskId, cacheTaskMutation, removeTaskFromCache } = p
 
-  // ─── Session events via sseBus ───────────────────────────────────────────── The backend cascade
-  // for task rename (updateTaskName → updateSessionName → onEventSendSessions → SSE
-  // session.updated) emits a `session.updated` event on `/api/sessions/stream`.
+  // ─── Session events via sseBus ─────────────────────────────────────────────
   let sessionHandlersInstalled = false
 
-  /** Subscribe to session events. The callback fires once per session event (after the internal
-   * workspacesStore handler runs). Returns an unsubscribe function. */
+  /** Subscribe to session events. */
   function onSessionEvent(cb: (event: api.SessionEvent) => void): () => void {
     const bus = useSseBus()
     return bus.on('session', (event) => {
       try {
         cb(event)
       } catch (e) {
-        // Swallow subscriber errors so a buggy callback can't take down sibling subscribers (the
-        // bus's own dispatch already wraps the listener call in try/catch — this is defense in
-        // depth: it also covers the case where a future bus implementation drops that wrapping).
+        // Swallow subscriber errors so a buggy callback can't take down sibling subscribers (the bus's own dispatch already wraps the listener call in try/catch — this …
         console.error('[workspacesStore] session event subscriber threw:', e)
       }
     })
@@ -55,9 +50,7 @@ export function createSessionEvents(p: SessionEventsParams) {
     const bus = useSseBus()
     bus.on('session', (event) => {
       if (event.action === 'updated') {
-        // Find the task (task.id == session_id) and update its name + unattended flag. We also keep
-        // navigationStore.activeChatName in sync if the renamed task is active — this is the same
-        // pattern as renameTask (workspaces.ts:renameTask).
+        // Find the task (task.id == session_id) and update its name + unattended flag.
         for (const ws of workspaces.value) {
           for (const item of ws.items) {
             if (!item.tasks) continue
@@ -76,9 +69,7 @@ export function createSessionEvents(p: SessionEventsParams) {
           }
         }
       } else if (event.action === 'deleted') {
-        // Find and remove the task. If it was active, clear the
-        // active state so the chat view doesn't render a stale
-        // task id.
+        // Find and remove the task.
         for (const ws of workspaces.value) {
           for (const item of ws.items) {
             if (!item.tasks) continue
@@ -102,9 +93,7 @@ export function createSessionEvents(p: SessionEventsParams) {
           }
         }
       }
-      // 'created' events are deliberately ignored here: tasks are only ever created via POST
-      // /workspaces/:w/items/:i/tasks (which the addTask action handles directly). A 'created' SSE
-      // event for an unbound session is a no-op for the workspace tree.
+      // 'created' events are deliberately ignored here: tasks are only ever created via POST /workspaces/:w/items/:i/tasks (which the addTask action handles directly).
     })
   }
 

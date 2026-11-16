@@ -1,5 +1,4 @@
-//! Stop/cancel an LLM session by setting the `cancelled` flag in the DB. The
-//! workflow's loop checks this flag and breaks out, stopping the async IO.
+//! Stop/cancel an LLM session by setting the `cancelled` flag in the DB.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -13,9 +12,7 @@ pub const SessionStopError = error{
     GlobalContextNotInitialized,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -25,9 +22,7 @@ fn useCase(
     llm_history.cancelSession(allocator, db, session_id) catch return error.CancelFailed;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn sessionStopHandler(
     ctx: gserverz.HttpContext,

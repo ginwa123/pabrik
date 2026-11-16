@@ -68,9 +68,7 @@ describe('WorkspaceSettingsView — the moved config sections', () => {
       // The editor, not one of the other sections.
       expect(wrapper.find('[data-testid="pabrik-settings"]').exists()).toBe(true)
       expect(wrapper.find(`[data-testid="${section}-section"]`).exists()).toBe(true)
-      // ...reading the workspace config for the workspace in the URL. This is
-      // the assertion that would fail if the view ever passed the default
-      // (user-scope) source.
+      // ...reading the workspace config for the workspace in the URL.
       expect(mockGetWs).toHaveBeenCalledWith('ws_1')
     })
   }
@@ -98,8 +96,7 @@ describe('WorkspaceSettingsView — the moved config sections', () => {
 
     const editorAfter = wrapper.findComponent({ name: 'PabrikConfigEditor' })
     expect(editorAfter.exists()).toBe(true)
-    // Same instance (same uid): a remount would silently discard whatever the
-    // user had edited in the previous section.
+    // Same instance (same uid): a remount would silently discard whatever the user had edited in the previous section.
     expect(editorAfter.vm.$.uid).toBe(editorBefore.vm.$.uid)
     // ...and the load did NOT happen again, which is the observable half of it.
     expect(mockGetWs).toHaveBeenCalledTimes(1)

@@ -1,5 +1,4 @@
-// Functional tests for sessions + /test/shutdown + LLM stub. Zig port of
-// `tests/functional/sessions_and_llm_test.py` (same test names, same order).
+// Functional tests for sessions + /test/shutdown + LLM stub.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,19 +8,15 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The fixed port the Python original passed for the shutdown test ("fixed
-/// port for shutdown test").
+/// The fixed port the Python original passed for the shutdown test ("fixed port for shutdown test").
 const shutdown_test_start_port: u16 = 8090;
 
-/// Python's `llm_harness` fixture: a harness booted with the stub LLM
-/// profile so session-create doesn't try to call a real LLM.
+/// Python's `llm_harness` fixture: a harness booted with the stub LLM profile so session-create doesn't try to call a real LLM.
 fn bootLlmStub() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
 
-/// `POST /api/workspaces` → the new workspace's id (an owned copy). The
-/// Python original had this helper but never called it — every test it wrote
-/// is session-scoped, which needs no workspace.
+/// `POST /api/workspaces` → the new workspace's id (an owned copy).
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -73,7 +68,6 @@ test "session_create_returns_session_id" {
     defer r.deinit();
 
     // The session may be created (201) or the LLM call may fail causing 500.
-    // Either way, a successful 201 has an id.
     if (r.status == 201) {
         var doc = try r.json();
         defer doc.deinit();
@@ -99,8 +93,7 @@ test "session_list_returns_200" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Response shape: `{sessions:[...]}` or a list directly. Accept both,
-    // plus the `{data: [...]}` fallback the Python original allowed.
+    // Response shape: `{sessions:[...]}` or a list directly.
     switch (doc.value().*) {
         .array => {},
         .object => |o| {
@@ -123,9 +116,7 @@ test "session_list_returns_200" {
     }
 }
 
-// GET /api/llm/session/<nonexistent>/messages returns 404 or empty. The
-// endpoint may 404 for a non-existent session id, or return an empty messages
-// list. Both are acceptable.
+// GET /api/llm/session/<nonexistent>/messages returns 404 or empty.
 test "session_messages_for_nonexistent_returns_404_or_empty" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -142,8 +133,7 @@ test "session_messages_for_nonexistent_returns_404_or_empty" {
     if (r.status == 200) {
         var doc = try r.json();
         defer doc.deinit();
-        // Only asserted when the body actually carries `messages` —
-        // Python's `if isinstance(body, dict) and "messages" in body`.
+        // Only asserted when the body actually carries `messages` — Python's `if isinstance(body, dict) and "messages" in body`.
         if (doc.get("messages") != null) {
             const messages = doc.array("messages") orelse {
                 std.debug.print("`messages` present but not an array: {s}\n", .{r.body});
@@ -157,8 +147,7 @@ test "session_messages_for_nonexistent_returns_404_or_empty" {
     }
 }
 
-// POST /test/shutdown initiates a graceful shutdown. After it returns, the
-// server should stop accepting new connections.
+// POST /test/shutdown initiates a graceful shutdown.
 test "test_shutdown_stops_server" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -191,8 +180,7 @@ test "test_shutdown_stops_server" {
         }
     }
 
-    // The server should no longer respond (the detached shutdown thread
-    // runs ~300ms after the 200 flushes, so give it a moment).
+    // The server should no longer respond (the detached shutdown thread runs ~300ms after the 200 flushes, so give it a moment).
     std.Io.sleep(io, .fromMilliseconds(500), .awake) catch {};
 
     if (h.health(io)) {
@@ -201,8 +189,7 @@ test "test_shutdown_stops_server" {
     }
 }
 
-// Belt-and-suspenders for the safety invariant: assert the real $HOME does
-// not contain a `pabrik/` dir newly created by the test.
+// Belt-and-suspenders for the safety invariant: assert the real $HOME does not contain a `pabrik/` dir newly created by the test.
 test "no_state_leaked_to_real_home" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -214,16 +201,13 @@ test "no_state_leaked_to_real_home" {
     const real_agent_db = try std.fs.path.join(gpa, &.{ h.orig_home, ".config", "pabrik", "agent.db" });
     defer gpa.free(real_agent_db);
 
-    // `if os.path.exists(...)` — an absent file passes vacuously, which
-    // is the Python behaviour and the safe one (nothing to leak).
+    // `if os.path.exists(...)` — an absent file passes vacuously, which is the Python behaviour and the safe one (nothing to leak).
     if (std.Io.Dir.cwd().access(io, real_agent_db, .{})) |_| {
         const stat = std.Io.Dir.cwd().statFile(io, real_agent_db, .{}) catch |err| {
             std.debug.print("could not stat {s}: {s}\n", .{ real_agent_db, @errorName(err) });
             return err;
         };
-        // File exists in real HOME — its mtime should be well in the
-        // past (older than 60s). If the test wrote to it, mtime would
-        // be < 60s.
+        // File exists in real HOME — its mtime should be well in the past (older than 60s).
         const now_ms = std.Io.Timestamp.now(io, .real).toMilliseconds();
         const age_s = @divTrunc(now_ms - stat.mtime.toMilliseconds(), 1000);
         if (age_s <= 60) {
@@ -236,9 +220,7 @@ test "no_state_leaked_to_real_home" {
         }
     } else |_| {}
 
-    // The harness's own tempdir DOES have an agent.db — the positive
-    // control. Without it, the check above could pass because the
-    // server never wrote a database anywhere.
+    // The harness's own tempdir DOES have an agent.db — the positive control.
     const temp_agent_db = try std.fs.path.join(gpa, &.{ h.temp_dir, ".config", "pabrik", "agent.db" });
     defer gpa.free(temp_agent_db);
     std.Io.Dir.cwd().access(io, temp_agent_db, .{}) catch |err| {
@@ -251,8 +233,7 @@ test "no_state_leaked_to_real_home" {
 }
 
 comptime {
-    // `createWorkspace` is unused by the current tests (the Python original
-    // carried it unused too).
+    // `createWorkspace` is unused by the current tests (the Python original carried it unused too).
     _ = createWorkspace;
     _ = bootLlmStub;
 }

@@ -1,5 +1,4 @@
-//! Data model for the `agent_knowledge` entity table. One row per markdown
-//! knowledge file attached to an Agent.
+//! Data model for the `agent_knowledge` entity table.
 
 const std = @import("std");
 
@@ -8,14 +7,11 @@ pub const EntityId = []u8;
 id: EntityId,
 /// FK to `agents.id`. The agent this knowledge file belongs to.
 agent_id: EntityId,
-/// Absolute path on disk to a markdown file. Validated by the handler
-/// (`std.fs.path.isAbsolute`) on INSERT — relative paths return 400.
+/// Absolute path on disk to a markdown file.
 file_path: []u8,
-/// Optional human-readable label. Empty slice is the canonical
-/// "no label" sentinel.
+/// Optional human-readable label.
 label: []u8 = &.{},
-/// Drag-reorder position (higher = higher in the list). Mirrors
-/// Kanban's `kanban_columns.position` pattern.
+/// Drag-reorder position (higher = higher in the list).
 position: i64 = 0,
 created_at: ?[]u8 = null,
 updated_at: ?[]u8 = null,

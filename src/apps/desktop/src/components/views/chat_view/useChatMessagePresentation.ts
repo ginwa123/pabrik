@@ -70,13 +70,11 @@ export interface ChatMessagePresentationDeps {
   mode: () => ChatViewMode
   /** The session's own agent, which labels a thread that has a single author. */
   authorLabel?: () => string
-  /** True when `name` is an agent the workspace still configures. A row that
-   * names a profile the config no longer has is not an author worth a badge. */
+  /** True when `name` is an agent the workspace still configures. */
   isKnownAgent?: (name: string) => boolean
 }
 
-/** `llm_history.agent`'s column default when nothing named the speaker
- * (`insertLLMHistories`): a placeholder, never an author worth a badge. */
+/** `llm_history.agent`'s column default when nothing named the speaker (`insertLLMHistories`): a placeholder, never an author worth a badge. */
 export const PLACEHOLDER_AGENT = 'Agent'
 
 /** Both prefixes are recognised: older rows carry the XML envelope, not the JSON one. */
@@ -156,8 +154,7 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
   const groupKey = (group: MessageGroup): string =>
     group.messages[0]?.id ?? `empty-${group.timestamp.getTime()}`
 
-  /** A background-command completion is a TOOL result the backend stores as `role=user` (the loop
-   * feeds it back to the model). It is not a human turn, so it groups and folds with the calls. */
+  /** A background-command completion is a TOOL result the backend stores as `role=user` (the loop feeds it back to the model). */
   const isBackgroundCompletion = (m: Message): boolean =>
     m.role === 'user' && isBackgroundCommandOutput(m.content)
 
@@ -171,15 +168,12 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
       const lastGroup = groups[groups.length - 1]
       const role = groupRoleOf(msg)
 
-      // Consecutive assistant rows are one block — unless a different agent
-      // wrote the next one, which is exactly what a group thread does.
+      // Consecutive assistant rows are one block — unless a different agent wrote the next one, which is exactly what a group thread does.
       const sameAuthor =
         msg.role !== 'assistant' ||
         (lastGroup?.messages[0]?.agent_name ?? '') === (msg.agent_name ?? '')
 
-      // A compaction envelope is a system artifact stored as a `role: user` row, so it is never
-      // part of a human turn: it opens its own block and closes the one before it. Folded into the
-      // turn after it, the block drew the card INSTEAD of that turn's message.
+      // A compaction envelope is a system artifact stored as a `role: user` row, so it is never part of a human turn: it opens its own block and closes the one before …
       const compaction = isCompactionMessage(msg)
       const previousWasCompaction = !!lastGroup && isCompactionMessage(lastGroup.messages[0])
 
@@ -203,9 +197,7 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
       }
     }
 
-    // Credit every reply to the agent that answered: the row's own `agent_name`
-    // first (a group thread), else the session's agent — never for a thread with
-    // two authors, and never for a name the workspace no longer configures.
+    // Credit every reply to the agent that answered: the row's own `agent_name` first (a group thread), else the session's agent — never for a thread with two …
     const known = (name: string): boolean => deps.isKnownAgent?.(name) ?? true
     const credited = (m: Message): string =>
       m.agent_name && m.agent_name !== PLACEHOLDER_AGENT && known(m.agent_name) ? m.agent_name : ''
@@ -242,17 +234,14 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     return g ? groupKey(g) : null
   }
 
-  // One pill per user group; click jumps the scroller to that group. Per-group (not per-message)
-  // because VirtualScroller items ARE groups — scrollToItem(groupIndex) is exact.
+  // One pill per user group; click jumps the scroller to that group.
   const userPills = computed((): UserPill[] => {
     const pills: UserPill[] = []
     messageGroups.value.forEach((g, i) => {
-      // Real user turns only: a background completion groups as a tool row, and a compaction
-      // envelope is a system artifact — neither gets a pill (see isPillGroup).
+      // Real user turns only: a background completion groups as a tool row, and a compaction envelope is a system artifact — neither gets a pill (see isPillGroup).
       const first = g.messages[0]
       if (!isPillGroup(g.role, !!first && isCompactionMessage(first))) return
-      // Per message, not on the join: a `/skill-` turn carries the loaded bodies
-      // as a trailing envelope, and the preview is for the human's sentence.
+      // Per message, not on the join: a `/skill-` turn carries the loaded bodies as a trailing envelope, and the preview is for the human's sentence.
       let text = ''
       let skills = 0
       for (const m of g.messages) {
@@ -327,8 +316,7 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     return index
   })
 
-  /** A background completion as the shell card the tool cards already read: the command it ran and
-   * the log the watcher captured. */
+  /** A background completion as the shell card the tool cards already read: the command it ran and the log the watcher captured. */
   const backgroundCard = (
     msg: Message,
   ): Pick<ToolCardData, 'message' | 'content' | 'parameters'> => {
@@ -388,16 +376,14 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     return messageGroups.value.map((group, i) => {
       if (group.role !== 'assistant') return null
 
-      // Same-group tool rows (rare but possible when an assistant message
-      // carries tool_calls_json AND a tool result) → no pill needed.
+      // Same-group tool rows (rare but possible when an assistant message carries tool_calls_json AND a tool result) → no pill needed.
       const nextGroup = messageGroups.value[i + 1]
       if (nextGroup?.role === 'tool') {
         return null
       }
 
       for (const msg of group.messages) {
-        // The backend always serializes tool_calls_json as a JSON STRING, but older events (or any
-        // future array-shaped regression) must not crash the render.
+        // The backend always serializes tool_calls_json as a JSON STRING, but older events (or any future array-shaped regression) must not crash the render.
         if (typeof msg.tool_calls_json === 'string' && msg.tool_calls_json.trim()) {
           try {
             const parsed = JSON.parse(msg.tool_calls_json)
@@ -406,8 +392,6 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
               const names = parsed.map((tc: any) => tc.function?.name || tc.name || 'unknown')
 
-              // If EVERY tool call in this group already has a rendered tool row somewhere in the
-              // transcript, the structured cards are the source of truth — suppress the pill entirely.
               // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; tool_calls_json shape is intentionally opaque.
               const allRendered = parsed.every((tc: any) => {
                 const id = tc?.id
@@ -421,9 +405,7 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
         }
 
         if (msg.finish_reason === 'tool_calls') {
-          // We can't match by id here (tool_calls_json is missing), so fall back to the adjacency
-          // heuristic: if a tool group appears ANYWHERE in the transcript after this group, the tool
-          // call was rendered → no pill.
+          // We can't match by id here (tool_calls_json is missing), so fall back to the adjacency heuristic: if a tool group appears ANYWHERE in the transcript after this …
           let hasLaterTool = false
           for (let j = i + 1; j < messageGroups.value.length; j++) {
             if (messageGroups.value[j]?.role === 'tool') {

@@ -1,5 +1,4 @@
-// Functional wire tests for POST /api/git/pr/merge. This is the endpoint the
-// PR tab's merge box calls.
+// Functional wire tests for POST /api/git/pr/merge.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// The suite's own scratch directory (the git repo + every fake bin),
-/// outside the harness's tempdir namespace.
+/// The suite's own scratch directory (the git repo + every fake bin), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -21,8 +17,7 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is
-    /// registered first.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered first.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -33,8 +28,7 @@ const Scratch = struct {
     }
 };
 
-/// `git` in `cwd` with the fixture identity baked in, so the fixture never
-/// depends on the machine's global git config.
+/// `git` in `cwd` with the fixture identity baked in, so the fixture never depends on the machine's global git config.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -62,8 +56,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// `git init` plus one commit, so `path` is a real worktree: the merge
-/// handler's status re-read gates on `git rev-parse --git-dir`.
+/// `git init` plus one commit, so `path` is a real worktree: the merge handler's status re-read gates on `git rev-parse --git-dir`.
 fn buildRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-merge-proj"});
     errdefer gpa.free(cwd);
@@ -92,9 +85,7 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Put an executable stub named `bin_name` in its OWN bindir inside `s`,
-/// so prepending that directory to PATH cannot shadow another command the
-/// server needs (`git` in particular — the repo gate runs it).
+/// Put an executable stub named `bin_name` in its OWN bindir inside `s`, so prepending that directory to PATH cannot shadow another command the server needs …
 fn installFakeCli(s: *Scratch, dir_name: []const u8, bin_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -107,9 +98,7 @@ fn installFakeCli(s: *Scratch, dir_name: []const u8, bin_name: []const u8, body:
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env. Scoped by `restore`, or every
-/// later suite in the same process would spawn the fake CLI.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -155,22 +144,15 @@ const PathShadow = struct {
     }
 };
 
-// ============================================================================
 // The fake forge CLIs
-// ============================================================================
 
-/// The head commit every test promises to be merging. Mirrored in the
-/// payloads below, so the `--match-head-commit` / `--sha` assertion is
-/// checking the value the status endpoint handed the UI.
+/// The head commit every test promises to be merging.
 const HEAD_SHA = "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e";
 const TITLE = "fix(chatview): land where the reader left it (#891)";
 
-/// `gh` as the merge box uses it: `pr view` answers `view_json`, and
-/// `pr merge` records its argv (one arg per line) and exits 0.
+/// `gh` as the merge box uses it: `pr view` answers `view_json`, and `pr merge` records its argv (one arg per line) and exits 0.
 fn ghScript(argv_path: []const u8, view_json: []const u8) ![]u8 {
-    // `for a in "$@"; do echo "$a"; done`, NOT `printf '%s\\n'`: a Zig `\\`
-    // multiline literal does not process escape sequences, so the printf
-    // format reaches /bin/sh as a literal backslash-n and the dump stops
+    // `for a in "$@"; do echo "$a"; done`, NOT `printf '%s\\n'`: a Zig `\\` multiline literal does not process escape sequences, so the printf format reaches /bin/sh …
     return std.fmt.allocPrint(gpa,
         \\#!/bin/sh
         \\case "$1-$2" in
@@ -192,8 +174,7 @@ fn ghScript(argv_path: []const u8, view_json: []const u8) ![]u8 {
     , .{ argv_path, view_json, argv_path });
 }
 
-/// A `gh` whose merge is REFUSED: exit 1 with the forge's own words on
-/// stderr, which the 502 body must carry through verbatim.
+/// A `gh` whose merge is REFUSED: exit 1 with the forge's own words on stderr, which the 502 body must carry through verbatim.
 fn ghRefusingScript(view_json: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa,
         \\#!/bin/sh
@@ -216,8 +197,7 @@ const GH_MERGED_JSON =
     \\{"number": 891, "title": "Scroll restore", "url": "https://github.com/ginwa123/pabrik/pull/891", "state": "MERGED", "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN", "headRefName": "worktree/add-a-button", "baseRefName": "main", "createdAt": "2026-10-11T00:00:00Z", "updatedAt": "2026-10-11T01:00:00Z", "mergedAt": "2026-10-11T01:00:00Z", "closedAt": null, "author": {"login": "ginwa123"}, "additions": 97, "deletions": 77, "changedFiles": 5, "headRefOid": "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e"}
 ;
 
-/// #891 still OPEN — the merge-queue / armed-auto-merge shape. The command
-/// was accepted; the change request has not merged.
+/// #891 still OPEN — the merge-queue / armed-auto-merge shape.
 const GH_OPEN_JSON =
     \\{"number": 891, "title": "Scroll restore", "url": "https://github.com/ginwa123/pabrik/pull/891", "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "headRefName": "worktree/add-a-button", "baseRefName": "main", "createdAt": "2026-10-11T00:00:00Z", "updatedAt": "2026-10-11T00:30:00Z", "mergedAt": null, "closedAt": null, "author": {"login": "ginwa123"}, "additions": 97, "deletions": 77, "changedFiles": 5, "headRefOid": "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e"}
 ;
@@ -227,8 +207,7 @@ const GLAB_MERGED_JSON =
     \\{"iid": 7, "title": "GitLab MR", "web_url": "https://gitlab.com/g/r/-/merge_requests/7", "state": "merged", "source_branch": "worktree/gl", "target_branch": "main", "detailed_merge_status": "mergeable", "merge_status": "can_be_merged", "sha": "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e", "merged_at": "2026-10-11T01:00:00Z", "closed_at": null, "created_at": "2026-10-11T00:00:00Z", "updated_at": "2026-10-11T01:00:00Z", "author": {"username": "ginwa123"}, "changes_count": "5"}
 ;
 
-/// The body the merge box sends — built the same way, so a field rename on
-/// either side fails here rather than in the browser.
+/// The body the merge box sends — built the same way, so a field rename on either side fails here rather than in the browser.
 fn mergeBody(repo: []const u8, provider: []const u8, method: []const u8) ![]u8 {
     return std.fmt.allocPrint(
         gpa,
@@ -244,9 +223,7 @@ fn mergeBody(repo: []const u8, provider: []const u8, method: []const u8) ![]u8 {
     );
 }
 
-/// The argv the fixture recorded, or "" when it never ran. The fixture
-/// dumps it on EVERY invocation (before it branches), so this doubles as
-/// "did the CLI run at all?".
+/// The argv the fixture recorded, or "" when it never ran.
 fn recordedArgv(argv_path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(io, argv_path, gpa, .limited(64 * 1024)) catch |err| switch (err) {
         error.FileNotFound => try gpa.dupe(u8, ""),
@@ -254,9 +231,7 @@ fn recordedArgv(argv_path: []const u8) ![]u8 {
     };
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // 1. THE HAPPY PATH — and the argv it implies.
 test "merge: gh pr merge --squash with the head guard, and the status re-read" {
@@ -309,8 +284,7 @@ test "merge: gh pr merge --squash with the head guard, and the status re-read" {
         std.debug.print("status.status = {s}, expected merged\n", .{got_status.string});
         return error.TestUnexpectedResult;
     }
-    // The re-read is the SAME parser the poll uses, so head_sha proves the
-    // payload grew the field the merge guard needs.
+    // The re-read is the SAME parser the poll uses, so head_sha proves the payload grew the field the merge guard needs.
     const got_sha = status.get("head_sha") orelse return error.TestUnexpectedResult;
     if (!std.mem.eql(u8, got_sha.string, HEAD_SHA)) {
         std.debug.print("status.head_sha = {s}, expected {s}\n", .{ got_sha.string, HEAD_SHA });
@@ -320,17 +294,14 @@ test "merge: gh pr merge --squash with the head guard, and the status re-read" {
     const argv = try recordedArgv(argv_path);
     defer gpa.free(argv);
 
-    // Exactly one strategy flag, the head guard, and the message. All four
-    // in one contiguous block: a flag that moved, vanished or gained a
-    // sibling fails here.
+    // Exactly one strategy flag, the head guard, and the message.
     const wanted = try std.fmt.allocPrint(gpa, "pr\nmerge\n891\n--squash\n--match-head-commit\n{s}\n--subject\n{s}\n", .{ HEAD_SHA, TITLE });
     defer gpa.free(wanted);
     if (std.mem.indexOf(u8, argv, wanted) == null) {
         std.debug.print("merge argv does not contain the expected flags:\n{s}\n", .{argv});
         return error.TestUnexpectedResult;
     }
-    // Delete-branch is OFF by default (it deletes the session's own worktree
-    // branch), and auto-merge does not exist in this app at all.
+    // Delete-branch is OFF by default (it deletes the session's own worktree branch), and auto-merge does not exist in this app at all.
     if (std.mem.indexOf(u8, argv, "--delete-branch") != null) {
         std.debug.print("delete-branch was passed without being asked for:\n{s}\n", .{argv});
         return error.TestUnexpectedResult;
@@ -470,9 +441,7 @@ test "merge: a missing or unknown method is a 400 and spawns nothing" {
         defer r.deinit();
     }
 
-    // The real assertion: the CLI never ran. `gh pr merge` with no strategy
-    // flag prompts for the method, so a 400 that still spawned would be a
-    // hang dressed up as a validation error.
+    // The real assertion: the CLI never ran.
     const argv = try recordedArgv(argv_path);
     defer gpa.free(argv);
     if (argv.len != 0) {
@@ -481,8 +450,7 @@ test "merge: a missing or unknown method is a 400 and spawns nothing" {
     }
 }
 
-// 5. GitLab goes through the same route, and its two mandatory flags are on
-//    the wire.
+// 5.
 test "merge: gitlab forces --yes and --auto-merge=false over the wire" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -522,9 +490,7 @@ test "merge: gitlab forces --yes and --auto-merge=false over the wire" {
     const argv = try recordedArgv(argv_path);
     defer gpa.free(argv);
 
-    // -y/--yes: without it `glab mr merge` waits on a confirmation prompt
-    // that a non-tty child can never answer. --auto-merge=false: glab
-    // defaults auto-merge to TRUE when a pipeline is running, so without this
+    // -y/--yes: without it `glab mr merge` waits on a confirmation prompt that a non-tty child can never answer. --auto-merge=false: glab defaults auto-merge to TRUE …
     const wanted = try std.fmt.allocPrint(gpa, "mr\nmerge\n7\n--squash\n--sha\n{s}\n", .{HEAD_SHA});
     defer gpa.free(wanted);
     if (std.mem.indexOf(u8, argv, wanted) == null) {
@@ -560,9 +526,7 @@ test "merge: a missing path is a 400" {
     try expectStr(&doc, "error", "path is required");
 }
 
-// ============================================================================
 // Assertion helpers
-// ============================================================================
 
 fn expectStr(doc: *const harness.Json, key: []const u8, want: []const u8) !void {
     const got = doc.str(key) orelse {

@@ -1,6 +1,4 @@
-//! Cross-platform process management helpers. Provides portable wrappers
-//! around the platform-specific APIs for checking process existence, sending
-//! signals, and terminating processes.
+//! Cross-platform process management helpers.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -17,8 +15,7 @@ pub fn isProcessRunning(pid: i32) bool {
 }
 
 fn isProcessRunningPosix(pid: i32) bool {
-    // kill(pid, 0) is a no-op signal that just checks if we can signal the
-    // process.
+    // kill(pid, 0) is a no-op signal that just checks if we can signal the process.
     const result = std.c.kill(@intCast(pid), @as(std.c.SIG, @enumFromInt(0)));
     if (result == 0) return true;
     // EPERM: process exists but we can't signal it. Still "running".
@@ -27,18 +24,14 @@ fn isProcessRunningPosix(pid: i32) bool {
 }
 
 fn isProcessRunningWindows(pid: i32) bool {
-    // PROCESS_QUERY_LIMITED_INFORMATION (0x1000) is the minimum access needed
-    // to check if a process exists and read a few properties.
-    // bInheritHandle=FALSE (0).
+    // PROCESS_QUERY_LIMITED_INFORMATION (0x1000) is the minimum access needed to check if a process exists and read a few properties. bInheritHandle=FALSE (0).
     const handle = OpenProcess(WINDOWS_PROCESS_QUERY_LIMITED_INFORMATION, 0, @intCast(pid));
     if (handle == null) return false;
     _ = CloseHandle(handle.?);
     return true;
 }
 
-/// Forcefully terminates a process with the given PID. On Linux/macOS, sends
-/// SIGKILL (signal 9) which cannot be caught or ignored by the target
-/// process.
+/// Forcefully terminates a process with the given PID.
 pub fn killProcess(pid: i32) bool {
     if (pid <= 0) return false;
 
@@ -65,9 +58,7 @@ fn killProcessWindows(pid: i32) bool {
     return ok;
 }
 
-/// PID of a child this process spawned, or null once it has no id left
-/// (`wait`/`kill` ran) — `std.process.Child.Id` is a `pid_t` on POSIX but a
-/// `HANDLE` on Windows, where the number has to be asked of the OS.
+/// PID of a child this process spawned, or null once it has no id left (`wait`/`kill` ran) — `std.process.Child.Id` is a `pid_t` on POSIX but a `HANDLE` on …
 pub fn pidOfChild(child: std.process.Child) ?i32 {
     const id = child.id orelse return null;
     if (comptime @typeInfo(@TypeOf(id)) == .int) return @intCast(id);
@@ -79,21 +70,18 @@ pub fn pidOfChild(child: std.process.Child) ?i32 {
     return null;
 }
 
-/// Returns the current process's PID as an `i32`. On POSIX, returns
-/// `getpid()`.
+/// Returns the current process's PID as an `i32`.
 pub fn getCurrentProcessIdInt() i32 {
     return switch (builtin.os.tag) {
         // POSIX: std.c.getpid returns pid_t = i32. The cast is a no-op.
         .linux, .macos => @intCast(std.c.getpid()),
         // Windows: std.c.pid_t is *anyopaque (Windows libc has no real pid_t).
-        // Use the Win32 GetCurrentProcessId() which returns DWORD = u32.
         .windows => @intCast(std.os.windows.GetCurrentProcessId()),
         else => @compileError("process_status: unsupported platform " ++ @tagName(builtin.os.tag)),
     };
 }
 
-// === Windows-only API declarations === These live in kernel32.dll which is
-// part of the default Windows API set — Zig auto-links it.
+// === Windows-only API declarations ===
 
 const WINDOWS_PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
 const WINDOWS_PROCESS_TERMINATE: u32 = 0x0001;

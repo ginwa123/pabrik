@@ -4,13 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The diff behind a `text_replace` card.
- *
- * The cases that matter are the ones that make a diff *lie*: a phantom trailing
- * blank line, a deleted line shown as added, and the size guard that has to give
- * up rather than allocate a table the device cannot hold.
- */
+/** The diff behind a `text_replace` card. */
 class ToolDiffTest {
 
     @Test
@@ -61,8 +55,7 @@ class ToolDiffTest {
     fun `a replacement reads as old line then new line`() {
         val rows = ToolDiff.compute("a\nOLD\nc\n", "a\nNEW\nc\n")
 
-        // A reader scanning a diff expects to meet the removed line before the
-        // added one; the other order reads as if the file gained the old line.
+        // A reader scanning a diff expects to meet the removed line before the added one; the other order reads as if the file gained the old line.
         assertEquals(
             listOf(DiffRowKind.Context, DiffRowKind.Removed, DiffRowKind.Added, DiffRowKind.Context),
             rows.map { it.kind },
@@ -95,8 +88,7 @@ class ToolDiffTest {
     fun `a final-newline-only change is one removed blank line`() {
         val rows = ToolDiff.compute("a", "a\n")
 
-        // Without the trailing-empty drop in splitLines this renders as a
-        // removal of an empty line, which is a difference that does not exist.
+        // Without the trailing-empty drop in splitLines this renders as a removal of an empty line, which is a difference that does not exist.
         assertEquals(listOf(DiffRowKind.Context), rows.map { it.kind })
     }
 
@@ -110,11 +102,7 @@ class ToolDiffTest {
         assertEquals(2, added.afterLine)
     }
 
-    /**
-     * Past the cell budget the LCS table would allocate ~16 MB on a phone. The
-     * fallback is deliberately imprecise — "everything replaced" — because a
-     * wrong-but-honest diff beats an out-of-memory kill on the render path.
-     */
+    /** Past the cell budget the LCS table would allocate ~16 MB on a phone. */
     @Test
     fun `an oversized diff degrades to a wholesale replacement`() {
         val side = (1..3000).joinToString("\n") { "line $it" }

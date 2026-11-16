@@ -5,8 +5,7 @@ const gserverz = pabrik_core.gserverz;
 const git_route = @import("git_route.zig");
 const validateRepoPath = @import("git_branches_list.zig").validateRepoPath;
 
-/// One commit row. All slices borrow from the use-case arena — the
-/// handler serializes before the arena is released.
+/// One commit row.
 pub const CommitEntry = struct {
     sha: []const u8,
     short_sha: []const u8,
@@ -29,8 +28,7 @@ const CommitsListResult = struct {
     commits: []const CommitEntry,
 };
 
-/// Parse the `%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e` output of `git
-/// log` into commit rows. Records split on `\x1e`, fields on `\x1f`.
+/// Parse the `%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e` output of `git log` into commit rows.
 pub fn parseLogRecords(allocator: std.mem.Allocator, raw: []const u8) ![]CommitEntry {
     var out: std.ArrayList(CommitEntry) = .empty;
     errdefer {
@@ -85,9 +83,7 @@ pub fn freeCommitEntries(allocator: std.mem.Allocator, entries: []const CommitEn
     allocator.free(entries);
 }
 
-/// Parse `git diff-tree --no-commit-id --name-status -r <sha>` output
-/// (`<STATUS>\t<path>` per line, renames carry `R100\told\tnew`).
-/// Pure — no IO.
+/// Parse `git diff-tree --no-commit-id --name-status -r <sha>` output (`<STATUS>\t<path>` per line, renames carry `R100\told\tnew`).
 pub fn parseNameStatus(allocator: std.mem.Allocator, raw: []const u8) ![]CommitFileEntry {
     var out: std.ArrayList(CommitFileEntry) = .empty;
     errdefer {
@@ -123,8 +119,7 @@ pub fn parseNameStatus(allocator: std.mem.Allocator, raw: []const u8) ![]CommitF
     return out.toOwnedSlice(allocator);
 }
 
-/// Clamp a `limit` query value to 1..200, defaulting to 100 on missing
-/// or unparsable input. Pure.
+/// Clamp a `limit` query value to 1..200, defaulting to 100 on missing or unparsable input.
 pub fn parseLimit(raw: ?[]const u8) usize {
     const v = std.fmt.parseInt(usize, std.mem.trim(u8, raw orelse "", " "), 10) catch return 100;
     if (v < 1) return 1;
@@ -138,7 +133,6 @@ pub fn parseSkip(raw: ?[]const u8) usize {
 }
 
 /// Validate a commit SHA query param: 4..40 hex chars, never a flag.
-/// Returns null on success, or an error message. Pure.
 pub fn validateSha(sha: []const u8) ?[]const u8 {
     if (sha.len < 4 or sha.len > 40) return "sha must be 4..40 characters";
     if (sha[0] == '-') return "sha must not start with '-'";
@@ -151,9 +145,7 @@ pub fn validateSha(sha: []const u8) ?[]const u8 {
 
 const log_format = "%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e";
 
-/// Use case — list commits at `path` with pagination. Takes primitives,
-/// returns a domain struct. No HTTP types. Returns
-/// `error.NotARepository` when `path` is not inside a git repo.
+/// Use case — list commits at `path` with pagination.
 fn listCommitsUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -168,8 +160,7 @@ fn listCommitsUseCase(
     const branch_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, opts) catch return error.NotARepository;
     const branch = std.mem.trim(u8, branch_result.stdout, " \n\r\t");
 
-    // Best-effort total for the `N of TOTAL` footer. Zero when the repo
-    // has no commits yet or the count fails.
+    // Best-effort total for the `N of TOTAL` footer.
     var total_count: i64 = 0;
     if (git_route.run(allocator, io, path, &.{ "rev-list", "--count", "HEAD" }, opts)) |count_result| {
         if (count_result.term.exited == 0) {
@@ -190,9 +181,7 @@ fn listCommitsUseCase(
     };
 }
 
-/// HTTP handler for `GET /api/git/commits?path=<repo>[&limit=100][&skip=0]`.
-/// 200: `{ "is_git_repo": true, "branch": "main", "total_count": 300,
-/// "commits": [{ "sha": ..., "short_sha": "3bc0e389", "author": ... }] }`.
+/// HTTP handler for `GET /api/git/commits?path=<repo>[&limit=100][&skip=0]`. 200: `{ "is_git_repo": true, "branch": "main", "total_count": 300, "commits": [{ …
 pub fn gitCommitsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -233,9 +222,7 @@ pub fn gitCommitsListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitCommitsResponse(allocator, response) });
 }
 
-/// HTTP handler for `GET /api/git/commit?path=<repo>&sha=<sha>`. 200: full
-/// message + author/date + touched files. 400 on missing/invalid
-/// `path`/`sha`; 404 when the path is not a repo or the SHA does not resolve.
+/// HTTP handler for `GET /api/git/commit?path=<repo>&sha=<sha>`. 200: full message + author/date + touched files. 400 on missing/invalid `path`/`sha`; 404 when …
 pub fn gitCommitDetailHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;
@@ -297,9 +284,7 @@ pub fn gitCommitDetailHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitCommitDetailResponse(allocator, response) });
 }
 
-/// Validate a `file` query param for the commit file-diff endpoint. The value
-/// reaches git as an argv element after `--` (never a shell string), so this
-/// guards against flag injection and path escape.
+/// Validate a `file` query param for the commit file-diff endpoint.
 pub fn validateCommitFile(file: []const u8) ?[]const u8 {
     if (file.len == 0) return "file is required";
     if (file.len > 4096) return "file exceeds 4096 characters";
@@ -313,9 +298,7 @@ pub fn validateCommitFile(file: []const u8) ?[]const u8 {
     return null;
 }
 
-/// HTTP handler for `GET
-/// /api/git/commit/file?path=<repo>&sha=<sha>&file=<path>`. 200: `{ "sha":
-/// ..., "path": ..., "diff_content": "<unified diff>" }` with the file's diff
+/// HTTP handler for `GET /api/git/commit/file?path=<repo>&sha=<sha>&file=<path>`. 200: `{ "sha": ..., "path": ..., "diff_content": "<unified diff>" }` with the …
 pub fn gitCommitFileDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;

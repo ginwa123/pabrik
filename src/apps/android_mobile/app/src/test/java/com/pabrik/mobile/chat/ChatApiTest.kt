@@ -6,14 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The wire contract for the chat endpoint.
- *
- * These are the traps in the backend's JSON that a client gets wrong silently
- * — no exception, just a transcript that is missing messages, sorted wrongly,
- * or carrying the literal text `null`. Every case here is one that actually
- * differs from what the desktop client does.
- */
+/** The wire contract for the chat endpoint. */
 class ChatApiTest {
 
     // A real payload shape, with the envelope fields the server always emits.
@@ -77,9 +70,7 @@ class ChatApiTest {
     fun `the message path sorts by id because created_at is inconsistent across pages`() {
         val path = ChatApi.messagesPath("sess_1", limit = 50, direction = "asc")
 
-        // `sort_by=created_at` orders page 1 by the *session's* created_at —
-        // identical for every row, so it degenerates to id order — and later
-        // pages by the message's. `id` is the only consistent key.
+        // `sort_by=created_at` orders page 1 by the *session's* created_at — identical for every row, so it degenerates to id order — and later pages by the message's.
         assertTrue(path, path.contains("sort_by=id"))
         assertTrue(path, path.contains("direction=asc"))
         assertTrue(path, path.contains("limit=50"))
@@ -136,10 +127,7 @@ class ChatApiTest {
 
     @Test
     fun `created_at holding a SQLite datetime is read as UTC, not device-local`() {
-        // The same column is written both ways depending on the code path, so
-        // this shape genuinely occurs. Reading it as a number would sort the row
-        // to the wrong end of the transcript, which reads as a missing message
-        // rather than as a bug.
+        // The same column is written both ways depending on the code path, so this shape genuinely occurs.
         val page = ChatApi.parseMessages(
             """{"messages":[{"id":"a","role":"user","content":"x","created_at":"2026-09-26 05:07:34"}]}""",
         )
@@ -183,16 +171,14 @@ class ChatApiTest {
     @Test
     fun `tool_calls_json stays the JSON string the server sent`() {
         val page = ChatApi.parseMessages(messagesResponse)
-        // The desktop client types this as `any`, which quietly invites a
-        // caller to treat it as an object. It is a string containing JSON.
+        // The desktop client types this as `any`, which quietly invites a caller to treat it as an object.
         assertEquals("command", page.messages[1].toolName)
         assertEquals("call_1", page.messages[1].toolCallId)
     }
 
     @Test
     fun `a row with no id is dropped because it cannot be merged or keyed`() {
-        // A duplicate key crashes LazyColumn outright, so an idless row is not
-        // something to paper over with a synthetic id.
+        // A duplicate key crashes LazyColumn outright, so an idless row is not something to paper over with a synthetic id.
         val page = ChatApi.parseMessages(
             """{"messages":[{"role":"user","content":"no id"},{"id":"","content":"blank id"},{"id":"ok","content":"fine"}]}""",
         )
@@ -209,8 +195,7 @@ class ChatApiTest {
 
     @Test
     fun `the same mapper renders a cached raw envelope and a network row identically`() {
-        // The web's hard-won rule: two mappers for one endpoint is how a cached
-        // mount and a live mount drift. Cached rows go through the same call.
+        // The web's hard-won rule: two mappers for one endpoint is how a cached mount and a live mount drift.
         val network = ChatApi.parseMessages(messagesResponse).messages.first()
         val cached = ChatApi.toChatMessage(network.rawEnvelope())
 

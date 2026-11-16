@@ -1,6 +1,4 @@
-/** Per-file `+added / -removed` on the sidebar's file rows. The counts are derived from diff text
- * the panel ALREADY holds — the PR diff it parsed, and the folder-mode batch payload it fetched for
- * the center column. */
+/** Per-file `+added / -removed` on the sidebar's file rows. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -158,8 +156,7 @@ describe('SidebarDiffPanel — per-file line counts', () => {
   })
 
   it('renders NOTHING for a file the batch payload did not cover', async () => {
-    // The server only reports CHANGED paths, so a row can legitimately have
-    // no diff entry. Unknown, not zero.
+    // The server only reports CHANGED paths, so a row can legitimately have no diff entry.
     getGitFolderDiffsMock.mockResolvedValue({
       diffs: [{ path: 'dirty.txt', diff_content: diffFor('dirty.txt'), staged: false }],
     })
@@ -170,8 +167,7 @@ describe('SidebarDiffPanel — per-file line counts', () => {
   })
 
   it('keeps the status chip the first direct-child span of the row', async () => {
-    // SidebarDiffPanel.chrome.spec.ts selects `[data-testid=…] > span` to
-    // read the status letter. The counts must not become that first span.
+    // SidebarDiffPanel.chrome.spec.ts selects `[data-testid=…] > span` to read the status letter.
     const wrapper = await mountPanel()
     const row = wrapper.get('[data-testid="sidebar-diff-file-unstaged-dirty.txt"]')
     const firstSpan = Array.from(row.element.children).find((el) => el.tagName === 'SPAN')

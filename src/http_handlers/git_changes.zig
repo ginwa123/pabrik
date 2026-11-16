@@ -15,8 +15,7 @@ pub const GitFileChange = struct {
 /// Git changes response with staged and unstaged files
 pub const GitChangesResponse = struct { is_git_repo: bool, branch: ?[]const u8 = null, has_changes: bool = false, staged_files: []const GitFileChange = &.{}, modified_files: []const GitFileChange = &.{}, untracked_files: []const GitFileChange = &.{} };
 
-/// Parse git status --porcelain output and separate staged/unstaged files
-/// Note: This function allocates copies of status chars and paths
+/// Parse git status --porcelain output and separate staged/unstaged files Note: This function allocates copies of status chars and paths
 fn parseGitStatus(allocator: std.mem.Allocator, output: []const u8) GitChangesResponse {
     var staged_files = std.ArrayList(GitFileChange).empty;
     var modified_files = std.ArrayList(GitFileChange).empty;
@@ -29,9 +28,7 @@ fn parseGitStatus(allocator: std.mem.Allocator, output: []const u8) GitChangesRe
         const line = output[start .. start + end];
 
         if (line.len >= 4) {
-            // Git porcelain format: XY<space><path> X = index status (1 char
-            // at position 0) Y = worktree status (1 char at position 1) space
-            // at position 2 path starts at position 3
+            // Git porcelain format: XY<space><path> X = index status (1 char at position 0) Y = worktree status (1 char at position 1) space at position 2 path starts at …
             const indexStatus = line[0..1];
             const worktreeStatus = line[1..2];
             const path = line[3..];
@@ -72,8 +69,7 @@ fn parseGitStatus(allocator: std.mem.Allocator, output: []const u8) GitChangesRe
     return GitChangesResponse{ .is_git_repo = true, .staged_files = staged_files.toOwnedSlice(allocator) catch &.{}, .modified_files = modified_files.toOwnedSlice(allocator) catch &.{}, .untracked_files = untracked_files.toOwnedSlice(allocator) catch &.{}, .has_changes = staged_files.items.len > 0 or modified_files.items.len > 0 or untracked_files.items.len > 0 };
 }
 
-/// Expand untracked directories to show individual files inside them
-/// Like VS Code Git, lazygit, or fzf-lua git
+/// Expand untracked directories to show individual files inside them Like VS Code Git, lazygit, or fzf-lua git
 fn expandUntrackedDirectories(allocator: std.mem.Allocator, io: std.Io, untracked_dirs: []const []const u8, path_param: []const u8, opts: git_route.Options) ![][]const u8 {
     var all_files = std.ArrayList([]const u8).empty;
     defer {
@@ -89,8 +85,7 @@ fn expandUntrackedDirectories(allocator: std.mem.Allocator, io: std.Io, untracke
             continue;
         }
 
-        // Get files inside this untracked directory
-        // Use git ls-files --others --exclude-standard <dir>
+        // Get files inside this untracked directory Use git ls-files --others --exclude-standard <dir>
         const result = git_route.run(allocator, io, path_param, &.{ "ls-files", "--others", "--exclude-standard", dir }, opts) catch continue;
 
         if (result.term.exited != 0) continue;

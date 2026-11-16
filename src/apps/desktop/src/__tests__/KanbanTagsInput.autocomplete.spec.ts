@@ -4,8 +4,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import KanbanTagsInput from '../components/kanban/KanbanTagsInput.vue'
 
-// jsdom does NOT implement IntersectionObserver natively. The component's watcher fires on focus
-// and unconditionally calls `new IntersectionObserver(...)` when the scroll sentinel is in the DOM.
+// jsdom does NOT implement IntersectionObserver natively.
 class NoopIntersectionObserver {
   constructor(_cb: IntersectionObserverCallback, _opts?: IntersectionObserverInit) {}
   observe(_target: Element): void {}
@@ -71,26 +70,21 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
   })
 
   it('clicking a suggestion commits it as a tag and KEEPS the dropdown open (user can pick more without re-focusing)', async () => {
-    // Plan: 2026-08-06-dropdown-tags-feedback. User feedback #2: "after enter select dropdown, the
-    // dropdown not show up agai, it should show up". The pre-fix behaviour closed the dropdown
-    // after every commit, forcing the user to click back into the input to pick the next tag.
+    // Plan: 2026-08-06-dropdown-tags-feedback.
     const wrapper = mount(KanbanTagsInput, {
       props: { modelValue: [], suggestions: ['bug', 'urgent', 'frontend'] },
     })
     await wrapper.find('[data-testid="kanban-tags-input-field"]').trigger('focus')
     await nextTick()
     await wrapper.find('[data-testid="kanban-tags-input-suggestion-bug"]').trigger('mousedown')
-    // Simulate v-model round-trip: parent updates modelValue in response
-    // to the emit. Without this, props.modelValue stays [] and the
-    // next assertion (the picked tag is filtered out) would fail.
+    // Simulate v-model round-trip: parent updates modelValue in response to the emit.
     await wrapper.setProps({ modelValue: ['bug'] })
     await nextTick()
     // The chip was added.
     expect(wrapper.emitted('update:modelValue')![0]).toEqual([['bug']])
     // The dropdown stays open.
     expect(wrapper.find('[data-testid="kanban-tags-input-suggestions"]').exists()).toBe(true)
-    // The picked tag is no longer in the list (filtered out by the
-    // "already on the task" check in filteredSuggestions).
+    // The picked tag is no longer in the list (filtered out by the "already on the task" check in filteredSuggestions).
     expect(wrapper.find('[data-testid="kanban-tags-input-suggestion-bug"]').exists()).toBe(false)
     // The other suggestions are still pickable.
     expect(wrapper.find('[data-testid="kanban-tags-input-suggestion-urgent"]').exists()).toBe(true)
@@ -98,9 +92,7 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
   })
 
   it('user can pick multiple tags in one focused session (regression for dropdown-closes-after-pick)', async () => {
-    // Plan: 2026-08-06-dropdown-tags-feedback. The user-reported flow: open dialog → focus tags
-    // input → click suggestion → click another suggestion → click another → ...  without the
-    // dropdown closing in between.
+    // Plan: 2026-08-06-dropdown-tags-feedback.
     const wrapper = mount(KanbanTagsInput, {
       props: { modelValue: ['bug'], suggestions: ['bug', 'urgent', 'frontend', 'flaky'] },
     })
@@ -224,8 +216,7 @@ describe('KanbanTagsInput — autocomplete dropdown', () => {
   })
 
   it('IntersectionObserver fires onLoadMore when the scroll sentinel is visible', async () => {
-    // jsdom doesn't trigger IntersectionObserver by default, so we stub the constructor to call the
-    // callback with isIntersecting=true synchronously.
+    // jsdom doesn't trigger IntersectionObserver by default, so we stub the constructor to call the callback with isIntersecting=true synchronously.
     const originalIO = globalThis.IntersectionObserver
      
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

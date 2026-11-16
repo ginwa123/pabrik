@@ -1,6 +1,4 @@
-/** Diff algorithm + diff-row renderers for the DiffView component. Implementation note: we use a
- * classic LCS (Longest Common Subsequence) DP to compute the shortest edit script. O(N*M) time and
- * space, simple to verify correct. */
+/** Diff algorithm + diff-row renderers for the DiffView component. */
 export interface DiffOp {
   type: 'equal' | 'insert' | 'delete'
   /** 1-indexed; null for inserts (no corresponding before line). */
@@ -58,9 +56,7 @@ export function splitLines(s: string): string[] {
   return lines
 }
 
-/**  * Compute the shortest edit script via LCS DP. Strategy: compute LCS lengths matrix `dp[i][j]` =
- * LCS length of `before[0..i)` and `after[0..j)`. Walk back from `dp[N][M]` to construct the SES in
- * reverse order. */
+/** Compute the shortest edit script via LCS DP. */
 export function myersDiff(before: string[], after: string[]): DiffOp[] {
   const N = before.length
   const M = after.length
@@ -155,8 +151,7 @@ function tokenizeWords(line: string): string[] {
   return tokens
 }
 
-/** Per-line word-level diff using LCS on tokens. Returns inline changes that
- * can be applied as `<span>` highlights. */
+/** Per-line word-level diff using LCS on tokens. */
 export function computeInlineWordChanges(before: string, after: string): InlineChange[] {
   const aTokens = tokenizeWords(before)
   const bTokens = tokenizeWords(after)
@@ -193,8 +188,7 @@ export function computeInlineWordChanges(before: string, after: string): InlineC
   return out
 }
 
-/** Convert a SES into a row-based split view (left = before, right = after). Equal lines produce
- * matched rows; insert ops leave the before cell empty; delete ops leave the after cell empty. */
+/** Convert a SES into a row-based split view (left = before, right = after). */
 export function computeSplitView(before: string[], after: string[]): SplitRow[] {
   const ops = myersDiff(before, after)
   const rows: SplitRow[] = []
@@ -248,8 +242,7 @@ export function computeSplitView(before: string[], after: string[]): SplitRow[] 
   return rows
 }
 
-/** Compute unified view with `contextLines` of context around changes and
- * `@@ -start,count +start,count @@` hunk headers between hunks. */
+/** Compute unified view with `contextLines` of context around changes and `@@ -start,count +start,count @@` hunk headers between hunks. */
 export function computeUnifiedView(
   before: string[],
   after: string[],
@@ -259,9 +252,7 @@ export function computeUnifiedView(
   if (ops.length === 0) return []
   const rows: UnifiedRow[] = []
 
-  // Group ops into hunks. When we accumulate more than 2*contextLines of
-  // trailing equal lines, split the current hunk (keeping contextLines of
-  // trailing context as leading context for the next hunk).
+  // Group ops into hunks.
   type Group = { ops: DiffOp[] }
   const groups: Group[] = []
   let current: Group = { ops: [] }
@@ -327,9 +318,7 @@ export function computeUnifiedView(
   return rows
 }
 
-/**
- * Single-column inline view (one row per op). Useful for collapsed/preview mode.
- */
+/** Single-column inline view (one row per op). */
 export function computeInlineView(before: string[], after: string[]): DiffOp[] {
   return myersDiff(before, after)
 }

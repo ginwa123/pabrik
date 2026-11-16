@@ -13,8 +13,7 @@ const helpers = @import("helpers");
 /// Request body for the kanban-item create endpoint.
 const CreateKanbanBody = struct {
     name: []const u8,
-    /// Optional absolute path on disk that will become the `cwd` for
-    /// every chat session created under this kanban's tasks.
+    /// Optional absolute path on disk that will become the `cwd` for every chat session created under this kanban's tasks.
     path: ?[]const u8 = null,
 };
 
@@ -24,8 +23,7 @@ pub const CreateKanbanResponse = struct {
     workspace_id: []const u8,
     item_type: []const u8,
     name: []const u8,
-    /// Mirrors the request body's path. `null` when the caller did
-    /// not supply one (cwd-less kanban).
+    /// Mirrors the request body's path.
     path: ?[]const u8 = null,
     position: i64,
 };
@@ -43,26 +41,20 @@ pub const WorkspaceItemsCreateKanbanError = error{
     NameRequired,
     InsertFailed,
     SeedFailed,
-    /// `std.json.Stringify.valueAlloc` and `allocator.dupe` can
-    /// fail with `OutOfMemory`. Unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` and `allocator.dupe` can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
 pub const WorkspaceItemsCreateKanbanInput = struct {
     workspace_id: []const u8,
     body: CreateKanbanBody,
-    /// Live config.json `tools` checklist (null = legacy defaults). Read from
-    /// the singleton by the HTTP handler and threaded into the seed so D2's
-    /// absent/list/[] semantics reach `agent_kanban_tools`.
+    /// Live config.json `tools` checklist (null = legacy defaults).
     config_tools: ?[]const []const u8 = null,
 };
 
 pub const WorkspaceItemsCreateKanbanResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -70,19 +62,15 @@ fn useCase(
     input: WorkspaceItemsCreateKanbanInput,
 ) WorkspaceItemsCreateKanbanError!WorkspaceItemsCreateKanbanResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    // Trim leading/trailing ASCII whitespace and reject empty names. Mirrors
-    // `workspace_items_create.zig`'s `EmptyName` validation so both create
-    // endpoints have consistent semantics.
+    // Trim leading/trailing ASCII whitespace and reject empty names.
     const trimmed_name = std.mem.trim(u8, input.body.name, " \t\n\r");
     if (trimmed_name.len == 0) return error.NameRequired;
 
-    // Path is optional — when omitted, NULL is stored (cwd-less kanban, same
-    // as pre-fix behavior).
+    // Path is optional — when omitted, NULL is stored (cwd-less kanban, same as pre-fix behavior).
     const path_opt: ?[]const u8 = input.body.path;
     const path_for_insert: []const u8 = path_opt orelse "";
 
-    // Generate item id. Same nanosecond-timestamp scheme as
-    // `workspace_items_create.zig:generateItemId`.
+    // Generate item id.
     const timestamp_ns = helpers.unixTimestampNanos();
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
     defer allocator.free(item_id);
@@ -92,8 +80,7 @@ fn useCase(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // Compute the new item's position as COALESCE(MAX(position), -1) + 1
-    // within this workspace.
+    // Compute the new item's position as COALESCE(MAX(position), -1) + 1 within this workspace.
     tx.exec(
         allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, created_at, updated_at) VALUES (?, ?, 'kanban', ?, NULLIF(?, ''), COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1, datetime('now'), datetime('now'))",
@@ -101,13 +88,9 @@ fn useCase(
     ) catch return error.InsertFailed;
 
     // Seed the 3 default columns (`todo / in progress / done`).
-    // Takes `tx` (not `db`): the tx holds the backend mutex, so a
-    // `db.exec` here would deadlock on the non-reentrant lock.
     kanban_model.seedDefaultColumns(allocator, .{ .tx = &tx }, item_id) catch return error.SeedFailed;
 
-    // Seed the agent_kanban config row + the tool allowlist (config.json
-    // `tools` checklist when set, otherwise DEFAULT_AGENT_TOOLS +
-    // DEFAULT_KANBAN_TOOLS) so a fresh board is immediately usable.
+    // Seed the agent_kanban config row + the tool allowlist (config.json `tools` checklist when set, otherwise DEFAULT_AGENT_TOOLS + DEFAULT_KANBAN_TOOLS) so a fresh …
     tx.exec(
         allocator,
         "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban') ON CONFLICT DO NOTHING",
@@ -117,8 +100,7 @@ fn useCase(
 
     tx.commit() catch return error.SeedFailed;
 
-    // Read back the freshly-seeded columns so the response can include them
-    // in the `columns` field of the wire envelope.
+    // Read back the freshly-seeded columns so the response can include them in the `columns` field of the wire envelope.
     const seeded_cols = kanban_model.listColumns(allocator, db, item_id) catch {
         std.log.warn(
             \\workspace_items_create_kanban: seed-listColumns failed (non-fatal); returning empty columns array
@@ -139,8 +121,7 @@ fn useCase(
     };
     defer kanban_model.freeColumns(allocator, seeded_cols);
 
-    // Emit SSE events for each seeded column so other connected clients
-    // refresh their kanban view. action="created" for all three.
+    // Emit SSE events for each seeded column so other connected clients refresh their kanban view. action="created" for all three.
     for (seeded_cols) |col| {
         on_event_sent_kanban.onEventSendKanbanColumn(allocator, .{
             .action = "created",
@@ -155,8 +136,7 @@ fn useCase(
         };
     }
 
-    // Read the actual position back from the DB so the response mirrors what
-    // was persisted.
+    // Read the actual position back from the DB so the response mirrors what was persisted.
     const position = readInsertedPosition(allocator, db, item_id);
 
     return try std.json.Stringify.valueAlloc(allocator, CreateKanbanResponseFull{
@@ -172,9 +152,7 @@ fn useCase(
     }, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workspaceItemsCreateKanbanHandler(
     ctx: gserverz.HttpContext,
@@ -194,9 +172,7 @@ pub fn workspaceItemsCreateKanbanHandler(
         });
     }
 
-    // Live `tools` checklist — seeds the fresh board's allowlist instead of
-    // the defaults when set (plan 2026-09-22-tools-menu). It is the
-    // WORKSPACE's list: tools are workspace-scoped.
+    // Live `tools` checklist — seeds the fresh board's allowlist instead of the defaults when set (plan 2026-09-22-tools-menu).
     const workspace_cfg = auth_common.requestWorkspaceConfig(allocator, di, workspace_id, req.headers) orelse
         pabrikcore.getLlmConfig(di);
     const config_tools = workspace_cfg.tools;
@@ -275,8 +251,7 @@ fn readInsertedPosition(
         &.{item_id},
     ) catch return 0;
     defer q.deinit();
-    // `try` would propagate the error and abort the 201 — we want
-    // a best-effort read, so swallow the error and fall through.
+    // `try` would propagate the error and abort the 201 — we want a best-effort read, so swallow the error and fall through.
     if (q.next() catch null) |row| {
         defer row.deinit(allocator);
         return std.fmt.parseInt(i64, row.values[0], 10) catch 0;

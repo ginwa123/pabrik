@@ -1,6 +1,4 @@
-/** Vitest test setup. Runs before every test file. Polyfills browser APIs that jsdom does not
- * implement so module-level code in `src/api/index.ts` (which calls `new EventSource(...)` at
- * function entry) can be imported without crashing during unit tests. */
+/** Vitest test setup. */
 class EventSourceStub {
   static readonly CONNECTING = 0
   static readonly OPEN = 1
@@ -28,9 +26,7 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'undefined'
   ;(globalThis as { EventSource: unknown }).EventSource = EventSourceStub
 }
 
-// jsdom does not ship ResizeObserver, but VirtualScroller.vue instantiates one in onMounted. The
-// stub matches the EventSource polyfill above: inert, accepts the calls, never fires — tests that
-// need real resize behavior should mock the component instead of relying on this stub.
+// jsdom does not ship ResizeObserver, but VirtualScroller.vue instantiates one in onMounted.
 if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {
   ;(globalThis as { ResizeObserver: unknown }).ResizeObserver = class {
     observe(): void {}
@@ -61,9 +57,7 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
   }
 }
 
-// Stub global fetch so relative-URL API calls in tests don't throw "Failed to parse URL from
-// /api/..." TypeErrors. Tests that need real API behavior should mock the api module (vi.spyOn(api,
-// ...)) instead of letting this stub fire.
+// Stub global fetch so relative-URL API calls in tests don't throw "Failed to parse URL from /api/..." TypeErrors.
 const stubFetch: typeof fetch = async () =>
   new Response(JSON.stringify({ error: 'fetch stubbed in test env' }), {
     status: 404,
@@ -71,15 +65,12 @@ const stubFetch: typeof fetch = async () =>
   })
 ;(globalThis as { fetch: typeof fetch }).fetch = stubFetch
 
-// Install the SSE bus ONCE for the whole test file. Why this is in setup.ts (not in every test's
-// beforeEach): 1. ChatView's onMounted calls connectSse() which calls useSseBus().
+// Install the SSE bus ONCE for the whole test file.
 import { createApp } from 'vue'
 import { installSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 
 installSseBus(createApp({}))
 __setSseBusGlobalClient({
-  // `state` is a private field on the real SseClient class; the cast is fine because the stub is
-  // never type-checked against the interface contract (no test asserts on it directly).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   state: 'open' as any,
   lastError: null,

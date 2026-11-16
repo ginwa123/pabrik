@@ -75,8 +75,7 @@ describe('sseTabChannel resync — a window that may have missed events refreshe
     a.onResync.mockClear()
 
     foreign.stop()
-    // Poll instead of a fixed sleep: the leader timeout is 60ms, and a loaded
-    // CI runner drifts past a 120ms budget (observed twice on 2026-11-08).
+    // Poll instead of a fixed sleep: the leader timeout is 60ms, and a loaded CI runner drifts past a 120ms budget (observed twice on 2026-11-08).
     await waitFor(() => a.tab.isLeader())
 
     expect(a.tab.isLeader()).toBe(true)
@@ -86,8 +85,7 @@ describe('sseTabChannel resync — a window that may have missed events refreshe
 
   it('signals a resync when returning from a LONG hidden period', async () => {
     let visible = true
-    // Small coalescing gap: the initial `becomeLeader` already emitted a resync,
-    // and we want THIS trigger to be observable on its own.
+    // Small coalescing gap: the initial `becomeLeader` already emitted a resync, and we want THIS trigger to be observable on its own.
     const a = makeTab({ isVisible: () => visible, resyncMinGapMs: 5 })
     a.tab.start()
     await settle(40)

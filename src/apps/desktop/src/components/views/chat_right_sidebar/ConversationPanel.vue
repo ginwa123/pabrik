@@ -106,8 +106,7 @@ onMounted(() => {
   void load()
 })
 
-// Reload on binding change (cwd / PR / provider): the thread belongs to the
-// previous change request, so it resets with the data.
+// Reload on binding change (cwd / PR / provider): the thread belongs to the previous change request, so it resets with the data.
 let prevCwd = props.cwd
 let prevPrUrl = props.prUrl
 let prevProvider = props.prProvider

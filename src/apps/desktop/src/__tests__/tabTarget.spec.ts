@@ -23,9 +23,7 @@ import { MAX_CLOSED, TABS_VERSION, groupPayload, parseTabList } from '../helpers
 import { __resetWindowIdForTests, getWindowId } from '../helpers/windowId'
 import { makeLocalStorageStub } from './helpers'
 
-/**  * Task 1 of the tab-mode plan: every rule that decides WHICH target a tab represents, which
- * navigations never become tabs, and how a persisted list is validated. These are pure functions on
- * purpose — the store and the strip are tested separately. */
+/** Task 1 of the tab-mode plan: every rule that decides WHICH target a tab represents, which navigations never become tabs, and how a persisted list is validated. */
 describe('isBackgroundOpenEvent', () => {
   it('matches the browser gesture for "open in a background tab"', () => {
     expect(isBackgroundOpenEvent({ ctrlKey: true })).toBe(true)
@@ -78,8 +76,7 @@ describe('tabKeyOf', () => {
       'ws:ws_1:item_7',
       'ws:ws_1:item_7:chat:task_9',
     ])
-    // every other type (known or unknown) collapses to ONE reading — the
-    // cold-boot key is already canonical, so nothing has to be adopted
+    // every other type (known or unknown) collapses to ONE reading — the cold-boot key is already canonical, so nothing has to be adopted
     expect(tabKeyVariants('/app', url, 'agent')).toEqual(['ws:ws_1:item_7:chat:task_9'])
     expect(tabKeyVariants('/app', url, 'kanban')).toEqual(['ws:ws_1:item_7:chat:task_9'])
     expect(tabKeyVariants('/app', url)).toEqual(['ws:ws_1:item_7:chat:task_9'])
@@ -106,8 +103,7 @@ describe('tabKeyOf', () => {
   })
 
   it('keys the workspace-scoped settings page like the legacy one', () => {
-    // The board is the same target either way, so the tab key must not change
-    // when the URL shape changes.
+    // The board is the same target either way, so the tab key must not change when the URL shape changes.
     expect(tabKeyOf('/app/ws_1/projects/item_7/settings', {})).toBe('ks:item_7')
     expect(tabKeyOf('/app/ws_1/projects/item_7/settings/', {})).toBe('ks:item_7')
   })

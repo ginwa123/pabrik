@@ -10,8 +10,7 @@ const compact_target = @import("../modules/agent/loop/session_compact_target.zig
 const compact_mod = @import("../modules/agent/loop/workflow_compact_message.zig");
 const skill_evals_config = @import("../modules/agent/loop/skill_evals_config.zig");
 
-/// Compact a session on demand: the same `maybeCompactMessagesNew` the agentic
-/// loop calls, against the same target the loop would use.
+/// Compact a session on demand: the same `maybeCompactMessagesNew` the agentic loop calls, against the same target the loop would use.
 pub fn sessionCompactHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const session_id = req.params.get("session_id") orelse {
@@ -59,9 +58,7 @@ pub fn sessionCompactHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     return res.jsonResponse(.{ .status_code = 200, .data = body });
 }
 
-/// The tool list the loop would hand `buildMessages` for this session: the
-/// session's allowlist (Agent binding first, kanban second), the progressive
-/// tools it has equipped, and the cached MCP tools.
+/// The tool list the loop would hand `buildMessages` for this session: the session's allowlist (Agent binding first, kanban second), the progressive tools it has …
 fn resolveSessionTools(
     allocator: std.mem.Allocator,
     di: *pabrikcore.App,

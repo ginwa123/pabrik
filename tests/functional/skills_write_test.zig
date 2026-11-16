@@ -1,5 +1,4 @@
-// Functional tests for the skills WRITE surface: `POST` (insert) and `PATCH`
-// (update). The read/delete surface is covered by `skills_sqlite_test.zig`.
+// Functional tests for the skills WRITE surface: `POST` (insert) and `PATCH` (update).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,16 +8,11 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// The body asserted BYTE-EXACT after a create and after a patch.
-/// Frontmatter included: `skill_eval` identities are `sha256(body)`, so a
-/// handler that trimmed the `---` block would stale every cached verdict.
 const BODY = "---\nname: pdf\ndescription: Work with PDFs.\n---\n\nRun `scripts/convert.py`.\n";
 
-// ============================================================================
 // HTTP helpers
-// ============================================================================
 
-/// `POST /api/workspaces/<ws>/skills` with the exact body the create form
-/// sends. Returns the whole response body (owned).
+/// `POST /api/workspaces/<ws>/skills` with the exact body the create form sends.
 fn createSkillBody(
     h: *Harness,
     ws: []const u8,
@@ -42,9 +36,7 @@ fn createSkillBody(
     return gpa.dupe(u8, r.body);
 }
 
-/// `PATCH /api/workspaces/<ws>/skills/<name>` with the exact body the edit
-/// form sends — BOTH fields, always, so a one-field edit cannot blank the
-/// other. Returns the whole response body (owned).
+/// `PATCH /api/workspaces/<ws>/skills/<name>` with the exact body the edit form sends — BOTH fields, always, so a one-field edit cannot blank the other.
 fn patchSkillBody(
     h: *Harness,
     ws: []const u8,
@@ -102,9 +94,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-// ============================================================================
 // Assertion helpers
-// ============================================================================
 
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
@@ -207,13 +197,9 @@ fn findByName(arr: std.json.Array, name: []const u8) ?std.json.ObjectMap {
     return null;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// The happy insert, asserted on the wire. `asset_count` is 0 because this
-// route writes the body only — a bundled skill's companions arrive through
-// the importer.
+// The happy insert, asserted on the wire.
 test "create_inserts_a_skill_and_returns_the_stored_row" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -247,8 +233,7 @@ test "create_inserts_a_skill_and_returns_the_stored_row" {
     try expectStr(dskill, "content", BODY, "re-read skill");
 }
 
-// The empty-slice-as-NULL trap, on the wire. `SqliteBackend.exec` binds `""`
-// as SQL NULL, and `skills.description` is NOT NULL.
+// The empty-slice-as-NULL trap, on the wire.
 test "create_with_an_empty_description_round_trips_as_empty_not_as_a_500" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -266,14 +251,12 @@ test "create_with_an_empty_description_round_trips_as_empty_not_as_a_500" {
     const created = try rootObject(&doc, "POST skill (empty description)");
     const skill = try skillObject(created, "POST skill (empty description)");
 
-    // `""`, not `null` and not a missing key: a null would render a blank
-    // list row indistinguishable from a bug.
+    // `""`, not `null` and not a missing key: a null would render a blank list row indistinguishable from a bug.
     try expectStr(skill, "description", "", "created skill");
     try expectStr(skill, "content", BODY, "created skill");
 }
 
-// A duplicate name in the SAME workspace is refused, and the stored body is
-// not replaced.
+// A duplicate name in the SAME workspace is refused, and the stored body is not replaced.
 test "create_of_a_duplicate_name_is_409_and_does_not_overwrite" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -307,9 +290,7 @@ test "create_of_a_duplicate_name_is_409_and_does_not_overwrite" {
     try expectStr(skill, "content", "first body", "after duplicate");
 }
 
-// The same name in a SECOND workspace is not a duplicate. Names are unique
-// per workspace, not per database — two workspaces are two different tenants
-// and each keeps its own `pdf`.
+// The same name in a SECOND workspace is not a duplicate.
 test "create_of_a_name_that_exists_in_another_workspace_succeeds" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -327,9 +308,7 @@ test "create_of_a_name_that_exists_in_another_workspace_succeeds" {
         defer gpa.free(raw);
     }
 
-    // A foreign name must NOT be reported as a conflict: a 409 here would
-    // confirm the name exists in another workspace, which is the leak the
-    // scoping exists to hide.
+    // A foreign name must NOT be reported as a conflict: a 409 here would confirm the name exists in another workspace, which is the leak the scoping exists to hide.
     const raw = try createSkillBody(&h, ws_b, "pdf", "B's copy", "B's body", &.{201});
     defer gpa.free(raw);
     var doc = try parseJson(raw);
@@ -348,9 +327,7 @@ test "create_of_a_name_that_exists_in_another_workspace_succeeds" {
     try expectStr(askill, "content", "A's body", "ws_a skill");
 }
 
-// A name the grammar cannot spell is a 400, not a 500 and not a write. `name`
-// is joined onto a materialisation directory by `use_skill`, so `..` and
-// `a/b` would escape it. The grammar is the guard.
+// A name the grammar cannot spell is a 400, not a 500 and not a write.
 test "create_of_an_invalid_name_is_400_and_writes_nothing" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -402,9 +379,7 @@ test "create_with_a_blank_name_is_400" {
     try expectError(body, "name is required", "blank name");
 }
 
-// The happy patch, asserted on the wire. The edit form ALWAYS sends both
-// fields, so this is also the proof that the handler forwards both: a handler
-// that dropped one would blank it.
+// The happy patch, asserted on the wire.
 test "patch_updates_the_description_and_the_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -467,8 +442,6 @@ test "patch_with_an_empty_description_clears_it_rather_than_keeping_it" {
 }
 
 // A patch that changes nothing is a 409, not a 200.
-//
-// A 200 here would render a saved-looking pane that saved nothing.
 test "patch_with_no_change_is_409" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -491,9 +464,7 @@ test "patch_with_no_change_is_409" {
     try expectError(patched, "nothing to change — the skill already holds these values", "no change");
 }
 
-// A foreign name is 404, never 403, and nothing is written. A 403 would
-// confirm the name exists, which is the one thing workspace scoping exists to
-// withhold.
+// A foreign name is 404, never 403, and nothing is written.
 test "patch_from_a_foreign_workspace_is_404_and_changes_nothing" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -546,9 +517,7 @@ test "patch_of_an_unknown_name_is_404" {
     try expectError(patched, "skill not found", "unknown patch");
 }
 
-// A rename attempt is refused, and the body is left as it was. The name is
-// the `use_skill({ name })` argument and the `skill_eval` identity, so a
-// rename would break both silently.
+// A rename attempt is refused, and the body is left as it was.
 test "patch_that_tries_to_rename_is_404_and_leaves_the_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -563,8 +532,7 @@ test "patch_that_tries_to_rename_is_404_and_leaves_the_body" {
         defer gpa.free(raw);
     }
 
-    // The edit form never sends a `name`, so this body is hand-built: it is
-    // what a client that tried to rename would put on the wire.
+    // The edit form never sends a `name`, so this body is hand-built: it is what a client that tried to rename would put on the wire.
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .name = "pdf-renamed",
         .description = "a description",
@@ -595,8 +563,7 @@ test "patch_that_tries_to_rename_is_404_and_leaves_the_body" {
     try expectStr(gone, "error_message", "skill not found", "renamed skill");
 }
 
-// The list reflects a create made over HTTP. The old handlers re-read a
-// directory on every request, so a filesystem change showed up immediately.
+// The list reflects a create made over HTTP.
 test "a_skill_created_over_http_is_visible_to_the_next_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -642,9 +609,7 @@ test "a_skill_created_over_http_is_visible_to_the_next_list" {
     try expectStr(row, "description", "Written over the wire.", "list row");
 }
 
-// A patch is visible to the list too. The description is the list row's
-// second line, so an edit that changed it has to show up there or the two
-// halves disagree about the same skill.
+// A patch is visible to the list too.
 test "a_patch_is_visible_to_the_next_list" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -676,9 +641,7 @@ test "a_patch_is_visible_to_the_next_list" {
     try expectStr(row, "description", "new description", "list row after patch");
 }
 
-// The write routes are scoped, and the OLD collection route is still gone. A
-// bare `/api/skills` has no workspace to scope to, which is why it was
-// removed.
+// The write routes are scoped, and the OLD collection route is still gone.
 test "the_write_routes_are_reachable_only_under_a_workspace" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -717,9 +680,7 @@ test "the_write_routes_are_reachable_only_under_a_workspace" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = createSkillBody;
     _ = patchSkillBody;
     _ = detailSkillBody;

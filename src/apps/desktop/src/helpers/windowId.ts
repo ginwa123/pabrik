@@ -1,6 +1,4 @@
-/** Per-window identity for the tab list. `sessionStorage` is exactly the right lifetime here: it is
- * per browser tab / webview window, and it survives a reload of that window while a brand-new
- * window starts empty — which is what a browser does with its tab strip. */
+/** Per-window identity for the tab list. */
 const STORAGE_KEY = 'pabrik-window-id'
 
 let cached: string | null = null
@@ -9,8 +7,7 @@ export function newWindowId(): string {
   return `w_${Math.random().toString(36).slice(2, 12)}`
 }
 
-/**  * Read-or-create the window id. Never throws: a host without `sessionStorage` (or one that denies
- * it, e.g. a hardened webview) still gets a stable id for the lifetime of the page. */
+/** Read-or-create the window id. */
 export function getWindowId(): string {
   if (cached) return cached
   const created = newWindowId()

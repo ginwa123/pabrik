@@ -46,9 +46,7 @@ export function useAppLayoutRouteSync(deps: RouteSyncDeps): UseAppLayoutRouteSyn
     fetchChatSessionCwd,
   } = deps
 
-// ─── Browser Back/forward ↔ task chat sync (non-tab mode) ───── Opening a task chat PUSHes
-// `/app?...&itemId=<id>/chat/<taskId>` (Sidebar.handleSelectTask), so browser Back pops the URL
-// back to the board URL.
+// ─── Browser Back/forward ↔ task chat sync (non-tab mode) ─────
 const syncTaskFromItemId = () => {
   let rawItemId: string | undefined
   try {
@@ -74,8 +72,7 @@ const syncTaskFromItemId = () => {
   }
 }
 
-// Route-change reconcile (Back/Forward/deep-link drift) — replaces the old path+query watcher; runs
-// from the render pump below.
+// Route-change reconcile (Back/Forward/deep-link drift) — replaces the old path+query watcher; runs from the render pump below.
 const reconcileRoute = async () => {
   const query = route.query as Record<string, string | undefined>
   const sessionId = query.session as string
@@ -83,16 +80,11 @@ const reconcileRoute = async () => {
   const view = query.view as string
   const parsed = parseAppPath(route.path)
 
-  // Path chat URL: adopt the chat when drifting (Back/Forward into
-  // a chat from a board, or across chats). Mirrors the legacy
-  // `?view=chat` branch below.
+  // Path chat URL: adopt the chat when drifting (Back/Forward into a chat from a board, or across chats).
   const isOverlayView = view === 'gitfile' || view === 'skill' || view === 'code-editor'
-  // Documents (Migration 095) are a PATH shape, so this watcher reads them like any other branch
-  // below.
+  // Documents (Migration 095) are a PATH shape, so this watcher reads them like any other branch below.
   if (parsed.kind === 'chat') {
     // The path names the workspace too — adopt it, exactly as the project branch below does.
-    // Without this, Back/Forward into a chat left the previous workspace selected in the sidebar
-    // while the URL named another one (task_1791556124905_10).
     if (workspacesStore.activeWorkspaceId !== parsed.workspaceId) {
       await workspacesStore.setActiveWorkspace(parsed.workspaceId)
     }
@@ -101,8 +93,7 @@ const reconcileRoute = async () => {
       navigationStore.setActiveChat(parsed.sessionId, navigationStore.activeChatName)
     }
     await fetchChatSessionCwd(parsed.sessionId)
-    // An overlay on a chat path (readable editor link) still needs its restore below — the path
-    // adoption above only rebuilds the cwd context the restore reads from.
+    // An overlay on a chat path (readable editor link) still needs its restore below — the path adoption above only rebuilds the cwd context the restore reads from.
     if (!isOverlayView) {
       clearAllOverlays()
       return
@@ -113,9 +104,7 @@ const reconcileRoute = async () => {
     parsed.kind === 'projectAdd' ||
     parsed.kind === 'projectSettings'
   ) {
-    // Path project URLs: adopt workspace + item, sync the task chat suffix, drop any standalone
-    // chat. `/add` and `/settings` ride the project path, so they adopt the same context — no task
-    // is active on them (wantTaskId stays null), exactly as on the plain board.
+    // Path project URLs: adopt workspace + item, sync the task chat suffix, drop any standalone chat.
     if (workspacesStore.activeWorkspaceId !== parsed.workspaceId) {
       await workspacesStore.setActiveWorkspace(parsed.workspaceId)
     }
@@ -148,8 +137,7 @@ const reconcileRoute = async () => {
     clearAllOverlays()
     return
   } else if (parsed.kind === 'doc') {
-    // A document is its own main view, so the chat / item / task selections must clear — exactly as
-    // `landing` does above.
+    // A document is its own main view, so the chat / item / task selections must clear — exactly as `landing` does above.
     if (workspacesStore.activeWorkspaceItemId !== null) {
       workspacesStore.setActiveWorkspaceItem(null)
     }
@@ -211,20 +199,16 @@ const reconcileRoute = async () => {
       })
     }
   } else {
-    // No overlay in the URL: drop any open viewer. The full session clear also resets
-    // loadedKey/cwd/loading, so a later deep link with the same file still refetches instead of
-    // hitting the restore echo guard.
+    // No overlay in the URL: drop any open viewer.
     clearAllOverlays()
 
     if (view === 'chat' && sessionId) {
       if (activeChatId.value !== `chat-${sessionId}`) {
-        // URL changed to a different chat — clear any leftover workspace
-        // item active state from a previous view.
+        // URL changed to a different chat — clear any leftover workspace item active state from a previous view.
         workspacesStore.setActiveWorkspaceItem(null)
         navigationStore.setActiveChat(sessionId, navigationStore.activeChatName)
       }
-      // Fetch cwd for folder explorer and git
-      // Use localStorage cached value if available for immediate use
+      // Fetch cwd for folder explorer and git Use localStorage cached value if available for immediate use
       const cachedCwd = localStorage.getItem(`session_cwd_${sessionId}`)
       if (cachedCwd) {
         chatSessionCwd.value = cachedCwd
@@ -237,9 +221,7 @@ const reconcileRoute = async () => {
     } else if (view === 'task' && taskId) {
       // Task is handled by workspacesStore.setActiveTask already called in onMounted
     } else if (!view || view === 'workspace') {
-      // Clear chat session cwd when not in chat view. We intentionally do NOT blindly clear
-      // activeWorkspaceItemId here: Sidebar's handleSelectItem navigates to this exact URL after
-      // setting the active workspace item (folder or kanban).
+      // Clear chat session cwd when not in chat view.
       if (route.path === '/app') {
         const parsed = parseItemIdWithChat((query.itemId as string | undefined) ?? '')
         if (!parsed.chatTaskId) {

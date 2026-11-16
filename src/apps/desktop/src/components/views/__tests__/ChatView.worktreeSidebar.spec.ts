@@ -1,5 +1,4 @@
-/** Static contract: the ChatView-embedded git-diff sidebar must follow the session's worktree
- * binding, not the session's original cwd. */
+/** Static contract: the ChatView-embedded git-diff sidebar must follow the session's worktree binding, not the session's original cwd. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -49,8 +48,7 @@ describe('ChatView worktree sidebar binding', () => {
   })
 
   it('bottom chip never falls back to a hardcoded main', () => {
-    // The stale-'main' bug: `gitStatus.branch || 'main'` showed main
-    // while the worktree branch was checked out (detached/loading).
+    // The stale-'main' bug: `gitStatus.branch || 'main'` showed main while the worktree branch was checked out (detached/loading).
     expect(chatViewSrc).not.toMatch(/\|\| 'main'/)
   })
 
@@ -66,9 +64,7 @@ describe('ChatView worktree sidebar binding', () => {
   it('stale fetches cannot overwrite the branch (seq guards, single fetch path)', () => {
     expect(chatViewSrc).toMatch(/gitStatusSeq/)
     expect(panelSrc).toMatch(/loadSeq/)
-    // ChatRightSidebar must not fire its own duplicate getGitChanges —
-    // the panel's cwd watcher is the only fetch path (expose passthrough
-    // for explicit refresh is fine, a watcher is not).
+    // ChatRightSidebar must not fire its own duplicate getGitChanges — the panel's cwd watcher is the only fetch path (expose passthrough for explicit refresh is …
     expect(shellSrc).not.toMatch(/watch\(/)
   })
 })

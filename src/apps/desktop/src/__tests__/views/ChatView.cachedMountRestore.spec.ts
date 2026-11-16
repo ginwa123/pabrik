@@ -1,6 +1,4 @@
-/** A warm IndexedDB cache must not cost the reader their place: the cached-mount branch painted
- * stored rows and then jumped to the bottom, discarding the saved position on every later open.
- */
+/** A warm IndexedDB cache must not cost the reader their place: the cached-mount branch painted stored rows and then jumped to the bottom, discarding the saved … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'

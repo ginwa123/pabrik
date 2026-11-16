@@ -16,8 +16,7 @@ pub const Key = union(enum) {
     end,
     page_up,
     page_down,
-    /// SGR-encoded mouse wheel up (button 64). See the test block
-    /// below for the wire shape.
+    /// SGR-encoded mouse wheel up (button 64).
     wheel_up,
     /// SGR-encoded mouse wheel down (button 65).
     wheel_down,
@@ -51,8 +50,6 @@ pub fn parse(buf: []const u8) ParseResult {
             // CSI sequences: ESC [ <params> <final>
             if (buf[1] == '[') {
                 // SGR mouse: ESC [ < button ; col ; row M (or m for release).
-                // Distinguish from ordinary CSI by the '<' prefix character
-                // and the final byte (M or m).
                 if (buf.len > 2 and buf[2] == '<') {
                     var i: usize = 3;
                     while (i < buf.len and (std.ascii.isDigit(buf[i]) or buf[i] == ';')) : (i += 1) {}
@@ -60,15 +57,11 @@ pub fn parse(buf: []const u8) ParseResult {
                     const final = buf[i];
                     if (final != 'M' and final != 'm') return .{ .key = null, .len = i + 1 }; // not SGR mouse — consume to skip
                     const consumed = i + 1;
-                    // Parse the button field (params[0]) — col/row are
-                    // ignored in v1 (no click handling). button is the
-                    // FIRST ';'-separated number after '<'.
+                    // Parse the button field (params[0]) — col/row are ignored in v1 (no click handling). button is the FIRST ';'-separated number after '<'.
                     const semicolon = std.mem.indexOfScalar(u8, buf[3..i], ';') orelse 0;
                     const button_str = buf[3 .. 3 + semicolon];
                     const button = std.fmt.parseInt(u16, button_str, 10) catch {
-                        // Malformed button field — consume the bytes
-                        // anyway so the dispatcher doesn't replay them
-                        // as runes (the original bug).
+                        // Malformed button field — consume the bytes anyway so the dispatcher doesn't replay them as runes (the original bug).
                         return .{ .key = null, .len = consumed };
                     };
                     const k: ?Key = switch (button) {
@@ -129,9 +122,7 @@ pub fn parse(buf: []const u8) ParseResult {
     }
 }
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -181,9 +172,7 @@ test "parse: arrow keys" {
 }
 
 test "parse: incomplete escape returns len=0 (not nil)" {
-    // Round-3 fix: an incomplete sequence now reports key=null, len=0 so the
-    // dispatcher knows to KEEP the bytes for the next read rather than
-    // dropping them (which would let residual bytes leak into the input
+    // Round-3 fix: an incomplete sequence now reports key=null, len=0 so the dispatcher knows to KEEP the bytes for the next read rather than dropping them (which …
     const r = parse("\x1b[");
     try testing.expect(r.key == null);
     try testing.expectEqual(@as(usize, 0), r.len);
@@ -197,9 +186,7 @@ test "parse: home/end/delete/page keys" {
     try testing.expectEqual(Key.page_down, (parse("\x1b[6~")).key.?);
 }
 
-// ----------------------------------------------------------------------------
 // SGR mouse wheel (round-2 — Task 5)
-// ----------------------------------------------------------------------------
 
 test "parse: SGR mouse wheel up = button 64" {
     const got = parse("\x1b[<64;12;8M");
@@ -213,9 +200,7 @@ test "parse: SGR mouse wheel down = button 65" {
 }
 
 test "parse: complete SGR mouse movement (button 27) reports key=null, len=consumed" {
-    // Round-3 fix: this is the sequence that previously broke scroll. The
-    // bytes must be CONSUMED (so the dispatcher advances past them) but the
-    // key is null (no scroll).
+    // Round-3 fix: this is the sequence that previously broke scroll.
     const got = parse("\x1b[<27;14;14M");
     try testing.expect(got.key == null);
     try testing.expectEqual(@as(usize, 12), got.len);
@@ -242,8 +227,6 @@ test "parse: incomplete SGR sequence (no M/m) reports key=null, len=0" {
 
 test "parse: malformed SGR button field still consumes the bytes" {
     // Button field has no digits (just semicolons) — parseInt fails.
-    // Previously returned null and dropped the bytes; now we still
-    // consume them so the dispatcher advances.
     const got = parse("\x1b[<;14;14M");
     try testing.expect(got.key == null);
     try testing.expectEqual(@as(usize, 10), got.len);

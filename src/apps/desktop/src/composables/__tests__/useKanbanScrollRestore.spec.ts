@@ -25,9 +25,7 @@ beforeAll(() => {
     configurable: true,
   })
 
-  // jsdom does NOT provide requestAnimationFrame — polyfill it using setTimeout(0) so the
-  // composable's `await rAF × 2` actually resolves. When vi.useFakeTimers() is active (e.g.
-  // debounce tests), rAF resolves when `vi.advanceTimersByTime(0)` runs the setTimeout queue.
+  // jsdom does NOT provide requestAnimationFrame — polyfill it using setTimeout(0) so the composable's `await rAF × 2` actually resolves.
   if (typeof globalThis.requestAnimationFrame !== 'function') {
     globalThis.requestAnimationFrame = (cb: (t: number) => void): number => {
       return setTimeout(() => cb(performance.now()), 0) as unknown as number
@@ -50,8 +48,7 @@ function mountHarness(initialKey = 'kanban-scroll-item_test'): TestHarness {
   const TestComp = defineComponent({
     setup() {
       const containerRef = ref<HTMLDivElement | null>(null)
-      // The composable is called inside setup so onMounted hooks
-      // into the parent component's lifecycle.
+      // The composable is called inside setup so onMounted hooks into the parent component's lifecycle.
       useKanbanScrollRestore(containerRef, itemIdRef)
       return { containerRef }
     },
@@ -63,9 +60,7 @@ function mountHarness(initialKey = 'kanban-scroll-item_test'): TestHarness {
   return { wrapper, container, inner, itemIdRef }
 }
 
-/**  * Configure jsdom to report a known scrollWidth/clientWidth on the container. Without this,
- * scrollWidth = 0 in jsdom and the composable's "max <= 0" early-exit would skip the restore.
- * Property descriptors must be `configurable: true` so individual tests can override per-case. */
+/** Configure jsdom to report a known scrollWidth/clientWidth on the container. */
 function setScrollGeometry(
   container: HTMLDivElement,
   { scrollWidth, clientWidth }: { scrollWidth: number; clientWidth: number },
@@ -82,23 +77,17 @@ function setScrollGeometry(
   })
 }
 
-/**  * Wait the two `requestAnimationFrame` ticks the composable awaits before applying the restore,
- * plus a microtask flush so Vue's reactive effects settle. jsdom's rAF resolves via the macrotask
- * queue — awaiting `requestAnimationFrame` directly is the canonical way to wait for it. */
+/** Wait the two `requestAnimationFrame` ticks the composable awaits before applying the restore, plus a microtask flush so Vue's reactive effects settle. jsdom's … */
 async function waitForRestore(): Promise<void> {
   await flushPromises()
   // jsdom provides `requestAnimationFrame` (defined on window).
-  // The composable awaits two rAF ticks before applying the
-  // restore — mirror those exactly here.
   await new Promise<void>((r) => requestAnimationFrame(() => r()))
   await new Promise<void>((r) => requestAnimationFrame(() => r()))
   await flushPromises()
 }
 
 beforeEach(() => {
-  // Default: real timers (so jsdom's requestAnimationFrame resolves). Tests that need deterministic
-  // debounce timing call `vi.useFakeTimers()` themselves and reset with `vi.useRealTimers()` in
-  // their own teardown.
+  // Default: real timers (so jsdom's requestAnimationFrame resolves).
   vi.useRealTimers()
   // Clean any leftover storage between tests.
   localStorage.clear()
@@ -155,9 +144,7 @@ describe('useKanbanScrollRestore', () => {
     // Restore is a no-op: scrollLeft stays at 0.
     expect(harness.container.scrollLeft).toBe(0)
 
-    // The composable MUST still attach scroll listeners even when there's no saved value — the user
-    // might scroll from scratch, and without a listener the first saved value would never land in
-    // localStorage.
+    // The composable MUST still attach scroll listeners even when there's no saved value — the user might scroll from scratch, and without a listener the first saved …
     harness.container.scrollLeft = 200
     harness.container.dispatchEvent(new Event('scrollend'))
     expect(localStorage.getItem('kanban-scroll-item_test')).toBe('200')
@@ -176,8 +163,7 @@ describe('useKanbanScrollRestore', () => {
 
     // Simulate the user scrolling right.
     harness.container.scrollLeft = 888
-    // jsdom supports `new Event('scrollend')` because HTMLElement
-    // has an `onscrollend` property slot.
+    // jsdom supports `new Event('scrollend')` because HTMLElement has an `onscrollend` property slot.
     harness.container.dispatchEvent(new Event('scrollend'))
 
     // No timer advance — the scrollend path is synchronous.
@@ -260,8 +246,7 @@ describe('useKanbanScrollRestore', () => {
 
     expect(localStorage.getItem('kanban-scroll-item_test')).toBeNull()
 
-    // Unmount BEFORE the debounce fires. The composable should
-    // flush the pending write synchronously.
+    // Unmount BEFORE the debounce fires.
     vi.useRealTimers() // let the unmount flushPending run synchronously
     harness.wrapper.unmount()
     expect(localStorage.getItem('kanban-scroll-item_test')).toBe('999')
@@ -291,8 +276,7 @@ describe('useKanbanScrollRestore', () => {
   })
 
   it('uses a reactive storage key (per-itemId)', async () => {
-    // The composable uses the key verbatim — the caller is responsible for building the full key
-    // (e.g. `kanban-scroll-<itemId>`). Seed storage with two distinct FULL keys.
+    // The composable uses the key verbatim — the caller is responsible for building the full key (e.g.
     localStorage.setItem('kanban-scroll-item_A', '111')
     localStorage.setItem('kanban-scroll-item_B', '222')
 
@@ -312,8 +296,7 @@ describe('useKanbanScrollRestore', () => {
 
     harnessA.wrapper.unmount()
 
-    // Mount with item_B — the storage key changes. Should restore
-    // item_B's value (222), not item_A's.
+    // Mount with item_B — the storage key changes.
     const harnessB = mountHarness('kanban-scroll-item_B')
     setScrollGeometry(harnessB.container, {
       scrollWidth: 5000,
@@ -339,8 +322,7 @@ describe('useKanbanScrollRestore', () => {
     harness.wrapper.unmount()
 
     vi.useFakeTimers()
-    // After unmount, the listener should be gone. Dispatching more
-    // scroll events must NOT cause writes.
+    // After unmount, the listener should be gone.
     harness.container.dispatchEvent(new Event('scroll'))
     vi.advanceTimersByTime(500)
     expect(localStorage.getItem('kanban-scroll-item_test')).toBe('100')
@@ -352,9 +334,7 @@ describe('useKanbanScrollRestore', () => {
   })
 
   it('does not throw when containerRef is null at flush time', async () => {
-    // Defensive: the composable's `flushPending` reads `containerRef.value` — if the ref is null
-    // when unmount fires (e.g. parent template rendered an error boundary), the composable should
-    // silently skip rather than throw.
+    // Defensive: the composable's `flushPending` reads `containerRef.value` — if the ref is null when unmount fires (e.g. parent template rendered an error …
     const itemIdRef = ref('item_test')
     const TestComp = defineComponent({
       setup() {
@@ -370,8 +350,7 @@ describe('useKanbanScrollRestore', () => {
   })
 })
 
-/**  * The `axis: 'y'` variant — used by the kanban row-mode list, which scrolls vertically (the columns
- * row scrolls horizontally). Same contract, different offset property. */
+/** The `axis: 'y'` variant — used by the kanban row-mode list, which scrolls vertically (the columns row scrolls horizontally). */
 describe('useKanbanScrollRestore (axis: y)', () => {
   function mountVerticalHarness(initialKey = 'kanban-row-scroll-item_test') {
     const itemIdRef = ref(initialKey)

@@ -1,24 +1,17 @@
-// src/service/crash_handler_smoke.zig Tiny standalone binary that exercises
-// src/service/crash_handler.zig end-to-end.
+// src/service/crash_handler_smoke.zig Tiny standalone binary that exercises src/service/crash_handler.zig end-to-end.
 
 const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
 const helpers = @import("helpers");
 
-/// This file is the ROOT of the standalone smoke build, so it is also the
-/// only place in the test suite where `pub const debug` is actually
-/// *compiled* rather than grepped for.
+/// This file is the ROOT of the standalone smoke build, so it is also the only place in the test suite where `pub const debug` is actually *compiled* rather than …
 pub const debug = pabrikcore.crash_handler.root_debug;
 
-/// Runtime-opaque base so the compiler cannot prove the load is safe and fold
-/// it to `undefined` (a comptime-known address turns the "crash" into a no-op
-/// — see the 2026-09-30 iteration where the first attempt at this file exited
+/// Runtime-opaque base so the compiler cannot prove the load is safe and fold it to `undefined` (a comptime-known address turns the "crash" into a no-op — see the …
 var wild_base: usize = 0xdead_0000;
 
-/// The function that must appear in the captured stack trace. Its name
-/// is the assertion: the report is only useful if it names the frame
-/// that actually faulted, not the frame that wrote the report.
+/// The function that must appear in the captured stack trace.
 fn crashSiteTarget() void {
     const addr = wild_base + 0x1000;
     const p: *volatile u8 = @ptrFromInt(addr);
@@ -39,9 +32,7 @@ pub fn main(init: std.process.Init) !void {
     pabrikcore.crash_handler.setCrashLogPath(log_path_arg);
     pabrikcore.crash_handler.installCrashHandlers();
 
-    // Give the signal handler a moment to be installed before we trip it. On
-    // POSIX, `helpers.nanosleep` (libc `nanosleep` exposed via `extern "c"`)
-    // is the standard async-safe delay.
+    // Give the signal handler a moment to be installed before we trip it.
     if (builtin.os.tag != .windows) {
         var ts: helpers.PosixTimespec = .{ .sec = 0, .nsec = 50_000_000 };
         _ = helpers.nanosleep(&ts, null);
@@ -57,9 +48,7 @@ pub fn main(init: std.process.Init) !void {
         return error.NoFault;
     }
 
-    // Trigger the requested signal via raise() so the kernel delivers
-    // it to our handler. BUS is not defined on Windows (no SIGBUS in
-    // MSVC's libc); the test runner skips BUS on Windows.
+    // Trigger the requested signal via raise() so the kernel delivers it to our handler.
     if (std.mem.eql(u8, signal_arg, "SEGV")) {
         _ = std.c.raise(std.c.SIG.SEGV);
     } else if (std.mem.eql(u8, signal_arg, "ABRT")) {
@@ -79,8 +68,7 @@ pub fn main(init: std.process.Init) !void {
         return error.UnknownSignal;
     }
 
-    // raise() returned. If we reach this line, the handler swallowed
-    // the signal instead of re-raising — that's a regression.
+    // raise() returned.
     std.debug.print("[smoke] FAIL: signal handler swallowed the signal — handler must re-raise\n", .{});
     return error.SignalSwallowed;
 }

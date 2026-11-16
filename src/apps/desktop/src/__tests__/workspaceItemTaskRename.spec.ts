@@ -1,6 +1,4 @@
-/** Component tests for the rename-task action on the task row in WorkspaceItem.vue. The action used
- * to be a hover pencil button on the row; it now lives in the row's right-click menu
- * (<OpenInNewTabMenu>), the same migration <WorkspaceItemTaskCard> made. */
+/** Component tests for the rename-task action on the task row in WorkspaceItem.vue. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -52,8 +50,7 @@ describe('WorkspaceItem task rename button', () => {
     // Pinia is torn down by the next beforeEach.
   })
 
-  // The menu is Teleported to `body`, so its rows are queried from the
-  // document rather than through the wrapper.
+  // The menu is Teleported to `body`, so its rows are queried from the document rather than through the wrapper.
   const menuItem = (testid: string) =>
     document.body.querySelector(`[data-testid="${testid}"]`) as HTMLButtonElement | null
 
@@ -83,9 +80,7 @@ describe('WorkspaceItem task rename button', () => {
   })
 
   it('does NOT emit selectTask when the rename row is picked', async () => {
-    // The pencil used to sit inside the row's @click, so it needed event.stopPropagation or the
-    // click bubbled and selected the task as a side-effect. The teleported menu never traverses the
-    // row, so this asserts the outcome survived rather than the guard.
+    // The pencil used to sit inside the row's @click, so it needed event.stopPropagation or the click bubbled and selected the task as a side-effect.
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()
@@ -99,9 +94,7 @@ describe('WorkspaceItem task rename button', () => {
   })
 
   it('offers rename and delete in the menu, so neither action is stranded', async () => {
-    // Regression guard: the pencil was inserted *before* the existing delete button. A future
-    // refactor that drops one of the two menu rows would silently break that feature — the row has
-    // no other route to it.
+    // Regression guard: the pencil was inserted *before* the existing delete button.
     const { wrapper } = mountWorkspaceItem()
     expandItem()
     await nextTick()
@@ -120,8 +113,7 @@ describe('WorkspaceItem task rename button', () => {
 
     expect(wrapper.find('[data-testid="task-pin-toggle"]').exists()).toBe(false)
     expect(wrapper.find('button[title="Rename Task"]').exists()).toBe(false)
-    // The row root is a <div role="button">, so any <button> inside it
-    // would be a re-added action.
+    // The row root is a <div role="button">, so any <button> inside it would be a re-added action.
     expect(wrapper.find('[data-task-row]').findAll('button')).toHaveLength(0)
 
     wrapper.unmount()

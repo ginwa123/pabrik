@@ -1,7 +1,6 @@
 package com.pabrik.mobile.projects
 
-// Skills CRUD helpers. Pure logic so they are unit-testable without a
-// ViewModel or a network.
+// Skills CRUD helpers.
 object SkillsCrud {
 
     // Whether a skill can be deleted (not locked).

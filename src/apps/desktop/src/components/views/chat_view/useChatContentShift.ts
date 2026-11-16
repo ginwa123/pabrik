@@ -42,9 +42,7 @@ export function useChatContentShift(deps: ChatContentShiftDeps) {
       const container = virtualScrollerRef.value?.containerRef
       if (!container) return
       const newScrollHeight = container.scrollHeight
-      // Only re-stick if the scrollHeight actually changed (a measurement
-      // update). Positioning-only shifts (pure window moves at constant
-      // total height) won't trigger a re-scroll.
+      // Only re-stick if the scrollHeight actually changed (a measurement update).
       if (newScrollHeight === getLastObservedScrollHeight()) return
       const delta = newScrollHeight - getLastObservedScrollHeight()
       if (delta <= 0 || delta < 10) {
@@ -53,9 +51,7 @@ export function useChatContentShift(deps: ChatContentShiftDeps) {
       }
       setLastObservedScrollHeight(newScrollHeight)
       void shift
-      // Build a context with the *pre-stick* geometry (scrollTop before
-      // we touch it), so the log answers "what was the world like when
-      // this re-stick fired?".
+      // Build a context with the *pre-stick* geometry (scrollTop before we touch it), so the log answers "what was the world like when this re-stick fired?".
       const ctx = buildScrollContext(container, {
         chatId: sessionId.value || chatId(),
         messages: messages.value.length,
@@ -92,12 +88,9 @@ export function useChatContentShift(deps: ChatContentShiftDeps) {
         })
         return
       }
-      // We are going to assign scrollTop. Mark the next scroll event as programmatic BEFORE the
-      // assignment so the browser-fired scroll reads origin='programmatic' in handleVirtualScroll.
+      // We are going to assign scrollTop.
       scrollLogger().markProgrammatic()
-      // Record the auto-stick timestamp so the loadMore gate knows the
-      // stick is actively engaged right now (not just that the LLM is
-      // busy — those are different things, see autoStickGate.ts).
+      // Record the auto-stick timestamp so the loadMore gate knows the stick is actively engaged right now (not just that the LLM is busy — those are different things …
       lastAutoStickAt.value = Date.now()
       // Explicit bottom computation.
       virtualScrollerRef.value?.scrollToBottom('auto')

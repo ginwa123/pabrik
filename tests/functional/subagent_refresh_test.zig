@@ -1,6 +1,4 @@
-// Functional wire tests for GET /api/subagent/progress/:tool_call_id. Zig
-// port of `tests/functional/subagent_refresh_test.py`. Task:
-// task_1788505292766_1 (spawn-subagent-refresh-persist).
+// Functional wire tests for GET /api/subagent/progress/:tool_call_id.
 
 // QUERY STRINGS ARE IN THE PATH, NOT IN `HttpOptions.params`.
 
@@ -13,9 +11,7 @@ const io = testing.io;
 
 // ─── Test 1: unknown tool_call_id → 200 empty progress ────────────────────
 
-// A tool_call_id with no live batch must return its id and an empty
-// progress array — this is what ChatView sees for completed batches
-// (snapshot cleared) and after a server restart (map wiped).
+// A tool_call_id with no live batch must return its id and an empty progress array — this is what ChatView sees for completed batches (snapshot cleared) and …
 test "subagent_progress_unknown_id_returns_empty" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -42,9 +38,7 @@ test "subagent_progress_unknown_id_returns_empty" {
 
 // ─── Test 2: sibling routes unshadowed (route-order guard) ───────────────
 
-// `/api/subagent/progress/:tool_call_id` is a fresh prefix, but pin
-// the invariant anyway: the pre-existing session routes must still
-// resolve after registering it.
+// `/api/subagent/progress/:tool_call_id` is a fresh prefix, but pin the invariant anyway: the pre-existing session routes must still resolve after registering it.
 test "subagent_progress_route_does_not_shadow_siblings" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

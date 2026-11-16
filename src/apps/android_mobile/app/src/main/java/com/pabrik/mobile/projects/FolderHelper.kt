@@ -6,8 +6,7 @@ object FolderHelper {
 
     fun isFolder(itemType: String): Boolean = itemType == TYPE_FOLDER
 
-    // Returns items whose parentId matches folderId. parentId is supplied by
-    // the caller (e.g. derived from the item's path or a parent field).
+    // Returns items whose parentId matches folderId. parentId is supplied by the caller (e.g. derived from the item's path or a parent field).
     fun <T> childrenOf(items: List<T>, folderId: String?, parentIdOf: (T) -> String?): List<T> =
         items.filter { parentIdOf(it) == folderId }
 

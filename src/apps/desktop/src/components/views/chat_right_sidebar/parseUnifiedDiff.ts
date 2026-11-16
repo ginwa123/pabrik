@@ -17,14 +17,10 @@ function tryParseInt(s: string): number | null {
   return isNaN(n) ? null : n
 }
 
-/**  * One `@@ -a,b +c,d @@` header. Module-level and shared by `parseUnifiedDiff` and `countDiffLines`
- * on purpose: two copies of this pattern drift the moment either is edited, and then the row counts
- * stop matching the diff they sit next to. */
+/** One `@@ -a,b +c,d @@` header. */
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)?$/
 
-// Pure extraction of GitFileViewer.vue parseUnifiedDiff logic so the
-// ChatView-embedded sidebar and the legacy fullscreen viewer share one
-// parser. No Vue reactivity here — takes a string, returns data.
+// Pure extraction of GitFileViewer.vue parseUnifiedDiff logic so the ChatView-embedded sidebar and the legacy fullscreen viewer share one parser.
 export function parseUnifiedDiff(diffText: string): ParsedDiff {
   const lines = diffText.split('\n')
   const parsed: ParsedDiffLine[] = []
@@ -125,9 +121,7 @@ export interface DiffLineCounts {
   removed: number
 }
 
-/** `+added / -removed` for ONE file's diff chunk, without building the line array
- * `parseUnifiedDiff` returns. Why this exists: the file lists want a number per row, and the only
- * diff text they have is the chunk they already hold. */
+/** `+added / -removed` for ONE file's diff chunk, without building the line array `parseUnifiedDiff` returns. */
 export function countDiffLines(diffText: string): DiffLineCounts {
   let added = 0
   let removed = 0
@@ -158,9 +152,7 @@ export interface SplitDiffFile {
   text: string
 }
 
-// Split a multi-file unified diff (e.g. `gh pr diff` output) into per-file chunks at `diff --git`
-// boundaries. Pure: no IO, no Vue. Status comes from the header lines: `new file mode` → A,
-// `deleted file mode` → D, `similarity index`/`rename from` → R, else M.
+// Split a multi-file unified diff (e.g.
 export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   const out: SplitDiffFile[] = []
   const lines = diffText.split('\n')
@@ -189,9 +181,7 @@ export function splitDiffByFile(diffText: string): SplitDiffFile[] {
   return out.filter((f) => f.text.trim().length > 0)
 }
 
-/**  * Center-diff selection payload: panel row click → shell → ChatView. `lines` travel by reference
- * (no copy). `error` set when the worktree fetch failed (PR mode parses inline, so error is always
- * null there). */
+/** Center-diff selection payload: panel row click → shell → ChatView. */
 export interface DiffSelection {
   path: string
   staged: boolean
@@ -199,14 +189,11 @@ export interface DiffSelection {
   added: number
   removed: number
   error?: string | null
-  /** A new file: its diff already shows every line, so the whole-file scope
-   * is satisfied without a request (the control renders locked). */
+  /** A new file: its diff already shows every line, so the whole-file scope is satisfied without a request (the control renders locked). */
   untracked?: boolean
 }
 
-// Stacked center diff addressing: each section id is `center-diff-<base64url-no-pad path>`, and the
-// ?diff= URL param carries the same encoding. btoa throws on non-latin1 paths (unicode), so fall
-// back to encodeURIComponent — still deterministic, still matchable.
+// Stacked center diff addressing: each section id is `center-diff-<base64url-no-pad path>`, and the ?diff= URL param carries the same encoding. btoa throws on …
 export function encodePathParam(path: string): string {
   try {
     return btoa(path).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -219,9 +206,7 @@ export function centerDiffSectionId(path: string): string {
   return `center-diff-${encodePathParam(path)}`
 }
 
-// Resolve a ?diff= value against the listed paths only — never decode
-// blindly into a selection, so stale/garbage params are ignored. Also
-// accepts legacy padded btoa (other features link files that way).
+// Resolve a ?diff= value against the listed paths only — never decode blindly into a selection, so stale/garbage params are ignored.
 export function decodePathParam(param: string, candidates: string[]): string | null {
   for (const c of candidates) {
     if (encodePathParam(c) === param) return c
@@ -235,9 +220,7 @@ export function decodePathParam(param: string, candidates: string[]): string | n
   }
 }
 
-// Scroll the stacked section for a path into view. Returns false when
-// the section isn't mounted (list not loaded yet) — callers treat that
-// as "nothing to scroll to", never a throw.
+// Scroll the stacked section for a path into view.
 export function scrollToSectionElement(path: string): boolean {
   if (typeof document === 'undefined') return false
   const el = document.getElementById(centerDiffSectionId(path))

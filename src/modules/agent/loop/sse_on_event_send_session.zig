@@ -66,9 +66,7 @@ pub fn onEventSendSessions(
     event_bus.emit(SseEvent, "sessions", event);
 }
 
-// ─── Tests
-// ───────────────────────────────────────────────────────────────────
-// Behavioural tests for the wire-format `event_type_name` mapping (see the
+// ─── Tests Behavioural tests for the wire-format `event_type_name` mapping (see the
 
 const testing = std.testing;
 
@@ -122,9 +120,7 @@ test "onEventSendSessions: action='created' emits event_type 'session_created'" 
 }
 
 test "onEventSendSessions: action='updated' emits event_type 'session_updated' (the fix — task_1786507100896)" {
-    // This is the actual user-reported bug: the auto-rename-on-first-message
-    // cascade calls updateSessionName() → onEventSendSessions(.action =
-    // "updated").
+    // This is the actual user-reported bug: the auto-rename-on-first-message cascade calls updateSessionName() → onEventSendSessions(.action = "updated").
     var s = try setupSessionBus();
     defer teardownSessionBus(&s);
     defer freeCapturedSessionEventData();
@@ -144,9 +140,7 @@ test "onEventSendSessions: action='updated' emits event_type 'session_updated' (
     const ev = captured_session_event orelse return error.NoEventCaptured;
     try testing.expectEqualStrings("session_updated", ev.event_type.?);
     try testing.expectEqualStrings("session_abc", ev.session_id);
-    // The data is the JSON-serialized payload; spot-check that the new
-    // name is present (full JSON shape is covered by the frontend's
-    // SessionEvent interface in apps/desktop/src/api/index.ts).
+    // The data is the JSON-serialized payload; spot-check that the new name is present (full JSON shape is covered by the frontend's SessionEvent interface in …
     try testing.expect(std.mem.indexOf(u8, ev.data, "Auto-generated name") != null);
 }
 
@@ -172,9 +166,7 @@ test "onEventSendSessions: action='deleted' emits event_type 'session_deleted'" 
 }
 
 test "onEventSendSessions: unknown action falls through to 'session_unknown' (future-proofing default)" {
-    // The 'session_unknown' branch is intentional: a NEW action that hasn't
-    // been wired into the if/else yet (e.g. a future 'reordered') lands here
-    // instead of crashing.
+    // The 'session_unknown' branch is intentional: a NEW action that hasn't been wired into the if/else yet (e.g. a future 'reordered') lands here instead of …
     var s = try setupSessionBus();
     defer teardownSessionBus(&s);
     defer freeCapturedSessionEventData();
@@ -196,9 +188,7 @@ test "onEventSendSessions: unknown action falls through to 'session_unknown' (fu
 }
 
 test "onEventSendSessions: 'subagent' in id is filtered out (no event emitted)" {
-    // The function returns early on 'subagent' ids — subagent sessions
-    // share the parent's client surface and shouldn't generate their own
-    // client-visible SSE events.
+    // The function returns early on 'subagent' ids — subagent sessions share the parent's client surface and shouldn't generate their own client-visible SSE events.
     var s = try setupSessionBus();
     defer teardownSessionBus(&s);
     defer freeCapturedSessionEventData();

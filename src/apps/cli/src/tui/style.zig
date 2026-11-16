@@ -1,5 +1,4 @@
-//! ANSI SGR (Select Graphic Rendition) style helpers. Every helper returns a
-//! NEW heap-allocated string with the escape codes wrapped around `text`.
+//! ANSI SGR (Select Graphic Rendition) style helpers.
 
 const std = @import("std");
 const color = @import("color.zig");
@@ -11,8 +10,6 @@ pub const Style = struct {
     bg: ?color.Color = null,
 
     /// Compose the full SGR prefix for this style, e.g. `\x1b[1;31m`.
-    /// Writes into `buf` (must be ≥ 16 bytes) and returns the written
-    /// prefix slice.
     pub fn sgrPrefix(self: Style, buf: []u8) []const u8 {
         var w: std.Io.Writer = .fixed(buf);
         _ = &w;
@@ -72,9 +69,7 @@ pub fn bg(allocator: std.mem.Allocator, c: color.Color, text: []const u8) ![]u8 
 /// The reset sequence, as a compile-time constant.
 pub const reset = "\x1b[0m";
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 

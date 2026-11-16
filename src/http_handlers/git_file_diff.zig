@@ -5,8 +5,7 @@ const gserverz = photon.gserverz;
 const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
 const git_route = @import("git_route.zig");
 
-/// Git file read response. The per-file DIFF endpoint that used to live here
-/// (`GET /api/git/file/diff?path=&file=&staged=`) is GONE.
+/// Git file read response.
 pub const GitFileReadResponse = struct { content: []const u8, encoding: []const u8 };
 
 /// Read a file from git repository (working tree)
@@ -38,9 +37,7 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
         switch (route) {
             .unavailable => |err| return res.jsonResponse(.{ .status_code = 503, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) }),
             .guest => |*fs| {
-                // `file_param` is relative and the guest refuses `.`/`..`
-                // segments when it resolves the path inside the workspace, so the
-                // joined form cannot climb out (`fs.readAll` -> `policy.relativeWorkspace`).
+                // `file_param` is relative and the guest refuses `.`/`..` segments when it resolves the path inside the workspace, so the joined form cannot climb out …
                 const joined = std.fs.path.join(allocator, &.{ path_param, file_param }) catch {
                     return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, "path join failed") });
                 };
@@ -60,8 +57,7 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
         }
     }
 
-    // Open `safe_path`, never the joined form: only the canonical path has been
-    // proven to be inside the requested directory.
+    // Open `safe_path`, never the joined form: only the canonical path has been proven to be inside the requested directory.
     const safe_path = resolveReadPath(io, allocator, path_param, file_param) catch |err| switch (err) {
         error.TargetUnreachable => return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) }),
         else => return res.jsonResponse(.{ .status_code = 403, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) }),
@@ -85,8 +81,7 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
     return res.jsonResponse(.{ .status_code = 200, .data = try makeGitFileReadResponse(allocator, response) });
 }
 
-/// The one path this endpoint may open: `file` resolved inside `dir`, or an
-/// error. Split out so the rule is testable without an HTTP request.
+/// The one path this endpoint may open: `file` resolved inside `dir`, or an error.
 fn resolveReadPath(io: std.Io, allocator: std.mem.Allocator, dir: []const u8, file: []const u8) ![]u8 {
     if (!std.fs.path.isAbsolute(dir)) return error.DirNotAbsolute;
     if (std.fs.path.isAbsolute(file)) return error.FileNotRelative;
@@ -100,8 +95,7 @@ fn resolveReadPath(io: std.Io, allocator: std.mem.Allocator, dir: []const u8, fi
     return file_sandbox.resolveInsideRoot(io, allocator, dir, joined, file_sandbox.nativeStyle());
 }
 
-/// `/` and `C:\` — a directory that contains everything is not a project root,
-/// and treating it as one authorises every path on the box.
+/// `/` and `C:\` — a directory that contains everything is not a project root, and treating it as one authorises every path on the box.
 fn isFilesystemRoot(p: []const u8) bool {
     if (std.mem.eql(u8, p, "/")) return true;
     return p.len == 3 and p[1] == ':' and (p[2] == '\\' or p[2] == '/');
@@ -145,14 +139,11 @@ fn makeGitFileReadResponse(allocator: std.mem.Allocator, response: GitFileReadRe
     return try buf.toOwnedSlice(allocator);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Behaviour: this endpoint hands out one file inside the directory it was
-// given. Every test drives `resolveReadPath`, the handler's only decision.
+// Behaviour: this endpoint hands out one file inside the directory it was given.
 
 const testing = std.testing;
 
-/// The absolute path of a `tmpDir`, so a test can pass it to a function that
-/// demands an absolute directory.
+/// The absolute path of a `tmpDir`, so a test can pass it to a function that demands an absolute directory.
 fn tmpAbs(allocator: std.mem.Allocator, dir: std.Io.Dir) ![]u8 {
     var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const n = try dir.realPath(testing.io, &buf);

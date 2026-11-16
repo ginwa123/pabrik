@@ -11,13 +11,11 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   const availableAgents = ref<
     Array<{ name: string; model: string; base_url: string; url_style: string }>
   >([])
-  // Every profile the config names, disabled ones included: the backend's
-  // `getAgent` does not filter `enabled`, so a disabled profile still resolves.
+  // Every profile the config names, disabled ones included: the backend's `getAgent` does not filter `enabled`, so a disabled profile still resolves.
   const configuredAgentNames = ref<string[]>([])
   const configLoaded = ref(false)
   const selectedAgent = ref<string | null>(null)
-  // User-chosen default agent from Settings → Agents → "Set active". `null` when no agent
-  // is marked active (or no agents configured).
+  // User-chosen default agent from Settings → Agents → "Set active".
   const activeAgent = ref<string | null>(null)
   const showAgentPicker = ref(false)
   const isUpdatingAgent = ref(false)
@@ -47,14 +45,10 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
         }))
       configuredAgentNames.value = Object.keys(agents)
       configLoaded.value = true
-      // `active_profile` is the user-chosen default from Settings. Empty
-      // string → null (matches the backend's PUT coercion in
-      // `pabrik_config_put.zig`).
+      // `active_profile` is the user-chosen default from Settings.
       const raw = (config as { active_profile?: string | null }).active_profile
       activeAgent.value = raw && raw.length > 0 ? raw : null
-      // How the chat draws tool calls. The config this chat already fetched
-      // is the effective one (the workspace overlay merged over the user
-      // config), so the mode is the one that runs here.
+      // How the chat draws tool calls.
       deps.applyChatViewMode(config)
     } catch (err) {
       console.error('Failed to load agents:', err)
@@ -63,9 +57,7 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     }
   }
 
-  // Mirrors `Config.zig::resolveEffectiveAgent`: a name only counts when it
-  // names a configured profile. A workspace with no profiles cannot contradict
-  // a name, so the name stands — the backend falls back to top-level there too.
+  // Mirrors `Config.zig::resolveEffectiveAgent`: a name only counts when it names a configured profile.
   const namesConfiguredAgent = (name: string | null): name is string => {
     if (!name) return false
     const known = configuredAgentNames.value
@@ -82,7 +74,6 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   })
 
   /// The wire style the effective profile uses — it decides which file types the model can read.
-  /// Empty when the profile is unknown; the backend then has the final say.
   const effectiveProfileUrlStyle = computed<string | undefined>(() => {
     const name = effectiveAgent.value
     if (!name) return undefined

@@ -1,5 +1,4 @@
-/** Behavioural tests for KanbanView's per-column-sort + URL persistence + per-column backend fetch
- * wiring. */
+/** Behavioural tests for KanbanView's per-column-sort + URL persistence + per-column backend fetch wiring. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -34,9 +33,7 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
     },
   ],
   tasks: [],
-  // NOTE (kanban-sort-independence, 2026-08-06, onmount single-fetch): tests that want to assert on
-  // the per-column fetch from `loadColumnsAndTasks` (URL restore) should NOT pre-populate
-  // columnPagination — that would skip the fetch. See each describe block for its setup.
+  // NOTE (kanban-sort-independence, 2026-08-06, onmount single-fetch): tests that want to assert on the per-column fetch from `loadColumnsAndTasks` (URL restore) …
   columnPagination: {},
   ...overrides,
 })
@@ -100,8 +97,7 @@ describe('KanbanView — per-column sort triggers API call (only the changed col
   })
 
   it('picking "Created (oldest)" on column A fires fetchKanbanTasks for col_a only (col_b is NOT called)', async () => {
-    // The CRITICAL user-reported bug (kanban-sort-independence, take 2): "only column a endpoint
-    // that called, other column should not call endpoint".
+    // The CRITICAL user-reported bug (kanban-sort-independence, take 2): "only column a endpoint that called, other column should not call endpoint".
     const item = makeItem({
       columnPagination: {
         col_a: { cursor: null, hasMore: false, isLoading: false },
@@ -128,8 +124,6 @@ describe('KanbanView — per-column sort triggers API call (only the changed col
     await flushPromises()
 
     // fetchKanbanTasks was called for col_a with sortBy='created_at', direction='asc'.
-    // Signature: (ws, item, columnId, limit, cursor, q, sortBy, direction).
-    // col_id is index 2, sortBy is index 6, direction is index 7.
     const colACalls = fetchOneSpy.mock.calls.filter((c) => c[2] === 'col_a')
     expect(colACalls.length).toBeGreaterThan(0)
     const lastColACall = colACalls[colACalls.length - 1]!
@@ -140,18 +134,14 @@ describe('KanbanView — per-column sort triggers API call (only the changed col
     const colBCalls = fetchOneSpy.mock.calls.filter((c) => c[2] === 'col_b')
     expect(colBCalls.length).toBe(0)
 
-    // And the "all columns" helper was NOT used (we don't fan out
-    // fetches on click — each click is single-column).
+    // And the "all columns" helper was NOT used (we don't fan out fetches on click — each click is single-column).
     expect(fetchAllSpy).not.toHaveBeenCalled()
   })
 
   it('picking "Manual" on column A fires fetchKanbanTasks for col_a with no sortBy param (backend default)', async () => {
-    // Default sort (position + asc) has no server-side equivalent
-    // — fetch with no sortBy param. Backend uses its default
-    // ORDER BY (kanban_position asc).
+    // Default sort (position + asc) has no server-side equivalent — fetch with no sortBy param.
     const store = useWorkspacesStore()
-    // Pre-populate columnPagination so the initial mount's
-    // loadColumnsAndTasks doesn't fire its own per-column fetch.
+    // Pre-populate columnPagination so the initial mount's loadColumnsAndTasks doesn't fire its own per-column fetch.
     const item = makeItem({
       columnPagination: {
         col_a: { cursor: null, hasMore: false, isLoading: false },
@@ -183,12 +173,9 @@ describe('KanbanView — per-column sort triggers API call (only the changed col
   })
 
   it('clicking a different sort on column A fires fetchKanbanTasks again for col_a (replaces previous)', async () => {
-    // Two clicks on the same column → two fetches. The second fetch
-    // replaces the column's local tasks slice (see fetchKanbanTasks
-    // implementation: `otherTasks = item.tasks.filter(t => t.kanban_column_id !== colId)`).
+    // Two clicks on the same column → two fetches.
     const store = useWorkspacesStore()
-    // Pre-populate columnPagination so the initial mount's
-    // loadColumnsAndTasks doesn't fire its own per-column fetch.
+    // Pre-populate columnPagination so the initial mount's loadColumnsAndTasks doesn't fire its own per-column fetch.
     const item = makeItem({
       columnPagination: {
         col_a: { cursor: null, hasMore: false, isLoading: false },
@@ -261,9 +248,7 @@ describe('KanbanView — URL persistence of per-column sorts', () => {
   })
 
   it('picking a sort preserves the ?layout= row-mode param', async () => {
-    // Regression guard: the sorts watcher used to rebuild the query from scratch, which dropped
-    // every sibling param — including the layout switch, so picking a column sort silently snapped
-    // the board back to column mode.
+    // Regression guard: the sorts watcher used to rebuild the query from scratch, which dropped every sibling param — including the layout switch, so picking a …
     const store = useWorkspacesStore()
     store.workspaces = [{ id: WS_ID, name: 'ws', icon: '📁', expanded: false, items: [makeItem()] }]
     vi.spyOn(store, 'fetchKanbanTasks').mockResolvedValue()
@@ -301,9 +286,7 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
   })
 
   it('mount with ?sorts=col_a:name:asc fires fetchKanbanTasks for col_a with sortBy=name', async () => {
-    // User lands on the kanban with a URL carrying a per-column sort. KanbanView's onMount parses
-    // the URL, calls setSortMode on each column, and fires fetchKanbanTasks for ONLY the columns
-    // mentioned in the URL.
+    // User lands on the kanban with a URL carrying a per-column sort.
     const item = makeItem({
       tasks: [makeTask('t_z', 'Zeta', 0), makeTask('t_a', 'Alpha', 1)],
     })
@@ -343,9 +326,7 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
     expect(lastColACall[6]).toBe('name')
     expect(lastColACall[7]).toBe('asc')
 
-    // col_b's fetch ALSO fires (regression fix 2026-08-06: other columns should NOT stay empty when
-    // only some have URL sort entries). col_b gets default sort (no sortBy/direction params —
-    // backend's natural ORDER BY).
+    // col_b's fetch ALSO fires (regression fix 2026-08-06: other columns should NOT stay empty when only some have URL sort entries). col_b gets default sort (no …
     const colBCalls = fetchOneSpy.mock.calls.filter((c) => c[2] === 'col_b')
     expect(colBCalls.length).toBeGreaterThan(0)
     const lastColBCall = colBCalls[colBCalls.length - 1]!
@@ -356,8 +337,7 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
   })
 
   it('mount with ?sorts=col_a:name:asc,col_b:created_at:desc fires per-column fetches with each column own sort', async () => {
-    // Two columns mentioned in the URL → two fetches, each with its
-    // own sort. col_b is NOT told to use col_a's sort.
+    // Two columns mentioned in the URL → two fetches, each with its own sort. col_b is NOT told to use col_a's sort.
     const item = makeItem()
     const store = useWorkspacesStore()
     store.workspaces = [{ id: WS_ID, name: 'ws', icon: '📁', expanded: false, items: [item] }]
@@ -404,9 +384,7 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
   })
 
   it('mount with ?sorts=col_a:position:asc (default) fetches with default sort (no URL-sort override)', async () => {
-    // Default sort (position+asc) is a no-op for the URL-sort override path — nonDefaultUrlEntries
-    // filters it out. But col_a IS still fetched (regression fix 2026-08-06: other columns should
-    // NOT stay empty when the URL has only default entries).
+    // Default sort (position+asc) is a no-op for the URL-sort override path — nonDefaultUrlEntries filters it out.
     const item = makeItem({
       tasks: [makeTask('t_z', 'Zeta', 0), makeTask('t_a', 'Alpha', 1)],
     })
@@ -439,9 +417,7 @@ describe('KanbanView — URL restore fires per-column fetchKanbanTasks', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     await flushPromises()
 
-    // col_a's fetch fires WITH default sort (no URL-sort
-    // override — the URL entry was default, so nonDefaultUrlEntries
-    // excluded it; the column still needs data).
+    // col_a's fetch fires WITH default sort (no URL-sort override — the URL entry was default, so nonDefaultUrlEntries excluded it; the column still needs data).
     const colACalls = fetchOneSpy.mock.calls.filter((c) => c[2] === 'col_a')
     expect(colACalls.length).toBeGreaterThan(0)
     const lastColACall = colACalls[colACalls.length - 1]!

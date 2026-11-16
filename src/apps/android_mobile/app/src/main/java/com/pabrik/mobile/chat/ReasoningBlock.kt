@@ -26,59 +26,20 @@ import androidx.compose.ui.unit.dp
 import com.pabrik.mobile.ui.PabrikBorder
 import com.pabrik.mobile.ui.PabrikDim
 
-/**
- * The header a collapsed reasoning block is drawn behind.
- *
- * "Thought", not "Reasoning", because that is what the web's `<summary>` says
- * (`ChatView.vue`, the `.assistant-reasoning` block) and the two clients are
- * deliberately kept word-for-word in step — a label the reader has to relearn
- * per platform is a label they will not bother to open.
- */
+/** The header a collapsed reasoning block is drawn behind. */
 const val REASONING_LABEL = "Thought"
 
 /** Leading rule marking the reasoning body, the web's `border-l-2`. */
 private val reasoningRuleWidth = 2.dp
 
-/**
- * Does this turn draw a reasoning block at all?
- *
- * An assistant turn only, mirroring the web, whose `.assistant-reasoning`
- * `<details>` sits in the assistant branch of the group template and nowhere
- * else. The reader's own bubble never gets one: they did not think anything,
- * and a "Thought" toggle over a question they just typed would be a control
- * that cannot do anything.
- */
+/** Does this turn draw a reasoning block at all? */
 fun showsReasoning(message: ChatMessage): Boolean =
     !message.isUser && message.reasoningContent.isNotBlank()
 
-/**
- * The key this turn's reasoning block is filed under in [ToolExpansion].
- *
- * Namespaced, and it has to be. A tool card is filed under its own
- * `ToolCardModel.id`, which is the message id verbatim — so a bare `message.id`
- * here would mean that opening the reasoning on a turn also opened that turn's
- * tool card, and closing it closed both. The same trap the tool-call summary
- * header sidesteps with its `tool-calls-` prefix.
- */
+/** The key this turn's reasoning block is filed under in [ToolExpansion]. */
 fun reasoningKey(id: String): String = "reasoning-$id"
 
-/**
- * The model chain of thought, folded away until the reader asks for it.
- *
- * The web's `<details class="assistant-reasoning">` (`ChatView.vue`), and the
- * two agree on the part that matters: **collapsed by default**, because a
- * thinking model emits reasoning for every turn and a run of them expanded
- * pushes the answer the reader actually came for off the bottom of the screen.
- * The fold is also the only affordance that makes reasoning skimmable at all —
- * rendered flat, as it was here, a long trace is a wall of monospace with no
- * way past it.
- *
- * The state is [ToolExpansion]'s rather than a local `remember`, for the same
- * reason the tool cards hoist theirs above the `LazyColumn`: this composable is
- * re-created every time the row is scrolled out of the viewport and back, so a
- * locally-remembered `expanded` would silently re-fold the moment the reader
- * scrolled away and back.
- */
+/** The model chain of thought, folded away until the reader asks for it. */
 @Composable
 fun ReasoningBlock(
     message: ChatMessage,
@@ -128,9 +89,7 @@ fun ReasoningBlock(
                 color = PabrikDim,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier
-                    // The web's `border-l-2 pl-3` on the reasoning body. It is
-                    // what keeps a screenful of trace visually separate from the
-                    // answer underneath it without boxing either one.
+                    // The web's `border-l-2 pl-3` on the reasoning body.
                     .drawBehind {
                         drawRect(
                             color = PabrikBorder,

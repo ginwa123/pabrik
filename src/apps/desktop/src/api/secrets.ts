@@ -1,21 +1,16 @@
 import { apiFetch } from './client'
 
-// ─── Workspace secrets (Migration 101) ─────────────────────────────────── Named credentials
-// scoped to one workspace. Values are sealed at rest and no list response contains one; only
-// `revealSecret` returns a plaintext, and only to a member of that workspace.
+// ─── Workspace secrets (Migration 101) ───────────────────────────────────
 export interface Secret {
   id: string
   name: string
-  /** What this credential is for, in the words the person who stored it chose. The agent reads
-   * this to pick the right name; `''` means nobody wrote one. */
+  /** What this credential is for, in the words the person who stored it chose. */
   description: string
   created_at: string
   updated_at: string
 }
 
-/**  * GET /api/workspaces/:workspaceId/secrets Metadata only. A workspace with no secrets returns `{
- * secrets: [], count: 0 }` — which is a different answer from a failed request, and callers must
- * keep the two apart. */
+/** GET /api/workspaces/:workspaceId/secrets Metadata only. */
 export async function listSecrets(
   workspaceId: string,
 ): Promise<{ secrets: Secret[]; count: number }> {
@@ -25,9 +20,7 @@ export async function listSecrets(
   )
 }
 
-/** POST /api/workspaces/:workspaceId/secrets Body: `{ name, value }`. `name` must be non-blank and
- * unique within the workspace; `value` is write-only — the response carries the created row WITHOUT
- * it. */
+/** POST /api/workspaces/:workspaceId/secrets Body: `{ name, value }`. */
 export async function createSecret(
   workspaceId: string,
   name: string,
@@ -40,9 +33,7 @@ export async function createSecret(
   )
 }
 
-/** PATCH /api/workspaces/:workspaceId/secrets/:secretId Body: `{ name?, value? }`. Both fields are
- * partial — send `{ value }` to rotate a credential without touching its name, or `{ name }` to
- * rename without re-supplying a value. */
+/** PATCH /api/workspaces/:workspaceId/secrets/:secretId Body: `{ name?, value? }`. */
 export async function updateSecret(
   workspaceId: string,
   secretId: string,
@@ -54,8 +45,7 @@ export async function updateSecret(
   )
 }
 
-/**  * DELETE /api/workspaces/:workspaceId/secrets/:secretId Returns 404 for another workspace's id, and
- * deletes nothing in that case. */
+/** DELETE /api/workspaces/:workspaceId/secrets/:secretId Returns 404 for another workspace's id, and deletes nothing in that case. */
 export async function deleteSecret(
   workspaceId: string,
   secretId: string,
@@ -73,9 +63,7 @@ export interface RevealedSecret {
   value: string
 }
 
-/** GET /api/workspaces/:workspaceId/secrets/:secretId/reveal Asks the server to unseal ONE value.
- * Member-only: a non-member gets 404, the same answer as an id that does not exist. Never call this
- * in a list or a loop — one explicit user action, one request. */
+/** GET /api/workspaces/:workspaceId/secrets/:secretId/reveal Asks the server to unseal ONE value. */
 export async function revealSecret(
   workspaceId: string,
   secretId: string,

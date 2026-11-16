@@ -1,5 +1,4 @@
-//! Functional tests for the per-workspace config overlay (Migration 105) over
-//! the wire.
+//! Functional tests for the per-workspace config overlay (Migration 105) over the wire.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// A user-level config with BOTH kinds of key: the ones that move to a
-/// workspace (profiles, tools, the retry backoff) and the ones that must keep
-/// applying everywhere (notify_on_complete).
+/// A user-level config with BOTH kinds of key: the ones that move to a workspace (profiles, tools, the retry backoff) and the ones that must keep applying …
 const USER_CONFIG =
     \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
     \\ "extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
@@ -28,8 +25,7 @@ const SENTINEL = "SENTINEL_SEARCH_KEY";
 
 fn boot() !Harness {
     try harness.requirePabrikBin(io, gpa);
-    // The stub profile makes the binary boot without a real API key; the tests
-    // then PUT their own user config over it.
+    // The stub profile makes the binary boot without a real API key; the tests then PUT their own user config over it.
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
 
@@ -73,15 +69,13 @@ fn deleteWorkspaceProfile(
     return h.http(io, .DELETE, path, .{ .expect = expect });
 }
 
-/// Remove the profile the boot's stub config carries, so a workspace created
-/// next takes a copy with no profiles in it.
+/// Remove the profile the boot's stub config carries, so a workspace created next takes a copy with no profiles in it.
 fn clearUserProfiles(h: *Harness) !void {
     var r = try h.http(io, .DELETE, "/api/config/pabrik/profiles/stub", .{ .expect = &.{200} });
     r.deinit();
 }
 
-/// The user-level `config.json` as stored (file mode: `--auth` off). The GET
-/// response masks the web_search key, so only the file proves it survived.
+/// The user-level `config.json` as stored (file mode: `--auth` off).
 fn readUserConfigFile(h: *Harness) ![]u8 {
     const parts = [_][]const u8{ h.temp_dir, ".config", "pabrik", "config.json" };
     const path = try std.fs.path.join(gpa, &parts);
@@ -93,9 +87,7 @@ fn readUserConfigFile(h: *Harness) ![]u8 {
     return try reader.interface.allocRemaining(gpa, .limited(1024 * 1024));
 }
 
-/// GET a workspace's effective config. `notify_on_complete` being present is
-/// also the route-order probe: no sibling `/api/workspaces/:id/...` route
-/// answers with the config shape.
+/// GET a workspace's effective config.
 fn getWorkspaceConfig(h: *Harness, workspace_id: []const u8) !struct { r: harness.Response, doc: harness.Json } {
     const path = try wsPath(gpa, workspace_id, "");
     defer gpa.free(path);
@@ -120,9 +112,7 @@ fn toolNames(doc: *const harness.Json) ![]const []const u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// ============================================================================
 // The route answers as the config handler, not as a sibling workspace route
-// ============================================================================
 
 test "workspace_config_route_answers_the_config_handler" {
     var h = try boot();
@@ -131,8 +121,7 @@ test "workspace_config_route_answers_the_config_handler" {
     const id = try createWorkspace(&h, "Route Probe");
     defer gpa.free(id);
 
-    // The extra assertion: a workspace created a moment ago carries no
-    // profiles of its own, not even the stub the harness booted with.
+    // The extra assertion: a workspace created a moment ago carries no profiles of its own, not even the stub the harness booted with.
     var got = try getWorkspaceConfig(&h, id);
     defer got.doc.deinit();
     defer got.r.deinit();
@@ -140,15 +129,12 @@ test "workspace_config_route_answers_the_config_handler" {
     try testing.expect(profiles == null or profiles.?.count() == 0);
 }
 
-// ============================================================================
 // Creation: a new workspace starts EMPTY - nothing copied, nothing inherited
-// ============================================================================
 
 test "workspace_config_is_empty_at_creation" {
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
-    // The creator ALREADY has profiles, tools and a search provider. None of
-    // it may appear in a workspace created from here on.
+    // The creator ALREADY has profiles, tools and a search provider.
     try putUserConfig(&h);
 
     const id = try createWorkspace(&h, "Empty At Birth");
@@ -166,9 +152,7 @@ test "workspace_config_is_empty_at_creation" {
     try testing.expect(got.doc.str("active_profile") == null);
     try testing.expect(got.doc.get("web_search") == null or got.doc.get("web_search").? == .null);
 
-    // The retry backoff is workspace-scoped, so this workspace has none of its
-    // own - it does not inherit the user's 1234. `notify_on_complete` was never
-    // workspace-scoped, so it still comes from the user document.
+    // The retry backoff is workspace-scoped, so this workspace has none of its own - it does not inherit the user's 1234.
     try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
     try testing.expectEqual(@as(i64, 0), got.doc.int("retry_delay_ms").?);
 }
@@ -181,8 +165,7 @@ test "workspace_config_does_not_adopt_profiles_the_user_adds_later" {
     const id = try createWorkspace(&h, "Stays Empty");
     defer gpa.free(id);
 
-    // ...and the user adds them afterwards. A read must NOT fill the
-    // workspace from the user document: an empty workspace is a decision.
+    // ...and the user adds them afterwards.
     try putUserConfig(&h);
 
     var got = try getWorkspaceConfig(&h, id);
@@ -195,9 +178,7 @@ test "workspace_config_does_not_adopt_profiles_the_user_adds_later" {
     try testing.expectEqual(@as(i64, 0), got.doc.int("retry_delay_ms").?);
 }
 
-// ============================================================================
 // PUT: only the workspace-scoped keys move; the user config is untouched
-// ============================================================================
 
 test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
     var h = try boot();
@@ -207,8 +188,7 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
     const id = try createWorkspace(&h, "Overrides");
     defer gpa.free(id);
 
-    // The SAME body shape the settings page PUTs: scoped keys AND General
-    // keys. Only the scoped ones may be stored.
+    // The SAME body shape the settings page PUTs: scoped keys AND General keys.
     const body =
         \\{"profiles":{"extra":{"model":"sonnet","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
         \\ "tools":["command"],
@@ -237,8 +217,7 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
             "sonnet",
             profiles.get("extra").?.object.get("model").?.string,
         );
-        // ...and the user's own profile is NOT part of this scope: the
-        // workspace owns the list it just PUT.
+        // ...and the user's own profile is NOT part of this scope: the workspace owns the list it just PUT.
         try testing.expect(profiles.get("stub") == null);
         try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
         try testing.expectEqual(@as(i64, 9), got.doc.int("retry_delay_ms").?);
@@ -259,9 +238,7 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
     }
 }
 
-// ============================================================================
 // The retry backoff is the workspace's, and the clamp follows it there
-// ============================================================================
 
 test "workspace_retry_delay_overrides_the_users_and_clamps_on_the_way_in" {
     var h = try boot();
@@ -285,9 +262,7 @@ test "workspace_retry_delay_overrides_the_users_and_clamps_on_the_way_in" {
         try testing.expectEqual(@as(i64, 2500), got.doc.int("retry_delay_ms").?);
     }
     {
-        // Above the cap. The user-scope PUT clamps at 60 000 and this one must
-        // too, or a workspace could store a 16-minute backoff the runtime
-        // would honour.
+        // Above the cap.
         var r = try h.http(io, .PUT, path, .{ .json_body = "{\"retry_delay_ms\":999999}", .expect = &.{200} });
         defer r.deinit();
     }
@@ -298,8 +273,7 @@ test "workspace_retry_delay_overrides_the_users_and_clamps_on_the_way_in" {
         try testing.expectEqual(@as(i64, 60_000), got.doc.int("retry_delay_ms").?);
     }
 
-    // The user document never moved: their own value is still there, it just
-    // does not reach this workspace any more.
+    // The user document never moved: their own value is still there, it just does not reach this workspace any more.
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
     var doc = try r.json();
@@ -307,9 +281,7 @@ test "workspace_retry_delay_overrides_the_users_and_clamps_on_the_way_in" {
     try testing.expectEqual(@as(i64, 1234), doc.int("retry_delay_ms") orelse return error.NoRetry);
 }
 
-// ============================================================================
 // PUT refusals: nothing scoped, and malformed JSON
-// ============================================================================
 
 test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
     var h = try boot();
@@ -323,8 +295,7 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
     defer gpa.free(path);
 
     {
-        // Storing this would look like a successful save while every setting
-        // the user typed stayed at user level - so it is a 400 instead.
+        // Storing this would look like a successful save while every setting the user typed stayed at user level - so it is a 400 instead.
         var r = try h.http(io, .PUT, path, .{
             .json_body = "{\"notify_on_complete\":false,\"web_launch_enabled\":true}",
             .expect = &.{400},
@@ -332,8 +303,7 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
         defer r.deinit();
     }
     {
-        // The refusal changed nothing: the workspace still has no tools of
-        // its own (and does not borrow the user's).
+        // The refusal changed nothing: the workspace still has no tools of its own (and does not borrow the user's).
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
@@ -347,9 +317,7 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
     }
 }
 
-// ============================================================================
 // An empty PUT body: the workspace drops its own copy
-// ============================================================================
 
 test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
     var h = try boot();
@@ -375,9 +343,7 @@ test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
         try testing.expectEqual(@as(usize, 1), tools.len);
     }
     {
-        // An EMPTY body means "inherit nothing", not "store an empty object" —
-        // the documented sentinel the settings page sends when it resets a
-        // workspace.
+        // An EMPTY body means "inherit nothing", not "store an empty object" — the documented sentinel the settings page sends when it resets a workspace.
         var r = try h.http(io, .PUT, path, .{ .json_body = "", .expect = &.{200} });
         defer r.deinit();
     }
@@ -385,8 +351,7 @@ test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
         defer got.r.deinit();
-        // Nothing scoped comes back: the user config is no longer a source for
-        // these keys, so a reset workspace has no tools and no profiles.
+        // Nothing scoped comes back: the user config is no longer a source for these keys, so a reset workspace has no tools and no profiles.
         const tools = try toolNames(&got.doc);
         defer gpa.free(tools);
         try testing.expectEqual(@as(usize, 0), tools.len);
@@ -397,9 +362,7 @@ test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
     }
 }
 
-// ============================================================================
 // Isolation between two workspaces
-// ============================================================================
 
 test "workspace_config_is_isolated_per_workspace" {
     var h = try boot();
@@ -425,8 +388,7 @@ test "workspace_config_is_isolated_per_workspace" {
         try testing.expectEqualStrings("stub", a.doc.str("active_profile").?);
     }
     {
-        // Beta was never touched: it must be EMPTY, not borrowing Alpha's
-        // override and not adopting the user's `extra`.
+        // Beta was never touched: it must be EMPTY, not borrowing Alpha's override and not adopting the user's `extra`.
         var b = try getWorkspaceConfig(&h, ws_b);
         defer b.doc.deinit();
         defer b.r.deinit();
@@ -436,9 +398,7 @@ test "workspace_config_is_isolated_per_workspace" {
     }
 }
 
-// ============================================================================
 // Masking: a provider key never reaches the browser on EITHER surface
-// ============================================================================
 
 test "workspace_config_masks_the_web_search_key" {
     var h = try boot();
@@ -448,8 +408,7 @@ test "workspace_config_masks_the_web_search_key" {
     const id = try createWorkspace(&h, "Masking");
     defer gpa.free(id);
 
-    // The workspace starts empty, so it has to hold the provider itself for
-    // this surface to be the one the key could leak through.
+    // The workspace starts empty, so it has to hold the provider itself for this surface to be the one the key could leak through.
     {
         const path = try wsPath(gpa, id, "");
         defer gpa.free(path);
@@ -462,8 +421,7 @@ test "workspace_config_masks_the_web_search_key" {
     defer got.r.deinit();
 
     try testing.expect(std.mem.indexOf(u8, got.r.body, SENTINEL) == null);
-    // Positive control: the provider block IS on the wire, so the absence
-    // above is masking and not a dropped section.
+    // Positive control: the provider block IS on the wire, so the absence above is masking and not a dropped section.
     try testing.expect(std.mem.indexOf(u8, got.r.body, "\"web_search\":{") != null);
     try testing.expect(std.mem.indexOf(u8, got.r.body, "\"key\":") != null);
 
@@ -472,14 +430,10 @@ test "workspace_config_masks_the_web_search_key" {
     try testing.expect(std.mem.indexOf(u8, r.body, SENTINEL) == null);
 }
 
-// ============================================================================
-// The profile picker's premise: a workspace-only profile is in the WORKSPACE
-// config and NOT in the user config
+// The profile picker's premise: a workspace-only profile is in the WORKSPACE config and NOT in the user config
 
 test "a profile saved in a workspace is absent from the user-scope config" {
-    // Why this is a wire fact and not a unit test: the two endpoints are the
-    // two possible sources for ChatView's profile picker, and the bug was
-    // asking the WRONG one.
+    // Why this is a wire fact and not a unit test: the two endpoints are the two possible sources for ChatView's profile picker, and the bug was asking the WRONG one.
     var h = try boot();
     defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
     try putUserConfig(&h);
@@ -499,8 +453,7 @@ test "a profile saved in a workspace is absent from the user-scope config" {
         defer r.deinit();
     }
 
-    // Workspace scope: the profile this workspace just saved. Profiles are
-    // workspace-scoped, so its own list is the list a run here resolves.
+    // Workspace scope: the profile this workspace just saved.
     {
         var got = try getWorkspaceConfig(&h, id);
         defer got.doc.deinit();
@@ -515,8 +468,7 @@ test "a profile saved in a workspace is absent from the user-scope config" {
         try testing.expect(profiles.count() == 1);
     }
 
-    // User scope: the picker's OLD source. The user's profiles are here (the
-    // positive control), and the workspace-only profile is not.
+    // User scope: the picker's OLD source.
     {
         var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
         defer r.deinit();
@@ -530,9 +482,7 @@ test "a profile saved in a workspace is absent from the user-scope config" {
     }
 }
 
-// ============================================================================
 // DELETE /api/workspaces/:id/config/profiles/:name
-// ============================================================================
 
 test "workspace_profile_delete_removes_it_from_this_workspace_only" {
     var h = try boot();
@@ -542,8 +492,7 @@ test "workspace_profile_delete_removes_it_from_this_workspace_only" {
     const id = try createWorkspace(&h, "DeleteProfile");
     defer gpa.free(id);
 
-    // The workspace's own copy of both profiles - the state every seeded
-    // workspace is in, and the copy the old flow left behind.
+    // The workspace's own copy of both profiles - the state every seeded workspace is in, and the copy the old flow left behind.
     const overlay_body =
         \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
         \\ "extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
@@ -575,8 +524,7 @@ test "workspace_profile_delete_removes_it_from_this_workspace_only" {
         try testing.expect(profiles.get("stub") != null);
     }
 
-    // The user config is NOT the workspace's to edit: both profiles, every
-    // other key and the search credential are exactly as they were.
+    // The user config is NOT the workspace's to edit: both profiles, every other key and the search credential are exactly as they were.
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
     var doc = try r.json();
@@ -595,8 +543,7 @@ test "workspace_profile_delete_removes_it_from_this_workspace_only" {
         try testing.expect(std.mem.indexOf(u8, r.body, "\"web_search\":{") != null);
     }
 
-    // The stored document - the GET above masks the search key, so only the
-    // file proves the credential survived the delete.
+    // The stored document - the GET above masks the search key, so only the file proves the credential survived the delete.
     const stored = try readUserConfigFile(&h);
     defer gpa.free(stored);
     try testing.expect(std.mem.indexOf(u8, stored, SENTINEL) != null);

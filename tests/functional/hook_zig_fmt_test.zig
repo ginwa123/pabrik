@@ -1,6 +1,4 @@
-//! The project hook runs zig fmt on edited Zig files. The hook itself
-//! (.pabrik/hooks/register_hook.lua) is the deliverable, and it runs INSIDE
-//! pabrik's vendored Lua interpreter, on every tool dispatch.
+//! The project hook runs zig fmt on edited Zig files.
 
 const std = @import("std");
 const testing = std.testing;
@@ -18,13 +16,10 @@ const HOOK_RUN_TIMEOUT_MS: i64 = 60_000;
 /// Python's `subprocess.run(..., timeout=30)` on `zig fmt --check`.
 const FMT_CHECK_TIMEOUT_MS: i64 = 30_000;
 
-/// Python's `_lua()`: `shutil.which("lua5.4") or shutil.which("lua")`, and
-/// `pytest.skip` when neither is present.
+/// Python's `_lua()`: `shutil.which("lua5.4") or shutil.which("lua")`, and `pytest.skip` when neither is present.
 fn luaExe() ![]u8 {
     for ([_][]const u8{ "lua5.4", "lua" }) |name| {
-        // The probe's captured streams are still owned by the caller:
-        // `RunResult` hands over `stdout` / `stderr` buffers whether or not
-        // the test looks at them, and the DebugAllocator reports them at the
+        // The probe's captured streams are still owned by the caller
         const res = std.process.run(gpa, io, .{ .argv = &.{ name, "-v" } }) catch continue;
         gpa.free(res.stdout);
         gpa.free(res.stderr);
@@ -98,8 +93,7 @@ fn runHook(lua: []const u8, hook_path: []const u8, cwd: []const u8, tool_name: [
     });
 }
 
-/// `subprocess.run(timeout=<ms>)` — Python's wall-clock-free "give the child
-/// N ms" budget, as `std.process.RunOptions.timeout`.
+/// `subprocess.run(timeout=<ms>)` — Python's wall-clock-free "give the child N ms" budget, as `std.process.RunOptions.timeout`.
 fn timeoutMs(ms: i64) std.Io.Timeout {
     return .{ .duration = .{
         .raw = .{ .nanoseconds = @as(i96, ms) * std.time.ns_per_ms },
@@ -115,8 +109,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// `_fmt_clean(path)` — `zig fmt --check <path>` exits 0. Python let a
-/// missing `zig` CLI raise out of the helper.
+/// `_fmt_clean(path)` — `zig fmt --check <path>` exits 0.
 fn fmtClean(path: []const u8) !bool {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "zig", "fmt", "--check", path },
@@ -143,8 +136,7 @@ fn writeFile(path: []const u8, content: []const u8) !void {
     try f.writeStreamingAll(io, content);
 }
 
-/// Python's `workdir` fixture: a scratch dir holding one fmt-clean and one
-/// not-fmt-clean .zig file.
+/// Python's `workdir` fixture: a scratch dir holding one fmt-clean and one not-fmt-clean .zig file.
 const Fixture = struct {
     scratch: []u8,
     proj: []u8,
@@ -190,9 +182,7 @@ fn makeWorkdir() !Fixture {
     return .{ .scratch = scratch, .proj = proj };
 }
 
-/// Assert the hook driver exited 0, printing stderr when it did not. Python
-/// repeated `assert r.returncode == 0, f"hook errored: {r.stderr}"` seven
-/// times.
+/// Assert the hook driver exited 0, printing stderr when it did not.
 fn expectHookOk(res: std.process.RunResult) !void {
     const code = exitCode(res.term);
     if (code == null or code.? != 0) {
@@ -224,9 +214,7 @@ fn brace12At(text: []const u8, start: usize) bool {
     return p < text.len and text[p] == '}';
 }
 
-/// `\s` in the pattern above: the Python regex class is `[ \t\r\n\f\v]`, and
-/// the fixture files never contain the last two, but matching them costs
-/// nothing and keeps the port honest.
+/// `\s` in the pattern above: the Python regex class is `[ \t\r\n\f\v]`, and the fixture files never contain the last two, but matching them costs nothing and …
 fn skipSpace(text: []const u8, from: usize) usize {
     var p = from;
     while (p < text.len) : (p += 1) {
@@ -267,9 +255,7 @@ test "hook_file_is_valid_lua" {
     }
 }
 
-// The headline behaviour: an edit lands canonically formatted. Without the
-// hook the edit sits in whatever shape the model wrote it and the file is
-// left dirty.
+// The headline behaviour: an edit lands canonically formatted.
 test "formats_the_edited_region" {
     const lua = try luaExe();
     defer gpa.free(lua);
@@ -282,9 +268,7 @@ test "formats_the_edited_region" {
     const target = try fx.path("src/clean.zig");
     defer gpa.free(target);
     try writeFile(target, "pub fn main() void {\n    const x    =    1;\n    const y = 2;\n}\n");
-    // Python: `assert not _fmt_clean(target)` — the precondition, and it must
-    // stay an assertion rather than a comment, or a `zig fmt` that silently
-    // started accepting the dirty file would make the rest of the test
+    // Python: `assert not _fmt_clean(target)` — the precondition, and it must stay an assertion rather than a comment, or a `zig fmt` that silently started accepting …
     if (try fmtClean(target)) {
         std.debug.print("precondition: the edit did not make the file dirty\n", .{});
         return error.TestUnexpectedResult;
@@ -299,9 +283,7 @@ test "formats_the_edited_region" {
         std.debug.print("hook left an edited file unformatted:\n{s}\n", .{text});
         return error.TestUnexpectedResult;
     }
-    // The read is hoisted out of the assertion so it can be freed: an
-    // owned buffer cannot be handed straight to `expectEqualStrings`
-    // AND deferred at the same time.
+    // The read is hoisted out of the assertion so it can be freed: an owned buffer cannot be handed straight to `expectEqualStrings` AND deferred at the same time.
     const formatted = try readFile(target);
     defer gpa.free(formatted);
     try testing.expectEqualStrings(
@@ -310,8 +292,7 @@ test "formats_the_edited_region" {
     );
 }
 
-// Pre-existing unformatted lines are normalised too — by design. `zig fmt` is
-// a whole-file rewriter.
+// Pre-existing unformatted lines are normalised too — by design.
 test "formats_whole_file_not_just_the_edit" {
     const lua = try luaExe();
     defer gpa.free(lua);
@@ -357,9 +338,7 @@ test "formats_whole_file_not_just_the_edit" {
     }
 }
 
-// A mid-edit file that does not parse must be left byte-for-byte alone. zig
-// fmt exits non-zero without writing on a parse error, so a half-typed file
-// is never mangled.
+// A mid-edit file that does not parse must be left byte-for-byte alone. zig fmt exits non-zero without writing on a parse error, so a half-typed file is never …
 test "syntax_broken_file_is_not_corrupted" {
     const lua = try luaExe();
     defer gpa.free(lua);
@@ -504,9 +483,7 @@ test "missing_file_does_not_error" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never
-    // type-checked, so a stdlib rename inside one would stay invisible
-    // until some caller appeared.
+    // Body-analysis barrier: an unreferenced function is never type-checked, so a stdlib rename inside one would stay invisible until some caller appeared.
     _ = luaExe;
     _ = repoFileAbs;
     _ = luaString;

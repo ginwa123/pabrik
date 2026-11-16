@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReadWorkspaceSession from '../ReadWorkspaceSession.vue'
 
-// ────────────────────────────────────────────────────────────────────────
 // Test helpers
-// ────────────────────────────────────────────────────────────────────────
 const makeSearchContent = (
   opts: {
     behavior?: 'search' | 'search-within'
@@ -46,9 +44,7 @@ const makeSearchContent = (
     session_name: e.session_name ?? 'Default chat',
     role: e.role ?? 'user',
     created_at: e.created_at ?? '2026-01-01 10:00:00',
-    // Mirrors what the backend ACTUALLY emits: llm_history.zig calls
-    // snippet(messages_fts, 0, '[', ']', '...', 10), which wraps matches in
-    // bare brackets. It never emits [match]/[/match].
+    // Mirrors what the backend ACTUALLY emits: llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10), which wraps matches in bare brackets.
     snippet: e.snippet ?? '...the login [bug] needs fixing...',
   }))
   return {
@@ -60,8 +56,7 @@ const makeSearchContent = (
     count,
     total_count: total,
     results,
-    // Present only when the caller passed `message_ids`; null otherwise,
-    // which is what the backend actually emits.
+    // Present only when the caller passed `message_ids`; null otherwise, which is what the backend actually emits.
     full_contents: opts.full_contents ?? null,
   }
 }
@@ -151,9 +146,7 @@ const makeDeniedContent = (sid = 's_other') => ({
 
 const makeErrorContent = (msg = 'Database query failed: SyntaxError') => ({ error: msg })
 
-// ────────────────────────────────────────────────────────────────────────
 // jsdom doesn't ship a clipboard by default; provide a minimal stub.
-// ────────────────────────────────────────────────────────────────────────
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -173,9 +166,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('ReadWorkspaceSession.vue — envelope dispatch', () => {
   it('renders behavior="search" header with query + entry count', () => {
     const wrapper = mount(ReadWorkspaceSession, {
@@ -304,16 +295,13 @@ describe('ReadWorkspaceSession.vue — search entries', () => {
     expect(entries[0]!.text()).toContain('user')
     expect(entries[0]!.text()).toContain('h1')
     expect(entries[0]!.text()).toContain('login bug')
-    // The session name now lives on the group header, not on every row —
-    // it was repeated on each of 11,996 rows before.
+    // The session name now lives on the group header, not on every row — it was repeated on each of 11,996 rows before.
     expect(entries[0]!.text()).not.toContain('Auth work')
     expect(wrapper.find('.search-group-header').text()).toContain('Auth work')
   })
 
   it('highlights bare-bracket spans (the format the backend actually emits)', () => {
-    // llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10), so a real snippet looks
-    // like `...a [portal] that refuses...` — there are no `[match]`/`[/match]` tags in it. This is
-    // a verbatim capture from the live database.
+    // llm_history.zig calls snippet(messages_fts, 0, '[', ']', '...', 10), so a real snippet looks like `...a [portal] that refuses...` — there are no …
     const wrapper = mount(ReadWorkspaceSession, {
       props: {
         expanded: true,

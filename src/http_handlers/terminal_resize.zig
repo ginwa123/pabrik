@@ -1,6 +1,4 @@
-//! `POST /api/terminal/sessions/:id/resize` — set the PTY window size. Body:
-//! `{ cols, rows }` (both required, integers in [2, 1000]). Success: 200 `{
-//! ok: true, cols, rows }`.
+//! `POST /api/terminal/sessions/:id/resize` — set the PTY window size. Body
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -66,8 +64,7 @@ pub fn terminalResizeHandler(
         });
     };
 
-    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is
-    // indistinguishable from a missing one (404, never 403).
+    // Owner check (plan 2026-09-25, W2.5): a foreign terminal id is indistinguishable from a missing one (404, never 403).
     var owner_buf: [128]u8 = undefined;
     const owner: []const u8 = auth_common.resolveOwnerInto(&owner_buf, req.headers) orelse "";
     if (terminal_guest.isGuestId(id)) {

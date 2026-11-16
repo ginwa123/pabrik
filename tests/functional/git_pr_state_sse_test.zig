@@ -1,6 +1,4 @@
-// Functional e2e for the `git_pr_state` SSE push. The bug this channel
-// closes: merging a change request from the PR tab's merge box recoloured the
-// PR tab's own badge and told nobody else.
+// Functional e2e for the `git_pr_state` SSE push.
 
 const std = @import("std");
 const testing = std.testing;
@@ -21,8 +19,7 @@ const push_timeout_ms: i64 = 5_000;
 /// How long the negative case waits before it may conclude "no event".
 const quiet_window_ms: i64 = 1_500;
 
-/// Transfer buffer for the response body reader. NOT `&.{}` — see
-/// background_process_sse_test.zig for why an empty slice livelocks.
+/// Transfer buffer for the response body reader.
 const transfer_buffer_len = 8 * 1024;
 
 fn nowMs() i64 {
@@ -70,9 +67,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. `s.* = .{...}` applies them all
-    // in one shot; `req` is genuinely assigned by `request()` below.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -111,8 +106,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -128,9 +122,7 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // `takeDelimiter` — NOT `takeDelimiterExclusive`. The Exclusive
-        // variant leaves the `\n` in the buffer, so the next call finds a
-        // delimiter at position 0 and returns a ZERO-LENGTH slice, forever.
+        // `takeDelimiter` — NOT `takeDelimiterExclusive`.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
@@ -192,13 +184,11 @@ fn releaseReader(s: *SseStream) void {
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Wait until an event named `want` is in `s.events`, or the deadline
-/// passes. Returns true iff the event was seen.
+/// Wait until an event named `want` is in `s.events`, or the deadline passes.
 fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
-        // Snapshot under the lock, then RELEASE it before sleeping —
-        // holding the mutex across `Io.sleep` starves the reader.
+        // Snapshot under the lock, then RELEASE it before sleeping — holding the mutex across `Io.sleep` starves the reader.
         s.mutex.lockUncancelable(io);
         const found = blk: {
             for (s.events.items) |e| {
@@ -240,12 +230,9 @@ fn seenNames(s: *SseStream) []u8 {
     };
 }
 
-// ============================================================================
 // Fixture
-// ============================================================================
 
-/// The suite's own scratch directory (the git repo + every fake bin),
-/// outside the harness's tempdir namespace.
+/// The suite's own scratch directory (the git repo + every fake bin), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -253,8 +240,7 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is
-    /// registered first.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered first.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -265,8 +251,7 @@ const Scratch = struct {
     }
 };
 
-/// `git` in `cwd` with the fixture identity baked in, so the fixture never
-/// depends on the machine's global git config.
+/// `git` in `cwd` with the fixture identity baked in, so the fixture never depends on the machine's global git config.
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -294,8 +279,7 @@ fn git(cwd: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// `git init` plus one commit, so `path` is a real worktree: the merge
-/// handler's status re-read gates on `git rev-parse --git-dir`.
+/// `git init` plus one commit, so `path` is a real worktree: the merge handler's status re-read gates on `git rev-parse --git-dir`.
 fn buildRepo(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-state-proj"});
     errdefer gpa.free(cwd);
@@ -324,9 +308,7 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// Put an executable stub named `bin_name` in its OWN bindir inside `s`,
-/// so prepending that directory to PATH cannot shadow another command the
-/// server needs (`git` in particular — the repo gate runs it).
+/// Put an executable stub named `bin_name` in its OWN bindir inside `s`, so prepending that directory to PATH cannot shadow another command the server needs …
 fn installFakeCli(s: *Scratch, dir_name: []const u8, bin_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -339,9 +321,7 @@ fn installFakeCli(s: *Scratch, dir_name: []const u8, bin_name: []const u8, body:
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env. Scoped by `restore`, or every
-/// later suite in the same process would spawn the fake CLI.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -387,17 +367,13 @@ const PathShadow = struct {
     }
 };
 
-// ============================================================================
 // The fake forge CLI
-// ============================================================================
 
-/// The head commit every test promises to be merging, mirrored in the
-/// payload below (the merge box sends `head_sha` as a guard).
+/// The head commit every test promises to be merging, mirrored in the payload below (the merge box sends `head_sha` as a guard).
 const HEAD_SHA = "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e";
 const TITLE = "fix(chatview): land where the reader left it (#891)";
 
-/// `gh` as the merge box uses it: `pr view` answers `view_json`, and `pr
-/// merge` records its argv (one arg per line) and exits 0.
+/// `gh` as the merge box uses it: `pr view` answers `view_json`, and `pr merge` records its argv (one arg per line) and exits 0.
 fn ghScript(argv_path: []const u8, view_json: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa,
         \\#!/bin/sh
@@ -420,21 +396,17 @@ fn ghScript(argv_path: []const u8, view_json: []const u8) ![]u8 {
     , .{ argv_path, view_json, argv_path });
 }
 
-/// #891 as the forge reports it AFTER the merge landed. `headRefName` is the
-/// branch the SSE payload must carry — it is half of the frontend's cache key.
+/// #891 as the forge reports it AFTER the merge landed.
 const GH_MERGED_JSON =
     \\{"number": 891, "title": "Scroll restore", "url": "https://github.com/ginwa123/pabrik/pull/891", "state": "MERGED", "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN", "headRefName": "worktree/add-a-button", "baseRefName": "main", "createdAt": "2026-10-11T00:00:00Z", "updatedAt": "2026-10-11T01:00:00Z", "mergedAt": "2026-10-11T01:00:00Z", "closedAt": null, "author": {"login": "ginwa123"}, "additions": 97, "deletions": 77, "changedFiles": 5, "headRefOid": "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e"}
 ;
 
-/// #891 still OPEN — the merge-queue / armed-auto-merge shape. The command
-/// was accepted; the change request has not merged, so nothing moved and no
-/// state event may be emitted.
+/// #891 still OPEN — the merge-queue / armed-auto-merge shape.
 const GH_OPEN_JSON =
     \\{"number": 891, "title": "Scroll restore", "url": "https://github.com/ginwa123/pabrik/pull/891", "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "headRefName": "worktree/add-a-button", "baseRefName": "main", "createdAt": "2026-10-11T00:00:00Z", "updatedAt": "2026-10-11T00:30:00Z", "mergedAt": null, "closedAt": null, "author": {"login": "ginwa123"}, "additions": 97, "deletions": 77, "changedFiles": 5, "headRefOid": "4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e4f21c9e"}
 ;
 
-/// The body the merge box sends — built the same way, so a field rename on
-/// either side fails here rather than in the browser.
+/// The body the merge box sends — built the same way, so a field rename on either side fails here rather than in the browser.
 fn mergeBody(repo: []const u8) ![]u8 {
     return std.fmt.allocPrint(
         gpa,
@@ -443,8 +415,7 @@ fn mergeBody(repo: []const u8) ![]u8 {
     );
 }
 
-/// Boot a harness with the fake `gh` on PATH and a real repo, all cleaned up
-/// on the way out. The caller owns `scratch`, `repo` and `shadow`.
+/// Boot a harness with the fake `gh` on PATH and a real repo, all cleaned up on the way out.
 fn bootWithFakeGh(s: *Scratch, repo: *[]u8, shadow: *PathShadow, view_json: []const u8) !Harness {
     repo.* = try buildRepo(s);
 
@@ -455,16 +426,13 @@ fn bootWithFakeGh(s: *Scratch, repo: *[]u8, shadow: *PathShadow, view_json: []co
     const bindir = try installFakeCli(s, "bin-ok", "gh", script);
     defer gpa.free(bindir);
 
-    // The child inherits `std.testing.environ`, so PATH must be shadowed
-    // BEFORE the server boots.
+    // The child inherits `std.testing.environ`, so PATH must be shadowed BEFORE the server boots.
     shadow.* = try PathShadow.install(gpa, bindir);
 
     return Harness.boot(io, gpa, .{});
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // GET /api/events?channels=git_pr_state returns 200 SSE + connected.
 test "git_pr_state_channel_handshake" {
@@ -504,8 +472,7 @@ test "git_pr_state_channel_handshake" {
     }
 }
 
-// POST /api/git/pr/merge pushes `event: git_pr_state_merged` carrying the
-// action, the cwd and the head branch — the pair the badges' cache is keyed on.
+// POST /api/git/pr/merge pushes `event: git_pr_state_merged` carrying the action, the cwd and the head branch — the pair the badges' cache is keyed on.
 test "merge_pushes_git_pr_state_merged_event" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -522,8 +489,7 @@ test "merge_pushes_git_pr_state_merged_event" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Subscribe BEFORE the POST: the emit is synchronous with the handler, so
-    // a stream opened afterwards would miss the frame entirely.
+    // Subscribe BEFORE the POST: the emit is synchronous with the handler, so a stream opened afterwards would miss the frame entirely.
     const stream = try openSse(h.port, "git_pr_state");
     defer stream.deinit();
     const reader = try std.Thread.spawn(.{}, readEvents, .{stream});
@@ -548,8 +514,7 @@ test "merge_pushes_git_pr_state_merged_event" {
     }
 
     const data = dataForEvent(stream, "git_pr_state_merged") orelse return error.NoPayload;
-    // Arena, not `gpa`: `parseFromSliceLeaky` deliberately does not free its
-    // allocations, and `testing.allocator` reports every one of them as a leak.
+    // Arena, not `gpa`: `parseFromSliceLeaky` deliberately does not free its allocations, and `testing.allocator` reports every one of them as a leak.
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena.allocator(), data, .{}) catch return error.BadPayload;
@@ -558,16 +523,12 @@ test "merge_pushes_git_pr_state_merged_event" {
         else => return error.BadPayload,
     };
     try testing.expectEqualStrings("merged", obj.get("action").?.string);
-    // The cwd the forge command ran in, and the head branch the frontend's
-    // cache key is built from — a badge cannot re-read the right entry without
-    // both.
+    // The cwd the forge command ran in, and the head branch the frontend's cache key is built from — a badge cannot re-read the right entry without both.
     try testing.expectEqualStrings(repo, obj.get("cwd").?.string);
     try testing.expectEqualStrings("worktree/add-a-button", obj.get("branch").?.string);
 }
 
-// An accepted-but-not-merged command (merge queue / armed auto-merge) leaves
-// the change request OPEN, so no state event may be pushed — the badges must
-// not be told to re-colour for a merge that did not happen.
+// An accepted-but-not-merged command (merge queue / armed auto-merge) leaves the change request OPEN, so no state event may be pushed — the badges must not be …
 test "pending_merge_pushes_no_state_event" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -589,8 +550,7 @@ test "pending_merge_pushes_no_state_event" {
     const reader = try std.Thread.spawn(.{}, readEvents, .{stream});
     defer reader.join();
 
-    // THE POSITIVE CONTROL. Without it, "no event" also passes on a stream that
-    // never connected at all — the absence assertion would be vacuous.
+    // THE POSITIVE CONTROL.
     if (!waitForEvent(stream, "connected", handshake_timeout_ms)) {
         const names = seenNames(stream);
         defer gpa.free(names);
@@ -606,9 +566,7 @@ test "pending_merge_pushes_no_state_event" {
         defer r.deinit();
         var doc = try r.json();
         defer doc.deinit();
-        // The response proves the merge path RAN (and answered `pending`), so
-        // the silence is about the event, not about a request that never
-        // reached the handler.
+        // The response proves the merge path RAN (and answered `pending`), so the silence is about the event, not about a request that never reached the handler.
         if (doc.boolean("pending") != true) {
             std.debug.print("expected pending=true from an OPEN re-read: {s}\n", .{r.body});
             releaseReader(stream);

@@ -1,6 +1,4 @@
-//! The `documents` SSE channel: the backend telling the UI that the agent
-//! created, rewrote or removed a document, so the sidebar's Documents list
-//! (and an editor open on that document) refresh without polling.
+//! The `documents` SSE channel: the backend telling the UI that the agent created, rewrote or removed a document, so the sidebar's Documents list (and an editor …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,20 +6,16 @@ const SseEvent = @import("sse.zig").SseEvent;
 
 const event_bus_mod = pabrikcore.event_bus;
 
-/// The central routing key. The frontend subscribes with the `documents`
-/// channel token, which `parseChannels` maps to this key.
+/// The central routing key.
 pub const RoutingKey = "documents";
 
 pub const EventCreated = "document_created";
 pub const EventUpdated = "document_updated";
 pub const EventDeleted = "document_deleted";
 /// A change with no single document to name: a folder write, or a reorder.
-/// The payload is a hint to refetch the workspace, not the new state.
 pub const EventListChanged = "documents_changed";
 
-/// One document mutation. `workspace_id` is what the frontend filters on: the
-/// backend fans these out to every connected client, and only a tab showing
-/// THAT workspace may react.
+/// One document mutation.
 pub const DocumentEventInput = struct {
     /// `created` | `updated` | `deleted` | `changed`.
     action: []const u8,
@@ -29,13 +23,11 @@ pub const DocumentEventInput = struct {
     document_id: []const u8 = "",
     /// Set by a folder write, so a client can tell which tree moved.
     folder_id: []const u8 = "",
-    /// The document's title AFTER the mutation. Empty when the mutation did
-    /// not read the row back — the frontend uses it for the row label only.
+    /// The document's title AFTER the mutation.
     title: []const u8 = "",
 };
 
-/// Emit one document mutation. No-op when `event_bus` is null (unit tests, and
-/// any caller that has no bus). The caller keeps owning `input`'s slices.
+/// Emit one document mutation.
 pub fn emitDocumentEvent(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -44,8 +36,7 @@ pub fn emitDocumentEvent(
     const bus = event_bus orelse return;
 
     const data = std.json.Stringify.valueAlloc(allocator, input, .{}) catch return;
-    // `EventBus.emit` dispatches synchronously, so every subscriber has copied
-    // what it needs before this runs.
+    // `EventBus.emit` dispatches synchronously, so every subscriber has copied what it needs before this runs.
     defer allocator.free(data);
 
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
@@ -66,8 +57,7 @@ pub fn emitDocumentEvent(
     });
 }
 
-/// A folder write or a reorder. Every client refetches the workspace on any
-/// `documents` event, so the payload only names what moved.
+/// A folder write or a reorder.
 pub fn emitDocumentsChanged(
     allocator: std.mem.Allocator,
     event_bus: ?*event_bus_mod.EventBus,
@@ -90,8 +80,7 @@ const testing = std.testing;
 var captured: ?SseEvent = null;
 var captured_payload: []u8 = &.{};
 
-/// The emit frees the JSON buffer it built, so keeping `ev.data` would dangle
-/// — copy it here, while the emit is still on the stack.
+/// The emit frees the JSON buffer it built, so keeping `ev.data` would dangle — copy it here, while the emit is still on the stack.
 fn capture(ev: SseEvent) void {
     captured = ev;
     captured_payload = testing.allocator.dupe(u8, ev.data) catch return;
@@ -130,9 +119,7 @@ test "each document action maps to its own granular wire name" {
         });
         const ev = captured orelse return error.NoEvent;
         try testing.expectEqualStrings(c.want, ev.event_type orelse "");
-        // The envelope id is the routing-key literal, not a session id: this
-        // channel is workspace-scoped, and the frontend filters on the
-        // payload's `workspace_id`.
+        // The envelope id is the routing-key literal, not a session id: this channel is workspace-scoped, and the frontend filters on the payload's `workspace_id`.
         try testing.expectEqualStrings(RoutingKey, ev.session_id);
         releaseCapture();
     }
@@ -155,8 +142,7 @@ test "the payload carries the action, workspace, document and title" {
     });
 
     try testing.expect(captured != null);
-    // `parsed` borrows slices into the buffer, so it must be deinit'd BEFORE
-    // the buffer is freed — the other order is a use-after-free.
+    // `parsed` borrows slices into the buffer, so it must be deinit'd BEFORE the buffer is freed — the other order is a use-after-free.
     {
         const parsed = try std.json.parseFromSlice(std.json.Value, alloc, captured_payload, .{});
         defer parsed.deinit();
@@ -215,8 +201,7 @@ test "a folder change names the folder and carries no document id" {
 }
 
 test "a null event_bus makes the emit a no-op" {
-    // Reset first: `captured` is module state, and reading it without clearing
-    // would make this test pass or fail on whatever ran before it.
+    // Reset first: `captured` is module state, and reading it without clearing would make this test pass or fail on whatever ran before it.
     releaseCapture();
     emitDocumentEvent(testing.allocator, null, .{
         .action = "created",

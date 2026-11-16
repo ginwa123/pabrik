@@ -1,5 +1,4 @@
-/** Touched-echo loop regression tests. Bug: ChatsList.loadChats() fired POST /touched on every load
- * while a chat was open, and the backend answers that POST with an SSE `session.updated` event. */
+/** Touched-echo loop regression tests. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'
@@ -152,8 +151,7 @@ describe('ChatsList - touched-echo loop guard', () => {
     expect(markSessionTouchedMock).toHaveBeenCalledTimes(1)
     expect(markSessionTouchedMock).toHaveBeenCalledWith('sess_loop')
 
-    // Simulate what the old code did on every SSE echo: a second full
-    // loadChats. The guard must NOT fire a second POST.
+    // Simulate what the old code did on every SSE echo: a second full loadChats.
     const exposed = wrapper.vm as unknown as { loadChats: () => Promise<void> }
     await exposed.loadChats()
     await flushLoadChats()
@@ -198,8 +196,7 @@ describe('ChatsList - touched-echo loop guard', () => {
       updated_at: dateToSqliteUtc(1000),
     } as never)
 
-    // Wait past the 400ms debounce — a buggy handler would have
-    // scheduled a reload by now.
+    // Wait past the 400ms debounce — a buggy handler would have scheduled a reload by now.
     await sleep(700)
     await flushLoadChats()
 

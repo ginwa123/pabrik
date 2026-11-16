@@ -6,10 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The wire, pinned where getting it wrong produces a list that merely *looks*
- * fine — which is the failure mode for all of these.
- */
+/** The wire, pinned where getting it wrong produces a list that merely *looks* fine — which is the failure mode for all of these. */
 class ProjectsApiTest {
 
     @Test
@@ -21,10 +18,7 @@ class ProjectsApiTest {
 
     @Test
     fun itemsPathEncodesAnIdThatWouldOtherwiseSplitTheRoute() {
-        // A workspace id containing a slash would land on a different route
-        // entirely if it were concatenated raw. This is the whole reason
-        // `itemsPath` is a function over `UriEncoding.encode` and not a
-        // `const` template.
+        // A workspace id containing a slash would land on a different route entirely if it were concatenated raw.
         val path = ProjectsApi.itemsPath("ws/../admin")
 
         assertFalse("an unencoded slash would split the path segment", path.contains("ws/../admin"))
@@ -51,8 +45,7 @@ class ProjectsApiTest {
 
     @Test
     fun tasksPathOmitsABlankCursor() {
-        // A blank cursor is indistinguishable from "first page" to the server,
-        // so sending it would restart the list and re-serve page 1 forever.
+        // A blank cursor is indistinguishable from "first page" to the server, so sending it would restart the list and re-serve page 1 forever.
         assertFalse(
             "a null cursor must not be sent at all",
             ProjectsApi.tasksPath("ws_1", "item_1", cursor = null).contains("cursor"),
@@ -65,8 +58,7 @@ class ProjectsApiTest {
 
     @Test
     fun tasksPathRoundTripsTheServersOwnCursorVerbatim() {
-        // The cursor is `"<sort_value>|<id>"`, not an opaque token. A client
-        // that rebuilt it would silently degrade into re-serving page 1.
+        // The cursor is `"<sort_value>|<id>"`, not an opaque token.
         val cursor = "2026-09-26 05:12:37|task_9"
         val path = ProjectsApi.tasksPath("ws_1", "item_1", cursor = cursor)
 
@@ -94,8 +86,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseItemsSkipsRowsWithoutAnId() {
-        // A row without an id cannot be scoped to, so it is unusable — the
-        // same rule the recents parser applies to sessions.
+        // A row without an id cannot be scoped to, so it is unusable — the same rule the recents parser applies to sessions.
         val body = """{"items":[{"item_type":"kanban","name":"nameless"},{"id":"item_2","item_type":"agent","name":"real"}],"count":2}"""
 
         val projects = ProjectsApi.parseItems(body)
@@ -105,10 +96,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseItemsLeavesNameAndPathEmptyWhenTheServerSendsNull() {
-        // `name` and `path` are both nullable server-side. `JSONObject.optString`
-        // renders an explicit null as the four-character text "null", so this
-        // is the difference between "Untitled project" and a row that literally
-        // says `null`.
+        // `name` and `path` are both nullable server-side.
         val body = """{"items":[{"id":"item_1","workspace_id":"ws_1","item_type":"kanban","name":null,"path":null}],"count":1}"""
 
         val project = ProjectsApi.parseItems(body).first()
@@ -119,8 +107,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseItemsKeepsAnUnknownTypeSoTheRowStillRenders() {
-        // Dropping it would hide a project the web app can see. The UI's
-        // fallback glyph is what handles it, not an invisible row.
+        // Dropping it would hide a project the web app can see.
         val body = """{"items":[{"id":"item_1","workspace_id":"ws_1","item_type":"something_new","name":"future"}],"count":1}"""
 
         assertEquals("something_new", ProjectsApi.parseItems(body).first().itemType)
@@ -133,10 +120,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseProjectChatsStopsOnHasMoreNotOnCursorPresence() {
-        // The decoy, pinned on the projects path so a future reader does not
-        // have to know it from the chats test: `next_cursor` is emitted whenever
-        // the page was non-empty, INCLUDING the last one. Its presence says
-        // nothing about there being more.
+        // The decoy, pinned on the projects path so a future reader does not have to know it from the chats test: `next_cursor` is emitted whenever the page was …
         val body = """{"tasks":[{"id":"t1","name":"a"}],"count":1,"has_more":false,"next_cursor":"2026-09-26|t1"}"""
 
         val page = ProjectsApi.parseProjectChatsPage(body, "item_1")
@@ -148,9 +132,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseProjectChatsEndsTheScrollOnAnEmptyPageEvenWhenTheServerClaimsMore() {
-        // A page carrying no rows while the server says there are more is a
-        // cursor that has stopped advancing. Continuing would re-request the
-        // same window on every scroll.
+        // A page carrying no rows while the server says there are more is a cursor that has stopped advancing.
         val body = """{"tasks":[],"count":0,"has_more":true,"next_cursor":"2026-09-26|t9"}"""
 
         assertFalse(ProjectsApi.parseProjectChatsPage(body, "item_1").hasMore)
@@ -158,8 +140,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseProjectChatsReadsTheTaskIdAsTheSessionId() {
-        // The backend joins the two tables on it. If this ever stopped being
-        // true, tapping a nested row would navigate to nothing.
+        // The backend joins the two tables on it.
         val body = """{"tasks":[{"id":"task_42","name":"a chat"}],"count":1,"has_more":false,"next_cursor":null}"""
 
         assertEquals("task_42", ProjectsApi.parseProjectChatsPage(body, "item_1").chats.first().id)
@@ -174,8 +155,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseProjectChatsReadsTheSameTimestampFormatAsTheChatList() {
-        // The same SQLite-UTC string the recents parser already handles. A
-        // second implementation of that would be a second set of bugs.
+        // The same SQLite-UTC string the recents parser already handles.
         val body = """{"tasks":[{"id":"t1","name":"a","updated_at":"2026-09-26 05:12:37"}],"count":1,"has_more":false,"next_cursor":null}"""
 
         val chat = ProjectsApi.parseProjectChatsPage(body, "item_1").chats.first()
@@ -186,8 +166,7 @@ class ProjectsApiTest {
 
     @Test
     fun parseProjectChatsLeavesTheStampUnsetRatherThanGuessingTheEpoch() {
-        // No parseable timestamp: no label beats a wrong one. Rendering the
-        // epoch would claim the chat is decades old.
+        // No parseable timestamp: no label beats a wrong one.
         val body = """{"tasks":[{"id":"t1","name":"a","updated_at":"","created_at":""}],"count":1,"has_more":false,"next_cursor":null}"""
 
         val chat = ProjectsApi.parseProjectChatsPage(body, "item_1").chats.first()
@@ -215,10 +194,7 @@ class ProjectsApiTest {
 
     @Test
     fun mergeProjectChatsReplacesInPlaceAndDeduplicates() {
-        // A chat touched while the reader is between pages moves up the
-        // ordering, so a page boundary can legitimately hand back a row already
-        // on screen. Without this the screen grows two tappable rows for one
-        // chat.
+        // A chat touched while the reader is between pages moves up the ordering, so a page boundary can legitimately hand back a row already on screen.
         val current = listOf(
             ProjectChat("a", "item_1", "A", 1L),
             ProjectChat("b", "item_1", "B", 2L),
@@ -243,8 +219,7 @@ class ProjectsApiTest {
 
     @Test
     fun aBlankNextCursorBecomesNullRatherThanBeingHandedBack() {
-        // A blank cursor is worse than none: it would restart the list at page 1
-        // and hand back rows the screen already shows.
+        // A blank cursor is worse than none: it would restart the list at page 1 and hand back rows the screen already shows.
         val body = """{"tasks":[{"id":"t1","name":"a"}],"count":1,"has_more":true,"next_cursor":""}"""
 
         assertNull(ProjectsApi.parseProjectChatsPage(body, "item_1").nextCursor)

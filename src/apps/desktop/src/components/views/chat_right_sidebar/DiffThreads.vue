@@ -8,9 +8,7 @@ import DiffCommentBox, {
   type SavedComment,
 } from './DiffCommentBox.vue'
 
-/** The saved review threads for one diff row. Extracted so the unified table and the split table
- * render the SAME block — a thread the user left in one render must keep its wording, its edit
- * affordance and its Copy output in the other. */
+/** The saved review threads for one diff row. */
 const props = defineProps<{
   threads: SavedComment[]
   path: string
@@ -29,9 +27,7 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null
 
 const threadKey = (thread: SavedComment) => `${thread.start}-${thread.end}`
 
-/**  * `toLocaleString` on a Date built from a number does not throw — a bad `ts` yields the string
- * "Invalid Date". There is therefore no failure to hide here, and no silent fallback to confuse
- * with a real answer. */
+/** `toLocaleString` on a Date built from a number does not throw — a bad `ts` yields the string "Invalid Date". */
 function formatSavedTime(ts: number): string {
   return new Date(ts).toLocaleString()
 }

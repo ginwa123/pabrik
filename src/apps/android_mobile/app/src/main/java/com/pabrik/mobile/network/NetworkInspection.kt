@@ -29,10 +29,7 @@ data class NetworkSummary(
     val slowestMillis: Long,
 )
 
-/**
- * Header names whose value is a credential. Matched case-insensitively and in
- * full: a partial match would hide `Content-Type` on a substring of "auth".
- */
+/** Header names whose value is a credential. */
 val SensitiveHeaderNames: Set<String> = setOf(
     "authorization",
     "proxy-authorization",
@@ -70,11 +67,7 @@ val SensitiveFieldNames: Set<String> = setOf(
     "pin",
 )
 
-/**
- * Suffixes catch vendor spellings (`stripe_signature`, `imap_password`) that an
- * exact-name list cannot. `_key` is deliberately absent: it would swallow
- * `idempotency_key` and `partition_key`, which are not secrets.
- */
+/** Suffixes catch vendor spellings (`stripe_signature`, `imap_password`) that an exact-name list cannot. */
 val SensitiveFieldSuffixes: List<String> = listOf(
     "_token",
     "_secret",
@@ -181,14 +174,7 @@ fun containsSecretQueryParam(query: String?): Boolean {
     }
 }
 
-/**
- * Rebuilds the call as a runnable shell command, with the real values — a curl
- * with `••••••••` in it does not reproduce anything, which is the whole point of
- * the button. The UI warns that the clipboard now holds live credentials.
- *
- * Single line, like a browser's "Copy as cURL": line continuations survive a
- * terminal but not every editor and chat client the clipboard passes through.
- */
+/** Rebuilds the call as a runnable shell command, with the real values — a curl with `••••••••` in it does not reproduce anything, which is the whole point of the … */
 fun buildCurlCommand(entry: NetworkLogEntry): String {
     val parts = mutableListOf("curl", "-X", entry.method.uppercase(), shellQuote(entry.url))
     entry.requestHeaders.forEach { header ->
@@ -204,14 +190,7 @@ fun buildCurlCommand(entry: NetworkLogEntry): String {
     return parts.joinToString(" ")
 }
 
-/**
- * POSIX single-quote wrapping. Line breaks are folded rather than dropped so a
- * header value can never inject a new command into the pasted script.
- *
- * The fold uses the transform form of `replace` on purpose: the plain form routes
- * the replacement through `Matcher.appendReplacement`, which treats `\` as an
- * escape and would swallow the backslash, silently deleting the line break.
- */
+/** POSIX single-quote wrapping. */
 fun shellQuote(value: String): String {
     val sanitized = LineBreakPattern.replace(value) { "\\n" }
     return "'" + sanitized.replace("'", "'\\''") + "'"

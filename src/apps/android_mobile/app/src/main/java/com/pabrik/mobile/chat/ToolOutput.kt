@@ -4,17 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
-/**
- * `JSONObject` accessors that treat an explicit null, an absent key and a wrong
- * type the same way.
- *
- * `optString` is unusable for a wire this optional: it renders an explicit null
- * as the four-character text `"null"`, so every `?T = null` field the backend
- * emits — and the shell tool sets nearly all of them — would arrive looking like
- * a real value. The web's parser has the same problem and solves it with
- * `strField` / `strOrNullField` / `numOrNullField` / `boolField`; these are the
- * same four, for the same reason.
- */
+/** `JSONObject` accessors that treat an explicit null, an absent key and a wrong type the same way. */
 internal fun JSONObject.stringOrNull(key: String): String? {
     if (isNull(key)) return null
     return when (val value = opt(key)) {
@@ -76,32 +66,14 @@ internal fun JSONArray.stringList(): List<String> {
     return out
 }
 
-/**
- * A byte count, which is a `u64` on the wire and therefore arrives as a
- * `Double` through `org.json`. A file larger than 2^53 bytes is not a thing, so
- * a lossy conversion here is exact in practice; the null and non-numeric cases
- * are not, and are what this actually guards.
- */
+/** A byte count, which is a `u64` on the wire and therefore arrives as a `Double` through `org.json`. */
 internal fun Any?.toLongOrZero(): Long = when (this) {
     is Number -> toLong()
     is String -> trim().toLongOrNull() ?: 0L
     else -> 0L
 }
 
-/**
- * A parsed tool-result envelope.
- *
- * The wire shape is fixed by the backend (`agentic_loop/tools_wrap_output.zig`):
- *
- * ```json
- * {"tool":"read_file","parameters":{"path":"/x"},"success":true,
- *  "data":{"path":"/x","content":"…"},"error":null,"v":1}
- * ```
- *
- * [parametersJson] is a *string* because that is what the shared "Arguments"
- * block renders; the backend sends an object, so it is re-serialised here
- * exactly as `unwrapToolOutput.ts` does.
- */
+/** A parsed tool-result envelope. */
 data class ToolEnvelope(
     val name: String,
     val parametersJson: String,
@@ -109,55 +81,26 @@ data class ToolEnvelope(
     val error: String?,
     val data: JSONObject?,
 ) {
-    /**
-     * The backend emits a placeholder row with `success: true, data: null` the
-     * instant the model asks for a tool, then re-emits the *same row id* with
-     * real data when the tool finishes. `data: null` on a success is therefore
-     * the only in-flight signal on the wire — `llm_history.is_loading` exists in
-     * the database but no SSE struct exposes it.
-     */
+    /** The backend emits a placeholder row with `success: true, data: null` the instant the model asks for a tool, then re-emits the *same row id* with real data when … */
     val isPending: Boolean get() = success && data == null
 
-    /**
-     * `{"_raw": "<original>"}`. `normalizeDataFragment` rewrites any payload
-     * whose top level is not an object this way, and `remove_file` still emits
-     * XML, so this is a shape the client genuinely meets rather than a
-     * theoretical one.
-     */
+    /** `{"_raw": "<original>"}`. */
     val rawPayload: String? get() = data?.stringOrNull("_raw")
 }
 
-/**
- * Envelope parsing, plus the pretty-printer for the Arguments block.
- *
- * No Android and no Compose in here on purpose: this is the layer where a wire
- * misunderstanding shows up as a blank card, so the unit tests drive it
- * directly rather than through a screenshot.
- */
+/** Envelope parsing, plus the pretty-printer for the Arguments block. */
 object ToolOutput {
     /** The only schema version the backend emits. */
     const val ENVELOPE_VERSION = 1
 
-    /**
-     * Parses an envelope, or returns null when the content is not one.
-     *
-     * Null is the load-bearing case, not the exception: `mcp_*` tools bypass the
-     * envelope entirely on success and store the server's raw text, a tool
-     * interrupted by a server restart is rewritten to a legacy XML string, and a
-     * blank placeholder is not JSON at all. All three have to render *something*,
-     * so an unparseable row falls back to its raw text rather than disappearing.
-     */
+    /** Parses an envelope, or returns null when the content is not one. */
     fun tryUnwrap(content: String?): ToolEnvelope? {
         val trimmed = content?.trim().orEmpty()
         if (!trimmed.startsWith("{")) return null
         val envelope = try {
             JSONObject(trimmed)
         } catch (_: Throwable) {
-            // `Throwable`, not `Exception`: `JSONObject` parses lazily, so the
-            // stack blow-up happens later — inside `reStringifyParameters`'s
-            // `toString`, on a deeply nested `parameters` blob. That is an
-            // `Error`, and every `catch (Exception)` here would let it through
-            // and take the app down on a tool the model chose to shape.
+            // `Throwable`, not `Exception`: `JSONObject` parses lazily, so the stack blow-up happens later — inside `reStringifyParameters`'s `toString`, on a deeply nested …
             return null
         }
 
@@ -166,11 +109,7 @@ object ToolOutput {
         if (!envelope.has("success") || envelope.isNull("success")) return null
         if (!envelope.has("parameters")) return null
 
-        // The version is checked, not merely documented. An unknown `v` means
-        // the payload's *meaning* may have changed, and rendering it with v1
-        // rules produces a confident, wrong card — the same failure a strict
-        // parser is meant to prevent. Refusing it falls back to raw text, which
-        // is at least honest.
+        // The version is checked, not merely documented.
         val version = envelope.intOrNull("v") ?: return null
         if (version != ENVELOPE_VERSION) return null
 
@@ -179,9 +118,7 @@ object ToolOutput {
             name = tool,
             parametersJson = reStringifyParameters(envelope.opt("parameters")),
             success = success,
-            // `success` and `error` are mutually exclusive on the wire, so a
-            // success never has one. A failure with no message still needs
-            // something to show.
+            // `success` and `error` are mutually exclusive on the wire, so a success never has one.
             error = if (success) {
                 null
             } else {
@@ -191,11 +128,7 @@ object ToolOutput {
         )
     }
 
-    /**
-     * `parameters` is an object on the wire, so it is re-serialised for the
-     * Arguments block. A malformed payload reaches us as `{"_raw": …}`, which is
-     * already an object, so there is no second fallback to write.
-     */
+    /** `parameters` is an object on the wire, so it is re-serialised for the Arguments block. */
     private fun reStringifyParameters(raw: Any?): String = try {
         when (raw) {
             null -> "{}"
@@ -204,9 +137,7 @@ object ToolOutput {
             else -> JSONObject().put("_raw", raw).toString()
         }
     } catch (_: Throwable) {
-        // Same reasoning as the parse above: serialising an arbitrarily nested
-        // object is a recursive walk, and the arguments are model-authored.
-        // An unprintable argument set degrades to no arguments, never to a crash.
+        // Same reasoning as the parse above: serialising an arbitrarily nested object is a recursive walk, and the arguments are model-authored.
         "{}"
     }
 
@@ -217,25 +148,9 @@ object ToolOutput {
     }
 }
 
-/**
- * `JSON.stringify(value, null, 2)`.
- *
- * Hand-rolled rather than `JSONObject.toString(2)` because the built-in renders
- * an empty object as `{ }`, and the Arguments block hides itself on the literal
- * string `"{}"` — so the built-in would show an Arguments section for every tool
- * that takes no arguments.
- */
+/** `JSON.stringify(value, null, 2)`. */
 object JsonPretty {
-    /**
-     * Nesting past this renders as the original text rather than as an outline.
-     *
-     * The argument blob is the model's own tool call, so its depth is
-     * attacker-influenced, and `render` is recursive: a few thousand levels is
-     * enough to overflow the stack. Every `catch (Exception)` around this
-     * misses that, because `StackOverflowError` is an `Error`. Refusing to
-     * descend past the cap is the one failure mode this function can have that
-     * does not end in a crash.
-     */
+    /** Nesting past this renders as the original text rather than as an outline. */
     const val MAX_DEPTH = 32
 
     fun pretty(raw: String): String {
@@ -256,10 +171,7 @@ object JsonPretty {
         out: StringBuilder,
         fallback: String,
     ): String {
-        // Past the cap the value is spliced in *raw*, so the reader still sees
-        // the top of the structure and the whole deep payload is preserved —
-        // just not outlined. Returning the document whole from here is not
-        // possible, because `render` is already mid-way through building it.
+        // Past the cap the value is spliced in *raw*, so the reader still sees the top of the structure and the whole deep payload is preserved — just not outlined.
         if (depth > MAX_DEPTH) return fallback
         return when (value) {
             null, JSONObject.NULL -> out.append("null").toString()
@@ -295,8 +207,7 @@ object JsonPretty {
 
             is String -> quote(value, out).toString()
             is Number, is Boolean -> out.append(value.toString()).toString()
-            // org.json also hands back a Map for a JSONTokener-constructed
-            // document; serialising it whole beats dropping it.
+            // org.json also hands back a Map for a JSONTokener-constructed document; serialising it whole beats dropping it.
             else -> quote(value.toString(), out).toString()
         }
     }
@@ -313,10 +224,7 @@ object JsonPretty {
                 '\b' -> out.append("\\b")
                 '' -> out.append("\\f")
                 else -> if (char < ' ') {
-                    // `Locale.ROOT` is load-bearing: Java's formatter takes the
-                    // zero digit from the locale's numbering system, so under
-                    // `th-TH-u-nu-thai` this emits `\u0` followed by a Thai digit
-                    // and the Arguments block stops being valid JSON.
+                    // `Locale.ROOT` is load-bearing: Java's formatter takes the zero digit from the locale's numbering system, so under `th-TH-u-nu-thai` this emits `\u0` followed …
                     out.append(String.format(Locale.ROOT, "\\u%04x", char.code))
                 } else {
                     out.append(char)
@@ -329,15 +237,7 @@ object JsonPretty {
     private const val INDENT = "  "
 }
 
-/**
- * One tool call declared by an assistant turn.
- *
- * `tool_calls_json` is a JSON *string* holding an OpenAI-style array, and each
- * element's `arguments` is itself a JSON string — so it is parsed twice. The
- * backend serialises it that way deliberately: an array on the wire crashed
- * every live assistant row that carried tool calls
- * (`msg.tool_calls_json?.trim is not a function`).
- */
+/** One tool call declared by an assistant turn. */
 data class ToolCallEntry(
     val id: String,
     val name: String,

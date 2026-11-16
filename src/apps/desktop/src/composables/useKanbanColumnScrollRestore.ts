@@ -1,8 +1,6 @@
 import { onBeforeUnmount, onMounted, onUpdated, ref, type Ref } from 'vue'
 
-/** Persists a kanban column body's `scrollTop` to `localStorage` across component mounts. Why this
- * exists: A kanban column's card list is a `<VirtualScroller>` that owns a `overflow-y-auto`
- * container. */
+/** Persists a kanban column body's `scrollTop` to `localStorage` across component mounts. */
 export function useKanbanColumnScrollRestore(
   containerRef: Ref<HTMLElement | null>,
   storageKey: Ref<string> | string,
@@ -12,8 +10,7 @@ export function useKanbanColumnScrollRestore(
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let attachedEl: HTMLElement | null = null
-  // Last value observed while the element was still attached. The unmount
-  // flush writes THIS, never a fresh DOM read (see the doc comment).
+  // Last value observed while the element was still attached.
   let lastKnownScrollTop: number | null = null
 
   const readSaved = (): number => {
@@ -32,8 +29,7 @@ export function useKanbanColumnScrollRestore(
     try {
       localStorage.setItem(keyRef.value, String(value))
     } catch {
-      // private-mode / quota-exceeded — cross-reload persistence is lost,
-      // the in-session restore still works. Silently ignore.
+      // private-mode / quota-exceeded — cross-reload persistence is lost, the in-session restore still works.
     }
   }
 
@@ -70,14 +66,11 @@ export function useKanbanColumnScrollRestore(
   }
 
   const restoreInto = async (el: HTMLElement): Promise<void> => {
-    // Two frames so the VirtualScroller has sized its spacers — a single rAF
-    // isn't enough for `scrollHeight` to reflect the measured items.
+    // Two frames so the VirtualScroller has sized its spacers — a single rAF isn't enough for `scrollHeight` to reflect the measured items.
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
-    // Then wait for the column to actually become scrollable (up to 500 ms). Bailing out on `max <=
-    // 0` alone would silently DROP the restore for any column whose cards have not been laid out by
-    // the second frame: the user would come back to a column sitting at the top, which is the bug.
+    // Then wait for the column to actually become scrollable (up to 500 ms).
     const start = Date.now()
     while (Date.now() - start < 500) {
       if (containerRef.value !== el) return // swapped out while waiting
@@ -95,9 +88,7 @@ export function useKanbanColumnScrollRestore(
     lastKnownScrollTop = clamped
   }
 
-  // Attach on mount when the element is already there, and on update when it shows up late (the
-  // scroller sits behind `v-if="cardsInColumn.length > 0"`, so on a cold load the container is
-  // still null at mount and only appears once cards arrive.
+  // Attach on mount when the element is already there, and on update when it shows up late (the scroller sits behind `v-if="cardsInColumn.length > 0"`, so on a …
   const wireContainer = (el: HTMLElement | null) => {
     if (!el) {
       detach()
@@ -108,9 +99,7 @@ export function useKanbanColumnScrollRestore(
     attachedEl = el
 
     el.addEventListener('scroll', handleScroll, { passive: true })
-    // `scrollend` is the fast path (~100 ms after the user stops). Feature
-    // detect with `in` — jsdom silently creates missing properties on
-    // assignment, so a bare `if (el.onscrollend)` would lie.
+    // `scrollend` is the fast path (~100 ms after the user stops).
     if ('onscrollend' in el) {
       el.addEventListener('scrollend', handleScrollEnd, { passive: true })
     }

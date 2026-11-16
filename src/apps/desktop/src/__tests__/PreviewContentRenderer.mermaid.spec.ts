@@ -1,5 +1,4 @@
-/** Mermaid in the present_files preview path: a presented `.md` whose diagram blocks draw, and a
- * presented `.mmd` which IS the diagram. Mermaid is mocked (jsdom has no layout). */
+/** Mermaid in the present_files preview path: a presented `.md` whose diagram blocks draw, and a presented `.mmd` which IS the diagram. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -56,8 +55,7 @@ describe('PreviewContentRenderer — mermaid', () => {
     })
     await flushPromises()
 
-    // This pane has no per-segment frame, so an `html` segment must keep
-    // rendering inline — splitting the file out must not drop the block.
+    // This pane has no per-segment frame, so an `html` segment must keep rendering inline — splitting the file out must not drop the block.
     expect(wrapper.html()).toContain('<b>live</b>')
     expect(wrapper.text()).toContain('before')
     expect(wrapper.text()).toContain('after')

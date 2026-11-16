@@ -1,6 +1,4 @@
-/**
- * Dependency API wire rules: `force` only when truthy, `depends_on` omitted unless provided (`[]` clears), `is_done` forwarded.
- */
+/** Dependency API wire rules: `force` only when truthy, `depends_on` omitted unless provided (`[]` clears), `is_done` forwarded. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

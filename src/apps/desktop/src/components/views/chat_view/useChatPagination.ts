@@ -60,9 +60,7 @@ export interface ChatPaginationDeps {
   PAGE_SIZE: number
 }
 
-/** Owns the older-history arm → commit → refill cycle, `loadChatHistory`, and the two scroll
- * primitives that cycle drives. The `─── Scroll` header travels with it so the bundle order that
- * `ChatView.lazyPrefetch.spec.ts` pins (… loadChatHistory < ─── Scroll) still holds. */
+/** Owns the older-history arm → commit → refill cycle, `loadChatHistory`, and the two scroll primitives that cycle drives. */
 export function useChatPagination(deps: ChatPaginationDeps) {
   const {
     props,
@@ -99,18 +97,13 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     PAGE_SIZE,
   } = deps
 
-  // Guard flag for the messages-length watcher's auto-stick. During the initial load, the
-  // loadChatHistory branch handles the scroll explicitly (either restore a saved position via
-  // scrollToPosition or land at the bottom via scrollToBottom).
+  // Guard flag for the messages-length watcher's auto-stick.
   let isInitialLoad = false
   let lastObservedScrollHeight = 0
-  // True while a loadMore preserve window is in flight — contentShift
-  // events are ignored entirely (same effect as the old observer teardown,
-  // without detaching anything).
+  // True while a loadMore preserve window is in flight — contentShift events are ignored entirely (same effect as the old observer teardown, without detaching …
   let suppressContentShiftStick = false
 
   // ─── Older-history pagination: arm → commit → refill ─────────────────────────
-  // Task_1789505423062_0 — "the auto fetch is loaded after the user hit the max.
   interface BufferedOlderPage {
     /** Cursor this page was requested with — must still equal `messageCursor` to commit. */
     fetchedWithCursor: string | null
@@ -143,14 +136,10 @@ export function useChatPagination(deps: ChatPaginationDeps) {
   /** Last skip reason logged, so a fling inside the radius doesn't spam one line per frame. */
   let lastPrefetchSkip: string | null = null
 
-  /** How many consecutive gesture-less commits may chain before REFILL stops. A commit normally
-   * restores the anchor far below the band (so no chain), but a tall viewport / short page can leave
-   * the viewport inside the band and pull pages back-to-back. */
+  /** How many consecutive gesture-less commits may chain before REFILL stops. */
   const MAX_PREFETCH_AUTO_CHAIN = 3
 
-  /**  * Shared log context for the prefetch path — the same scroller/wrapper geometry every other scroll
-   * log carries. One helper, so the five prefetch log lines (`armed` / `committed` / `skipped` /
-   * `dropped` / `failed`) can never disagree about the geometry they report. */
+  /** Shared log context for the prefetch path — the same scroller/wrapper geometry every other scroll log carries. */
   const prefetchLogCtx = (
     reason: ScrollReason,
     caller: string,
@@ -168,9 +157,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     extra,
   })
 
-  /**  * Map REST rows into the view's `Message` shape. Shared by the initial load AND the scroll-back
-   * prefetch so a pull of older history can never drift from the initial page's wire shape (the #291
-   * lesson: two mappers for one endpoint = two shapes). */
+  /** Map REST rows into the view's `Message` shape. */
   const toChatMessages = (
     rows: Awaited<ReturnType<typeof api.getChatHistory>>['messages'] | undefined,
   ): Message[] =>
@@ -202,8 +189,6 @@ export function useChatPagination(deps: ChatPaginationDeps) {
   }
 
   // SSE is the freshest source for tool rows it has delivered in this view.
-  // Retain their ids for the component lifetime so a late REST response
-  // cannot roll a completed tool result back to its placeholder.
   let liveMessageSessionId: string | null = null
   const liveMessageIds = new Set<string>()
 
@@ -223,14 +208,10 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       (message) => liveMessageIds.has(message.id) || message.id.startsWith('streaming-'),
     )
 
-  /**  * Fetch ONE older page and measure the round trip. Network + mapping only: mutates no component
-   * state except the fetch-duration estimate. Used by the speculative ARM (buffered, never rendered
-   * directly) and by the foreground path when no buffer is armed. */
+  /** Fetch ONE older page and measure the round trip. */
   const fetchOlderPage = async (cursor: string | null): Promise<BufferedOlderPage> => {
     const startedAt = performance.now()
-    // Cache-first older page: serve from IndexedDB when it holds rows older than the pagination
-    // cursor. A hit advances the cursor to the cache page's oldest row, so the next lookup (cache or
-    // network) resumes exactly where this page ended; the commit's id-dedupe covers any overlap.
+    // Cache-first older page: serve from IndexedDB when it holds rows older than the pagination cursor.
     const beforeKey = cursor !== null ? Number(cursor) : NaN
     if (Number.isFinite(beforeKey)) {
       try {
@@ -268,8 +249,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     }
   }
 
-  /** Drop any armed / in-flight older page and invalidate late responses. Called on session switch
-   * (the two `sessionId` watchers), on an initial `loadChatHistory()` refresh, and on unmount. */
+  /** Drop any armed / in-flight older page and invalidate late responses. */
   const resetOlderPrefetch = (cause: string) => {
     const hadWork = bufferedOlderPage !== null || prefetchPromise !== null
     commitGeneration++
@@ -287,8 +267,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     }
   }
 
-  /** ARM — fetch the next older page speculatively, into the buffer. Invisible by contract: no
-   * `messages` mutation, no scrollTop write, no `lastAutoStickAt` bump, no `isLoadingMore`. */
+  /** ARM — fetch the next older page speculatively, into the buffer. */
   const armPrefetchOlder = (trigger: 'margin' | 'velocity' | 'refill') => {
     if (prefetchPromise) return
     if (!sessionId.value || isPendingSession.value) return
@@ -298,9 +277,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       try {
         const page = await fetchOlderPage(cursor)
         if (generation !== commitGeneration || page.fetchedWithCursor !== messageCursor.value) {
-          // The world moved while we were in flight (session switch, refresh,
-          // or another path advanced the cursor). Committing this page would
-          // prepend the wrong slice — drop it.
+          // The world moved while we were in flight (session switch, refresh, or another path advanced the cursor).
           logger().info({
             ...prefetchLogCtx('load-more-prefetch-dropped', 'armPrefetchOlder', {
               cause: generation !== commitGeneration ? 'generation-changed' : 'cursor-changed',
@@ -324,9 +301,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
           }),
         })
       } catch (err) {
-        // A failed speculative fetch must never block the foreground path — the
-        // user's own trigger will simply fetch normally. Back off so a dead
-        // backend is not hammered once per scroll event.
+        // A failed speculative fetch must never block the foreground path — the user's own trigger will simply fetch normally.
         prefetchFailures++
         const backoffMs = Math.min(5000, 250 * 2 ** (prefetchFailures - 1))
         prefetchBackoffUntil = performance.now() + backoffMs
@@ -373,9 +348,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     // Snapshot the at-bottom state BEFORE the preserve begins.
     const wasAtBottom = isAtBottom.value
 
-    // Preserve scroll position when prepending new (older) messages at the top.
-    // beginPreserve must be called BEFORE mutating the array so the anchor
-    // element's offsetTop is captured while it's still in the DOM.
+    // Preserve scroll position when prepending new (older) messages at the top. beginPreserve must be called BEFORE mutating the array so the anchor element's …
     const newCount = newMessages.length
     const containerBefore = virtualScrollerRef.value?.containerRef
     const beforeCtx = buildScrollContext(containerBefore, {
@@ -402,9 +375,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     messageCursor.value = page.nextCursor
     hasMoreMessages.value = page.hasMore
     await nextTick()
-    // The VirtualScroller's internal scrollTop restoration may fire
-    // a scroll event. Mark it programmatic so the next
-    // handleVirtualScroll knows.
+    // The VirtualScroller's internal scrollTop restoration may fire a scroll event.
     logger().markProgrammatic()
     await virtualScrollerRef.value?.endPreserve()
     const containerAfter = virtualScrollerRef.value?.containerRef
@@ -415,9 +386,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       virtualScrollerRef,
       wrapperRef: messagesWrapperRef,
     })
-    // The interesting deltas: did scrollTop actually return to its
-    // pre-preserve position? did scrollHeight grow by ~the new
-    // messages? did the user-visible position jump (deltaAnchor ≠ 0)?
+    // The interesting deltas: did scrollTop actually return to its pre-preserve position? did scrollHeight grow by ~the new messages? did the user-visible position …
     const scrollTopDelta = afterCtx.scrollTop - beforeCtx.scrollTop
     const scrollHeightDelta = afterCtx.scrollHeight - beforeCtx.scrollHeight
     logger().info({
@@ -442,11 +411,9 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       if (c) {
         logger().markProgrammatic()
         lastAutoStickAt.value = Date.now()
-        // Delegated to the scroller's scrollToBottom (real-bottom
-        // target — same rationale as the onContentShift stick).
+        // Delegated to the scroller's scrollToBottom (real-bottom target — same rationale as the onContentShift stick).
         virtualScrollerRef.value?.scrollToBottom('auto')
-        // Re-engage the stick explicitly: the user WAS at bottom before the prepend, and we just
-        // moved them to the new bottom on their behalf.
+        // Re-engage the stick explicitly: the user WAS at bottom before the prepend, and we just moved them to the new bottom on their behalf.
         isAtBottom.value = true
         logger().info({
           ...afterCtx,
@@ -457,9 +424,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       }
     }
 
-    // REFILL — keep exactly one page of lookahead so the NEXT scroll-back is
-    // instant too. Bounded: a commit that leaves the viewport inside the band
-    // (tall viewport / short page) would otherwise chain pages with no gesture.
+    // REFILL — keep exactly one page of lookahead so the NEXT scroll-back is instant too.
     if (page.hasMore && !isLoading.value && !isPendingSession.value) {
       if (prefetchAutoChain < MAX_PREFETCH_AUTO_CHAIN) {
         prefetchAutoChain++
@@ -503,9 +468,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       armPrefetchOlder(decision.trigger === 'velocity' ? 'velocity' : 'margin')
       return
     }
-    // Log a skip once per DISTINCT reason (a fling inside the radius fires many
-    // scroll events; one line each would drown the log), and never log the
-    // ordinary "still far from the top" case.
+    // Log a skip once per DISTINCT reason (a fling inside the radius fires many scroll events; one line each would drown the log), and never log the ordinary "still …
     const skip = decision.skip && decision.skip !== 'not-close-enough' ? decision.skip : null
     if (skip && skip !== lastPrefetchSkip) {
       logger().info({
@@ -519,13 +482,9 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     lastPrefetchSkip = skip
   }
 
-  /** The single entry point for "load older messages". Replaces the old `handleLoadMore` guard chain
-   * and is the only path that commits a page, so the guards run exactly once per attempt: - the
-   * auto-stick gate applies ONLY to `trigger === 'edge'` (the scroll trigger). */
+  /** The single entry point for "load older messages". */
   const maybeLoadOlder = async (trigger: 'edge' | 'manual') => {
-    // The open must not spend a scroll-back request: while the initial load is
-    // still placing the transcript the scroller can transiently report its edge,
-    // before the bottom/restore scroll of the first page has landed.
+    // The open must not spend a scroll-back request: while the initial load is still placing the transcript the scroller can transiently report its edge, before the …
     if (isInitialLoad && trigger === 'edge') return
     const container = virtualScrollerRef.value?.containerRef
     const ctx = buildScrollContext(container, {
@@ -536,8 +495,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       wrapperRef: messagesWrapperRef,
     })
 
-    // Each guard is its own `if` (not chained with `||`) so we can log exactly which one blocked. See
-    // `helpers/autoStickGate.ts` for the gating math.
+    // Each guard is its own `if` (not chained with `||`) so we can log exactly which one blocked.
     const now = Date.now()
     const sinceLastAutoStickMs = lastAutoStickAt.value === 0 ? -1 : now - lastAutoStickAt.value
     if (trigger === 'edge' && isAutoStickActive(lastAutoStickAt.value, now, isAtBottom.value)) {
@@ -593,17 +551,13 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       return
     }
 
-    // Synchronous claim — the buffer slot is cleared and both in-flight flags are
-    // set BEFORE any `await`, so a second caller (the positional commit racing the
-    // scroller's 200 ms backstop) hits `already-loading`/`already-committing`.
+    // Synchronous claim — the buffer slot is cleared and both in-flight flags are set BEFORE any `await`, so a second caller (the positional commit racing the …
     const buffered = claimBufferedOlderPage()
     const pending = prefetchPromise
     isLoadingMore.value = true
     isCommittingOlder = true
 
     // All guards passed — log the threshold reached and fetch.
-    // The extra includes the LLM/scroll state so the log line
-    // answers "was this a streaming-time loadMore?" in one glance.
     const effectiveThreshold = virtualScrollerRef.value?.effectiveLoadMoreThreshold ?? 200
     logger().info({
       ...ctx,
@@ -627,8 +581,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         await commitOlderPage(buffered, 'buffered')
         return
       }
-      // No buffer: if an ARM is already in flight, reuse it instead of firing a
-      // duplicate request (single-flight), then commit whatever it produced.
+      // No buffer: if an ARM is already in flight, reuse it instead of firing a duplicate request (single-flight), then commit whatever it produced.
       if (pending) {
         await pending
         const claimed = claimBufferedOlderPage()
@@ -648,9 +601,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     }
   }
 
-  /**  * Apply the session metadata piggybacked on the messages endpoint (cwd, worktree, PR binding,
-   * profile, token budgets, skills). Shared by the cached-mount delta path and the full-load path so
-   * the two can never drift. */
+  /** Apply the session metadata piggybacked on the messages endpoint (cwd, worktree, PR binding, profile, token budgets, skills). */
   const applyDeltaExtra = (extra: {
     cwd?: string
     git_worktree_cwd?: string
@@ -678,13 +629,9 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     sessionSkills.value = extra.skills || []
   }
 
-  /** One attempt at the initial load: cache-first paint, then the network page. Split out of
-   * `loadChatHistory` so the retry loop can re-run the WHOLE attempt (cache-prime included) after a
-   * failed network fetch. */
+  /** One attempt at the initial load: cache-first paint, then the network page. */
   const runHistoryLoadAttempt = async () => {
-    // Cached mount: paint stored full-fidelity raws instantly (same mapper as the network path, so no
-    // shape drift), then refresh just the tail with cursor+asc. Miss/IDB failure falls through to the
-    // full-load path below unchanged.
+    // Cached mount: paint stored full-fidelity raws instantly (same mapper as the network path, so no shape drift), then refresh just the tail with cursor+asc.
     try {
       const sid = sessionId.value
       const cached = await runSyncEffectOr(
@@ -702,17 +649,13 @@ export function useChatPagination(deps: ChatPaginationDeps) {
               .reverse(),
             liveMessagesAtPaint,
           )
-          // Older-history pagination walks BACKWARDS from the oldest row on screen, like the server's
-          // `next_cursor` (last row of a DESC page). `sync_state` holds the NEWEST row — that is the
-          // newer-direction delta cursor, and using it here aims scroll-back at the wrong end.
+          // Older-history pagination walks BACKWARDS from the oldest row on screen, like the server's `next_cursor` (last row of a DESC page).
           messageCursor.value = oldestCursor(cached)
           hasMoreMessages.value = true
         } finally {
           isInitialLoad = false
         }
-        // The cache painted rows, so the empty state is already ruled out — but
-        // the tail delta below has not answered yet, so `historyConfirmed`
-        // waits for it. A cached mount is still a "not known yet" state.
+        // The cache painted rows, so the empty state is already ruled out — but the tail delta below has not answered yet, so `historyConfirmed` waits for it.
         isLoading.value = false
         await nextTick()
         await placeInitialScroll('cached-mount')
@@ -731,16 +674,12 @@ export function useChatPagination(deps: ChatPaginationDeps) {
                 liveMessagesAtMerge,
               )
             }
-            // NOT `delta.hasMore` / `delta.nextCursor` — the tail is ASCENDING (newer) so both
-            // describe the wrong direction. Adopting them disarmed scroll-back for the whole mount
-            // (an already-cached tail answers has_more=false); `messageCursor` stays at the oldest row.
+            // NOT `delta.hasMore` / `delta.nextCursor` — the tail is ASCENDING (newer) so both describe the wrong direction.
           }
         } catch {
           // Painted cache stands; the next mount retries the tail.
         }
-        // Painted rows exist either way, so "this session is empty" is now ruled out — the empty
-        // state may be shown again if the session is later reloaded. "Painted rows" has to mean rows
-        // the transcript can actually DRAW.
+        // Painted rows exist either way, so "this session is empty" is now ruled out — the empty state may be shown again if the session is later reloaded.
         if (messageGroups.value.length > 0) {
           historyConfirmed.value = true
           setupCodeBlockCopyButtons()
@@ -752,9 +691,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       // Ignore — network path below is authoritative.
     }
 
-    // `fetchChatHistoryEffect`, not `getChatHistory`: the latter answers a failed fetch with an empty
-    // transcript, which is exactly the "this session has no messages" lie the empty state would then
-    // render.
+    // `fetchChatHistoryEffect`, not `getChatHistory`: the latter answers a failed fetch with an empty transcript, which is exactly the "this session has no messages" …
     const data = await Effect.runPromise(
       api.fetchChatHistoryEffect(
         sessionId.value,
@@ -777,9 +714,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       noteCwdMutation(prevCwd)
     }
 
-    // Attached-PR binding for the sidebar's PR-changes mode. Loaded
-    // here (mount) and re-synced by refreshWorktreeBinding() so a
-    // mid-chat attach/clear flips the panel without a reload.
+    // Attached-PR binding for the sidebar's PR-changes mode.
     if (data.pr_url !== undefined) {
       chatPrUrl.value = data.pr_url ?? ''
     }
@@ -802,25 +737,20 @@ export function useChatPagination(deps: ChatPaginationDeps) {
 
     const newMessages = toChatMessages(data.messages)
 
-    // Initial load path. Set isInitialLoad BEFORE the messages assignment so the messages-length
-    // watcher's sync callback sees the flag and skips its own scrollToBottom (which would yank the
-    // user back to the bottom right after we restore a saved position).
+    // Initial load path.
     isInitialLoad = true
     try {
       const liveMessagesAtCommit = currentLiveMessages()
       messages.value = mergeMessagesById(newMessages.slice().reverse(), liveMessagesAtCommit)
       messageCursor.value = data.next_cursor
       hasMoreMessages.value = data.has_more
-      // Write-through: persist full server rows so the next mount paints
-      // from cache. Best-effort — IDB failure keeps in-memory behavior.
+      // Write-through: persist full server rows so the next mount paints from cache.
       try {
         const sid = sessionId.value
         const allRows = (data.messages ?? []).map((m) => toChatMessage(sid, m))
         const rows = allRows.filter((row) => !liveMessageIds.has(row.id))
         await runSyncVoid(chatEngineDb.putLocal(sid, rows), 'messages.putLocal')
-        // Sync cursor must be the newest row, not the pagination cursor: the backend omits
-        // next_cursor when has_more is false (wiping the cursor to null), and on a full page it
-        // points at the oldest row (re-fetching the same page next mount).
+        // Sync cursor must be the newest row, not the pagination cursor: the backend omits next_cursor when has_more is false (wiping the cursor to null), and on a full …
         if (rows.length === allRows.length) {
           await runSyncVoid(
             chatEngineDb.setCursor(sid, newestCursor(allRows, data.next_cursor ?? null, null)),
@@ -846,8 +776,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         extra: { trigger: 'initial-load' },
       })
       await nextTick()
-      // Wait one paint frame so the browser has actually laid out the VirtualScroller items (nextTick
-      // alone only waits for Vue's DOM update, not for layout/paint).
+      // Wait one paint frame so the browser has actually laid out the VirtualScroller items (nextTick alone only waits for Vue's DOM update, not for layout/paint).
       await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
       await placeInitialScroll('initial-load', initialCtx)
@@ -857,8 +786,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     } finally {
       isInitialLoad = false
     }
-    // The server answered. Whether the answer was "0 messages" or "500", the
-    // empty state is now allowed to consider rendering.
+    // The server answered.
     historyConfirmed.value = true
 
     // NOTE — deliberately NO prefetch evaluation here.
@@ -875,8 +803,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         }),
     })
 
-  /** Initial load / refresh (the old `loadChatHistory(false)`). Wraps `runHistoryLoadAttempt` in the
-   * retry schedule, then decides what a fully-failed load means. Two invariants this owns: 1. */
+  /** Initial load / refresh (the old `loadChatHistory(false)`). */
   const loadChatHistory = async () => {
     if (!sessionId.value || isPendingSession.value) return
 
@@ -889,9 +816,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
     // "Not known yet" until an attempt completes.
     historyConfirmed.value = false
 
-    // No try/catch: `ensuring` is the finally, `tapError` is the catch, and both
-    // are typed against the error channel. See AGENTS.md, "Frontend — No
-    // `try`/`catch` in the desktop app; use Effect-TS".
+    // No try/catch: `ensuring` is the finally, `tapError` is the catch, and both are typed against the error channel.
     await runEffectExit(
       Effect.ensuring(
         Effect.tapError(fetchInitialHistoryWithRetry(runHistoryLoadAttemptEffect), (err) =>
@@ -903,8 +828,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         ),
         Effect.sync(() => {
           isLoading.value = false
-          // The network half is over — success, or every retry exhausted — so
-          // the readgate may fall through to the empty / error state.
+          // The network half is over — success, or every retry exhausted — so the readgate may fall through to the empty / error state.
           isRemoteLoadPending.value = false
         }),
       ),
@@ -913,8 +837,6 @@ export function useChatPagination(deps: ChatPaginationDeps) {
   }
 
   // ─── Scroll ──────────────────────────────────────────────────────────────────
-  /** Resolve once the VirtualScroller's height model describes the CONTENT rather than the estimate,
-   * or after `MEASURE_WAIT_TIMEOUT_MS` — whichever comes first. */
   const MEASURE_WAIT_TIMEOUT_MS = 500
   const MEASURE_POLL_MS = 16
 
@@ -928,9 +850,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
 
   const scrollToBottom = async (force = false, trigger: string = 'unspecified') => {
     await nextTick()
-    // Defense: during `beginPreserve`/`endPreserve`, the VirtualScroller is adjusting `scrollTop`
-    // itself to keep the user's view stable while older messages are prepended. An external
-    // `scrollToBottom` here fights that adjustment and produces visible jitter.
+    // Defense: during `beginPreserve`/`endPreserve`, the VirtualScroller is adjusting `scrollTop` itself to keep the user's view stable while older messages are …
     if (virtualScrollerRef.value?.isPreservingScroll) return
     if (virtualScrollerRef.value) {
       if (force || isAtBottom.value) {
@@ -942,8 +862,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
           virtualScrollerRef,
           wrapperRef: messagesWrapperRef,
         })
-        // Mark before the assignment so the resulting scroll event reads
-        // origin='programmatic' in handleVirtualScroll.
+        // Mark before the assignment so the resulting scroll event reads origin='programmatic' in handleVirtualScroll.
         logger().markProgrammatic()
         if (force) {
           logger().info({

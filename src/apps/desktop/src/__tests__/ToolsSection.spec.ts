@@ -11,9 +11,7 @@ vi.mock('../api', () => ({
 
 const mockRegistry = api.getAgentToolsRegistry as unknown as ReturnType<typeof vi.fn>
 
-/**  * Registry fixture covering: several wireframe groups, both special pills (`main-agent only`, `mode
- * floor`), built-in-default members, non-default members, and one tool missing from the static
- * group map (→ the "Other" fallback bucket). */
+/** Registry fixture covering: several wireframe groups, both special pills (`main-agent only`, `mode floor`), built-in-default members, non-default members, and … */
 const REGISTRY = [
   { name: 'command', description: 'Run a shell command' },
   { name: 'read_file', description: "Read a file's contents" },
@@ -27,8 +25,7 @@ const REGISTRY = [
   { name: 'mystery_tool', description: 'Not in the static group map' },
 ]
 
-// Built-in defaults ∩ registry: everything except add_mcp_server and
-// mystery_tool (neither is part of DEFAULT_AGENT_TOOLS / kanban floor).
+// Built-in defaults ∩ registry: everything except add_mcp_server and mystery_tool (neither is part of DEFAULT_AGENT_TOOLS / kanban floor).
 const DEFAULTS_IN_REGISTRY = [
   'command',
   'read_file',
@@ -138,8 +135,7 @@ describe('ToolsSection', () => {
     const wrapper = mountSection(null)
     await flushPromises()
 
-    // mystery_tool is off in the defaults → checking it must emit
-    // every selected name (defaults + the new one), not just the delta.
+    // mystery_tool is off in the defaults → checking it must emit every selected name (defaults + the new one), not just the delta.
     await wrapper.find('[data-testid="row-mystery_tool"] input').setValue(true)
     const emitted = wrapper.emitted('change')
     expect(emitted).toHaveLength(1)

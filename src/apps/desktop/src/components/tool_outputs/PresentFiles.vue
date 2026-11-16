@@ -82,30 +82,21 @@ import { fileDownloadUrl } from '../../api'
 
 const props = withDefaults(
   defineProps<{
-    /**      * The inner `<data>` XML from the present_files tool's `<tool>` envelope (already unwrapped by
-     * the parent's `tryUnwrapToolOutput` pipeline). Always XML — never JSON. */
+    /** The inner `<data>` XML from the present_files tool's `<tool>` envelope (already unwrapped by the parent's `tryUnwrapToolOutput` pipeline). */
     content: unknown
-    /**      * The session id — threaded into the download/preview URLs as `?session_id=` so the backend can
-     * sandbox paths to the session working directory. Falls back to `chatId` at the call site. */
+    /** The session id — threaded into the download/preview URLs as `?session_id=` so the backend can sandbox paths to the session working directory. */
     sessionId: string
-    /**      * Whether the row is already expanded in the parent chat. Defaults to expanded — presented
-     * files are the payload, not metadata. Uses withDefaults (not `?? true`): Vue coerces an absent
-     * Boolean prop to false, so `??` would never fire. */
+    /** Whether the row is already expanded in the parent chat. */
     expanded?: boolean
-    /**
-     * Session working directory (for the header's open-in-editor hint).
-     */
+    /** Session working directory (for the header's open-in-editor hint). */
     cwd?: string
-    /** The JSON-stringified tool-call arguments. Rendered collapsed via
-     * ToolParameters for parity with the other cards. */
+    /** The JSON-stringified tool-call arguments. */
     parameters?: string
   }>(),
   { expanded: true },
 )
 
-// Expanded by default: the files ARE the answer (unlike metadata cards
-// such as web_search that default collapsed). The parent may still pass
-// an explicit false to start collapsed.
+// Expanded by default: the files ARE the answer (unlike metadata cards such as web_search that default collapsed).
 const isExpanded = ref(props.expanded)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
@@ -286,9 +277,7 @@ async function fetchHtmlFor(f: ParsedPresentFile): Promise<void> {
   }
 }
 
-/** Build the HTML iframe's `srcdoc` value. Do NOT escape `<`, `>`, `&`, `"` here — Vue's `:srcdoc`
- * binding goes through setAttribute, which encodes them, and the iframe parser decodes them back
- * (same contract as PreviewContentRenderer's html branch). */
+/** Build the HTML iframe's `srcdoc` value. */
 const PRESENT_FILES_HTML_RESIZE_SOURCE = 'present-files-html-auto-resize'
 
 const themeTick = useThemeTick()
@@ -363,9 +352,7 @@ onUnmounted(() => {
   }
 })
 
-/**  * Inline full-width images decode with no intrinsic size until load, popping the card taller
- * mid-scroll. Track per-file load so the wrapper reserves space until the image arrives (error
- * counts as arrived — the img hides itself and the reserve must drop too). */
+/** Inline full-width images decode with no intrinsic size until load, popping the card taller mid-scroll. */
 const inlineImageLoaded = ref<Record<string, boolean>>({})
 const markInlineImageLoaded = (path: string): void => {
   inlineImageLoaded.value[path] = true
@@ -380,9 +367,7 @@ function maybeFetchVisibleTexts(): void {
   }
 }
 
-// Fetch visible texts when the card expands or the file list changes. Prev-value guards on update
-// instead of watchers; the per-path fetchers dedupe by path, so repeat runs are harmless. Mount
-// covers the mount-expanded case the old `immediate` watcher handled.
+// Fetch visible texts when the card expands or the file list changes.
 const prevFetchKey = ref('')
 const fetchKey = () => `${isExpanded.value ? '1' : '0'}|${files.value.map((f) => f.path).join(',')}`
 onMounted(() => {

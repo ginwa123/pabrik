@@ -1,6 +1,4 @@
-//! Exporting documents as downloads: `GET .../documents/:id/export` answers one file,
-//! `POST .../documents/export` answers one zip. Both go through `documents_export`, the same
-//! module the headless CLI uses, so a download and `pabrik headless documents export` agree.
+//! Exporting documents as downloads: `GET .../documents/:id/export` answers one file, `POST .../documents/export` answers one zip.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -23,9 +21,7 @@ fn errorResponse(
     const message: []const u8 = switch (err) {
         error.IdsRequired => "workspace_id and document_id required",
         error.NoDocuments => "document_ids must name at least one document",
-        // One message for "no such id" and "belongs to another workspace",
-        // matching the GET handler: this call must not probe another
-        // workspace's row ids.
+        // One message for "no such id" and "belongs to another workspace", matching the GET handler: this call must not probe another workspace's row ids.
         error.NotFound => "document not found",
         error.QueryFailed => "DB error",
         error.TooManyEntries => "too many documents for one archive",

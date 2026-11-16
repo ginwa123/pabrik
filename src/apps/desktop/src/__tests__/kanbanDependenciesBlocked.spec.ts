@@ -1,6 +1,4 @@
-/**
- * Blocked badge on both twins (WorkspaceItemTaskCard, KanbanTaskRow): hidden when `is_blocked` is falsy, else count + names.
- */
+/** Blocked badge on both twins (WorkspaceItemTaskCard, KanbanTaskRow): hidden when `is_blocked` is falsy, else count + names. */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

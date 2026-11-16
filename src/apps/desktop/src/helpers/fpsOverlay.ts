@@ -1,6 +1,4 @@
-/** Dev-only FPS overlay (desktop scroll-perf plan, Task 5). A tiny fixed-position chip that shows
- * rolling frames-per-second so platform-level rendering fixes (Linux gfx env pinning, macOS scheme
- * handler, Windows resize coalescing) can be MEASURED instead of guessed. */
+/** Dev-only FPS overlay (desktop scroll-perf plan, Task 5). */
 const OVERLAY_ID = 'pabrik-fps-overlay'
 
 let rafId: number | null = null

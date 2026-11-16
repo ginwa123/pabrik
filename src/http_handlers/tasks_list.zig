@@ -15,20 +15,15 @@ const DEFAULT_PAGE_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 100;
 
 /// Default sort field when the client doesn't pass `sort_by`.
-/// `updated_at` is the default because that's what the user wants
-/// to see (most recently renamed/updated task on top).
 const DEFAULT_SORT_FIELD: llm_history.TaskSortField = .updated_at;
 
 /// Default sort direction when the client doesn't pass `direction`.
-/// `desc` matches the existing "newest first" behavior.
 const DEFAULT_SORT_DIRECTION: llm_history.TaskSortDirection = .desc;
 
 pub const TasksListError = error{
     ItemIdRequired,
     QueryFailed,
-    /// `std.json.Stringify.valueAlloc` / `makeWorkspaceItemTaskListResponse`
-    /// can fail with `OutOfMemory`. Unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` / `makeWorkspaceItemTaskListResponse` can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
@@ -38,24 +33,17 @@ pub const TasksListInput = struct {
     cursor: ?[]const u8,
     sort_field: llm_history.TaskSortField,
     sort_direction: llm_history.TaskSortDirection,
-    /// Per-column pagination filter (kanban-per-column-pagination,
-    /// 2026-08-06).
+    /// Per-column pagination filter (kanban-per-column-pagination, 2026-08-06).
     column_id: ?[]const u8,
-    /// Optional case-insensitive substring filter applied at the SQL level
-    /// against `name`, `description`, `tags`. Null / empty → no filter
-    /// (matches the historical behaviour).
+    /// Optional case-insensitive substring filter applied at the SQL level against `name`, `description`, `tags`.
     q: ?[]const u8,
 };
 
 pub const TasksListResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Parse the query string into the typed input. Defaults + clamping +
-/// enum-from-string parsing all happen here. Kept as a free function so the
-/// use-case body stays focused on the DB work.
+/// Parse the query string into the typed input.
 fn parseInput(query: anytype) TasksListInput {
     const limit_str = query.get("limit") orelse "20";
     const limit_parsed = std.fmt.parseInt(u32, limit_str, 10) catch DEFAULT_PAGE_SIZE;
@@ -72,21 +60,15 @@ fn parseInput(query: anytype) TasksListInput {
     const direction_str = query.get("direction") orelse "desc";
     const sort_direction = llm_history.enumFromString(llm_history.TaskSortDirection, direction_str) catch DEFAULT_SORT_DIRECTION;
 
-    // Optional cursor — null when absent or empty. The cursor is the
-    // "<sort_value>|<id>" pair from the previous page's next_cursor.
-    // We forward it raw to the DB fn which knows how to split it.
+    // Optional cursor — null when absent or empty.
     const cursor_raw = query.get("cursor");
     const cursor: ?[]const u8 = if (cursor_raw) |c| (if (c.len == 0) null else c) else null;
 
-    // Optional q (search) — null when absent or empty. Empty string is
-    // treated identically to "no q param" so the URL ?q= (empty value)
-    // behaves the same as no q at all.
+    // Optional q (search) — null when absent or empty.
     const q_raw = query.get("q");
     const q: ?[]const u8 = if (q_raw) |q_val| (if (q_val.len == 0) null else q_val) else null;
 
-    // Optional column_id (per-column pagination, 2026-08-06). Same
-    // null-or-empty semantics as `q`: an empty `?column_id=` is
-    // identical to omitting the param.
+    // Optional column_id (per-column pagination, 2026-08-06).
     const column_id_raw = query.get("column_id");
     const column_id: ?[]const u8 = if (column_id_raw) |c| (if (c.len == 0) null else c) else null;
 
@@ -128,8 +110,6 @@ fn useCase(
     defer if (item_path.len > 0) allocator.free(item_path);
 
     // Migration 111 — ONE query for the whole page (per-task would be N+1).
-    // The edges and the per-task field arrays are freed by the defers at the
-    // end of the function, i.e. after the response JSON has copied them.
     const dep_edges = ai_mod.kanban_deps.listEdgesForItem(allocator, db, input.item_id) catch
         return error.QueryFailed;
     defer ai_mod.kanban_deps.freeEdges(allocator, dep_edges);
@@ -158,8 +138,7 @@ fn useCase(
             item_path;
         const branch = if (cwd.len == 0) "" else branches.branch(cwd);
 
-        // Migration 111 — this task's dependencies, split into "what I wait
-        // for" and "what is still in the way".
+        // Migration 111 — this task's dependencies, split into "what I wait for" and "what is still in the way".
         const dep_fields = http_response.makeTaskDependencyFields(
             allocator,
             dep_edges,
@@ -181,21 +160,14 @@ fn useCase(
             .kanban_position = task.kanban_position,
             // Migration 070 — per-task cwd override.
             .cwd = task.cwd,
-            // Auto-retry-until-stop: slice borrow from `task` (owned by
-            // WorkspaceItemTaskInfo.deinit, stays valid until the outer defer
-            // at the top of useCase runs).
+            // Auto-retry-until-stop: slice borrow from `task` (owned by WorkspaceItemTaskInfo.deinit, stays valid until the outer defer at the top of useCase runs).
             .is_auto_retry_until_stop = task.is_auto_retry_until_stop,
-            // Kanban notification icon (Migration 065 /):
-            // last_finish_reason comes from the LEFT JOIN on sessions,
+            // Kanban notification icon (Migration 065 /)
             .last_finish_reason = task.last_finish_reason,
             .needs_human_review = task.needs_human_review,
-            // Migration 067 — kanban task tags. JSON-encoded array
-            // string borrowed from WorkspaceItemTaskInfo.tags (the
-            // per-request arena reaps it on request teardown).
+            // Migration 067 — kanban task tags.
             .tags = task.tags,
-            // Media-flags change — media-presence flags only. The full
-            // base64 TEXT columns stay server-side for the lazy media
-            // endpoint; the frontend fetches them when the flag is true.
+            // Media-flags change — media-presence flags only.
             .is_have_image = task.is_have_image,
             .is_have_video = task.is_have_video,
             .git_branch = if (branch.len == 0) null else branch,
@@ -206,8 +178,7 @@ fn useCase(
         });
     }
 
-    // next_cursor: the encoded "<sort_value>|<id>" of the LAST task in this
-    // page, when has_more is true. The DB fn will decode it.
+    // next_cursor: the encoded "<sort_value>|<id>" of the LAST task in this page, when has_more is true.
     const next_cursor: ?[]const u8 = blk: {
         if (!result.has_more) break :blk null;
         if (result.tasks.len == 0) break :blk null;
@@ -218,14 +189,10 @@ fn useCase(
             .name => last.name, // name is NOT NULL in the DB schema
         };
         const v = sort_value orelse break :blk null;
-        // Encode as "<sort_value>|<id>". For DATETIME columns the
-        // value never contains '|' (the format is "YYYY-MM-DD HH:MM:SS"),
-        // so the split in the DB fn is unambiguous.
+        // Encode as "<sort_value>|<id>".
         break :blk try std.fmt.allocPrint(allocator, "{s}|{s}", .{ v, last.id });
     };
-    // `next_cursor` is a freshly-allocated slice whose bytes are COPIED into
-    // the JSON response by makeWorkspaceItemTaskListResponse, so we can free
-    // it as soon as that call returns.
+    // `next_cursor` is a freshly-allocated slice whose bytes are COPIED into the JSON response by makeWorkspaceItemTaskListResponse, so we can free it as soon as …
     defer if (next_cursor) |c| allocator.free(c);
 
     return try http_response.makeWorkspaceItemTaskListResponse(
@@ -236,9 +203,7 @@ fn useCase(
     );
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn tasksListHandler(
     ctx: gserverz.HttpContext,
@@ -282,12 +247,9 @@ pub fn tasksListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-// =====================================================================
 // Git branch resolution (kanban-task-git-branch plan, 2026-08-06)
-// =====================================================================
 
-/// Look up the parent workspace item's `path`. Used as the fallback cwd for
-/// the git_branch lookup when a task has no worktree bound.
+/// Look up the parent workspace item's `path`.
 fn fetchWorkspaceItemPath(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,

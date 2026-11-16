@@ -1,13 +1,10 @@
-/** Behavioural tests for DesignPageRow.vue.6 tests covering the row's
- * behavioral contract: 1. Renders the page name. 2. */
+/** Behavioural tests for DesignPageRow.vue.6 tests covering the row's behavioral contract: 1. */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DesignPageRow from '../components/workspace/DesignPageRow.vue'
 import type { DesignPage } from '../api'
 
-// Stub vue-router — DesignPageRow reads useRoute() via useCurrentMainView() to drive its active
-// state. Mirrors the pattern at sidebarHandleSelectTaskUrl.spec.ts:57-77. Default = empty route (no
-// active state); tests that need the active styling override per-test.
+// Stub vue-router — DesignPageRow reads useRoute() via useCurrentMainView() to drive its active state.
 const { useRouteMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
     query: {} as Record<string, string>,
@@ -79,9 +76,7 @@ describe('DesignPageRow.vue', () => {
   })
 
   it('click on × does NOT also emit selectPage (stopPropagation)', async () => {
-    // Regression: the row's button would bubble the click up to the
-    // outer <button>, firing selectPage right before deletePage —
-    // bad UX (the user sees the page flash before the empty state).
+    // Regression: the row's button would bubble the click up to the outer <button>, firing selectPage right before deletePage — bad UX (the user sees the page flash …
     const wrapper = mountRow({
       page: makePage({ id: 'page_a' }),
       isActivePage: false,
@@ -92,13 +87,9 @@ describe('DesignPageRow.vue', () => {
   })
 
   it('active page gets the violet active style; inactive does not', () => {
-    // Active state is now URL-driven (sidebar-single-active-state plan,
-    // 2026-08-06). The `isActivePage` prop is kept for backwards compat
-    // but the visual now sources from the URL.
+    // Active state is now URL-driven (sidebar-single-active-state plan, 2026-08-06).
     const page = makePage({ id: 'page_active' })
-    // Mock URL with the matching pageId — page_1 is item_1's page in
-    // the base fixture. The first mockReturnValueOnce is consumed by
-    // the active mount, the second by the inactive mount (no match).
+    // Mock URL with the matching pageId — page_1 is item_1's page in the base fixture.
     useRouteMock
       .mockReturnValueOnce({
         query: { view: 'workspace', itemId: 'item_1', pageId: 'page_active' },
@@ -120,9 +111,7 @@ describe('DesignPageRow.vue', () => {
       .toContain('var(--color-aqua)')
     expect(inactive.find('[data-testid="design-page-row-page_active"]').attributes('style') ?? '')
       .not.toContain('var(--color-aqua)')
-    // The inactive row should expose a data-active-page attribute that
-    // is undefined (Vue's `data-` binding with `undefined` value drops
-    // the attribute entirely).
+    // The inactive row should expose a data-active-page attribute that is undefined (Vue's `data-` binding with `undefined` value drops the attribute entirely).
     expect(inactive.find('[data-testid="design-page-row-page_active"]').attributes('data-active-page'))
       .toBeUndefined()
   })
@@ -135,9 +124,7 @@ describe('DesignPageRow.vue', () => {
     expect(wrapper.find('[data-testid="design-page-row-page_xxx"]').exists()).toBe(true)
   })
 
-  // ─── ⋮ menu (rename-design-pages, 2026-08-06) ────────────────────────── Verifies the three-dot
-  // menu mounted alongside the existing × delete button. The menu is the canonical surface for
-  // page-level actions (Rename + Delete); future actions (duplicate, lock, etc.) slot in here.
+  // ─── ⋮ menu (rename-design-pages, 2026-08-06) ──────────────────────────
   it('renders a ⋮ menu trigger button on the row', () => {
     const wrapper = mountRow({
       page: makePage({ id: 'page_menu' }),
@@ -167,9 +154,7 @@ describe('DesignPageRow.vue', () => {
   })
 
   it('clicking the ⋮ trigger does NOT emit selectPage (stopPropagation)', async () => {
-    // Regression: without @click.stop on the menu trigger, the outer row's click handler would also
-    // fire when the menu is opened, causing the user to navigate to the page right before the menu
-    // appears.
+    // Regression: without @click.stop on the menu trigger, the outer row's click handler would also fire when the menu is opened, causing the user to navigate to the …
     const wrapper = mountRow({
       page: makePage({ id: 'page_noop' }),
       isActivePage: false,
@@ -197,8 +182,7 @@ describe('DesignPageRow.vue', () => {
   })
 
   it('clicking the ⋮ trigger does NOT emit renamePage or deletePage (menu opens, item click emits)', async () => {
-    // The menu trigger ITSELF should not fire any row actions — only
-    // the menu items do.
+    // The menu trigger ITSELF should not fire any row actions — only the menu items do.
     const wrapper = mountRow({
       page: makePage({ id: 'page_only_menu' }),
       isActivePage: false,

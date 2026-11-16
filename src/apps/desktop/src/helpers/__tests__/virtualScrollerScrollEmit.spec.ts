@@ -4,25 +4,20 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
 
-/**  * Mount a VirtualScroller with one item. The item content doesn't matter for these tests — we're
- * driving scroll events directly on the root element. */
+/** Mount a VirtualScroller with one item. */
 function mountScroller() {
   return mount(VirtualScroller, {
     props: {
       items: [{ id: 'a' }],
       defaultItemHeight: 200,
-      // Disable lazy-load thresholds so the test doesn't have to
-      // know about the threshold logic — the loadMore debounce is
-      // off the critical path for this test.
+      // Disable lazy-load thresholds so the test doesn't have to know about the threshold logic — the loadMore debounce is off the critical path for this test.
       loadMoreThreshold: 200,
       loadMoreThresholdRatio: 0.5,
     },
   })
 }
 
-/**  * Dispatch a real scroll event on the scroller's root element with a known `scrollTop`. jsdom does
- * not lay out, so we set the layout-affecting properties explicitly so the geometry reads in
- * `onScroll` (target.clientHeight, target.scrollHeight) return realistic values. */
+/** Dispatch a real scroll event on the scroller's root element with a known `scrollTop`. jsdom does not lay out, so we set the layout-affecting properties … */
 function dispatchScroll(wrapper: ReturnType<typeof mountScroller>, scrollTop: number) {
   const el = wrapper.element as HTMLElement
   Object.defineProperty(el, 'clientHeight', { value: 800, configurable: true })
@@ -39,8 +34,7 @@ describe('VirtualScroller scroll emit', () => {
     dispatchScroll(wrapper, 0)
     await nextTick()
 
-    // `wrapper.emitted('scroll')` returns an array of arrays — one entry per emit, each entry being
-    // the args. We expect exactly one emit for the one scroll we dispatched.
+    // `wrapper.emitted('scroll')` returns an array of arrays — one entry per emit, each entry being the args.
     const emits = wrapper.emitted('scroll')
     expect(emits).toBeDefined()
     expect(emits).toHaveLength(1)
@@ -50,9 +44,7 @@ describe('VirtualScroller scroll emit', () => {
     expect(typeof args[0]).toBe('number')
     // Arg 1: direction ('up' | 'down')
     expect(['up', 'down']).toContain(args[1])
-    // Arg 2: the actual DOM element that dispatched the scroll. The browser guarantees `e.target`
-    // is non-null while the event is being dispatched — so the third emit argument must be the same
-    // HTMLElement we just scrolled.
+    // Arg 2: the actual DOM element that dispatched the scroll.
     expect(args[2]).toBe(wrapper.element)
     expect(args[2]).toBeInstanceOf(HTMLElement)
   })
@@ -70,9 +62,7 @@ describe('VirtualScroller scroll emit', () => {
     expect(emits).toBeDefined()
     expect(emits).toHaveLength(3)
 
-    // Every call's third arg must be the current element — not a stale ref, not a cached value, not
-    // null. The element identity check is the key invariant: the handler is expected to pass the
-    // LIVE element on every emit.
+    // Every call's third arg must be the current element — not a stale ref, not a cached value, not null.
     expect(emits![0]![2]).toBe(wrapper.element)
     expect(emits![1]![2]).toBe(wrapper.element)
     expect(emits![2]![2]).toBe(wrapper.element)
@@ -96,9 +86,7 @@ describe('VirtualScroller scroll emit', () => {
   })
 
   it('reports the actual scrollTop value in the first emit arg', async () => {
-    // Regression guard: if a future change to `onScroll` ever accidentally short-circuits before
-    // the `emit` call (e.g. an early return when target is null), this test catches it by asserting
-    // the value reaches the parent.
+    // Regression guard: if a future change to `onScroll` ever accidentally short-circuits before the `emit` call (e.g. an early return when target is null), this …
     const wrapper = mountScroller()
     await nextTick()
 

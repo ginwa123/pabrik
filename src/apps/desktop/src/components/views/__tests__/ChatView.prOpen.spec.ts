@@ -1,5 +1,4 @@
-/** Static contract: ChatView opens sidebar files in the in-app code browser (which also updates the
- * app URL to view=code-editor). */
+/** Static contract: ChatView opens sidebar files in the in-app code browser (which also updates the app URL to view=code-editor). */
 import { describe, expect, it } from 'vitest'
 import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 

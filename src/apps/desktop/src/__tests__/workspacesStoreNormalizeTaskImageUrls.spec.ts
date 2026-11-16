@@ -136,8 +136,7 @@ describe('normalizeTaskTags — wire image_urls → imageUrls mapping', () => {
   })
 
   it('keeps an existing camelCase imageUrls array instead of the wire string', () => {
-    // Same rule as the dates: the wire→camel bridge only fires when the camelCase field is absent, so
-    // an optimistic local array is never replaced by a stale wire value.
+    // Same rule as the dates: the wire→camel bridge only fires when the camelCase field is absent, so an optimistic local array is never replaced by a stale wire …
     const task = normalizeTaskTags({
       id: 'task_existing',
       name: 'Existing',

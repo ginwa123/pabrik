@@ -15,25 +15,20 @@ vi.mock('@/api', async (importOriginal) => {
 
 const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 
-/**  * Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server owns ranking now — the old
- * N-sequential-fetch full-tree walk via raw `fetch` is deleted). Each test sets the rows its query
- * should return. */
+/** Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server owns ranking now — the old N-sequential-fetch full-tree walk via raw `fetch` is deleted). */
 function mockSearchResults(entries: Array<{ name: string; path: string; is_directory: boolean }>) {
   searchFilesMock.mockResolvedValue({
     entries: entries.map((e) => ({ ...e, is_symlink: false })),
   })
 }
 
-/**  * Set the textarea's value and explicitly position the cursor at the end, then dispatch `input` so
- * the component's `autoResize` handler runs and updates `cursorPos`. jsdom does not always move
- * `selectionStart` to the end of a programmatically-set `.value`. */
+/** Set the textarea's value and explicitly position the cursor at the end, then dispatch `input` so the component's `autoResize` handler runs and updates … */
 async function typeInTextarea(textareaWrapper: ReturnType<VueWrapper['find']>, value: string) {
   const element = textareaWrapper.element as HTMLTextAreaElement
   await textareaWrapper.setValue(value)
   element.setSelectionRange(value.length, value.length)
   element.dispatchEvent(new Event('input', { bubbles: true }))
-  // Wait for BOTH debounces (100ms trigger-detect + 100ms server-search)
-  // plus promise flushes.
+  // Wait for BOTH debounces (100ms trigger-detect + 100ms server-search) plus promise flushes.
   await new Promise((resolve) => setTimeout(resolve, 450))
   await flushPromises()
 }
@@ -67,9 +62,7 @@ describe('FileInput — /files- autocomplete', () => {
   })
 
   it('replaces the /files- query with the picked path when Enter picks the first match', async () => {
-    // Server owns ranking now: pre-ranked rows for query "d" — `/docs`
-    // first (shortest path), `/docs/superpowers` second. The picker
-    // renders them directly (no client-side walk or re-sort).
+    // Server owns ranking now: pre-ranked rows for query "d" — `/docs` first (shortest path), `/docs/superpowers` second.
     mockSearchResults([
       { name: 'docs', path: '/home/user/docs', is_directory: true },
       { name: 'superpowers', path: '/home/user/docs/superpowers', is_directory: true },
@@ -82,15 +75,12 @@ describe('FileInput — /files- autocomplete', () => {
     // File picker should be open with at least one match.
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
 
-    // Press Enter — selectedFileIndex starts at 0, so the first match (/docs)
-    // is selected.
+    // Press Enter — selectedFileIndex starts at 0, so the first match (/docs) is selected.
     await textarea.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    // The whole `/files-<query>` span becomes the canonical `/files-<path>`
-    // token; the marker survives so the message can be stripped on submit.
-    // The path is the row's own (cwd-relative) path — `/home/user` is the cwd.
+    // The whole `/files-<query>` span becomes the canonical `/files-<path>` token; the marker survives so the message can be stripped on submit.
     expect(finalValue).toBe('/files-/docs')
   })
 
@@ -146,8 +136,7 @@ describe('FileInput — /files- autocomplete', () => {
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    // The "/doc" query is replaced by the full relative path; the
-    // `/files-` marker is preserved as a prefix.
+    // The "/doc" query is replaced by the full relative path; the `/files-` marker is preserved as a prefix.
     expect(finalValue).toBe('/files-/docs')
   })
 
@@ -269,9 +258,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     delete (navigator as unknown as { clipboard?: unknown }).clipboard
   })
 
-  /**    * Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor
-   * in the test env, so we use the closest shape and rely on the handler's duck-typing checks
-   * (kind, type, getAsFile()). */
+  /** Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor in the test env, so we use the closest shape and rely on the … */
   function fakeImageItem(
     type = 'image/png',
     withName = '',
@@ -302,9 +289,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
       files: [] as File[],
       types: items.map((i) => i.type),
     } as unknown as DataTransfer
-    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we build a synthetic event
-    // with the clipboardData property attached. The DOM-level event dispatch
-    // (Element.dispatchEvent) only requires a non-null Event with bubbles=true.
+    // jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we build a synthetic event with the clipboardData property attached.
     const ev = new Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent
     Object.defineProperty(ev, 'clipboardData', { value: dataTransfer })
     return ev
@@ -321,12 +306,10 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     ta.dispatchEvent(ev)
     await flushPromises()
 
-    // The preview list is rendered by FilePreview.vue which gives each item
-    // a `.preview-item` class.
+    // The preview list is rendered by FilePreview.vue which gives each item a `.preview-item` class.
     const previews = wrapper.findAll('.preview-item')
     expect(previews.length).toBe(1)
-    // The handler should have called preventDefault so the textarea doesn't
-    // get a multi-MB base64 string inserted.
+    // The handler should have called preventDefault so the textarea doesn't get a multi-MB base64 string inserted.
     expect(ev.defaultPrevented).toBe(true)
   })
 
@@ -389,8 +372,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     // Empty items — the WebKitGTK case.
     const ev = fakeClipboardEvent({ items: [] })
     ta.dispatchEvent(ev)
-    // The handler is async (await navigator.clipboard.read); let the
-    // microtask queue flush.
+    // The handler is async (await navigator.clipboard.read); let the microtask queue flush.
     await flushPromises()
     // Allow additional microtask ticks for the .getType() await chain.
     await new Promise((r) => setTimeout(r, 10))
@@ -444,9 +426,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     await flushPromises()
     await new Promise((r) => setTimeout(r, 10))
 
-    // The FileInput's listener must NOT have processed this paste — the
-    // clipboard.read() fallback (which would block other FileInputs' text
-    // pastes on WebKitGTK) should NOT have been called.
+    // The FileInput's listener must NOT have processed this paste — the clipboard.read() fallback (which would block other FileInputs' text pastes on WebKitGTK) …
     expect(clipboardReadMock).not.toHaveBeenCalled()
     expect(wrapper.findAll('.preview-item').length).toBe(0)
 
@@ -456,8 +436,6 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
 
   it('removes the document paste listener on unmount (no leak across mounts)', async () => {
     // Before mount: count document-level paste listeners we know about.
-    // We can't introspect the exact listener count, but we can dispatch a
-    // paste after unmount and assert the handler is gone.
     const wrapper = await mountInput()
     const clipboardReadMock = vi.fn().mockResolvedValue([])
     Object.defineProperty(navigator, 'clipboard', {
@@ -477,8 +455,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     await flushPromises()
     await new Promise((r) => setTimeout(r, 10))
 
-    // After unmount, the unmounted instance's listener shouldn't add another preview to the
-    // (now-unmounted) FileInput's DOM.
+    // After unmount, the unmounted instance's listener shouldn't add another preview to the (now-unmounted) FileInput's DOM.
     expect(clipboardReadMock).not.toHaveBeenCalled()
     expect(previewsBefore).toBe(1)
   })

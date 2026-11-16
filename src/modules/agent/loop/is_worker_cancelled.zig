@@ -75,8 +75,7 @@ test "isWorkerCancelled treats non-zero values as truthy (defensive parse)" {
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
-    // cancelled=42 — the implementation does `cancelled == 1`, so any
-    // value other than 1 returns false. Document the contract.
+    // cancelled=42 — the implementation does `cancelled == 1`, so any value other than 1 returns false.
     try s.db.exec(testing.allocator, "INSERT INTO worker (id, cancelled) VALUES ('w3', 42)", &.{});
     try testing.expect(!isWorkerCancelled(.{ .allocator = testing.allocator, .db = &s.db, .session_id = "w3" }));
 }

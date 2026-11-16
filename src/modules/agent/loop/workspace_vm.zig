@@ -1,6 +1,4 @@
-//! Whether a workspace's work runs in a microVM. `workspaces.is_vm`
-//! (Migration 115) records it per workspace, and the guest routes ask it
-//! before they ask the manager for a Firecracker.
+//! Whether a workspace's work runs in a microVM.
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -17,16 +15,12 @@ pub fn creationIsVm(mode: runtime_mode.Mode) bool {
     return mode == .saas;
 }
 
-/// The effective answer for a row's flag: a workspace runs in a microVM only
-/// when the server is in saas mode, because that is the only mode with a
-/// Firecracker at all.
+/// The effective answer for a row's flag: a workspace runs in a microVM only when the server is in saas mode, because that is the only mode with a Firecracker at …
 pub fn runsInVm(mode: runtime_mode.Mode, stored_is_vm: bool) bool {
     return mode == .saas and stored_is_vm;
 }
 
-/// The `is_vm` flag of a workspace row. A row that is not there, or a schema
-/// without the column, answers true: before Migration 115 every saas
-/// workspace was a VM workspace.
+/// The `is_vm` flag of a workspace row.
 pub fn storedIsVm(allocator: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) bool {
     var q = db.query(allocator, "SELECT is_vm FROM workspaces WHERE id = ?", &[_][]const u8{workspace_id}) catch return true;
     defer q.deinit();
@@ -37,17 +31,14 @@ pub fn storedIsVm(allocator: std.mem.Allocator, db: *database.Db, workspace_id: 
     return r.values[0][0] == '1';
 }
 
-/// Where an MCP server process runs. Derived from the runtime mode, never
-/// from configuration: `--saas` means this deployment has a microVM per
-/// workspace, so every MCP server runs inside it.
+/// Where an MCP server process runs.
 pub const McpPlacement = enum { host, guest };
 
 pub fn mcpPlacement(mode: runtime_mode.Mode) McpPlacement {
     return if (mode == .saas) .guest else .host;
 }
 
-/// The placement this process uses now, with an operator kill switch. The
-/// switch exists for rollout only and is not user configuration.
+/// The placement this process uses now, with an operator kill switch.
 pub fn mcpPlacementNow(environment: ?*const std.process.Environ.Map) McpPlacement {
     if (environment) |env| {
         if (env.get(mcp_guest_env)) |value| {
@@ -64,9 +55,7 @@ fn switchPinsHost(value: []const u8) bool {
 pub const mcp_guest_env = "PABRIK_MCP_GUEST";
 const mcp_guest_env_z: [:0]const u8 = mcp_guest_env;
 
-/// The placement this PROCESS uses now: the mode, unless the operator's
-/// rollout switch pins MCP to the host. Read straight from the environment, so
-/// a tool call needs no environment map plumbed to it.
+/// The placement this PROCESS uses now: the mode, unless the operator's rollout switch pins MCP to the host.
 pub fn mcpPlacementForProcess() McpPlacement {
     if (comptime builtin.os.tag != .windows) {
         if (std.c.getenv(mcp_guest_env_z)) |value| {
@@ -125,8 +114,7 @@ test "a schema without the column keeps the pre-Migration-115 behaviour" {
     try test_db.openMemory(&db, threaded.io());
     try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &[_][]const u8{});
 
-    // Every workspace of a saas deployment was a VM workspace before the
-    // column existed, so a missing column must not refuse them.
+    // Every workspace of a saas deployment was a VM workspace before the column existed, so a missing column must not refuse them.
     try testing.expect(storedIsVm(alloc, &db, "ws_1"));
 }
 

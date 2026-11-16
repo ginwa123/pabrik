@@ -60,7 +60,6 @@ const sourceColumns = ref<Array<{ id: string; name: string; description: string 
 const sourceColumnsLoading = ref<boolean>(false)
 
 // ─── Picker data ──────────────────────────────────────────────────────
-// All kanbans in the active workspace EXCEPT the target.
 const availableSources = computed<WorkspaceItem[]>(() => {
   return workspacesStore.workspaces
     .flatMap((ws) => (ws.id === props.workspaceId ? ws.items : []))
@@ -135,9 +134,7 @@ const selectSource = (id: string) => {
 }
 
 const onDocumentClick = (e: MouseEvent) => {
-  // Close the dropdown on outside click. We check via composedPath
-  // because the dropdown is teleported (well, rendered inline here
-  // but with absolute positioning over the page).
+  // Close the dropdown on outside click.
   const target = e.target as HTMLElement | null
   if (!target) return
   if (!target.closest('[data-copy-kanban-spec-picker]')) {
@@ -145,9 +142,7 @@ const onDocumentClick = (e: MouseEvent) => {
   }
 }
 
-// ─── Lifecycle ──────────────────────────────────────────────────────── Reset + preselect on every
-// open (open-sync guard below) and detach the outside-click listener after close (Transition
-// after-leave). onBeforeUnmount below remains as the unmount safety net.
+// ─── Lifecycle ────────────────────────────────────────────────────────
 const handleOpen = async () => {
   sourceItemId.value = ''
   mode.value = 'replace'
@@ -169,9 +164,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

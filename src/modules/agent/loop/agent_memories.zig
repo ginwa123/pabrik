@@ -1,6 +1,4 @@
 //! Storage layer for the `save_memory` + `load_memory` agent tools.
-//! Append-only: every `saveMemory` call inserts a NEW row with a fresh
-//! `mem_<16-hex>` id and `CURRENT_TIMESTAMP` timestamps.
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -11,23 +9,18 @@ const dialect = @import("pabrikcore").dialect;
 const migration = @import("../../../migrations/migration.zig");
 const llm_history = @import("llm_history.zig");
 
-/// One row in `agent_memories`. All string fields are allocator-owned and
-/// must be freed by the caller — use `freeMemoryRow` for a single row or
-/// `freeMemoryRows` for a slice.
+/// One row in `agent_memories`.
 pub const MemoryRow = struct {
     id: []const u8,
     content: []const u8,
     tags: []const u8,
-    /// Owning workspace (Migration 095). `''` = the "no workspace"
-    /// bucket. The exec layer echoes this back to the LLM so a scoped
-    /// tool result is never mistaken for a global one.
+    /// Owning workspace (Migration 095).
     workspace_id: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
 };
 
-/// One FTS5 search hit. `snippet` is the FTS5 10-token preview with `[match]`
-/// markers around matched words.
+/// One FTS5 search hit.
 pub const MemoryHit = struct {
     id: []const u8,
     tags: []const u8,
@@ -45,28 +38,20 @@ pub const MemoryHit = struct {
     }
 };
 
-/// Arguments for `saveMemory`. Append-only: the caller supplies content
-/// + tags; the id and both timestamps are always generated fresh.
+/// Arguments for `saveMemory`.
 pub const SaveMemoryArgs = struct {
     /// The note body. 1 KiB – 1 MiB. Empty string → `error.InvalidContent`.
     content: []const u8,
-    /// Optional tags. Each tag is a non-empty string. Stored as
-    /// `||`-joined (matches the project's `tags` / `image_urls` convention
-    /// — see Migration 067 / 069).
+    /// Optional tags.
     tags: []const []const u8,
-    /// Owning workspace (Migration 095). Empty string = the "no
-    /// workspace" bucket, written via the column DEFAULT so an empty
-    /// bind never lands as SQL NULL.
+    /// Owning workspace (Migration 095).
     workspace_id: []const u8 = "",
 };
 
-/// Hard cap on the size of a single memory. 1 MiB is well above any
-/// plausible note ("the user's preferred model is X" is ~50 bytes) and
-/// prevents a runaway agent from filling the DB.
+/// Hard cap on the size of a single memory. 1 MiB is well above any plausible note ("the user's preferred model is X" is ~50 bytes) and prevents a runaway agent …
 pub const MAX_CONTENT_BYTES: usize = 1 << 20; // 1 MiB
 
-/// Save a memory. ALWAYS inserts a new row with a fresh `mem_<16-hex>` id and
-/// `CURRENT_TIMESTAMP` for both `created_at` and `updated_at`.
+/// Save a memory.
 pub fn saveMemory(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -79,8 +64,7 @@ pub fn saveMemory(
     const id = try generateMemoryId(allocator);
     defer allocator.free(id);
 
-    // Plain INSERT. The `agent_memories_ai` trigger keeps the FTS5 index in
-    // sync.
+    // Plain INSERT.
     const tags_str: ?[]u8 = if (args.tags.len == 0) null else try joinTags(allocator, args.tags);
     defer if (tags_str) |t| allocator.free(t);
 
@@ -110,8 +94,6 @@ pub fn saveMemory(
     try db.exec(allocator, insert_sql.items, binds.items);
 
     // Read the row back so the caller sees the canonical timestamps.
-    // Scoped to the workspace we just stamped, so this read is the same
-    // read a `load_memory {id}` from that workspace would perform.
     const row = (try getMemoryById(allocator, db, id, args.workspace_id)) orelse return error.RowNotFoundAfterInsert;
     return row;
 }
@@ -158,15 +140,13 @@ pub fn freeMemoryRow(allocator: std.mem.Allocator, row: MemoryRow) void {
     if (row.updated_at.len > 0) allocator.free(row.updated_at);
 }
 
-/// Free a slice of MemoryRow. Each row's strings are freed by
-/// `freeMemoryRow`; the slice itself is freed last.
+/// Free a slice of MemoryRow.
 pub fn freeMemoryRows(allocator: std.mem.Allocator, rows: []MemoryRow) void {
     for (rows) |row| freeMemoryRow(allocator, row);
     allocator.free(rows);
 }
 
-/// Free a slice of MemoryHit. Each hit's strings are freed by
-/// `MemoryHit.deinit`; the slice itself is freed last.
+/// Free a slice of MemoryHit.
 pub fn freeMemoryHits(allocator: std.mem.Allocator, hits: []MemoryHit) void {
     for (hits) |h| {
         var copy = h;
@@ -179,22 +159,17 @@ pub fn freeMemoryHits(allocator: std.mem.Allocator, hits: []MemoryHit) void {
 pub const LoadOptions = struct {
     /// FTS5 phrase search. Must be non-empty.
     query: []const u8,
-    /// AND filter: every tag must be present in the row's tags
-    /// (substring match — `LIKE '%tag%'`). Empty array = no filter.
+    /// AND filter: every tag must be present in the row's tags (substring match — `LIKE '%tag%'`).
     tags: []const []const u8,
-    /// Max rows to return. Caller caps at a sane upper bound (50 in
-    /// the tool layer).
+    /// Max rows to return.
     limit: u32,
-    /// Skip the first N rows of the ranked result set. 0 = start from
-    /// the top.
+    /// Skip the first N rows of the ranked result set. 0 = start from the top.
     offset: u32,
     /// Owning workspace (Migration 095).
     workspace_id: []const u8,
 };
 
-/// FTS5 phrase search over `agent_memories_fts`. Returns ranked hits with
-/// `snippet(..., 0, '[', ']', '…', 10)` (10-token window with `[match]`
-/// markers around matches).
+/// FTS5 phrase search over `agent_memories_fts`.
 pub fn loadMemoriesByFts(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -205,17 +180,14 @@ pub fn loadMemoriesByFts(
     // Sanitize the query — same tokenizer the workspace history search uses.
     const sanitized_query = try llm_history.searchQueryText(allocator, opts.query);
     defer allocator.free(sanitized_query);
-    // Empty after sanitization (query was all FTS5 operators) — bail
-    // before FTS5 sees `MATCH ''` and throws "empty query".
+    // Empty after sanitization (query was all FTS5 operators) — bail before FTS5 sees `MATCH ''` and throws "empty query".
     if (sanitized_query.len == 0) return allocator.alloc(MemoryHit, 0);
 
     // Build the SQL.
     var sql: std.ArrayList(u8) = .empty;
     defer sql.deinit(allocator);
 
-    // The subquery is the only engine-specific part: sqlite reads the FTS5
-    // index, postgres ranks `to_tsvector` and headlines it. Both wrap it
-    // because sqlite's virtual tables reject `COUNT(*) OVER ()` directly.
+    // The subquery is the only engine-specific part: sqlite reads the FTS5 index, postgres ranks `to_tsvector` and headlines it.
     if (dialect.is_postgres) {
         try sql.appendSlice(allocator,
             \\SELECT
@@ -264,9 +236,7 @@ pub fn loadMemoriesByFts(
         binds.deinit(allocator);
     }
     try binds.append(allocator, sanitized_query);
-    // The workspace scope sits INSIDE the subquery, not in the outer wrapper:
-    // `COUNT(*) OVER ()` is evaluated over the subquery's rows, so a filter
-    // applied outside would report the GLOBAL match count next to a
+    // The workspace scope sits INSIDE the subquery, not in the outer wrapper
     try binds.append(allocator, opts.workspace_id);
 
     // AND-filter by tags. Each tag adds a `LIKE '%tag%'` clause to the WHERE.
@@ -274,8 +244,6 @@ pub fn loadMemoriesByFts(
         if (tag.len == 0) continue;
         try sql.appendSlice(allocator, " AND m.tags LIKE ?");
         // The pattern is heap-owned — free AFTER `db.query` reads it.
-        // If we `defer free` inside this loop iteration, the defer
-        // fires before `db.query` runs and the bind slice dangles.
         const pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{tag});
         try tag_patterns.append(allocator, pattern);
         try binds.append(allocator, pattern);
@@ -321,15 +289,13 @@ pub fn loadMemoriesByFts(
 /// Options for `listMemories`.
 pub const ListOptions = struct {
     workspace_id: []const u8,
-    /// Case-insensitive substring over the body and the tags. Empty = no
-    /// filter.
+    /// Case-insensitive substring over the body and the tags.
     query: []const u8 = "",
     limit: u32 = 50,
     offset: u32 = 0,
 };
 
-/// One page of `listMemories`. `total_count` is the number of rows the
-/// workspace holds, not the number in `rows`.
+/// One page of `listMemories`.
 pub const MemoryPage = struct {
     rows: []MemoryRow,
     total_count: u32,
@@ -339,8 +305,7 @@ pub fn freeMemoryPage(allocator: std.mem.Allocator, page: MemoryPage) void {
     freeMemoryRows(allocator, page.rows);
 }
 
-/// Every memory the workspace holds, newest first. Unlike `loadMemoriesByFts`
-/// this needs no query — it is the browse list behind the settings page.
+/// Every memory the workspace holds, newest first.
 pub fn listMemories(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -393,8 +358,7 @@ pub fn listMemories(
     return .{ .rows = try rows.toOwnedSlice(allocator), .total_count = total_count };
 }
 
-/// Remove one memory from one workspace. Returns false when the id is not in
-/// that workspace, so a caller can answer 404 without a second read.
+/// Remove one memory from one workspace.
 pub fn deleteMemory(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -416,9 +380,7 @@ pub fn deleteMemory(
     return true;
 }
 
-// ---------------------------------------------------------------------------
 // Internal helpers
-// ---------------------------------------------------------------------------
 
 /// Generate a fresh `mem_<16-hex>` id.
 fn generateMemoryId(allocator: std.mem.Allocator) ![]u8 {
@@ -435,13 +397,10 @@ fn generateMemoryId(allocator: std.mem.Allocator) ![]u8 {
         },
         .macos, .ios, .tvos, .watchos => {
             // arc4random_buf is declared in std.c private on Apple targets.
-            // No loop needed — it always fills in one call.
             std.c.arc4random_buf(&bytes, bytes.len);
         },
         .windows => {
             // BCrypt.dll → BCRYPT_USE_SYSTEM_PREFERRED_RNG (0x00000002).
-            // The docs guarantee it is suitable for cryptographic use and is
-            // seeded from the OS entropy pool at boot.
             const status = bcrypt.BCryptGenRandom(
                 null,
                 &bytes,
@@ -467,8 +426,7 @@ fn generateMemoryId(allocator: std.mem.Allocator) ![]u8 {
     return out;
 }
 
-/// Join a slice of tags into a `||`-delimited string. Empty tags are
-/// skipped (defensive — the tool layer should already filter).
+/// Join a slice of tags into a `||`-delimited string.
 fn joinTags(allocator: std.mem.Allocator, tags: []const []const u8) ![]u8 {
     var total: usize = 0;
     for (tags) |t| {
@@ -503,9 +461,7 @@ const bcrypt = struct {
     ) callconv(.c) c_long;
 };
 
-// ---------------------------------------------------------------------------
 // Inline tests
-// ---------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -556,7 +512,6 @@ test "joinTags joins with || and skips empty tags" {
 }
 
 // ─── Inline tests (formerly agent_memories_test.zig) ─────────────────────
-// Behavioural tests for saveMemory / loadMemoriesByFts / getMemoryById.
 
 const TestCtx = struct {
     db: database.Db,
@@ -623,8 +578,7 @@ test "saveMemory: appends a new row on every call (never overwrites)" {
     });
     defer freeMemoryRow(alloc, first);
 
-    // Saving the same content again appends a SECOND row (append-only:
-    // corrections supersede by recency, they never replace in place).
+    // Saving the same content again appends a SECOND row (append-only
     const second = try saveMemory(alloc, &ctx.db, .{
         .content = "original content",
         .tags = &.{"preferences"},
@@ -718,8 +672,7 @@ test "loadMemoriesByFts: returns ranked hits with snippets" {
     try testing.expectEqual(@as(usize, 2), hits.len);
     try testing.expectEqual(@as(u32, 2), hits[0].total_count);
 
-    // Every hit has a non-empty snippet that contains [match] markers
-    // (the FTS5 snippet() convention).
+    // Every hit has a non-empty snippet that contains [match] markers (the FTS5 snippet() convention).
     for (hits) |h| {
         try testing.expect(h.snippet.len > 0);
         try testing.expect(std.mem.indexOf(u8, h.snippet, "[") != null);
@@ -749,9 +702,7 @@ test "loadMemoriesByFts: AND-filters by tags" {
     });
     defer freeMemoryRow(alloc, row3);
 
-    // Search for "context" + filter by tags=["project"] → should return
-    // row2 + row3 (both have "project" tag) but NOT row1
-    // (only has "preferences" + "user").
+    // Search for "context" + filter by tags=["project"] → should return row2 + row3 (both have "project" tag) but NOT row1 (only has "preferences" + "user").
     const hits = try loadMemoriesByFts(alloc, &ctx.db, .{
         .query = "context",
         .tags = &.{"project"},
@@ -848,9 +799,7 @@ test "loadMemoriesByFts: paginates via limit + offset and reports total_count" {
         try testing.expectEqual(@as(u32, 15), hits[0].total_count);
     }
 
-    // Page 3: limit=10 offset=20 → 0 rows, total=15 reported elsewhere. (We
-    // can't read hits[0].total_count when hits.len==0 — would be an
-    // out-of-bounds access.
+    // Page 3: limit=10 offset=20 → 0 rows, total=15 reported elsewhere.
     {
         const hits = try loadMemoriesByFts(alloc, &ctx.db, .{
             .query = "match",
@@ -908,9 +857,7 @@ test "saveMemory: stamps workspace_id, and an empty one lands in the '' bucket" 
     defer freeMemoryRow(alloc, scoped);
     try testing.expectEqualStrings("ws_alpha", scoped.workspace_id);
 
-    // Empty workspace_id must NOT become SQL NULL — the column is
-    // NOT NULL, and binding a zero-length slice lands as NULL. It goes
-    // in through the column DEFAULT instead.
+    // Empty workspace_id must NOT become SQL NULL — the column is NOT NULL, and binding a zero-length slice lands as NULL.
     const unscoped = try saveMemory(alloc, &ctx.db, .{
         .content = "workspace-less note",
         .tags = &.{"test"},
@@ -918,8 +865,7 @@ test "saveMemory: stamps workspace_id, and an empty one lands in the '' bucket" 
     defer freeMemoryRow(alloc, unscoped);
     try testing.expectEqualStrings("", unscoped.workspace_id);
 
-    // `rowid` is sqlite's; the question is what each row's workspace_id IS, so
-    // ask per row instead of relying on insertion order.
+    // `rowid` is sqlite's; the question is what each row's workspace_id IS, so ask per row instead of relying on insertion order.
     var q = try ctx.db.query(alloc,
         \\SELECT id, workspace_id FROM agent_memories WHERE id IN (?, ?)
     , &.{ scoped.id, unscoped.id });
@@ -947,7 +893,6 @@ test "loadMemoriesByFts: never returns another workspace's rows" {
     defer ctx.db.deinit();
 
     // Two workspaces each hold a note matching the SAME query term.
-    // Before Migration 095 both came back from either workspace.
     const alpha = try saveMemory(alloc, &ctx.db, .{
         .content = "deployment uses rsync for releases",
         .tags = &.{"ops"},
@@ -977,9 +922,7 @@ test "loadMemoriesByFts: never returns another workspace's rows" {
     }
     try testing.expectEqual(@as(usize, 1), alpha_hits.len);
     try testing.expectEqualStrings(alpha.id, alpha_hits[0].id);
-    // total_count must be the SCOPED count. If the filter sat outside
-    // the subquery this would read 2 and the agent would page with an
-    // offset derived from a row it can never see.
+    // total_count must be the SCOPED count.
     try testing.expectEqual(@as(u32, 1), alpha_hits[0].total_count);
 
     const beta_hits = try loadMemoriesByFts(alloc, &ctx.db, .{
@@ -999,8 +942,7 @@ test "loadMemoriesByFts: never returns another workspace's rows" {
     try testing.expectEqual(@as(usize, 1), beta_hits.len);
     try testing.expectEqualStrings(beta.id, beta_hits[0].id);
 
-    // A workspace with no rows of its own sees nothing, even though the
-    // term matches two rows globally.
+    // A workspace with no rows of its own sees nothing, even though the term matches two rows globally.
     const gamma_hits = try loadMemoriesByFts(alloc, &ctx.db, .{
         .query = "deployment",
         .tags = &.{},
@@ -1030,9 +972,7 @@ test "getMemoryById: a row owned by another workspace is indistinguishable from 
     defer freeMemoryRow(alloc, own);
     try testing.expectEqualStrings("alpha-only secret note body", own.content);
 
-    // Another workspace gets null — NOT the 1 MiB body. The by-id path
-    // is the one that would leak most (full content, no snippet cap), so
-    // it is the one that must be scoped.
+    // Another workspace gets null — NOT the 1 MiB body.
     const stolen = try getMemoryById(alloc, &ctx.db, alpha.id, "ws_beta");
     try testing.expect(stolen == null);
 

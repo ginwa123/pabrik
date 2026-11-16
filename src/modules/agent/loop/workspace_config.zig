@@ -1,5 +1,4 @@
-//! The per-workspace config OVERLAY: how a workspace's `workspace_settings`
-//! row is combined with the user-level config.
+//! The per-workspace config OVERLAY: how a workspace's `workspace_settings` row is combined with the user-level config.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,8 +6,7 @@ const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
-/// Merge `overlay_json` over `base_json`, returning a newly allocated JSON
-/// object text.
+/// Merge `overlay_json` over `base_json`, returning a newly allocated JSON object text.
 pub fn overlayJson(
     allocator: std.mem.Allocator,
     base_json: []const u8,
@@ -47,8 +45,7 @@ pub fn overlayJson(
     return out.toOwnedSlice(allocator);
 }
 
-/// The explicit error set of the `appendMergedObject`/`appendMergedValue`
-/// pair.
+/// The explicit error set of the `appendMergedObject`/`appendMergedValue` pair.
 const AppendError = error{OutOfMemory};
 
 /// Write `{ base keys (overlay-merged where present) , overlay-only keys }`.
@@ -118,8 +115,7 @@ fn appendValueJson(
     try out.appendSlice(allocator, text);
 }
 
-/// An object KEY needs the same escaping a string value does - a profile
-/// named `my "prod" key` must not be able to produce invalid JSON.
+/// An object KEY needs the same escaping a string value does - a profile named `my "prod" key` must not be able to produce invalid JSON.
 fn appendKeyJson(
     allocator: std.mem.Allocator,
     out: *std.ArrayList(u8),
@@ -130,37 +126,27 @@ fn appendKeyJson(
 
 /// The config keys that MOVED to workspace scope.
 pub const ScopedKey = struct {
-    /// The spelling `LlmConfigJson` parses out of config.json - the one the
-    /// overlay MUST use, because the overlay is merged into that same text
-    /// and then handed to `LlmConfig.initFromJsonText`.
+    /// The spelling `LlmConfigJson` parses out of config.json - the one the overlay MUST use, because the overlay is merged into that same text and then handed to …
     disk: []const u8,
     /// The spelling the HTTP wire uses, when it differs.
     wire: []const u8 = "",
     /// Upper bound for an integer value, applied while the overlay is written.
-    /// The user-scope PUT clamps the same field (`pabrik_config_put.zig`); a
-    /// workspace body must not be able to store a value that path would refuse.
     max: ?u32 = null,
 };
 
 pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
-    // The agents map keeps its old spelling on BOTH sides: `profiles_models`
-    // on disk is what every existing config.json holds, and `profiles` is what
-    // the HTTP clients already speak. The concept is an AGENT (see `LlmAgent`).
+    // The agents map keeps its old spelling on BOTH sides: `profiles_models` on disk is what every existing config.json holds, and `profiles` is what the HTTP …
     .{ .disk = "profiles_models", .wire = "profiles" },
     .{ .disk = "active_profile" },
     .{ .disk = "mcp_servers" },
     .{ .disk = "tools" },
     .{ .disk = "skill_evals" },
     .{ .disk = "web_search" },
-    // Retry backoff is a property of the run, not of the account: two
-    // workspaces can want different patience against the same provider.
+    // Retry backoff is a property of the run, not of the account: two workspaces can want different patience against the same provider.
     .{ .disk = "retry_delay_ms", .max = 60_000 },
-    // One model call's deadline is a property of the run too: a workspace
-    // that asks for long design turns needs more patience than a chat one.
+    // One model call's deadline is a property of the run too: a workspace that asks for long design turns needs more patience than a chat one.
     .{ .disk = "llm_read_timeout_ms", .max = 1_800_000 },
-    // Whether the agent may compact its own context is a workspace policy:
-    // the same account runs a throwaway chat and a long refactor, and only the
-    // second can afford the agent deciding to compress.
+    // Whether the agent may compact its own context is a workspace policy
     .{ .disk = "agent_auto_compaction" },
 };
 
@@ -171,8 +157,7 @@ fn scopedValue(obj: std.json.ObjectMap, key: ScopedKey) ?std.json.Value {
     return null;
 }
 
-/// `value` with the key's `max` applied to an integer. A negative integer is
-/// left for the parser to reject, so this never has to decide what one means.
+/// `value` with the key's `max` applied to an integer.
 fn clampedValue(key: ScopedKey, value: std.json.Value) std.json.Value {
     const max = key.max orelse return value;
     return switch (value) {
@@ -203,9 +188,7 @@ pub fn workspaceScopedOverlay(
     var first = true;
     for (WORKSPACE_SCOPED_KEYS) |key| {
         const value = scopedValue(obj, key) orelse continue;
-        // A null value carries no override - copying `"tools": null` into the
-        // overlay would say "this workspace overrides tools" and show an
-        // Overridden pill over the user's own list.
+        // A null value carries no override - copying `"tools": null` into the overlay would say "this workspace overrides tools" and show an Overridden pill over the …
         if (value == .null) continue;
         if (!first) try out.append(allocator, ',');
         first = false;
@@ -226,9 +209,7 @@ fn isWorkspaceScopedKey(key: []const u8) bool {
     return false;
 }
 
-/// The user-level document minus the workspace-scoped keys: everything a
-/// workspace still shares once its own row owns profiles, MCP servers, tools,
-/// skill evals, web search and the retry backoff.
+/// The user-level document minus the workspace-scoped keys: everything a workspace still shares once its own row owns profiles, MCP servers, tools, skill evals …
 pub fn withoutScopedKeys(allocator: std.mem.Allocator, base_json: []const u8) ![]u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, base_json, .{}) catch
         return allocator.dupe(u8, "{}");
@@ -257,8 +238,7 @@ pub fn withoutScopedKeys(allocator: std.mem.Allocator, base_json: []const u8) ![
 
 const settings_store = @import("workspace_settings_store.zig");
 
-/// The user-level config TEXT that a workspace overlay is layered over. *
-/// `--auth` ON -> `users.config_json` for `owner`.
+/// The user-level config TEXT that a workspace overlay is layered over.
 pub fn baseConfigText(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -272,8 +252,7 @@ pub fn baseConfigText(
     }
 
     const env = environment orelse return null;
-    // `getDefaultConfigPath` only READS the map, but its parameter is a
-    // mutable pointer. Same cast the config handlers use.
+    // `getDefaultConfigPath` only READS the map, but its parameter is a mutable pointer.
     const config_path = pabrikcore.config.getDefaultConfigPath(allocator, @constCast(env)) catch return null;
     defer allocator.free(config_path);
 
@@ -285,9 +264,7 @@ pub fn baseConfigText(
     return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
 }
 
-/// `baseConfigText` minus the workspace-scoped keys: a workspace owns those
-/// through its own row and inherits only the rest (General) from the user
-/// document.
+/// `baseConfigText` minus the workspace-scoped keys: a workspace owns those through its own row and inherits only the rest (General) from the user document.
 pub fn scopedBaseConfigText(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -302,12 +279,10 @@ pub fn scopedBaseConfigText(
     return stripped;
 }
 
-/// The overlay key that records profile names this workspace removed. It is
-/// bookkeeping, not config: it is never merged into a config document.
+/// The overlay key that records profile names this workspace removed.
 pub const removed_profiles_key = "removed_profiles";
 
-/// `overlay_json` with `name` recorded as removed from this workspace, so the
-/// user document cannot hand the profile back over a later read.
+/// `overlay_json` with `name` recorded as removed from this workspace, so the user document cannot hand the profile back over a later read.
 pub fn withRemovedProfile(
     allocator: std.mem.Allocator,
     overlay_json: []const u8,
@@ -355,9 +330,7 @@ pub fn withRemovedProfile(
     return out.toOwnedSlice(allocator);
 }
 
-/// The scoped settings a read layers over `scopedBaseConfigText`: the
-/// workspace's OWN row and nothing else. No row (or a cleared one) means no
-/// scoped settings - which is what makes a brand-new workspace start empty.
+/// The scoped settings a read layers over `scopedBaseConfigText`: the workspace's OWN row and nothing else.
 pub fn workspaceOverlay(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -367,17 +340,14 @@ pub fn workspaceOverlay(
 ) ?[]u8 {
     if (workspace_id.len == 0) return null;
     const key = settings_store.ownerKey(auth_enabled, owner);
-    // A row that cannot be opened is reported, never silently rendered as "this
-    // workspace inherits everything" - the two states need different remedies.
+    // A row that cannot be opened is reported, never silently rendered as "this workspace inherits everything" - the two states need different remedies.
     return settings_store.loadRaw(allocator, db, key, workspace_id) catch |err| {
         std.log.warn("workspace config: cannot unseal the overlay for {s}/{s} ({s})", .{ key, workspace_id, @errorName(err) });
         return null;
     };
 }
 
-// ===================================================================== Tests
-// ===================================================================== Every
-// assertion re-PARSES the merged text and reads a value out of it, rather
+// ===================================================================== Tests ===================================================================== Every …
 
 const testing = std.testing;
 
@@ -410,8 +380,7 @@ test "an array is REPLACED, so a workspace can narrow the tool list" {
     var parsed = try parse(alloc, merged);
     defer parsed.deinit();
     const tools = parsed.value.object.get("tools").?.array;
-    // The positive control: the base list really had three entries, so a
-    // length of 1 below is a replacement and not a no-op on an empty base.
+    // The positive control: the base list really had three entries, so a length of 1 below is a replacement and not a no-op on an empty base.
     try testing.expectEqual(@as(usize, 1), tools.items.len);
     try testing.expectEqualStrings("read_file", tools.items[0].string);
 }
@@ -431,8 +400,7 @@ test "objects DEEP-merge, so overriding one profile field keeps its api_key" {
 
     const claude = obj.get("profiles").?.object.get("claude").?.object;
     try testing.expectEqualStrings("sonnet", claude.get("model").?.string);
-    // The credential the workspace never mentioned. "Last write wins" would
-    // have dropped it and broken every run in this workspace.
+    // The credential the workspace never mentioned.
     try testing.expectEqualStrings("sk-secret", claude.get("api_key").?.string);
     // A profile the overlay never mentioned at all.
     try testing.expectEqualStrings("gpt-4o", obj.get("profiles").?.object.get("other").?.object.get("model").?.string);
@@ -499,9 +467,7 @@ test "an empty base is treated as an empty object, so the overlay still applies"
 
 test "a malformed BASE degrades to the malformed text rather than to invalid JSON" {
     const alloc = testing.allocator;
-    // Nothing sensible can be merged into a broken base; handing the caller a
-    // copy of what it passed is the only honest answer, and it keeps this
-    // function's "never fails a turn" contract.
+    // Nothing sensible can be merged into a broken base; handing the caller a copy of what it passed is the only honest answer, and it keeps this function's "never …
     const merged = try overlayJson(alloc, "{oops", "{\"active_profile\":\"claude\"}");
     defer alloc.free(merged);
     try testing.expectEqualStrings("{oops", merged);
@@ -509,8 +475,7 @@ test "a malformed BASE degrades to the malformed text rather than to invalid JSO
 
 test "keys needing JSON escaping survive the round trip" {
     const alloc = testing.allocator;
-    // Profile names are user input, and a quote in one must not be able to
-    // produce text that fails to parse.
+    // Profile names are user input, and a quote in one must not be able to produce text that fails to parse.
     const merged = try overlayJson(alloc, "{}", "{\"a\\\"b\":1}");
     defer alloc.free(merged);
 
@@ -520,8 +485,6 @@ test "keys needing JSON escaping survive the round trip" {
 }
 
 // ─── the copy slice ────────────────────────────────────────────────────────
-// The single most important property here is a NEGATIVE one: the copy must
-// NOT carry the General-tab keys.
 
 const USER_CONFIG =
     \\{"profiles_models":{"claude":{"model":"opus","api_key":"sk-secret"}},
@@ -623,8 +586,7 @@ test "the copy does NOT carry the General-tab keys, so they keep applying everyw
 test "a config using the WIRE spelling is normalised to the on-disk one" {
     const alloc = testing.allocator;
 
-    // The bug this pins: `LlmConfigJson` parses `profiles_models`, while the
-    // HTTP wire calls it `profiles`.
+    // The bug this pins: `LlmConfigJson` parses `profiles_models`, while the HTTP wire calls it `profiles`.
     const wire_shaped = "{\"profiles\":{\"claude\":{\"model\":\"opus\"}},\"tools\":[\"read_file\"]}";
     const copy = try workspaceScopedOverlay(alloc, wire_shaped);
     defer alloc.free(copy);
@@ -650,8 +612,7 @@ test "the on-disk spelling wins when a config carries both" {
 
     var parsed = try parse(alloc, copy);
     defer parsed.deinit();
-    // One key, not two: emitting both would let a stale wire-spelled map
-    // shadow the real one depending on iteration order.
+    // One key, not two: emitting both would let a stale wire-spelled map shadow the real one depending on iteration order.
     try testing.expectEqual(@as(usize, 1), parsed.value.object.count());
     try testing.expect(parsed.value.object.get("profiles_models").?.object.get("a") != null);
 }
@@ -676,8 +637,7 @@ test "a null or absent key is not copied, so it cannot fake an override" {
 
     var parsed = try parse(alloc, copy);
     defer parsed.deinit();
-    // `tools: null` means "no explicit list" at user level. Copying it would
-    // claim this workspace overrides tools while overriding it with nothing.
+    // `tools: null` means "no explicit list" at user level.
     try testing.expect(parsed.value.object.get("tools") == null);
     try testing.expect(parsed.value.object.get("active_profile") != null);
     try testing.expect(parsed.value.object.get("profiles_models") != null);

@@ -1,5 +1,4 @@
-//! `GET /api/llm/session/:session_id/background_processes` — list all
-//! background processes (`command background=true` rows) for a session.
+//! `GET /api/llm/session/:session_id/background_processes` — list all background processes (`command background=true` rows) for a session.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -11,9 +10,7 @@ const process_status = @import("helpers").process_status;
 pub const BackgroundProcessesListError = error{
     MissingSessionId,
     QueryFailed,
-    /// `allocator.dupe` returned no memory. In production the per-request
-    /// arena makes this unreachable but the type system requires the variant
-    /// so `try allocator.dupe` propagates a typed error.
+    /// `allocator.dupe` returned no memory.
     OutOfMemory,
 };
 
@@ -33,9 +30,7 @@ pub const BackgroundProcessesListResponse = struct {
 
 pub const BackgroundProcessesListResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 pub fn useCase(
     allocator: std.mem.Allocator,
@@ -62,9 +57,7 @@ pub fn useCase(
         const pid = std.fmt.parseInt(u32, row.values[0], 10) catch continue;
         const started_at = std.fmt.parseInt(i64, row.values[3], 10) catch continue;
 
-        // Live-ness is the OS truth, not the status column. PIDs above
-        // i32 range can never be alive (and @intCast would panic), so
-        // short-circuit them to false.
+        // Live-ness is the OS truth, not the status column.
         const running: bool = if (pid > std.math.maxInt(i32))
             false
         else
@@ -81,9 +74,7 @@ pub fn useCase(
     }
 
     const owned = try processes.toOwnedSlice(allocator);
-    // The JSON body deep-copies every slice, so the duped intermediates are
-    // freed here — they must NOT outlive the call (under testing.allocator
-    // they would report as leaks; under the per-request arena the frees are
+    // The JSON body deep-copies every slice, so the duped intermediates are freed here — they must NOT outlive the call (under testing.allocator they would report as …
     defer {
         for (owned) |p| {
             allocator.free(p.command);
@@ -99,9 +90,7 @@ pub fn useCase(
     return try std.json.Stringify.valueAlloc(allocator, response, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn backgroundProcessesListHandler(
     ctx: gserverz.HttpContext,
@@ -150,9 +139,7 @@ pub fn backgroundProcessesListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = json_str });
 }
 
-// =====================================================================
-// Inline tests (project convention — useCase directly against an in-memory DB
-// walked through ALL migrations, never hand-rolled CREATE TABLE bodies).
+// Inline tests (project convention — useCase directly against an in-memory DB walked through ALL migrations, never hand-rolled CREATE TABLE bodies).
 
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
@@ -229,9 +216,7 @@ test "useCase returns rows with live running=false for a dead PID" {
     var ctx = try setupDb();
     defer teardownDb(&ctx);
 
-    // 999999999 exceeds Linux's max PID so kill(pid, 0) -> ESRCH ->
-    // isProcessRunning == false (same precedent as
-    // background_command_completion_test.py's DEAD_PID).
+    // 999999999 exceeds Linux's max PID so kill(pid, 0) -> ESRCH -> isProcessRunning == false (same precedent as background_command_completion_test.py's DEAD_PID).
     try insertBgRow(&ctx.db, "sess_dead_001", 999999999, "sleep 10", "/tmp/bg-dead.log", 1700000000, "running");
 
     const json = try useCase(testing.allocator, &ctx.db, "sess_dead_001");

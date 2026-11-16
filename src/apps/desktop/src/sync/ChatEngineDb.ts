@@ -1,5 +1,4 @@
-/** Chat child of the generic sync engine (cached mount + delta). Wires storeName='messages',
- * cursorOf/compareFn over created_at_nano, and fetchDelta over api.getChatHistory. */
+/** Chat child of the generic sync engine (cached mount + delta). */
 import { Effect } from 'effect'
 import { getChatHistory } from '../api'
 import { BaseSyncEngine } from './SyncEngine'
@@ -41,9 +40,7 @@ export function newestCursor(
   return nextCursor ?? prevCursor
 }
 
-/** Older-history cursor: the OLDEST row's exact timestamp, mirroring the server's `next_cursor` (the
- * last row of a DESC page). The opposite end of {@link newestCursor}, which is the newer-direction
- * sync cursor — the two are not interchangeable. */
+/** Older-history cursor: the OLDEST row's exact timestamp, mirroring the server's `next_cursor` (the last row of a DESC page). */
 export function oldestCursor(items: ChatMessage[], prevCursor: string | null = null): string | null {
   let best: number | null = null
   for (const m of items) {
@@ -116,9 +113,7 @@ export class ChatEngineDb extends BaseSyncEngine<ChatMessage, ChatCtx> {
     return this.fetchDeltaPage(cursor, limit, ctx)
   }
 
-  /**    * Newer-than-cursor fetch plus the session metadata the endpoint piggybacks. A stored cursor
-   * means the cache already holds everything before it, so ask ascending for just the tail; cold
-   * start (no cursor) keeps the desc full load. */
+  /** Newer-than-cursor fetch plus the session metadata the endpoint piggybacks. */
   fetchDeltaPage(
     cursor: string | null,
     limit: number,
@@ -155,15 +150,12 @@ export class ChatEngineDb extends BaseSyncEngine<ChatMessage, ChatCtx> {
     )
   }
 
-  /** Background refresh for a cached mount: fetch the tail, persist it, advance the cursor.
-   * `preserveIds` prevents a response that started before a live SSE update from overwriting that
-   * newer row. */
+  /** Background refresh for a cached mount: fetch the tail, persist it, advance the cursor. */
   loadDelta(
     ctx: ChatCtx,
     limit: number,
     preserveIds: ReadonlySet<string> = new Set(),
   ): Effect.Effect<ChatDelta, SyncError> {
-    // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     return Effect.gen(function* () {

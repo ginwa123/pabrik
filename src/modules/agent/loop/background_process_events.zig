@@ -19,9 +19,7 @@ pub const EmitArgs = struct {
     action: []const u8, // "created" | "completed"
 };
 
-/// Emit one background-process lifecycle event. No-op when `event_bus`
-/// is null (unit tests). Never fails the caller — OOM / emit errors are
-/// swallowed (the frontend falls back to manual refresh + resync refetch).
+/// Emit one background-process lifecycle event.
 pub fn emitBackgroundProcessEvent(args: EmitArgs) void {
     const ev = args.event_bus orelse return;
     const event_type_name: []const u8 = if (std.mem.eql(u8, args.action, "created"))
@@ -44,9 +42,7 @@ pub fn emitBackgroundProcessEvent(args: EmitArgs) void {
         .whitespace = .indent_4,
     })}) catch return;
 
-    // Arena rule: the caller-owned allocator outlives the synchronous
-    // `emit` (forwardToClients copies into the SSE frame before return),
-    // so no free here — same as onEventSendWorkers / insertQueueMessage.
+    // Arena rule: the caller-owned allocator outlives the synchronous `emit` (forwardToClients copies into the SSE frame before return), so no free here — same as …
     const data_copy = args.allocator.dupe(u8, buf.items) catch return;
     const event = on_event_sent.SseEvent{
         .session_id = args.session_id,

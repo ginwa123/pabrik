@@ -1,14 +1,11 @@
-//! `pabrik-vm-tap` — the OPT-IN privileged half of the tap-based mode. The
-//! server never holds CAP_NET_ADMIN; the vsock path needs no tap, and the
-//! ioctl path is UNVERIFIED.
+//! `pabrik-vm-tap` — the OPT-IN privileged half of the tap-based mode.
 
 const std = @import("std");
 const linux = std.os.linux;
 
 /// `CAP_NET_ADMIN` is bit 12 of `CapEff` in `/proc/self/status`.
 pub const cap_net_admin_bit: u6 = 12;
-/// `TUNSETIFF` is `_IOW('T', 202, int)`; a tap carries Ethernet frames and
-/// `IFF_NO_PI` keeps the 4-byte packet-info prefix out of them.
+/// `TUNSETIFF` is `_IOW('T', 202, int)`; a tap carries Ethernet frames and `IFF_NO_PI` keeps the 4-byte packet-info prefix out of them.
 pub const tunsetiff: u32 = 0x400454ca;
 pub const iff_tap: u16 = 0x0002;
 pub const iff_no_pi: u16 = 0x1000;
@@ -31,8 +28,7 @@ pub const Plan = struct {
     mac: []const u8 = default_mac,
 };
 
-/// A tap name the kernel will accept and a shell will not misread: the helper
-/// runs as root, so a name from an argument is validated, never trusted.
+/// A tap name the kernel will accept and a shell will not misread: the helper runs as root, so a name from an argument is validated, never trusted.
 pub fn tapNameValid(name: []const u8) bool {
     if (name.len == 0 or name.len > 15) return false;
     for (name) |c| {
@@ -54,8 +50,7 @@ pub fn hexCapabilities(text: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Whether the helper may create a tap at all. A capability it does not have
-/// is a refusal, not a fallback: the fallback is the vsock-only path.
+/// Whether the helper may create a tap at all.
 pub fn mayCreateTap(status_text: []const u8) bool {
     const hex = hexCapabilities(status_text) orelse return false;
     const mask: u64 = @as(u64, 1) << cap_net_admin_bit;
@@ -63,8 +58,7 @@ pub fn mayCreateTap(status_text: []const u8) bool {
     return value & mask != 0;
 }
 
-/// The `PUT /network-interfaces/tap0` body Firecracker needs, with the tap the
-/// helper created and the guest's own MAC and address.
+/// The `PUT /network-interfaces/tap0` body Firecracker needs, with the tap the helper created and the guest's own MAC and address.
 pub fn nicConfig(allocator: std.mem.Allocator, plan: Plan) ![]u8 {
     if (!tapNameValid(plan.tap)) return error.InvalidTapName;
     return std.fmt.allocPrint(
@@ -74,17 +68,14 @@ pub fn nicConfig(allocator: std.mem.Allocator, plan: Plan) ![]u8 {
     );
 }
 
-/// The kernel-command-line fragment that configures `eth0` without DHCP,
-/// because the guest image ships no udhcpc lease and no NIC by default:
-/// `ip=<guest>::<gateway>:<mask>::<iface>:off`.
+/// The kernel-command-line fragment that configures `eth0` without DHCP, because the guest image ships no udhcpc lease and no NIC by default …
 pub fn bootIpHint(allocator: std.mem.Allocator, plan: Plan) ![]u8 {
     return std.fmt.allocPrint(allocator, "ip={s}::{s}:{s}::eth0:off", .{
         plan.guest_ip, plan.host_ip, plan.mask,
     });
 }
 
-/// What the operator has to run, in order. Printed instead of guessed at, so a
-/// deployment can copy it and a reviewer can check it.
+/// What the operator has to run, in order.
 pub fn planText(allocator: std.mem.Allocator, plan: Plan) ![]u8 {
     const nic = try nicConfig(allocator, plan);
     defer allocator.free(nic);
@@ -127,9 +118,7 @@ fn readStatus(allocator: std.mem.Allocator) ?[]u8 {
     return out.toOwnedSlice(allocator) catch null;
 }
 
-/// Create the tap and print its name. Privileged: this is the only call in the
-/// whole tree that needs CAP_NET_ADMIN, and it is a separate process from the
-/// server on purpose.
+/// Create the tap and print its name.
 fn createTap(plan: Plan) bool {
     var name_buf: [16]u8 = .{0} ** 16;
     @memcpy(name_buf[0..plan.tap.len], plan.tap);

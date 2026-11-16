@@ -1,5 +1,4 @@
-//! `ensureDefaultProject` — the one implementation of this invariant: Every
-//! workspace has a default project.
+//! `ensureDefaultProject` — the one implementation of this invariant: Every workspace has a default project.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -14,15 +13,12 @@ const SystemFolder = pabrikcore.system_folder.SystemFolder;
 const vmd_policy = @import("../vmd/policy.zig");
 const workspace_vm = @import("../modules/agent/loop/workspace_vm.zig");
 
-/// The display name of an auto-created default project. Cosmetic only —
-/// both clients follow the `is_default` flag, never the name, so a user is
-/// free to rename it without breaking anything.
+/// The display name of an auto-created default project.
 pub const DEFAULT_PROJECT_NAME = "Project Default";
 
 pub const EnsureDefaultProjectError = error{
     WorkspaceIdRequired,
-    /// No usable home directory: missing, empty, or relative. See the
-    /// module comment — a bad `path` is worse than a visible error.
+    /// No usable home directory: missing, empty, or relative.
     HomeNotFound,
     DatabaseError,
     OutOfMemory,
@@ -33,12 +29,10 @@ pub const DefaultProject = struct {
     id: []const u8,
     workspace_id: []const u8,
     name: []const u8,
-    /// The directory the project's files live in: the guest root for a
-    /// workspace that runs in a VM, else the server user's home directory.
+    /// The directory the project's files live in: the guest root for a workspace that runs in a VM, else the server user's home directory.
     path: []const u8,
     position: i64,
-    /// True when THIS call created the row. The wire layer uses it to pick
-    /// 201 vs 200. False on every subsequent call — that is the invariant.
+    /// True when THIS call created the row.
     created: bool,
 
     pub fn deinit(self: DefaultProject, allocator: std.mem.Allocator) void {
@@ -49,8 +43,7 @@ pub const DefaultProject = struct {
     }
 };
 
-/// Idempotent. Returns the workspace's default project, creating it when
-/// the lookup finds nothing.
+/// Idempotent.
 pub fn ensureDefaultProject(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -60,19 +53,16 @@ pub fn ensureDefaultProject(
 ) EnsureDefaultProjectError!DefaultProject {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
 
-    // Fast path: found. One indexed read, plus a write only when the stored
-    // path names a directory the workspace's substrate does not have.
+    // Fast path: found.
     if (readDefault(allocator, db, workspace_id)) |found| return healHostPath(allocator, db, workspace_id, found);
 
-    // Miss. Resolve the root BEFORE opening a transaction so a bad home leaves
-    // nothing half-written (the test for this asserts zero rows).
+    // Miss.
     const root = try defaultProjectRoot(allocator, db, workspace_id, environment);
     defer allocator.free(root);
 
     const timestamp_ns = helpers.unixTimestampNanos();
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
-    // The production handlers rely on the request arena to reap this, but
-    // the inline tests use testing.allocator, which leak-detects.
+    // The production handlers rely on the request arena to reap this, but the inline tests use testing.allocator, which leak-detects.
     errdefer allocator.free(item_id);
 
     // `tx` so the 3 INSERTs are atomic.
@@ -80,9 +70,7 @@ pub fn ensureDefaultProject(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // Every statement below goes through `tx`, never `db`: the tx holds the
-    // backend mutex and the lock is not reentrant. (Same constraint as
-    // workspace_items_create_agent.zig:139-152.)
+    // Every statement below goes through `tx`, never `db`: the tx holds the backend mutex and the lock is not reentrant.
     tx.exec(allocator,
         \\INSERT INTO workspace_items
         \\  (id, workspace_id, item_type, name, path, position, is_default, created_at, updated_at)
@@ -90,8 +78,7 @@ pub fn ensureDefaultProject(
         \\  COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1,
         \\  1, datetime('now'), datetime('now'))
     , &[_][]const u8{ item_id, workspace_id, DEFAULT_PROJECT_NAME, root, workspace_id }) catch |err| switch (err) {
-        // The partial UNIQUE index rejected us: another caller created the
-        // default between our read and our write.
+        // The partial UNIQUE index rejected us: another caller created the default between our read and our write.
         error.ExecuteFailed => {
             tx.rollback() catch {};
             if (readDefault(allocator, db, workspace_id)) |winner| {
@@ -103,20 +90,15 @@ pub fn ensureDefaultProject(
         else => return error.DatabaseError,
     };
 
-    // The agent sibling shares the item's id (spec D3), which
-    // `agents.workspace_item_id UNIQUE` turns into a 1-1 invariant.
+    // The agent sibling shares the item's id (spec D3), which `agents.workspace_item_id UNIQUE` turns into a 1-1 invariant.
     agent_db.insert(allocator, .{ .tx = &tx }, item_id, item_id) catch return error.DatabaseError;
 
-    // Seed the tool allowlist so a fresh default is immediately usable
-    // rather than a NotConfigured dead-end. Inside the same tx, and through
-    // `tx` (not `db`) for the mutex reason above.
+    // Seed the tool allowlist so a fresh default is immediately usable rather than a NotConfigured dead-end.
     tools_equipped.seedDefaultAgentTools(allocator, .{ .tx = &tx }, item_id, config_tools) catch return error.DatabaseError;
 
     tx.commit() catch return error.DatabaseError;
 
-    // The INSERT computes position via a correlated subquery, so the
-    // persisted value isn't known without a follow-up read — same
-    // readInsertedPosition pattern as the kanban/agent create handlers.
+    // The INSERT computes position via a correlated subquery, so the persisted value isn't known without a follow-up read — same readInsertedPosition pattern as the …
     return DefaultProject{
         .id = item_id,
         .workspace_id = try allocator.dupe(u8, workspace_id),
@@ -128,9 +110,7 @@ pub fn ensureDefaultProject(
     };
 }
 
-/// Where the default project's files live: the guest root when this workspace
-/// runs in a VM, else the server user's home. Each is a tree the other
-/// substrate does not have, so the substrate decides the vocabulary.
+/// Where the default project's files live: the guest root when this workspace runs in a VM, else the server user's home.
 fn defaultProjectRoot(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -151,9 +131,7 @@ fn insideGuest(path: []const u8) bool {
     return vmd_policy.relativeToRoot(vmd_policy.guest_root, path) != null;
 }
 
-/// A VM workspace's default must name the guest root: a row written before the
-/// substrate was consulted stores the host's home, which the VM cannot open, so
-/// the read moves it to the tree the workspace actually has.
+/// A VM workspace's default must name the guest root: a row written before the substrate was consulted stores the host's home, which the VM cannot open, so the …
 fn healHostPath(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -189,8 +167,7 @@ fn healHostPath(
     };
 }
 
-/// Is this a name a person could have typed? The rule is deliberately narrow,
-/// because a false positive here **destroys a user's rename**.
+/// Is this a name a person could have typed?
 fn nameLooksUsable(name: []const u8) bool {
     if (name.len == 0) return false;
     if (!std.unicode.utf8ValidateSlice(name)) return false;
@@ -199,9 +176,7 @@ fn nameLooksUsable(name: []const u8) bool {
     var view = std.unicode.Utf8View.init(name) catch return false;
     var it = view.iterator();
     while (it.nextCodepoint()) |cp| {
-        // C0 controls, DEL, and the C1 range. A control character in a
-        // project name is either corruption or a paste accident, and
-        // rewriting it is the safer of the two outcomes.
+        // C0 controls, DEL, and the C1 range.
         if (cp < 0x20) return false;
         if (cp == 0x7F) return false;
         if (cp >= 0x80 and cp <= 0x9F) return false;
@@ -222,8 +197,7 @@ fn repairGarbageName(
         "UPDATE workspace_items SET name = ? WHERE id = ?",
         &[_][]const u8{ DEFAULT_PROJECT_NAME, item_id },
     ) catch |err| {
-        // Non-fatal on purpose: a stale name is cosmetic, and failing the
-        // read over it would be strictly worse than showing it.
+        // Non-fatal on purpose: a stale name is cosmetic, and failing the read over it would be strictly worse than showing it.
         std.log.warn(
             "ensureDefaultProject: could not repair the default project's name (non-fatal): {s}",
             .{@errorName(err)},
@@ -237,7 +211,6 @@ fn repairGarbageName(
 }
 
 /// Read the workspace's default project, or null when it has none.
-/// This is the whole "does a default exist?" query — one row on the hot path.
 fn readDefault(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -252,9 +225,7 @@ fn readDefault(
     const row = (q.next() catch null) orelse return null;
     defer row.deinit(allocator);
 
-    // Dup every field up front, before the row's memory is released by
-    // `defer` — the same dangling-slice trap that `resolveCwdFromTaskOrItem`
-    // fell into, avoided here by never returning a reference into the row.
+    // Dup every field up front, before the row's memory is released by `defer` — the same dangling-slice trap that `resolveCwdFromTaskOrItem` fell into, avoided here …
     const id = allocator.dupe(u8, row.values[0]) catch return null;
     const ws = allocator.dupe(u8, workspace_id) catch {
         allocator.free(id);
@@ -273,8 +244,7 @@ fn readDefault(
     };
     const position = std.fmt.parseInt(i64, row.values[3], 10) catch 0;
 
-    // Heal a name corrupted by an earlier build, now that we hold an owned copy
-    // and know the row's id. Best effort, and never on a name a user typed.
+    // Heal a name corrupted by an earlier build, now that we hold an owned copy and know the row's id.
     if (!nameLooksUsable(name)) {
         repairGarbageName(allocator, db, id, name);
         allocator.free(name);
@@ -302,8 +272,7 @@ fn readDefault(
     };
 }
 
-/// Best-effort: the persisted `position` of a just-INSERTed item. Returns 0
-/// on failure — position is a sort hint, and 0 is a legal value for it.
+/// Best-effort: the persisted `position` of a just-INSERTed item.
 fn readPosition(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -329,24 +298,18 @@ pub fn workspaceExists(
     return true;
 }
 
-// =====================================================================
-// Handler — POST /api/workspaces/:workspace_id/default-project
-// ===================================================================== The
+// Handler — POST /api/workspaces/:workspace_id/default-project ===================================================================== The
 
 const DefaultProjectResponse = struct {
     item: http_response.WorkspaceItemGetResponse,
     created: bool,
-    /// Sort hint for the item above. Kept beside it, not inside it, so the
-    /// item keeps the exact shape `GET /workspaces/:ws/items` emits — one
-    /// WorkspaceItem, two producers.
+    /// Sort hint for the item above.
     position: i64,
 };
 
 pub const WorkspaceDefaultProjectInput = struct {
     workspace_id: []const u8,
     /// Live config.json `tools` checklist (null = built-in defaults).
-    /// Read from the singleton by the handler, matching
-    /// `workspace_items_create_agent.zig`.
     config_tools: ?[]const []const u8 = null,
     environment: ?*const std.process.Environ.Map = null,
 };
@@ -364,9 +327,7 @@ pub fn useCaseGet(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, inp
             .path = project.path,
             .is_default = 1,
         },
-        // Reported next to the item rather than inside it: `position` is a
-        // per-item sort hint the workspace_items list already carries, and
-        // this envelope is a lookup, not a listing.
+        // Reported next to the item rather than inside it: `position` is a per-item sort hint the workspace_items list already carries, and this envelope is a lookup …
         .position = project.position,
         .created = project.created,
     }, .{});
@@ -391,15 +352,12 @@ pub fn workspaceDefaultProjectHandler(
         });
     }
 
-    // The workspace's own tools checklist — it seeds the default project's
-    // allowlist. Tools are workspace-scoped, never the user document's.
+    // The workspace's own tools checklist — it seeds the default project's allowlist.
     const workspace_cfg = auth_common.requestWorkspaceConfig(allocator, di, workspace_id, req.headers) orelse
         pabrikcore.getLlmConfig(di);
     const config_tools = workspace_cfg.tools;
 
-    // An unknown workspace is a 404 here, unlike the list endpoint which
-    // answers 200 + []. This is an explicit request for a specific
-    // workspace's default, so "no such workspace" is a real answer.
+    // An unknown workspace is a 404 here, unlike the list endpoint which answers 200 + [].
     if (!workspaceExists(allocator, sqlite_db, workspace_id)) {
         return res.jsonResponse(.{
             .status_code = 404,
@@ -416,8 +374,7 @@ pub fn workspaceDefaultProjectHandler(
             error.WorkspaceIdRequired => 400,
             error.HomeNotFound, error.DatabaseError, error.OutOfMemory => 500,
         };
-        // Never echo the path back — a 500 here means the home directory
-        // could not be resolved, and the caller has no need for it.
+        // Never echo the path back — a 500 here means the home directory could not be resolved, and the caller has no need for it.
         const message: []const u8 = switch (err) {
             error.WorkspaceIdRequired => "workspace_id required",
             error.HomeNotFound => "Could not resolve the home directory for the default project",
@@ -431,7 +388,6 @@ pub fn workspaceDefaultProjectHandler(
     };
 
     // 201 when this call created the default, 200 when it already existed.
-    // The body carries `created` so a client never has to guess.
     const created = std.mem.indexOf(u8, data, "\"created\":true") != null;
     return res.jsonResponse(.{ .status_code = if (created) 201 else 200, .data = data });
 }
@@ -507,8 +463,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     , &[_][]const u8{});
     try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, user_id TEXT, is_vm INTEGER NOT NULL DEFAULT 0)", &[_][]const u8{});
 
-    // A real environment map with HOME set, because getHomeDirectory takes
-    // one and the whole feature is defined by where HOME lands.
+    // A real environment map with HOME set, because getHomeDirectory takes one and the whole feature is defined by where HOME lands.
     var env: std.process.Environ.Map = .init(alloc);
     errdefer env.deinit();
     try env.put("HOME", "/home/tester");
@@ -516,8 +471,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
     return .{ .db = db, .threaded = threaded, .env = env, .home = "/home/tester" };
 }
 
-/// Run a `SELECT COUNT(*)` whose WHERE clause needs the item id(s)
-/// interpolated.
+/// Run a `SELECT COUNT(*)` whose WHERE clause needs the item id(s) interpolated.
 fn countWhereFmt(
     db: *database.Db,
     alloc: std.mem.Allocator,
@@ -555,17 +509,13 @@ test "ensureDefaultProject creates the default on a miss, rooted at HOME" {
     try testing.expectEqualStrings("/home/tester", p.path);
     try testing.expectEqualStrings(DEFAULT_PROJECT_NAME, p.name);
 
-    // The row, and the two siblings that make it a usable agent. The
-    // combined WHERE is deliberate: it asserts the type, the flag and the
-    // path on the SAME row rather than three independent counts.
+    // The row, and the two siblings that make it a usable agent.
     try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "workspace_id = 'ws_1'"));
     try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND item_type = 'agent' AND is_default = 1 AND path = '/home/tester'", .{p.id}));
-    // The 1-1 invariant: the agents row's id AND workspace_item_id are both
-    // the item id, which is what `agents.workspace_item_id UNIQUE` relies on.
+    // The 1-1 invariant: the agents row's id AND workspace_item_id are both the item id, which is what `agents.workspace_item_id UNIQUE` relies on.
     try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM agent_configs WHERE id = '{s}' AND workspace_item_id = '{s}'", .{ p.id, p.id }));
 
-    // The tool allowlist must be seeded, or the default project is a
-    // NotConfigured dead-end on first use.
+    // The tool allowlist must be seeded, or the default project is a NotConfigured dead-end on first use.
     const seeded = try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM agent_config_tools WHERE config_id = '{s}'", .{p.id});
     try testing.expect(seeded > 0);
 }
@@ -581,8 +531,7 @@ test "ensureDefaultProject is idempotent: a second call returns the same id and 
     const second = try ensureDefaultProject(alloc, &ctx.db, "ws_1", &ctx.env, null);
     defer second.deinit(alloc);
 
-    // The invariant, asserted. Same row, and the second call reports that
-    // it did not create anything.
+    // The invariant, asserted.
     try testing.expectEqualStrings(first.id, second.id);
     try testing.expect(!second.created);
     try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "workspace_id = 'ws_1'"));
@@ -609,8 +558,7 @@ test "ensureDefaultProject returns the existing default alongside ordinary items
     var ctx = try setupDb(alloc);
     defer ctx.deinit();
 
-    // A workspace that already has projects but no default — the legacy
-    // shape this feature has to heal.
+    // A workspace that already has projects but no default — the legacy shape this feature has to heal.
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('item_kanban', 'ws_1', 'kanban', 'Board', '/tmp/board', 5)
@@ -620,8 +568,7 @@ test "ensureDefaultProject returns the existing default alongside ordinary items
     defer p.deinit(alloc);
 
     try testing.expect(p.created);
-    // The ordinary project is untouched, and the default landed at the TOP
-    // (position 6 > 5) so it is visible without scrolling.
+    // The ordinary project is untouched, and the default landed at the TOP (position 6 > 5) so it is visible without scrolling.
     try testing.expectEqual(@as(u32, 2), try countWhere(&ctx.db, alloc, "workspace_items", "workspace_id = 'ws_1'"));
     try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "id = 'item_kanban' AND is_default = 0"));
     try testing.expectEqual(@as(i64, 6), p.position);
@@ -634,9 +581,7 @@ test "ensureDefaultProject writes nothing when the home directory is unusable" {
 
     var no_home: std.process.Environ.Map = .init(alloc);
     defer no_home.deinit();
-    // HOME present but EMPTY. On POSIX that historically "succeeded" with
-    // "" — which is exactly the case that would store path='' and send the
-    // agent to a temp sandbox. It must be a hard error instead.
+    // HOME present but EMPTY.
     try no_home.put("HOME", "");
 
     try testing.expectError(
@@ -673,8 +618,7 @@ test "ensureDefaultProject honours the partial unique index under a simulated ra
     const first = try ensureDefaultProject(alloc, &ctx.db, "ws_1", &ctx.env, null);
     defer first.deinit(alloc);
 
-    // Simulate the loser of a race: force the fast path to miss, then try to
-    // insert a second default the way the create branch would.
+    // Simulate the loser of a race: force the fast path to miss, then try to insert a second default the way the create branch would.
     try testing.expectError(
         error.ExecuteFailed,
         ctx.db.exec(alloc,
@@ -702,8 +646,7 @@ test "useCaseGet serializes the project and reports whether it created it" {
     const second = try useCaseGet(alloc, &ctx.db, .{ .workspace_id = "ws_1", .environment = &ctx.env });
     defer alloc.free(second);
 
-    // `"created":true` is what the handler reads to choose 201 vs 200, so
-    // this asserts the exact substring the handler greps for.
+    // `"created":true` is what the handler reads to choose 201 vs 200, so this asserts the exact substring the handler greps for.
     try testing.expect(std.mem.indexOf(u8, first, "\"created\":true") != null);
     try testing.expect(std.mem.indexOf(u8, second, "\"created\":false") != null);
 
@@ -729,16 +672,12 @@ test "workspaceExists distinguishes a real workspace from an invented one" {
     try ctx.db.exec(alloc, "INSERT INTO workspaces (id, name) VALUES ('ws_real', 'Real')", &[_][]const u8{});
 
     try testing.expect(workspaceExists(alloc, &ctx.db, "ws_real"));
-    // This is the orphan guard. useCaseList returns [] for an unknown
-    // workspace rather than 404, so without this probe a list read of
-    // "ws_ghost" would create a default for a workspace that never existed.
+    // This is the orphan guard. useCaseList returns [] for an unknown workspace rather than 404, so without this probe a list read of "ws_ghost" would create a …
     try testing.expect(!workspaceExists(alloc, &ctx.db, "ws_ghost"));
     try testing.expect(!workspaceExists(alloc, &ctx.db, ""));
 }
 
-// ─── The corrupted-name repair ─────────────────────────────────────────── A
-// build with the bad free wrote default projects whose `name` came back as
-// 0xAA poison bytes, which the UI rendered as `[ 170, 170, … ]`.
+// ─── The corrupted-name repair ───────────────────────────────────────────
 
 test "nameLooksUsable rejects poison bytes and blanks, accepts real names" {
     // The exact shape the bug produced: 0xAA repeated.
@@ -750,23 +689,18 @@ test "nameLooksUsable rejects poison bytes and blanks, accepts real names" {
     try testing.expect(!nameLooksUsable("\x80"));
     try testing.expect(!nameLooksUsable(""));
 
-    // Real names, including ones a person deliberately chose. A false
-    // negative here means the heal would clobber a user's rename, which is
-    // the one way this repair could do harm.
+    // Real names, including ones a person deliberately chose.
     try testing.expect(nameLooksUsable(DEFAULT_PROJECT_NAME));
     try testing.expect(nameLooksUsable("My Home Chat"));
     try testing.expect(nameLooksUsable("project 2"));
-    // Non-ASCII is a legitimate name, not corruption. An earlier ASCII-only
-    // version of this check rejected all three of these and would have silently
-    // rewritten a user's rename.
+    // Non-ASCII is a legitimate name, not corruption.
     try testing.expect(nameLooksUsable("caf\u{00e9}"));
     try testing.expect(nameLooksUsable("\u{043f}\u{0440}\u{043e}\u{043a}\u{0435}\u{043a}\u{0442}"));
     // Punctuation-only is odd but is still something a person typed.
     try testing.expect(nameLooksUsable("."));
     try testing.expect(nameLooksUsable("---"));
 
-    // Control characters ARE rejected, even when the rest is valid UTF-8 —
-    // this is the second line of defence behind the UTF-8 check.
+    // Control characters ARE rejected, even when the rest is valid UTF-8 — this is the second line of defence behind the UTF-8 check.
     try testing.expect(!nameLooksUsable("New\u{0001}Chat"));
     try testing.expect(!nameLooksUsable("\u{007f}"));
 }
@@ -777,8 +711,6 @@ test "a corrupted default project name is repaired on read" {
     defer ctx.deinit();
 
     // Seed a default whose name is poison bytes, the way the bad build did.
-    // Control bytes, not 0xAA: postgres rejects invalid UTF-8 on write, and a
-    // stored name this reader must repair has to exist on both engines.
     var poison: [8]u8 = undefined;
     @memset(&poison, 0x01);
     try ctx.db.exec(alloc,
@@ -848,8 +780,7 @@ test "a VM workspace's default project is rooted at the guest root, not the host
     const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
     defer p.deinit(alloc);
 
-    // The host's home (`/home/tester`) is no directory inside the VM, so a
-    // client handed it can only fail to list it.
+    // The host's home (`/home/tester`) is no directory inside the VM, so a client handed it can only fail to list it.
     try testing.expect(p.created);
     try testing.expectEqualStrings(vmd_policy.guest_root, p.path);
     try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND path = '/workspace'", .{p.id}));
@@ -871,8 +802,7 @@ test "a default project that stores the host home is moved to the guest root on 
 
     try testing.expect(!p.created);
     try testing.expectEqualStrings(vmd_policy.guest_root, p.path);
-    // The ROW moved too, so every later reader (the items list, the picker)
-    // sees the path the VM actually has rather than this one call.
+    // The ROW moved too, so every later reader (the items list, the picker) sees the path the VM actually has rather than this one call.
     try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "id = 'item_seeded' AND path = '/workspace'"));
 }
 
@@ -881,8 +811,7 @@ test "a default project already inside the guest root is left exactly as stored"
     var ctx = try setupDb(alloc);
     defer ctx.deinit();
     try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
-    // A project a user pointed at a directory inside the VM. Moving it to the
-    // root would silently relocate their files.
+    // A project a user pointed at a directory inside the VM.
     try insertDefaultAtPath(alloc, &ctx.db, "ws_vm", "/workspace/pabrik");
 
     runtime_mode.setCurrent(.saas);
@@ -901,8 +830,7 @@ test "a local server keeps the host home for the same VM-backed workspace" {
     defer ctx.deinit();
     try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
 
-    // No mode switch: this process is local, so the workspace's work runs on
-    // the host and the host home is the only tree its tools can open.
+    // No mode switch: this process is local, so the workspace's work runs on the host and the host home is the only tree its tools can open.
     const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
     defer p.deinit(alloc);
 
@@ -923,6 +851,4 @@ test "a local server never rewrites a default project's host path" {
     try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "id = 'item_seeded' AND path = '/home/tester'"));
 }
 
-// ===== Tests merged from workspace_items_default_test.zig (2026-09-29
-// flatten) ===== The default-project ROUTE contract is not asserted here:
-// `matchRoute` walks the shared table in registration order, so "is the
+// ===== Tests merged from workspace_items_default_test.zig (2026-09-29 flatten) ===== The default-project ROUTE contract is not asserted here: `matchRoute` walks …

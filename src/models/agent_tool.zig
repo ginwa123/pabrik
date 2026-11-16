@@ -1,5 +1,4 @@
-//! Data model for the `agent_tools` entity table. One row per tool explicitly
-//! enabled on an Agent.
+//! Data model for the `agent_tools` entity table.
 
 const std = @import("std");
 
@@ -8,12 +7,9 @@ pub const EntityId = []u8;
 id: EntityId,
 /// FK to `agents.id`. The agent this tool row belongs to.
 agent_id: EntityId,
-/// Canonical tool name (e.g. "bash", "read_file"). Must match an entry
-/// in `tools_equipped.UNIFIED_TOOL_REGISTRY()` — the handler validates
-/// this on INSERT (400 if unknown).
+/// Canonical tool name (e.g.
 tool_name: []u8,
-/// 1 = enabled, 0 = disabled. v1 always sends 1; the column exists for
-/// future "temporarily disable without removing" UX (spec D10).
+/// 1 = enabled, 0 = disabled. v1 always sends 1; the column exists for future "temporarily disable without removing" UX (spec D10).
 enabled: u8 = 1,
 created_at: ?[]u8 = null,
 

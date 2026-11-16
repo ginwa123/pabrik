@@ -1,6 +1,4 @@
-// Functional tests for the bulk `stop_all_agents` column endpoint. Mirror of
-// `kanban_column_run_all_agents_test.zig` with the direction flipped: run-all
-// starts idle workers, stop-all cancels running ones.
+// Functional tests for the bulk `stop_all_agents` column endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers (mirrors kanban_column_run_all_agents_test.zig)
-// ============================================================================
 
 /// The seeded workspace / board / column / three task ids.
 const Seed = struct {
@@ -49,7 +45,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/{ws}/items/kanban` → the new board's id.
-/// Caller frees.
 fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -272,9 +267,7 @@ fn expectTrue(doc: *const harness.Json, key: []const u8, body: []const u8) !void
     }
 }
 
-// ============================================================================
 // Test 1: stop on an idle column covers all three as skipped
-// ============================================================================
 
 test "stop_all_agents_idle_column_all_skipped" {
     try harness.requirePabrikBin(io, gpa);
@@ -286,9 +279,7 @@ test "stop_all_agents_idle_column_all_skipped" {
     var seed = try seedColumnWithThreeTasks(&h);
     defer seed.deinit();
 
-    // No worker started anywhere: every task must land in `skipped`
-    // (idle, no worker row) — the positive control that the skipped
-    // branch is reachable on the wire, not just in unit tests.
+    // No worker started anywhere: every task must land in `skipped` (idle, no worker row) — the positive control that the skipped branch is reachable on the wire …
     var r = try stopAllAgents(&h, seed.ws_id, seed.kanban_id, seed.col_id, &.{200});
     defer r.deinit();
     var doc = try r.json();
@@ -309,9 +300,7 @@ test "stop_all_agents_idle_column_all_skipped" {
     }
 }
 
-// ============================================================================
 // Test 2: bulk stop covers all three with a stopped/skipped split
-// ============================================================================
 
 test "stop_all_agents_stopped_skipped_split" {
     try harness.requirePabrikBin(io, gpa);
@@ -348,8 +337,7 @@ test "stop_all_agents_stopped_skipped_split" {
 
     try expectBulkCoversExactly(&doc, r.body, seed.idSlice());
 
-    // task-1 owned a worker: it must be in `stopped` (worker in-flight)
-    // or `skipped` (worker already drained) — never silently dropped.
+    // task-1 owned a worker: it must be in `stopped` (worker in-flight) or `skipped` (worker already drained) — never silently dropped.
     if (!try listHas(&doc, "stopped", seed.ids[0]) and
         !try listHas(&doc, "skipped", seed.ids[0]))
     {
@@ -361,9 +349,7 @@ test "stop_all_agents_stopped_skipped_split" {
     }
 }
 
-// ============================================================================
 // Test 3: re-POST is safe
-// ============================================================================
 
 test "stop_all_agents_repost_safe" {
     try harness.requirePabrikBin(io, gpa);
@@ -401,9 +387,7 @@ test "stop_all_agents_repost_safe" {
     try expectBulkCoversExactly(&doc, second.body, seed.idSlice());
 }
 
-// ============================================================================
 // Test 4: unknown column -> 404
-// ============================================================================
 
 test "stop_all_agents_unknown_column_404" {
     try harness.requirePabrikBin(io, gpa);
@@ -430,9 +414,7 @@ test "stop_all_agents_unknown_column_404" {
     }
 }
 
-// ============================================================================
 // Test 5: single-task GET unshadowed + run_all still resolves
-// ============================================================================
 
 test "stop_all_agents_single_task_get_unshadowed" {
     try harness.requirePabrikBin(io, gpa);
@@ -444,8 +426,7 @@ test "stop_all_agents_single_task_get_unshadowed" {
     var seed = try seedColumnWithThreeTasks(&h);
     defer seed.deinit();
 
-    // The single-task GET must still return the task envelope (the new
-    // POST literal lives in the columns family, never under /tasks/:id).
+    // The single-task GET must still return the task envelope (the new POST literal lives in the columns family, never under /tasks/:id).
     {
         const path = try std.fmt.allocPrint(
             gpa,
@@ -475,8 +456,7 @@ test "stop_all_agents_single_task_get_unshadowed" {
         try testing.expectEqualStrings(seed.ids[0], id);
     }
 
-    // The sibling run_all_agents literal must still resolve (the two
-    // column bulk routes coexist — neither shadows the other).
+    // The sibling run_all_agents literal must still resolve (the two column bulk routes coexist — neither shadows the other).
     {
         const path = try std.fmt.allocPrint(
             gpa,

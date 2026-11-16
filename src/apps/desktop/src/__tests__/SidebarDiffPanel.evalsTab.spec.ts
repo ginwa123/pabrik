@@ -1,13 +1,10 @@
-/** The Evals tab's URL contract. Every view switch must land in the URL, or refresh / Back-Forward
- * / shared links lose the view. The commits tab first shipped as a local boolean and had exactly
- * that bug; the Evals tab reuses the same `?panel=` union rather than inventing a second param. */
+/** The Evals tab's URL contract. */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SidebarDiffPanel from '../components/views/chat_right_sidebar/SidebarDiffPanel.vue'
 
-// The panel's children fetch on mount; stub them so the spec is about the
-// tab contract, not about the network.
+// The panel's children fetch on mount; stub them so the spec is about the tab contract, not about the network.
 vi.mock('../components/git/GitCommits.vue', () => ({
   default: { name: 'GitCommits', template: '<div data-testid="git-commits-stub" />' },
 }))
@@ -50,8 +47,7 @@ describe('SidebarDiffPanel — the Evals tab', () => {
   })
 
   it('is reachable without an attached PR', async () => {
-    // The Evals tab is about the agent's self-assessment, not about the
-    // diff, so it must not be gated behind PR mode.
+    // The Evals tab is about the agent's self-assessment, not about the diff, so it must not be gated behind PR mode.
     const router = makeRouter()
     const wrapper = await mountPanel(router)
     expect(wrapper.find('[data-testid="sidebar-tab-evals"]').exists()).toBe(true)

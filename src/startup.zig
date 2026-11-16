@@ -5,8 +5,7 @@ const logger_mod = pabrikcore.loggermod;
 const config_mod = pabrikcore.config;
 const ai_workflow = pabrikcore.ai_mod;
 
-/// Startup handler - queries worker table and starts a thread for each worker
-/// Called once during app initialization to bootstrap workers from database
+/// Startup handler - queries worker table and starts a thread for each worker Called once during app initialization to bootstrap workers from database
 pub fn startup(
     allocator: std.mem.Allocator,
     ctxTui: *pabrikcore.App,

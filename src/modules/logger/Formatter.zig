@@ -270,8 +270,7 @@ pub fn getAgentColor(agent_index: usize) []const u8 {
 
 // Tests
 
-// The formatter tests that used to live in formatter_test.zig are now inline
-// at the bottom of this file (2026-09-29 flatten).
+// The formatter tests that used to live in formatter_test.zig are now inline at the bottom of this file (2026-09-29 flatten).
 
 // ===== Tests merged from formatter_test.zig (2026-09-29 flatten) =====
 test "LogLevel toString" {

@@ -21,9 +21,7 @@ export function createWorkspaceCrud(p: WorkspaceCrudParams) {
     loadExpandedWorkspaces,
   } = p
 
-  // Returns the new workspace id on BOTH paths (API success and the
-  // local offline fallback) so callers can navigate into it — the
-  // /app landing pushes `/app/<id>` right after creation.
+  // Returns the new workspace id on BOTH paths (API success and the local offline fallback) so callers can navigate into it — the /app landing pushes `/app/<id>` …
   async function addWorkspace(name: string): Promise<string> {
     const defaultIcon = '📂'
     try {
@@ -87,9 +85,7 @@ export function createWorkspaceCrud(p: WorkspaceCrudParams) {
         }
       })
     }
-    // Deleting the selected workspace falls back down the
-    // activeWorkspace precedence chain; drop the stale persisted id
-    // so the next load doesn't resurrect it.
+    // Deleting the selected workspace falls back down the activeWorkspace precedence chain; drop the stale persisted id so the next load doesn't resurrect it.
     if (activeWorkspaceId.value === workspaceId) {
       activeWorkspaceId.value = null
       writeActiveWorkspaceKey(null)
@@ -98,9 +94,7 @@ export function createWorkspaceCrud(p: WorkspaceCrudParams) {
     // Sync with API
     try {
       await api.deleteWorkspace(workspaceId)
-      // The row is gone — drop its lazy-load mark. Only on success:
-      // the rollback below restores the in-memory items, which are
-      // still a valid loaded state.
+      // The row is gone — drop its lazy-load mark. Only on success
       workspaceItemsLoaded.delete(workspaceId)
     } catch (err) {
       console.error('Failed to delete workspace:', err)
@@ -111,16 +105,12 @@ export function createWorkspaceCrud(p: WorkspaceCrudParams) {
     }
   }
 
-  /** Reorder the workspaces array to match `orderedIds` and persist the new order via `POST
-   * /api/workspaces/reorder`. Optimistic: the local array is reordered immediately so the UI snaps
-   * to the new position on drop. */
+  /** Reorder the workspaces array to match `orderedIds` and persist the new order via `POST /api/workspaces/reorder`. */
   async function reorderWorkspaces(orderedIds: string[]) {
     const current = workspaces.value
     if (orderedIds.length === 0) return
 
-    // Defensive: the client must send a complete ordering. A partial
-    // list (e.g. drag-reordering 2 of 5 workspaces) would lose the
-    // other 3. Refuse early.
+    // Defensive: the client must send a complete ordering.
     if (orderedIds.length !== current.length) {
       console.error(
         `[workspacesStore.reorderWorkspaces] orderedIds length ${orderedIds.length} != current ${current.length}; refusing reorder`,
@@ -128,9 +118,7 @@ export function createWorkspaceCrud(p: WorkspaceCrudParams) {
       return
     }
 
-    // No-op: same set of IDs in (potentially) different order. The
-    // set-equality check is an O(n) walk — fine for the realistic
-    // sidebar size.
+    // No-op: same set of IDs in (potentially) different order.
     const currentIdSet = new Set(current.map((w) => w.id))
     const newIdSet = new Set(orderedIds)
     const isSameSet =
@@ -139,21 +127,17 @@ export function createWorkspaceCrud(p: WorkspaceCrudParams) {
       return
     }
 
-    // Snapshot for rollback. Vue's ref returns the inner array;
-    // copying the slice gives us a moment-in-time view.
+    // Snapshot for rollback.
     const previousOrder = current.slice()
 
-    // Optimistic local reorder: build a new array by looking up each id in the current array. If an
-    // id is missing (defensive — the length-mismatch check above should have caught this), fall
-    // back to keeping the original row at its original position.
+    // Optimistic local reorder: build a new array by looking up each id in the current array.
     const byId = new Map(current.map((w) => [w.id, w]))
     const reordered: Workspace[] = []
     for (const id of orderedIds) {
       const ws = byId.get(id)
       if (ws) reordered.push(ws)
     }
-    // If any current rows were missed, append them at the end (should
-    // not happen given the length check, but defensive).
+    // If any current rows were missed, append them at the end (should not happen given the length check, but defensive).
     for (const ws of current) {
       if (!orderedIds.includes(ws.id)) reordered.push(ws)
     }

@@ -1,5 +1,4 @@
-//! Functional test harness for pabrik — Zig port of
-//! `tests/functional/harness.py`.
+//! Functional test harness for pabrik — Zig port of `tests/functional/harness.py`.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -9,17 +8,12 @@ const posix = std.posix;
 
 const is_windows = builtin.os.tag == .windows;
 
-// ============================================================================
 // Safety constants
-// ============================================================================
 
-/// Substring that every harness-allocated tmpdir must contain. Acts as
-/// a "namespace" so a buggy caller that points the tempdir allocation
-/// at a non-tmpdir path is rejected.
+/// Substring that every harness-allocated tmpdir must contain.
 pub const REQUIRED_TMP_SUBSTR = "pabrik-func-";
 
-/// Last-resort kill signal. Windows has no SIGKILL — it maps SIGTERM to
-/// TerminateProcess there, which is the correct fallback.
+/// Last-resort kill signal.
 pub const SIGKILL: posix.SIG = if (is_windows) @enumFromInt(15) else @enumFromInt(9);
 pub const SIGTERM: posix.SIG = @enumFromInt(15);
 
@@ -27,61 +21,44 @@ pub const SIGTERM: posix.SIG = @enumFromInt(15);
 pub const DEFAULT_PORT: u16 = 8080;
 pub const PORT_SCAN_END: u16 = 8199;
 
-/// Random-port range used by the modern picker. The previous range was
-/// 40000-60000, chosen for headroom against TIME_WAIT.
+/// Random-port range used by the modern picker.
 pub const RANDOM_PORT_START: u16 = 20000;
 pub const RANDOM_PORT_END: u16 = 32000;
 
-/// Number of random attempts before giving up. With 12,000 ports and a
-/// busy CI runner holding a few hundred listeners, 50 consecutive
-/// collisions is vanishingly unlikely — safely "never happens".
+/// Number of random attempts before giving up.
 pub const RANDOM_PORT_ATTEMPTS: usize = 50;
 
-/// Ports the random picker MUST skip regardless of bind() success.
-/// 8081 is the always-running dev backend per project memory.
+/// Ports the random picker MUST skip regardless of bind() success. 8081 is the always-running dev backend per project memory.
 pub const RESERVED_PORTS = [_]u16{8081};
 
-/// How long each rung of the teardown kill ladder waits before escalating:
-/// `/test/shutdown` then wait, then SIGTERM then wait, then SIGKILL then
-/// wait.
+/// How long each rung of the teardown kill ladder waits before escalating
 const kill_ladder_rung_s: f64 = 0.25;
 
-/// The Io handle to use for harness-internal work that is not given one (the
-/// port picker, the entropy seeder). Inside a test this is `std.testing.io`,
-/// which the test runner initialises.
+/// The Io handle to use for harness-internal work that is not given one (the port picker, the entropy seeder).
 fn testingIo() Io {
     return std.testing.io;
 }
 
-/// A PRNG seeded from the best entropy the stdlib exposes without a
-/// dependency on `pabrikcore`.
+/// A PRNG seeded from the best entropy the stdlib exposes without a dependency on `pabrikcore`.
 fn entropyPrng(io: Io) std.Random.DefaultPrng {
-    // Zig 0.16 removed the old `std.crypto.random.int`; the portable
-    // replacement is the OS entropy source.
+    // Zig 0.16 removed the old `std.crypto.random.int`; the portable replacement is the OS entropy source.
     return .init(entropySeed(io));
 }
 
 fn entropySeed(io: Io) u64 {
-    // NANOSECONDS, not milliseconds. This was `toMilliseconds()`, which
-    // quantises the seed to 1 ms — and `findFreePortRandom` builds a FRESH
-    // PRNG from it on every call.
+    // NANOSECONDS, not milliseconds.
     const ts: u64 = @truncate(@as(u96, @bitCast(Io.Timestamp.now(io, .real).toNanoseconds())));
     const pid: u64 = if (is_windows) 0 else @intCast(std.os.linux.getpid());
     const seq = seed_counter.fetchAdd(1, .monotonic);
     return (ts << 8) ^ (pid << 32) ^ seq ^ @intFromPtr(&ts);
 }
 
-/// Monotonic tie-breaker for `entropySeed`, so two seeds taken in the
-/// same clock tick are still distinct.
+/// Monotonic tie-breaker for `entropySeed`, so two seeds taken in the same clock tick are still distinct.
 var seed_counter = std.atomic.Value(u64).init(0);
 
-// ============================================================================
 // Errors
-// ============================================================================
 
-/// Raised when the harness cannot safely proceed. Distinct from
-/// `error.TestUnexpectedResult` (which is what API-level assertions raise) so
-/// a caller can treat this as a SETUP failure rather than a test failure.
+/// Raised when the harness cannot safely proceed.
 pub const FunctionalHarnessError = error{
     HomeNotSet,
     UnsafePath,
@@ -99,15 +76,11 @@ pub const FunctionalHarnessError = error{
     RunTimedOut,
 };
 
-// ============================================================================
 // Safety validator
-// ============================================================================
 
 /// `realpath` + `normcase` — the ONE spelling every comparison here uses.
-/// Both halves are load-bearing.
 pub fn canonical(io: Io, allocator: Allocator, path: []const u8) ![]u8 {
-    // A symlink is resolved to its TARGET, never trusted as itself. This is
-    // the whole reason the function exists in this shape.
+    // A symlink is resolved to its TARGET, never trusted as itself.
     var link_buf: [std.fs.max_path_bytes]u8 = undefined;
     if (std.Io.Dir.cwd().readLink(io, path, &link_buf)) |link_len| {
         const target = link_buf[0..link_len];
@@ -124,9 +97,7 @@ pub fn canonical(io: Io, allocator: Allocator, path: []const u8) ![]u8 {
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const len = std.Io.Dir.cwd().realPathFile(io, path, &buf) catch |err| switch (err) {
-        // The path does not exist. Anchor on the parent's canonical form
-        // and re-append the basename, so the result still reflects a real
-        // directory prefix rather than an unresolved string.
+        // The path does not exist.
         error.FileNotFound, error.NameTooLong => return canonicalMissing(io, allocator, path),
         else => return err,
     };
@@ -153,9 +124,7 @@ fn canonicalMissing(io: Io, allocator: Allocator, path: []const u8) ![]u8 {
     return normcaseSlice(owned);
 }
 
-/// Lower-case an OWNED path in place on Windows (`C:\Tmp` and `c:\tmp` are
-/// the same directory there, and the safety gates compare prefixes). Takes
-/// `[]u8`, not `[]const u8`: it rewrites the buffer, and a const slice
+/// Lower-case an OWNED path in place on Windows (`C:\Tmp` and `c:\tmp` are the same directory there, and the safety gates compare prefixes).
 fn normcaseSlice(s: []u8) []u8 {
     if (!is_windows) return s;
     for (s) |*c| {
@@ -172,8 +141,7 @@ pub const POSIX_TMP_PREFIXES = [_][]const u8{
     "/var/folders/",
 };
 
-/// The OS temp directory (`$TMPDIR`, falling back to `/tmp` on POSIX
-/// and `%TEMP%` on Windows).
+/// The OS temp directory (`$TMPDIR`, falling back to `/tmp` on POSIX and `%TEMP%` on Windows).
 pub fn tmpRoot(allocator: Allocator) ![]u8 {
     if (builtin.os.tag == .windows) {
         if (getEnvOrEmpty(allocator, "TEMP")) |v| {
@@ -201,9 +169,7 @@ pub fn isSafeTmp(io: Io, allocator: Allocator, path: []const u8, orig_home: []co
     const real = try canonical(io, allocator, path);
     defer allocator.free(real);
 
-    // (1) Prefix allow-list. `tmpRoot` is probed first because a
-    // custom `%TEMP%` is authoritative; the POSIX spellings are
-    // appended as fixed fallbacks.
+    // (1) Prefix allow-list.
     var allowed = false;
     {
         const root = tmpRoot(allocator) catch null;
@@ -212,8 +178,7 @@ pub fn isSafeTmp(io: Io, allocator: Allocator, path: []const u8, orig_home: []co
             const rcanon = canonical(io, allocator, r) catch null;
             if (rcanon) |rc| {
                 defer allocator.free(rc);
-                // `tempfile.gettempdir() + "/"` — note the trailing
-                // separator, so `/tmpfoo` does not match `/tmp`.
+                // `tempfile.gettempdir() + "/"` — note the trailing separator, so `/tmpfoo` does not match `/tmp`.
                 if (hasDirPrefix(real, rc)) allowed = true;
             }
         }
@@ -230,8 +195,7 @@ pub fn isSafeTmp(io: Io, allocator: Allocator, path: []const u8, orig_home: []co
     }
     if (!allowed) return false;
 
-    // (2) Namespace substring. Two prefixes are accepted: the harness's own
-    // (`pabrik-func-`) and the suite-fixture one (`pabrik-fix-`).
+    // (2) Namespace substring.
     const has_marker = std.mem.indexOf(u8, real, REQUIRED_TMP_SUBSTR) != null or
         std.mem.indexOf(u8, real, SCRATCH_PREFIX) != null;
     if (!has_marker) return false;
@@ -245,8 +209,7 @@ pub fn isSafeTmp(io: Io, allocator: Allocator, path: []const u8, orig_home: []co
     return true;
 }
 
-/// `haystack` starts with `dir` AND `dir` ended at a path boundary
-/// (so `/tmpfoo` does not match prefix `/tmp`).
+/// `haystack` starts with `dir` AND `dir` ended at a path boundary (so `/tmpfoo` does not match prefix `/tmp`).
 fn hasDirPrefix(haystack: []const u8, dir: []const u8) bool {
     var d = dir;
     while (d.len > 1 and (d[d.len - 1] == '/' or d[d.len - 1] == '\\')) d = d[0 .. d.len - 1];
@@ -259,9 +222,7 @@ fn hasDirPrefix(haystack: []const u8, dir: []const u8) bool {
 
 /// Return an absolute path under `h`'s isolated tempdir.
 pub fn harnessPath(allocator: Allocator, temp_dir: []const u8, parts: []const []const u8) ![]u8 {
-    // Built by hand rather than with `std.fs.path.join`: `join` treats every
-    // argument as a path component, which is right, but the `[temp_dir] ++
-    // parts` splice is not comptime-known here (parts arrives at runtime), so
+    // Built by hand rather than with `std.fs.path.join`: `join` treats every argument as a path component, which is right, but the `[temp_dir] ++ parts` splice is …
     var all = try allocator.alloc([]const u8, parts.len + 1);
     defer allocator.free(all);
     all[0] = temp_dir;
@@ -269,20 +230,15 @@ pub fn harnessPath(allocator: Allocator, temp_dir: []const u8, parts: []const []
     return std.fs.path.join(allocator, all);
 }
 
-// ============================================================================
 // Response
-// ============================================================================
 
-/// One HTTP header. Module scope (not nested in `Harness`) because both
-/// `Response.headers` and `Harness.HttpOptions.extra_headers` use it.
+/// One HTTP header.
 pub const Header = struct {
     name: []const u8,
     value: []const u8,
 };
 
-/// A typed HTTP response from the  pabrik API.
-///
-/// Owns `body`; free it (or call `deinit`) once done.
+/// A typed HTTP response from the pabrik API.
 pub const Response = struct {
     status: u16,
     body: []u8,
@@ -316,23 +272,18 @@ pub const Response = struct {
         }
     }
 
-    /// Parse the body as JSON into an OWNING `std.json.Parsed(Value)`. The
-    /// Zig analogue of Python's `r.json()`.
+    /// Parse the body as JSON into an OWNING `std.json.Parsed(Value)`.
     pub fn json(self: *const Response) !Json {
         return .{ .parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, self.body, .{}) };
     }
 
-    /// The body as UTF-8 text (always valid — HTTP bodies here are
-    /// text or base64, never raw binary, but invalid bytes are replaced
-    /// rather than propagated).
+    /// The body as UTF-8 text (always valid — HTTP bodies here are text or base64, never raw binary, but invalid bytes are replaced rather than propagated).
     pub fn text(self: *const Response) []const u8 {
         return self.body;
     }
 };
 
-/// An owned, parsed JSON document — the return type of `Response.json()`. WHY
-/// A WRAPPER INSTEAD OF A BARE `std.json.Value`: the std parser allocates
-/// every string and number it produces into an arena owned by the `Parsed`.
+/// An owned, parsed JSON document — the return type of `Response.json()`.
 pub const Json = struct {
     parsed: std.json.Parsed(std.json.Value),
 
@@ -346,9 +297,7 @@ pub const Json = struct {
         return &self.parsed.value;
     }
 
-    /// Look up a key on a JSON OBJECT root. `null` if absent, or if the root
-    /// is not an object (so a test asserting on an error body fails with a
-    /// clear "expected string, got null" rather than a union-tag panic).
+    /// Look up a key on a JSON OBJECT root.
     pub fn get(self: *const Json, key: []const u8) ?std.json.Value {
         return switch (self.parsed.value) {
             .object => |o| o.get(key),
@@ -401,9 +350,7 @@ pub const Json = struct {
         };
     }
 
-    /// The number at `key` as `f64`, or `null` if absent or not a
-    /// number. Accepts an integer payload too, so a ported assertion
-    /// does not have to care whether the server sent `3` or `3.0`.
+    /// The number at `key` as `f64`, or `null` if absent or not a number.
     pub fn number(self: *const Json, key: []const u8) ?f64 {
         const v = self.get(key) orelse return null;
         return switch (v) {
@@ -414,9 +361,7 @@ pub const Json = struct {
     }
 };
 
-// ============================================================================
 // Harness
-// ============================================================================
 
 /// A booted `pabrik` instance bound to an isolated tmpdir.
 pub const Harness = struct {
@@ -429,8 +374,7 @@ pub const Harness = struct {
     pid: ?u32,
     dry_run: bool,
     stopped: bool = false,
-    /// Set once `deinit` has run, so a second call is a no-op even
-    /// though `freeAll` poisons the struct.
+    /// Set once `deinit` has run, so a second call is a no-op even though `freeAll` poisons the struct.
     dedeinit: bool = false,
     /// Windows-only original env snapshots; empty on POSIX.
     orig_userprofile: []u8,
@@ -443,35 +387,27 @@ pub const Harness = struct {
 
     /// Boot options. Defaults mirror Python's keyword-only args.
     pub const BootOptions = struct {
-        /// Explicit port. `null` (the default) picks a RANDOM free
-        /// port from `[RANDOM_PORT_START, RANDOM_PORT_END]`. Pass an
-        /// integer to fall back to the legacy sequential scan.
+        /// Explicit port.
         port: ?u16 = null,
         ready_timeout_s: f64 = 30.0,
-        /// Pre-create a stub LLM profile so the binary boots without a
-        /// real API key.
+        /// Pre-create a stub LLM profile so the binary boots without a real API key.
         stub_llm_profile: bool = false,
         /// Extra CLI flags appended after `--port` (e.g. `&.{"--http2"}`).
         extra_args: []const []const u8 = &.{},
-        /// Extra env entries for the CHILD only (e.g. test-only feature gates
-        /// the server reads from its own environment).
+        /// Extra env entries for the CHILD only (e.g. test-only feature gates the server reads from its own environment).
         extra_env: []const [2][]const u8 = &.{},
-        /// Lower the CHILD's soft `RLIMIT_NOFILE` to this value before it
-        /// execs, without touching the hard limit.
+        /// Lower the CHILD's soft `RLIMIT_NOFILE` to this value before it execs, without touching the hard limit.
         no_file_limit: ?u64 = null,
 
-        /// Run BEFORE the child is spawned, with the tmpdir HOME already in
-        /// place.
+        /// Run BEFORE the child is spawned, with the tmpdir HOME already in place.
         pre_boot_setup: ?*const fn (io: Io, allocator: Allocator, temp_dir: []const u8) anyerror!void = null,
     };
 
-    /// Boot a fresh `pabrik` binary against an isolated tmpdir HOME. Resolves
-    /// the binary via `resolvePabrikBin` unless `$PABRIK_BIN` is set.
+    /// Boot a fresh `pabrik` binary against an isolated tmpdir HOME.
     pub fn boot(io: Io, allocator: Allocator, opts: BootOptions) !Harness {
         const gpa = allocator;
 
-        // 1. Snapshot HOME BEFORE we shadow it. On Windows HOME is not
-        // set by default; USERPROFILE is.
+        // 1.
         var orig_home = getEnvOrEmpty(gpa, "HOME") catch try gpa.dupe(u8, "");
         if (orig_home.len == 0) {
             gpa.free(orig_home);
@@ -484,9 +420,7 @@ pub const Harness = struct {
 
         errdefer gpa.free(orig_home);
 
-        // Snapshot the env vars we shadow in the child. If the parent
-        // shell has e.g. XDG_CONFIG_HOME=/home/user/.config, the child
-        // must NOT inherit it.
+        // Snapshot the env vars we shadow in the child.
         const orig_userprofile = try getEnvOrEmpty(gpa, "USERPROFILE");
         errdefer gpa.free(orig_userprofile);
         const orig_appdata = try getEnvOrEmpty(gpa, "APPDATA");
@@ -502,9 +436,7 @@ pub const Harness = struct {
         const orig_xdg_cache_home = try getEnvOrEmpty(gpa, "XDG_CACHE_HOME");
         errdefer gpa.free(orig_xdg_cache_home);
 
-        // 2. Reap orphans from prior aborted runs BEFORE picking a
-        //    port, so the random pick sees a clean slate. Failure here
-        //    is non-fatal — a slightly leakier state beats aborting.
+        // 2.
         _ = reapOrphanTestPids(io, gpa) catch 0;
 
         // 3. Pick a free port.
@@ -517,9 +449,7 @@ pub const Harness = struct {
         const temp_dir = try makeTempDir(io, gpa);
         errdefer gpa.free(temp_dir);
 
-        // 5. Validate BEFORE shadowing anything. If this fails, abort
-        //    and leak the tempdir. Leaking is preferable to corrupting
-        //    state.
+        // 5.
         if (!try isSafeTmp(io, gpa, temp_dir, orig_home)) {
             return error.UnsafePath;
         }
@@ -543,9 +473,7 @@ pub const Harness = struct {
         const xdg_cache = try std.fs.path.join(gpa, &.{ temp_dir, ".cache" });
         defer gpa.free(xdg_cache);
 
-        // Created on every platform: the child inherits these paths
-        // from the env block below and the server expects the parent dir
-        // to exist before it writes config.json / state / cache beneath.
+        // Created on every platform: the child inherits these paths from the env block below and the server expects the parent dir to exist before it writes config.json …
         try std.Io.Dir.cwd().createDirPath(io, xdg_config);
         try std.Io.Dir.cwd().createDirPath(io, xdg_state);
         try std.Io.Dir.cwd().createDirPath(io, xdg_data);
@@ -554,8 +482,7 @@ pub const Harness = struct {
         const log_path = try std.fs.path.join(gpa, &.{ temp_dir, "pabrik.log" });
         errdefer gpa.free(log_path);
 
-        // 9. Build the child environment. Copy the parent's, then shadow the
-        // isolation-critical vars.
+        // 9.
         var env_map = try std.process.Environ.createMap(currentEnviron(), gpa);
         defer env_map.deinit();
         try env_map.put("HOME", temp_dir);
@@ -563,13 +490,9 @@ pub const Harness = struct {
         try env_map.put("XDG_STATE_HOME", xdg_state);
         try env_map.put("XDG_DATA_HOME", xdg_data);
         try env_map.put("XDG_CACHE_HOME", xdg_cache);
-        // A functional-test child boots with no cached snapshot, so the catalog's
-        // priming fetch would open one live 5 MB request per spawned server. The
-        // boot behaviour itself is covered by the unit tests.
+        // A functional-test child boots with no cached snapshot, so the catalog's priming fetch would open one live 5 MB request per spawned server.
         try env_map.put("PABRIK_MODEL_CATALOG_FETCH", "0");
-        // The default object store is a supervised rustfs child. On Windows it
-        // outlives the killed server and locks the tempdir, so teardown cannot
-        // remove it. The filesystem store has no child and lives in the tempdir.
+        // The default object store is a supervised rustfs child.
         try env_map.put("PABRIK_STORAGE_BACKEND", "fs");
         if (is_windows) {
             try env_map.put("USERPROFILE", temp_dir);
@@ -600,8 +523,7 @@ pub const Harness = struct {
         defer if (ulimit_script) |script| gpa.free(script);
         if (opts.no_file_limit) |limit| {
             if (is_windows) return error.NoFileLimitUnsupported;
-            // `$0` is the binary, `$@` the args after it — `exec` replaces the
-            // shell, so the recorded pid keeps pointing at the server.
+            // `$0` is the binary, `$@` the args after it — `exec` replaces the shell, so the recorded pid keeps pointing at the server.
             ulimit_script = try std.fmt.allocPrint(
                 gpa,
                 "ulimit -S -n {d} || exit 126; exec \"$0\" \"$@\"",
@@ -623,30 +545,22 @@ pub const Harness = struct {
             .environ_map = &env_map,
             .stdout = .{ .file = log_file },
             .stderr = .{ .file = log_file },
-            // Own process group, so a killpg reaches any subprocess
-            // the binary spawned (a PTY a terminal test drives).
+            // Own process group, so a killpg reaches any subprocess the binary spawned (a PTY a terminal test drives).
             .pgid = if (is_windows) null else 0,
         });
-        // `child.id` is a process HANDLE on Windows, not a pid. Everything
-        // downstream of `child_pid` is POSIX-shaped — `pidAlive()` is
-        // hardcoded true there and `reapOrphanTestPids` never signals on
+        // `child.id` is a process HANDLE on Windows, not a pid.
         const child_pid: u32 = if (is_windows) 0 else @intCast(child.id.?);
 
-        // 11. Record pids so a subsequent boot can reap us if we die.
-        //     Format is "<harness_pid> <pabrik_pid>\n" — the same
-        //     contract `reapOrphanTestPids` reads.
+        // 11.
         const self_pid: u32 = if (is_windows) 0 else @intCast(std.os.linux.getpid());
         const pidfile = try std.fs.path.join(gpa, &.{ temp_dir, ".harness.pid" });
         defer gpa.free(pidfile);
         writePidfile(io, gpa, pidfile, self_pid, child_pid) catch {};
 
-        // 12. Wait for readiness. On failure, kill the child and
-        //     propagate — the caller never gets a half-live harness.
+        // 12.
         waitReady(io, gpa, chosen_port, opts.ready_timeout_s, child_pid, log_path) catch |err| {
             child.kill(io);
-            // `kill` clears `id` on Windows (it closes the process handle),
-            // and `Child.wait` ASSERTS that it is set — so a slow boot would
-            // turn into an unreachable-code panic instead of the NotReady
+            // `kill` clears `id` on Windows (it closes the process handle), and `Child.wait` ASSERTS that it is set — so a slow boot would turn into an unreachable-code …
             if (child.id != null) _ = child.wait(io) catch {};
             return err;
         };
@@ -678,19 +592,15 @@ pub const Harness = struct {
         };
     }
 
-    /// Tear down: stop the binary, then delete the isolated tempdir. Order
-    /// matters: 1. Validate the tempdir with `isSafeTmp`; ERROR if it fails.
+    /// Tear down: stop the binary, then delete the isolated tempdir.
     pub fn deinit(self: *Harness, io: Io) !void {
-        // Idempotency: `freeAll` ends with `self.* = undefined`, so a second
-        // call would read POISONED memory for `temp_dir.len` and take the
-        // stop/dealloc path again.
+        // Idempotency: `freeAll` ends with `self.* = undefined`, so a second call would read POISONED memory for `temp_dir.len` and take the stop/dealloc path again.
         if (self.dedeinit) return;
         self.dedeinit = true;
         const gpa = self.allocator;
         const temp_dir = self.temp_dir;
 
-        // Stop the binary first: the child may still be writing into
-        // the tempdir, and deleting under it produces ENOTEMPTY.
+        // Stop the binary first: the child may still be writing into the tempdir, and deleting under it produces ENOTEMPTY.
         if (self.pid != null and !self.stopped) {
             self.stopped = true;
             self.stopBinary(io) catch {};
@@ -710,9 +620,7 @@ pub const Harness = struct {
             return error.TeardownRefused;
         }
 
-        // Remove the pidfile BEFORE rmtree. Without this, the next boot
-        // would see an entry whose harness pid is now dead and try to
-        // reap an already-dead child.
+        // Remove the pidfile BEFORE rmtree.
         const pidfile = std.fs.path.join(gpa, &.{ temp_dir, ".harness.pid" }) catch {
             self.freeAll(gpa);
             return;
@@ -723,9 +631,7 @@ pub const Harness = struct {
         if (self.dry_run) {
             std.debug.print("[dry-run] would rmtree: {s}\n", .{temp_dir});
         } else {
-            // The child tree is dead, but "dead" is not "finished writing": a
-            // shell the binary spawned can still be flushing its last writes
-            // into the temp HOME, and POSIX rmtree surfaces that as ENOTEMPTY
+            // The child tree is dead, but "dead" is not "finished writing": a shell the binary spawned can still be flushing its last writes into the temp HOME, and POSIX …
             var last_err: ?anyerror = null;
             const retries: usize = if (is_windows) 10 else 5;
             for (0..retries) |_| {
@@ -776,8 +682,7 @@ pub const Harness = struct {
         /// Accepted status codes. Empty means "200" (Python's default).
         expect: []const u16 = &.{200},
         timeout_s: f64 = 5.0,
-        /// Extra request headers. Used by the auth suites for `Cookie` and by
-        /// the workspace-sharing suites for bearer tokens.
+        /// Extra request headers.
         extra_headers: []const Header = &.{},
         /// Set false to accept ANY status. Default true.
         assert_status: bool = true,
@@ -786,8 +691,7 @@ pub const Harness = struct {
     /// One URL query parameter. `value` is percent-encoded.
     pub const Param = struct { name: []const u8, value: []const u8 };
 
-    /// Issue an HTTP request to the harness's `pabrik` instance. Returns a
-    /// `Response` the caller owns.
+    /// Issue an HTTP request to the harness's `pabrik` instance.
     pub fn http(self: *Harness, io: Io, method: HttpMethod, path: []const u8, opts: HttpOptions) !Response {
         const gpa = self.allocator;
 
@@ -802,9 +706,7 @@ pub const Harness = struct {
             body = try gpa.dupe(u8, jb);
         }
 
-        // `std.Io.Writer.Allocating` is the 0.16 replacement for the
-        // old `ArrayList(u8).writer(gpa)` idiom: an auto-growing sink
-        // that hands back an owned slice via `toOwnedSlice`.
+        // `std.Io.Writer.Allocating` is the 0.16 replacement for the old `ArrayList(u8).writer(gpa)` idiom: an auto-growing sink that hands back an owned slice via …
         var out: std.Io.Writer.Allocating = .init(gpa);
         errdefer out.deinit();
         const w = &out.writer;
@@ -812,8 +714,7 @@ pub const Harness = struct {
         var client: std.http.Client = .{ .allocator = gpa, .io = io };
         defer client.deinit();
 
-        // A fixed Content-Type when there is no body, plus whatever the
-        // caller added. `std.http.Header` is `{ name, value }`.
+        // A fixed Content-Type when there is no body, plus whatever the caller added.
         var extra: std.ArrayList(std.http.Header) = .empty;
         defer extra.deinit(gpa);
         try extra.append(gpa, .{ .name = "Content-Type", .value = "application/json" });
@@ -879,8 +780,7 @@ pub const Harness = struct {
         if (!ok) {
             const got = out.written();
             const excerpt = if (got.len > 500) got[0..500] else got;
-            // Spell out the accepted codes so the failure says what
-            // would have passed — the Python harness printed the tuple.
+            // Spell out the accepted codes so the failure says what would have passed — the Python harness printed the tuple.
             var want_buf: [128]u8 = undefined;
             var want_w: Io.Writer = .fixed(&want_buf);
             for (expected, 0..) |e, i| {
@@ -891,9 +791,7 @@ pub const Harness = struct {
                 "{s} {s}: expected [{s}], got {d}\nbody: {s}\n",
                 .{ method.name(), path, want_w.buffered(), status, excerpt },
             );
-            // No `out.deinit()` here: the `errdefer out.deinit()` above
-            // already owns the failure path, and an explicit deinit
-            // double-frees — which surfaced as a general-protection exception
+            // No `out.deinit()` here: the `errdefer out.deinit()` above already owns the failure path, and an explicit deinit double-frees — which surfaced as a …
             return error.UnexpectedStatus;
         }
 
@@ -956,23 +854,17 @@ pub const Harness = struct {
         defer gpa.free(url);
         var req = client.request(.POST, std.Uri.parse(url) catch return, .{}) catch return;
         defer req.deinit();
-        // POST needs a body: Zig's `sendBodiless` asserts that the
-        // method cannot have one. Python's `urlopen(..., data=b"")`
-        // sent an empty body, which is what we mirror here.
+        // POST needs a body: Zig's `sendBodiless` asserts that the method cannot have one.
         req.transfer_encoding = .{ .content_length = 0 };
         var body_writer = req.sendBodyUnflushed(&.{}) catch return;
         body_writer.end() catch return;
         req.connection.?.flush() catch return;
         var resp = req.receiveHead(&.{}) catch return;
-        // Drain the body so the connection is released cleanly. Zig
-        // 0.16's `Response` has no `deinit` — `req.deinit` (the outer
-        // defer) owns everything.
+        // Drain the body so the connection is released cleanly.
         var sink: std.Io.Writer.Discarding = .init(&.{});
         _ = resp.reader(&.{}).streamRemaining(&sink.writer) catch {};
 
-        // 250ms per rung, not 1s. The ported perf test asserts the WHOLE
-        // deinit is under 3s, and deinit is this ladder plus up to 5 rmtree
-        // retries at 1s.
+        // 250ms per rung, not 1s.
         if (waitPidDead(io, pid, kill_ladder_rung_s)) {
             return;
         }
@@ -985,9 +877,7 @@ pub const Harness = struct {
     }
 };
 
-// ============================================================================
 // HTTP helpers
-// ============================================================================
 
 /// HTTP verbs the suites use.
 pub const HttpMethod = enum {
@@ -1003,8 +893,7 @@ pub const HttpMethod = enum {
         return @tagName(self);
     }
 
-    /// Map onto `std.http.Method` by NAME. NOT `@enumFromInt`: the two enums
-    /// do NOT have the same discriminants.
+    /// Map onto `std.http.Method` by NAME.
     fn toStdMethod(self: HttpMethod) std.http.Method {
         return switch (self) {
             .GET => .GET,
@@ -1018,8 +907,7 @@ pub const HttpMethod = enum {
     }
 };
 
-/// Build `http://127.0.0.1:<port><path>?<params>`, percent-encoding parameter
-/// values. Build `http://127.0.0.1:<port><path>?<params>`.
+/// Build `http://127.0.0.1:<port><path>?<params>`, percent-encoding parameter values.
 fn buildUrl(gpa: Allocator, port: u16, path: []const u8, params: []const Harness.Param) ![]u8 {
     if (params.len == 0) {
         return std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}{s}", .{ port, path });
@@ -1030,8 +918,7 @@ fn buildUrl(gpa: Allocator, port: u16, path: []const u8, params: []const Harness
     const w = &buf.writer;
     w.print("http://127.0.0.1:{d}{s}?", .{ port, path }) catch return error.OutOfMemory;
 
-    // NAME AND VALUE ARE PERCENT-ENCODED, as Python's
-    // `urllib.parse.urlencode` did.
+    // NAME AND VALUE ARE PERCENT-ENCODED, as Python's `urllib.parse.urlencode` did.
     for (params, 0..) |p, i| {
         if (i > 0) w.writeAll("&") catch return error.OutOfMemory;
         try writePercentEncoded(w, p.name);
@@ -1041,8 +928,7 @@ fn buildUrl(gpa: Allocator, port: u16, path: []const u8, params: []const Harness
     return buf.toOwnedSlice();
 }
 
-/// Percent-encode one query component. Everything outside the RFC 3986
-/// unreserved set is escaped, INCLUDING `+`.
+/// Percent-encode one query component.
 fn writePercentEncoded(w: *Io.Writer, s: []const u8) !void {
     for (s) |c| {
         switch (c) {
@@ -1052,13 +938,9 @@ fn writePercentEncoded(w: *Io.Writer, s: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Port allocation
-// ============================================================================
 
-/// Sequential port scan from `start` to `PORT_SCAN_END`. Legacy path,
-/// kept for the orphan-reap TIME_WAIT regression test which depends on
-/// the deterministic "first free port = target_port" behaviour.
+/// Sequential port scan from `start` to `PORT_SCAN_END`.
 pub fn findFreePortSequential(io: Io, start: u16) !u16 {
     var s = start;
     if (s == 8081) s = 8082;
@@ -1072,8 +954,7 @@ pub fn findFreePortSequential(io: Io, start: u16) !u16 {
 
 /// Return true iff `port` can be bound on 127.0.0.1 with SO_REUSEADDR.
 pub fn portIsFreeWithReuse(io: Io, port: u16) bool {
-    // Bind a throwaway listener on 127.0.0.1:<port>. Success ⇒ nothing is
-    // listening there.
+    // Bind a throwaway listener on 127.0.0.1:<port>.
     const addr: Io.net.IpAddress = .{ .ip4 = .loopback(port) };
     var server = addr.listen(io, .{ .reuse_address = true }) catch return false;
     server.deinit(io);
@@ -1081,8 +962,6 @@ pub fn portIsFreeWithReuse(io: Io, port: u16) bool {
 }
 
 /// Pick a random free port from a wide range, avoiding reserved ports.
-/// `attempts` independent random picks within `[range_start, range_end]`; the
-/// first that binds without error and is not reserved wins.
 pub fn findFreePortRandom(gpa: Allocator) !u16 {
     const range_size = RANDOM_PORT_END - RANDOM_PORT_START + 1;
     var prng = entropyPrng(testingIo());
@@ -1100,28 +979,21 @@ pub fn findFreePortRandom(gpa: Allocator) !u16 {
     return error.NoFreePort;
 }
 
-/// Find a free port. `start = null` → random pick; otherwise the legacy
-/// sequential scan from `start`.
+/// Find a free port.
 pub fn findFreePort(start: ?u16) !u16 {
     if (start) |s| return findFreePortSequential(testingIo(), s);
     return findFreePortRandom(std.heap.page_allocator);
 }
 
-// ============================================================================
 // Process helpers
-// ============================================================================
 
-/// Milliseconds on the monotonic clock. Zig 0.16 removed
-/// `std.time.milliTimestamp()`; a monotonic deadline is now `Io.Clock.now(io,
-/// .monotonic)`.
+/// Milliseconds on the monotonic clock.
 fn monotonicMs(io: Io) i64 {
-    // `.awake`, not `.real`: Zig 0.16 renamed the monotonic clock, and
-    // a wall-clock step backwards (NTP) would otherwise hang the wait.
+    // `.awake`, not `.real`: Zig 0.16 renamed the monotonic clock, and a wall-clock step backwards (NTP) would otherwise hang the wait.
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// Return true iff `pid` exited within `timeout_s`. Uses `kill(pid, 0)` as a
-/// liveness probe. ESRCH ⇒ dead.
+/// Return true iff `pid` exited within `timeout_s`.
 fn waitPidDead(io: Io, pid: u32, timeout_s: f64) bool {
     const deadline = monotonicMs(io) + @as(i64, @intFromFloat(timeout_s * 1000.0));
     while (monotonicMs(io) < deadline) {
@@ -1131,15 +1003,11 @@ fn waitPidDead(io: Io, pid: u32, timeout_s: f64) bool {
     return false;
 }
 
-/// `kill(pid, 0)` liveness probe. Swallows every error: EPERM means
-/// alive-but-not-ours, which for our purposes is the same as "not
-/// ours to signal" and we treat it as alive so we escalate.
+/// `kill(pid, 0)` liveness probe.
 fn pidAlive(pid: u32) bool {
     if (is_windows) return true; // No POSIX probe; Windows path uses SIGTERM=TerminateProcess.
     const p: posix.pid_t = @intCast(pid);
-    // `kill(pid, 0)` is the liveness probe: signal 0 performs error
-    // checking but delivers nothing. EPERM means alive-but-not-ours
-    // (treat as alive so we escalate); ESRCH means gone.
+    // `kill(pid, 0)` is the liveness probe: signal 0 performs error checking but delivers nothing.
     posix.kill(p, @as(posix.SIG, @enumFromInt(0))) catch |err| switch (err) {
         error.PermissionDenied => return true,
         else => return false,
@@ -1147,20 +1015,15 @@ fn pidAlive(pid: u32) bool {
     return true;
 }
 
-/// Signal the whole process group on POSIX, or the pid on Windows. Every
-/// error is swallowed — the process can die between our queries, the OS may
-/// have recycled the pgid, or we may not own the pid.
+/// Signal the whole process group on POSIX, or the pid on Windows.
 pub fn signalGroup(pid: u32, sig: posix.SIG) void {
     if (is_windows) return;
     const p: posix.pid_t = @intCast(pid);
-    // `killpg(pgid, sig)` where pgid == pid (the child was spawned with
-    // `pgid = 0`, making it a group leader). Fall back to `kill` if the
-    // group signal fails.
+    // `killpg(pgid, sig)` where pgid == pid (the child was spawned with `pgid = 0`, making it a group leader).
     posix.kill(-p, sig) catch posix.kill(p, sig) catch {};
 }
 
-/// Kill orphaned `pabrik` children from prior aborted runs. Idempotent. Scan
-/// `<tmpdir>/pabrik-func-*/.harness.pid`.
+/// Kill orphaned `pabrik` children from prior aborted runs.
 pub fn reapOrphanTestPids(io: Io, gpa: Allocator) !usize {
     var reaped: usize = 0;
     const base = try tmpRoot(gpa);
@@ -1191,13 +1054,10 @@ pub fn reapOrphanTestPids(io: Io, gpa: Allocator) !usize {
         const harness_pid = std.fmt.parseInt(u32, h_tok, 10) catch continue;
         const pabrik_pid = std.fmt.parseInt(u32, p_tok, 10) catch continue;
 
-        // If the harness is alive, this test is still in progress —
-        // a concurrent scan must NOT kill it.
+        // If the harness is alive, this test is still in progress — a concurrent scan must NOT kill it.
         if (pidAlive(harness_pid)) continue;
 
-        // Harness is dead. Kill the `pabrik` child if alive — POSIX only:
-        // Windows has no `kill(pid)` by number, `pidAlive` is always true
-        // there (so the scan above never reaches this line), and
+        // Harness is dead. Kill the `pabrik` child if alive — POSIX only
         if (!is_windows) {
             const self_pid: u32 = @intCast(std.os.linux.getpid());
             if (pabrik_pid != 0 and pabrik_pid != self_pid) {
@@ -1208,9 +1068,7 @@ pub fn reapOrphanTestPids(io: Io, gpa: Allocator) !usize {
             }
         }
 
-        // Delete via the SAME safety gate teardown uses. For an orphan
-        // we don't know the original HOME, so pass "" — that disables
-        // the "matches HOME" check but keeps prefix + substring.
+        // Delete via the SAME safety gate teardown uses.
         if (try isSafeTmp(io, gpa, entry_path, "")) {
             std.Io.Dir.cwd().deleteTree(io, entry_path) catch continue;
             reaped += 1;
@@ -1290,13 +1148,9 @@ fn readTail(io: Io, gpa: Allocator, path: []const u8, n: usize) ![]u8 {
     return std.mem.join(gpa, "\n", kept.items[start..]);
 }
 
-// ============================================================================
 // Temp dir
-// ============================================================================
 
-/// Allocate a fresh tempdir named `pabrik-func-<random>` under the OS
-/// temp root. Atomic (O_EXCL-style) — no TOCTOU window between choosing
-/// a name and creating it.
+/// Allocate a fresh tempdir named `pabrik-func-<random>` under the OS temp root.
 fn makeTempDir(io: Io, gpa: Allocator) ![]u8 {
     const base = try tmpRoot(gpa);
     defer gpa.free(base);
@@ -1307,9 +1161,7 @@ fn makeTempDir(io: Io, gpa: Allocator) ![]u8 {
     var attempt: usize = 0;
     while (attempt < 32) : (attempt += 1) {
         const suffix: u32 = rand.int(u32);
-        // No `defer gpa.free(name)` here: this slice IS the return
-        // value, and a `defer` would free it before the caller ever
-        // reads it. Ownership transfers to the caller instead.
+        // No `defer gpa.free(name)` here: this slice IS the return value, and a `defer` would free it before the caller ever reads it.
         const name = try std.fmt.allocPrint(gpa, "{s}{s}{s}{x}", .{ base, std.fs.path.sep_str, REQUIRED_TMP_SUBSTR, suffix });
         std.Io.Dir.cwd().createDirPath(io, name) catch |err| switch (err) {
             // Already exists → free this attempt and try a new suffix.
@@ -1327,12 +1179,9 @@ fn makeTempDir(io: Io, gpa: Allocator) ![]u8 {
     return error.BootFailed;
 }
 
-// ============================================================================
 // Binary resolution
-// ============================================================================
 
-/// Candidate binary paths, in resolution order. `$PABRIK_BIN` is
-/// handled by the caller before this list is consulted.
+/// Candidate binary paths, in resolution order.
 const BIN_CANDIDATES = [_][]const u8{
     "zig-out/bin/pabrik",
     "zig-out/bin/pabrik.exe",
@@ -1343,9 +1192,7 @@ const BIN_CANDIDATES = [_][]const u8{
     "zig-out/bin/pabrikcore-windows-x86_64.exe",
 };
 
-/// Resolve the `pabrik` binary the suite boots. Order: `$PABRIK_BIN`, then
-/// the known `zig-out/bin/*` spellings. The build step runs with cwd = repo
-/// root so the relative paths resolve.
+/// Resolve the `pabrik` binary the suite boots.
 pub fn resolvePabrikBin(io: Io, gpa: Allocator) ![]u8 {
     if (getEnvOrEmpty(gpa, "PABRIK_BIN")) |env_bin| {
         defer gpa.free(env_bin);
@@ -1359,16 +1206,13 @@ pub fn resolvePabrikBin(io: Io, gpa: Allocator) ![]u8 {
     for (BIN_CANDIDATES) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
-        // A candidate that did not resolve is still an allocation. Dropping it
-        // here is what makes `boot` leak-free: without it every boot leaked one
-        // buffer per rejected candidate, and the test runner failed the suite.
+        // A candidate that did not resolve is still an allocation.
         gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
 
-/// Resolve the `mcp-hello-world` test MCP server (stdio transport),
-/// built by `zig build mcp-hello-world`.
+/// Resolve the `mcp-hello-world` test MCP server (stdio transport), built by `zig build mcp-hello-world`.
 pub fn mcpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     if (getEnvOrEmpty(gpa, "MCP_HELLO_WORLD_BIN")) |env_bin| {
         defer gpa.free(env_bin);
@@ -1385,17 +1229,13 @@ pub fn mcpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     }) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
-        // A candidate that did not resolve is still an allocation. Dropping it
-        // here is what makes `boot` leak-free: without it every boot leaked one
-        // buffer per rejected candidate, and the test runner failed the suite.
+        // A candidate that did not resolve is still an allocation.
         gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
 
 /// Resolve the `mcp-http-hello-world` test MCP server (HTTP transport).
-/// Per the project convention "one binary per transport", this is a
-/// distinct binary from the stdio one, not a flag on it.
 pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     if (getEnvOrEmpty(gpa, "MCP_HTTP_HELLO_WORLD_BIN")) |env_bin| {
         defer gpa.free(env_bin);
@@ -1412,17 +1252,13 @@ pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     }) |c| {
         const resolved = try resolveRelative(io, gpa, c);
         if (isExecutable(io, resolved)) return resolved;
-        // A candidate that did not resolve is still an allocation. Dropping it
-        // here is what makes `boot` leak-free: without it every boot leaked one
-        // buffer per rejected candidate, and the test runner failed the suite.
+        // A candidate that did not resolve is still an allocation.
         gpa.free(resolved);
     }
     return error.BinaryNotFound;
 }
 
 /// The `mcp-oauth-hello-world` fixture binary, or `error.BinaryNotFound`.
-/// Same resolution order as `mcpHttpHelloWorldBin`: an explicit env override
-/// first, then the two installed names.
 pub fn mcpOAuthHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     if (getEnvOrEmpty(gpa, "MCP_OAUTH_HELLO_WORLD_BIN")) |env_bin| {
         defer gpa.free(env_bin);
@@ -1465,19 +1301,14 @@ fn getEnvOrEmpty(gpa: Allocator, name: []const u8) ![]u8 {
 }
 
 /// The current process's environment as a `Map` view we can read from.
-/// `std.testing.environ` is only defined under `builtin.is_test`; the
-/// process-global block is the non-test equivalent.
 fn currentEnviron() std.process.Environ {
     if (builtin.is_test) return std.testing.environ;
     return std.process.Environ{ .block = .global };
 }
 
-// ============================================================================
 // Stub LLM profile
-// ============================================================================
 
-/// Pre-create a stub LLM profile at every platform-correct config path so the
-/// binary boots without a real `api_key`.
+/// Pre-create a stub LLM profile at every platform-correct config path so the binary boots without a real `api_key`.
 pub fn writeStubLlmProfile(io: Io, gpa: Allocator, temp_dir: []const u8) !void {
     const payload =
         \\{
@@ -1508,9 +1339,7 @@ pub fn writeStubLlmProfile(io: Io, gpa: Allocator, temp_dir: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Convenience
-// ============================================================================
 
 /// The outcome of a `pabrik` subcommand run against a harness's HOME.
 pub const RunResult = struct {
@@ -1526,9 +1355,7 @@ pub const RunResult = struct {
     }
 };
 
-/// Run a `pabrik` SUBCOMMAND (not the server) against `home`, capturing
-/// stdout+stderr. 40 of the 132 Python suites shell out to the binary —
-/// `create-admin`, `pabrik config get`, `pabrik mcp ...`.
+/// Run a `pabrik` SUBCOMMAND (not the server) against `home`, capturing stdout+stderr. 40 of the 132 Python suites shell out to the binary — `create-admin` …
 pub fn runPabrikCommand(
     io: Io,
     gpa: Allocator,
@@ -1539,8 +1366,7 @@ pub fn runPabrikCommand(
     const bin = try resolvePabrikBin(io, gpa);
     defer gpa.free(bin);
 
-    // Same isolation the server gets: HOME plus the XDG vars, all
-    // pointing inside the harness tempdir.
+    // Same isolation the server gets: HOME plus the XDG vars, all pointing inside the harness tempdir.
     const xdg_config = try std.fs.path.join(gpa, &.{ home, ".config" });
     defer gpa.free(xdg_config);
     const xdg_state = try std.fs.path.join(gpa, &.{ home, ".local", "state" });
@@ -1557,15 +1383,12 @@ pub fn runPabrikCommand(
     try env_map.put("XDG_STATE_HOME", xdg_state);
     try env_map.put("XDG_DATA_HOME", xdg_data);
     try env_map.put("XDG_CACHE_HOME", xdg_cache);
-    // Same reason as `boot` above: a CLI subcommand boots the app too, and a
-    // 5 MB fetch from a test process is not what any of these suites measure.
+    // Same reason as `boot` above: a CLI subcommand boots the app too, and a 5 MB fetch from a test process is not what any of these suites measure.
     try env_map.put("PABRIK_MODEL_CATALOG_FETCH", "0");
-    // Same reason as `boot` above: a rustfs child would outlive the CLI and
-    // lock the tempdir on Windows.
+    // Same reason as `boot` above: a rustfs child would outlive the CLI and lock the tempdir on Windows.
     try env_map.put("PABRIK_STORAGE_BACKEND", "fs");
 
-    // The capture files live inside `home` — normally the harness tempdir,
-    // which teardown removes anyway.
+    // The capture files live inside `home` — normally the harness tempdir, which teardown removes anyway.
     std.Io.Dir.cwd().createDirPath(io, home) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
@@ -1593,14 +1416,12 @@ pub fn runPabrikCommand(
         .stderr = .{ .file = err_file },
     });
 
-    // Bound the wait. `Child.wait` blocks, so the deadline is enforced by a
-    // watchdog thread that kills the child if it overruns.
+    // Bound the wait.
     var timed_out = std.atomic.Value(bool).init(false);
     const watchdog = try std.Thread.spawn(.{}, struct {
         fn killAfter(c: *std.process.Child, w_io: Io, ms: u32, flag: *std.atomic.Value(bool)) void {
             Io.sleep(w_io, .fromMilliseconds(ms), .awake) catch return;
-            // `Child.kill` is a NO-OP once the child has been reaped —
-            // `child.id` is null then.
+            // `Child.kill` is a NO-OP once the child has been reaped — `child.id` is null then.
             flag.store(true, .release);
             c.kill(w_io);
         }
@@ -1625,8 +1446,7 @@ pub fn runPabrikCommand(
         else => null,
     };
 
-    // Read the captures back. They live in the tempdir, which `deinit`
-    // removes, so nothing here outlives the harness.
+    // Read the captures back.
     const stdout_bytes = std.Io.Dir.cwd().readFileAlloc(io, out_path, gpa, .limited(1 << 20)) catch try gpa.dupe(u8, "");
     const stderr_bytes = std.Io.Dir.cwd().readFileAlloc(io, err_path, gpa, .limited(1 << 20)) catch try gpa.dupe(u8, "");
 
@@ -1638,9 +1458,7 @@ pub fn runPabrikCommand(
 }
 
 comptime {
-    // Body-analysis barrier. See the note above: an unreferenced function is
-    // never type-checked, so a stdlib rename inside one is invisible until a
-    // caller appears.
+    // Body-analysis barrier.
     _ = harnessPath;
     _ = tmpRoot;
     _ = canonical;
@@ -1683,8 +1501,7 @@ comptime {
     _ = Json.number;
 }
 
-/// Allocate a scratch directory for a suite's OWN fixture (a git repo, a
-/// design tree), OUTSIDE the harness's tempdir namespace.
+/// Allocate a scratch directory for a suite's OWN fixture (a git repo, a design tree), OUTSIDE the harness's tempdir namespace.
 pub fn makeScratchDir(gpa: Allocator) ![]u8 {
     const base = try tmpRoot(gpa);
     defer gpa.free(base);
@@ -1722,9 +1539,7 @@ pub fn randomSuffix(gpa: Allocator) ![]u8 {
     return std.fmt.allocPrint(gpa, "{x}", .{prng.random().int(u64)});
 }
 
-/// Remove a directory the TEST created, after checking it is under the OS
-/// temp root and carries the `REQUIRED_TMP_SUBSTR` marker. `Harness.deinit`
-/// deletes `temp_dir` — the HOME the server booted under.
+/// Remove a directory the TEST created, after checking it is under the OS temp root and carries the `REQUIRED_TMP_SUBSTR` marker.
 pub fn cleanupExtraDir(io: Io, gpa: Allocator, path: []const u8) void {
     const safe = isSafeTmp(io, gpa, path, "") catch false;
     if (!safe) {
@@ -1739,8 +1554,7 @@ pub fn cleanupExtraDir(io: Io, gpa: Allocator, path: []const u8) void {
     };
 }
 
-/// Render `s` with non-printable bytes escaped, for a diagnostic. Zig 0.16
-/// removed the old `std.zig.fmtEscapes`.
+/// Render `s` with non-printable bytes escaped, for a diagnostic.
 pub fn debugString(gpa: Allocator, s: []const u8) ![]u8 {
     var buf: std.Io.Writer.Allocating = .init(gpa);
     errdefer buf.deinit();
@@ -1753,17 +1567,14 @@ pub fn debugString(gpa: Allocator, s: []const u8) ![]u8 {
     return buf.toOwnedSlice();
 }
 
-/// Return the text AFTER the first occurrence of `delim`, or `null`. THE
-/// reason this exists: `std.mem.splitSequence(hay, delim).next()` returns the
-/// text BEFORE the delimiter, not after.
+/// Return the text AFTER the first occurrence of `delim`, or `null`.
 pub fn afterFirst(haystack: []const u8, delim: []const u8) ?[]const u8 {
     var it = std.mem.splitSequence(u8, haystack, delim);
     _ = it.next() orelse return null; // the before-part
     return it.next(); // the after-part
 }
 
-/// Return `error.SkipZigTest` unless a `pabrik` binary is resolvable. THE
-/// FIRST LINE OF EVERY SUITE THAT BOOTS A HARNESS.
+/// Return `error.SkipZigTest` unless a `pabrik` binary is resolvable.
 pub fn requirePabrikBin(io: Io, gpa: Allocator) !void {
     const bin = resolvePabrikBin(io, gpa) catch |err| switch (err) {
         error.BinaryNotFound => return error.SkipZigTest,
@@ -1772,9 +1583,7 @@ pub fn requirePabrikBin(io: Io, gpa: Allocator) !void {
     gpa.free(bin);
 }
 
-/// Boot a harness and run `f`, then tear it down — the Zig analogue of
-/// Python's `run_quick` context manager. try harness.run(io, gpa, .{}, struct
-/// { fn body(io: Io, h: *Harness) !void { ... } }.body);
+/// Boot a harness and run `f`, then tear it down — the Zig analogue of Python's `run_quick` context manager. try harness.run(io, gpa, .{}, struct { fn body(io …
 pub fn run(
     io: Io,
     gpa: Allocator,

@@ -1,5 +1,4 @@
-/** Unit tests for `workspacesStore.ungroupDesignElements` (the store action backing Cmd+Shift+G /
- * right-click Ungroup). 5 tests: 1. */
+/** Unit tests for `workspacesStore.ungroupDesignElements` (the store action backing Cmd+Shift+G /right-click Ungroup). 5 tests: 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -68,8 +67,7 @@ describe('workspacesStore.ungroupDesignElements (Chunk 9)', () => {
     global.fetch = fetchMock as unknown as typeof fetch
   }
 
-  // A typical "after ungroup" response — the children were reparented
-  // to empty parent_id (top-level).
+  // A typical "after ungroup" response — the children were reparented to empty parent_id (top-level).
   const CHILD_A_REPARENTED: DesignElement = elem({
     id: 'elem_a',
     name: 'Child A',

@@ -1,5 +1,4 @@
-/** Behavioural tests for `ChatsList.vue` workspace scoping (plan:
- * 2026-09-22-revamp-ui-chats-workspace-scoped). */
+/** Behavioural tests for `ChatsList.vue` workspace scoping (plan */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, reactive, ref } from 'vue'
@@ -126,8 +125,7 @@ describe('ChatsList — workspace-scoped chats', () => {
   })
 
   it('refetches with the new scope when the workspace changes', async () => {
-    // Reactive route so path mutations re-run the scope computed
-    // (same pattern as ChatsList.activeFromUrlReactive.spec.ts).
+    // Reactive route so path mutations re-run the scope computed (same pattern as ChatsList.activeFromUrlReactive.spec.ts).
     const route = reactive({
       query: {} as Record<string, string>,
       path: '/app/ws_A',
@@ -141,8 +139,7 @@ describe('ChatsList — workspace-scoped chats', () => {
     await flushLoadChats()
     expect(getChatsSpy.mock.calls[getChatsSpy.mock.calls.length - 1]![4]).toBe('ws_A')
 
-    // Switch workspace: the route path changes (Back/Forward or
-    // dropdown push). The watcher clears + refetches with ws_B.
+    // Switch workspace: the route path changes (Back/Forward or dropdown push).
     route.path = '/app/ws_B'
     route.fullPath = '/app/ws_B'
     await nextTick()

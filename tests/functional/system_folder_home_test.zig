@@ -1,6 +1,4 @@
-// Wire tests for GET /api/system/folder against a real per-platform host. Zig
-// port of `tests/functional/system_folder_home_test.py` (same test names,
-// same order).
+// Wire tests for GET /api/system/folder against a real per-platform host.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,16 +7,12 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// Content chosen to exercise every branch of the handler's `jsonEscape`: a
-/// quote, a backslash, a tab and a newline.
+/// Content chosen to exercise every branch of the handler's `jsonEscape`: a quote, a backslash, a tab and a newline.
 const TRICKY_CONTENT = "quote \" backslash \\ tab \t newline \nend";
 
-/// A scratch directory to hold the probe fixture tree, mirroring pytest's
-/// `tmp_path`. Removed on the way out, whatever the test's outcome.
+/// A scratch directory to hold the probe fixture tree, mirroring pytest's `tmp_path`.
 const Scratch = struct {
     root: []u8,
 
@@ -26,8 +20,7 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is
-    /// registered first.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered first.
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -74,8 +67,7 @@ fn gitInit(root: []const u8) !void {
     }
 }
 
-/// Python's `probe_root` fixture: a non-empty directory tree to point `path=`
-/// at.
+/// Python's `probe_root` fixture: a non-empty directory tree to point `path=` at.
 fn buildProbeRoot(s: *Scratch) ![]u8 {
     const root = try s.path(&.{"sf-probe"});
     errdefer gpa.free(root);
@@ -92,9 +84,7 @@ fn buildProbeRoot(s: *Scratch) ![]u8 {
     {
         var dir = try std.Io.Dir.cwd().openDir(io, sub, .{});
         defer dir.close(io);
-        // Raw bytes, not text: a text-mode write would apply newline
-        // translation, so the `\n` above would come back as `\r\n` on Windows
-        // and the content assertion would fail on the one cell this file
+        // Raw bytes, not text: a text-mode write would apply newline translation, so the `\n` above would come back as `\r\n` on Windows and the content assertion would …
         try writeFileAt(dir, "note.txt", TRICKY_CONTENT);
     }
     {
@@ -119,9 +109,7 @@ fn toPosix(path: []const u8) ![]u8 {
     return out;
 }
 
-// ============================================================================
 // Wire helpers
-// ============================================================================
 
 /// Python's `_list`: `GET /api/system/folder?action=list[&path=…]`.
 fn listFolder(h: *Harness, path: ?[]const u8) !harness.Response {
@@ -139,9 +127,7 @@ fn listFolder(h: *Harness, path: ?[]const u8) !harness.Response {
     });
 }
 
-/// A folder-listing response parsed into an owned `harness.Json` plus the
-/// body it borrows from. Bundled so a caller cannot deinit one and forget
-/// the other.
+/// A folder-listing response parsed into an owned `harness.Json` plus the body it borrows from.
 const Doc = struct {
     resp: harness.Response,
     json: harness.Json,
@@ -225,13 +211,9 @@ fn expectEqualStr(doc: *const Doc, key: []const u8, want: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// The call the sidebar, the kanban picker and Android all make first. On
-// native Windows (cmd/pwsh) `HOME` is unset — `getHomeDirectory` falls back
-// to USERPROFILE then HOMEDRIVE+HOMEPATH.
+// The call the sidebar, the kanban picker and Android all make first.
 test "action_list_with_no_path_reports_the_server_home" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -248,9 +230,7 @@ test "action_list_with_no_path_reports_the_server_home" {
     // Home itself is the root of the relative tree.
     try expectEqualStr(&doc, "path", "/");
 
-    // `getParentPath` refuses to go above home, so there is no parent key
-    // here. Asserted rather than assumed: a client that renders an "up"
-    // button reads this key.
+    // `getParentPath` refuses to go above home, so there is no parent key here.
     if (doc.json.get("parent") != null) {
         std.debug.print("home must not carry a `parent`: {s}\n", .{doc.body()});
         return error.TestUnexpectedResult;
@@ -265,9 +245,7 @@ test "action_list_with_no_path_reports_the_server_home" {
     }
 }
 
-// `?path=<home>` must be indistinguishable from the no-path form. This is the
-// round-trip the frontend relies on: it renders `absolute` back into the next
-// request.
+// `?path=<home>` must be indistinguishable from the no-path form.
 test "explicit_home_path_matches_the_implicit_listing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -294,9 +272,7 @@ test "explicit_home_path_matches_the_implicit_listing" {
     }
 }
 
-// The "do not go above home" guard, on the wire. `getParentPath` compares the
-// requested path against home so it can refuse to hand out a parent that sits
-// ABOVE home.
+// The "do not go above home" guard, on the wire.
 test "home_spelled_with_forward_slashes_has_no_parent_above_it" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -330,8 +306,6 @@ test "home_spelled_with_forward_slashes_has_no_parent_above_it" {
 }
 
 // The picker's actual walk: list, click an entry, list again.
-// `FolderExplorer.vue` expands by sending back `entry.path` verbatim, so that
-// value has to be a path the handler accepts on the NEXT call.
 test "listing_a_subdirectory_navigates_by_entry_path" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -399,8 +373,7 @@ test "listing_a_subdirectory_navigates_by_entry_path" {
     }
 }
 
-// A camelCase `isDirectory` reads as undefined and every row becomes a
-// file.
+// A camelCase `isDirectory` reads as undefined and every row becomes a file.
 test "entries_serialize_snake_case_flags" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -436,9 +409,7 @@ test "entries_serialize_snake_case_flags" {
                 return error.TestUnexpectedResult;
             }
         }
-        // Both flags must be present AND booleans — a camelCase
-        // `isDirectory` reads as `undefined`, which is why the type check
-        // matters as much as the presence check.
+        // Both flags must be present AND booleans — a camelCase `isDirectory` reads as `undefined`, which is why the type check matters as much as the presence check.
         for ([_][]const u8{ "is_directory", "is_symlink" }) |key| {
             switch (o.get(key) orelse {
                 std.debug.print("entry is missing `{s}`: {s}\n", .{ key, doc.body() });
@@ -489,9 +460,7 @@ test "read_returns_content_that_survives_json_escaping" {
     try expectEqualStr(&doc, "content", TRICKY_CONTENT);
 }
 
-// `action=search` serializes entries through the SAME escaping. It used to
-// carry a byte-identical copy of the list branch's loop; this pins that the
-// two shapes still agree on the wire.
+// `action=search` serializes entries through the SAME escaping.
 test "search_hits_survive_json_escaping" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -599,9 +568,7 @@ test "request_without_an_action_returns_location_only" {
     try expectEqualStr(&doc, "home", h.temp_dir);
 }
 
-// 400, not a crash and not a wrong directory. On Windows `C:notes.txt` parses
-// as a path but is drive-RELATIVE, so it must not be joined onto a base and
-// opened — that would read the wrong file.
+// 400, not a crash and not a wrong directory.
 test "drive_relative_and_relative_paths_are_rejected" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -683,9 +650,7 @@ test "a_missing_directory_is_403_not_500" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one is invisible until a
-    // caller appears.
+    // Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one is invisible until a caller appears.
     _ = Scratch.init;
     _ = Scratch.deinit;
     _ = Scratch.path;

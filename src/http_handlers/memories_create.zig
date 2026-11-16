@@ -1,6 +1,4 @@
-//! `POST /api/memories` — create a global memory file. Body:
-//! `{"name":"foo.md","content":"..."}`. On success: 201 with
-//! `{"memory":{name,title,path,size}}`.
+//! `POST /api/memories` — create a global memory file. Body
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,16 +6,13 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// JSON request body for `POST /api/memories`. Both fields are required.
-/// `name` must be a single filename (no `/`, no `..`, must end in `.md`) —
-/// see `memories.isValidMemoryName`.
+/// JSON request body for `POST /api/memories`.
 const CreateMemoryBody = struct {
     name: []const u8,
     content: []const u8,
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code.
+/// Domain-level error set for `useCase`.
 pub const MemoryCreateError = error{
     /// `getSingleton()` failed — server not initialised.
     ServerNotInitialized,
@@ -31,9 +26,7 @@ pub const MemoryCreateError = error{
     AlreadyExists,
     /// `writeMemoryFile` returned false (validation / IO failure).
     WriteFailed,
-    /// Insert succeeded but the new memory wasn't visible in the
-    /// subsequent `listAllMemories` (consistency violation —
-    /// extremely unlikely; surfaces as 500).
+    /// Insert succeeded but the new memory wasn't visible in the subsequent `listAllMemories` (consistency violation — extremely unlikely; surfaces as 500).
     NotVisible,
     /// `allocator.dupe` failed while building the heap-owned output.
     OutOfMemory,
@@ -45,16 +38,12 @@ pub const MemoryCreateInput = struct {
     content: []const u8,
 };
 
-/// Output of the create use-case. `memory` is HEAP-OWNED by the use-case
-/// (duplicated from `listAllMemories` so it survives the internal
-/// `freeMemoriesList` defer).
+/// Output of the create use-case.
 pub const MemoryCreateOutput = struct {
     memory: memories_mod.MemoryInfo,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a global memory file. Steps: 1. Get the singleton + env. 2.
 fn useCase(
@@ -77,9 +66,7 @@ fn useCase(
         return error.WriteFailed;
     }
 
-    // Re-list to derive title/path/size. `listAllMemories` is a
-    // no-op on a missing dir; the freshly-created file is always in
-    // the list right after `writeMemoryFile` returns true.
+    // Re-list to derive title/path/size.
     const list = memories_mod.listAllMemories(allocator, io, environment);
     defer memories_mod.freeMemoriesList(allocator, list);
 
@@ -92,13 +79,10 @@ fn useCase(
     }
     const m = found orelse {
         // The file was just written but the re-list cannot see it.
-        // This should be impossible unless another process deleted
-        // the file between writeMemoryFile and listAllMemories.
         return error.NotVisible;
     };
 
-    // Duplicate the matched slices so the output survives the
-    // `free` defers above.
+    // Duplicate the matched slices so the output survives the `free` defers above.
     var duped_name: ?[]u8 = null;
     var duped_title: ?[]u8 = null;
     var duped_path: ?[]u8 = null;
@@ -119,9 +103,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 const CreateMemoryResponse = struct {
     memory: ?memories_mod.MemoryInfo = null,
@@ -143,8 +125,6 @@ pub fn memoryCreateHandler(
     }
 
     // Body is small enough to live entirely in the request slice.
-    // Per-request arena owns the parsed value (Leaky variant — see
-    // `task_create.zig` for precedent).
     const parsed = std.json.parseFromSliceLeaky(CreateMemoryBody, allocator, req.body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,

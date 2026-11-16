@@ -27,9 +27,7 @@ import {
   webSearchRowErrorsFromMessage,
   type WebSearchProviderRow,
 } from './webSearchProviders'
-// The models.dev catalog: its status for the block below, and the manual
-// refresh. Both live in the General tab because the catalog is machine-wide —
-// it is not a per-workspace or per-agent fact.
+// The models.dev catalog: its status for the block below, and the manual refresh.
 import { getAgentProfileInUse, getModelCatalog, refreshModelCatalog } from '../../api'
 import AgentModal, { type AgentModalValue } from './AgentModal.vue'
 import McpServerModal, { type McpServerModalValue } from './McpServerModal.vue'
@@ -41,41 +39,31 @@ const emit = defineEmits<{
   notification: [message: string, type: 'success' | 'error']
 }>()
 
-// ─── Scope ──────────────────────────────────────────────────────────────── Navigation lives in
-// `SettingsShell` (flat sidebar items + `?section=`), so this component renders ONE section at a
-// time and owns no tab strip. One editor, two scopes.
+// ─── Scope ────────────────────────────────────────────────────────────────
 type Tab = 'general' | 'runtime' | 'agents' | 'mcp' | 'tools' | 'evals'
 
 const props = withDefaults(
   defineProps<{
     /** Where the config is read from and written to. */
     source?: PabrikConfigSource
-    /**      * Which sections this editor offers. The settings shell renders the nav, so this is the
-     * editor's ACCEPT list: a `?section=` outside it falls back to the first entry instead of
-     * rendering an empty pane. */
+    /** Which sections this editor offers. */
     sections?: readonly Tab[]
   }>(),
   {
     source: undefined,
-    // Inline, not a module constant: `defineProps` is hoisted above the
-    // setup body, so its default factories may not reference a local
-    // declaration. The type annotation is erased and therefore fine.
+    // Inline, not a module constant: `defineProps` is hoisted above the setup body, so its default factories may not reference a local declaration.
     sections: () => ['general', 'agents', 'mcp', 'tools', 'evals'] as Tab[],
   },
 )
 
 const source = props.source ?? userConfigSource()
 
-// ─── Tab state ──────────────────────────────────────────────────────────── Plan
-// 2026-08-24-config-simplify-remove-defaults: 'defaults' tab removed.
+// ─── Tab state ────────────────────────────────────────────────────────────
 const TAB_STORAGE_KEY = 'pabrik-settings-active-tab'
 
-/**  * The section ids this editor accepts. Derived from the `sections` prop, so a URL or a stored value
- * pointing at a section this editor does not offer falls back instead of rendering nothing. */
+/** The section ids this editor accepts. */
 const TAB_IDS = computed<readonly string[]>(() => props.sections)
-// ─── Edit mode: the form, or the raw JSON ──────────────────────────────── Some edits are far
-// easier to express as JSON - pasting a whole agent map from another machine, or reading the
-// exact keys the backend will store - and a workspace's config IS a JSON document on the wire.
+// ─── Edit mode: the form, or the raw JSON ────────────────────────────────
 type EditorMode = 'form' | 'json'
 const MODE_PARAM = 'mode'
 
@@ -83,9 +71,7 @@ const jsonText = ref('')
 /** Has the textarea's content been folded into the in-memory config? */
 const jsonApplied = ref(false)
 
-/** What is wrong with the textarea, or null when it is applicable. Live, not on-submit: the Apply
- * button is disabled and the reason is on screen while the user types, so an invalid paste never
- * looks like it worked. */
+/** What is wrong with the textarea, or null when it is applicable. */
 const jsonProblem = computed<string | null>(() => {
   const text = jsonText.value.trim()
   if (text.length === 0) return 'Nothing to apply — the JSON is empty.'
@@ -104,8 +90,7 @@ const jsonProblem = computed<string | null>(() => {
 // ─── Central config (usePabrikConfig composable) ──────────────────────────
 const { config, loaded, dirty, saving, setConfig, save } = usePabrikConfig(source)
 
-// Autosave. Every edit handler funnels into `schedule()`, so the change itself is the trigger — no
-// Save button, and no `watch()` (banned here: a reaction must live in the handler that caused it).
+// Autosave.
 const saveError = ref<string | null>(null)
 const savedOnce = ref(false)
 const autosave = useDebouncedRunner(AUTOSAVE_DELAY_MS, persist)
@@ -122,16 +107,12 @@ onBeforeUnmount(() => {
   void autosave.flush()
 })
 
-// ─── Tab mode ──────────────────────────────────────────────────────────── This one is an app
-// preference, not part of the server config: the tab set is client-side state, so it is
-// deliberately NOT a field in the config v-model.
+// ─── Tab mode ────────────────────────────────────────────────────────────
 const tabsStore = useTabsStore()
 const router = useRouter()
 const route = useRoute()
 
-// ─── Active tab: URL (?section=) → localStorage → general ──────────────── D5 of plan
-// 2026-09-22-tools-menu-config-default-tools: every tab switch lands in the URL so refresh /
-// Back-Forward / shared links keep the open section.
+// ─── Active tab: URL (?section=) → localStorage → general ────────────────
 function readStoredTab(): Tab | null {
   try {
     const saved = localStorage.getItem(TAB_STORAGE_KEY)
@@ -141,9 +122,7 @@ function readStoredTab(): Tab | null {
   }
 }
 
-// Falls back to the FIRST section this editor offers, not to `general`:
-// an editor mounted with `sections: ['agents', ...]` has no General to show,
-// and defaulting to it renders an empty pane.
+// Falls back to the FIRST section this editor offers, not to `general`
 const firstTab = computed<Tab>(() => props.sections[0] ?? 'general')
 const activeTabLocal = ref<Tab>(readStoredTab() ?? props.sections[0] ?? 'general')
 
@@ -166,18 +145,14 @@ const activeTab = computed<Tab>({
     }
     if (!router || !route) return
     const rest = { ...route.query }
-    // Default tab is stripped from the URL to keep it clean (mirrors
-    // KanbanSettingsView). Other params (e.g. a browser `?tab=` ID)
-    // are preserved untouched.
+    // Default tab is stripped from the URL to keep it clean (mirrors KanbanSettingsView).
     if (next === 'general') delete rest.section
     else rest.section = next
     void router.replace({ query: rest })
   },
 })
 
-/**  * Turning tab mode off must leave no trace: the route funnel stops creating/normalising tabs, and
- * the now-meaningless `?tab=` is dropped from the URL. Guarded because this component also mounts
- * in tests without a router installed. */
+/** Turning tab mode off must leave no trace: the route funnel stops creating/normalising tabs, and the now-meaningless `?tab=` is dropped from the URL. */
 function onToggleBrowserTabs(value: boolean) {
   tabsStore.setEnabled(value)
   if (value || !router || !route) return
@@ -219,8 +194,7 @@ function showJson() {
   mode.value = 'json'
 }
 
-/** Leave JSON mode. Refuses to leave when the textarea holds text that has NOT been applied and
- * cannot be - leaving would silently discard an edit the user is mid-way through. */
+/** Leave JSON mode. */
 function showForm() {
   if (mode.value === 'json' && jsonText.value.trim().length > 0 && !applyJson()) return
   mode.value = 'form'
@@ -230,8 +204,7 @@ function onJsonInput() {
   jsonApplied.value = false
 }
 
-/** Fold the textarea into the in-memory config, then re-hydrate the sections. Written straight to
- * `config` rather than through `setConfig`, which re-snapshots and would mark the edit saved. */
+/** Fold the textarea into the in-memory config, then re-hydrate the sections. */
 function applyJson(): boolean {
   if (jsonProblem.value !== null) return false
   config.value = JSON.parse(jsonText.value) as PabrikConfig
@@ -242,8 +215,7 @@ function applyJson(): boolean {
 }
 
 onMounted(async () => {
-  // Every view switch lands in the URL (?section=) so refresh / Back-Forward / shared links keep
-  // the open tab.
+  // Every view switch lands in the URL (?section=) so refresh / Back-Forward / shared links keep the open tab.
   try {
     if (router && route) {
       const actual = activeTab.value
@@ -272,30 +244,23 @@ onMounted(async () => {
   } catch {
     /* router absent in tests */
   }
-  // Plan 2026-08-24-config-simplify-remove-defaults: the legacy localStorage fallback (which
-  // existed solely to seed the removed Defaults form) is gone. The API response is the only source.
-  // Read through the SOURCE.
+  // Plan 2026-08-24-config-simplify-remove-defaults: the legacy localStorage fallback (which existed solely to seed the removed Defaults form) is gone.
   await reload()
 })
 
 // ─── Per-section view state ──────────────────────────────────────────────
 const agentsList = ref<AgentRow[]>([])
 const activeAgent = ref<string | null>(null)
-/**  * Has the agent list been edited this session? An emptied list must still be written through —
- * otherwise deleting the LAST agent would save the pre-delete map back and resurrect it. */
+/** Has the agent list been edited this session? */
 const agentsTouched = ref(false)
 const mcpServersList = ref<McpServer[]>([])
-// Web search providers (`web_search` in config.json). Edited as rows rather than as the raw map —
-// see components/pabrik/webSearchProviders.ts.
+// Web search providers (`web_search` in config.json).
 const webSearchRows = ref<WebSearchProviderRow[]>([])
 const webSearchErrors = ref<Record<string, string>>({})
-// Default tool checklist (Tools tab). `null` = config.json has no
-// `tools` key → the built-in defaults render and nothing is written
-// back until the user changes a checkbox.
+// Default tool checklist (Tools tab).
 const toolsList = ref<string[] | null>(null)
 
-// Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the General tab uses a single
-// `defineModel<PabrikGeneralSettings>` v-model surface in PabrikGeneralSection.vue.
+// Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the General tab uses a single `defineModel<PabrikGeneralSettings>` v-model surface in …
 const generalSettings = ref<PabrikGeneralSettings>({
   notify_on_complete: false,
   notify_on_error: false,
@@ -312,14 +277,11 @@ const runtimeSettings = ref<PabrikRuntimeSettings>({
   agent_auto_compaction: true,
 })
 
-// Skill Evals tab. Only `enabled` is editable in the UI; the budget
-// knobs ride along untouched (see skillEvalsRaw below) so flipping the
-// switch can never reset a hand-edited value in config.json.
+// Skill Evals tab.
 const skillEvalsSettings = ref<SkillEvalsSettings>({ enabled: false })
 /** The block exactly as the GET returned it. Replayed verbatim on save. */
 const skillEvalsRaw = ref<PabrikConfig['skill_evals']>(undefined)
-/** What `enabled` was at hydrate time, so we can tell "untouched" from
- * "the user flipped it" — see the guard in syncToConfig. */
+/** What `enabled` was at hydrate time, so we can tell "untouched" from "the user flipped it" — see the guard in syncToConfig. */
 const skillEvalsHydrated = ref(false)
 
 function syncFromConfig() {
@@ -334,18 +296,14 @@ function syncFromConfig() {
     url_style: p.url_style ?? 'openai',
     api_key: p.api_key ?? '',
     system_prompt: p.system_prompt ?? '',
-    // Transport + its Claude Code knobs. Absent `backend` reads as "http",
-    // matching the backend's default so nothing migrates.
+    // Transport + its Claude Code knobs.
     backend: p.backend ?? 'http',
     config_dir: p.config_dir ?? null,
     max_turns: p.max_turns ?? null,
-    // Compaction overrides — both top-level and per-agent coexist. Each layer cascades over the
-    // next; the agent's own wins over the top-level.
+    // Compaction overrides — both top-level and per-agent coexist.
     max_capacity_tokens: p.max_capacity_tokens ?? null,
     compaction_threshold_percent: p.compaction_threshold_percent ?? null,
-    // Model-thinking knobs (plan 2026-08-23-model-thinking). Anthropic budget + OpenAI effort. Both
-    // default to null when missing from the persisted agent, so the form can decide whether to
-    // render the row (it does for thinking !== "off").
+    // Model-thinking knobs (plan 2026-08-23-model-thinking).
     thinking_budget_tokens: p.thinking_budget_tokens ?? null,
     reasoning_effort: p.reasoning_effort ?? null,
     enabled: p.enabled ?? true,
@@ -353,47 +311,37 @@ function syncFromConfig() {
   activeAgent.value = c.active_profile ?? null
   agentsTouched.value = false
   mcpServersList.value = parseMcpServers(c.mcp_servers)
-  // Web search providers hydrate with whatever `key` the backend sent, which may be a MASK rather
-  // than the secret. It is kept verbatim so a save that does not touch the key field cannot blank
-  // the stored credential — see webSearchProviders.ts.
+  // Web search providers hydrate with whatever `key` the backend sent, which may be a MASK rather than the secret.
   webSearchRows.value = parseWebSearchProviders(c.web_search)
   webSearchErrors.value = {}
-  // Tools checklist — `null`/absent stays null (built-in defaults);
-  // an array hydrates the checklist as an explicit selection.
+  // Tools checklist — `null`/absent stays null (built-in defaults); an array hydrates the checklist as an explicit selection.
   toolsList.value = c.tools ?? null
 
-  // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: hydrate the General tab from the
-  // loaded config.
+  // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: hydrate the General tab from the loaded config.
   generalSettings.value = {
     notify_on_complete: c.notify_on_complete ?? false,
     notify_on_error: c.notify_on_error ?? false,
-    // Plan 2026-09-10-web-launch-toggle: browser-mode flag, same
-    // `?? false` hydration as the notify toggles.
+    // Plan 2026-09-10-web-launch-toggle: browser-mode flag, same `?? false` hydration as the notify toggles.
     web_launch_enabled: c.web_launch_enabled ?? false,
     chat_view: c.chat_view === 'compact' ? 'compact' : 'dev',
   }
-  // Treat `undefined` (missing key) and explicit 0 the same way so
-  // hydrating an absent field is not read as an edit.
+  // Treat `undefined` (missing key) and explicit 0 the same way so hydrating an absent field is not read as an edit.
   runtimeSettings.value = {
     retry_delay_ms: c.retry_delay_ms ?? 0,
     llm_read_timeout_ms: c.llm_read_timeout_ms ?? 900_000,
     // `null`/absent on disk means enabled — the same reading the backend does.
     agent_auto_compaction: c.agent_auto_compaction ?? true,
   }
-  // Remember the persisted flag so the autosave can detect the OFF→ON
-  // transition for the one-time browser auto-open.
+  // Remember the persisted flag so the autosave can detect the OFF→ON transition for the one-time browser auto-open.
   prevWebLaunch.value = generalSettings.value.web_launch_enabled
 
-  // Skill Evals: keep the raw block for the save, and project just the switch for the checkbox. A
-  // config with no `skill_evals` key hydrates as OFF — the same default the runtime uses, so the
-  // toggle never shows a phantom ON.
+  // Skill Evals: keep the raw block for the save, and project just the switch for the checkbox.
   skillEvalsRaw.value = c.skill_evals
   skillEvalsHydrated.value = c.skill_evals?.enabled ?? false
   skillEvalsSettings.value = { enabled: skillEvalsHydrated.value }
 }
 
-// ─── Models & compaction ────────────────────────────────────────────── THE TWO FIELDS THAT HAD NO
-// UI.
+// ─── Models & compaction ──────────────────────────────────────────────
 const catalogFreshness = ref<'fresh' | 'stale' | 'absent'>('absent')
 const catalogModelTotal = ref<number | null>(null)
 const catalogError = ref<string | null>(null)
@@ -439,8 +387,7 @@ async function loadCatalogStatus(): Promise<void> {
     catalogModelTotal.value = res.total
     catalogError.value = null
   } catch (err) {
-    // Surface it: "not synced yet" and "the server is down" are different
-    // states and the label must not collapse them.
+    // Surface it: "not synced yet" and "the server is down" are different states and the label must not collapse them.
     catalogFreshness.value = 'absent'
     catalogModelTotal.value = null
     catalogError.value = err instanceof Error ? err.message : String(err)
@@ -465,35 +412,27 @@ onMounted(() => void loadCatalogStatus())
 function syncToConfig() {
   if (!config.value) return
   const c = config.value
-  // Only write list fields when non-empty, so the structural shape of the config stays close to the
-  // original (loaded) snapshot. Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
-  // defaults are no longer sent — the agents map + operational settings only.
+  // Only write list fields when non-empty, so the structural shape of the config stays close to the original (loaded) snapshot.
   const agents = agentsToRecord(agentsList.value)
   const mcpServers = serializeMcpServers(mcpServersList.value)
   const webSearch = serializeWebSearchProviders(webSearchRows.value)
   config.value = {
     ...c,
-    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the operational settings are
-    // driven by their tabs (`generalSettings`, `runtimeSettings`). Always write them through so
-    // toggling one reaches the autosave as the edit it is.
+    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the operational settings are driven by their tabs (`generalSettings`, `runtimeSettings`).
     notify_on_complete: generalSettings.value.notify_on_complete,
     notify_on_error: generalSettings.value.notify_on_error,
     retry_delay_ms: runtimeSettings.value.retry_delay_ms,
     llm_read_timeout_ms: runtimeSettings.value.llm_read_timeout_ms,
-    // Absent on disk means enabled, so the sibling of the two above defaults to
-    // `true` rather than `false` before the user touches it.
+    // Absent on disk means enabled, so the sibling of the two above defaults to `true` rather than `false` before the user touches it.
     agent_auto_compaction: runtimeSettings.value.agent_auto_compaction,
-    // Plan 2026-09-10-web-launch-toggle: 4th operational setting,
-    // always written through like its siblings.
+    // Plan 2026-09-10-web-launch-toggle: 4th operational setting, always written through like its siblings.
     web_launch_enabled: generalSettings.value.web_launch_enabled,
     chat_view: generalSettings.value.chat_view,
-    // Skill Evals: write the switch on top of the raw block, so the budget knobs the UI doesn't
-    // expose survive the save untouched.
+    // Skill Evals: write the switch on top of the raw block, so the budget knobs the UI doesn't expose survive the save untouched.
     ...(skillEvalsSettings.value.enabled !== skillEvalsHydrated.value
       ? {
           skill_evals: {
-            // Spreading a missing block already contributes nothing —
-            // an explicit `?? {}` fallback is dead weight here.
+            // Spreading a missing block already contributes nothing — an explicit `?? {}` fallback is dead weight here.
             ...skillEvalsRaw.value,
             enabled: skillEvalsSettings.value.enabled,
           },
@@ -502,21 +441,15 @@ function syncToConfig() {
         ? { skill_evals: skillEvalsRaw.value }
         : {}),
     // Top-level compaction defaults — plan 2026-07-07-compaction-inline.
-    // Unconditional spread so `null` is preserved (cascade wildcard).
     max_capacity_token_model: c.max_capacity_token_model,
     compaction_threshold_percent: c.compaction_threshold_percent,
-    // The agents map rides under the wire key `profiles` — the storage
-    // contract keeps its old name, the concept is an AGENT.
+    // The agents map rides under the wire key `profiles` — the storage contract keeps its old name, the concept is an AGENT.
     ...(agentsTouched.value || Object.keys(agents).length > 0 ? { profiles: agents } : {}),
     ...(activeAgent.value ? { active_profile: activeAgent.value } : {}),
     ...(mcpServers ? { mcp_servers: mcpServers } : {}),
-    // Same guard for `web_search`: no providers means the key is left
-    // exactly as loaded, so the backend sees "no change" instead of an
-    // empty map that would wipe the user's providers.
+    // Same guard for `web_search`: no providers means the key is left exactly as loaded, so the backend sees "no change" instead of an empty map that would wipe the …
     ...(webSearch ? { web_search: webSearch } : {}),
-    // Tools checklist follows the mcp_servers guard: while nothing was chosen (`null`) the key is
-    // left exactly as loaded so the backend sees "no change"; a chosen list — including `[]` — is
-    // written through and replaces the whole stored list.
+    // Tools checklist follows the mcp_servers guard: while nothing was chosen (`null`) the key is left exactly as loaded so the backend sees "no change"; a chosen …
     ...(toolsList.value !== null ? { tools: toolsList.value } : {}),
   }
   autosave.schedule()
@@ -592,8 +525,6 @@ function startEditAgent(p: AgentRow) {
         max_capacity_tokens: p.max_capacity_tokens ?? null,
         compaction_threshold_percent: p.compaction_threshold_percent ?? null,
         // Model-thinking knobs (plan 2026-08-23-model-thinking).
-        // Hydrate from the loaded agent so the form re-opens
-        // with the previously-saved budget / effort.
         thinking_budget_tokens: p.thinking_budget_tokens ?? null,
         reasoning_effort: p.reasoning_effort ?? null,
       },
@@ -659,8 +590,7 @@ function uniqueAgentCopyName(name: string): string {
   return candidate
 }
 
-/** Duplicate an agent under a fresh key. The copy is a normal list entry, so it
- * reaches config.json through the autosave like every other edit. */
+/** Duplicate an agent under a fresh key. */
 function duplicateAgent(name: string) {
   const source = agentsList.value.find((a) => a.name === name)
   if (!source) return
@@ -703,9 +633,7 @@ function startAddMcpServer() {
     value: {
       name: '',
       transport: 'stdio', // default for new entries — stdio is the
-      // canonical MCP transport and the user added it specifically for
-      // that. Legacy callers can pass `initialTransport='http'` if
-      // they need the old behaviour.
+      // canonical MCP transport and the user added it specifically for that.
       url: '',
       headers: [],
       command: '',
@@ -798,16 +726,13 @@ function toggleMcpServer(name: string) {
   syncToConfig()
 }
 
-// ToolsSection always emits the FULL explicit array — write it to
-// the section ref and re-serialize so the autosave picks the change up.
+// ToolsSection always emits the FULL explicit array — write it to the section ref and re-serialize so the autosave picks the change up.
 function handleToolsChange(list: string[]) {
   toolsList.value = list
   syncToConfig()
 }
 
-// ─── Web search providers ───────────────────────────────────────────────── The section edits rows
-// in place; every mutation clears the row errors, because an error describes the row as it was when
-// the save failed and would otherwise outlive the edit that fixed it.
+// ─── Web search providers ─────────────────────────────────────────────────
 function updateWebSearchRows(rows: WebSearchProviderRow[]) {
   webSearchRows.value = rows
   webSearchErrors.value = {}
@@ -827,8 +752,7 @@ async function setActiveAgent(name: string) {
   emit('notification', `Active agent set to "${name}"`, 'success')
 }
 
-// Clearing writes `active_profile: ""` — an ABSENT key means "no change" to the
-// backend, so omitting it would leave the old agent active.
+// Clearing writes `active_profile: ""` — an ABSENT key means "no change" to the backend, so omitting it would leave the old agent active.
 async function clearActiveAgent() {
   const previous = activeAgent.value
   activeAgent.value = null
@@ -844,13 +768,10 @@ async function clearActiveAgent() {
 }
 
 // ─── Autosave ───────────────────────────────────────────────────────────
-/** Write the config now and report the outcome. Never rejects: a failure lands in `saveError`, so
- * the status strip and the web-search rows can show it. */
 async function persist(): Promise<string | null> {
   if (!config.value || !dirty.value) return null
   saveError.value = null
-  // Pre-flight the web search rows against the rules the backend enforces. A provider the backend
-  // would refuse would otherwise reach disk and then be dropped by the runtime's parser.
+  // Pre-flight the web search rows against the rules the backend enforces.
   const rowErrors = validateWebSearchRows(webSearchRows.value)
   if (Object.keys(rowErrors).length > 0) {
     webSearchErrors.value = rowErrors
@@ -888,8 +809,7 @@ async function persistNow(): Promise<string | null> {
   return saveError.value
 }
 
-/** A rename writes the NEW key and leaves the old one in the map (the PUT merges profiles), so the
- * stale key has to go — only after a successful write, so an abandoned edit loses nothing. */
+/** A rename writes the NEW key and leaves the old one in the map (the PUT merges profiles), so the stale key has to go — only after a successful write, so an … */
 async function removeRenamedAgentKeys(): Promise<void> {
   const liveNames = new Set(agentsList.value.map((agent) => agent.name))
   const stale = Object.entries(agentRenameOrigins.value)
@@ -904,9 +824,7 @@ async function removeRenamedAgentKeys(): Promise<void> {
   }
 }
 
-// ─── Web launch (browser mode) ────────────────────────────────────────── Plan
-// 2026-09-10-web-launch-toggle: the General tab pill shows the live browser URL from `GET
-// /api/web/status`.
+// ─── Web launch (browser mode) ──────────────────────────────────────────
 const webUrl = ref<string | null>(null)
 const prevWebLaunch = ref(false)
 
@@ -938,8 +856,7 @@ async function copyWeb() {
   }
 }
 
-// Fetch the live URL once settings load (best-effort — a null just
-// renders the waiting hint until the next save refreshes it).
+// Fetch the live URL once settings load (best-effort — a null just renders the waiting hint until the next save refreshes it).
 onMounted(async () => {
   await refreshWebStatus()
 })
@@ -967,8 +884,7 @@ async function reload() {
     syncFromConfig()
     if (mode.value === 'json') seedJsonText()
   } catch (err) {
-    // An unreadable config and a workspace that legitimately has none must not
-    // look identical.
+    // An unreadable config and a workspace that legitimately has none must not look identical.
     emit(
       'notification',
       `Could not load the settings: ${err instanceof Error ? err.message : String(err)}`,

@@ -10,8 +10,7 @@ const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
 const is_worker_running = @import("../loop/is_worker_running.zig");
 
-/// Input for view_session. Omitting `session_id` reports the CALLER's own
-/// session — the common "where am I working?" question.
+/// Input for view_session.
 pub const ViewSessionInput = struct {
     /// A session in your workspace to inspect. Omit for your own session.
     session_id: []const u8 = "",
@@ -74,8 +73,7 @@ fn countScalar(allocator: std.mem.Allocator, db: *database.Db, sql: []const u8, 
     return 0;
 }
 
-/// One owned string from a single-row scalar query, or "" when there is no
-/// row.
+/// One owned string from a single-row scalar query, or "" when there is no row.
 fn scalar(allocator: std.mem.Allocator, db: *database.Db, sql: []const u8, binds: []const []const u8) ![]u8 {
     var rows = try db.query(allocator, sql, binds);
     defer rows.deinit();
@@ -104,8 +102,7 @@ const TaskDetail = struct {
     }
 };
 
-/// The kanban/agent task this session IS, when it is a task chat. A session
-/// id doubles as the task id (Migration 052), so the join is by id.
+/// The kanban/agent task this session IS, when it is a task chat.
 fn taskDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?TaskDetail {
     var rows = try db.query(allocator,
         \\SELECT t.id, COALESCE(CAST(t.name AS TEXT), ''), COALESCE(CAST(t.cwd AS TEXT), ''), wi.id,
@@ -141,8 +138,7 @@ const WorkerDetail = struct {
     }
 };
 
-/// The live `worker` row, when a turn is executing. `is_running` is derived
-/// from the same row, so the two can never disagree.
+/// The live `worker` row, when a turn is executing.
 fn workerDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?WorkerDetail {
     var rows = try db.query(allocator,
         \\SELECT COALESCE(CAST(working_directory AS TEXT), ''), COALESCE(last_activity_nano, 0),
@@ -210,8 +206,7 @@ const SessionDetail = struct {
     }
 };
 
-/// Read every column view_session reports for one session, or null when the
-/// row is gone. Reads only; the caller owns the result.
+/// Read every column view_session reports for one session, or null when the row is gone.
 fn loadSessionDetail(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?SessionDetail {
     var rows = try db.query(allocator,
         \\SELECT id, COALESCE(CAST(name AS TEXT), ''), COALESCE(CAST(status AS TEXT), ''), COALESCE(CAST(cwd AS TEXT), ''),
@@ -256,8 +251,7 @@ fn loadSessionDetail(allocator: std.mem.Allocator, db: *database.Db, session_id:
     };
     errdefer detail.deinit(allocator);
 
-    // Parsed and duped INSIDE the row scope: a `break` that returned these
-    // slices would hand back memory the row's `defer` is about to free.
+    // Parsed and duped INSIDE the row scope: a `break` that returned these slices would hand back memory the row's `defer` is about to free.
     detail.message_count = blk: {
         var r = try db.query(allocator,
             \\SELECT COUNT(*), COALESCE(MAX(created_at_nano), '') FROM llm_history WHERE session_id = ?
@@ -298,9 +292,7 @@ fn jsonError(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, .{ .@"error" = clean }, .{});
 }
 
-/// The read gate, shared with `read_workspace_session`: your own session is
-/// always visible, a peer only inside your workspace. Never leaks fields on a
-/// denial.
+/// The read gate, shared with `read_workspace_session`: your own session is always visible, a peer only inside your workspace.
 fn deniedJSON(allocator: std.mem.Allocator, session_id: []const u8) ![]u8 {
     const clean = try sanitize(allocator, session_id);
     defer allocator.free(clean);
@@ -329,13 +321,11 @@ pub fn execute_view_session(
     defer detail.deinit(allocator);
 
     // Your own session is always visible; a peer must share the workspace.
-    // Fail closed: an unresolvable pair is not "same".
     if (!is_self and !try workspace_scope.isSameWorkspace(allocator, db, caller_session_id, target)) {
         return deniedJSON(allocator, target);
     }
 
-    // The RESOLVED workspace, not the raw column: a task-linked session (the
-    // common case) has no stamped value and resolves through its task row.
+    // The RESOLVED workspace, not the raw column: a task-linked session (the common case) has no stamped value and resolves through its task row.
     const resolved_workspace = try workspace_scope.resolveWorkspaceId(allocator, db, target);
     defer if (resolved_workspace) |w| allocator.free(w);
     const workspace_id: []const u8 = resolved_workspace orelse "";
@@ -769,8 +759,7 @@ test "view_session: is_running comes from the same worker row as the detail" {
     defer before_parsed.deinit();
     try testing.expect(!before_parsed.value.object.get("is_running").?.bool);
 
-    // Positive control: with a worker row present it flips, so the assertion
-    // above is not a field that is hard-coded false.
+    // Positive control: with a worker row present it flips, so the assertion above is not a field that is hard-coded false.
     try s.db.exec(alloc, "INSERT INTO worker (id, session_id) VALUES ('mate', 'mate')", &.{});
     try testing.expect(is_worker_running.isWorkerRunning(alloc, &s.db, "mate"));
     const after = try execute_view_session(alloc, &s.db, "caller", .{ .session_id = "mate" });
@@ -793,8 +782,7 @@ test "view_session: the schema and prompt teach own-session default and the deni
     try testing.expectEqual(@as(usize, 0), tool.parameters.required.len);
     try testing.expect(std.mem.indexOf(u8, tool.parameters.properties[0].description, "your own session") != null);
 
-    // The field list is the contract, so it is asserted by name; the budget
-    // keeps the surrounding prose from growing back around it.
+    // The field list is the contract, so it is asserted by name; the budget keeps the surrounding prose from growing back around it.
     try testing.expect(std.mem.indexOf(u8, tool.description, "git_worktree_cwd") != null);
     try testing.expect(std.mem.indexOf(u8, tool.description, "item_type") != null);
     try testing.expect(tool.description.len <= 1350);

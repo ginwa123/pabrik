@@ -1,6 +1,4 @@
-/** Folder-mode diff, end to end in the panel. The contract this pins: the frontend reads diffs ONLY
- * through folder mode. `loadFullList` makes ONE POST for the whole repo and primes the shared
- * snapshot, so clicking a file row costs ZERO further requests. */
+/** Folder-mode diff, end to end in the panel. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import SidebarDiffPanel from '../chat_right_sidebar/SidebarDiffPanel.vue'
@@ -44,9 +42,7 @@ const CHANGES = {
 const diffFor = (path: string) =>
   `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new`
 
-// What the server answers for `folder: ""` — the whole repo, staged side
-// first for anything both-staged-and-modified. The client named a folder,
-// not a file list.
+// What the server answers for `folder: ""` — the whole repo, staged side first for anything both-staged-and-modified.
 const FOLDER_RESULT = {
   diffs: [
     { path: 'staged.txt', diff_content: diffFor('staged.txt'), staged: true },
@@ -67,8 +63,7 @@ const clickFileRow = async (wrapper: ReturnType<typeof mountPanel>, label: strin
   const row = wrapper
     .findAll('.diff-file-row, [data-testid="file-row"]')
     .find((r) => r.text().includes(label))
-  // The rows carry no stable class in every build; fall back to the first
-  // clickable element whose text names the file.
+  // The rows carry no stable class in every build; fall back to the first clickable element whose text names the file.
   const target =
     row ??
     wrapper.findAll('button').find((b) => b.text().includes(label)) ??
@@ -80,9 +75,7 @@ const clickFileRow = async (wrapper: ReturnType<typeof mountPanel>, label: strin
 describe('SidebarDiffPanel folder diff', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // The snapshot is module-level on purpose (that is what makes a click
-    // free), so it must be dropped between tests or one test's repo leaks
-    // into the next.
+    // The snapshot is module-level on purpose (that is what makes a click free), so it must be dropped between tests or one test's repo leaks into the next.
     clearFolderDiffCache()
     getGitChangesMock.mockResolvedValue(CHANGES)
     getGitFolderDiffsMock.mockResolvedValue(FOLDER_RESULT)
@@ -106,9 +99,7 @@ describe('SidebarDiffPanel folder diff', () => {
     await flushPromises()
     expect(getGitFolderDiffsMock).toHaveBeenCalledTimes(1)
 
-    // The snapshot is what a click reads. Prime-and-read is the contract the
-    // click handler depends on, so assert it directly rather than only
-    // inferring it from request counts.
+    // The snapshot is what a click reads.
     expect(readFolderDiff('/repo', 'dirty.txt', false)?.diff_content).toContain('+new')
     // Staged and unstaged are separate entries — same path, both sides.
     expect(readFolderDiff('/repo', 'staged.txt', true)?.diff_content).toContain('+new')
@@ -133,8 +124,7 @@ describe('SidebarDiffPanel folder diff', () => {
     const listed = wrapper.emitted('show-diff-list')
     expect(listed).toHaveLength(1)
     const files = listed![0]![0] as Array<{ path: string; error?: string }>
-    // Every row is reported, marked failed — no file quietly disappears and
-    // no second wave of per-file requests goes out.
+    // Every row is reported, marked failed — no file quietly disappears and no second wave of per-file requests goes out.
     expect(files.map((f) => f.path)).toEqual(['staged.txt', 'dirty.txt', 'new.txt'])
     expect(files.every((f) => !!f.error)).toBe(true)
     expect(getGitFolderDiffsMock).toHaveBeenCalledTimes(1)

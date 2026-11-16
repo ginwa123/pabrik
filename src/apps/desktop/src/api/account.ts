@@ -2,8 +2,6 @@ import { ApiError, apiFetch } from './client'
 import { tryParseJsonErrorField } from './internal'
 
 // ─── Account: change your own password ──────────────────────────────────────
-/** Mirrors `auth_password.zig`'s policy so the form can refuse locally what
- * the server would refuse anyway. */
 export const CHANGE_PASSWORD_MIN_LENGTH = 8
 export const CHANGE_PASSWORD_MAX_LENGTH = 72
 
@@ -13,8 +11,7 @@ export interface ChangePasswordResult {
   sessions_revoked: number
 }
 
-/** `POST /api/auth/password` — verify the current password, then rotate it.
- * `silent` because the form renders the rejection inline, next to the field. */
+/** `POST /api/auth/password` — verify the current password, then rotate it. */
 export async function changePassword(body: {
   current_password: string
   new_password: string
@@ -26,9 +23,7 @@ export async function changePassword(body: {
   })
 }
 
-/** The server's `{"error": "..."}` code from a failed `changePassword`.
- * Delegates the parse to `tryParseJsonErrorField` so this file adds no new
- * try/catch beyond the ones the lint baseline already carries. */
+/** The server's `{"error": "..."}` code from a failed `changePassword`. */
 export function changePasswordErrorCode(err: unknown): string | null {
   if (!(err instanceof ApiError)) return null
   return tryParseJsonErrorField(err.body)

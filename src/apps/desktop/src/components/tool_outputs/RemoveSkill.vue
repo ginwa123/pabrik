@@ -7,17 +7,13 @@ import { normalizeToolContent, parseRemoveSkill } from './_shared/toolOutputPars
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Surfaced via the
-   *  shared <ToolParameters> block in the expanded body; empty/'{}'
-   *  renders nothing (see ToolParameters.vue hasArgs guard). */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
 // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
-// Without this the card renders its failure styling (`border-[var(--tint-error-border)]` + a red cross) for the
-// whole tool call, because `parsed.removed` is false while the envelope is empty.
 const isEmptyContent = (c: unknown): boolean =>
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content))

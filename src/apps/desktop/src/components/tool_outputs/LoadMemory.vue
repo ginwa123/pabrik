@@ -66,9 +66,7 @@ interface MemoryEntry {
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Accepted so the
-   *  dispatcher can thread call args uniformly; the load result carries
-   *  no "unknown" fallback that needs it today. */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
@@ -112,9 +110,7 @@ const dataRecord = computed(() => asRecord(normalized.value.data))
 
 // Running: result envelope is still empty (no entries/error yet).
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content))
 
@@ -134,8 +130,7 @@ const withContent = computed(() => {
 /** Returned-page size (count of entries in *this* response). */
 const count = computed((): number | null => numOrNull(dataRecord.value.count))
 
-/** Total rows matching the FTS5 query (before LIMIT/OFFSET). The LLM
- *  uses this to know whether more pages exist via offset. */
+/** Total rows matching the FTS5 query (before LIMIT/OFFSET). */
 const totalCount = computed((): number | null => numOrNull(dataRecord.value.total_count))
 
 // ── Parse entries ─────────────────────────────────────────────────────────
@@ -169,8 +164,7 @@ const summaryText = computed((): string => {
   const parts: string[] = []
   if (queryText.value) parts.push(`"${truncateMiddle(queryText.value, 48)}"`)
 
-  // Counters: "3 of 7" when paginated, just "7" when all fit, "0 hits"
-  // when empty.
+  // Counters: "3 of 7" when paginated, just "7" when all fit, "0 hits" when empty.
   const c = count.value
   const t = totalCount.value
   if (c === 0 && (t === 0 || t === null)) {
@@ -211,9 +205,7 @@ const copyId = async (e: Event, id: string) => {
   }
 }
 
-// Per-entry "show full content" toggle. Mirrors ReadWorkspaceSession's
-// pattern — we only render <content> when the user explicitly expands
-// it, keeping the bubble compact even when one entry is huge.
+// Per-entry "show full content" toggle.
 const expandedContentIds = ref<Set<string>>(new Set())
 const isContentExpanded = (id: string): boolean => expandedContentIds.value.has(id)
 const toggleContent = (id: string): void => {
@@ -224,17 +216,13 @@ const toggleContent = (id: string): void => {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-/** Truncate `s` to `max` chars, keeping both ends (more useful for
- *  long queries than a pure tail ellipsis). */
 function truncateMiddle(s: string, max: number): string {
   if (s.length <= max) return s
   const half = Math.max(2, Math.floor((max - 1) / 2))
   return `${s.slice(0, half)}…${s.slice(s.length - half)}`
 }
 
-/** Parse a snippet that uses `[match]…[/match]` markers into a list
- *  of (text, isMatch) segments for Vue rendering. Same algorithm as
- *  ReadWorkspaceSession.vue — backend emits the same marker format. */
+/** Parse a snippet that uses `[match]…[/match]` markers into a list of (text, isMatch) segments for Vue rendering. */
 function parseSnippet(snippet: string): { text: string; match: boolean }[] {
   const out: { text: string; match: boolean }[] = []
   let i = 0

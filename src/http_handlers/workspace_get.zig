@@ -1,6 +1,4 @@
-//! `GET /api/workspaces/:id` — fetch a workspace by id. Layered as `useCase`
-//! (resolve singleton + read DB) and a thin handler that maps the outcome +
-//! errors to status codes / JSON.
+//! `GET /api/workspaces/:id` — fetch a workspace by id.
 
 const std = @import("std");
 const mod = @import("mod.zig");
@@ -20,12 +18,9 @@ pub const DbErrorInfo = struct {
 pub const WorkspaceGetResult = union(enum) {
     found: WorkspaceGetData,
     not_found,
-    /// The SQL query failed at the prepare/bind stage (Rows was never
-    /// created, so no `sqlite3_errmsg` capture is available).
+    /// The SQL query failed at the prepare/bind stage (Rows was never created, so no `sqlite3_errmsg` capture is available).
     query_failed: DbErrorInfo,
-    /// `Rows.next()` returned an error after the Rows object was
-    /// created; `sqlite_message` is the last `sqlite3_errmsg(db)`
-    /// value (may be empty if the backend couldn't capture it).
+    /// `Rows.next()` returned an error after the Rows object was created; `sqlite_message` is the last `sqlite3_errmsg(db)` value (may be empty if the backend …
     row_fetch_failed: DbErrorInfo,
     out_of_memory,
     id_required,
@@ -36,14 +31,11 @@ pub const WorkspaceGetData = struct {
     name: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
-    /// Whether this workspace runs in a microVM on THIS server (Migration
-    /// 115). False on a local server, which has no Firecracker at all.
+    /// Whether this workspace runs in a microVM on THIS server (Migration 115).
     is_vm: bool,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -54,16 +46,13 @@ fn useCase(
 ) WorkspaceGetResult {
     if (id.len == 0) return .id_required;
 
-    // `db.query` returns `Error!Rows`; on failure the Rows object is never
-    // created, so we can't capture the SQLite error message.
+    // `db.query` returns `Error!Rows`; on failure the Rows object is never created, so we can't capture the SQLite error message.
     var rows = db.query(
         allocator,
         "SELECT id, name, created_at, updated_at, is_vm FROM workspaces WHERE id = ? AND " ++ comptime auth_common.workspaceVisibilityClause("workspaces"),
         &.{ id, owner, owner },
     ) catch |err| {
-        // Build a best-effort message. The sqlite3_errmsg is not available
-        // here because Rows was never created; surface the error name as the
-        // fallback.
+        // Build a best-effort message.
         const fallback: []const u8 = @errorName(err);
         const duped = allocator.dupe(u8, fallback) catch return .out_of_memory;
         return switch (err) {
@@ -73,9 +62,7 @@ fn useCase(
     };
     defer rows.deinit();
 
-    // `rows.next()` calls `sqlite3_errmsg` on failure and caches the message
-    // in `Rows.last_error_msg`. We dup it before `rows.deinit` so the handler
-    // can render it.
+    // `rows.next()` calls `sqlite3_errmsg` on failure and caches the message in `Rows.last_error_msg`.
     const row = (rows.next() catch {
         const captured = rows.getLastErrorMessage() orelse "";
         const duped = allocator.dupe(u8, captured) catch return .out_of_memory;
@@ -89,16 +76,13 @@ fn useCase(
             .name = allocator.dupe(u8, row.values[1]) catch return .out_of_memory,
             .created_at = allocator.dupe(u8, row.values[2]) catch return .out_of_memory,
             .updated_at = allocator.dupe(u8, row.values[3]) catch return .out_of_memory,
-            // The stored flag says the workspace was created by a saas server;
-            // the mode says whether there is a Firecracker here to run it in.
+            // The stored flag says the workspace was created by a saas server; the mode says whether there is a Firecracker here to run it in.
             .is_vm = workspace_vm.runsInVm(mode, row.values[4].len > 0 and row.values[4][0] == '1'),
         },
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn workspaceGetHandler(
     ctx: gserverz.HttpContext,
@@ -112,8 +96,7 @@ pub fn workspaceGetHandler(
 
     const id = req.params.get("id") orelse "";
 
-    // Not-found (not 403) when the workspace belongs to another user, so a
-    // caller cannot probe for the existence of someone else's ids.
+    // Not-found (not 403) when the workspace belongs to another user, so a caller cannot probe for the existence of someone else's ids.
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, di.auth_enabled, req.headers) catch {
         return res.jsonResponse(.{
             .status_code = 500,
@@ -126,8 +109,7 @@ pub fn workspaceGetHandler(
 
     switch (outcome) {
         .found => |data| {
-            // The four strings are duped by useCase; the response body copies
-            // them into a fresh allocation.
+            // The four strings are duped by useCase; the response body copies them into a fresh allocation.
             const body = try std.fmt.allocPrint(
                 allocator,
                 "{{\"id\":\"{s}\",\"name\":\"{s}\",\"created_at\":\"{s}\",\"updated_at\":\"{s}\",\"is_vm\":{s}}}",
@@ -154,9 +136,7 @@ pub fn workspaceGetHandler(
             });
         },
         .query_failed => |info| {
-            // `info.sqlite_message` is duped by useCase but lives in the
-            // per-request arena — freed when the request scope ends (no
-            // manual `defer allocator.free` needed; see the arena note on
+            // `info.sqlite_message` is duped by useCase but lives in the per-request arena — freed when the request scope ends (no manual `defer allocator.free` needed; see …
             return res.jsonResponse(.{
                 .status_code = 500,
                 .data = try std.fmt.allocPrint(
@@ -167,9 +147,7 @@ pub fn workspaceGetHandler(
             });
         },
         .row_fetch_failed => |info| {
-            // Two shapes: with a captured sqlite message (most common,
-            // surfaces e.g. "no such column: foo") or without
-            // (backend couldn't capture — generic fallback).
+            // Two shapes: with a captured sqlite message (most common, surfaces e.g. "no such column: foo") or without (backend couldn't capture — generic fallback).
             const data = if (info.sqlite_message.len > 0)
                 try std.fmt.allocPrint(
                     allocator,
@@ -183,15 +161,12 @@ pub fn workspaceGetHandler(
     }
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 const testing = @import("std").testing;
 
 test "workspaceGetError DbErrorInfo shape is plain" {
-    // Sanity: the struct is a plain data type so the captured
-    // sqlite message can be examined in tests without unwrapping.
+    // Sanity: the struct is a plain data type so the captured sqlite message can be examined in tests without unwrapping.
     const info: DbErrorInfo = .{ .sqlite_message = "no such column: foo" };
     try testing.expectEqualStrings("no such column: foo", info.sqlite_message);
 }

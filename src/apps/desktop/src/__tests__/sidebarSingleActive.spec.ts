@@ -1,6 +1,4 @@
-/** End-to-end test for the "single active row in the sidebar" contract (plan
- * 2026-08-06-sidebar-single-active-state.md, Task 7). The sidebar derives its `active` styling from
- * the URL (via `useCurrentMainView`), not from store flags. */
+/** End-to-end test for the "single active row in the sidebar" contract (plan 2026-08-06-sidebar-single-active-state.md, Task 7). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, createApp } from 'vue'
@@ -18,8 +16,6 @@ import {
 import type { SseClient } from '../helpers/sseClient'
 
 // Stub vue-router per the canonical pattern (mirrors sidebarHandleSelectTaskUrl.spec.ts).
-// `useRoute` returns a `reactive` shape so the composable's computed re-runs when we mutate the
-// query mid-test.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(),
   useRouterMock: vi.fn(() => ({ replace: vi.fn(), push: vi.fn() })),
@@ -107,12 +103,9 @@ function mountSidebar() {
   })
 }
 
-// Count the rendered sidebar's active rows. The "active row" signal is the inline `style` attribute
-// containing `--semantic-active-bg` — both the workspace item row and the design page row inject
-// that CSS variable into the inline `style` when they are the URL-driven active row.
+// Count the rendered sidebar's active rows.
 function countActiveRows(html: string): number {
-  // A loading SKELETON carries the token too \u2014 its shimmer is painted from the same active bg \u2014 and a
-  // skeleton is not a row: it has no identity, so it can never be "the active one".
+  // A loading SKELETON carries the token too \u2014 its shimmer is painted from the same active bg \u2014 and a skeleton is not a row: it has no identity, so it …
   let count = 0
   for (const m of html.matchAll(/<[a-z-]+([^>]*)style="[^"]*--semantic-active-bg[^"]*"/g)) {
     const cls = /class="([^"]*)"/.exec(m[1] ?? '')?.[1] ?? ''
@@ -134,9 +127,7 @@ describe('Sidebar — URL-driven single-active contract', () => {
     const app = createApp({})
     installSseBus(app)
     __setSseBusGlobalClient(makeStubClient())
-    // ChatsList (a child of Sidebar) calls `loadChats()` in onMounted,
-    // which calls `api.getChats`. Stub it so the test doesn't try to
-    // hit the network.
+    // ChatsList (a child of Sidebar) calls `loadChats()` in onMounted, which calls `api.getChats`.
     vi.spyOn(api, 'getChats').mockResolvedValue({
       sessions: [],
       has_more: false,
@@ -150,9 +141,7 @@ describe('Sidebar — URL-driven single-active contract', () => {
     vi.restoreAllMocks()
   })
 
-  /**    * Helper: pre-populate the workspaces store with the design-workspace fixture (1 design item with
-   * 2 design pages). The store's `expandedItemIds` and `designPagesByItemId` caches must be set so
-   * the design pages render (otherwise the `<DesignPageRow>` for `page_42` never mounts). */
+  /** Helper: pre-populate the workspaces store with the design-workspace fixture (1 design item with 2 design pages). */
   function seedWorkspaceFixture() {
     const ws = useWorkspacesStore()
      
@@ -164,9 +153,7 @@ describe('Sidebar — URL-driven single-active contract', () => {
   }
 
   it('design page URL → 2 active rows (item + page), workspace header NOT active', async () => {
-    // URL: viewing a design page. Both the item row AND the page row get the active bg + accent bar
-    // (per the spec's documented mental model — meaningful hierarchy breadcrumb). The expanded
-    // workspace header does NOT get the active bg.
+    // URL: viewing a design page.
     useRouteMock.mockReturnValue({
       query: {
         view: 'workspace',
@@ -190,20 +177,16 @@ describe('Sidebar — URL-driven single-active contract', () => {
     const html = wrapper.html()
     const activeRows = countActiveRows(html)
 
-    // Lock in the documented mental model:
-    //   workspace item row + the matching design page row.
+    // Lock in the documented mental model
     expect(activeRows).toBe(2)
 
     // Explicit assertion: the workspace header button is NOT active.
-    // Without this assertion, a regression could silently bump the
-    // header back to an active bg (pre-Task-6 behaviour).
     const buttons = wrapper.findAll('button')
     const wsHeaderButton = buttons.find((b) => b.text().includes('agentic coding'))
     expect(wsHeaderButton).toBeDefined()
     expect(wsHeaderButton!.attributes('style') ?? '').not.toContain('--semantic-active-bg')
 
-    // The matching page row IS active (regression guard for the
-    // page-id-driven contract from Task 5).
+    // The matching page row IS active (regression guard for the page-id-driven contract from Task 5).
     const activePage = wrapper.find(`[data-page-id="${PAGE_42_ID}"]`)
     expect(activePage.exists()).toBe(true)
     expect(activePage.attributes('style')).toContain('--semantic-active-bg')
@@ -216,9 +199,7 @@ describe('Sidebar — URL-driven single-active contract', () => {
   })
 
   it('chat URL → 0 active rows in the sidebar tree', async () => {
-    // URL: viewing a chat. No workspace item or page is the URL-driven active row. The chat row's
-    // highlight lives inside <ChatsList> (separate from this count). Pre-fix the expanded workspace
-    // header would still be active — this asserts it isn't.
+    // URL: viewing a chat.
     useRouteMock.mockReturnValue({
        
       query: { view: 'chat', session: 'session_xyz' },
@@ -235,13 +216,10 @@ describe('Sidebar — URL-driven single-active contract', () => {
     const html = wrapper.html()
     const activeRows = countActiveRows(html)
 
-    // Zero: nothing in the workspace tree is active when the URL
-    // points at a chat. (The chat row's active bg is inside <ChatsList>,
-    // which uses a different inline-style string — see below.)
+    // Zero: nothing in the workspace tree is active when the URL points at a chat.
     expect(activeRows).toBe(0)
 
-    // Regression guard: the workspace header still has no active bg
-    // even when the URL is chat (Task 6's contract).
+    // Regression guard: the workspace header still has no active bg even when the URL is chat (Task 6's contract).
     const buttons = wrapper.findAll('button')
     const wsHeaderButton = buttons.find((b) => b.text().includes('agentic coding'))
     expect(wsHeaderButton).toBeDefined()

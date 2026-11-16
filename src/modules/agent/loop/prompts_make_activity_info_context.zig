@@ -4,9 +4,7 @@ const pabrikcore = @import("pabrikcore");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
-/// Build activity info string for the agent prompt
-/// Uses worker table as the SOLE source of active workers info
-/// Filters out current session to avoid self-reference
+/// Build activity info string for the agent prompt Uses worker table as the SOLE source of active workers info Filters out current session to avoid self-reference
 pub fn makeActivityInfo(allocator: std.mem.Allocator, io: std.Io, db: *database.Db, current_session_id: []const u8) ![]const u8 {
     const workers = try getActiveWorker(allocator, db);
     defer {

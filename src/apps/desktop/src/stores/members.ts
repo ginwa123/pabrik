@@ -1,5 +1,4 @@
-// Pinia store for workspace members. The list is per workspace and refetched after every write, so
-// the server's ordering (owners first) stays the only ordering there is.
+// Pinia store for workspace members.
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { Cause, Data, Effect, Exit } from 'effect'
@@ -7,8 +6,7 @@ import * as api from '../api'
 import type { WorkspaceMember, WorkspaceRole } from '../api'
 import { tryParseJsonErrorField } from '../api/internal'
 
-/** This store's error channel, the same shape `stores/secrets.ts` uses: the failure is in the TYPE,
- * so every call site decides what to do with it. */
+/** This store's error channel, the same shape `stores/secrets.ts` uses: the failure is in the TYPE, so every call site decides what to do with it. */
 export class MembersRequestError extends Data.TaggedError('MembersRequestError')<{
   readonly op: string
   /** Operator-facing message. Never parsed for control flow. */
@@ -19,8 +17,7 @@ export function describeMembersError(error: MembersRequestError): string {
   return `members ${error.op} failed: ${error.reason}`
 }
 
-/** The server answers its refusals as `{"error": "no active account with the email '…'"}`. THAT
- * sentence is the useful one — `HTTP 404 Not Found` tells the user nothing about what to fix. */
+/** The server answers its refusals as `{"error": "no active account with the email '…'"}`. */
 function reasonOf(e: unknown): string {
   if (e instanceof api.ApiError) {
     return tryParseJsonErrorField(e.body) ?? e.message
@@ -112,8 +109,7 @@ export const useMembersStore = defineStore('members', () => {
     return true
   }
 
-  /** Called on mount and on workspace switch, so one workspace's members — and its error banner —
-   * never paint under another workspace's header. */
+  /** Called on mount and on workspace switch, so one workspace's members — and its error banner — never paint under another workspace's header. */
   function reset(): void {
     members.value = []
     error.value = null

@@ -1,6 +1,4 @@
-// Kanban task descriptions are unlimited (no 5000-char cap). Zig port of
-// `tests/functional/kanban_task_long_description_test.py` (same test names,
-// same order).
+// Kanban task descriptions are unlimited (no 5000-char cap).
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,9 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The cap the frontend used to enforce. Every description below must exceed
-/// it — Python asserted `len(long_desc) > 5000` as a "test bug" guard so a
-/// typo'd multiplier cannot silently turn the suite into a test of nothing.
+/// The cap the frontend used to enforce.
 const OLD_FRONTEND_CAP: usize = 5000;
 
 /// `text` repeated `times` times, owned by the caller.
@@ -76,8 +72,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with the
-/// frontend's `mode: "create_session"` shape → the new task's id.
+/// `POST /api/workspaces/<ws>/items/<kanban>/kanban/tasks` with the frontend's `mode: "create_session"` shape → the new task's id.
 fn createTask(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, name: []const u8, description: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .mode = "create_session",
@@ -112,8 +107,7 @@ fn createTask(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, name
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/workspaces/<ws>/items/<kanban>/tasks/<task>` → the description
-/// field, owned.
+/// `GET /api/workspaces/<ws>/items/<kanban>/tasks/<task>` → the description field, owned.
 fn taskDescription(h: *Harness, workspace_id: []const u8, kanban_id: []const u8, task_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items/{s}/tasks/{s}", .{ workspace_id, kanban_id, task_id });
     defer gpa.free(path);
@@ -141,8 +135,7 @@ fn taskDescription(h: *Harness, workspace_id: []const u8, kanban_id: []const u8,
     return gpa.dupe(u8, desc);
 }
 
-/// `PUT /api/workspaces/tasks/<task_id> {"description": ...}` — the
-/// edit-mode Save. Python asserted only the status (200); so does this.
+/// `PUT /api/workspaces/tasks/<task_id> {"description": ...}` — the edit-mode Save.
 fn updateTaskDescription(h: *Harness, task_id: []const u8, description: []const u8) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .description = description }, .{});
     defer gpa.free(body);

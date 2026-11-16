@@ -1,5 +1,4 @@
-/** Elements whose content the HTML parser reads as raw text up to the matching end tag — and, when
- * the model never writes that end tag, up to the end of the message. Everything after it vanishes. */
+/** Elements whose content the HTML parser reads as raw text up to the matching end tag — and, when the model never writes that end tag, up to the end of the … */
 const RAW_TEXT_TAGS = [
   'style',
   'script',
@@ -12,12 +11,10 @@ const RAW_TEXT_TAGS = [
   'noscript',
 ] as const
 
-/** `<plaintext>` has no end tag at all: every character after it — including the app's own closing
- * tags — becomes text, so it is escaped wherever it appears. */
+/** `<plaintext>` has no end tag at all: every character after it — including the app's own closing tags — becomes text, so it is escaped wherever it appears. */
 const PLAINTEXT = /<plaintext(?=[\s/>])/gi
 
-/** One pass escapes only the last unclosed opener per element, so N openers of the same element
- * take N passes; the cap keeps a crafted reply from making that unbounded work. */
+/** One pass escapes only the last unclosed opener per element, so N openers of the same element take N passes; the cap keeps a crafted reply from making that … */
 const GUARD_PASSES = 16
 
 const isTagBoundary = (ch: string | undefined): boolean =>
@@ -37,8 +34,7 @@ const lastOpener = (lower: string, tag: string): number => {
 const escapeAt = (html: string, at: number): string =>
   `${html.slice(0, at)}&lt;${html.slice(at + 1)}`
 
-/** Escapes the `<` of an opener that nothing closes, so it reads as text instead of consuming the
- * rest of the message. */
+/** Escapes the `<` of an opener that nothing closes, so it reads as text instead of consuming the rest of the message. */
 const escapeUnclosed = (html: string, tag: string): string => {
   const lower = html.toLowerCase()
   const open = lastOpener(lower, tag)
@@ -46,8 +42,7 @@ const escapeUnclosed = (html: string, tag: string): string => {
   return lower.lastIndexOf(`</${tag}`) > open ? html : escapeAt(html, open)
 }
 
-/** An unclosed `<!--` runs to the end of the input — the text after it becomes the comment node's
- * data and never paints — so the opener is escaped like an unclosed tag. */
+/** An unclosed `<!--` runs to the end of the input — the text after it becomes the comment node's data and never paints — so the opener is escaped like an … */
 const escapeUnclosedComment = (html: string): string => {
   const open = html.lastIndexOf('<!--')
   if (open === -1) return html
@@ -60,8 +55,7 @@ const neutralizeOnce = (html: string): string => {
   return out
 }
 
-/** Make rendered HTML safe to hand to `v-html`: an opener the model left unclosed can no longer
- * swallow the text after it. Closed elements are untouched, so a complete report keeps its look. */
+/** Make rendered HTML safe to hand to `v-html`: an opener the model left unclosed can no longer swallow the text after it. */
 export const neutralizeSwallowingHtml = (html: string): string => {
   if (!html) return html
   let out = html.replace(PLAINTEXT, '&lt;plaintext')

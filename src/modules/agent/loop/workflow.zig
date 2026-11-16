@@ -14,8 +14,7 @@ const skill_evals_config = @import("skill_evals_config.zig");
 const session_llm_config = @import("session_llm_config.zig");
 const ask_user_pending = @import("ask_user_pending.zig");
 const ask_user_message = @import("ask_user_message.zig");
-// `MAIN_AGENT_ONLY_NAMES` — the tools a sub-agent must not re-equip via
-// `use_tool`.
+// `MAIN_AGENT_ONLY_NAMES` — the tools a sub-agent must not re-equip via `use_tool`.
 const main_agent_only = pabrikcore.main_agent_only;
 const notifications = pabrikcore.notifications_mod;
 
@@ -163,9 +162,7 @@ pub const CallbackAiWorkerFlow = struct {
                 logger.errFmt("[{s}] Failed to delete worker: {s}\n", .{ keyword, @errorName(error_sqlite) });
             };
 
-            // For TooManyRetries, the inner bail already saved a rich
-            // diagnostic to chat history (with the retry reason, count, and
-            // source).
+            // For TooManyRetries, the inner bail already saved a rich diagnostic to chat history (with the retry reason, count, and source).
             if (err == error.TooManyRetries) {
                 logger.errFmt("[{s}] TooManyRetries\n", .{keyword});
                 return;
@@ -192,8 +189,7 @@ pub const CallbackAiWorkerFlow = struct {
             const created_at = std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}) catch return;
             defer allocator.free(created_at);
 
-            // The model this error row names is the session owner's under
-            // `--auth` — same resolution module the loop below uses.
+            // The model this error row names is the session owner's under `--auth` — same resolution module the loop below uses.
             const error_row_model = (session_llm_config.forSession(allocator, db, session_id) orelse
                 pabrikcore.getLlmConfig(di)).model;
             _ = insertLLMHistories(.{ .allocator = allocator, .io = io, .db = db, .logger = logger, .event_bus = event_bus, .is_emit_sse = true, .cwd = cwd, .entity = .{ .id = id, .session_id = session_id, .model = error_row_model, .response_content = error_message, .reasoning_content = null, .role = agent.Role.user.to_str(), .finish_reason = "null", .tool_calls_json = "", .tool_call_id = null, .agent = initial_agent, .loop_index = 0, .temperature = initial_agent_state.temperature, .is_thinking = initial_agent_state.is_thinking, .prompt_tokens = 0, .completion_tokens = 0, .total_tokens = 0, .parent_id = session_id, .parent_session_id = session_id, .is_input = true, .is_output = false, .is_feed_to_llm = false, .image_urls = null, .created_at = created_at } }) catch return;
@@ -212,8 +208,6 @@ pub const RunAgenticMultiStepInput = struct {
 };
 
 // ─── re_read_selected_profile_model — live-re-read from sessions table ─────
-// **Why this helper exists** (bug report task_1786031708725, 2026-08-06): The
-// workflow's `while (true)` loop in `runAgenticMultiStepnew` previously used
 fn re_read_selected_profile_model(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -236,9 +230,7 @@ fn re_read_selected_profile_model(
     return fallback;
 }
 
-// ─── Test fixture for re_read_selected_profile_model
-// ───────────────────────── In-memory SQLite with the full migration chain
-// applied (so the `sessions` table has the `selected_profile_model` column
+// ─── Test fixture for re_read_selected_profile_model ───────────────────────── In-memory SQLite with the full migration chain applied (so the `sessions` table …
 const ReReadTestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -346,8 +338,7 @@ fn touchCheckpointWorkers(input: TouchCheckpointWorkersInput) void {
     };
 }
 
-/// Fetch MCP tools fresh from all configured servers (plan:
-/// mcp-fetch-once-cache).
+/// Fetch MCP tools fresh from all configured servers (plan
 fn fetchMcpToolsFresh(
     parent_allocator: std.mem.Allocator,
     db: *database.Db,
@@ -396,8 +387,6 @@ fn fetchMcpToolsFresh(
 }
 
 /// Cancel thunk handed to `Agent.callStreaming` for the in-flight turn.
-/// `Agent.zig` must not depend on sqlite/config, so it takes a plain `?*const
-/// fn () bool` and the workflow supplies this one.
 const LlmCancelCtx = struct {
     db: *database.Db,
     session_id: []const u8,
@@ -459,18 +448,13 @@ const FlushCancelledInput = struct {
     loop_counter: u32,
 };
 
-/// Publish + persist the text streamed so far when a turn is cancelled
-/// mid-stream.
+/// Publish + persist the text streamed so far when a turn is cancelled mid-stream.
 fn flushCancelledPartial(input: FlushCancelledInput) void {
     const allocator = input.allocator;
 
-    // The snapshot outlives the abort: `callDynamicAgentNew` only calls
-    // `endStream` when the terminal `done` chunk arrives, which a cancelled
-    // stream never delivers. So this holds exactly the text the user saw.
+    // The snapshot outlives the abort: `callDynamicAgentNew` only calls `endStream` when the terminal `done` chunk arrives, which a cancelled stream never delivers.
     const snapshot = stream_snapshot.getSnapshot(allocator, input.session_id) catch return;
-    // Nothing streamed (cancelled before the first token): there is no row to
-    // write and an empty `full` would fail the frontend's renderable gate
-    // anyway, so the streaming placeholder is best cleared by the ordinary
+    // Nothing streamed (cancelled before the first token): there is no row to write and an empty `full` would fail the frontend's renderable gate anyway, so the …
     if (snapshot.content.len == 0) return;
 
     const now_ns = std.Io.Timestamp.now(input.io, .real).nanoseconds;
@@ -511,8 +495,7 @@ fn flushCancelledPartial(input: FlushCancelledInput) void {
         return;
     };
 
-    // Leave the snapshot inactive: the turn is over, so a stream-resume poll
-    // must not resurrect a placeholder for it.
+    // Leave the snapshot inactive: the turn is over, so a stream-resume poll must not resurrect a placeholder for it.
     stream_snapshot.endStream(allocator, input.session_id);
 }
 
@@ -596,8 +579,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     const copy_image_urls = try parent_allocator.dupe(u8, params.image_urls);
     const copy_video_urls = try parent_allocator.dupe(u8, params.video_urls);
     const copy_file_attachments = try parent_allocator.dupe(u8, params.file_attachments);
-    // The queue row owns its own copy, so the payload is dead once the
-    // message is queued.
+    // The queue row owns its own copy, so the payload is dead once the message is queued.
     defer parent_allocator.free(copy_file_attachments);
     const copy_inherited_context = try parent_allocator.dupe(u8, params.inherited_context);
     var is_have_queue_message = false;
@@ -647,9 +629,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         ended.deinit(parent_allocator);
     }
 
-    // Persist the selected profile on the session row so subagent children
-    // (whose rows are lazily created by updateWorker with NULL profile) carry
-    // the parent's profile.
+    // Persist the selected profile on the session row so subagent children (whose rows are lazily created by updateWorker with NULL profile) carry the parent's …
     if (params.selected_profile_model.len > 0) {
         _ = llm_history.ensureSessionExists(parent_allocator, db, copy_session_id) catch |err| {
             logger.errFmt("[CHECKPOINT] ensure session failed session_id={s}: {s}", .{ copy_session_id, @errorName(err) });
@@ -659,9 +639,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         };
     }
 
-    // Migration 091 — stamp sub-agent identity alongside the parent profile.
-    // selected_profile_model stays as the parent (needed for thinking
-    // inheritance); sub_agent_name records who actually ran so DB inspection
+    // Migration 091 — stamp sub-agent identity alongside the parent profile. selected_profile_model stays as the parent (needed for thinking inheritance) …
     if (params.sub_agent_overrides) |ov| {
         if (ov.resolved_name.len > 0) {
             _ = llm_history.ensureSessionExists(parent_allocator, db, copy_session_id) catch {};
@@ -677,16 +655,13 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         copy_session_id,
     );
     const initial_agent = initial_agent_state.agent;
-    // A sub-agent's configured temperature wins; without one the row carries
-    // the session's last temperature.
+    // A sub-agent's configured temperature wins; without one the row carries the session's last temperature.
     const insert_temperature: f32 = if (params.sub_agent_overrides) |ov|
         ov.temperature orelse initial_agent_state.temperature
     else
         initial_agent_state.temperature;
 
-    // Claim the session's single run slot with one compare-and-swap statement —
-    // never a held write transaction, or ten workers would queue on SQLite's
-    // single writer slot. No lease means another run owns this session.
+    // Claim the session's single run slot with one compare-and-swap statement — never a held write transaction, or ten workers would queue on SQLite's single writer …
     const run_lease: session_lock.RunLease = (blk: {
         const claim = session_lock.acquire(.{
             .allocator = parent_allocator,
@@ -709,9 +684,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             "[CHECKPOINT] worker busy, queueing message session_id={s} msg_len={d} image_urls_len={d}",
             .{ copy_session_id, copy_message.len, copy_image_urls.len },
         );
-        // A trigger run (boot resume, background-completion wake) carries no
-        // message of its own: losing the slot means the session is already
-        // being worked on, so there is nothing to hand over.
+        // A trigger run (boot resume, background-completion wake) carries no message of its own: losing the slot means the session is already being worked on, so there …
         if (!params.skip_initial_queue_message) {
             try insertQueueMessage(InsertQueueMessageInput{
                 .allocator = parent_allocator,
@@ -778,14 +751,11 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     var last_retry_server_detail: ?[]const u8 = null;
     var current_max_tokens: usize = 20000;
     var last_iter_start_ns: i128 = 0;
-    // The auto-name call is a blocking LLM round-trip, so it runs at most
-    // ONCE per worker run (one user turn) — never once per loop iteration.
+    // The auto-name call is a blocking LLM round-trip, so it runs at most ONCE per worker run (one user turn) — never once per loop iteration.
     var auto_name_attempted = false;
-    // The auto-name call is a blocking LLM round-trip, so it runs at most
-    // ONCE per worker run (one user turn) — never once per loop iteration.
+    // The auto-name call is a blocking LLM round-trip, so it runs at most ONCE per worker run (one user turn) — never once per loop iteration.
 
-    // Same source as `config` above: the session owner's stored config in
-    // auth mode, the process-global singleton otherwise.
+    // Same source as `config` above: the session owner's stored config in auth mode, the process-global singleton otherwise.
     const initial_config = config;
 
     touchCheckpointWorkers(.{
@@ -799,28 +769,21 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         .is_sub_agent = params.is_sub_agent,
     });
 
-    // Fetch-once MCP tools cache (plan: mcp-fetch-once-cache): one
-    // `tools/list` per boot / per config mutation, published to the singleton
-    // for every future run.
+    // Fetch-once MCP tools cache (plan: mcp-fetch-once-cache): one `tools/list` per boot / per config mutation, published to the singleton for every future run.
     if (!di.di.isMcpToolsInit()) {
         const fresh = fetchMcpToolsFresh(parent_allocator, db, copy_session_id, initial_config, logger, di.io);
-        // Publish for all future runs. On error (`fresh == null`) pass
-        // mark_init=false so the next run retries instead of caching
-        // the failure forever.
+        // Publish for all future runs.
         di.di.storeMcpToolsCache(fresh, if (fresh) |f| f.len > 0 else false);
     }
 
-    // Per-turn arena: every allocation inside the while loop below uses
-    // `allocator` from this arena — no `parent_allocator` inside the loop.
+    // Per-turn arena: every allocation inside the while loop below uses `allocator` from this arena — no `parent_allocator` inside the loop.
     var arenaAllocatorWhileLoop = std.heap.ArenaAllocator.init(di.allocator);
     defer arenaAllocatorWhileLoop.deinit();
     const allocator = arenaAllocatorWhileLoop.allocator();
     while (true) {
         _ = arenaAllocatorWhileLoop.reset(.free_all);
 
-        // The iteration's flags and the lease check come back from ONE
-        // statement, so they cannot disagree: a run that lost the session
-        // leaves here instead of racing the owner.
+        // The iteration's flags and the lease check come back from ONE statement, so they cannot disagree: a run that lost the session leaves here instead of racing the …
         const iteration = session_lock.beginIteration(allocator, db, copy_session_id, run_lease.token) catch |err| {
             logger.errFmt(
                 "[CHECKPOINT] session lock check failed session_id={s}: {s} — leaving the loop",
@@ -852,29 +815,19 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         last_iter_start_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
 
         // ─── Live config re-read ───
-        // Re-fetch the LlmConfig pointer from the holder once per iteration
-        // so user-initiated changes (model switch, profile change, API-key
         config = session_compact_target.sessionConfig(allocator, di.di, db, copy_session_id);
 
-        // ─── Live MCP tools refresh on config invalidation ─── PUT
-        // /api/config/pabrik and add_mcp_server call `clearMcpToolsCache()`
-        // after their `setLlmConfig` swap.
+        // ─── Live MCP tools refresh on config invalidation ───
         if (!di.di.isMcpToolsInit()) {
             const fresh = fetchMcpToolsFresh(allocator, db, copy_session_id, config, logger, di.io);
-            // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes
-            // onto the singleton), so it is safe for this to live in the
-            // per-turn arena.
+            // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes onto the singleton), so it is safe for this to live in the per-turn arena.
             di.di.storeMcpToolsCache(fresh, if (fresh) |f| f.len > 0 else false);
         }
 
-        // ─── MCP tools for THIS TURN ONLY ─── The snapshot is owned by the
-        // per-turn arena `allocator`, which
-        // `arenaAllocatorWhileLoop.reset(.free_all)` at the top of every
+        // ─── MCP tools for THIS TURN ONLY ───
         const mcp_tools: ?[]pabrikcore.tool_models.AgentTool = di.di.getMcpToolsCached(allocator);
 
-        // ─── Live per-session profile re-read (plan
-        // 2026-08-06-workflow-re-read-profile) ─── The previous snapshot
-        // pattern (params.selected_profile_model) silently ignored mid-run
+        // ─── Live per-session profile re-read (plan 2026-08-06-workflow-re-read-profile) ─── The previous snapshot pattern (params.selected_profile_model) silently …
         const live_selected_profile_model: []const u8 = re_read_selected_profile_model(
             allocator,
             db,
@@ -883,16 +836,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         );
 
         // Step 1 produces a warning when the named profile is missing.
-        // Step 2 (`config.active_agent`) is silent — it's the user's
-        // default, so a typo there is a normal fall-through to top-level.
         if (live_selected_profile_model.len > 0 and
             config.getAgent(live_selected_profile_model) == null)
         {
             logger.warnFmt("WORKFLOW: selected_profile_model '{s}' not found in LlmConfig.profiles_models, using top-level config", .{live_selected_profile_model});
         }
-        // === Per-iteration profile re-resolution
-        // ============================ ONE typed cascade call replaces the 4×
-        // resolveProfileField + ~50 lines of hand-rolled
+        // === Per-iteration profile re-resolution ============================ ONE typed cascade call replaces the 4× resolveProfileField + ~50 lines of hand-rolled
         eff = effectiveAgentForSubAgent(
             config.resolveEffectiveAgent(live_selected_profile_model),
             params.sub_agent_overrides,
@@ -905,17 +854,14 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .{ copy_session_id, loop_counter, retry_count, eff.model },
         );
 
-        // Cancellation, read in the iteration transaction above — BEFORE
-        // `touchCheckpointWorkers` resets the flag on the row.
+        // Cancellation, read in the iteration transaction above — BEFORE `touchCheckpointWorkers` resets the flag on the row.
         if (iter_state.is_cancelled) {
             end_reason = "cancelled";
             logger.infoFmt("WORKFLOW CANCELLED while looping back for next API call...", .{});
             break;
         }
 
-        // A run must never proceed while a question is unanswered: the model
-        // would receive the <status>pending</status> envelope and might
-        // guess.
+        // A run must never proceed while a question is unanswered: the model would receive the <status>pending</status> envelope and might guess.
         if (ask_user_pending.hasPendingQuestion(allocator, db, copy_session_id)) {
             end_reason = "pending_question";
             logger.infoFmt(
@@ -937,8 +883,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 .{ copy_session_id, messages.items.len },
             );
             for (messages.items) |queued| {
-                // Use image_url/video_url from database if present, otherwise
-                // try to extract from message content.
+                // Use image_url/video_url from database if present, otherwise try to extract from message content.
                 var image_urls: ?[][]const u8 = null;
                 if (queued.image_url.len > 0) {
                     // Split by pipe separator
@@ -980,8 +925,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     };
                 }
 
-                // The attachments ride as a JSON payload; the read path
-                // needs the metadata only, so derive it here.
+                // The attachments ride as a JSON payload; the read path needs the metadata only, so derive it here.
                 var file_attachments_meta: []const u8 = "";
                 if (queued.file_attachments.len > 0) {
                     if (file_attachments.parseStored(allocator, queued.file_attachments)) |parsed_files| {
@@ -1063,18 +1007,14 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         var agent_temperature = currentAgentState.temperature;
         var isThinking = currentAgentState.is_thinking;
 
-        // The agent itself was applied to `eff` before the first history row
-        // was written (see `effectiveAgentForSubAgent`); what is left here
-        // are the session-state values and the resolved agent's name.
+        // The agent itself was applied to `eff` before the first history row was written (see `effectiveAgentForSubAgent`); what is left here are the session-state …
         var sub_agent_session_name: []const u8 = "";
         if (params.sub_agent_overrides) |ov| {
             if (ov.is_thinking) |t| isThinking = t;
             if (ov.temperature) |t| agent_temperature = t;
             sub_agent_session_name = ov.resolved_name;
         }
-        // A group session takes its speaker from the roster instead: the
-        // newest row names who is addressed, and a thread that has said
-        // everything it can say closes instead of picking another speaker.
+        // A group session takes its speaker from the roster instead: the newest row names who is addressed, and a thread that has said everything it can say closes …
         var group_speaker_buf: [160]u8 = undefined;
         var group_speaker: []const u8 = "";
         if (!copy_is_sub_agent) {
@@ -1097,16 +1037,14 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 }
             }
         }
-        // The speaker runs with its own configuration, not the session's:
-        // model, and the persona that tells it whether it leads or works.
+        // The speaker runs with its own configuration, not the session's
         var group_system_prompt: []const u8 = "";
         if (group_speaker.len > 0) {
             eff = effectiveAgentForSubAgent(config.resolveEffectiveAgent(group_speaker), params.sub_agent_overrides);
             if (config.getAgent(group_speaker)) |member| group_system_prompt = member.system_prompt;
         }
 
-        // For sub-agent flow: replace `current_agent` (the session's last
-        // `agent_name` from llm_history) with the resolved sub-agent name.
+        // For sub-agent flow: replace `current_agent` (the session's last `agent_name` from llm_history) with the resolved sub-agent name.
         const effective_agent_name: []const u8 = if (sub_agent_session_name.len > 0)
             sub_agent_session_name
         else if (group_speaker.len > 0)
@@ -1114,9 +1052,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         else
             current_agent;
 
-        // Sub-agent's specialized system_prompt (from
-        // SubAgentConfig.system_prompt) is injected as the `## Your Active
-        // Agent Configuration` section of build_agent_prompt.
+        // Sub-agent's specialized system_prompt (from SubAgentConfig.system_prompt) is injected as the `## Your Active Agent Configuration` section of build_agent_prompt.
         const sub_agent_system_prompt: []const u8 = if (params.sub_agent_overrides) |ov|
             ov.system_prompt
         else
@@ -1146,9 +1082,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     .logger = logger,
                     .event_bus = event_bus,
                     .is_emit_sse = true,
-                    // Soft-bail diagnostic should surface in the live chat
-                    // stream but NOT pollute the persistent chat history —
-                    // the AI's next turn shouldn't see 10+ retry snapshots
+                    // Soft-bail diagnostic should surface in the live chat stream but NOT pollute the persistent chat history — the AI's next turn shouldn't see 10+ retry snapshots
                     .is_skip_db = true,
                     // Frontend AgentErrorCard routing (task_1787663566535_2).
                     .is_error = true,
@@ -1167,9 +1101,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     logger.infoFmt("WORKFLOW CANCELLED during unattended soft-bail: session_id={s}", .{copy_session_id});
                     break;
                 }
-                // Reset retry counter AND stale retry-cause capture so the
-                // NEXT soft-bail diagnostic reflects the *current* failure
-                // batch, not the very first error of this session.
+                // Reset retry counter AND stale retry-cause capture so the NEXT soft-bail diagnostic reflects the *current* failure batch, not the very first error of this …
                 retry_count = 0;
                 last_retry_error = error.Unknown;
                 last_retry_source = "unknown";
@@ -1186,9 +1118,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
             logger.errFmt("TooManyRetries exhausted: {} consecutive failures for session_id={s} — last_error={s} source={s} — server: {s}", .{ retry_count, copy_session_id, reason_error, reason_source, clampDetail(last_retry_server_detail orelse "(no server detail)", 500) });
 
-            // Save the diagnostic as a user message so the AI agent sees it on
-            // its next turn. Mirror the pattern the outer catch uses for generic
-            // errors so the message shape is consistent.
+            // Save the diagnostic as a user message so the AI agent sees it on its next turn.
 
             _ = try insertLLMHistories(.{
                 .allocator = allocator,
@@ -1197,9 +1127,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 .logger = logger,
                 .event_bus = event_bus,
                 .is_emit_sse = true,
-                // Hard-bail diagnostic should surface in the live chat stream
-                // but NOT pollute the persistent chat history — the workflow
-                // halts immediately after this call so the diagnostic is
+                // Hard-bail diagnostic should surface in the live chat stream but NOT pollute the persistent chat history — the workflow halts immediately after this call so the …
                 .is_skip_db = true,
                 // Frontend AgentErrorCard routing (task_1787663566535_2).
                 .is_error = true,
@@ -1254,8 +1182,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             break :blk max_loop_counter;
         };
         loop_counter += 1;
-        // Auto-name gate: keyed on the session's CURRENT name, not on
-        // `loop_counter == 1`.
+        // Auto-name gate: keyed on the session's CURRENT name, not on `loop_counter == 1`.
         if (!is_task_kanban and
             !auto_name_attempted and
             sessionNameIsPlaceholder(allocator, db, copy_session_id))
@@ -1264,9 +1191,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, logger, io, db, event_bus);
         }
 
-        // ─── Progressive tool search ─────────────────────────────────── The
-        // catalog is what this session could still enable: registered
-        // built-ins that are NOT enabled, plus every MCP tool (MCP is
+        // ─── Progressive tool search ───────────────────────────────────
         const progressive_rows = try llm_history.getProgressiveTools(allocator, db, copy_session_id);
         const progressive_names = try allocator.alloc([]const u8, progressive_rows.len);
         for (progressive_rows, 0..) |row, i| progressive_names[i] = row.tool_name;
@@ -1278,8 +1203,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         };
 
         const registered_tools = tools.all_agent_tools(allocator);
-        // The catalog is built for the diagnostic log line below (how many
-        // tools this session could still discover).
+        // The catalog is built for the diagnostic log line below (how many tools this session could still discover).
         const catalog = try progressive_catalog.buildCatalog(
             allocator,
             registered_tools,
@@ -1347,9 +1271,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (err == error.Cancelled) {
                 end_reason = "cancelled";
                 logger.infoFmt("WORKFLOW CANCELLED during streaming: session_id={s}", .{copy_session_id});
-                // Keep the partial text and settle the transcript — without
-                // this the only signal is `worker_deleted`, which clears the
-                // Stop button but leaves the streaming row behind forever.
+                // Keep the partial text and settle the transcript — without this the only signal is `worker_deleted`, which clears the Stop button but leaves the streaming row …
                 flushCancelledPartial(.{
                     .allocator = allocator,
                     .io = io,
@@ -1368,30 +1290,21 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 break;
             }
             retry_count += 1;
-            // Capture WHY this retry fired so the AI agent can understand the
-            // cause when the retry budget is eventually exhausted.
+            // Capture WHY this retry fired so the AI agent can understand the cause when the retry budget is eventually exhausted.
             last_retry_error = err;
             last_retry_source = "callDynamicAgentNew";
-            // Cross-turn carry: the retry-budget check at the TOP of a later
-            // iteration reads this, and every iteration frees the per-turn
-            // arena — so the copy must live in the RUN arena
+            // Cross-turn carry: the retry-budget check at the TOP of a later iteration reads this, and every iteration frees the per-turn arena — so the copy must live in …
             last_retry_server_detail = if (last_dynamic_agent_error_message) |msg|
                 parent_allocator.dupe(u8, msg) catch null
             else
                 null;
-            // The agent populated `last_dynamic_agent_error_message` with the
-            // actual server / transport reason (e.g. "HTTP 429: rate limit
-            // exceeded", "scanner.next failed after 12 chunk(s):
+            // The agent populated `last_dynamic_agent_error_message` with the actual server / transport reason (e.g.
             const server_detail = clampDetail(last_dynamic_agent_error_message orelse "(no server detail)", 500);
             logger.errFmt("Error calling dynamic agent: {s} now retrying after {d}ms delay — server: {s}", .{ @errorName(err), config.retry_delay_ms, server_detail });
-            // Save a per-retry diagnostic to chat history so the user sees
-            // each attempt live AND the AI has the full retry progression in
-            // context for its next turn (instead of only learning about
+            // Save a per-retry diagnostic to chat history so the user sees each attempt live AND the AI has the full retry progression in context for its next turn (instead …
             try saveRetryAttemptMessage(allocator, db, event_bus, logger, io, copy_cwd, copy_session_id, copy_parent_session_id, eff.model, effective_agent_name, agent_temperature, isThinking, loop_counter, retry_count, @as(u32, 10), "callDynamicAgentNew", @errorName(err), server_detail, config.retry_delay_ms);
 
-            // Sleep before the next attempt so the upstream can recover (or
-            // rate-limit window can close). 0 ms = no delay (current
-            // behavior, the default).
+            // Sleep before the next attempt so the upstream can recover (or rate-limit window can close). 0 ms = no delay (current behavior, the default).
             if (!retryDelayMs(.{
                 .allocator = allocator,
                 .delay_ms = config.retry_delay_ms,
@@ -1416,9 +1329,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             m.deinit(allocator);
         }
 
-        // Lifecycle: `CallResponse` (and everything it points at — `content`,
-        // `reasoning_content`, each `tool_calls[i].{id, function.name,
-        // function.arguments}`, the `tool_calls` slice itself) is allocated
+        // Lifecycle: `CallResponse` (and everything it points at — `content`, `reasoning_content`, each `tool_calls[i].{id, function.name, function.arguments}`, the …
 
         const llm_duration_ms = @divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds - checkpoint_llm_start_ns, std.time.ns_per_ms);
         logger.infoFmt(
@@ -1453,16 +1364,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             );
         }
 
-        // Successful LLM call — clear the retry-cause capture so the
-        // NEXT soft-bail diagnostic reflects the most recent failure,
-        // not the first one of this session.
+        // Successful LLM call — clear the retry-cause capture so the NEXT soft-bail diagnostic reflects the most recent failure, not the first one of this session.
         retry_count = 0;
         last_retry_error = error.Unknown;
         last_retry_source = "unknown";
         last_retry_server_detail = null;
-        // Migration 063 — persist the most recent `finish_reason` so the next
-        // workflow invocation (e.g., after a server restart) can start from
-        // the right state without re-querying llm_history.
+        // Migration 063 — persist the most recent `finish_reason` so the next workflow invocation (e.g., after a server restart) can start from the right state without …
         if (res_dynamic_agent.finish_reason) |fr| {
             llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, fr.to_str()) catch |err| {
                 logger.warnFmt(
@@ -1517,9 +1424,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     break :blk stripped.?;
                 } else raw_content;
 
-                // In-stream final marker (llm_chunk / type="chunk_final"):
-                // tells the frontend the token stream is over + carries usage
-                // BEFORE the canonical llm_full row lands.
+                // In-stream final marker (llm_chunk / type="chunk_final")
                 on_event_sent.sendStreamChunkFinal(allocator, copy_session_id, .{
                     .index = 0,
                     .usage = .{
@@ -1593,9 +1498,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     continue;
                 }
 
-                // A group hands the turn on with no queued message: the row
-                // just written names who it addresses. The hop budget, read by
-                // the router, is what stops the room talking to itself.
+                // A group hands the turn on with no queued message: the row just written names who it addresses.
                 if (!copy_is_sub_agent and asked == null) {
                     if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
                         var resolved = speaker;
@@ -1665,9 +1568,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     break;
                 }
 
-                // Fire an OS notification when the user has opted in. Only on
-                // `finish_reason == .stop` — tool_calls and length are
-                // mid-conversation events the user is already watching.
+                // Fire an OS notification when the user has opted in.
                 if (config.notify_on_complete and copy_is_sub_agent == false) {
                     const preview = if (res_dynamic_agent.content) |c| c else "(empty response)";
                     try notifications.notify(io, allocator, "Agent Pabrik", preview);
@@ -1701,15 +1602,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     "[CHECKPOINT] finish_reason=tool_calls session_id={s} loop_counter={d} tool_count={d}",
                     .{ copy_session_id, loop_counter, if (res_dynamic_agent.tool_calls) |tc| tc.len else 0 },
                 );
-                // Forward the LIVE per-session profile (re-read at the top of
-                // this iteration) to handle_tool.
+                // Forward the LIVE per-session profile (re-read at the top of this iteration) to handle_tool.
                 const tool_outcome = try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent, effective_agent_name);
 
-                // `is_stop` on a tool call (`command is_stop=true`): the
-                // model asked to end THIS turn.
+                // `is_stop` on a tool call (`command is_stop=true`): the model asked to end THIS turn.
                 if (tool_outcome.stop_loop) {
-                    // The provider's own finish_reason was `tool_calls` and
-                    // was persisted as such at the top of this iteration.
+                    // The provider's own finish_reason was `tool_calls` and was persisted as such at the top of this iteration.
                     llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, agent.FinishReason.stop.to_str()) catch |err| {
                         logger.warnFmt(
                             "[workflow] failed to persist last_finish_reason=stop after is_stop: {s}",
@@ -1734,21 +1632,14 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 }
             } else {
                 retry_count += 1;
-                // Capture the unexpected finish_reason as a synthetic
-                // retry-cause so the bail diagnostic identifies it.
+                // Capture the unexpected finish_reason as a synthetic retry-cause so the bail diagnostic identifies it.
                 last_retry_error = error.UnexpectedFinishReason;
                 last_retry_source = "finish_reason else";
-                // No transport error on this path — the LLM responded but
-                // with an unusable finish_reason, so there is no server
-                // detail to surface.
+                // No transport error on this path — the LLM responded but with an unusable finish_reason, so there is no server detail to surface.
                 last_retry_server_detail = null;
-                // Save a per-retry diagnostic (no `err` here — unexpected
-                // finish_reason has no underlying error name, so use the
-                // source label as the diagnostic).
+                // Save a per-retry diagnostic (no `err` here — unexpected finish_reason has no underlying error name, so use the source label as the diagnostic).
                 try saveRetryAttemptMessage(allocator, db, event_bus, logger, io, copy_cwd, copy_session_id, copy_parent_session_id, eff.model, effective_agent_name, agent_temperature, isThinking, loop_counter, retry_count, @as(u32, 10), "finish_reason else", "unexpected finish_reason", "(no server detail — LLM responded with an unexpected finish_reason)", config.retry_delay_ms);
-                // Same delay policy as the callDynamicAgentNew catch — sleep
-                // before the loop restarts so we don't hammer the upstream
-                // when it returns an unexpected finish_reason repeatedly.
+                // Same delay policy as the callDynamicAgentNew catch — sleep before the loop restarts so we don't hammer the upstream when it returns an unexpected finish_reason …
 
                 if (!retryDelayMs(.{
                     .allocator = allocator,
@@ -1765,9 +1656,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 break;
             }
 
-            // Reset retry counter AND stale retry-cause capture so the NEXT
-            // bail (soft or hard) reflects the most recent failure, not the
-            // very first one of this session.
+            // Reset retry counter AND stale retry-cause capture so the NEXT bail (soft or hard) reflects the most recent failure, not the very first one of this session.
             retry_count = 0;
             last_retry_error = error.Unknown;
             last_retry_source = "unknown";
@@ -1791,16 +1680,13 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     logger.debugFmt("WORKFLOW: exiting while loop for session_id {s}", .{copy_session_id});
 }
 
-/// True when the session has no real name yet, so the LLM name generator
-/// should (still) be allowed to run.
+/// True when the session has no real name yet, so the LLM name generator should (still) be allowed to run.
 fn sessionNameIsPlaceholder(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
 ) bool {
-    // A read error must NOT answer "still a placeholder": this predicate
-    // gates an overwrite, so it fails CLOSED on error. A missing row is
-    // the one case that legitimately has no name to protect.
+    // A read error must NOT answer "still a placeholder": this predicate gates an overwrite, so it fails CLOSED on error.
     const session = llm_history.getSession(allocator, db, session_id) catch return false;
     const maybe = session orelse return true;
     defer maybe.deinit(allocator);
@@ -1842,8 +1728,7 @@ fn generateSessionNameNew(
     for (db_messages) |msg| {
         // role is stored as string "user" in TUIHistory
         if (std.mem.eql(u8, msg.role, "user") and msg.response_content.len > 0) {
-            // DB may hold the Option A user envelope; unwrap to .msg so the
-            // auto-name prompt sees human text, never raw JSON.
+            // DB may hold the Option A user envelope; unwrap to .msg so the auto-name prompt sees human text, never raw JSON.
             first_user_owned = parsing_mod.unwrapChatContent(allocator, msg.response_content) catch null;
             if (first_user_owned) |b| {
                 if (b.len > 0) first_user_message = b;
@@ -1863,8 +1748,7 @@ fn generateSessionNameNew(
     name_messages[1] = .{ .role = .user, .content = first_user_message.? };
 
     var name_agent = agent.Agent.init(allocator, io);
-    // Frees `last_error_message` (the drained server error body) on the
-    // failure path.
+    // Frees `last_error_message` (the drained server error body) on the failure path.
     defer name_agent.deinit();
     name_agent.apiKey = api_key;
     name_agent.model = model;
@@ -1920,9 +1804,7 @@ fn generateSessionNameNew(
             stripped_content = stripped_content[0..50];
         }
 
-        // Update session name in database. Log the ERROR, not the name:
-        // the pre-fix line printed the generated name, so a failed UPDATE
-        // was indistinguishable from a successful one in the log.
+        // Update session name in database. Log the ERROR, not the name
         updateSessionName(allocator, db, session_id, stripped_content, event_bus) catch |err| {
             logger.errFmt(
                 "[SESSION NAME] Failed to update session name session_id={s} error={s} name={s}",
@@ -1945,9 +1827,7 @@ fn generateSessionNameNew(
     }
 }
 
-/// Save a per-retry diagnostic message to chat history so the user sees each
-/// retry attempt live in their chat (instead of only learning about retries
-/// via the final TooManyRetries summary) AND the AI agent has the full retry
+/// Save a per-retry diagnostic message to chat history so the user sees each retry attempt live in their chat (instead of only learning about retries via the …
 fn clampDetail(detail: []const u8, max_len: usize) []const u8 {
     if (detail.len <= max_len) return detail;
     return detail[0..max_len];
@@ -1971,8 +1851,7 @@ fn saveRetryAttemptMessage(
     max_attempts: u32,
     source: []const u8,
     error_name: []const u8,
-    /// Actual server-side reason (HTTP status+body, scanner error, raw SSE
-    /// sample) — already clamped by the caller via `clampDetail`.
+    /// Actual server-side reason (HTTP status+body, scanner error, raw SSE sample) — already clamped by the caller via `clampDetail`.
     server_detail: []const u8,
     delay_ms: u32,
 ) !void {
@@ -2026,9 +1905,7 @@ fn saveRetryAttemptMessage(
         },
     });
 
-    // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 5): "Also
-    // when error too" — bump the session's last_human_touched_at whenever the
-    // workflow emits an error diagnostic (retry-catch / unexpected
+    // NEW (plan 2026-08-29-chat-sidebar-last-human-touched, Task 5): "Also when error too" — bump the session's last_human_touched_at whenever the workflow emits an …
     llm_history.updateSessionLastHumanTouchedAt(
         allocator,
         db,
@@ -2146,15 +2023,11 @@ fn callDynamicAgentNew(
     agent_temperature: f32,
     current_max_tokens: usize,
     isThinking: bool,
-    /// Anthropic-only override for `thinking.budget_tokens`. When set,
-    /// `buildJsonAnthropicRequest` uses it directly (clamped to >=1024 and
-    /// <max_tokens).
+    /// Anthropic-only override for `thinking.budget_tokens`.
     thinking_budget_tokens: ?u32,
     /// Anthropic-only.
     thinking_adaptive: bool,
-    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). When
-    /// set, `buildJsonOpenAIRequest` emits `reasoning_effort` verbatim.
-    /// Anthropic-style URLs ignore this field.
+    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1).
     reasoning_effort: ?[]const u8,
     api_key: []const u8,
     model: []const u8,
@@ -2166,21 +2039,14 @@ fn callDynamicAgentNew(
     opencode_cwd: []const u8,
     session_id: []const u8,
     equip_tools: []const agent.AgentTool,
-    /// Overall deadline for this one streaming call, from
-    /// `LlmConfig.llm_read_timeout_ms` (workspace-overridable).
+    /// Overall deadline for this one streaming call, from `LlmConfig.llm_read_timeout_ms` (workspace-overridable).
     read_timeout_ms: u32,
-    /// Polled by the agent's SSE chunk-read loop between chunks so a
-    /// user-initiated Stop aborts the in-flight turn immediately instead of
-    /// waiting for the response to finish (see `Agent.callStreaming`).
+    /// Polled by the agent's SSE chunk-read loop between chunks so a user-initiated Stop aborts the in-flight turn immediately instead of waiting for the response to …
     cancel_fn: ?*const fn () bool,
-    /// On error, the underlying server/transporter detail (drained HTTP error
-    /// body, scanner error name, chunk count) so the retry-catch block can
-    /// log the actual reason instead of just `error.ApiError` /
+    /// On error, the underlying server/transporter detail (drained HTTP error body, scanner error name, chunk count) so the retry-catch block can log the actual …
     out_last_error_message: *?[]const u8,
 ) !agent.CallResponse {
-    // Libcurl-backed Agent (custom_http_client). Same field names, same
-    // callStreaming signature as the previous std.http.Client version — only
-    // the transport differs.
+    // Libcurl-backed Agent (custom_http_client).
     var dynamic_agent = agent.Agent.init(allocator, io);
     dynamic_agent.apiKey = api_key;
     dynamic_agent.model = model;
@@ -2191,14 +2057,11 @@ fn callDynamicAgentNew(
     dynamic_agent.opencode_auto = opencode_auto;
     dynamic_agent.opencode_cwd = opencode_cwd;
     dynamic_agent.sessionId = session_id;
-    // `messages_list.items` is `[]agent.AgentMessage`; the local
-    // `agent.AgentCall.messages` wants the same type — direct assignment.
+    // `messages_list.items` is `[]agent.AgentMessage`; the local `agent.AgentCall.messages` wants the same type — direct assignment.
     const messages_for_agent: []const agent.AgentMessage = messages_list.items;
     const dynamic_agent_call_params = agent.AgentCall{ .tools = equip_tools, .messages = messages_for_agent, .temperature = agent_temperature, .max_tokens = current_max_tokens, .cancel_fn = cancel_fn };
     dynamic_agent.thinkingEnabled = isThinking;
-    // === Model-thinking ======================================= The
-    // new fields are no-ops when the URL style isn't a match:
-    // buildJsonAnthropicRequest ignores `reasoningEffort`; OpenAI
+    // === Model-thinking =======================================
     dynamic_agent.thinkingBudgetTokens = thinking_budget_tokens;
     dynamic_agent.thinkingAdaptive = thinking_adaptive;
     dynamic_agent.reasoningEffort = reasoning_effort;
@@ -2209,24 +2072,19 @@ fn callDynamicAgentNew(
         .session_id = session_id,
         .chunk_index = 0,
     };
-    // 2026-09-02 stream-resume-on-reselect — mark the in-flight stream buffer
-    // as started (clears any stale content from a previous turn) so `GET
-    // /api/llm/session/:id/stream` can serve the partial text to a re-mounted
+    // 2026-09-02 stream-resume-on-reselect — mark the in-flight stream buffer as started (clears any stale content from a previous turn) so `GET …
     stream_snapshot.beginStream(allocator, session_id);
-    // `stream_callback` is typed as agent.StreamCallback; callStreaming
-    // wants the same type — direct assignment, no @ptrCast needed.
+    // `stream_callback` is typed as agent.StreamCallback; callStreaming wants the same type — direct assignment, no @ptrCast needed.
     const callback_for_agent: agent.StreamCallback = &stream_callback;
     out_last_error_message.* = null;
-    // Catch the callStreaming error so we can copy `last_error_message` out
-    // BEFORE the deferred `dynamic_agent.deinit()` frees it.
+    // Catch the callStreaming error so we can copy `last_error_message` out BEFORE the deferred `dynamic_agent.deinit()` frees it.
     const res_dynamic_agent = dynamic_agent.callStreaming(dynamic_agent_call_params, &stream_ctx, callback_for_agent) catch |err| {
         if (dynamic_agent.last_error_message) |msg| {
             out_last_error_message.* = allocator.dupe(u8, msg) catch null;
         }
         return err;
     };
-    // `callDynamicAgentNew` returns `agent.CallResponse` (preserves the
-    // upstream signature).
+    // `callDynamicAgentNew` returns `agent.CallResponse` (preserves the upstream signature).
     const tool_calls_for_agent: ?[]agent.ToolCall = res_dynamic_agent.tool_calls;
     const finish_reason_for_agent: ?agent.FinishReason = res_dynamic_agent.finish_reason;
     const usage_for_agent: agent.Usage = .{
@@ -2262,8 +2120,7 @@ pub fn stream_callback(ctx: ?*anyopaque, chunk: agent.StreamChunk) void {
     // Handle done marker - no data to send
     if (chunk.done) {
         stream_ctx.chunk_index = 0;
-        // 2026-09-02 stream-resume-on-reselect — flip the snapshot to
-        // inactive (content stays readable for a late poll).
+        // 2026-09-02 stream-resume-on-reselect — flip the snapshot to inactive (content stays readable for a late poll).
         stream_snapshot.endStream(allocator, session_id);
         return;
     }
@@ -2277,9 +2134,7 @@ pub fn stream_callback(ctx: ?*anyopaque, chunk: agent.StreamChunk) void {
                 .session_id = session_id,
             };
             on_event_sent.sendStreamChunkContent(allocator, session_id, content_chunk);
-            // 2026-09-02 stream-resume-on-reselect — accumulate the delta
-            // into the in-memory snapshot so a re-selected ChatView can
-            // recover the partial text via GET /api/llm/session/:id/stream.
+            // 2026-09-02 stream-resume-on-reselect — accumulate the delta into the in-memory snapshot so a re-selected ChatView can recover the partial text via GET …
             stream_snapshot.appendContent(allocator, session_id, content);
         }
     }
@@ -2311,9 +2166,7 @@ pub fn stream_callback(ctx: ?*anyopaque, chunk: agent.StreamChunk) void {
     stream_ctx.chunk_index += 1;
 }
 
-/// Filter and merge tools based on allowed_tools setting - allowed_tools: ""
-/// = no filtering (all tools), "all" = all tools, "none" = zero tools (the
-/// exact sentinel emitted by the agent override's zero-enabled case and the
+/// Filter and merge tools based on allowed_tools setting - allowed_tools: "" = no filtering (all tools), "all" = all tools, "none" = zero tools (the exact …
 pub fn filterAndMergeTools(
     allocator: std.mem.Allocator,
     mcp_tools: ?[]const agent.AgentTool,
@@ -2323,9 +2176,7 @@ pub fn filterAndMergeTools(
     // Injected by the caller from `config.skill_evals.enabled`.
     inject_skill_evals: bool,
 ) ![]agent.AgentTool {
-    // Single source of truth for the allowlist + sub-agent strip
-    // (shared with the progressive-tool catalog so the two can never
-    // disagree about what is already enabled).
+    // Single source of truth for the allowlist + sub-agent strip (shared with the progressive-tool catalog so the two can never disagree about what is already …
     const registered = tools.all_agent_tools(allocator);
     const enabled = try tool_eligibility.allowlistFilter(
         allocator,
@@ -2335,8 +2186,7 @@ pub fn filterAndMergeTools(
     );
 
     var out: std.ArrayList(agent.AgentTool) = .empty;
-    // Dedup by name, first wins. Today a server tool named `read_file` used to
-    // ship twice; the built-in now wins.
+    // Dedup by name, first wins.
     var seen: std.StringArrayHashMapUnmanaged(void) = .{};
 
     for (enabled) |tool| {
@@ -2345,9 +2195,7 @@ pub fn filterAndMergeTools(
         try out.append(allocator, tool);
     }
 
-    // Workspace secrets discovery: injected SERVER-SIDE, bypassing the
-    // allowlist, exactly as the MCP/progressive and skill_evals injections
-    // below do.
+    // Workspace secrets discovery: injected SERVER-SIDE, bypassing the allowlist, exactly as the MCP/progressive and skill_evals injections below do.
     if (!is_sub_agent and !seen.contains("list_secrets")) {
         for (registered) |tool| {
             if (std.mem.eql(u8, tool.function.name, "list_secrets")) {
@@ -2358,8 +2206,7 @@ pub fn filterAndMergeTools(
         }
     }
 
-    // Built-ins this session enabled for itself. Injected even when the
-    // allowlist excluded them — that is the point of `use_tool`.
+    // Built-ins this session enabled for itself.
     for (progressive_equipped) |name| {
         if (seen.contains(name)) continue;
         if (is_sub_agent and main_agent_only.isMainAgentOnly(name)) continue;
@@ -2372,8 +2219,7 @@ pub fn filterAndMergeTools(
         }
     }
 
-    // Skill Evals: injected from CONFIG, not from the allowlist, and only
-    // when the user turned the feature on.
+    // Skill Evals: injected from CONFIG, not from the allowlist, and only when the user turned the feature on.
     if (inject_skill_evals and !is_sub_agent and !seen.contains("run_skill_eval")) {
         for (registered) |tool| {
             if (std.mem.eql(u8, tool.function.name, "run_skill_eval")) {
@@ -2404,8 +2250,7 @@ pub fn filterAndMergeTools(
     return try out.toOwnedSlice(allocator);
 }
 
-/// How many of `names` exist in `list` (registered built-ins or the MCP
-/// catalog). Used for the resolution checkpoint log.
+/// How many of `names` exist in `list` (registered built-ins or the MCP catalog).
 fn countNamesIn(list: []const agent.AgentTool, names: []const []const u8) usize {
     var n: usize = 0;
     for (names) |name| {
@@ -2440,7 +2285,6 @@ pub const SubAgentOverrides = struct {
     api_key: []const u8 = "",
     url_style: []const u8 = "",
     /// Transport override — `"http"` | `"claude-code"` | `"opencode"`.
-    /// Empty = keep the parent's (see `ResolvedAgent.backend`).
     backend: []const u8 = "",
     /// Claude Code only: `CLAUDE_CONFIG_DIR` override. Null = parent's.
     config_dir: ?[]const u8 = null,
@@ -2452,19 +2296,14 @@ pub const SubAgentOverrides = struct {
     opencode_auto: ?bool = null,
     is_thinking: ?bool = null,
     temperature: ?f32 = null,
-    /// Anthropic-only override for `thinking.budget_tokens`. When set, the
-    /// spawned sub-agent's `Agent.thinkingBudgetTokens` is this value (not
-    /// the parent profile's).
+    /// Anthropic-only override for `thinking.budget_tokens`.
     thinking_budget_tokens: ?u32 = null,
-    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1). When set, the
-    /// spawned sub-agent's `Agent.reasoningEffort` is this value.
+    /// OpenAI-style reasoning effort (o1/o3/GPT-5/DeepSeek-R1).
     reasoning_effort: ?[]const u8 = null,
     system_prompt: []const u8 = "",
 };
 
-/// The agent a session runs with: a sub-agent's resolved override wins over
-/// what this session resolved. It has to be applied before the first history
-/// row is written — a sub-agent session has no config owner to resolve one.
+/// The agent a session runs with: a sub-agent's resolved override wins over what this session resolved.
 pub fn effectiveAgentForSubAgent(
     base: config_mod.LlmConfig.EffectiveAgent,
     overrides: ?SubAgentOverrides,
@@ -2475,16 +2314,14 @@ pub fn effectiveAgentForSubAgent(
     if (ov.base_url.len > 0) eff.base_url = ov.base_url;
     if (ov.api_key.len > 0) eff.api_key = ov.api_key;
     if (ov.url_style.len > 0) eff.url_style = ov.url_style;
-    // Transport: a non-empty string wins for `backend`, and the optional CLI
-    // knobs are applied whenever the override carries one.
+    // Transport: a non-empty string wins for `backend`, and the optional CLI knobs are applied whenever the override carries one.
     if (ov.backend.len > 0) eff.backend = ov.backend;
     if (ov.config_dir) |d| eff.config_dir = d;
     if (ov.max_turns) |n| eff.max_turns = n;
     if (ov.opencode_agent) |a| eff.opencode_agent = a;
     if (ov.opencode_auto) |b| eff.opencode_auto = b;
     if (ov.is_thinking) |t| eff.is_thinking = t;
-    // Model-thinking overrides. A non-null budget wins over the profile's
-    // value, and so does a non-null reasoning effort.
+    // Model-thinking overrides.
     if (ov.thinking_budget_tokens) |t| eff.thinking_budget_tokens = t;
     if (ov.reasoning_effort) |re| {
         if (re.len > 0) eff.reasoning_effort = re;
@@ -2502,25 +2339,19 @@ pub const RunParamsNew = struct {
     is_sub_agent: bool = false,
     image_urls: []const u8 = "",
     video_urls: []const u8 = "",
-    /// The chat's file attachments, as the JSON payload the model path
-    /// reads. Empty when the message carries no file.
+    /// The chat's file attachments, as the JSON payload the model path reads.
     file_attachments: []const u8 = "",
     selected_profile_model: []const u8 = "",
     inherited_context: []const u8 = "",
     sub_agent_overrides: ?SubAgentOverrides = null,
     is_auto_retry_until_stop: []const u8 = "",
-    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). When true,
-    // runAgenticMultiStepnew skips the initial insertQueueMessage call.
+    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
     skip_initial_queue_message: bool = false,
 };
 
 // ─── Inline tests (formerly compaction_long_context_test.zig) ────────────
-// Long-context compaction test. Inlined here. The original test file
-// self-imported zig — that self-import is removed in the inlined copy.
 
-/// Walk ALL migrations from 001 → latest (per project memory
-/// `llm-history-test-use-migrations-module.md`). No hand-rolled
-/// CREATE TABLE — the migration chain is the source of truth.
+/// Walk ALL migrations from 001 → latest (per project memory `llm-history-test-use-migrations-module.md`).
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -2548,9 +2379,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
     defer teardownDb(&s);
     const alloc = testing.allocator;
 
-    // Build a 6-message fixture (system + 5 dropped). Capture the
-    // DB ids we'll write for the dropped messages so we can verify
-    // they show up in the read tool's output AFTER compaction.
+    // Build a 6-message fixture (system + 5 dropped).
     const session_id = "sess_e2e_1";
     const dropped_ids = [_][]const u8{ "h_real_1", "h_real_2", "h_real_3", "h_real_4", "h_real_5" };
     const dropped_contents = [_][]const u8{
@@ -2620,9 +2449,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
     }
     try testing.expectEqual(@as(usize, 5), index_results.len);
     for (dropped_ids) |id| {
-        // The read tool returns rows by their pre-seeded h_real_* ids (the
-        // in-memory messages in this test don't set .id, so the envelope uses
-        // "unknown" placeholders — but the DB rows still carry the real
+        // The read tool returns rows by their pre-seeded h_real_* ids (the in-memory messages in this test don't set .id, so the envelope uses "unknown" placeholders — …
         try testing.expect(std.mem.indexOf(u8, id, "h_real_") == null or index_results.len > 0);
     }
     // Verify the h_real_ ids appear in the read tool's results
@@ -2644,9 +2471,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
     }
 }
 
-/// Agent Mode helper: if `session_id` is bound to a workspace_item whose
-/// item_type='agent', resolve the agent's allowed_tools from the
-/// `agent_tools` table and overwrite `out_allowed_tools` with the
+/// Agent Mode helper: if `session_id` is bound to a workspace_item whose item_type='agent', resolve the agent's allowed_tools from the `agent_tools` table and …
 pub fn maybeOverrideAllowedToolsForAgent(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2687,9 +2512,7 @@ pub fn maybeOverrideAllowedToolsForAgent(
     return true;
 }
 
-/// Agent-Kanbans mirror (Migration 081): override `out_allowed_tools` with
-/// the board's allowlist from `agent_kanban_tools` when the session's
-/// workspace_item is a kanban WITH an `agent_kanbans` row.
+/// Agent-Kanbans mirror (Migration 081): override `out_allowed_tools` with the board's allowlist from `agent_kanban_tools` when the session's workspace_item is a …
 pub fn maybeOverrideAllowedToolsForKanban(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2737,8 +2560,7 @@ pub fn maybeOverrideAllowedToolsForKanban(
         try names.append(allocator, try allocator.dupe(u8, r.values[0]));
     }
 
-    // D5: configured but zero enabled tools = "not configured" — leave
-    // caller defaults untouched. See doc comment above for the flip.
+    // D5: configured but zero enabled tools = "not configured" — leave caller defaults untouched.
     if (names.items.len == 0) {
         return false;
     }
@@ -2748,9 +2570,7 @@ pub fn maybeOverrideAllowedToolsForKanban(
     return true;
 }
 
-/// Agent-Routines mirror (Migration 087): override `out_allowed_tools` with
-/// the routine's allowlist from `agent_routine_tools` when the session
-/// belongs to a routine WITH an `agent_routines` row.
+/// Agent-Routines mirror (Migration 087): override `out_allowed_tools` with the routine's allowlist from `agent_routine_tools` when the session belongs to a …
 fn maybeOverrideAllowedToolsForRoutine(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2760,7 +2580,6 @@ fn maybeOverrideAllowedToolsForRoutine(
     if (session_id.len == 0) return false;
 
     // Resolve session_id → workspace_item_id (tasks first, then fires).
-    // Duped: row defers are block-scoped, so the slice must be owned here.
     var workspace_item_id: []const u8 = "";
     defer if (workspace_item_id.len > 0) allocator.free(workspace_item_id);
     var q1 = db.query(
@@ -2823,9 +2642,7 @@ fn maybeOverrideAllowedToolsForRoutine(
     return true;
 }
 
-/// Config-default fallback: apply config.json's top-level `tools` checklist
-/// as `allowed_tools` when NO agent / kanban / routine override fired (the
-/// final else-if in the `runAgenticMultiStepnew` chain, inside the
+/// Config-default fallback: apply config.json's top-level `tools` checklist as `allowed_tools` when NO agent / kanban / routine override fired (the final else-if …
 fn maybeOverrideAllowedToolsForConfigDefault(
     allocator: std.mem.Allocator,
     config_tools: ?[]const []const u8,
@@ -2833,9 +2650,7 @@ fn maybeOverrideAllowedToolsForConfigDefault(
 ) !bool {
     const names = config_tools orelse return false;
 
-    // Explicit-empty checklist → zero tools. Must be the `none` sentinel:
-    // emitting `""` would mean "no filtering → all tools" in
-    // allowlistFilter — the exact opposite of what the user checked.
+    // Explicit-empty checklist → zero tools. Must be the `none` sentinel
     if (names.len == 0) {
         out_allowed_tools.* = "none";
         return true;
@@ -2878,9 +2693,7 @@ test "config default override: non-empty list joins into the CSV allowlist" {
 }
 
 test "filterAndMergeTools: MCP tools are progressive — absent from the tool list unless equipped" {
-    // MCP is progressive: the catalog is fetched and cached (so search_tool
-    // can offer it) but NOT injected into the LLM's tool list until the
-    // session equips it.
+    // MCP is progressive: the catalog is fetched and cached (so search_tool can offer it) but NOT injected into the LLM's tool list until the session equips it.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2957,9 +2770,7 @@ test "filterAndMergeTools: the progressive tools ship when the tool config names
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // A tool config that NAMES them — which is exactly what the creation-time
-    // seed does for agent and kanban items (DEFAULT_AGENT_TOOLS includes the
-    // three, and only workspace_items_create_agent / _kanban apply that list).
+    // A tool config that NAMES them — which is exactly what the creation-time seed does for agent and kanban items (DEFAULT_AGENT_TOOLS includes the three, and only …
     const seeded = "read_file,search_tool,view_tool,use_tool";
     const with_metas = try filterAndMergeTools(alloc, null, seeded, false, &.{}, false);
     for (progressive_tools_mod.PROGRESSIVE_TOOL_NAMES) |name| {
@@ -2977,21 +2788,17 @@ test "filterAndMergeTools: the progressive tools ship when the tool config names
     // 4 allowlisted + the injected list_secrets.
     try testing.expectEqual(@as(usize, 5), with_metas.len);
 
-    // A tool config that does NOT name them (a design or folder item, which
-    // seeds no list, or a user who unticked them): they are simply absent —
-    // no special-casing either way.
+    // A tool config that does NOT name them (a design or folder item, which seeds no list, or a user who unticked them): they are simply absent — no special-casing …
     const without_metas = try filterAndMergeTools(alloc, null, "read_file,glob", false, &.{}, false);
     for (without_metas) |t| {
         for (progressive_tools_mod.PROGRESSIVE_TOOL_NAMES) |name| {
             try testing.expect(!std.mem.eql(u8, t.function.name, name));
         }
     }
-    // read_file, glob, and the injected list_secrets — none of the three
-    // progressive meta-tools.
+    // read_file, glob, and the injected list_secrets — none of the three progressive meta-tools.
     try testing.expectEqual(@as(usize, 3), without_metas.len);
 
-    // `use_tool` remains the escape hatch: an equipped tool is injected even
-    // when the allowlist excluded it.
+    // `use_tool` remains the escape hatch: an equipped tool is injected even when the allowlist excluded it.
     const equipped = try filterAndMergeTools(alloc, null, "read_file", false, &.{"use_tool"}, false);
     var found_equipped = false;
     for (equipped) |t| {
@@ -3051,8 +2858,7 @@ test "filterAndMergeTools: list_secrets is injected past the allowlist, for main
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // The Migration099 lesson: a tool only new agents have is a tool no
-    // existing agent ever sees.
+    // The Migration099 lesson: a tool only new agents have is a tool no existing agent ever sees.
     const restrictive = "read_file,glob";
     const merged = try filterAndMergeTools(alloc, null, restrictive, false, &.{}, false);
 
@@ -3065,8 +2871,7 @@ test "filterAndMergeTools: list_secrets is injected past the allowlist, for main
     try testing.expect(found_read_file);
     try testing.expect(found_secrets);
 
-    // Exactly once — the injection must not duplicate a tool the allowlist
-    // already granted.
+    // Exactly once — the injection must not duplicate a tool the allowlist already granted.
     var count: usize = 0;
     for (merged) |t| {
         if (std.mem.eql(u8, t.function.name, "list_secrets")) count += 1;
@@ -3087,8 +2892,7 @@ test "filterAndMergeTools: list_secrets is injected past the allowlist, for main
         try testing.expect(std.mem.eql(u8, t.function.name, "read_file") or std.mem.eql(u8, t.function.name, "glob"));
     }
 
-    // The `"none"` sentinel still receives it, exactly as the skill_evals
-    // injection above does.
+    // The `"none"` sentinel still receives it, exactly as the skill_evals injection above does.
     const none = try filterAndMergeTools(alloc, null, "none", false, &.{}, false);
     var none_secrets = false;
     for (none) |t| {
@@ -3102,9 +2906,7 @@ test "filterAndMergeTools: the injected list_secrets schema cannot be pointed at
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Asserted on the SERIALIZED schema of the tool that actually gets
-    // appended, not on the const in the tool module: this is the copy the
-    // model reads, and it is the copy that matters.
+    // Asserted on the SERIALIZED schema of the tool that actually gets appended, not on the const in the tool module: this is the copy the model reads, and it is the …
     const merged = try filterAndMergeTools(alloc, null, "read_file", false, &.{}, false);
 
     var checked = false;
@@ -3123,9 +2925,7 @@ test "filterAndMergeTools: the injected list_secrets schema cannot be pointed at
 }
 
 test "list_secrets prompt rule: the gated append is in buildMessages, and the gate really is a gate" {
-    // Static contract, in the spirit of the source-grep tests above: the rule
-    // exists in `core.zig` and is reachable through the `prompts.zig` barrel
-    // the builder consumes.
+    // Static contract, in the spirit of the source-grep tests above: the rule exists in `core.zig` and is reachable through the `prompts.zig` barrel the builder …
     const alloc = testing.allocator;
 
     const builder = try std.Io.Dir.cwd().readFileAlloc(
@@ -3141,9 +2941,7 @@ test "list_secrets prompt rule: the gated append is in buildMessages, and the ga
     const append = std.mem.indexOf(u8, builder, "prompts_const.SecretsToolRule") orelse
         return error.SecretsRuleNotAppended;
 
-    // The append has to be INSIDE the gate's block. The gap between the
-    // condition and the append is a few bytes of body and nothing else — a
-    // closing brace in between would mean the rule is unconditional.
+    // The append has to be INSIDE the gate's block.
     try testing.expect(gate < append);
     try testing.expect(append - gate < 120);
     try testing.expect(std.mem.indexOf(u8, builder[gate..append], "}") == null);
@@ -3169,9 +2967,7 @@ test "list_secrets prompt rule: the gated append is in buildMessages, and the ga
     try testing.expect(std.mem.indexOf(u8, rule, "Never echo, print, log, or write a secret's value") != null);
 }
 
-// Composition test: replays exactly what the loop does at the resolution
-// point (getProgressiveTools -> buildCatalog -> filterAndMergeTools) against
-// a real database, so the three pieces are proven to fit together — not just
+// Composition test: replays exactly what the loop does at the resolution point (getProgressiveTools -> buildCatalog -> filterAndMergeTools) against a real …
 test "progressive tool search: equipping a built-in makes it appear in the next resolution" {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -3197,9 +2993,7 @@ test "progressive tool search: equipping a built-in makes it appear in the next 
     const registered = tools.all_agent_tools(a);
     const session_id = "s_prog";
 
-    // ── Before: only read_file is enabled, so glob is NOT in the tool list
-    //    but IS discoverable, and the meta-tools ship because the catalog is
-    //    non-empty.
+    // ── Before: only read_file is enabled, so glob is NOT in the tool list but IS discoverable, and the meta-tools ship because the catalog is non-empty.
     const catalog_before = try progressive_catalog.buildCatalog(a, registered, "read_file", false, null, &.{}, "agent");
     try testing.expect(catalog_before.len > 0);
     var glob_discoverable = false;
@@ -3211,8 +3005,7 @@ test "progressive tool search: equipping a built-in makes it appear in the next 
     try testing.expect(glob_discoverable);
 
     var names_before: [0][]const u8 = .{};
-    // What agent/kanban creation seeds: the three progressive tools are
-    // named in the tool config, so they are in the list from turn one.
+    // What agent/kanban creation seeds: the three progressive tools are named in the tool config, so they are in the list from turn one.
     const seeded_allowlist = "read_file" ++ ",search_tool" ++ ",view_tool" ++ ",use_tool";
     const before = try filterAndMergeTools(a, null, seeded_allowlist, false, &names_before, false);
     var found_glob_before = false;
@@ -3252,8 +3045,7 @@ test "progressive tool search: equipping a built-in makes it appear in the next 
         if (std.mem.eql(u8, t.function.name, "read_file")) found_read_file_after = true;
         if (std.mem.eql(u8, t.function.name, "search_tool")) found_search_tool_after = true;
     }
-    // The equipped built-in is injected even though the allowlist excluded it,
-    // the enabled built-in is still there, and the meta-tools remain.
+    // The equipped built-in is injected even though the allowlist excluded it, the enabled built-in is still there, and the meta-tools remain.
     try testing.expect(found_glob_after);
     try testing.expect(found_read_file_after);
     try testing.expect(found_search_tool_after);
@@ -3313,9 +3105,7 @@ test "progressive tool search: an MCP tool is invisible until equipped, then app
     try testing.expectEqualStrings("mcp_ctx_query-docs", after[after.len - 1].function.name);
 }
 
-/// Insert a minimal session row (matching the production schema: the
-/// `sessions` table's NOT NULL columns are id, name, status, cwd, created_at,
-/// updated_at, selected_profile_model, is_auto_retry_until_stop).
+/// Insert a minimal session row (matching the production schema: the `sessions` table's NOT NULL columns are id, name, status, cwd, created_at, updated_at …
 fn re_read_insertSession(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -3332,9 +3122,7 @@ fn re_read_insertSession(
 }
 
 test "re_read_selected_profile_model: returns live DB value when row exists" {
-    // Wrap in a per-test arena so the dupe'd slice is freed at the
-    // end of the test (matches production usage in runAgenticMultiStepnew
-    // where the caller passes the per-iteration arena allocator).
+    // Wrap in a per-test arena so the dupe'd slice is freed at the end of the test (matches production usage in runAgenticMultiStepnew where the caller passes the …
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3373,8 +3161,7 @@ test "re_read_selected_profile_model: returns fallback when no session row exist
 }
 
 test "re_read_selected_profile_model: subsequent reads see UPDATEd value (live re-read)" {
-    // The whole point of this helper: a second call after a session row
-    // UPDATE picks up the new value, NOT the snapshot.
+    // The whole point of this helper: a second call after a session row UPDATE picks up the new value, NOT the snapshot.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3386,8 +3173,7 @@ test "re_read_selected_profile_model: subsequent reads see UPDATEd value (live r
     const first = re_read_selected_profile_model(alloc, &ctx.db, "s_live", "snapshot");
     try testing.expectEqualStrings("alpha", first);
 
-    // Simulate the user picking a different profile in the chatview
-    // dropdown (PUT /api/llm/session/:id → sessions.selected_profile_model).
+    // Simulate the user picking a different profile in the chatview dropdown (PUT /api/llm/session/:id → sessions.selected_profile_model).
     try ctx.db.exec(
         alloc,
         "UPDATE sessions SET selected_profile_model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -3462,12 +3248,9 @@ test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
     defer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Run the REAL migrations rather than hand-rolling `llm_history`:
-    // `insertLLMHistories` binds ~30 columns plus an `UPDATE sessions`, and a
-    // hand-written CREATE TABLE would silently drift from the real schema.
+    // Run the REAL migrations rather than hand-rolling `llm_history`
     var mgr = migration_mod.MigrationManager.init(alloc, &db);
-    // `registerAllMigrations` grows this list; the manager does not own its
-    // teardown.
+    // `registerAllMigrations` grows this list; the manager does not own its teardown.
     defer mgr.migrations.deinit(alloc);
     try migration_mod.registerAllMigrations(&mgr);
     try mgr.runMigrations();
@@ -3476,18 +3259,14 @@ test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
     defer lg.deinit();
     var bus = event_bus_mod.EventBus.init("cancel-partial-test", alloc, std.testing.io);
 
-    // The flush path is arena-scoped BY CONTRACT — production passes the
-    // per-iteration arena, and `insertLLMHistories` hands several allocations
-    // to the SSE emit path without freeing them itself.
+    // The flush path is arena-scoped BY CONTRACT — production passes the per-iteration arena, and `insertLLMHistories` hands several allocations to the SSE emit path …
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
 
     const session_id = "sess_cancel_partial";
 
-    // Exactly what the agent loop leaves behind when a stream is aborted: the
-    // accumulated content sits in the snapshot registry, and the terminal
-    // `done` chunk never arrived so `endStream` was never called.
+    // Exactly what the agent loop leaves behind when a stream is aborted: the accumulated content sits in the snapshot registry, and the terminal `done` chunk never …
     stream_snapshot.beginStream(alloc, session_id);
     stream_snapshot.appendContent(alloc, session_id, "hello ");
     stream_snapshot.appendContent(alloc, session_id, "wor");
@@ -3517,20 +3296,17 @@ test "flushCancelledPartial persists the streamed partial as a cancelled turn" {
     const row = (try rows.next()) orelse return error.NoRowInserted;
     defer row.deinit(a);
 
-    // The text the user already saw is preserved (Option A: assistant rows
-    // persist the {model,msg} envelope; unwrap to .msg for the assertion)...
+    // The text the user already saw is preserved (Option A: assistant rows persist the {model,msg} envelope; unwrap to .msg for the assertion)...
     const stored = row.values[0];
     const unwrapped = try parsing_mod.unwrapChatContent(a, stored);
     try testing.expectEqualStrings("hello wor", unwrapped);
-    // ...flagged as cancelled, NOT "stop" — the frontend's completed-turn
-    // affordances key off "stop", and an aborted turn must not claim them.
+    // ...flagged as cancelled, NOT "stop" — the frontend's completed-turn affordances key off "stop", and an aborted turn must not claim them.
     try testing.expectEqualStrings("cancelled", row.values[1]);
     try testing.expectEqualStrings("assistant", row.values[2]);
     // `is_output` is what makes the row render as an assistant bubble.
     try testing.expectEqualStrings("1", row.values[3]);
 
-    // Snapshot released: a stream-resume poll must not resurrect a
-    // placeholder for a turn that is no longer running.
+    // Snapshot released: a stream-resume poll must not resurrect a placeholder for a turn that is no longer running.
     const snap = try stream_snapshot.getSnapshot(a, session_id);
     try testing.expect(!snap.active);
 }
@@ -3540,8 +3316,7 @@ test "sessionNameIsPlaceholder: un-named sessions are a placeholder, real names 
     var s = try setupDb();
     defer teardownDb(&s);
 
-    // Both UI placeholders count — "New Chat" is what the sidebar's
-    // new-chat flow creates, "New Session" is the TUI/handler default.
+    // Both UI placeholders count — "New Chat" is what the sidebar's new-chat flow creates, "New Session" is the TUI/handler default.
     for ([_][]const u8{ "s_new_chat", "s_new_session" }) |id| {
         try s.db.exec(
             alloc,
@@ -3551,9 +3326,7 @@ test "sessionNameIsPlaceholder: un-named sessions are a placeholder, real names 
         try testing.expect(sessionNameIsPlaceholder(alloc, &s.db, id));
     }
 
-    // A generated or user-typed name must never be treated as a
-    // placeholder, otherwise the auto-name would overwrite it on the
-    // next turn.
+    // A generated or user-typed name must never be treated as a placeholder, otherwise the auto-name would overwrite it on the next turn.
     try s.db.exec(
         alloc,
         "INSERT INTO sessions (id, name, status) VALUES ('s_named', 'fix-login-bug', 'active')",
@@ -3561,15 +3334,12 @@ test "sessionNameIsPlaceholder: un-named sessions are a placeholder, real names 
     );
     try testing.expect(!sessionNameIsPlaceholder(alloc, &s.db, "s_named"));
 
-    // Missing row: the worker can run before the session row exists in
-    // some paths; treat it as "needs a name" rather than skipping.
+    // Missing row: the worker can run before the session row exists in some paths; treat it as "needs a name" rather than skipping.
     try testing.expect(sessionNameIsPlaceholder(alloc, &s.db, "s_absent"));
 }
 
 test "isUsableGeneratedName: blank / whitespace names are rejected, real ones pass" {
-    // These are the names that would otherwise reach `UPDATE sessions SET
-    // name = ?` on a TEXT NOT NULL column and (per this repo's documented
-    // db.exec behaviour) bind as SQL NULL, failing the write and leaving the
+    // These are the names that would otherwise reach `UPDATE sessions SET name = ?` on a TEXT NOT NULL column and (per this repo's documented db.exec behaviour) bind …
     for ([_][]const u8{ "", " ", "\n", "\t\r\n  ", "\n \t" }) |blank| {
         try testing.expect(!isUsableGeneratedName(blank));
     }
@@ -3579,9 +3349,7 @@ test "isUsableGeneratedName: blank / whitespace names are rejected, real ones pa
 }
 
 test "generateSessionNameNew: name call failure leaves the placeholder name and does not throw" {
-    // The pre-fix bug: the name call's transport error was swallowed by a
-    // bare `catch {}` that logged a constant, and the gate (`loop_counter ==
-    // 1`) meant the failure was never retried — the session stayed "New Chat"
+    // The pre-fix bug: the name call's transport error was swallowed by a bare `catch {}` that logged a constant, and the gate (`loop_counter == 1`) meant the …
     const alloc = testing.allocator;
     var s = try setupDb();
     defer teardownDb(&s);
@@ -3633,7 +3401,6 @@ test "generateSessionNameNew: name call failure leaves the placeholder name and 
         &bus,
     );
 
-    // The gate the retry depends on: the name is STILL a placeholder, so
-    // the next turn tries again.
+    // The gate the retry depends on: the name is STILL a placeholder, so the next turn tries again.
     try testing.expect(sessionNameIsPlaceholder(alloc, &s.db, session_id));
 }

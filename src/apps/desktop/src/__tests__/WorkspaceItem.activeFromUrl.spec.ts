@@ -15,9 +15,7 @@ vi.mock('vue-router', async () => {
   return { ...actual, useRoute: useRouteMock }
 })
 
-// The active row is painted from the theme's semantic tokens (`--semantic-active-bg` +
-// `--semantic-active-text` + a violet inset rule), not a hard-coded rgb, so the row reads as active
-// in every theme. The token itself is the marker.
+// The active row is painted from the theme's semantic tokens (`--semantic-active-bg` + `--semantic-active-text` + a violet inset rule), not a hard-coded rgb, so …
 const ACTIVE_MARKER = '--semantic-active-bg'
 
 const baseItem = {

@@ -1,5 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/items/design`. Creates a new workspace
-//! item of `item_type='design'`.
+//! `POST /api/workspaces/:workspace_id/items/design`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,13 +9,11 @@ const helpers = @import("helpers");
 /// Request body for the design-item create endpoint.
 const CreateDesignBody = struct {
     name: []const u8,
-    /// Absolute path on disk that will become the storage root for design
-    /// elements (`<path>/.pabrik/design/...`).
+    /// Absolute path on disk that will become the storage root for design elements (`<path>/.pabrik/design/...`).
     path: []const u8,
 };
 
-/// Response body for the design-item create endpoint. Same shape as
-/// `CreateKanbanResponse` minus the seeded-column fields.
+/// Response body for the design-item create endpoint.
 pub const CreateDesignResponse = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -34,9 +31,7 @@ pub const WorkspaceItemsCreateDesignError = error{
     PathRequired,
     PathEmpty,
     InsertFailed,
-    /// `std.json.Stringify.valueAlloc` and `allocator.dupe` can
-    /// fail with `OutOfMemory`. Unreachable on the per-request
-    /// arena, but the type system requires the variant.
+    /// `std.json.Stringify.valueAlloc` and `allocator.dupe` can fail with `OutOfMemory`.
     OutOfMemory,
 };
 
@@ -54,25 +49,20 @@ fn useCase(
 ) WorkspaceItemsCreateDesignError!WorkspaceItemsCreateDesignResult {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
 
-    // Trim whitespace and reject empty names. Mirrors
-    // `workspace_items_create.zig`'s `EmptyName` validation.
+    // Trim whitespace and reject empty names.
     const trimmed_name = std.mem.trim(u8, input.body.name, " \t\n\r");
     if (trimmed_name.len == 0) return error.NameRequired;
 
-    // Design items REQUIRE a path — without it, addElement would fail on
-    // first use.
+    // Design items REQUIRE a path — without it, addElement would fail on first use.
     const trimmed_path = std.mem.trim(u8, input.body.path, " \t\n\r");
     if (trimmed_path.len == 0) return error.PathRequired;
 
-    // Generate item id with the same `item_<unix_nanoseconds>` scheme as
-    // `workspace_items_create.zig:generateItemId` and
-    // `workspace_items_create_kanban.zig:79-81`.
+    // Generate item id with the same `item_<unix_nanoseconds>` scheme as `workspace_items_create.zig:generateItemId` and `workspace_items_create_kanban.zig:79-81`.
     const timestamp_ns = helpers.unixTimestampNanos();
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
     defer allocator.free(item_id);
 
-    // Compute the new item's position as COALESCE(MAX(position), -1) + 1
-    // within this workspace.
+    // Compute the new item's position as COALESCE(MAX(position), -1) + 1 within this workspace.
     db.exec(allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, created_at, updated_at)
         \\VALUES (?, ?, 'design', ?, ?, COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1, datetime('now'), datetime('now'))

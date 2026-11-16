@@ -17,8 +17,7 @@ const envelope = {
   summary: { succeeded: 1, failed: 0 },
 }
 
-// Realistic tool-call args as produced by ChatView's
-// getParametersForMessage (jsonArgsToXml / tool_calls_json arguments).
+// Realistic tool-call args as produced by ChatView's getParametersForMessage (jsonArgsToXml / tool_calls_json arguments).
 const parameters = '{"agents":[{"agent_name":"researcher","instruction":"do the thing"}]}'
 
 describe('SpawnSubAgent.vue — parameters (Arguments block)', () => {

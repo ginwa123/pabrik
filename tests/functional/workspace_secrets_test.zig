@@ -1,6 +1,4 @@
-// Functional wire tests for workspace-scoped secrets (Migration 103). Zig
-// port of `tests/functional/workspace_secrets_test.py` (same test names minus
-// the `test_` prefix, same order).
+// Functional wire tests for workspace-scoped secrets (Migration 103).
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,8 +10,6 @@ const io = testing.io;
 const Io = std.Io;
 
 // ─── Canaries ──────────────────────────────────────────────────────────────
-// Distinctive, JSON-safe, and different from every secret NAME used below — a
-// name is not a secret and is echoed by the 409 conflict message, so reusing
 const FIRST_VALUE = "sk_live_CANARY_4f1c9a_Zx7Q_DO_NOT_LEAK";
 const SECOND_VALUE = "sk_live_CANARY_be02d8_Mm4R_ROTATED_DO_NOT_LEAK";
 
@@ -145,8 +141,7 @@ fn patchNameValueBody(name: ?[]const u8, value: ?[]const u8) ![]u8 {
     return patchValueBody(value);
 }
 
-/// The single list row called `name`: its id + updated_at + the full
-/// list body (for leak checks). All owned.
+/// The single list row called `name`: its id + updated_at + the full list body (for leak checks).
 const RowInfo = struct {
     id: []u8,
     updated_at: []u8,
@@ -235,8 +230,7 @@ fn assertWireShape(obj: std.json.ObjectMap, body: []const u8) !void {
         };
         switch (v) {
             .string => |s| {
-                // An undescribed secret legitimately sends "". Every other key
-                // is an id or a timestamp, and those are never blank.
+                // An undescribed secret legitimately sends "".
                 if (s.len == 0 and !std.mem.eql(u8, k, "description")) {
                     std.debug.print("SecretResponse `{s}` is empty: {s}\n", .{ k, body });
                     return error.TestUnexpectedResult;
@@ -283,9 +277,7 @@ fn expectErrorContains(raw: []const u8, needle: []const u8) !void {
     }
 }
 
-// ============================================================================
-// 1. Full CRUD round-trip
-// ============================================================================
+// 1.
 
 test "full_crud_round_trip" {
     try harness.requirePabrikBin(io, gpa);
@@ -425,9 +417,7 @@ test "full_crud_round_trip" {
     }
 }
 
-// ============================================================================
-// 2. The write-only guarantee, end to end (headline)
-// ============================================================================
+// 2.
 
 test "plaintext_never_appears_in_any_response_across_the_cycle" {
     try harness.requirePabrikBin(io, gpa);
@@ -584,9 +574,7 @@ test "plaintext_never_appears_in_any_response_across_the_cycle" {
     if (std.mem.eql(u8, FIRST_VALUE, SECOND_VALUE)) return error.TestUnexpectedResult;
 }
 
-// ============================================================================
-// 3. Cross-workspace isolation
-// ============================================================================
+// 3.
 
 test "cross_workspace_isolation_is_404_never_403" {
     try harness.requirePabrikBin(io, gpa);
@@ -687,9 +675,7 @@ test "cross_workspace_isolation_is_404_never_403" {
     }
 }
 
-// ============================================================================
-// 4. Empty value is a 400, not a 500
-// ============================================================================
+// 4.
 
 test "empty_value_is_400_not_a_500_null_constraint_violation" {
     try harness.requirePabrikBin(io, gpa);
@@ -728,9 +714,7 @@ test "empty_value_is_400_not_a_500_null_constraint_violation" {
     if (try listCount(&h, ws) != 1) return error.TestUnexpectedResult;
 }
 
-// ============================================================================
-// 5. Duplicate name
-// ============================================================================
+// 5.
 
 test "duplicate_name_is_409_in_one_workspace_201_in_another" {
     try harness.requirePabrikBin(io, gpa);
@@ -779,9 +763,7 @@ test "duplicate_name_is_409_in_one_workspace_201_in_another" {
     if (try listCount(&h, ws_a) != 1) return error.TestUnexpectedResult;
 }
 
-// ============================================================================
-// 6. Invalid name
-// ============================================================================
+// 6.
 
 test "name_outside_the_placeholder_grammar_is_400" {
     try harness.requirePabrikBin(io, gpa);
@@ -832,9 +814,7 @@ test "name_outside_the_placeholder_grammar_is_400" {
     }
 }
 
-// ============================================================================
-// 7. Missing ids / missing fields
-// ============================================================================
+// 7.
 
 test "missing_name_and_missing_value_are_both_400" {
     try harness.requirePabrikBin(io, gpa);
@@ -886,9 +866,7 @@ test "missing_name_and_missing_value_are_both_400" {
     }
 }
 
-// ============================================================================
-// 7b. A PATCH `name` is a claim, not a rename
-// ============================================================================
+// 7b.
 
 test "patch_name_is_a_claim_not_a_rename" {
     try harness.requirePabrikBin(io, gpa);
@@ -972,7 +950,6 @@ test "patch_name_is_a_claim_not_a_rename" {
     }
 }
 
-// ============================================================================
 // 8.
 
 const UNKNOWN_NAME = "UNKNOWN";
@@ -986,15 +963,12 @@ const MAX_HEAD_BYTES = 1 << 18;
 const POLL_BUDGET_MS: i64 = 60_000;
 const POLL_INTERVAL_MS: i64 = 500;
 
-/// Build the placeholder string for `name` at runtime (open-brace,
-/// close-brace, and the SECRETS marker joined here, so no literal
-/// marker sits in this source).
+/// Build the placeholder string for `name` at runtime (open-brace, close-brace, and the SECRETS marker joined here, so no literal marker sits in this source).
 fn placeholderFor(name: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "{s}{s}:{s}{s}", .{ "{{", "SECRETS", name, "}}" });
 }
 
-/// A stateful stub LLM upstream serving a fixed queue of tool calls, one per
-/// agentic turn — the Zig analogue of the Python stub state + handler pair.
+/// A stateful stub LLM upstream serving a fixed queue of tool calls, one per agentic turn — the Zig analogue of the Python stub state + handler pair.
 const Stub = struct {
     port: u16,
     server: Io.net.Server,
@@ -1054,9 +1028,7 @@ fn serve(stub: *Stub) void {
     }
 }
 
-/// A request is a FOLLOW-UP turn (plain stop reply) as soon as it carries an
-/// already-served call id; anything else carrying a `tools` array consumes
-/// the next queued call.
+/// A request is a FOLLOW-UP turn (plain stop reply) as soon as it carries an already-served call id; anything else carrying a `tools` array consumes the next …
 fn handleStubRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(io, &rbuf);
@@ -1228,7 +1200,6 @@ fn stubContentLength(head: []const u8) usize {
 }
 
 /// Poll until a `write_file` row for this session carries content.
-/// Returns an OWNED copy of the row's `content`, or null on timeout.
 fn waitForWriteFileRow(h: *Harness, session_id: []const u8) !?[]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -1308,8 +1279,7 @@ test "unknown_placeholder_names_the_missing_key_and_dispatches_nothing" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // A workspace whose item path IS the session cwd, so workspace
-    // resolution finds it by path.
+    // A workspace whose item path IS the session cwd, so workspace resolution finds it by path.
     const ws = try createWorkspace(&h, "secrets-placeholder-ws");
     defer gpa.free(ws);
     const ws_path = try harness.harnessPath(gpa, h.temp_dir, &.{"secrets-placeholder-ws"});

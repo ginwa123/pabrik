@@ -3,28 +3,22 @@ const std = @import("std");
 const builtin = @import("builtin");
 const log = std.log.scoped(.notifications);
 
-/// Maximum characters of the body we pass to the OS. notify-send and friends
-/// don't have a hard limit, but very long bodies look bad in toast UIs and
-/// are truncated visually anyway. 140 chars is roughly 2 sentences.
+/// Maximum characters of the body we pass to the OS. notify-send and friends don't have a hard limit, but very long bodies look bad in toast UIs and are truncated …
 pub const MAX_BODY_LEN: usize = 140;
 
 pub const NotifyError = error{
-    /// The OS notification binary is not installed (e.g. notify-send on a
-    /// Linux box without libnotify) or the spawn failed. Caller should log
-    /// and continue — a notification failure must not break the LLM workflow.
+    /// The OS notification binary is not installed (e.g. notify-send on a Linux box without libnotify) or the spawn failed.
     BinaryNotFound,
     OutOfMemory,
 };
 
-/// Build the argv that would be spawned for the current OS. Public so tests
-/// can assert on the command shape without actually running it.
+/// Build the argv that would be spawned for the current OS.
 pub fn buildCommand(allocator: std.mem.Allocator, title: []const u8, body: []const u8) ![]const []const u8 {
     const truncated = try truncateBody(allocator, body, MAX_BODY_LEN);
     errdefer allocator.free(truncated);
 
     var args: std.ArrayList([]const u8) = .empty;
-    // On any error path, free all the strings we've already appended plus
-    // the ArrayList's backing buffer.
+    // On any error path, free all the strings we've already appended plus the ArrayList's backing buffer.
     errdefer {
         for (args.items) |arg| allocator.free(arg);
         args.deinit(allocator);
@@ -38,9 +32,7 @@ pub fn buildCommand(allocator: std.mem.Allocator, title: []const u8, body: []con
             try args.append(allocator, truncated);
         },
         .macos => {
-            // AppleScript: display notification "body" with title "title"
-            // Body and title are escaped for double-quote and backslash
-            // insertion.
+            // AppleScript: display notification "body" with title "title" Body and title are escaped for double-quote and backslash insertion.
             const title_esc = try escapeAppleScript(allocator, title);
             defer allocator.free(title_esc);
             const body_esc = try escapeAppleScript(allocator, truncated);
@@ -54,15 +46,11 @@ pub fn buildCommand(allocator: std.mem.Allocator, title: []const u8, body: []con
             try args.append(allocator, try allocator.dupe(u8, "osascript"));
             try args.append(allocator, try allocator.dupe(u8, "-e"));
             try args.append(allocator, script);
-            // `truncated` was consumed by escapeAppleScript (which copies)
-            // and the errdefer only fires on error. Free it now since we're
-            // about to return successfully.
+            // `truncated` was consumed by escapeAppleScript (which copies) and the errdefer only fires on error.
             allocator.free(truncated);
         },
         .windows => {
-            // PowerShell stub: uses MessageBox (a blocking modal) instead of
-            // a proper toast. Single quotes are doubled to avoid breaking out
-            // of the single-quoted literal (SEC-20).
+            // PowerShell stub: uses MessageBox (a blocking modal) instead of a proper toast.
             const title_esc = try escapePowerShell(allocator, title);
             defer allocator.free(title_esc);
             const body_esc = try escapePowerShell(allocator, truncated);
@@ -78,9 +66,7 @@ pub fn buildCommand(allocator: std.mem.Allocator, title: []const u8, body: []con
             try args.append(allocator, try allocator.dupe(u8, "-NoProfile"));
             try args.append(allocator, try allocator.dupe(u8, "-Command"));
             try args.append(allocator, script);
-            // `truncated` was consumed by allocPrint (which copies); free
-            // it now since the errdefer only fires on error and we're
-            // about to return successfully.
+            // `truncated` was consumed by allocPrint (which copies); free it now since the errdefer only fires on error and we're about to return successfully.
             allocator.free(truncated);
         },
         else => {
@@ -93,8 +79,7 @@ pub fn buildCommand(allocator: std.mem.Allocator, title: []const u8, body: []con
     return try args.toOwnedSlice(allocator);
 }
 
-/// Fire an OS notification using the platform's native CLI (notify-send /
-/// osascript / PowerShell).
+/// Fire an OS notification using the platform's native CLI (notify-send /osascript / PowerShell).
 pub fn notify(io: std.Io, allocator: std.mem.Allocator, title: []const u8, body: []const u8) NotifyError!void {
     const cmd = buildCommand(allocator, title, body) catch return error.OutOfMemory;
     defer {
@@ -105,9 +90,7 @@ pub fn notify(io: std.Io, allocator: std.mem.Allocator, title: []const u8, body:
     return notifyWithArgv(io, cmd);
 }
 
-/// Test-only helper: spawn a specific binary path. Used by the
-/// `BinaryNotFound` test. Production code uses `notify()` which calls
-/// `buildCommand` to pick the path.
+/// Test-only helper: spawn a specific binary path.
 pub fn notifyWithPath(io: std.Io, allocator: std.mem.Allocator, path: []const u8, title: []const u8, body: []const u8) NotifyError!void {
     const truncated = try truncateBody(allocator, body, MAX_BODY_LEN);
     defer allocator.free(truncated);
@@ -120,24 +103,20 @@ pub fn notifyWithPath(io: std.Io, allocator: std.mem.Allocator, path: []const u8
     return notifyWithArgv(io, argv);
 }
 
-/// Args passed to the reaper thread. The struct is copied onto the thread's
-/// stack for the thread's lifetime, so no heap allocation is needed.
+/// Args passed to the reaper thread.
 const ReaperArgs = struct {
     io: std.Io,
     child: std.process.Child,
 };
 
-/// One-shot reaper thread: blocks on `child.wait` so the OS can reap the
-/// child when it exits.
+/// One-shot reaper thread: blocks on `child.wait` so the OS can reap the child when it exits.
 fn reapChild(args: ReaperArgs) void {
     var local = args;
     _ = local.child.wait(local.io) catch {};
 }
 
 fn notifyWithArgv(io: std.Io, argv: []const []const u8) NotifyError!void {
-    // Any spawn failure (file not found, permission denied, etc.) is
-    // collapsed into `BinaryNotFound` so the LLM workflow logs it and moves
-    // on.
+    // Any spawn failure (file not found, permission denied, etc.) is collapsed into `BinaryNotFound` so the LLM workflow logs it and moves on.
     var child = std.process.spawn(io, .{
         .argv = argv,
         .stdin = .ignore,
@@ -146,22 +125,17 @@ fn notifyWithArgv(io: std.Io, argv: []const []const u8) NotifyError!void {
     }) catch return error.BinaryNotFound;
     if (child.id == null) return error.BinaryNotFound;
 
-    // Fire-and-forget from the LLM workflow's perspective: we must not block
-    // waiting for notify-send to exit (a slow toast library would freeze the
-    // chat).
+    // Fire-and-forget from the LLM workflow's perspective: we must not block waiting for notify-send to exit (a slow toast library would freeze the chat).
     const args = ReaperArgs{ .io = io, .child = child };
     if (std.Thread.spawn(.{}, reapChild, .{args})) |thread| {
         thread.detach();
     } else |_| {
-        // Thread spawn failed (out of memory / thread limit). Fall back to
-        // inline `child.kill(io)` to at least prevent zombie accumulation.
+        // Thread spawn failed (out of memory / thread limit).
         child.kill(io);
     }
 }
 
 /// Truncate `body` to `max` characters, appending an ellipsis when truncated.
-/// Always returns a freshly-allocated slice that the caller owns and must
-/// `allocator.free()`.
 pub fn truncateBody(allocator: std.mem.Allocator, body: []const u8, max: usize) ![]u8 {
     if (body.len <= max) return try allocator.dupe(u8, body);
     const ellipsis: []const u8 = "…";
@@ -186,8 +160,7 @@ fn escapeAppleScript(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 fn escapePowerShell(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
-    // In a PowerShell single-quoted string a literal single quote is
-    // written by doubling it.
+    // In a PowerShell single-quoted string a literal single quote is written by doubling it.
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
     for (s) |c| {
@@ -200,9 +173,7 @@ fn escapePowerShell(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 // ===== Tests merged from notifications_test.zig (2026-09-29 flatten) =====
 const testing = std.testing;
 
-// ---------------------------------------------------------------------------
 // truncateBody: pure helper, no OS-specific code
-// ---------------------------------------------------------------------------
 
 test "truncateBody returns input unchanged when shorter than max" {
     const allocator = testing.allocator;
@@ -238,9 +209,7 @@ test "truncateBody at the boundary returns the original (no ellipsis)" {
     try testing.expectEqualStrings(&input_buf, result);
 }
 
-// ---------------------------------------------------------------------------
 // buildCommand: per-OS argv construction (skipped on non-matching OS)
-// ---------------------------------------------------------------------------
 
 test "buildCommand on Linux returns notify-send as the first arg" {
     if (builtin.os.tag != .linux) return;
@@ -294,22 +263,19 @@ test "buildCommand truncates body longer than 140 chars" {
         for (cmd) |arg| allocator.free(arg);
         allocator.free(cmd);
     }
-    // Every argv item should be bounded by the platform's argv-item length
-    // limit.
+    // Every argv item should be bounded by the platform's argv-item length limit.
     const max_arg_len: usize = if (builtin.os.tag == .windows) 400 else 350;
     for (cmd) |arg| {
         try testing.expect(arg.len <= max_arg_len);
     }
-    // The body (truncated to 140 chars + ellipsis "…") should be present in
-    // the command's output.
+    // The body (truncated to 140 chars + ellipsis "…") should be present in the command's output.
     var all_args: std.ArrayList(u8) = .empty;
     defer all_args.deinit(allocator);
     for (cmd) |arg| {
         try all_args.appendSlice(allocator, arg);
         try all_args.append(allocator, '\n');
     }
-    // The body should appear in the rendered command as 137 'x' chars
-    // (MAX_BODY_LEN=140 minus ellipsis_len=3) followed by the ellipsis.
+    // The body should appear in the rendered command as 137 'x' chars (MAX_BODY_LEN=140 minus ellipsis_len=3) followed by the ellipsis.
     var expected_body_buf: [MAX_BODY_LEN]u8 = undefined;
     @memset(expected_body_buf[0 .. MAX_BODY_LEN - 3], 'x');
     @memcpy(
@@ -320,9 +286,7 @@ test "buildCommand truncates body longer than 140 chars" {
     try testing.expect(std.mem.indexOf(u8, all_args.items, expected_body_substr) != null);
 }
 
-// ---------------------------------------------------------------------------
 // notifyWithPath: tests the BinaryNotFound error path without needing notify-send
-// ---------------------------------------------------------------------------
 
 test "notifyWithPath returns BinaryNotFound when the binary does not exist" {
     const allocator = testing.allocator;
@@ -336,21 +300,14 @@ test "notifyWithPath returns BinaryNotFound for an empty path" {
     try testing.expectError(error.BinaryNotFound, result);
 }
 
-// ---------------------------------------------------------------------------
-// notifyWithPath positive path: spawn /bin/true (exits immediately) to verify
-// the spawn-and-reap pipeline works.
+// notifyWithPath positive path: spawn /bin/true (exits immediately) to verify the spawn-and-reap pipeline works.
 
 test "notifyWithPath with /bin/true returns success and does not leak" {
     if (builtin.os.tag == .windows) return; // no `true` binary on Windows
     const allocator = testing.allocator;
-    // `/bin/true` exists on Linux but NOT on macOS — BSD true lives at
-    // `/usr/bin/true` (modern macOS no longer carries the legacy `/bin`
-    // symlink alias, so a hardcoded `/bin/true` spawn fails with
+    // `/bin/true` exists on Linux but NOT on macOS — BSD true lives at `/usr/bin/true` (modern macOS no longer carries the legacy `/bin` symlink alias, so a …
     const true_bin: []const u8 = if (builtin.os.tag == .macos) "/usr/bin/true" else "/bin/true";
-    // true exits immediately. If the function blocks on a
-    // synchronous child.wait, the test still passes (the wait is
-    // microseconds).
+    // true exits immediately.
     try notifyWithPath(testing.io, allocator, true_bin, "T", "B");
-    // No explicit assertion needed: returning from notifyWithPath
-    // without error is the success criterion.
+    // No explicit assertion needed: returning from notifyWithPath without error is the success criterion.
 }

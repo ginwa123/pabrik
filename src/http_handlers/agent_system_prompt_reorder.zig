@@ -1,6 +1,4 @@
-//! `PATCH /api/agents/:agent_id/system_prompt/reorder`. Body: `{ordered_ids:
-//! string[]}`. Reorders the agent's system-prompt rows to match the supplied
-//! order.
+//! `PATCH /api/agents/:agent_id/system_prompt/reorder`. Body: `{ordered_ids
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,9 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for system-prompt-reorder. Decoupled from the
-/// `SystemPromptReorderInput` domain struct so the wire format can
-/// evolve independently without touching the use-case.
+/// HTTP request body for system-prompt-reorder.
 const ReorderBody = struct {
     ordered_ids: []const []const u8 = &.{},
 };
@@ -34,12 +30,9 @@ pub const SystemPromptReorderInput = struct {
     ordered_ids: []const []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Reorder system-prompt rows for the given agent. All updates happen inside
-/// a single tx — all UPDATEs finalize together via tx.commit().
+/// Reorder system-prompt rows for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -55,13 +48,9 @@ fn useCase(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentSystemPromptReorderHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -114,8 +103,6 @@ pub fn agentSystemPromptReorderHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). Behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -135,17 +122,13 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try Migration116.up(&db, testing.allocator);
-    // Production DBs run every migration in order — the harness must
-    // mirror that, or the agent_system_prompt table (Migration 080) is
-    // missing.
+    // Production DBs run every migration in order — the harness must mirror that, or the agent_system_prompt table (Migration 080) is missing.
 
     // Seed: 1 agent + 3 system-prompt rows (position 0, 1, 2).
     try db.exec(testing.allocator,
@@ -217,8 +200,7 @@ test "useCase: ordered_ids[0] gets highest position (len - 1)" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Reverse the order: asp_3 first (should land at position 2),
-    // then asp_2 (position 1), then asp_1 (position 0).
+    // Reverse the order: asp_3 first (should land at position 2), then asp_2 (position 1), then asp_1 (position 0).
     try useCase(alloc, &ctx.db, .{
         .agent_id = "ws_item_1",
         .ordered_ids = &.{ "asp_3", "asp_2", "asp_1" },
@@ -235,8 +217,7 @@ test "useCase: 1-row ordering lands at position 0 (not 1)" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Just 1 id. We use `len - 1 - i` = `1 - 1 - 0` = 0.
-    // Contract: 1-row orderings get position 0, not position 1.
+    // Just 1 id.
     try useCase(alloc, &ctx.db, .{
         .agent_id = "ws_item_1",
         .ordered_ids = &.{"asp_2"},

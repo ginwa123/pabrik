@@ -1,5 +1,4 @@
-//! LLM tool: `update_element` — partial-update an existing element on a
-//! design page.
+//! LLM tool: `update_element` — partial-update an existing element on a design page.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -12,21 +11,15 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `update_element` tool. ALL fields except `element_id`
-/// are optional.
+/// Input structure for `update_element` tool.
 pub const UpdateElementInput = struct {
-    /// The element id (NOT the page_id). The LLM discovers element
-    /// ids via `set_design_page` (the response includes the element
-    /// ids in each element object's `id` field).
+    /// The element id (NOT the page_id).
     element_id: []const u8 = "",
     /// New name (optional). Must be unique within the page if changed.
     name: ?[]const u8 = null,
-    /// New element type (optional). One of: rectangle, ellipse, text,
-    /// image, frame, group. Null = no change.
+    /// New element type (optional).
     type: ?[]const u8 = null,
-    /// New HTML body (optional). When set, the on-disk file at
-    /// `file_path` is rewritten atomically. If the file doesn't
-    /// exist (orphan), it's recreated.
+    /// New HTML body (optional).
     html: ?[]const u8 = null,
     /// New X position (optional).
     x: ?i64 = null,
@@ -38,8 +31,7 @@ pub const UpdateElementInput = struct {
     height: ?i64 = null,
     /// New rotation in degrees (optional).
     rotation: ?f64 = null,
-    /// New fill color (optional). Empty string means "use default"
-    /// (no fill) — same as add_element's behavior.
+    /// New fill color (optional).
     fill: ?[]const u8 = null,
     /// New stroke color (optional).
     stroke: ?[]const u8 = null,
@@ -57,9 +49,7 @@ pub const UpdateElementInput = struct {
     image_url: ?[]const u8 = null,
 };
 
-/// Top-level tool definition for the LLM. The description emphasizes that ALL
-/// fields except `element_id` are optional, and that `set_design_page` is the
-/// way to discover element ids (no separate list tool exists).
+/// Top-level tool definition for the LLM.
 pub const update_design_element_tool_system_prompt =
     \\## Update Design Element Tool — Behavior
     \\Use `update_element` to partially update an existing design element.
@@ -176,9 +166,7 @@ pub const update_design_element_tool = AgentTool{
     },
 };
 
-/// Generate an error JSON object (replaces the old per-tool XML escape +
-/// error envelope helpers).
-/// Generate an error JSON object `{"error":...}` for the tool dispatcher.
+/// Generate an error JSON object (replaces the old per-tool XML escape + error envelope helpers).
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -191,8 +179,7 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     return try errorJSON(allocator, error_msg);
 }
 
-/// Canonical element JSON object (keys mirror the old `<element ... />`
-/// attributes 1:1; attributes omitted-when-empty become explicit nulls).
+/// Canonical element JSON object (keys mirror the old `<element ...
 pub const ElementJSON = struct {
     id: []const u8,
     page_id: []const u8,
@@ -246,16 +233,13 @@ pub fn elementToJSON(
     }, .{});
 }
 
-/// Clean an optional free-text field: empty becomes null, otherwise the
-/// control-char-sanitized copy owned by the caller's arena.
+/// Clean an optional free-text field: empty becomes null, otherwise the control-char-sanitized copy owned by the caller's arena.
 fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     if (s.len == 0) return null;
     return try sanitizeControlChars(allocator, s);
 }
 
 /// Parse the optional `type` string into an `ElementType` enum.
-/// Returns null when the string is null (no change), or an error JSON object
-/// when the string is non-null but not one of the 6 valid types.
 fn parseOptionalElementType(_: std.mem.Allocator, type_str: ?[]const u8) !?design_model.ElementType {
     const t = type_str orelse return null;
     if (std.mem.eql(u8, t, "rectangle")) return .rectangle;
@@ -267,9 +251,7 @@ fn parseOptionalElementType(_: std.mem.Allocator, type_str: ?[]const u8) !?desig
     return error.BadTypeString;
 }
 
-/// Validate `element_id` is non-empty and has the right `elem_`
-/// prefix. Returns null when shape is correct, or an error JSON object on
-/// mismatch.
+/// Validate `element_id` is non-empty and has the right `elem_` prefix.
 fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) !?[]u8 {
     if (element_id.len == 0) {
         return try errorJSON(allocator, "element_id is required (find it in the `id` field of an element object in a previous set_design_page response)");
@@ -301,9 +283,7 @@ pub fn executeUpdateElementToString(
     // 0. Input validation (shape only — DB validation runs after).
     if (try validateElementIdShape(allocator, input.element_id)) |e| return e;
 
-    // 1. Parse the optional type string. parseOptionalElementType returns:
-    // null → "no change" (string was null) enum value → parsed successfully
-    // error.BadTypeString → malformed string (not one of the 6)
+    // 1. Parse the optional type string. parseOptionalElementType returns
     const parsed_type = parseOptionalElementType(allocator, input.type) catch |err| {
         if (err == error.BadTypeString) {
             return try errorJSON(allocator, "type must be one of: rectangle, ellipse, text, image, frame, group");
@@ -311,15 +291,12 @@ pub fn executeUpdateElementToString(
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: parseOptionalElementType failed: {s}", .{@errorName(err)}));
     };
 
-    // 2. Apply the same fill workaround as add_element: empty fill
-    //    string would bind as NULL and violate the v6 NOT NULL
-    //    constraint on the `fill` column. Substitute "transparent".
+    // 2.
     const fill_for_db: ?[]const u8 = if (input.fill) |f| blk: {
         break :blk if (f.len == 0) @as([]const u8, "transparent") else f;
     } else null;
 
-    // 3. Call updateElement. Returns the element_id on success;
-    //    returns ElementNotFound if no such row exists.
+    // 3.
     const element_id = design_model.updateElement(allocator, db, .{
         .element_id = input.element_id,
         .name = input.name,
@@ -345,8 +322,7 @@ pub fn executeUpdateElementToString(
     };
     defer allocator.free(element_id);
 
-    // 4. Re-fetch the full element via getElement so the LLM gets
-    //    the canonical state (with file_path, timestamps, etc.).
+    // 4.
     const elem = design_model.getElement(allocator, db, element_id) catch |err| {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: getElement failed: {s}", .{@errorName(err)}));
     };
@@ -397,9 +373,7 @@ test "errorJSON on missing field returns an error object" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the v6 design schema + one page +
-/// one rectangle element named "card". Returns the DB handle + the
-/// element_id so tests can call update_element on it.
+/// Set up an in-memory SQLite with the v6 design schema + one page + one rectangle element named "card".
 fn setupDbWithElement() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -658,8 +632,7 @@ test "executeUpdateElementToString returns ElementNotFound error when element_id
 }
 
 test "executeUpdateElementToString with only element_id is a no-op success" {
-    // All fields null except element_id → updateElement short-circuits
-    // (no SET clauses), but still succeeds and returns the current state.
+    // All fields null except element_id → updateElement short-circuits (no SET clauses), but still succeeds and returns the current state.
     const alloc = testing.allocator;
     var s = try setupDbWithElement();
     defer s.threaded.deinit();
@@ -706,7 +679,6 @@ test "executeUpdateElementToString updates rotation and opacity" {
 }
 
 // Exec adapter — merged from `update_design_element.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -729,9 +701,7 @@ pub fn execUpdateElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // updateElement doesn't need Io (no mkdir-p required). It uses the
-    // existing file_path and rewrites in place. If the file is missing
-    // (orphan), it internally looks up the path via JOIN and rebuilds it.
+    // updateElement doesn't need Io (no mkdir-p required).
     const inner = executeUpdateElementToString(
         ctx.allocator,
         ctx.db,
@@ -744,9 +714,7 @@ pub fn execUpdateElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

@@ -1,6 +1,4 @@
-/** The office editor's own behaviour: it mounts the right Univer product, it
- *  reports edits, and it never leaves a live Univer behind. The SDK itself is
- *  mocked — jsdom cannot evaluate it, and the point here is the wiring. */
+/** The office editor's own behaviour: it mounts the right Univer product, it reports edits, and it never leaves a live Univer behind. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -132,9 +130,7 @@ describe('OfficeDocumentEditor — edits and teardown', () => {
     })
     await flushPromises()
 
-    // The view stores the snapshot under this kind. If it re-parsed the body
-    // instead, a body that changed underneath the editor could label a
-    // workbook as a document.
+    // The view stores the snapshot under this kind.
     expect(wrapper.vm.kind()).toBe('doc')
     wrapper.unmount()
   })

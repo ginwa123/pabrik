@@ -44,15 +44,11 @@ import {
 
 const props = defineProps<{
   selectedSkillName: string | null
-  /**    * Explicit workspace binding. When set, the list reads this workspace's skills instead of the
-   * active workspace's — the workspace settings page binds the route workspace, which may differ
-   * from the active one. Absent = previous behaviour (active workspace). */
+  /** Explicit workspace binding. */
   workspaceId?: string | null
 }>()
 
-// The RESOLVED workspace, not the raw `activeWorkspaceId` ref (see
-// DocumentsView.vue). An explicit prop wins over the store so a page can
-// show a non-active workspace without switching context.
+// The RESOLVED workspace, not the raw `activeWorkspaceId` ref (see DocumentsView.vue).
 const workspacesStore = useWorkspacesStore()
 const workspaceId = computed(() => props.workspaceId ?? workspacesStore.activeWorkspace?.id ?? null)
 
@@ -100,8 +96,7 @@ const reportError = (message: string) => {
   emit('error', message)
 }
 
-// Reload when the resolved workspace changes: mount covers the initial load, prev-id guard on
-// update covers workspace switches.
+// Reload when the resolved workspace changes: mount covers the initial load, prev-id guard on update covers workspace switches.
 const prevWorkspaceId = ref<string | null>(workspaceId.value)
 onMounted(() => {
   prevWorkspaceId.value = workspaceId.value
@@ -115,14 +110,10 @@ onUpdated(() => {
 })
 
 // ─── Filter, sort, count ───────────────────────────────────────────────
-// Seeded from the URL and written back on every change, so a filtered view
-// is a link. `replace`, not `push`: typing must not bury earlier keystrokes.
 const route = useRoute()
 const router = useRouter()
 
-// `route?.query` rather than `route.query`: a unit test that mounts this
-// component without a router leaves `route` undefined, and the read must
-// degrade to "no filter" rather than throw during setup.
+// `route?.query` rather than `route.query`: a unit test that mounts this component without a router leaves `route` undefined, and the read must degrade to "no …
 const filterState = ref<SkillFilterState>(
   decodeSkillFilter((route?.query as Record<string, unknown> | undefined) ?? {}),
 )
@@ -148,8 +139,7 @@ function writeFilterToUrl(): void {
     if (encoded[key] !== undefined) query[key] = encoded[key]
     else delete query[key]
   }
-  // replace, not push: typing in the search box must not bury the previous
-  // five keystrokes under Back.
+  // replace, not push: typing in the search box must not bury the previous five keystrokes under Back.
   router?.replace({ path: route?.path ?? '', query })
 }
 
@@ -158,8 +148,6 @@ const visibleCount = computed(() => countVisible(skills.value, filterState.value
 const filterActive = computed(() => isFilterActive(filterState.value))
 
 // ─── Keyboard navigation ───────────────────────────────────────────────
-// The rows were plain click targets, so the list needed a mouse. Arrows
-// move a cursor, Enter opens it, Home/End jump to either end.
 const cursorIndex = ref(-1)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 
@@ -194,8 +182,7 @@ const toggleFacet = (facet: SkillFacet) => {
     : [...filterState.value.facets, facet]
   filterState.value = { ...filterState.value, facets }
   writeFilterToUrl()
-  // The cursor indexes the OLD list; keeping it would make Enter open a
-  // different skill than the one the reader is looking at.
+  // The cursor indexes the OLD list; keeping it would make Enter open a different skill than the one the reader is looking at.
   cursorIndex.value = -1
 }
 
@@ -218,8 +205,7 @@ const onListKeyDown = (event: KeyboardEvent) => {
     event.preventDefault()
     const step = event.key === 'ArrowDown' ? 1 : -1
     const next = cursorIndex.value + step
-    // Clamp rather than wrap: with 41 rows, wrapping from the bottom to
-    // the top loses the reader's place entirely.
+    // Clamp rather than wrap: with 41 rows, wrapping from the bottom to the top loses the reader's place entirely.
     cursorIndex.value = Math.max(0, Math.min(rows.length - 1, next))
     return
   }

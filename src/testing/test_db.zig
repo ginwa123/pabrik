@@ -36,9 +36,7 @@ pub fn handle(temp: *TempDb) *database.Db {
     return &temp.db;
 }
 
-/// A postgres test database is a SCHEMA, not a database: creating one per test
-/// would cost a `CREATE DATABASE` (and a leftover) for every setup. One schema
-/// per test process, wiped on every open, gives a `:memory:`-fresh schema.
+/// A postgres test database is a SCHEMA, not a database: creating one per test would cost a `CREATE DATABASE` (and a leftover) for every setup.
 const schema_prefix = "pabrik_test_";
 
 var base_conninfo: ?[]const u8 = null;
@@ -49,13 +47,10 @@ fn longLived() std.mem.Allocator {
     return std.heap.page_allocator;
 }
 
-/// Postgres reports every skipped `CREATE INDEX IF NOT EXISTS` and every object
-/// a `DROP SCHEMA … CASCADE` takes as a NOTICE, and Zig relays a PASSING step's
-/// stderr as a block shaped exactly like a failure. It rides in the conninfo.
+/// Postgres reports every skipped `CREATE INDEX IF NOT EXISTS` and every object a `DROP SCHEMA … CASCADE` takes as a NOTICE, and Zig relays a PASSING step's …
 const quiet_option = "-cclient_min_messages=warning";
 
-/// The temp-database path splits a conninfo on spaces, so the option has to stay
-/// one token: `-csetting=value` is the form both libpq and the server accept.
+/// The temp-database path splits a conninfo on spaces, so the option has to stay one token: `-csetting=value` is the form both libpq and the server accept.
 fn quietBaseConninfo() !?[:0]const u8 {
     if (!database.backend_is_postgres) return null;
     const base = ensureBaseConninfo() catch return null;
@@ -78,9 +73,7 @@ fn pidAlive(pid: []const u8) bool {
     return std.c.access(path.ptr, 0) == 0;
 }
 
-/// The instance the scratch schemas live on. An explicit `POSTGRES_TEST_CONNINFO`
-/// wins; otherwise the two ports a local server is normally on are probed, so
-/// `zig build test -Ddb_used=postgres` works without exporting anything.
+/// The instance the scratch schemas live on.
 fn ensureBaseConninfo() ![]const u8 {
     if (base_conninfo) |base| return base;
 
@@ -115,8 +108,7 @@ fn ensureSchemaName() ![]const u8 {
     return name;
 }
 
-/// Drop the schemas a previous, now-dead test process left behind. Without
-/// this the instance collects one schema per shard run, for ever.
+/// Drop the schemas a previous, now-dead test process left behind.
 fn dropDeadSchemas(db: *database.Db) void {
     var doomed: std.ArrayList([]u8) = .empty;
     defer {
@@ -124,8 +116,7 @@ fn dropDeadSchemas(db: *database.Db) void {
         doomed.deinit(longLived());
     }
 
-    // The rows must be closed BEFORE the drops: an open iterator holds a
-    // reader connection, and `exec` wants the writer.
+    // The rows must be closed BEFORE the drops: an open iterator holds a reader connection, and `exec` wants the writer.
     {
         var rows = db.query(
             longLived(),
@@ -150,14 +141,11 @@ fn dropDeadSchemas(db: *database.Db) void {
     }
 }
 
-/// Open a database the way the compiled backend can, with a fresh schema:
-/// `:memory:` on sqlite, a per-process schema on postgres. This is what the
-/// test setups call instead of `db.init(io, ":memory:")`.
+/// Open a database the way the compiled backend can, with a fresh schema
 pub fn openMemory(db: *database.Db, io: std.Io) !void {
     if (!database.backend_is_postgres) return db.init(io, ":memory:");
 
-    // No instance answering means there is nothing to test against: skip, the
-    // same contract `create()` uses, unless CI demands a server.
+    // No instance answering means there is nothing to test against: skip, the same contract `create()` uses, unless CI demands a server.
     const base = ensureBaseConninfo() catch |err| {
         if (std.c.getenv(require_env) != null) return err;
         return error.SkipZigTest;
@@ -186,9 +174,7 @@ pub fn openMemory(db: *database.Db, io: std.Io) !void {
     for (dialect.sqlite_time_functions) |sql| try db.exec(longLived(), sql, &.{});
 }
 
-/// Turn on the same foreign-key pragma `MigrationManager.runMigrations` sets
-/// at the end of a chain. A fixture that asserts a cascade has to call this:
-/// sqlite enforces nothing without it, and postgres needs no call at all.
+/// Turn on the same foreign-key pragma `MigrationManager.runMigrations` sets at the end of a chain.
 pub fn enableForeignKeys(allocator: std.mem.Allocator, db: *database.Db) !void {
     if (dialect.enable_foreign_keys.len == 0) return;
     try db.exec(allocator, dialect.enable_foreign_keys, &.{});

@@ -1,6 +1,4 @@
-//! Deleting one LLM profile, from either scope: the user-scope route
-//! `DELETE /api/config/pabrik/profiles/:name`, and the workspace-scope twin in
-//! `workspace_config.zig`, which edits only that workspace's own row.
+//! Deleting one LLM profile, from either scope: the user-scope route `DELETE /api/config/pabrik/profiles/:name`, and the workspace-scope twin in …
 
 const std = @import("std");
 const json = std.json;
@@ -10,9 +8,7 @@ const gserverz = pabrikcore.gserverz;
 const config = pabrikcore.config;
 const user_config_store = pabrikcore.user_config_store;
 
-// =====================================================================
 // Domain types
-// =====================================================================
 
 /// Body of every profile-delete response, on both routes.
 pub const ProfileDeleteResponse = struct {
@@ -30,19 +26,15 @@ pub const RemovalOutcome = struct {
     active_cleared: bool,
 };
 
-/// The document with one profile removed, re-serialized in full. `document` is
-/// owned by the caller.
+/// The document with one profile removed, re-serialized in full.
 pub const ProfileRemoval = struct {
     document: []u8,
     outcome: RemovalOutcome,
 };
 
-// =====================================================================
 // Use-cases (pure)
-// =====================================================================
 
-/// Remove `name` from `document_json`'s `profiles_models` map, keeping every
-/// other key of the document.
+/// Remove `name` from `document_json`'s `profiles_models` map, keeping every other key of the document.
 pub fn removeProfileFromDocument(
     allocator: std.mem.Allocator,
     document_json: []const u8,
@@ -82,19 +74,15 @@ pub fn removeProfileFromDocument(
     };
 }
 
-// =====================================================================
 // The user-level config document
-// =====================================================================
 
-/// Resolved on-disk config paths. Both slices live for the lifetime of the
-/// request (per-request arena) — no explicit `free` needed.
+/// Resolved on-disk config paths.
 const ConfigPaths = struct {
     dir: []const u8,
     path: []const u8,
 };
 
-/// The user-level config document: `users.config_json` under `--auth`,
-/// `config.json` otherwise. `null` when there is nothing to read.
+/// The user-level config document: `users.config_json` under `--auth`, `config.json` otherwise.
 pub fn loadUserConfigDocument(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -106,8 +94,7 @@ pub fn loadUserConfigDocument(
     return readConfigFile(allocator, io, paths.path);
 }
 
-/// Write the user-level config document back where `loadUserConfigDocument`
-/// read it from.
+/// Write the user-level config document back where `loadUserConfigDocument` read it from.
 pub fn saveUserConfigDocument(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -121,8 +108,7 @@ pub fn saveUserConfigDocument(
     try writeConfigFile(io, paths.path, document);
 }
 
-/// Remove `name` from the user-level config and persist the result. `removed =
-/// false` means the document had no such profile and nothing was written.
+/// Remove `name` from the user-level config and persist the result.
 pub fn removeProfileFromUserConfig(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -141,13 +127,9 @@ pub fn removeProfileFromUserConfig(
     return removal.outcome;
 }
 
-// =====================================================================
 // Handler: DELETE /api/config/pabrik/profiles/:name
-// =====================================================================
 
-/// Removes a single profile from the user-level config (`users.config_json`
-/// under `--auth`, `config.json` otherwise) and live-reloads the in-memory
-/// `LlmConfig` so running workflows see the change.
+/// Removes a single profile from the user-level config (`users.config_json` under `--auth`, `config.json` otherwise) and live-reloads the in-memory `LlmConfig` so …
 pub fn pabrikConfigProfileDeleteHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -165,8 +147,6 @@ pub fn pabrikConfigProfileDeleteHandler(
         return makeErrorResponse(allocator, res, 500, name, "Failed to resolve session");
 
     // Auth mode: the session names the owner whose `config_json` is edited.
-    // The id is COPIED: `freeSessionLookup` runs at the end of this block, and
-    // the work below happens after that.
     var owner: []const u8 = "";
     var owner_owned: ?[]u8 = null;
     defer if (owner_owned) |owned| allocator.free(owned);
@@ -200,9 +180,7 @@ pub fn pabrikConfigProfileDeleteHandler(
     };
 }
 
-// =====================================================================
 // File-mode plumbing
-// =====================================================================
 
 /// Resolve the config dir + file path from the process environment.
 fn resolveConfigPaths(allocator: std.mem.Allocator) !ConfigPaths {
@@ -214,8 +192,7 @@ fn resolveConfigPaths(allocator: std.mem.Allocator) !ConfigPaths {
         std.log.err("profile delete: environment unavailable", .{});
         return error.EnvironmentUnavailable;
     };
-    // `getDefaultConfigDir` only READS the map, but its parameter is a mutable
-    // pointer - the same cast the config handlers use.
+    // `getDefaultConfigDir` only READS the map, but its parameter is a mutable pointer - the same cast the config handlers use.
     const environment: *std.process.Environ.Map = @ptrCast(@constCast(environment_ptr));
 
     const config_dir = config.getDefaultConfigDir(allocator, environment) catch |err| {
@@ -320,9 +297,7 @@ pub fn liveReloadLlmConfig(io: std.Io, name: []const u8) LiveReloadResult {
     return .ok;
 }
 
-// =====================================================================
 // Response builders (shared with the workspace-scope route)
-// =====================================================================
 
 /// Build a JSON error response with a `ProfileDeleteResponse` body.
 pub fn makeErrorResponse(
@@ -340,8 +315,7 @@ pub fn makeErrorResponse(
     return res.jsonResponse(.{ .status_code = status_code, .data = body });
 }
 
-/// Build the 200 OK success response. `warning` is `null` on a clean success or
-/// a short string when the delete landed but the live reload did not.
+/// Build the 200 OK success response.
 pub fn makeSuccessResponse(
     allocator: std.mem.Allocator,
     res: gserverz.HttpResponse,
@@ -358,14 +332,11 @@ pub fn makeSuccessResponse(
     return res.jsonResponse(.{ .status_code = 200, .data = body });
 }
 
-// =====================================================================
 // Tests
-// =====================================================================
 
 const testing = std.testing;
 
-/// A config shaped like a real one: the profile map, the active profile, and
-/// the keys that have nothing to do with profiles.
+/// A config shaped like a real one: the profile map, the active profile, and the keys that have nothing to do with profiles.
 const FULL_CONFIG =
     \\{"profiles_models":{
     \\  "alpha":{"model":"gpt-4o","base_url":"https://api.example.com","api_key":"sk-alpha"},
@@ -379,9 +350,7 @@ const FULL_CONFIG =
     \\ "retry_delay_ms":2000}
 ;
 
-/// Every test runs on an ARENA: `removeProfileFromDocument` parses with
-/// `parseFromSliceLeaky` (the handlers give it the request arena), so the
-/// document and everything parsed out of it share one lifetime.
+/// Every test runs on an ARENA: `removeProfileFromDocument` parses with `parseFromSliceLeaky` (the handlers give it the request arena), so the document and …
 const TestArena = struct {
     state: std.heap.ArenaAllocator,
 
@@ -466,8 +435,7 @@ test "removeProfileFromDocument: reports not-removed for an unknown name, changi
     try testing.expect(!removal.outcome.removed);
     try testing.expect(!removal.outcome.active_cleared);
 
-    // The document round-trips unchanged, so a caller that ignores the flag
-    // still cannot lose data by writing it back.
+    // The document round-trips unchanged, so a caller that ignores the flag still cannot lose data by writing it back.
     var before = try std.json.parseFromSlice(std.json.Value, alloc, FULL_CONFIG, .{});
     defer before.deinit();
     var after = try std.json.parseFromSlice(std.json.Value, alloc, removal.document, .{});

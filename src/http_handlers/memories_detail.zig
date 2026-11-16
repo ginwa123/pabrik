@@ -1,5 +1,4 @@
-//! `GET /api/memories/:name` — read a global memory file's content +
-//! metadata.
+//! `GET /api/memories/:name` — read a global memory file's content + metadata.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -7,9 +6,7 @@ const gserverz = pabrikcore.gserverz;
 const memories_mod = pabrikcore.memories;
 const http_response = @import("http_response.zig");
 
-/// Response payload for `GET /api/memories/:name`. `content` is JSON-escaped
-/// automatically by `std.json.Stringify.valueAlloc` — do not hand-roll JSON
-/// for the body, it can break on memories that contain `"` or backslash.
+/// Response payload for `GET /api/memories/:name`.
 pub const MemoryDetailPayload = struct {
     name: []const u8,
     title: []const u8,
@@ -18,14 +15,11 @@ pub const MemoryDetailPayload = struct {
     content: []const u8,
 };
 
-/// Domain-level error set for `useCase`. Each variant maps to a
-/// distinct HTTP status code via two exhaustive switches in the
-/// handler.
+/// Domain-level error set for `useCase`.
 pub const MemoryDetailError = error{
     /// `getSingleton()` failed — server not initialised.
     ServerNotInitialized,
     /// Singleton has no environment (server constructed without env).
-    /// Maps to 500 with the "Missing environment" message.
     MissingEnvironment,
     /// `:name` path param was missing or empty.
     NameRequired,
@@ -47,12 +41,9 @@ pub const MemoryDetailOutput = struct {
     payload: MemoryDetailPayload,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Read a global memory file's content and metadata. Steps: 1. Get the
-/// singleton + env. 2.
+/// Read a global memory file's content and metadata.
 fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -69,9 +60,7 @@ fn useCase(
     };
     defer allocator.free(content);
 
-    // Re-list for title/path/size. The re-list is cheap (single
-    // `openDir` + iterate) and avoids re-parsing the file to extract
-    // the title (readMemoryFile returns raw bytes).
+    // Re-list for title/path/size.
     const list = memories_mod.listAllMemories(allocator, io, environment);
     defer memories_mod.freeMemoriesList(allocator, list);
 
@@ -83,13 +72,11 @@ fn useCase(
         }
     }
     const m = found orelse {
-        // Defensive: the file existed at read time but the re-list
-        // does not see it. Treat as not-found rather than 200/empty.
+        // Defensive: the file existed at read time but the re-list does not see it.
         return error.NotFound;
     };
 
-    // Duplicate the matched slices + content so the output survives the
-    // `free` defers above.
+    // Duplicate the matched slices + content so the output survives the `free` defers above.
     var duped_name: ?[]u8 = null;
     var duped_title: ?[]u8 = null;
     var duped_path: ?[]u8 = null;
@@ -114,9 +101,7 @@ fn useCase(
     } };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 const MemoryDetailResponse = struct {
     memory: ?MemoryDetailPayload = null,
@@ -138,8 +123,7 @@ pub fn memoryDetailHandler(
     };
 
     const outcome = useCase(allocator, ctx.io, .{ .name = name }) catch |err| {
-        // Exhaustive mapping — adding a new MemoryDetailError variant
-        // will fail to compile here (intentional). No `else` prong.
+        // Exhaustive mapping — adding a new MemoryDetailError variant will fail to compile here (intentional).
         const status: u16 = switch (err) {
             error.ServerNotInitialized => 500,
             error.MissingEnvironment => 500,
@@ -162,9 +146,7 @@ pub fn memoryDetailHandler(
         });
     };
 
-    // Free the useCase's heap-owned slices. On the per-request arena
-    // this is a no-op (the arena reaps at request end) but the
-    // explicit frees are defensive + document ownership.
+    // Free the useCase's heap-owned slices.
     defer {
         allocator.free(outcome.payload.name);
         allocator.free(outcome.payload.title);

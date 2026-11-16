@@ -19,9 +19,7 @@ const LOG_MAX_BYTES = 20480
 
 const processes = ref<BackgroundProcess[]>([])
 const listError = ref<string | null>(null)
-// True while `fetchList` is in flight. Without it the "No background commands for this session"
-// empty state fires on every open — a false statement, since the popup is opened precisely BECAUSE
-// commands are running.
+// True while `fetchList` is in flight.
 const isLoadingList = ref(false)
 const show = ref(false)
 const expandedPid = ref<number | null>(null)
@@ -43,9 +41,7 @@ const findProcess = (pid: number): BackgroundProcess | undefined =>
   processes.value.find((p) => p.pid === pid)
 
 const formatStartedAt = (startedAt: number): string => {
-  // Backend `started_at` is unix SECONDS (see background_processes_list.zig
-  // fixtures: 1700000000). formatRelativeTime accepts unix-MS strings or
-  // SQLite datetime strings, so convert seconds -> ms string.
+  // Backend `started_at` is unix SECONDS (see background_processes_list.zig fixtures: 1700000000). formatRelativeTime accepts unix-MS strings or SQLite datetime …
   if (!startedAt) return 'now'
   return formatRelativeTime(String(startedAt * 1000))
 }
@@ -64,8 +60,7 @@ const fetchList = async (): Promise<void> => {
     if (disposed || props.sessionId !== sid) return
     processes.value = data.processes ?? []
     listError.value = null
-    // A list refresh can flip the expanded row to completed — stop its
-    // 2s tail poll (the log stays visible, just no longer live).
+    // A list refresh can flip the expanded row to completed — stop its 2s tail poll (the log stays visible, just no longer live).
     if (expandedPid.value !== null) {
       const proc = findProcess(expandedPid.value)
       if (proc && !proc.running) stopLogTimer()
@@ -167,29 +162,23 @@ const unsubscribeAll = (): void => {
 
 const subscribePush = (): void => {
   unsubscribeAll()
-  // The global bus is installed once by App.vue; component specs and
-  // isolated mounts may not have it — never throw from here.
+  // The global bus is installed once by App.vue; component specs and isolated mounts may not have it — never throw from here.
   try {
     const bus = useSseBus()
     const sid = props.sessionId
-    // Primary: dedicated background-process lifecycle events
-    // (`background_process_created` on spawn, `background_process_completed`
-    // on exit — see background_process_events.zig). No polling.
+    // Primary: dedicated background-process lifecycle events (`background_process_created` on spawn, `background_process_completed` on exit — see …
     offBg = bus.on('backgroundProcess', (event) => {
       if (disposed) return
       if (event.session_id !== sid && event.session_id !== props.sessionId) return
       refreshList()
     })
-    // Fallback: completion also queues a message (`queue_queued` via
-    // insertQueueMessage), so ANY queue event for this session refreshes
-    // too — covers backends that predate the new channel.
+    // Fallback: completion also queues a message (`queue_queued` via insertQueueMessage), so ANY queue event for this session refreshes too — covers backends that …
     offQueue = bus.on('queue', (event) => {
       if (disposed) return
       if (event.session_id !== sid && event.session_id !== props.sessionId) return
       refreshList()
     })
-    // Missed events during leader-takeover / return-from-hidden:
-    // re-fetch from REST (same pattern as ChatView loadChatHistory).
+    // Missed events during leader-takeover / return-from-hidden
     if (bus.onResync) {
       offResync = bus.onResync(() => {
         if (disposed) return
@@ -217,13 +206,11 @@ const resetForSession = (sid: string): void => {
     return
   }
   // Push-driven: immediate fetch on mount/session-switch, then SSE only.
-  // Manual refresh (dialog Refresh button) + resync cover missed events.
   void fetchList()
   subscribePush()
 }
 
-// Reset on session switch (prev-value guard on update — same reset the
-// watcher did; mount is covered by the onMounted reset below).
+// Reset on session switch (prev-value guard on update — same reset the watcher did; mount is covered by the onMounted reset below).
 let prevPopupSessionId = props.sessionId
 onUpdated(() => {
   const newSid = props.sessionId

@@ -57,13 +57,9 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 const openInEditor = useInjectOpenInCodeEditor()
 
-// Single parser pass — reuses the typed `ParsedListDirectory` from the
-// project-wide parser. Handles both the inner-data shape and the
-// outer-<tool>-envelope error fallback (see ChatView.innerToolData).
+// Single parser pass — reuses the typed `ParsedListDirectory` from the project-wide parser.
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
@@ -80,8 +76,7 @@ const contentPath = computed((): string | null => {
   return v && v.trim() !== '' ? v : null
 })
 
-// Prefer the envelope's path; fall back to the parameters prop so a
-// still-running tool (placeholder envelope with empty <data>) shows its path.
+// Prefer the envelope's path; fall back to the parameters prop so a still-running tool (placeholder envelope with empty <data>) shows its path.
 const displayPath = computed((): string | null => {
   return contentPath.value ?? extractParam(props.parameters, 'path')
 })
@@ -96,9 +91,7 @@ const count = computed(() => parsed.value.count)
 const entries = computed(() => parsed.value.entries)
 const errorMessage = computed(() => parsed.value.error)
 
-// Singular vs plural: "1 entry" / "0 entries" / "N entries". The backend's `count` attribute is the
-// source of truth — if a stale envelope ever has `<count>` but no entries (or vice versa), we still
-// pick the grammar based on `count`.
+// Singular vs plural: "1 entry" / "0 entries" / "N entries".
 const countLabel = computed(() => {
   const n = count.value
   return `${n} ${n === 1 ? 'entry' : 'entries'}`
@@ -113,8 +106,7 @@ const headerLabel = computed(() => {
   return path.value ?? 'unknown'
 })
 
-// Hover title: the full path (no truncation) on success; the error
-// message on failure.
+// Hover title: the full path (no truncation) on success; the error message on failure.
 const headerTitle = computed(() => {
   if (!isSuccess.value) return errorMessage.value ?? ''
   return path.value ?? ''
@@ -140,9 +132,7 @@ const openInEditorClick = (e: Event, fullPath: string) => {
   openInEditor({ filePath: fullPath, cwd: props.cwd })
 }
 
-// Per-row icon: `folder` for directories, `file` for files. The symlink marker is a separate `→` in
-// the template — it is typographic text, not an icon, and stays outside the registry. Matches the
-// visual conventions of `ls -F` / `eza`.
+// Per-row icon: `folder` for directories, `file` for files.
 const rowIcon = (entry: { isDirectory: boolean }): UiIconName =>
   entry.isDirectory ? 'folder' : 'file'
 

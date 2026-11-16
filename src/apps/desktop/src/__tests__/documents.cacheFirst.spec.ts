@@ -1,6 +1,4 @@
-/** The documents list is cache-first, like the sidebar's Recent chats. Two layers are proven
- * separately, because they fail differently: - `DocumentEngineDb` against an injected memory store
- * — deterministic, no IndexedDB, so it can assert the exact cache contents after each write. */
+/** The documents list is cache-first, like the sidebar's Recent chats. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import { setActivePinia, createPinia } from 'pinia'
@@ -42,14 +40,12 @@ describe('DocumentEngineDb — cache contents', () => {
 
     const cached = await run(eng.primeFromCache(WS, 50))
     expect(cached.map((r) => r.id)).toEqual(['doc_1'])
-    // The BODY is cached, not just the title — that is the whole point of
-    // using IndexedDB rather than a localStorage metadata cache.
+    // The BODY is cached, not just the title — that is the whole point of using IndexedDB rather than a localStorage metadata cache.
     expect(cached[0]!.raw.content).toBe('# heading')
   })
 
   it('a revalidate that carries no body keeps the body already cached', async () => {
-    // One store, two engines: the first load carries a body (the document was
-    // opened), the second is a list revalidate that carries metadata only.
+    // One store, two engines: the first load carries a body (the document was opened), the second is a list revalidate that carries metadata only.
     const store = makeMemorySyncStore()
     const first = new DocumentEngineDb(
       (async () => ({ documents: [doc()], count: 1 })) as never,
@@ -86,9 +82,7 @@ describe('DocumentEngineDb — cache contents', () => {
   })
 
   it('REPLACES rather than merges, so a server-side delete actually disappears', async () => {
-    // The regression a merge would introduce: two rows land in the cache,
-    // then the server returns one. The evicted row must not survive to be
-    // painted on every later cold boot (clicking it would 404).
+    // The regression a merge would introduce: two rows land in the cache, then the server returns one.
     const store = makeMemorySyncStore()
     const twoRows = async () => ({
       documents: [doc({ id: 'doc_1' }), doc({ id: 'doc_2' })],
@@ -99,8 +93,7 @@ describe('DocumentEngineDb — cache contents', () => {
     await run(first.loadDelta(WS))
     expect(await run(first.primeFromCache(WS, 50))).toHaveLength(2)
 
-    // A FRESH engine over the SAME store models the next app session
-    // reading what the last one persisted.
+    // A FRESH engine over the SAME store models the next app session reading what the last one persisted.
     const next = new DocumentEngineDb(
       (async () => ({ documents: [doc({ id: 'doc_1' })], count: 1 })) as never,
       'documents',
@@ -144,8 +137,7 @@ describe('DocumentEngineDb — cache contents', () => {
 describe('useDocumentsStore — cache-first contract', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
-    // The singleton's cache outlives `createPinia()` — that is the point of
-    // it — so each test starts from a cold cache explicitly.
+    // The singleton's cache outlives `createPinia()` — that is the point of it — so each test starts from a cold cache explicitly.
     await runSyncVoid(documentEngineDb.clear(WS), 'spec.clear')
     await runSyncVoid(documentEngineDb.clear(OTHER_WS), 'spec.clear')
   })
@@ -155,9 +147,7 @@ describe('useDocumentsStore — cache-first contract', () => {
   })
 
   it('a REAL cold boot paints from cache with the network dead (the regression)', async () => {
-    // Seed the cache the way a previous session would have, then throw away every scrap of
-    // in-memory state. This is the user scenario the cache exists for: reload the app offline and
-    // still see the documents.
+    // Seed the cache the way a previous session would have, then throw away every scrap of in-memory state.
     await run(documentEngineDb.putDocument(WS, doc()))
     setActivePinia(createPinia())
     const store = useDocumentsStore()
@@ -168,8 +158,7 @@ describe('useDocumentsStore — cache-first contract', () => {
 
     expect(store.documents).toHaveLength(1)
     expect(store.documents[0]!.title).toBe('Release plan')
-    // The BODY came back too, so clicking the row opens real content with
-    // no second round trip.
+    // The BODY came back too, so clicking the row opens real content with no second round trip.
     expect(store.documents[0]!.content).toBe('# heading')
     // And the failure is still VISIBLE, not swallowed into the empty value.
     expect(store.error).toContain('offline')
@@ -184,8 +173,7 @@ describe('useDocumentsStore — cache-first contract', () => {
     vi.spyOn(api, 'listDocuments').mockRejectedValue(new Error('offline'))
     await store.fetchDocuments(WS)
 
-    // The regression this cache change could reintroduce: a failed refresh
-    // degrading to an empty list, which reads to the user as data loss.
+    // The regression this cache change could reintroduce: a failed refresh degrading to an empty list, which reads to the user as data loss.
     expect(store.documents).toHaveLength(1)
     expect(store.error).toContain('offline')
   })
@@ -209,8 +197,7 @@ describe('useDocumentsStore — cache-first contract', () => {
     })
     await store.updateDocument(WS, 'doc_new', { title: 'Renamed' })
     const cached = await run(documentEngineDb.primeFromCache(WS, 50))
-    // The BODY travels with the write-through, so an offline reload cannot
-    // show the pre-edit body under the post-edit title.
+    // The BODY travels with the write-through, so an offline reload cannot show the pre-edit body under the post-edit title.
     expect(cached[0]!.raw.title).toBe('Renamed')
     expect(cached[0]!.raw.content).toBe('edited body')
 
@@ -226,18 +213,14 @@ describe('useDocumentsStore — cache-first contract', () => {
 
     await store.fetchDocuments(WS)
 
-    // The empty-vs-unavailable contract, now behind a cache. It is easier to
-    // break here: "no cached rows" and "the revalidation failed" are the
-    // same `[]` unless the failure is carried in the type.
+    // The empty-vs-unavailable contract, now behind a cache.
     expect(store.documents).toHaveLength(0)
     expect(store.error).toContain('HTTP 500')
     expect(store.loaded).toBe(false)
   })
 
   it('opening a document revalidates the body instead of trusting the cached one', async () => {
-    // The regression: `loadDelta` merges a previously cached body into every
-    // list row, so a cache-first single read served that body forever — an
-    // agent edit never reached the page, and a cached "" rendered blank.
+    // The regression: `loadDelta` merges a previously cached body into every list row, so a cache-first single read served that body forever — an agent edit never …
     const store = useDocumentsStore()
     store.documents = [doc({ content: 'stale body' })]
     vi.spyOn(api, 'getDocument').mockResolvedValue({ document: doc({ content: 'fresh body' }) })

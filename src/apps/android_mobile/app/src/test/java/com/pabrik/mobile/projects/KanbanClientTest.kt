@@ -10,16 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The three reads the board's form needs and the one write that lands the card
- * in a column.
- *
- * The column move is the one worth reading closely: it is the only PATCH this
- * app has ever issued, and it is the second half of a create the backend splits
- * in two — so the two tests that matter are that it carries the session cookie
- * and that it reports a failure as "the card exists, the column did not land",
- * which is a different promise from "the create failed".
- */
+/** The three reads the board's form needs and the one write that lands the card in a column. */
 class KanbanClientTest {
     private class MemorySessionStore(var value: String? = "tok-123") : SessionStore {
         override fun read(): String? = value
@@ -92,9 +83,7 @@ class KanbanClientTest {
 
     @Test
     fun aColumnWithNoIdIsDroppedRatherThanOffered() {
-        // A column the form cannot move a card into is not a choice. Offering it
-        // produces a create that silently lands in the wrong column, which is
-        // exactly what the move exists to prevent.
+        // A column the form cannot move a card into is not a choice.
         val transport = FakeTransport().apply {
             getResponse = AuthHttpResponse(
                 200,
@@ -110,8 +99,7 @@ class KanbanClientTest {
 
     @Test
     fun anEmptyBoardIsLoadedAndNotAFailure() {
-        // `{"columns":[]}` is a real answer. Reporting it as an error would put
-        // a banner on a form whose create works perfectly well without a picker.
+        // `{"columns":[]}` is a real answer.
         val transport = FakeTransport().apply {
             getResponse = AuthHttpResponse(200, body = """{"columns":[],"count":0}""")
         }
@@ -153,8 +141,7 @@ class KanbanClientTest {
 
     @Test
     fun aNewCardLandsAtTheTopOfTheColumn() {
-        // Position 0 is what "put it in this column" means on a create form: the
-        // new card lands where the board is worked from.
+        // Position 0 is what "put it in this column" means on a create form: the new card lands where the board is worked from.
         val transport = FakeTransport()
 
         KanbanClient(MemorySessionStore(), httpTransport = transport)
@@ -165,8 +152,7 @@ class KanbanClientTest {
 
     @Test
     fun noChosenColumnMeansNoRequestAtAll() {
-        // The server auto-assigns to the board's first column, and that is a
-        // perfectly good outcome — not something to PATCH an empty id over.
+        // The server auto-assigns to the board's first column, and that is a perfectly good outcome — not something to PATCH an empty id over.
         val transport = FakeTransport()
 
         val result = KanbanClient(MemorySessionStore(), httpTransport = transport)
@@ -178,9 +164,7 @@ class KanbanClientTest {
 
     @Test
     fun aFailedMoveSaysTheCardExistsAndTheColumnDidNotLand() {
-        // "Could not create that" would send the reader looking for a card that
-        // is already on their board, and the second one they then create would
-        // be a duplicate.
+        // "Could not create that" would send the reader looking for a card that is already on their board, and the second one they then create would be a duplicate.
         val transport = FakeTransport().apply { patchStatus = 500 }
 
         val result = KanbanClient(MemorySessionStore(), httpTransport = transport)
@@ -204,9 +188,7 @@ class KanbanClientTest {
 
     @Test
     fun profileNamesAreTheKeysOfTheProfilesObject() {
-        // `config.profiles` is an object keyed by profile name, not the array
-        // the web's own type would suggest. Reading it as an array is what makes
-        // a configured profile list come back empty.
+        // `config.profiles` is an object keyed by profile name, not the array the web's own type would suggest.
         val transport = FakeTransport().apply {
             getResponse = AuthHttpResponse(
                 200,
@@ -239,8 +221,7 @@ class KanbanClientTest {
 
     @Test
     fun anUnknownServerHomeIsEmptyRatherThanGuessed() {
-        // A literal `~` must never reach the agent's path validator, so the
-        // unknown case is "" and the prefill falls back to the `~` display.
+        // A literal `~` must never reach the agent's path validator, so the unknown case is "" and the prefill falls back to the `~` display.
         val transport = FakeTransport().apply {
             getResponse = AuthHttpResponse(200, body = """{"path":"~"}""")
         }
@@ -286,8 +267,7 @@ class KanbanClientTest {
 
     @Test
     fun idsAreEncodedIntoTheirSegments() {
-        // An id carrying a slash must not invent a path segment; the backend
-        // nests every one of these under a workspace and an item.
+        // An id carrying a slash must not invent a path segment; the backend nests every one of these under a workspace and an item.
         assertEquals(
             "/api/workspaces/ws%201/items/it%2F2/tasks/t%203/move",
             KanbanApi.moveTaskPath("ws 1", "it/2", "t 3"),

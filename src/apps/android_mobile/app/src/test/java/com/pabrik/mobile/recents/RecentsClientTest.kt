@@ -54,8 +54,7 @@ class RecentsClientTest {
         assertTrue(result is RecentsResult.Loaded)
         val loaded = (result as RecentsResult.Loaded).value as List<*>
         assertEquals(listOf("ws_1"), loaded.map { (it as WorkspaceOption).id })
-        // The backend reads the session from this cookie and nowhere else, so a
-        // client that omitted it would silently get a 401.
+        // The backend reads the session from this cookie and nowhere else, so a client that omitted it would silently get a 401.
         assertEquals("Cookie", transport.lastHeaders.keys.single())
         assertEquals("pabrik_session=tok-123", transport.lastHeaders["Cookie"])
     }
@@ -86,8 +85,7 @@ class RecentsClientTest {
         )
         val client = RecentsClient(MemorySessionStore(), httpTransport = transport)
 
-        // Retry cannot fix a dead cookie, so this has to be distinguishable
-        // from a transient failure at the ViewModel.
+        // Retry cannot fix a dead cookie, so this has to be distinguishable from a transient failure at the ViewModel.
         assertEquals(RecentsResult.SignedOut, client.loadWorkspaces())
     }
 
@@ -128,8 +126,7 @@ class RecentsClientTest {
 
         val result = client.loadWorkspaces()
 
-        // A parse failure must never degrade into "you have no workspaces",
-        // which is indistinguishable from a real empty account.
+        // A parse failure must never degrade into "you have no workspaces", which is indistinguishable from a real empty account.
         assertTrue(result is RecentsResult.Unavailable)
     }
 
@@ -146,8 +143,7 @@ class RecentsClientTest {
         val result = client.loadWorkspaces()
 
         assertTrue(result is RecentsResult.Unavailable)
-        // Sending the request anyway would have produced a 401 and looked like
-        // a signed-out user.
+        // Sending the request anyway would have produced a 401 and looked like a signed-out user.
         assertEquals(null, transport.lastPath)
     }
 

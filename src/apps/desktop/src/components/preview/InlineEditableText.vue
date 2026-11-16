@@ -60,9 +60,7 @@ async function startEditing() {
   editValue.value = props.value
   isEditing.value = true
   await nextTick()
-  // Focus + select-all so the user can immediately type a new
-  // value (or hit Esc to cancel). Mirrors
-  // KanbanColumn.vue:startInlineRename (line 109-115).
+  // Focus + select-all so the user can immediately type a new value (or hit Esc to cancel).
   inputRef.value?.focus()
   inputRef.value?.select()
 }
@@ -75,9 +73,7 @@ function cancelEditing() {
 
 function commitEditing() {
   const trimmed = editValue.value.trim()
-  // No-op if empty (caller shouldn't be allowed to blank the
-  // value — KanbanSettingsDialog and KanbanView both treat empty
-  // as a UI bug rather than a rename intent).
+  // No-op if empty (caller shouldn't be allowed to blank the value — KanbanSettingsDialog and KanbanView both treat empty as a UI bug rather than a rename intent).
   if (!trimmed) {
     cancelEditing()
     return

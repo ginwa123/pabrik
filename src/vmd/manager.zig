@@ -1,6 +1,4 @@
-//! The face the admin console sees of the manager: a client for `pabrik-vmd`'s
-//! socket and the limits a resize may ask for. The daemon is Linux-only, so
-//! `supported` is false elsewhere and the console says so.
+//! The face the admin console sees of the manager: a client for `pabrik-vmd`'s socket and the limits a resize may ask for.
 
 const builtin = @import("builtin");
 

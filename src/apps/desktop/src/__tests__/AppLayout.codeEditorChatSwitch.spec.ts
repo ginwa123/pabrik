@@ -1,5 +1,4 @@
-/** Regression: the code editor kept persisting across chat session switches. Root cause: the editor
- * session is global to AppLayout (not per-chat). */
+/** Regression: the code editor kept persisting across chat session switches. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive } from 'vue'
@@ -78,8 +77,6 @@ function mountWithReactiveRoute(initialQuery: Record<string, string>, initialPat
   return { wrapper, routeState }
 }
 
-// The session refs live in AppLayout setup; <script setup> bindings are proxied on wrapper.vm (same
-// seam AppLayout.urlPersist.spec.ts uses for openInCodeEditor), with refs unwrapped.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const openFileOf = (wrapper: any) => wrapper.vm.codeEditorFile as unknown
 
@@ -126,7 +123,6 @@ describe('AppLayout — code editor clears on chat session switch', () => {
     await nextTick()
     await nextTick()
 
-    // Open a file in chat A (same call the sidebar explorer makes).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (wrapper.vm as any).openInCodeEditor({ filePath: 'notes.txt', cwd: '/w' })
     await nextTick()

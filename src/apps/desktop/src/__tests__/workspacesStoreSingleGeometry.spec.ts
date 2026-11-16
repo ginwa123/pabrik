@@ -1,5 +1,4 @@
-/** Behavioural tests for `workspacesStore.updateDesignElementGeometry` (single-element drag/resize
- * path). */
+/** Behavioural tests for `workspacesStore.updateDesignElementGeometry` (single-element drag/resize path). */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

@@ -6,13 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The `/me` cache as the client actually uses it.
- *
- * The assertion that matters most is `aFreshCacheHitMakesNoNetworkCall`: a
- * cache that still "helpfully" fetches is a cache that costs what it was
- * supposed to save, and it is invisible without counting the calls.
- */
+/** The `/me` cache as the client actually uses it. */
 class AuthMeCacheClientTest {
     private class MemorySessionStore(var value: String? = "tok-a") : SessionStore {
         override fun read(): String? = value
@@ -78,8 +72,7 @@ class AuthMeCacheClientTest {
 
     @Test
     fun theCachedAndNetworkPathsAgreeOnTheSameBody() {
-        // Shared `interpretMe`: a cached identity must be judged by the same
-        // rules as a live one, or the two drift.
+        // Shared `interpretMe`: a cached identity must be judged by the same rules as a live one, or the two drift.
         val cache = FakeAuthMeCache()
         val client = client(cache = cache)
 
@@ -109,8 +102,7 @@ class AuthMeCacheClientTest {
 
         client(transport = transport, cache = cache).restoreSession()
 
-        // Deliberate divergence from the web, which serves stale and
-        // revalidates behind. Failing open is not safe on mobile.
+        // Deliberate divergence from the web, which serves stale and revalidates behind.
         assertEquals(1, transport.getCalls)
     }
 
@@ -155,8 +147,7 @@ class AuthMeCacheClientTest {
 
         client(transport = transport, cache = cache).restoreSession(forceRefresh = true)
 
-        // The retry button exists to re-check; replaying the cache would make
-        // it inert.
+        // The retry button exists to re-check; replaying the cache would make it inert.
         assertEquals(1, transport.getCalls)
     }
 
@@ -166,8 +157,7 @@ class AuthMeCacheClientTest {
             response = AuthHttpResponse(statusCode = 401, body = """{"error":"unauthorized"}"""),
         )
         val cache = FakeAuthMeCache()
-        // STALE, not fresh: the real-world path is "cached a moment ago, cookie
-        // has since died". A fresh entry would short-circuit before the fetch.
+        // STALE, not fresh: the real-world path is "cached a moment ago, cookie has since died".
         cache.write(
             fingerprintOf("tok-a"),
             AUTHENTICATED_BODY,
@@ -208,8 +198,7 @@ class AuthMeCacheClientTest {
 
     @Test
     fun aServerErrorIsNotCached() {
-        // Android's recovery path is a retry button, and a cached 5xx or 401
-        // would make that button do nothing. The web caches !ok; we do not.
+        // Android's recovery path is a retry button, and a cached 5xx or 401 would make that button do nothing.
         listOf(500, 503, 408).forEach { status ->
             val cache = FakeAuthMeCache()
             client(
@@ -232,8 +221,7 @@ class AuthMeCacheClientTest {
 
         val result = client(transport = transport, cache = cache).restoreSession()
 
-        // It must be re-checked, not replayed: acting on garbage here would
-        // sign the user out on the strength of a corrupt cache entry.
+        // It must be re-checked, not replayed: acting on garbage here would sign the user out on the strength of a corrupt cache entry.
         assertEquals(1, transport.getCalls)
         assertTrue(result is AuthResult.Authenticated)
     }
@@ -299,8 +287,7 @@ class AuthMeCacheClientTest {
 
     @Test
     fun anOfflineDeviceWithAFreshEntryStillRestores() {
-        // The actual win: a relaunch inside the TTL never touches the network,
-        // so airplane mode is indistinguishable from a warm start.
+        // The actual win: a relaunch inside the TTL never touches the network, so airplane mode is indistinguishable from a warm start.
         val transport = FakeTransport(failure = IOException("offline"))
         val cache = FakeAuthMeCache()
         cache.write(fingerprintOf("tok-a"), AUTHENTICATED_BODY, clock)

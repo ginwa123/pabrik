@@ -1,6 +1,4 @@
-/** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskRow> (the sidebar list row
- * variant). The sidebar row has tighter horizontal real estate than the kanban card, so it ships a
- * single affordance — a small red ⚠ icon with the same hover-tooltip payload as the kanban card. */
+/** Behavioural tests for the agent-error indicator on <WorkspaceItemTaskRow> (the sidebar list row variant). */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -18,9 +16,7 @@ const BAIL_CONTENT =
   'Reason for last retry: StreamInterrupted (source: callDynamicAgentNew).\n' +
   'Server said: upstream provider rate-limited'
 
-// Stub vue-router — WorkspaceItemTaskRow reads useRoute() via
-// useCurrentMainView() to drive its active state. Mirrors the pattern
-// in workspaceItemTask.spec.ts.
+// Stub vue-router — WorkspaceItemTaskRow reads useRoute() via useCurrentMainView() to drive its active state.
 import { vi } from 'vitest'
 
 const { useRouteMock } = vi.hoisted(() => ({
@@ -100,8 +96,7 @@ describe('WorkspaceItemTaskRow — agent-error indicator', () => {
     const wrapper = mountRow(makeTask({ id: 'task_1' }))
     await nextTick()
 
-    // The wrap carries the `.error-icon-wrap` class (the subject of the scoped hover rule) and the
-    // tooltip carries `.error-tooltip` (the descendant that gets `opacity:1; visibility:visible`).
+    // The wrap carries the `.error-icon-wrap` class (the subject of the scoped hover rule) and the tooltip carries `.error-tooltip` (the descendant that gets …
     const wrapEl = wrapper
       .find('[data-testid="task-agent-error-row"]')
       .element as HTMLElement
@@ -114,9 +109,7 @@ describe('WorkspaceItemTaskRow — agent-error indicator', () => {
     expect(tooltipEl).toBeTruthy()
     expect(tooltipEl.classList.contains('error-tooltip')).toBe(true)
 
-    // Dispatch pointerenter on the wrap — the same event Vue synthesizes for `:hover` listeners and
-    // the trigger that would make a real browser resolve the `.error-icon-wrap:hover
-    // .error-tooltip` selector.
+    // Dispatch pointerenter on the wrap — the same event Vue synthesizes for `:hover` listeners and the trigger that would make a real browser resolve the …
     await wrapEl.dispatchEvent(new Event('pointerenter', { bubbles: true }))
     await nextTick()
 

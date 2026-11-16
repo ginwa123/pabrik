@@ -1,6 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/secrets`. Returns `{secrets, count}`
-//! for one workspace, ordered by name. NO VALUE APPEARS IN THIS RESPONSE —
-//! not masked, not hinted, not truncated.
+//! `GET /api/workspaces/:workspace_id/secrets`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,14 +19,11 @@ pub const SecretsListInput = struct {
 };
 
 pub const SecretsListOutput = struct {
-    /// Owned slice; the caller frees it with
-    /// `secrets_store.freeSecretRows`.
+    /// Owned slice; the caller frees it with `secrets_store.freeSecretRows`.
     secrets: []secrets_store.SecretRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -40,8 +35,7 @@ fn useCase(
         error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
-        // The rest of the store's shared error set belongs to the write
-        // paths, which `listSecrets` cannot reach.
+        // The rest of the store's shared error set belongs to the write paths, which `listSecrets` cannot reach.
         error.IdsRequired,
         error.NameRequired,
         error.ValueRequired,
@@ -58,9 +52,7 @@ fn useCase(
     return .{ .secrets = rows };
 }
 
-// ===================================================================== Error
-// mapping
-// ===================================================================== Two
+// ===================================================================== Error mapping ===================================================================== Two
 
 fn statusFor(err: SecretsListError) u16 {
     return switch (err) {
@@ -77,9 +69,7 @@ fn messageFor(err: SecretsListError) []const u8 {
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn secretsListHandler(
     ctx: gserverz.HttpContext,
@@ -195,16 +185,14 @@ test "useCase: never returns another workspace's secrets" {
     const ws2 = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_2" });
     defer secrets_store.freeSecretRows(alloc, ws2.secrets);
 
-    // No leak in either direction, and no "empty because mis-scoped" false
-    // negative in the one workspace that does have secrets.
+    // No leak in either direction, and no "empty because mis-scoped" false negative in the one workspace that does have secrets.
     try testing.expectEqual(@as(usize, 2), ws1.secrets.len);
     try testing.expectEqual(@as(usize, 1), ws2.secrets.len);
     try testing.expectEqualStrings("MANGO", ws2.secrets[0].name);
 }
 
 test "useCase: a failed query is a 500 DB error, never a silent empty list" {
-    // Degrading a read failure into `[]` is what makes "nothing to show" and
-    // "we could not look" indistinguishable, so the mapping is pinned.
+    // Degrading a read failure into `[]` is what makes "nothing to show" and "we could not look" indistinguishable, so the mapping is pinned.
     try testing.expectEqual(@as(u16, 500), statusFor(error.QueryFailed));
     try testing.expectEqualStrings("DB error", messageFor(error.QueryFailed));
     try testing.expectEqual(@as(u16, 500), statusFor(error.OutOfMemory));

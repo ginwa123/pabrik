@@ -1,6 +1,4 @@
 // Functional tests for per-user SSE channel isolation (plan 2026-09-25, W3).
-// Zig port of `tests/functional/sse_isolation_test.py` (same test names, same
-// order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,9 +10,7 @@ const io = testing.io;
 
 const Io = std.Io;
 
-// ============================================================================
 // Raw HTTP (cookie jars are just strings here)
-// ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawHttp(
@@ -76,8 +72,7 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         std.debug.print("login sent no pabrik_session cookie: {s}\n", .{set_cookie});
         return error.TestUnexpectedResult;
     }
-    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is
-    // the text BETWEEN the name and the next `;`.
+    // `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is the text BETWEEN the name and the next `;`.
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const raw_token = harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -103,8 +98,6 @@ fn createSession(h: *Harness, cookie: ?[]const u8, session_id: []const u8) ![]u8
 }
 
 /// Rename a session, waiting for its row to exist (Python `_rename_session`).
-/// `POST /api/session` returns before the row is INSERTed: the insert runs in
-/// the concurrent `emit_run_agent` task (`root.zig` :: `insert_worker`).
 fn renameSession(h: *Harness, session_id: []const u8, name: []const u8, cookie: ?[]const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -113,9 +106,7 @@ fn renameSession(h: *Harness, session_id: []const u8, name: []const u8, cookie: 
 
     const deadline = nowMs() + 10_000;
     var last_status: u16 = 0;
-    // Owned from the FIRST failure onward, so there is exactly one owner
-    // at every point. Seeding it with a string LITERAL and freeing it
-    // unconditionally would hand a comptime slice to `gpa.free`.
+    // Owned from the FIRST failure onward, so there is exactly one owner at every point.
     var last_body: ?[]u8 = null;
     defer if (last_body) |b| gpa.free(b);
     while (nowMs() < deadline) {
@@ -136,9 +127,7 @@ fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-// ============================================================================
 // SSE reader
-// ============================================================================
 
 /// Transfer buffer for the response body reader.
 const transfer_buffer_len = 8 * 1024;
@@ -147,8 +136,7 @@ const transfer_buffer_len = 8 * 1024;
 const RawSse = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its
-    /// address outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *std.Io.Reader = undefined,
@@ -157,9 +145,7 @@ const RawSse = struct {
     stop: std.atomic.Value(bool) = .init(false),
     /// Set by the reader thread once it has stopped touching `buf`.
     done: std.atomic.Value(bool) = .init(false),
-    /// `buf` is guarded by `mutex`: the reader thread appends while the
-    /// test thread polls, and an unsynchronised read during the
-    /// append is a use-after-free.
+    /// `buf` is guarded by `mutex`: the reader thread appends while the test thread polls, and an unsynchronised read during the append is a use-after-free.
     mutex: Io.Mutex = .init,
     buf: std.ArrayList(u8) = .empty,
 
@@ -170,8 +156,7 @@ const RawSse = struct {
         gpa.destroy(self);
     }
 
-    /// A PRINTABLE rendering of the bytes received so far. Owned by the
-    /// caller.
+    /// A PRINTABLE rendering of the bytes received so far.
     fn text(self: *RawSse) ![]u8 {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -191,9 +176,7 @@ const RawSse = struct {
     fn waitFor(self: *RawSse, needle: []const u8, timeout_ms: i64) bool {
         const deadline = nowMs() + timeout_ms;
         while (true) {
-            // Snapshot under the lock, then RELEASE it before
-            // sleeping: holding the mutex across the sleep starves the
-            // reader, which needs the same lock to append.
+            // Snapshot under the lock, then RELEASE it before sleeping: holding the mutex across the sleep starves the reader, which needs the same lock to append.
             self.mutex.lockUncancelable(io);
             const found = std.mem.indexOf(u8, self.buf.items, needle) != null;
             self.mutex.unlock(io);
@@ -204,21 +187,17 @@ const RawSse = struct {
     }
 };
 
-/// Open `GET /api/events?channels=<channels>` and start pumping. The
-/// caller owns the returned pointer and must `deinit` it.
+/// Open `GET /api/events?channels=<channels>` and start pumping.
 fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*RawSse {
     const s = try gpa.create(RawSse);
     errdefer gpa.destroy(s);
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. `s.* = .{}` applies all of them in
-    // one shot; an uninitialised `Io.Mutex` is not a lock at all.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
     defer gpa.free(url);
 
-    // `extra_headers` borrows the array for the duration of the
-    // request, so it must stay alive until `receiveHead` returns.
+    // `extra_headers` borrows the array for the duration of the request, so it must stay alive until `receiveHead` returns.
     var extra: [2]std.http.Header = undefined;
     extra[0] = .{ .name = "Accept", .value = "text/event-stream" };
     const header_count: usize = if (cookie) |c| blk: {
@@ -245,8 +224,7 @@ fn openSse(port: u16, channels: []const u8, cookie: ?[]const u8) !*RawSse {
     return s;
 }
 
-/// Pump `s`'s body into `s.buf` until the stream ends. Runs on its own
-/// thread.
+/// Pump `s`'s body into `s.buf` until the stream ends.
 fn pump(s: *RawSse) void {
     defer s.done.store(true, .release);
 
@@ -258,16 +236,13 @@ fn pump(s: *RawSse) void {
         const n = s.body.buffered().len;
         const appended = s.buf.appendSlice(gpa, s.body.buffered());
         s.mutex.unlock(io);
-        // `toss` AFTER the copy: the slice `buffered()` returned is a
-        // view into the reader's transfer buffer, and advancing first
-        // would invalidate it.
+        // `toss` AFTER the copy: the slice `buffered()` returned is a view into the reader's transfer buffer, and advancing first would invalidate it.
         s.body.toss(n);
         appended catch return;
     }
 }
 
-/// Spawn the reader thread. Caller owns the returned `std.Thread` and MUST
-/// join it.
+/// Spawn the reader thread.
 fn startPump(s: *RawSse) !std.Thread {
     return std.Thread.spawn(.{}, pump, .{s});
 }
@@ -290,13 +265,10 @@ const Stream = struct {
     }
 };
 
-/// `_open_stream(...)`: connect, then wait for the `connected`
-/// handshake.
+/// `_open_stream(...)`: connect, then wait for the `connected` handshake.
 fn openStream(port: u16, cookie: ?[]const u8) !Stream {
     const s = try openSse(port, "sessions,workers", cookie);
-    // No `errdefer s.deinit()`: the handshake-failure path below already
-    // tears the stream down explicitly, and an `errdefer` would fire a SECOND
-    // time on that `return` — a double `deinit` of the client, the reader and
+    // No `errdefer s.deinit()`: the handshake-failure path below already tears the stream down explicitly, and an `errdefer` would fire a SECOND time on that …
     const t = startPump(s) catch |err| {
         s.deinit();
         return err;
@@ -349,9 +321,7 @@ fn twoUsers() !TwoUsers {
     return .{ .h = h, .tok_a = tok_a, .tok_b = tok_b };
 }
 
-// ============================================================================
 // tests
-// ============================================================================
 
 // A's session rename must never reach B's EventSource.
 test "sse_does_not_deliver_foreign_session_events" {
@@ -367,8 +337,7 @@ test "sse_does_not_deliver_foreign_session_events" {
 
     const sess_a = try createSession(&tu.h, cookie_a, "sess_iso_a_1");
     defer gpa.free(sess_a);
-    // Python bound `sess_b` and never read it either; here the OWNED
-    // copy must be freed, or the test leaks on the passing path.
+    // Python bound `sess_b` and never read it either; here the OWNED copy must be freed, or the test leaks on the passing path.
     const sess_b_unused = try createSession(&tu.h, cookie_b, "sess_iso_b_1");
     defer gpa.free(sess_b_unused);
 
@@ -377,12 +346,10 @@ test "sse_does_not_deliver_foreign_session_events" {
     var stream_b = try openStream(tu.h.port, cookie_b);
     defer stream_b.deinit();
 
-    // A renames its own session — this emits `session_updated` on the
-    // `sessions` routing key with A's session id in the payload.
+    // A renames its own session — this emits `session_updated` on the `sessions` routing key with A's session id in the payload.
     try renameSession(&tu.h, sess_a, "A renamed this", cookie_a);
 
-    // A's own stream must receive it (proves the event was actually
-    // published, so B's silence is isolation and not a dead bus).
+    // A's own stream must receive it (proves the event was actually published, so B's silence is isolation and not a dead bus).
     if (!stream_a.s.waitFor(sess_a, 10_000)) {
         const tail = try stream_a.s.text();
         defer gpa.free(tail);
@@ -404,9 +371,7 @@ test "sse_does_not_deliver_foreign_session_events" {
     }
 }
 
-// Both users receive their OWN session events — no over-filtering. Guards the
-// false pass where the filter drops everything: B must still see B's rename,
-// and A must still see A's.
+// Both users receive their OWN session events — no over-filtering.
 test "sse_still_delivers_own_events_to_each_user" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -460,9 +425,7 @@ test "sse_still_delivers_own_events_to_each_user" {
     }
 }
 
-// Regression: without `--auth` the stream still delivers session events. With
-// auth off there is no identity, so the system user sees everything and the
-// fan-out filter must be a no-op — the pre-isolation behaviour.
+// Regression: without `--auth` the stream still delivers session events.
 test "sse_auth_off_still_delivers_events" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -487,8 +450,7 @@ test "sse_auth_off_still_delivers_events" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = rawHttp;
     _ = bootAuth;

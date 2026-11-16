@@ -74,13 +74,7 @@ import com.pabrik.mobile.ui.PabrikText
 /** Reserved key for the row that navigates to the full recents list. */
 private const val SEE_ALL_KEY = "__recents_see_all__"
 
-/**
- * The destination row's test tag.
- *
- * An `internal const` rather than a literal at the call site so a test and the
- * row cannot drift onto two different strings — which is how a test ends up
- * asserting against nothing and passing.
- */
+/** The destination row's test tag. */
 internal const val SEE_ALL_ROW_TAG = "recents_see_all"
 
 /** Reserved key for the recents list's own loading/error/empty row. */
@@ -91,14 +85,7 @@ private const val RECENTS_HEADER_KEY = "__recents_header__"
 
 private const val PROJECTS_HEADER_KEY = "__projects_header__"
 
-/**
- * The gap above the Projects header, as its own row.
- *
- * A row rather than padding on the header itself because the header is sticky:
- * a sticky row is pinned to the top of the list viewport, so a spacer drawn
- * inside it pins too and leaves a transparent band the chats scroll through.
- * The separation has to live above the pin.
- */
+/** The gap above the Projects header, as its own row. */
 private const val PROJECTS_GAP_KEY = "__projects_gap__"
 
 private const val CONTENT_TYPE_SENTINEL = "sentinel"
@@ -111,20 +98,7 @@ private const val CONTENT_TYPE_SECTION_HEADER = "section-header"
 
 private const val CONTENT_TYPE_PROJECT = "project"
 
-/**
- * How many chat rows the drawer asks the ViewModel for, restated here as the
- * row count it renders.
- *
- * Two constants would be two places for the drawer's height to disagree with
- * itself, and they already did once: the request said thirty and the composable
- * capped at five, so a page that came back short silently rendered fewer rows
- * than the reader expected with nothing to explain it. The request is now
- * [RecentsApi.DRAWER_PREVIEW_ROWS] and this reads it back, so the number is
- * defined once and read twice.
- *
- * Not defensive paranoia, and not a second cap: it is the assertion that what
- * the drawer draws is the preview it asked for.
- */
+/** How many chat rows the drawer asks the ViewModel for, restated here as the row count it renders. */
 internal fun recentsVisibleChatCount(totalChats: Int): Int =
     minOf(totalChats, RecentsApi.DRAWER_PREVIEW_ROWS)
 
@@ -137,104 +111,33 @@ fun RecentsSidebar(
     onWorkspaceSelected: (String) -> Unit,
     onChatSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * Read once per composition, not once per recomposition.
-     *
-     * This default used to be a bare `System.currentTimeMillis()`, which is a
-     * *new value every time the sidebar recomposes*. Compose compares
-     * parameters to decide what may be skipped, so a parameter that changes
-     * every frame means no row is ever skippable: opening the drawer, and
-     * switching chat, re-ran `formatRelativeTime`, the accessibility string and
-     * two colour copies for every visible row.
-     *
-     * `remember` is legal in a default argument — it is evaluated inside the
-     * composable — so callers that pin the clock (tests, previews) are
-     * unaffected and the default stops being a moving target. The trade is that
-     * "2 hours ago" is as old as the composition; the sidebar is re-entered
-     * constantly and the string is only ever a hint.
-     */
+    /** Read once per composition, not once per recomposition. */
     nowEpochMillis: Long = remember { System.currentTimeMillis() },
-    /**
-     * Leave the sidebar because a chat was opened — a chat is a destination.
-     *
-     * Switching the workspace is not, so it must not fire this: the whole
-     * point of picking a workspace is to then pick a chat inside it, and
-     * dismissing the drawer throws that second tap away.
-     */
+    /** Leave the sidebar because a chat was opened — a chat is a destination. */
     onOpenChat: () -> Unit = {},
     isLoading: Boolean = false,
     errorMessage: String? = null,
     onRetry: () -> Unit = {},
-    /**
-     * Whether the server says the workspace holds chats the drawer is not
-     * showing.
-     *
-     * The only thing it decides here is whether the `See all chats ›` row is
-     * honest to offer. Five rows on screen cannot answer that alone — the same
-     * five is what a workspace with exactly five chats looks like — so the row
-     * needs the server's word.
-     */
+    /** Whether the server says the workspace holds chats the drawer is not showing. */
     hasMoreChats: Boolean = false,
-    /**
-     * The server's full filtered count for this workspace; 0 when it sent none.
-     *
-     * Held apart from [chats] for one reason: the drawer shows
-     * [RecentsApi.DRAWER_PREVIEW_ROWS] rows and the section header has to say
-     * how many exist. A header reading "5" over thirty chats is a section
-     * claiming it holds five when it holds thirty.
-     */
+    /** The server's full filtered count for this workspace; 0 when it sent none. */
     chatsTotal: Int = 0,
     /** Leave the drawer for the full recents list. The row is a destination. */
     onOpenAllChats: () -> Unit = {},
-    /**
-     * Session ids with a live worker, so a chat the user is not in can still be
-     * seen to be busy.
-     *
-     * Not derivable from anything on this screen: `isLoading` is about this
-     * fetch, and a chat that was already running when the list loaded looks
-     * identical to an idle one. The set is app-wide — see
-     * `com.pabrik.mobile.worker.RunningSessionsStore` — and defaulted so previews
-     * and tests need no running worker to render a row.
-     */
+    /** Session ids with a live worker, so a chat the user is not in can still be seen to be busy. */
     runningSessionIds: Set<String> = emptySet(),
-    /**
-     * False when the server runs without `--auth`. There is no session to end
-     * then, so the sign-out footer is hidden — the same gate the desktop
-     * sidebar's `v-if="authEnabled"` applies.
-     */
+    /** False when the server runs without `--auth`. */
     isAuthEnabled: Boolean = false,
     signedInEmail: String? = null,
     isLoggingOut: Boolean = false,
     onLogout: () -> Unit = {},
-    /**
-     * The Projects section, and the four things a reader can do to it.
-     *
-     * Two holders rather than eight more parameters: this composable already
-     * takes twenty-two, and these eight fields are only ever read together, so
-     * a caller passing half of them is a caller with a half-rendered section.
-     */
+    /** The Projects section, and the four things a reader can do to it. */
     projects: ProjectsState = ProjectsState.Empty,
     projectActions: ProjectsActions = ProjectsActions.None,
-    /**
-     * Whether the Recents section is unfolded, and the tap that folds it.
-     *
-     * State and action rather than a holder because neither half means anything
-     * without the other, and both are forwarded verbatim from
-     * [com.pabrik.mobile.shell.RecentsDrawerContent] to here — the graph's
-     * drawer and the shell's drawer are the same drawer and must not be able to
-     * disagree about which section is open.
-     */
+    /** Whether the Recents section is unfolded, and the tap that folds it. */
     recentsExpanded: Boolean = true,
     onToggleRecents: () -> Unit = {},
-    /**
-     * The top-level "New Chat" row: create a chat in the workspace's default
-     * project and open it.
-     *
-     * State and action rather than a holder because neither half means anything
-     * without the other, and both are forwarded verbatim from
-     * [com.pabrik.mobile.shell.RecentsDrawerContent] — the graph's drawer and
-     * the shell's drawer are the same drawer.
-     */
+    /** The top-level "New Chat" row: create a chat in the workspace's default project and open it. */
     isCreatingChat: Boolean = false,
     onNewChat: () -> Unit = {},
 ) {
@@ -271,9 +174,7 @@ fun RecentsSidebar(
             onNewChat = onNewChat,
         )
 
-        // Deliberately outside the body. The "no workspaces" story is an early
-        // return in there, and that is exactly the state in which the user would
-        // otherwise have no route back to signing in.
+        // Deliberately outside the body.
         if (isAuthEnabled) {
             AccountFooter(
                 email = signedInEmail,
@@ -284,17 +185,7 @@ fun RecentsSidebar(
     }
 }
 
-/**
- * The workspace picker, the stale-data notice and the recents list.
- *
- * Split out for one reason: [RecentsSidebar] needs an account footer below it
- * that no branch of this may swallow.
- *
- * Opted into `ExperimentalFoundationApi` for `stickyHeader` alone. It is the
- * only experimental call here, and both section titles are pinned with it — a
- * sidebar whose sections are named by a row that scrolls off is a list of rows
- * with no headings, which is the problem this drawer already had.
- */
+/** The workspace picker, the stale-data notice and the recents list. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SidebarBody(
@@ -305,21 +196,12 @@ private fun SidebarBody(
     onWorkspaceSelected: (String) -> Unit,
     onChatSelected: (String) -> Unit,
     nowEpochMillis: Long,
-    /**
-     * Leave the sidebar because a chat was opened — a chat is a destination.
-     *
-     * Same name as the public parameter and for the same reason: a filter has
-     * nowhere to navigate to, and naming this one `onNavigate` is what invited
-     * the workspace dropdown to call it.
-     */
+    /** Leave the sidebar because a chat was opened — a chat is a destination. */
     onOpenChat: () -> Unit,
     isLoading: Boolean,
     errorMessage: String?,
     onRetry: () -> Unit,
-    /**
-     * Whether more chats exist beyond the preview, and the tap that leaves the
-     * drawer for them. See the public parameter for what each is for.
-     */
+    /** Whether more chats exist beyond the preview, and the tap that leaves the drawer for them. */
     hasMoreChats: Boolean,
     chatsTotal: Int,
     onOpenAllChats: () -> Unit,
@@ -328,20 +210,14 @@ private fun SidebarBody(
     projectActions: ProjectsActions,
     recentsExpanded: Boolean,
     onToggleRecents: () -> Unit,
-    /**
-     * The top-level "New Chat" row's busy flag and its tap. No defaults, like the
-     * the two above: this is a private composable with exactly one caller, and
-     * a default here would only let that caller forget to wire the action.
-     */
+    /** The top-level "New Chat" row's busy flag and its tap. */
     isCreatingChat: Boolean,
     onNewChat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
         if (workspaces.isEmpty()) {
-            // No workspace means no scope, so there is nothing to scope chats
-            // to. Loading, failed and genuinely-empty are three different
-            // stories and the user needs to be able to tell them apart.
+            // No workspace means no scope, so there is nothing to scope chats to.
             when {
                 isLoading -> SidebarPlaceholder(
                     modifier = Modifier.weight(1f),
@@ -374,12 +250,7 @@ private fun SidebarBody(
             onWorkspaceSelected = onWorkspaceSelected,
         )
 
-        // Top-level "New Chat", above the scroller and outside it. The whole
-        // point of the row is that it is reachable without touching the list,
-        // so it must not be something a scroll can take away.
-        //
-        // Placed BEFORE the conditional stale-data notice (not after) so it does
-        // not move down when a refresh fails.
+        // Top-level "New Chat", above the scroller and outside it.
         if (selectedWorkspaceId != null) {
             NewChatRow(
                 isBusy = isCreatingChat,
@@ -387,8 +258,7 @@ private fun SidebarBody(
             )
         }
 
-        // Rows survived a failed refresh. Say so — a stale list that looks live
-        // is its own kind of lie.
+        // Rows survived a failed refresh.
         if (errorMessage != null && !isLoading) {
             Spacer(Modifier.height(10.dp))
             StaleDataNotice(
@@ -398,44 +268,26 @@ private fun SidebarBody(
             )
         }
 
-        // Half of what this was. 24dp of nothing between "New Chat" and the
-        // first section read as two unrelated blocks on a phone, and a drawer
-        // whose sections cannot be seen together is a drawer that has to be
-        // scrolled to be *read*. 12dp still separates them as sections.
+        // Half of what this was. 24dp of nothing between "New Chat" and the first section read as two unrelated blocks on a phone, and a drawer whose sections cannot be …
         Spacer(Modifier.height(12.dp))
 
         val visibleChats = selectedWorkspaceId
             ?.let { workspaceId -> recentChatsForWorkspace(chats, workspaceId) }
             .orEmpty()
 
-        // Which project rows are busy, resolved once for the whole section
-        // rather than per row — the header asks the same question, and N rows
-        // each re-scanning the loaded chat pages is N answers to one.
+        // Which project rows are busy, resolved once for the whole section rather than per row — the header asks the same question, and N rows each re-scanning the …
         val runningProjectIds = projects.runningProjectIds(runningSessionIds, visibleChats)
 
-        // The preview the drawer renders, and the one thing it does not decide
-        // for itself. `HomeViewModel` fetched exactly this many rows, so
-        // nothing is being hidden here — the rest of the workspace is on
-        // [RecentsChatsScreen], one tap below.
+        // The preview the drawer renders, and the one thing it does not decide for itself.
         val renderedChats = visibleChats.take(recentsVisibleChatCount(visibleChats.size))
 
-        // The destination row, and whether it is honest to offer at all. A
-        // workspace with three chats has nothing behind the preview, so it gets
-        // no row: a button that opens the same three rows is a detour dressed
-        // as a destination. The project's row answers the same question with
-        // the same rule — see [ProjectsState.shouldOfferSeeAllChats].
-        //
-        // Absent in *both* directions, deliberately. It is not "See 0 more
-        // chats", and it is not a control that survives a workspace switch and
-        // then leads somewhere with nothing in it.
+        // The destination row, and whether it is honest to offer at all.
         val canOpenAllChats =
             visibleChats.size > RecentsApi.DRAWER_PREVIEW_ROWS || hasMoreChats
 
         val listState = rememberLazyListState()
 
-        // A workspace switch shows a different set of rows at the same indices,
-        // so the old scroll offset would land the user mid-list in a workspace
-        // they have not looked at yet.
+        // A workspace switch shows a different set of rows at the same indices, so the old scroll offset would land the user mid-list in a workspace they have not looked …
         LaunchedEffect(selectedWorkspaceId) {
             listState.scrollToItem(0)
         }
@@ -445,29 +297,16 @@ private fun SidebarBody(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                // Not the transcript's `chat_message_list`. The chat route
-                // composes this drawer *and* the transcript at once — a
-                // closed sheet stays in the tree — so a shared tag made
-                // every `onNodeWithTag` on either list fail on "multiple
-                // nodes", which is two lists that cannot be told apart.
+                // Not the transcript's `chat_message_list`.
                 .testTag("sidebar_chat_list")
                 .selectableGroup(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // ── Recents ───────────────────────────────────────────────────
-            //
-            // Sticky like every header in this list, and for the same reason the
-            // two section titles have to be one shared composable: the section's
-            // name is the only thing on screen saying which list the rows under
-            // it belong to, and the name is the first thing a scroll throws away.
             stickyHeader(key = RECENTS_HEADER_KEY, contentType = CONTENT_TYPE_SECTION_HEADER) {
                 SidebarSectionHeader(
                     title = "Recent",
-                    // The server's count, not `visibleChats.size`. The drawer
-                    // shows five of thirty, and a header reading "5" would be a
-                    // section claiming it holds five when it holds thirty. When
-                    // the server sends no count the loaded rows are all there
-                    // is to claim, so those are used.
+                    // The server's count, not `visibleChats.size`.
                     itemCount = if (chatsTotal > 0) chatsTotal else visibleChats.size,
                     unit = "chats",
                     expanded = recentsExpanded,
@@ -479,10 +318,6 @@ private fun SidebarBody(
             if (recentsExpanded) {
                 if (visibleChats.isEmpty()) {
                     // A row in the list, not a weighted placeholder beside it.
-                    // The Projects section has to stay reachable while the recents
-                    // are loading, empty or broken — a weighted placeholder would
-                    // take the whole remaining height and push Projects off-screen
-                    // exactly when the reader most wants somewhere else to go.
                     item(key = CHATS_STATE_KEY, contentType = CONTENT_TYPE_STATE) {
                         when {
                             isLoading -> SidebarPlaceholder(
@@ -519,11 +354,7 @@ private fun SidebarBody(
                         )
                     }
 
-                    // A destination, not a toggle: it closes the drawer and
-                    // pushes a route. There is no "show fewer" half, because
-                    // nothing was ever revealed in place — the list behind it is
-                    // a screen, and the chevron is the affordance for "the row
-                    // goes somewhere".
+                    // A destination, not a toggle: it closes the drawer and pushes a route.
                     if (canOpenAllChats) {
                         item(key = SEE_ALL_KEY, contentType = CONTENT_TYPE_SENTINEL) {
                             SeeAllChatsRow(
@@ -537,10 +368,6 @@ private fun SidebarBody(
             }
 
             // ── Projects ──────────────────────────────────────────────────
-            // 20dp here, plus the 4dp `spacedBy` above it and the header's own
-            // 6dp, put a 30dp canyon between the last chat and the word
-            // "Projects" — the largest gap in a drawer whose rows are 40dp
-            // apart. 8dp leaves the sections visibly separate and nothing more.
             item(key = PROJECTS_GAP_KEY, contentType = CONTENT_TYPE_SENTINEL) {
                 Spacer(Modifier.height(8.dp))
             }
@@ -553,9 +380,7 @@ private fun SidebarBody(
                     expanded = projects.expanded,
                     onClick = projectActions.onToggleSection,
                     testTag = "projects_section_header",
-                    // Read once per composition of the body rather than per
-                    // row, so N projects do not each re-scan the loaded chat
-                    // pages for the same answer.
+                    // Read once per composition of the body rather than per row, so N projects do not each re-scan the loaded chat pages for the same answer.
                     isRunning = runningProjectIds.isNotEmpty(),
                 )
             }
@@ -567,9 +392,7 @@ private fun SidebarBody(
                     SidebarPlaceholder(
                         testTag = "projects_empty",
                         title = "No projects yet",
-                        // Vue's copy points at the "+" it has and this does not
-                        // have, so it would send the reader looking for a
-                        // button that is not on this screen.
+                        // Vue's copy points at the "+" it has and this does not have, so it would send the reader looking for a button that is not on this screen.
                         detail = "Create one on the web app and it will show up here.",
                     )
                 }
@@ -620,28 +443,13 @@ private fun SidebarBody(
                                 .padding(start = 12.dp)
                                 .padding(start = 12.dp),
                         ) {
-                            // Above the rows, not below: the thing the reader
-                            // just made should be the first thing they see, and
-                            // the list grows downward, so a create affordance
-                            // at the bottom of it would be pushed off screen
-                            // by the very rows it creates.
-                            //
-                            // Hidden for routine projects, matching the desktop
-                            // (`WorkspaceItem.vue` hides the `+` there, and
-                            // `createTaskStartDecision` refuses one anyway) —
-                            // a scheduler-owned project has no task list for
-                            // this row to add to.
+                            // Above the rows, not below: the thing the reader just made should be the first thing they see, and the list grows downward, so a create affordance at the bottom …
                             if (project.itemType != ProjectTypes.ROUTINE) {
                                 CreateTaskRow(
                                     projectName = project.id,
                                     isBusy = projects.creatingTaskItemId == project.id,
                                     onClick = {
-                                        // Same fallback "See all chats" uses one
-                                        // row below: a project read back from
-                                        // cache can carry a blank workspace, and
-                                        // the create endpoint is nested under it
-                                        // — so a blank here is a 404, not a
-                                        // defaulted success.
+                                        // Same fallback "See all chats" uses one row below: a project read back from cache can carry a blank workspace, and the create endpoint is nested under it — so a …
                                         projectActions.onCreateTask(
                                             project.copy(
                                                 workspaceId = project.workspaceId
@@ -660,10 +468,7 @@ private fun SidebarBody(
                                     nowEpochMillis = nowEpochMillis,
                                     onClick = {
                                         onChatSelected(chat.id)
-                                        // A chat is a destination, and this row
-                                        // opens the identical one the Recent
-                                        // list opens — the task id IS the
-                                        // session id.
+                                        // A chat is a destination, and this row opens the identical one the Recent list opens — the task id IS the session id.
                                         onOpenChat()
                                     },
                                 )
@@ -689,15 +494,7 @@ private fun SidebarBody(
     }
 }
 
-/**
- * Who is signed in, and the one control that ends it.
- *
- * The account line comes first on purpose: "Log out" is unambiguous as a verb
- * and easy to tap by accident next to the recents list, and naming the account
- * is what turns an accidental read into a deliberate one. The button says
- * "Logging out…" and refuses further presses while the call is in flight, so a
- * slow network cannot produce two sign-outs.
- */
+/** Who is signed in, and the one control that ends it. */
 @Composable
 private fun AccountFooter(
     email: String?,
@@ -752,31 +549,12 @@ private fun AccountFooter(
     }
 }
 
-/**
- * The row under the last chat: a spinner while the next page is in flight, and
- * an end-of-list marker only once the server has said there is nothing more.
- *
- * It is always present *for as long as it is the last row of the chat region*,
- * rather than shown and hidden, so the list's total item count is stable across
- * a page append — otherwise appending shifts every index and the scroll watcher
- * re-evaluates mid-animation.
- *
- * The project-chats screen's row, not the recents list's: that list drains
- * every page up front, so it has no "next page" to report and no end to stand
- * after. A project's chats are still paged, so this still has three states to
- * render — which is why it lives here rather than beside the screen that uses
- * it, next to [ProjectChatsScreen]'s own copy of the three strings' meaning.
- */
+/** The row under the last chat: a spinner while the next page is in flight, and an end-of-list marker only once the server has said there is nothing more. */
 @Composable
 internal fun ChatListFooter(
     isLoading: Boolean,
     hasReachedEnd: Boolean,
-    /**
-     * Why the last page failed, or null. A failure is offered as a *control*,
-     * not as a caption: the list this row sits under may be shorter than the
-     * screen and therefore not scrollable at all, so "scroll again" is not a
-     * recovery a reader can take. Tapping this row is.
-     */
+    /** Why the last page failed, or null. */
     errorMessage: String? = null,
     onRetry: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -797,9 +575,7 @@ internal fun ChatListFooter(
                 color = PabrikMuted,
             )
 
-            // Checked before the end marker: a page that failed is not the end
-            // of the list, and saying "No older chats" over a network error is
-            // the one claim a reader cannot undo by trying again.
+            // Checked before the end marker: a page that failed is not the end of the list, and saying "No older chats" over a network error is the one claim a reader cannot …
             errorMessage != null -> Text(
                 text = "$errorMessage — tap to retry",
                 modifier = Modifier
@@ -817,9 +593,7 @@ internal fun ChatListFooter(
                 color = PabrikDim,
             )
 
-            // More may exist and nothing is in flight. Naming the behaviour
-            // makes an automatic load readable rather than surprising, and gives
-            // the row something to assert on.
+            // More may exist and nothing is in flight.
             else -> Text(
                 text = "Scroll for older chats",
                 modifier = Modifier.testTag("chats_load_more_hint"),
@@ -908,10 +682,7 @@ private fun WorkspaceDropdown(
                             )
                         },
                         onClick = {
-                            // Only the dropdown closes here. Dismissing the
-                            // drawer as well would dump the user back on the
-                            // main content with the new workspace's chats
-                            // hidden behind the menu button they just used.
+                            // Only the dropdown closes here.
                             expanded = false
                             onWorkspaceSelected(workspace.id)
                         },
@@ -935,19 +706,7 @@ private fun WorkspaceDropdown(
     }
 }
 
-/**
- * A chat row: title, the human's last-visit pill, the running dot.
- *
- * `internal` rather than `private` because [RecentsChatsScreen] draws the same
- * row for the same `ChatSummary`. One implementation is not tidiness here — the
- * two lists show the *same* chats, so a second row would be a second place for
- * the time pill, the busy marker and the selection to disagree about what a
- * chat looks like.
- *
- * Deliberately **not** `ProjectChatRow`: that one takes a `ProjectChat`, which
- * is a task rather than a session and carries a `taskType` this row has no
- * business rendering. Sharing the model would mean sharing the wrong one.
- */
+/** A chat row: title, the human's last-visit pill, the running dot. */
 @Composable
 internal fun ChatRow(
     chat: ChatSummary,
@@ -965,10 +724,7 @@ internal fun ChatRow(
                     append(chat.displayTitle)
                     if (chat.hasTimestamp) {
                         append(", ")
-                        // The label key, not the order key: this row can be at
-                        // the top of the list because the *agent* is working it,
-                        // and "updated just now" would be a claim about the
-                        // human that is not true.
+                        // The label key, not the order key: this row can be at the top of the list because the *agent* is working it, and "updated just now" would be a claim about the …
                         append(
                             formatRelativeTimeForAccessibility(
                                 chat.lastHumanTouchedAtEpochMillis,
@@ -977,10 +733,6 @@ internal fun ChatRow(
                         )
                     }
                     // Spoken as part of the row rather than left to the spinner.
-                    // A bare "progress indicator" tells a screen-reader user
-                    // that something is animating, not *which* chat is busy —
-                    // and this row's own description is the only place that
-                    // answer can live.
                     if (isRunning) append(", agent is working")
                 }
             }
@@ -1013,10 +765,7 @@ internal fun ChatRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                // A session with no parseable timestamp gets no time pill
-                // rather than a fabricated one. The pill reads the human-touch
-                // key, so a running session at the top of the list still says
-                // when the human was last actually there.
+                // A session with no parseable timestamp gets no time pill rather than a fabricated one.
                 if (chat.hasTimestamp) {
                     Text(
                         text = formatRelativeTime(chat.lastHumanTouchedAtEpochMillis, nowEpochMillis),
@@ -1026,8 +775,7 @@ internal fun ChatRow(
                 }
             }
 
-            // One trailing slot for both markers, so they cannot overlap and so
-            // the selected dot keeps the position it already had.
+            // One trailing slot for both markers, so they cannot overlap and so the selected dot keeps the position it already had.
             Row(
                 modifier = Modifier.padding(start = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1040,18 +788,11 @@ internal fun ChatRow(
                     )
                 }
                 if (isRunning) {
-                    // Gaps rather than a fixed offset: the running spinner is
-                    // the only marker on an unselected row and the one that
-                    // matters most, so it is not pushed away from the title for
-                    // the sake of a dot the user is not looking for.
+                    // Gaps rather than a fixed offset: the running spinner is the only marker on an unselected row and the one that matters most, so it is not pushed away from the …
                     Spacer(Modifier.size(if (selected) 6.dp else 0.dp))
                     CircularProgressIndicator(
                         modifier = Modifier
-                            // Cleared *before* the tag: `clearAndSetSemantics`
-                            // discards everything a preceding modifier set, and
-                            // the row above merges descendants, so an
-                            // un-cleared progress node would be announced as a
-                            // second, meaningless thing inside the row.
+                            // Cleared *before* the tag: `clearAndSetSemantics` discards everything a preceding modifier set, and the row above merges descendants, so an un-cleared progress …
                             .clearAndSetSemantics { }
                             .size(14.dp)
                             .testTag("chat_row_running_${chat.id}"),

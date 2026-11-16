@@ -1,5 +1,4 @@
-//! Data model for the `workspace_items` entity table. Each row is a project
-//! belonging to one `workspaces.id`.
+//! Data model for the `workspace_items` entity table.
 
 const std = @import("std");
 
@@ -12,15 +11,11 @@ item_type: []u8,
 created_at: ?[]u8 = null,
 updated_at: ?[]u8 = null,
 name: ?[]u8 = null,
-/// Absolute filesystem path the workspace item points at. NULL for legacy
-/// rows and for items created before Migration 025.
+/// Absolute filesystem path the workspace item points at.
 path: ?[]u8 = null,
-/// Drag-and-drop sort key (Migration 045). Higher = higher in the
-/// workspace's item list.
+/// Drag-and-drop sort key (Migration 045).
 position: i64 = 0,
 /// Migration 094 — 1 when this item is the workspace's default project.
-/// The partial unique index on (workspace_id) WHERE is_default = 1 is
-/// what guarantees a workspace can never have two.
 is_default: i64 = 0,
 
 const Self = @This();

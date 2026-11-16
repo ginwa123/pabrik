@@ -1,6 +1,4 @@
-/** Zero-dependency code highlighter for read-only diff output. `detectLanguage` is the repo's
- * single extension→language table (moved verbatim from `CodeEditor.vue` so the diff card and the
- * full editor agree on language). */
+/** Zero-dependency code highlighter for read-only diff output. */
 export type TokenType = 'keyword' | 'string' | 'comment' | 'number' | 'function' | 'type' | 'plain'
 
 export interface Token {
@@ -180,8 +178,7 @@ const NUMBER_RE =
   /^(?:0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?)/
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/
 
-/** Split one line into typed tokens. Pure function — no DOM, no HTML.
- * `language` is a monaco language id (see `detectLanguage`). */
+/** Split one line into typed tokens. */
 export function highlightLine(line: string, language: string): Token[] {
   if (!line || PASSTHROUGH.has(language)) return [{ text: line, type: 'plain' }]
 
@@ -202,8 +199,7 @@ export function highlightLine(line: string, language: string): Token[] {
   while (i < n) {
     const rest = line.slice(i)
 
-    // Block comment opener `/*` (css family + c-style): consume to `*/`
-    // on the same line, else the rest of the line.
+    // Block comment opener `/*` (css family + c-style): consume to `*/` on the same line, else the rest of the line.
     if (rest.startsWith('/*')) {
       const end = line.indexOf('*/', i + 2)
       flushPlain()
@@ -230,13 +226,10 @@ export function highlightLine(line: string, language: string): Token[] {
     }
 
     // Line comment: marker outside of a string starts a comment to EOL.
-    // (Strings are consumed first below, so a `#`/`//` inside "..." never
-    // reaches this branch.)
     let isComment = false
     for (const m of commentMarkers) {
       if (m && rest.startsWith(m)) {
-        // `#` is also a CSS id selector — only treat as comment for
-        // languages where `#` comments exist AND this isn't css-like.
+        // `#` is also a CSS id selector — only treat as comment for languages where `#` comments exist AND this isn't css-like.
         if (m === '#' && (language === 'css' || language === 'scss' || language === 'less')) {
           continue
         }
@@ -309,15 +302,12 @@ export function highlightLine(line: string, language: string): Token[] {
   return tokens.length > 0 ? tokens : [{ text: line, type: 'plain' }]
 }
 
-/** Tokenize every line against an ALREADY-RESOLVED monaco language id. For a caller that resolved
- * the language itself — an explicit override, or a `detectLanguage` result it wants to reuse. */
+/** Tokenize every line against an ALREADY-RESOLVED monaco language id. */
 export function highlightLines(lines: readonly string[], language: string): Token[][] {
   return lines.map((line) => highlightLine(line, language))
 }
 
-/** Tokenize every line of one file for a render site that only knows the path — the diff reviews,
- * the git viewers. Pairing `detectLanguage` with `highlightLine` happens exactly once, here, so a
- * new code surface cannot drift from the others. */
+/** Tokenize every line of one file for a render site that only knows the path — the diff reviews, the git viewers. */
 export function highlightLinesForFile(
   lines: readonly string[],
   filePath: string | null | undefined,

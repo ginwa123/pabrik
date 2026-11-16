@@ -8,24 +8,21 @@ describe('computeSnapDelta', () => {
   ]
 
   it('snaps left edge to another element\'s left edge', () => {
-    // Drag element A from (100, 100) to (105, 100) — within 6px of
-    // its own start position. No snap target within 6px on left.
+    // Drag element A from (100, 100) to (105, 100) — within 6px of its own start position.
     const result = computeSnapDelta(elements, 'a', 5, 0)
     expect(result.dx).toBe(0)  // already aligned to start
     expect(result.guides).toEqual([])
   })
 
   it('snaps right edge of moving element to left edge of nearby element', () => {
-    // Element A's right edge starts at x=300. Element B's left edge
-    // is at x=400. To snap A's right edge onto B's left edge, dx = 100.
+    // Element A's right edge starts at x=300.
     const result = computeSnapDelta(elements, 'a', 105, 0)
     expect(result.dx).toBe(100)
     expect(result.guides).toContainEqual({ axis: 'x', position: 400 })
   })
 
   it('snaps center H of moving element to center H of nearby element', () => {
-    // Element A's center H starts at x=200. Element B's center H is
-    // at x=450. To align, dx = 250.
+    // Element A's center H starts at x=200.
     const result = computeSnapDelta(elements, 'a', 252, 0)
     expect(result.dx).toBe(250)
     expect(result.guides).toContainEqual({ axis: 'x', position: 450 })
@@ -50,9 +47,7 @@ describe('computeSnapDelta', () => {
   })
 
   it('applies 6px threshold — snap fires only when within 6 design-px of target', () => {
-    // Element A right edge starts at x=300. Element B left edge at x=400.
-    // dx = 95 → A's right edge ends up at x=395 (5px from B's left).
-    // dx = 89 → A's right edge at x=389 (11px from B's left). NO snap.
+    // Element A right edge starts at x=300.
     const snap1 = computeSnapDelta(elements, 'a', 95, 0)
     expect(snap1.dx).toBe(100)  // snapped
     const snap2 = computeSnapDelta(elements, 'a', 89, 0)

@@ -1,6 +1,4 @@
-/** KanbanView `/add` (add-task page) URL behaviour, pinned against a real router. Plan: the kanban
- * add-task page is `/app/{ws}/projects/{item}/add`, with the target column in `?column=`, and the
- * board's own query (`?layout=`, `?sorts=`, …) must survive the round trip. */
+/** KanbanView `/add` (add-task page) URL behaviour, pinned against a real router. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,8 +19,7 @@ const ITEM_ID = 'item_add'
 const BOARD_PATH = `/app/${WS_ID}/projects/${ITEM_ID}`
 const ADD_PATH = `${BOARD_PATH}/add`
 
-/** Two columns, deliberately handed over out of order: `col_a` is the leftmost (position 0), so it
- * is the one the header's "Add task" button must pre-select. */
+/** Two columns, deliberately handed over out of order: `col_a` is the leftmost (position 0), so it is the one the header's "Add task" button must pre-select. */
 const makeColumn = (overrides: Partial<KanbanColumn> = {}): KanbanColumn => ({
   id: 'col_a',
   workspace_item_id: ITEM_ID,
@@ -51,9 +48,7 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   ...overrides,
 })
 
-/** A real router with a catch-all route, so `router.push`/`replace` actually commit and
- * `route.query` really updates. The catch-all keeps the path opaque — `/add` is parsed by
- * `parseAppPath`, not by a route table. */
+/** A real router with a catch-all route, so `router.push`/`replace` actually commit and `route.query` really updates. */
 async function makeRouter(initial: {
   path: string
   query?: Record<string, string>

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GetPlan from '../GetPlan.vue'
 
 // ──────────────────────────────────────────────────────────────────────── Helpers
-// ────────────────────────────────────────────────────────────────────────
 const makePresentContent = (markdown: string): string =>
   JSON.stringify({
     tool: 'get_plan',
@@ -36,9 +35,7 @@ const makeErrorContent = (msg = 'database is locked') =>
     v: 1,
   })
 
-/**  * Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes
- * through. Mirrors the backend's `wrapToolOutput`. Accepts a data object (or a full envelope
- * string, passed through unchanged). */
+/** Wrap the inner data payload in the full JSON wire envelope the dispatcher actually passes through. */
 const wrapInToolEnvelope = (inner: string): string => {
   if (inner.trim().startsWith('{')) {
     try {
@@ -61,9 +58,7 @@ const wrapInToolEnvelope = (inner: string): string => {
   return inner
 }
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('GetPlan.vue — present plan', () => {
   let clipboardWrites: string[] = []
 
@@ -192,9 +187,7 @@ describe('GetPlan.vue — present plan', () => {
       attachTo: document.body,
     })
 
-    // JSON `plan` carries the body verbatim (no CDATA leading newline),
-    // so line 0 is "- [x] step 1" (checked) → ☑, line 1 is
-    // "- [ ] step 2" (unchecked) → ☐.
+    // JSON `plan` carries the body verbatim (no CDATA leading newline), so line 0 is "- [x] step 1" (checked) → ☑, line 1 is "- [ ] step 2" (unchecked) → ☐.
     const checkedLine = wrapper.find('[data-testid="get-plan-line-0"]')
     const uncheckedLine = wrapper.find('[data-testid="get-plan-line-1"]')
     expect(checkedLine.attributes('data-kind')).toBe('checked')
@@ -253,17 +246,14 @@ describe('GetPlan.vue — present plan', () => {
       attachTo: document.body,
     })
 
-    // Strict ordering preserved (line 0 = "## Goal", 1 = "Build the whole
-    // thing", 2 = "", 3 = "## Steps", 4 = "- [x] step 1").
+    // Strict ordering preserved (line 0 = "## Goal", 1 = "Build the whole thing", 2 = "", 3 = "## Steps", 4 = "- [x] step 1").
     expect(wrapper.find('[data-testid="get-plan-line-0"]').attributes('data-kind')).toBe('text')
     expect(wrapper.find('[data-testid="get-plan-line-1"]').attributes('data-kind')).toBe('text')
     expect(wrapper.text()).toContain('Build the whole thing')
   })
 
   it('shows the "(no checklist lines)" hint when body is empty', async () => {
-    // The hint renders when the parsed body splits into zero lines
-    // (i.e. the CDATA payload was empty or whitespace-only). Plain-text
-    // bodies without checkboxes render as text rows instead.
+    // The hint renders when the parsed body splits into zero lines (i.e. the CDATA payload was empty or whitespace-only).
     const wrapper = mount(GetPlan, {
       props: {
         message: {
@@ -278,9 +268,7 @@ describe('GetPlan.vue — present plan', () => {
   })
 
   it('renders plain-text lines as text rows when body has no checkboxes', async () => {
-    // When the body has text but no `- [ ]` / `- [x]` markers, each line
-    // renders as a text row (no glyph, no line-through). The
-    // "(no checklist)" hint is reserved for the empty-body edge case.
+    // When the body has text but no `- [ ]` / `- [x]` markers, each line renders as a text row (no glyph, no line-through).
     const wrapper = mount(GetPlan, {
       props: {
         message: {

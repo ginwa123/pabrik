@@ -1,6 +1,4 @@
-/** DocumentsSse — the `documents` channel. Emitted by the agent tools and by
- * every HTTP write that changes the tree (folder CRUD, document create/update/
- * delete, reorder), so a second window follows a drag the first one made. */
+/** DocumentsSse — the `documents` channel. */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useSseBus, __getSseBusGlobalClient } from '../helpers/sseBus'
@@ -11,8 +9,7 @@ export const useDocumentsSseStore = defineStore('documentsSse', () => {
   // Mutable ref so `setActiveWorkspaceId` can update the filter without re-subscribing.
   const activeWorkspaceId = ref<string>('')
 
-  // The unsubscribe function for the bus listener. Stashed so `closeDocumentsSse()`
-  // can detach the handler on unmount.
+  // The unsubscribe function for the bus listener.
   let offDocuments: (() => void) | null = null
 
   // Unsubscribe for the bus's "you may have missed events" signal (see `helpers/sseTabChannel.ts`).
@@ -25,42 +22,34 @@ export const useDocumentsSseStore = defineStore('documentsSse', () => {
 
   /** Subscribe the documents store to the bus's `documents` channel. */
   async function initDocumentsSse(workspaceId: string): Promise<void> {
-    // Set the filter first: a fresh listener reads it on its first event, and a re-init
-    // just moves the filter for the listener that is already registered.
+    // Set the filter first: a fresh listener reads it on its first event, and a re-init just moves the filter for the listener that is already registered.
     activeWorkspaceId.value = workspaceId
 
     if (offDocuments) return
 
     const bus = useSseBus()
     offDocuments = bus.on('documents', (event: DocumentEvent) => {
-      // Drop events for other workspaces — the backend fans document events out globally, so any
-      // connected client receives them all. Without this every tab re-reads its document list when
-      // ANY workspace's agent writes one.
+      // Drop events for other workspaces — the backend fans document events out globally, so any connected client receives them all.
       if (event.workspace_id !== activeWorkspaceId.value) return
-      // The payload carries no body, and a delete has to make a row disappear, so re-read the
-      // list. `fetchDocuments` revalidates the WHOLE workspace, so create / update / delete all
-      // land — a per-action branch would need three different partial-update paths for no gain.
+      // The payload carries no body, and a delete has to make a row disappear, so re-read the list.
       void useDocumentsStore().fetchDocuments(event.workspace_id)
     })
 
-    // Re-sync on every (re)connect of the bus's underlying global SseClient: a mutation that
-    // landed while the stream was down was announced to nobody.
+    // Re-sync on every (re)connect of the bus's underlying global SseClient: a mutation that landed while the stream was down was announced to nobody.
     if (bus.state.value === 'open') refreshDocuments(activeWorkspaceId.value)
     stopOpenSub =
       __getSseBusGlobalClient()?.onStateChange((s) => {
         if (s === 'open') refreshDocuments(activeWorkspaceId.value)
       }) ?? null
 
-    // Stale-on-wake (cross-tab sharing): `bus.state` only fires on transitions the SseClient
-    // itself emits, so a takeover can miss events with no transition to hang a refresh off.
+    // Stale-on-wake (cross-tab sharing): `bus.state` only fires on transitions the SseClient itself emits, so a takeover can miss events with no transition to hang a …
     offResync =
       bus.onResync?.(() => {
         if (activeWorkspaceId.value !== '') refreshDocuments(activeWorkspaceId.value)
       }) ?? null
   }
 
-  /** Tear down the document-event handlers. Called on AppLayout unmount (and at the end of
-   * each test). */
+  /** Tear down the document-event handlers. */
   function closeDocumentsSse(): void {
     if (offDocuments) {
       offDocuments()
@@ -77,14 +66,12 @@ export const useDocumentsSseStore = defineStore('documentsSse', () => {
     activeWorkspaceId.value = ''
   }
 
-  /** Update the workspace filter without re-subscribing the bus listener. Called by AppLayout's
-   * `initSseStores` on workspace switch after the initial setup. */
+  /** Update the workspace filter without re-subscribing the bus listener. */
   async function setActiveWorkspaceId(workspaceId: string): Promise<void> {
     await initDocumentsSse(workspaceId)
   }
 
-  /** Re-read the active workspace's documents after a (re)connect. Throttled: `bus.state` flips
-   * to 'open' on every reconnect, and without a guard each one would refetch the whole list. */
+  /** Re-read the active workspace's documents after a (re)connect. */
   function refreshDocuments(workspaceId: string): void {
     if (Date.now() - lastDocumentsFetchAt < 10_000) return
     lastDocumentsFetchAt = Date.now()

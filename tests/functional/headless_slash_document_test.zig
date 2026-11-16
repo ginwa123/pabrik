@@ -1,6 +1,4 @@
-//! Wire test: `pabrik headless documents expand` and a real `POST /api/llm/session`
-//! both resolve `/document-<id>` through the SAME function, against an isolated
-//! HOME, on a document whose body has crossed the object store.
+//! Wire test: `pabrik headless documents expand` and a real `POST /api/llm/session` both resolve `/document-<id>` through the SAME function, against an isolated …
 
 const std = @import("std");
 const testing = std.testing;

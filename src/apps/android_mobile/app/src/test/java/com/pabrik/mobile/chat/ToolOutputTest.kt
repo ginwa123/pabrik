@@ -8,11 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The envelope is the contract every tool card is built on, and every mistake
- * in it shows up as a blank card rather than an exception — so it is asserted
- * here, against payloads shaped like the ones the backend actually emits.
- */
+/** The envelope is the contract every tool card is built on, and every mistake in it shows up as a blank card rather than an exception — so it is asserted here … */
 class ToolOutputTest {
 
     // ─── tryUnwrap ──────────────────────────────────────────────────────────
@@ -43,8 +39,7 @@ class ToolOutputTest {
         assertNotNull(envelope)
         assertFalse(envelope!!.success)
         assertEquals("no such file", envelope.error)
-        // `success:false` never carries a payload, and a client that trusted one
-        // would render a stale body under an error.
+        // `success:false` never carries a payload, and a client that trusted one would render a stale body under an error.
         assertNull(envelope.data)
     }
 
@@ -59,8 +54,7 @@ class ToolOutputTest {
 
     @Test
     fun `a success never reports an error`() {
-        // `success` and `error` are mutually exclusive on the wire; a writer
-        // that breaks that must not produce a card claiming both.
+        // `success` and `error` are mutually exclusive on the wire; a writer that breaks that must not produce a card claiming both.
         val envelope = ToolOutput.tryUnwrap(
             """{"tool":"x","parameters":{},"success":true,"data":{},"error":"boom","v":1}""",
         )
@@ -68,12 +62,7 @@ class ToolOutputTest {
         assertNull(envelope?.error)
     }
 
-    /**
-     * The placeholder row the backend inserts the instant the model asks for a
-     * tool. It has `data: null` on a *success*, which is the only in-flight
-     * signal on the wire — `llm_history.is_loading` is in the database and in
-     * no SSE struct.
-     */
+    /** The placeholder row the backend inserts the instant the model asks for a tool. */
     @Test
     fun `a success with no data is still in flight`() {
         val envelope = ToolOutput.tryUnwrap(
@@ -133,12 +122,7 @@ class ToolOutputTest {
         assertNull(ToolOutput.tryUnwrap("""{"tool":"x","success":true,"data":{}}"""))
     }
 
-    /**
-     * `normalizeDataFragment` rewrites any payload whose top level is not an
-     * object as `{"_raw": <original>}`, and `remove_file` still emits XML, so a
-     * client that assumes `data` is the tool's own shape renders nothing for
-     * every real `remove_file` call.
-     */
+    /** `normalizeDataFragment` rewrites any payload whose top level is not an object as `{"_raw": <original>}`, and `remove_file` still emits XML, so a client that … */
     @Test
     fun `a raw payload is surfaced as text`() {
         val envelope = ToolOutput.tryUnwrap(
@@ -162,11 +146,7 @@ class ToolOutputTest {
 
     // ─── JsonPretty ─────────────────────────────────────────────────────────
 
-    /**
-     * The Arguments block hides itself on the literal string `"{}"`, so an
-     * empty object must render as `{}` and not as the built-in `{ }` — which
-     * would put an Arguments section under every argument-less tool.
-     */
+    /** The Arguments block hides itself on the literal string `"{}"`, so an empty object must render as `{}` and not as the built-in `{ }` — which would put an … */
     @Test
     fun `an empty object pretty-prints as the exact guard string`() {
         assertEquals("{}", JsonPretty.pretty("{}"))
@@ -203,11 +183,7 @@ class ToolOutputTest {
 
     // ─── ToolCalls ──────────────────────────────────────────────────────────
 
-    /**
-     * `tool_calls_json` is a JSON *string* holding an array whose `arguments`
-     * are themselves a JSON string, so it is parsed twice. A single parse
-     * yields `[object Object]` and every tool-call pill reads "unknown".
-     */
+    /** `tool_calls_json` is a JSON *string* holding an array whose `arguments` are themselves a JSON string, so it is parsed twice. */
     @Test
     fun `tool calls are parsed out of a double-encoded string`() {
         val calls = ToolCalls.parse(

@@ -1,6 +1,4 @@
-/** skillFilter.ts — the behaviour behind the Skills
- * settings search box, facet chips and sort
- * menu. Pure functions, so nothing needs injecting. */
+/** skillFilter.ts — the behaviour behind the Skills settings search box, facet chips and sort menu. */
 import { describe, expect, it } from 'vitest'
 import {
   countVisible,

@@ -1,13 +1,10 @@
-/** Shared FOLDER-mode diff snapshot — the app's only way to read a file diff. Why this exists:
- * `POST /api/git/file/diffs` in folder mode returns every changed path under a folder (or the whole
- * repo) in ONE request. */
+/** Shared FOLDER-mode diff snapshot — the app's only way to read a file diff. Why this exists */
 import { getGitFolderDiffs, type GitFileDiff } from '../api'
 
 /** Matches the sidebar's git-status poll. See note above. */
 export const FOLDER_DIFF_TTL_MS = 30_000
 
-/** Repos remembered at once. A session flip-flopping across >8 worktrees
- *  evicts the oldest rather than growing without bound. */
+/** Repos remembered at once. */
 const MAX_TRACKED_CWDS = 8
 
 type Snapshot = { at: number; byKey: Map<string, GitFileDiff> }
@@ -27,8 +24,7 @@ export function clearFolderDiffCache(): void {
 }
 
 function evictOldest(): void {
-  // Map preserves insertion order; re-inserting on every prime keeps the
-  // most-recently-written cwd last.
+  // Map preserves insertion order; re-inserting on every prime keeps the most-recently-written cwd last.
   while (snapshots.size > MAX_TRACKED_CWDS) {
     const oldest = snapshots.keys().next()
     if (oldest.done) return
@@ -41,23 +37,19 @@ export function primeFolderDiffs(cwd: string, diffs: GitFileDiff[]): void {
   if (!cwd) return
   const byKey = new Map<string, GitFileDiff>()
   for (const d of diffs) byKey.set(folderDiffKey(d.staged, d.path), d)
-  // Delete-then-set so the insertion order reflects "written last", which is
-  // what `evictOldest` reads.
+  // Delete-then-set so the insertion order reflects "written last", which is what `evictOldest` reads.
   snapshots.delete(cwd)
   snapshots.set(cwd, { at: Date.now(), byKey })
   evictOldest()
 }
 
-/**  * The diff for one file, or null when the snapshot is missing or expired. A file the server did not
- * report is null too — the caller decides whether that means "clean file" (empty diff) or "ask
- * again". */
+/** The diff for one file, or null when the snapshot is missing or expired. */
 export function readFolderDiff(cwd: string, path: string, staged: boolean): GitFileDiff | null {
   if (!cwd || !path) return null
   const snap = snapshots.get(cwd)
   if (!snap) return null
   if (Date.now() - snap.at >= FOLDER_DIFF_TTL_MS) {
-    // Expired. Drop it so the next read cannot accidentally serve it, and so
-    // an abandoned cwd's entry does not linger in the eviction queue.
+    // Expired.
     snapshots.delete(cwd)
     return null
   }
@@ -80,9 +72,7 @@ function fetchSnapshot(cwd: string): Promise<Map<string, GitFileDiff>> {
     if (!snap) throw new Error(`folder diff snapshot vanished for ${cwd}`)
     return snap.byKey
   })()
-  // Cleanup runs on both paths, and the rejection is handed to every caller
-  // (no `.catch` here) — swallowing it would turn a backend outage into an
-  // empty diff that reads as "this file is unchanged".
+  // Cleanup runs on both paths, and the rejection is handed to every caller (no `.catch` here) — swallowing it would turn a backend outage into an empty diff that …
   const tracked = request.finally(() => {
     inflight.delete(cwd)
   })
@@ -90,8 +80,7 @@ function fetchSnapshot(cwd: string): Promise<Map<string, GitFileDiff>> {
   return tracked
 }
 
-/** Diff for one file, from the shared snapshot. Revalidates with a single folder request when the
- * snapshot is missing or older than the TTL; concurrent callers share that one request. */
+/** Diff for one file, from the shared snapshot. */
 export async function fetchFolderDiff(
   cwd: string,
   path: string,
@@ -99,9 +88,7 @@ export async function fetchFolderDiff(
 ): Promise<GitFileDiff> {
   const empty: GitFileDiff = { path, diff_content: '', staged }
   if (!cwd || !path) return empty
-  // A FRESH snapshot is authoritative, so a path it does not list means "no diff" — answer from it
-  // instead of revalidating. Refetching here would bring back one request per click for every file
-  // that happens to be unchanged, which is the flood this module exists to remove.
+  // A FRESH snapshot is authoritative, so a path it does not list means "no diff" — answer from it instead of revalidating.
   if (hasFreshFolderSnapshot(cwd)) return readFolderDiff(cwd, path, staged) ?? empty
   const byKey = await fetchSnapshot(cwd)
   return byKey.get(folderDiffKey(staged, path)) ?? empty

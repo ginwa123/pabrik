@@ -1,11 +1,9 @@
 import type { ParsedDiffLine } from './parseUnifiedDiff'
 
-/** A row of the side-by-side (split) diff render. `oldText` / `newText` are the line bodies with
- * the diff prefix already stripped (that is what `parseUnifiedDiff` hands over). */
+/** A row of the side-by-side (split) diff render. */
 export interface SplitRow {
   kind: 'hunk' | 'context' | 'change'
-  /** Full-width row content (a hunk header). `null` for the two-sided rows,
-   * whose content lives in `oldText` / `newText`. */
+  /** Full-width row content (a hunk header). */
   text: string | null
   oldLineNum: number | null
   oldText: string | null
@@ -13,9 +11,7 @@ export interface SplitRow {
   newText: string | null
   /** True for the paired change rows — both sides are tinted from this flag. */
   isChanged: boolean
-  /**    * Indexes into the SOURCE `ParsedDiffLine[]` this row was built from, in source order.
-   * Review-comment threads anchor to a source line index, so this is what lets a thread keep its
-   * position when the user flips between unified and split. */
+  /** Indexes into the SOURCE `ParsedDiffLine[]` this row was built from, in source order. */
   sourceIndexes: number[]
 }
 
@@ -55,8 +51,7 @@ export function pairSplitRows(lines: ParsedDiffLine[]): SplitRow[] {
       adds.push({ line, index })
       return
     }
-    // Anything else ends the change block. A hunk header is full-width; a
-    // context/empty line exists on both sides.
+    // Anything else ends the change block.
     flush()
     if (line.type === 'hunk' || line.type === 'header') {
       rows.push({
@@ -87,9 +82,7 @@ export function pairSplitRows(lines: ParsedDiffLine[]): SplitRow[] {
   return rows
 }
 
-/** Map every source line index to the split row that carries it. `SidebarDiffView` anchors review
- * threads to a source index; this is how the split render finds the right row for a thread the user
- * left in unified mode (and vice versa). */
+/** Map every source line index to the split row that carries it. */
 export function splitRowIndexBySourceIndex(rows: SplitRow[]): Map<number, number> {
   const map = new Map<number, number>()
   rows.forEach((row, rowIndex) => {

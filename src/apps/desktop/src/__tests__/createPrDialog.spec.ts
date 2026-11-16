@@ -1,6 +1,4 @@
-/** Tests for CreatePrDialog.vue — the "Create a pull request" modal mounted by ChatView when the
- * user clicks "Create a PR" in the WorktreeMenu. The component is async at three points: 1.
- * onMounted: fetches worktree info to pre-fill title/body 2. */
+/** Tests for CreatePrDialog.vue — the "Create a pull request" modal mounted by ChatView when the user clicks "Create a PR" in the WorktreeMenu. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -8,8 +6,7 @@ import { nextTick } from 'vue'
 import * as api from '../api'
 import CreatePrDialog from '../components/dialogs/CreatePrDialog.vue'
 
-// Realistic payload the backend returns. Field names match
-// `GitWorktreeInfo` in api/index.ts.
+// Realistic payload the backend returns.
 function makeInfo(overrides: Partial<api.GitWorktreeInfo> = {}): api.GitWorktreeInfo {
   return {
     is_git_repo: true,
@@ -51,9 +48,7 @@ describe('CreatePrDialog', () => {
     })
     await flushPromises()
 
-    // First call must have only one arg (worktreePath). The component's
-    // onMounted does NOT pass a base — it relies on the backend's
-    // default-base detection.
+    // First call must have only one arg (worktreePath).
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy.mock.calls[0]![0]).toBe('/tmp/wt')
     expect(spy.mock.calls[0]![1]).toBeUndefined()
@@ -72,8 +67,7 @@ describe('CreatePrDialog', () => {
   })
 
   it('auto-fill button re-fetches with the current base branch', async () => {
-    // This is the verbose test from the plan's Step 8.2 — copy the
-    // structure exactly so the regression coverage matches the spec.
+    // This is the verbose test from the plan's Step 8.2 — copy the structure exactly so the regression coverage matches the spec.
     const spy = vi
       .spyOn(api, 'getGitWorktreeInfo')
       .mockResolvedValueOnce({
@@ -134,7 +128,6 @@ describe('CreatePrDialog', () => {
 
   it('the Auto-fill button is disabled while submitting', async () => {
     // Hold the createGitPr promise open so isSubmitting stays true.
-    // Then verify the regenerate button has the `disabled` attribute.
     let resolveCreate: (v: api.GitPrCreateResponse) => void = () => {}
     const createPromise = new Promise<api.GitPrCreateResponse>((res) => {
       resolveCreate = res
@@ -162,14 +155,12 @@ describe('CreatePrDialog', () => {
   })
 
   it('the Auto-fill button is disabled while a regenerate is in flight', async () => {
-    // Hold the getGitWorktreeInfo response open so isRegenerating
-    // stays true. Then verify the regenerate button is disabled.
+    // Hold the getGitWorktreeInfo response open so isRegenerating stays true.
     let resolveRegen: (v: api.GitWorktreeInfo) => void = () => {}
     const regenPromise = new Promise<api.GitWorktreeInfo>((res) => {
       resolveRegen = res
     })
-    // The onMounted call resolves immediately (so the form populates),
-    // but the auto-fill click holds open.
+    // The onMounted call resolves immediately (so the form populates), but the auto-fill click holds open.
     vi.spyOn(api, 'getGitWorktreeInfo')
       .mockResolvedValueOnce(makeInfo())
       .mockReturnValueOnce(regenPromise)
@@ -226,9 +217,7 @@ describe('CreatePrDialog', () => {
     vi.spyOn(api, 'getGitWorktreeInfo').mockResolvedValue(
       makeInfo({ draft_title: 'My PR', draft_body: 'My body' }),
     )
-    // The component's `onSubmit` wraps `createGitPr` in try/catch —
-    // any thrown error (e.g. an HTTP failure from the backend) emits
-    // `error`. The dialog does NOT close; the user can fix and retry.
+    // The component's `onSubmit` wraps `createGitPr` in try/catch — any thrown error (e.g. an HTTP failure from the backend) emits `error`.
     vi.spyOn(api, 'createGitPr').mockRejectedValue(new Error('HTTP 500: gh not installed'))
 
     wrapper = mount(CreatePrDialog, {
@@ -245,15 +234,12 @@ describe('CreatePrDialog', () => {
     expect(wrapper.emitted('error')![0]![0]).toMatch(/500|HTTP|gh not installed/i)
     // No pr-created event on failure.
     expect(wrapper.emitted('pr-created')).toBeFalsy()
-    // The dialog must still be visible (the wrapper still exists and
-    // the submit button is still in the DOM).
+    // The dialog must still be visible (the wrapper still exists and the submit button is still in the DOM).
     expect(wrapper.find('[data-testid="create-pr-submit"]').exists()).toBe(true)
   })
 
   it('on createGitPr success=false, emits error with the response error', async () => {
-    // The backend can return HTTP 500 with `{success: false, error: ...}`
-    // (e.g. when `gh pr create` exited non-zero). The component must
-    // handle this distinctly from an exception.
+    // The backend can return HTTP 500 with `{success: false, error: ...}` (e.g. when `gh pr create` exited non-zero).
     vi.spyOn(api, 'getGitWorktreeInfo').mockResolvedValue(
       makeInfo({ draft_title: 'My PR', draft_body: 'My body' }),
     )
@@ -323,9 +309,7 @@ describe('CreatePrDialog', () => {
     await wrapper.find('[data-testid="create-pr-submit"]').trigger('click')
     await nextTick()
 
-    // The plan specifies `data-testid="create-pr-submit"` on the submit button. The close (✕)
-    // button in the dialog header is NOT given a testid in the production code, so identify it as
-    // the button with text content `Cancel` (in the footer) and the ✕ (in the header).
+    // The plan specifies `data-testid="create-pr-submit"` on the submit button.
     const buttons = wrapper.findAll('button')
     const cancelBtn = buttons.find((b) => b.text() === 'Cancel')!
     const closeBtn = buttons.find((b) => b.text().trim() === '✕')!

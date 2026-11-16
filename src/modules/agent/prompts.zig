@@ -7,7 +7,6 @@ const tool_search_skills_mod = @import("tools/skill_tools.zig");
 const tool_models = @import("Agent.zig");
 const tool_memories_mod = @import("tools/memories.zig");
 
-// =============================================================================
 // Re-exports only.
 
 // Re-export all prompts for easy access
@@ -30,30 +29,22 @@ pub const ResponseFormatting = prompts.ResponseFormatting;
 pub const SearchToolRule = prompts.SearchToolRule;
 pub const ReadWorkspaceSessionToolRule = prompts.ReadWorkspaceSessionToolRule;
 pub const MemoryToolRule = prompts.MemoryToolRule;
-// The agent's special tool (search the catalog for the tool a task needs) and
-// its special skills (load the skill a task needs).
+// The agent's special tool (search the catalog for the tool a task needs) and its special skills (load the skill a task needs).
 pub const ProgressiveToolRule = prompts.ProgressiveToolRule;
 pub const SkillsToolRule = prompts.SkillsToolRule;
 // Skill Evals — evaluate the skills this session actually used.
 pub const SkillEvalToolRule = prompts.SkillEvalToolRule;
-// The write half of the skills loop — `add_skill` when a task taught
-// something a future session would otherwise rediscover, `edit_skill` when an
-// eval flags a skill as stale.
+// The write half of the skills loop — `add_skill` when a task taught something a future session would otherwise rediscover, `edit_skill` when an eval flags a …
 pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
-// Session VCS binding — see the comment above the constants in
-// `prompts/core.zig`. Appended unconditionally by `buildMessages`, immediately
-// after `SkillWriteToolRule` and before the gated Secrets rule.
+// Session VCS binding — see the comment above the constants in `prompts/core.zig`.
 pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
 pub const PullRequestToolRule = prompts.PullRequestToolRule;
 // The `#Notes AutoMerge` flag: wait for CI, then merge — only when the note says so.
 pub const AutoMergeToolRule = prompts.AutoMergeToolRule;
-// The `<ask_user>` question card — appended by `buildMessages` for the main
-// agent only, because a sub-agent cannot reach the human.
+// The `<ask_user>` question card — appended by `buildMessages` for the main agent only, because a sub-agent cannot reach the human.
 pub const AskUserRule = prompts.AskUserRule;
 
-// ---------------------------------------------------------------------------
-// Thin delegating re-exports for the two pure helpers that `prompts_test.zig`
-// exercises directly.
+// Thin delegating re-exports for the two pure helpers that `prompts_test.zig` exercises directly.
 pub const loadGlobalKnowledge = @import("loop/prompts_build_messages_for_agent_prompt.zig").loadGlobalKnowledge;
 pub const loadLocalKnowledge = @import("loop/prompts_build_messages_for_agent_prompt.zig").loadLocalKnowledge;
 
@@ -63,8 +54,6 @@ const AgentTool = tool_models.AgentTool;
 const AgentToolFunction = tool_models.AgentToolFunction;
 const ToolParameters = tool_models.ToolParameters;
 // `tool_models` here is Agent.zig, whose `ToolProperty` alias is private.
-// The test builds schemas.AgentTool literals, so reach the real type
-// through the schemas module directly.
 const ToolProperty = @import("tools/schemas.zig").ToolProperty;
 
 // Helper: substring check
@@ -88,7 +77,6 @@ fn makeTool(name: []const u8, desc: []const u8) AgentTool {
     };
 }
 
-// -------------------------------------------------------------------------
 // build_agent_prompt — empty / no-memory cases
 test "build_agent_prompt loads memory files into Global Knowledge section" {
     const alloc = std.testing.allocator;
@@ -134,14 +122,12 @@ test "build_agent_prompt loads memory files into Global Knowledge section" {
 }
 
 // build_agent_prompt — Available Skills listing
-// -------------------------------------------------------------------------
 
 test "build_agent_prompt omits Available Skills section when search_skills tool is absent" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    // Set up a HOME with a real skill, so the test confirms the GATING,
-    // not just the "no skill found" path.
+    // Set up a HOME with a real skill, so the test confirms the GATING, not just the "no skill found" path.
     const tmp_home = "/tmp/pabrik-prompt-test-skills-gated";
     const global_skill_dir = "/tmp/pabrik-prompt-test-skills-gated/.config/pabrik/skills/test-gated-skill";
     std.Io.Dir.cwd().deleteTree(io, tmp_home) catch {};
@@ -196,7 +182,6 @@ test "build_agent_prompt silently skips Available Skills when env is null" {
 }
 
 // build_agent_prompt — Local Knowledge section (<cwd>/.pabrik/memories/*.md)
-// -------------------------------------------------------------------------
 
 test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memories" {
     const alloc = std.testing.allocator;
@@ -241,9 +226,7 @@ test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memo
     try std.testing.expect(contains(prompt, "auto-loaded from `<cwd>/.pabrik/memories/`"));
 }
 
-// build_agent_prompt — Memory paths are rendered alongside filenames
-// -------------------------------------------------------------------------
-// Every memory entry rendered in the `## Local Knowledge` / `## Global
+// build_agent_prompt — Memory paths are rendered alongside filenames Every memory entry rendered in the `## Local Knowledge` / `## Global
 
 test "build_agent_prompt Global Knowledge section emits each memory's absolute path" {
     const alloc = std.testing.allocator;
@@ -278,14 +261,11 @@ test "build_agent_prompt Global Knowledge section emits each memory's absolute p
     const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", &env, "", "", "");
     defer alloc.free(prompt);
 
-    // The full absolute path appears in the prompt — copy-pasteable
-    // straight into read_file / write_file / text_replace / remove_file.
+    // The full absolute path appears in the prompt — copy-pasteable straight into read_file / write_file / text_replace / remove_file.
     try std.testing.expect(contains(prompt, file_path));
-    // The path appears inside backticks (Markdown code span), not as a
-    // bare string — that's the convention for paths in this prompt.
+    // The path appears inside backticks (Markdown code span), not as a bare string — that's the convention for paths in this prompt.
     try std.testing.expect(contains(prompt, "`" ++ file_path ++ "`"));
-    // The heading format is unchanged — the path is a separate line below
-    // the `### <title> (`<filename>`)` heading, not part of it.
+    // The heading format is unchanged — the path is a separate line below the `### <title> (`<filename>`)` heading, not part of it.
     try std.testing.expect(contains(prompt, "### Path Emission Test (`path-test-rule.md`)"));
 }
 
@@ -391,8 +371,7 @@ test "build_agent_prompt renders Local and Global Knowledge together when both e
     try std.testing.expect(contains(prompt, "global-rule.md"));
     try std.testing.expect(contains(prompt, "Global Cross-Project Rule"));
 
-    // Local Knowledge appears BEFORE Global Knowledge in the rendered prompt
-    // (most-specific-first ordering).
+    // Local Knowledge appears BEFORE Global Knowledge in the rendered prompt (most-specific-first ordering).
     const local_pos = std.mem.indexOf(u8, prompt, "## Local Knowledge").?;
     const global_pos = std.mem.indexOf(u8, prompt, "## Global Knowledge").?;
     try std.testing.expect(local_pos < global_pos);
@@ -433,9 +412,7 @@ test "build_agent_prompt omits Local Knowledge when cwd is empty" {
     try std.testing.expect(!contains(prompt, "## Local Knowledge"));
 }
 
-// build_agent_prompt — LocalMemorySystem static section (no gating)
-// -------------------------------------------------------------------------
-// The LocalMemorySystem section is static — it appears in every prompt
+// build_agent_prompt — LocalMemorySystem static section (no gating) The LocalMemorySystem section is static — it appears in every prompt
 
 test "build_agent_prompt omits Local Knowledge when <cwd>/.pabrik/memories has no .md files" {
     const alloc = std.testing.allocator;
@@ -477,9 +454,7 @@ test "build_agent_prompt: no sub-agent section is rendered" {
     try std.testing.expect(!contains(prompt, "## Available Sub-Agents"));
 }
 
-// ---------------------------------------------------------------------------
-// build_agent_prompt with kanbanStatusContent — tests for the `## Kanban
-// Status Tracking` section (added by the 2026-06-27 kanban-status-prompt
+// build_agent_prompt with kanbanStatusContent — tests for the `## Kanban Status Tracking` section (added by the 2026-06-27 kanban-status-prompt
 
 test "build_agent_prompt renders Kanban Status Tracking when section is non-empty" {
     const alloc = std.testing.allocator;
@@ -529,7 +504,6 @@ test "build_agent_prompt omits Kanban Status Tracking when section is empty" {
     try std.testing.expect(!contains(prompt, "MUST call the `kanban_move_task`"));
 }
 
-// ---------------------------------------------------------------------------
 // loadGlobalKnowledge — direct unit tests for the memory-file loader.
 
 test "loadGlobalKnowledge returns empty string when env is null" {
@@ -544,8 +518,7 @@ test "loadGlobalKnowledge returns empty string when env is null" {
 }
 
 test "loadGlobalKnowledge returns empty string when HOME has no memories subdir" {
-    // First-run case: HOME exists but the user has not created
-    // ~/.config/pabrik/memories/ yet. Must not error, must return "".
+    // First-run case: HOME exists but the user has not created ~/.config/pabrik/memories/ yet.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -565,8 +538,7 @@ test "loadGlobalKnowledge returns empty string when HOME has no memories subdir"
 }
 
 test "loadGlobalKnowledge returns empty string when memories dir exists but is empty" {
-    // The dir exists but contains no .md files. Mirrors the first-run
-    // contract: no memories → no Global Knowledge content.
+    // The dir exists but contains no .md files.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -595,8 +567,7 @@ test "loadGlobalKnowledge returns empty string when memories dir exists but is e
 }
 
 test "loadGlobalKnowledge loads a single memory file with H1 title" {
-    // The happy path: one .md file with an H1 heading. The function must emit
-    // `### <title> (`<filename>`)` followed by the full file content.
+    // The happy path: one .md file with an H1 heading.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -638,8 +609,6 @@ test "loadGlobalKnowledge loads a single memory file with H1 title" {
 
 test "loadGlobalKnowledge uses filename stem as title when no H1 is present" {
     // No H1 → `extractTitle` falls back to the filename stem (e.g.
-    // "random-name.md" → "random-name"). The rendered heading must use
-    // the stem in place of an H1 title.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -671,8 +640,7 @@ test "loadGlobalKnowledge uses filename stem as title when no H1 is present" {
 }
 
 test "loadGlobalKnowledge concatenates multiple memory files" {
-    // Two .md files in the same dir → both rendered, separated by a blank
-    // line.
+    // Two .md files in the same dir → both rendered, separated by a blank line.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -722,8 +690,7 @@ test "loadGlobalKnowledge concatenates multiple memory files" {
 }
 
 test "loadGlobalKnowledge skips a corrupt file and loads the rest" {
-    // Mirrors the "openFile/readFile errors skip-and-continue" contract from
-    // `loadGlobalKnowledge`.
+    // Mirrors the "openFile/readFile errors skip-and-continue" contract from `loadGlobalKnowledge`.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -737,9 +704,7 @@ test "loadGlobalKnowledge skips a corrupt file and loads the rest" {
 
     try std.Io.Dir.cwd().createDirPath(io, memories_dir);
 
-    // Create `broken.md` AS A DIRECTORY (so openFile fails — it's not
-    // a regular file). This simulates a corrupt / permission-denied
-    // file. The loader must skip it, not abort.
+    // Create `broken.md` AS A DIRECTORY (so openFile fails — it's not a regular file).
     try std.Io.Dir.cwd().createDirPath(io, bad_path);
 
     {
@@ -766,12 +731,10 @@ test "loadGlobalKnowledge skips a corrupt file and loads the rest" {
     try std.testing.expect(!contains(result, "broken.md"));
 }
 
-// ---------------------------------------------------------------------------
 // loadLocalKnowledge — direct unit tests for the per-project memory loader.
 
 test "loadLocalKnowledge returns empty string when cwd is empty" {
-    // No project context → no local knowledge. Mirrors the first-run
-    // contract: an empty cwd must NOT error, must return "".
+    // No project context → no local knowledge.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -782,8 +745,7 @@ test "loadLocalKnowledge returns empty string when cwd is empty" {
 }
 
 test "loadLocalKnowledge returns empty string when cwd has no .pabrik/memories subdir" {
-    // First-run case: cwd is a real path but the user has not created
-    // `<cwd>/.pabrik/memories/` yet. Must not error, must return "".
+    // First-run case: cwd is a real path but the user has not created `<cwd>/.pabrik/memories/` yet.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -799,8 +761,7 @@ test "loadLocalKnowledge returns empty string when cwd has no .pabrik/memories s
 }
 
 test "loadLocalKnowledge returns empty string when memories dir exists but is empty" {
-    // The dir exists but contains no .md files. Mirrors the first-run
-    // contract: no memories → no Local Knowledge content.
+    // The dir exists but contains no .md files.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -825,8 +786,7 @@ test "loadLocalKnowledge returns empty string when memories dir exists but is em
 }
 
 test "loadLocalKnowledge loads a single memory file with H1 title" {
-    // Happy path: one .md file with an H1 heading. The function must emit
-    // `### <title> (<filename>)` followed by the full file content.
+    // Happy path: one .md file with an H1 heading.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -864,8 +824,6 @@ test "loadLocalKnowledge loads a single memory file with H1 title" {
 
 test "loadLocalKnowledge uses filename stem as title when no H1 is present" {
     // No H1 → `extractTitle` falls back to the filename stem (e.g.
-    // "random-name.md" → "random-name"). The rendered heading must use
-    // the stem in place of an H1 title.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -893,8 +851,7 @@ test "loadLocalKnowledge uses filename stem as title when no H1 is present" {
 }
 
 test "loadLocalKnowledge concatenates multiple memory files" {
-    // Two .md files in the same dir → both rendered, separated by a blank
-    // line.
+    // Two .md files in the same dir → both rendered, separated by a blank line.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -940,8 +897,7 @@ test "loadLocalKnowledge concatenates multiple memory files" {
 }
 
 test "loadLocalKnowledge skips a corrupt file and loads the rest" {
-    // Mirrors the "openFile/readFile errors skip-and-continue" contract from
-    // `loadLocalKnowledge`.
+    // Mirrors the "openFile/readFile errors skip-and-continue" contract from `loadLocalKnowledge`.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -955,9 +911,7 @@ test "loadLocalKnowledge skips a corrupt file and loads the rest" {
 
     try std.Io.Dir.cwd().createDirPath(io, memories_dir);
 
-    // Create `broken.md` AS A DIRECTORY (so openFile fails — it's not
-    // a regular file). This simulates a corrupt / permission-denied
-    // file. The loader must skip it, not abort.
+    // Create `broken.md` AS A DIRECTORY (so openFile fails — it's not a regular file).
     try std.Io.Dir.cwd().createDirPath(io, bad_path);
 
     {
@@ -980,18 +934,14 @@ test "loadLocalKnowledge skips a corrupt file and loads the rest" {
     try std.testing.expect(!contains(result, "broken.md"));
 }
 
-// ---------------------------------------------------------------------------
 // build_agent_prompt — Workspace Context section
-// ---------------------------------------------------------------------------
 
 test "build_agent_prompt renders Workspace Context when section is non-empty" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
     const tools = [_]AgentTool{};
-    // Realistic Workspace Context block (the same shape produced by
-    // `BuildWorkspaceContext` in
-    // `prompts_build_messages_for_agent_prompt.zig`).
+    // Realistic Workspace Context block (the same shape produced by `BuildWorkspaceContext` in `prompts_build_messages_for_agent_prompt.zig`).
     const workspaceContext =
         \\## Workspace Context
         \\
@@ -1042,8 +992,7 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
     const io = std.testing.io;
 
     const tools = [_]AgentTool{};
-    // workspaceContext is "" — mirrors the production behavior when
-    // the session is not bound to any workspace_item_task.
+    // workspaceContext is "" — mirrors the production behavior when the session is not bound to any workspace_item_task.
     const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
@@ -1053,7 +1002,6 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
     try std.testing.expect(!contains(prompt, "*(this task)*"));
 }
 
-// ---------------------------------------------------------------------------
 // build_agent_prompt — Search Tool Preference (MANDATORY) section.
 
 test "build_agent_prompt always renders Search Tool Preference (unconditional)" {
@@ -1069,16 +1017,14 @@ test "build_agent_prompt always renders Search Tool Preference (unconditional)" 
     try std.testing.expect(contains(prompt, "## Search Tool Preference (MANDATORY)"));
     // Hard-rule language is preserved.
     try std.testing.expect(contains(prompt, "always use the `search` tool"));
-    // The rule names the live tool, not the retired one — teaching `bash` is
-    // what kept the model emitting it.
+    // The rule names the live tool, not the retired one — teaching `bash` is what kept the model emitting it.
     try std.testing.expect(contains(prompt, "Do NOT run `rg`, `grep`, or `find` through the `command` tool"));
     // Mapping examples survived into the rendered prompt.
     try std.testing.expect(contains(prompt, "search(pattern=\"pattern\""));
     try std.testing.expect(contains(prompt, "group_by_file: false"));
     try std.testing.expect(contains(prompt, "word_boundary: true"));
     try std.testing.expect(contains(prompt, "literal: true"));
-    // The flags that used to be the documented reason to shell out are now
-    // tool parameters, and the prompt must teach them.
+    // The flags that used to be the documented reason to shell out are now tool parameters, and the prompt must teach them.
     try std.testing.expect(contains(prompt, "after_context: 20"));
     try std.testing.expect(contains(prompt, "ignore_case: true"));
     try std.testing.expect(contains(prompt, "count_only: true"));
@@ -1105,9 +1051,7 @@ test "build_agent_prompt Search Tool Preference appears even with non-empty tool
     try std.testing.expect(contains(prompt, "always use the `search` tool"));
 }
 
-// -------------------------------------------------------------------------
 // Memory Tools Rule (save_memory + load_memory) — gated on `load_memory`
-// -------------------------------------------------------------------------
 
 test "build_agent_prompt renders Memory Tools section when load_memory is in tool list" {
     const alloc = std.testing.allocator;
@@ -1148,8 +1092,7 @@ test "build_agent_prompt omits Memory Tools section when load_memory is absent" 
 }
 
 test "CompactionAgent constant teaches save_memory + load_memory (cross-session memory block)" {
-    // CompactionAgent is a comptime string literal (`pub const X = \\…`), so
-    // we read it directly without an allocator.
+    // CompactionAgent is a comptime string literal (`pub const X = \\…`), so we read it directly without an allocator.
     const prompt: []const u8 = CompactionAgent;
 
     // The new block is present.
@@ -1157,21 +1100,16 @@ test "CompactionAgent constant teaches save_memory + load_memory (cross-session 
     // Both tools are referenced.
     try std.testing.expect(contains(prompt, "save_memory"));
     try std.testing.expect(contains(prompt, "load_memory"));
-    // The block teaches the compaction step to forward save/load cues to
-    // the next agent rather than pasting the value verbatim.
+    // The block teaches the compaction step to forward save/load cues to the next agent rather than pasting the value verbatim.
     try std.testing.expect(contains(prompt, "save_memory id=") or
         contains(prompt, "load_memory query=") or
         contains(prompt, "next agent"));
 }
 
-// -------------------------------------------------------------------------
 // ResponseFormatting — <html> wrapper tag (2026-08-23 html-tag-support)
-// -------------------------------------------------------------------------
 
 test "ResponseFormatting teaches the <html> wrapper tag" {
-    // The model must know it CAN wrap raw HTML in <html>...</html> so the
-    // chat UI renders it as a live sandboxed-iframe block. Capability
-    // phrasing ("you can use"), not mandate.
+    // The model must know it CAN wrap raw HTML in <html>...</html> so the chat UI renders it as a live sandboxed-iframe block.
     const prompt: []const u8 = ResponseFormatting;
 
     // The tag pair is present.
@@ -1187,26 +1125,20 @@ test "ResponseFormatting teaches the <html> wrapper tag" {
     try std.testing.expect(contains(prompt, "#1D1C19"));
 }
 
-// -------------------------------------------------------------------------
 // ResponseFormatting — INTERACTIVE <html> (2026-11-04 interactive-html)
-// -------------------------------------------------------------------------
 
 test "ResponseFormatting teaches the interactive <html> contract" {
     // The model must know a block is a LIVE document it can build a widget in.
-    // Every wall below was measured in Chromium against the frame's real
-    // attribute (`sandbox="allow-scripts allow-forms"`, ChatMessageRow.vue).
     const prompt: []const u8 = ResponseFormatting;
 
     // 1. The capability is advertised at all.
     try std.testing.expect(contains(prompt, "Interactive HTML works"));
     try std.testing.expect(contains(prompt, "allow-forms"));
 
-    // 2. A form submit fires there, and an un-prevented one navigates the frame
-    // away — the one rule that turns a widget into a blank frame.
+    // 2.
     try std.testing.expect(contains(prompt, "event.preventDefault()"));
 
-    // 3. The null-origin walls: storage/cookies/history throw, dialogs are
-    // silent, window.open is refused, and there is no network.
+    // 3.
     try std.testing.expect(contains(prompt, "localStorage"));
     try std.testing.expect(contains(prompt, "SecurityError"));
     try std.testing.expect(contains(prompt, "window.open"));
@@ -1216,14 +1148,10 @@ test "ResponseFormatting teaches the interactive <html> contract" {
     try std.testing.expect(contains(prompt, "never a block nested inside another"));
 }
 
-// -------------------------------------------------------------------------
 // ResponseFormatting — <mermaid> wrapper tag (2026-10-17 mermaid-support)
-// -------------------------------------------------------------------------
 
 test "ResponseFormatting teaches the <mermaid> wrapper tag" {
-    // The model must know it CAN wrap Mermaid source in <mermaid>...</mermaid>
-    // so the chat UI renders it as a diagram (MermaidDiagram.vue).
-    // Capability phrasing ("you can use"), not mandate.
+    // The model must know it CAN wrap Mermaid source in <mermaid>...</mermaid> so the chat UI renders it as a diagram (MermaidDiagram.vue).
     const prompt: []const u8 = ResponseFormatting;
 
     // The tag pair is present.
@@ -1232,31 +1160,25 @@ test "ResponseFormatting teaches the <mermaid> wrapper tag" {
     // The capability phrasing the user asked for.
     try std.testing.expect(contains(prompt, "Diagram Responses"));
     try std.testing.expect(contains(prompt, "you can use"));
-    // Verbatim-emission note (wire-format requirement: an escaped or fenced
-    // payload does not reach the renderer as Mermaid source).
+    // Verbatim-emission note (wire-format requirement: an escaped or fenced payload does not reach the renderer as Mermaid source).
     try std.testing.expect(contains(prompt, "verbatim"));
     // The renderer owns the theme; a `%%{init}%%` directive would fight it.
     try std.testing.expect(contains(prompt, "%%{init}%%"));
 }
 
-// -------------------------------------------------------------------------
 // ResponseFormatting — WHEN to draw it and HOW to colour it (task_1793032402682_2)
-// -------------------------------------------------------------------------
 
 test "ResponseFormatting routes content to a surface and colours it by role" {
     const prompt: []const u8 = ResponseFormatting;
 
-    // 1. The when-to-use-which rule. The four surfaces are what the renderer
-    // really branches on: helpers/richBlocks.ts extracts <html> and <mermaid>
-    // (inline or fenced) and everything else falls through to markdown.
+    // 1.
     try std.testing.expect(contains(prompt, "Pick the surface"));
     try std.testing.expect(contains(prompt, "uniform rows"));
 
     // A reply may hold prose plus rich blocks, inside the single wrapper.
     try std.testing.expect(contains(prompt, "inside its single wrapper"));
 
-    // PlantUML has no local renderer: the tag, the external-server warning and
-    // the two skinparams that keep it dark are what make the block usable.
+    // PlantUML has no local renderer: the tag, the external-server warning and the two skinparams that keep it dark are what make the block usable.
     try std.testing.expect(contains(prompt, "<plantuml>"));
     try std.testing.expect(contains(prompt, "</plantuml>"));
     try std.testing.expect(contains(prompt, "skinparam backgroundColor"));
@@ -1266,9 +1188,7 @@ test "ResponseFormatting routes content to a surface and colours it by role" {
     try std.testing.expect(contains(prompt, "</d2>"));
     try std.testing.expect(contains(prompt, "theme-id: 200"));
 
-    // 2. Colour is EXPECTED, from the app's own Kanagawa Dragon accent tokens
-    // (helpers/mermaid.ts MERMAID_PALETTE_FALLBACK, ChatView's
-    // HTML_FRAME_PALETTE_FALLBACK) — one accent per role.
+    // 2.
     try std.testing.expect(contains(prompt, "Colour by ROLE"));
     try std.testing.expect(contains(prompt, "#8ba4b0"));
     try std.testing.expect(contains(prompt, "#87a987"));
@@ -1277,17 +1197,14 @@ test "ResponseFormatting routes content to a surface and colours it by role" {
     // The dark-canvas floor survives — a light palette is still banned.
     try std.testing.expect(contains(prompt, "near-white"));
 
-    // 3. HOW to emit it: mermaid's `theme: 'base'` is the baseline and both of
-    // these override it. `%%{init}%%` (pinned above) is the one that fights it.
+    // 3.
     try std.testing.expect(contains(prompt, "classDef"));
     try std.testing.expect(contains(prompt, "linkStyle"));
 
     // Anti-slop: no gradient/glow/blur/shadow/emoji in a rich block.
     try std.testing.expect(contains(prompt, "No gradient"));
 
-    // 4. Legibility traps. `htmlLabels: false` + securityLevel strict mean an
-    // HTML tag inside a Mermaid label is escaped to SVG text and printed
-    // literally; the ids named here are the ones mermaid 12 really rejects.
+    // 4.
     try std.testing.expect(contains(prompt, "prints literally"));
     try std.testing.expect(contains(prompt, "subgraph"));
 
@@ -1295,13 +1212,9 @@ test "ResponseFormatting routes content to a surface and colours it by role" {
     try std.testing.expect(contains(prompt, "[\"quoted\"]"));
 }
 
-// -------------------------------------------------------------------------
-// Regression: build_agent_prompt was moved from src/modules/agent/prompts.zig
-// into src/modules/agent/loop/prompts_build_messages_for_agent_prompt.zig on
+// Regression: build_agent_prompt was moved from src/modules/agent/prompts.zig into src/modules/agent/loop/prompts_build_messages_for_agent_prompt.zig on
 
-// -------------------------------------------------------------------------
-// ProgressiveToolRule + SkillsToolRule + MemoryToolRule +
-// ReadWorkspaceSessionToolRule + GitWorktreeToolRule + PullRequestToolRule —
+// ProgressiveToolRule + SkillsToolRule + MemoryToolRule + ReadWorkspaceSessionToolRule + GitWorktreeToolRule + PullRequestToolRule —
 
 test "ProgressiveToolRule names the special tool and the three-call loop" {
     const prompt: []const u8 = ProgressiveToolRule;
@@ -1330,21 +1243,18 @@ test "SkillsToolRule names the special skills and the search->use loop" {
     // Mandate: load the skill the task needs, before improvising.
     try std.testing.expect(contains(prompt, "When to load"));
     try std.testing.expect(contains(prompt, "blocking, not advisory"));
-    // `use_skill` takes ONE argument — the name `search_skills` returned,
-    // verbatim.
+    // `use_skill` takes ONE argument — the name `search_skills` returned, verbatim.
     try std.testing.expect(contains(prompt, "verbatim"));
     try std.testing.expect(!contains(prompt, "SKILL.MD"));
     try std.testing.expect(!contains(prompt, ".nalar/skills/"));
     try std.testing.expect(!contains(prompt, "is_global"));
-    // Workspace scoping, and a miss is a real miss — no second tier to fall
-    // back to.
+    // Workspace scoping, and a miss is a real miss — no second tier to fall back to.
     try std.testing.expect(contains(prompt, "workspace"));
     try std.testing.expect(contains(prompt, "genuinely not found"));
 }
 
 test "SkillsToolRule does not pre-list skills (no Available Skills listing)" {
-    // A per-user listing in the system prompt would grow with the skill
-    // library and bust the cacheable prefix. Discovery must stay a tool call.
+    // A per-user listing in the system prompt would grow with the skill library and bust the cacheable prefix.
     const prompt: []const u8 = SkillsToolRule;
     try std.testing.expect(!contains(prompt, "## Available Skills"));
     try std.testing.expect(!contains(prompt, "## Loaded Skills"));
@@ -1352,7 +1262,6 @@ test "SkillsToolRule does not pre-list skills (no Available Skills listing)" {
     try std.testing.expect(contains(prompt, "Nothing is pre-injected"));
 }
 
-// -------------------------------------------------------------------------
 // Live-path coverage for the six tool mandates.
 
 const prompt_migration = @import("../../migrations/migration.zig");
@@ -1405,8 +1314,7 @@ const mandate_order = [_][]const u8{
     AutoMergeToolRule,
 };
 
-/// Assemble one session's system prompt through the live path and hand
-/// back an owned copy of the returned bytes.
+/// Assemble one session's system prompt through the live path and hand back an owned copy of the returned bytes.
 fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8, tools: []AgentTool) ![]u8 {
     return buildSystemPromptFor(ctx, cwd, session_id, session_id, false, tools);
 }
@@ -1472,9 +1380,7 @@ test "buildMessages: the nine mandates reach the live prompt, ungated by the too
         makeTool("set_pull_request", "Bind a PR to this session"),
         makeTool("status_pull_request", "Read the bound PR's live status"),
     };
-    // ... and one with none of them. The mandates are deliberately NOT
-    // gated: a per-agent bit inside the cacheable prefix would fragment
-    // the prompt cache once per distinct tool set.
+    // ... and one with none of them.
     var with_none = [_]AgentTool{
         makeTool("read_file", "Read a file"),
         makeTool("text_replace", "Edit a file"),
@@ -1486,23 +1392,19 @@ test "buildMessages: the nine mandates reach the live prompt, ungated by the too
     defer std.testing.allocator.free(bare);
 
     for ([_][]const u8{ full, bare }) |prompt| {
-        // Every mandate is present, in append order, and non-overlapping —
-        // a dropped or reordered append fails here.
+        // Every mandate is present, in append order, and non-overlapping — a dropped or reordered append fails here.
         var consumed: usize = 0;
         for (mandate_order) |rule| {
             const at = std.mem.indexOf(u8, prompt[consumed..], rule) orelse
                 return error.MandateMissingFromLivePrompt;
             consumed += at + rule.len;
         }
-        // No skill bodies / no skills listing injected: discovery stays a
-        // `search_skills` call so the prefix does not grow with the user's
-        // skill library.
+        // No skill bodies / no skills listing injected: discovery stays a `search_skills` call so the prefix does not grow with the user's skill library.
         try std.testing.expect(!contains(prompt, "## Loaded Skills"));
         try std.testing.expect(!contains(prompt, "## Available Skills"));
     }
 
-    // Non-vacuity: the tool list really did change the prompt (Task
-    // Planning is gated on `update_plan`), yet every mandate survived it.
+    // Non-vacuity: the tool list really did change the prompt (Task Planning is gated on `update_plan`), yet every mandate survived it.
     try std.testing.expect(contains(full, "## Task Planning"));
     try std.testing.expect(!contains(bare, "## Task Planning"));
 }
@@ -1521,8 +1423,7 @@ test "buildMessages: only the main agent's prompt teaches the ask_user block" {
 
     var tools = [_]AgentTool{makeTool("command", "Run a shell command")};
 
-    // The desktop chat sends parent == session with is_sub_agent = false
-    // (`src/app.zig`), so a non-empty parent must not hide the rule.
+    // The desktop chat sends parent == session with is_sub_agent = false (`src/app.zig`), so a non-empty parent must not hide the rule.
     const main_agent = try buildSystemPromptFor(&ctx, cwd, "sess_ask_main", "sess_ask_main", false, &tools);
     defer std.testing.allocator.free(main_agent);
     try std.testing.expect(contains(main_agent, AskUserRule));
@@ -1531,8 +1432,7 @@ test "buildMessages: only the main agent's prompt teaches the ask_user block" {
     defer std.testing.allocator.free(sub_agent);
     try std.testing.expect(!contains(sub_agent, AskUserRule));
 
-    // Non-vacuity: the sub-agent got a real prompt, and it differs from the
-    // main agent's only where this rule lives.
+    // Non-vacuity: the sub-agent got a real prompt, and it differs from the main agent's only where this rule lives.
     try std.testing.expect(contains(sub_agent, TemporaryFilesRule));
     try std.testing.expect(!std.mem.eql(u8, main_agent, sub_agent));
 }
@@ -1549,8 +1449,7 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
     const root = try std.testing.allocator.dupe(u8, path_buf[0..n]);
     defer std.testing.allocator.free(root);
 
-    // Two sessions that differ only in their working directory — the simplest
-    // per-session payload.
+    // Two sessions that differ only in their working directory — the simplest per-session payload.
     const cwd_a = try std.fs.path.join(std.testing.allocator, &[_][]const u8{ root, "session-a" });
     defer std.testing.allocator.free(cwd_a);
     const cwd_b = try std.fs.path.join(std.testing.allocator, &[_][]const u8{ root, "session-b" });
@@ -1569,12 +1468,10 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
     const prefix_len = tail + PullRequestToolRule.len;
     try std.testing.expect(prefix_len <= a.len);
     try std.testing.expect(prefix_len <= b.len);
-    // Every byte up to the end of the last mandate is shared, so the block
-    // the provider caches is one hit rather than one per session.
+    // Every byte up to the end of the last mandate is shared, so the block the provider caches is one hit rather than one per session.
     try std.testing.expectEqualStrings(a[0..prefix_len], b[0..prefix_len]);
 
-    // The prompts really do differ, and the difference starts strictly
-    // AFTER that prefix: a per-session mutation cannot invalidate it.
+    // The prompts really do differ, and the difference starts strictly AFTER that prefix: a per-session mutation cannot invalidate it.
     try std.testing.expect(!std.mem.eql(u8, a, b));
     const cwd_a_at = std.mem.indexOf(u8, a, cwd_a) orelse return error.CwdMissing;
     const cwd_b_at = std.mem.indexOf(u8, b, cwd_b) orelse return error.CwdMissing;
@@ -1585,8 +1482,7 @@ test "buildMessages: the mandates hold a byte-identical prefix across sessions" 
 }
 
 test "the tools the mandates name are really in the equipped set" {
-    // A mandate that names a tool the agent does not carry is a lie the model
-    // can do nothing about.
+    // A mandate that names a tool the agent does not carry is a lie the model can do nothing about.
     const tools_equipped = @import("tools/tools_equipped.zig");
     const equipped = tools_equipped.equips(std.testing.allocator);
     defer std.testing.allocator.free(equipped);
@@ -1641,9 +1537,7 @@ test "ReadWorkspaceSessionToolRule names the tool and the four behaviors" {
     try std.testing.expect(i_behaviors < i_search);
     try std.testing.expect(i_search < i_read);
     try std.testing.expect(i_read < i_within);
-    // The live filters must be named — the old "compacted_messages
-    // envelopes" phrasing was stale jargon for a concept the tool now
-    // exposes as live_only / compacted_only.
+    // The live filters must be named — the old "compacted_messages envelopes" phrasing was stale jargon for a concept the tool now exposes as live_only / …
     try std.testing.expect(contains(prompt, "live_only"));
     try std.testing.expect(contains(prompt, "compacted_only"));
     try std.testing.expect(!contains(prompt, "compacted_messages"));
@@ -1659,15 +1553,13 @@ test "SkillEvalToolRule names the tool and its non-negotiable behaviors" {
     try std.testing.expect(contains(prompt, "Once per task"));
     // The agent chooses WHEN, not the verdict — that is the whole design.
     try std.testing.expect(contains(prompt, "You are not the judge"));
-    // It must NOT be told to pass the skill list: the tool reads the ledger,
-    // which is what stops an agent omitting the skill it worked around.
+    // It must NOT be told to pass the skill list: the tool reads the ledger, which is what stops an agent omitting the skill it worked around.
     try std.testing.expect(contains(prompt, "you cannot"));
     try std.testing.expect(contains(prompt, "Self-check"));
     // It must be honest about the needs_human outcome rather than hiding it.
     try std.testing.expect(contains(prompt, "needs_human"));
 }
 
-// -------------------------------------------------------------------------
 // SkillWriteToolRule — the WRITE half of the skills loop.
 
 test "SkillWriteToolRule drives the create -> eval -> edit loop" {
@@ -1675,8 +1567,7 @@ test "SkillWriteToolRule drives the create -> eval -> edit loop" {
 
     try std.testing.expect(contains(prompt, "add_skill"));
     try std.testing.expect(contains(prompt, "edit_skill"));
-    // The loop closes on the eval tool: an outdated skill is fixed, not
-    // re-litigated.
+    // The loop closes on the eval tool: an outdated skill is fixed, not re-litigated.
     try std.testing.expect(contains(prompt, "run_skill_eval"));
     const i_write_action = std.mem.indexOf(u8, prompt, "**When to write").?;
     const i_dup_check = std.mem.indexOf(u8, prompt, "check for a near-duplicate").?;
@@ -1690,31 +1581,25 @@ test "SkillWriteToolRule drives the create -> eval -> edit loop" {
 test "SkillWriteToolRule states when NOT to write and what a skill body needs" {
     const prompt: []const u8 = SkillWriteToolRule;
 
-    // The anti-bloat half. A write mandate without a stop condition trains
-    // the agent to save every routine task, and every saved skill is a future
-    // `search_skills` row that dilutes the ones that matter.
+    // The anti-bloat half.
     try std.testing.expect(contains(prompt, "Do NOT write"));
     try std.testing.expect(contains(prompt, "fact"));
     // Facts go to save_memory; procedures go to skills.
     try std.testing.expect(contains(prompt, "save_memory"));
-    // Format: frontmatter `description` is what search_skills results are read
-    // from, so the rule has to name it.
+    // Format: frontmatter `description` is what search_skills results are read from, so the rule has to name it.
     try std.testing.expect(contains(prompt, "description"));
     try std.testing.expect(contains(prompt, "name:"));
     try std.testing.expect(contains(prompt, "## Procedure"));
     try std.testing.expect(contains(prompt, "## Pitfalls"));
     // Self-check, like every other mandate in this block.
     try std.testing.expect(contains(prompt, "Self-check"));
-    // add_skill / edit_skill / remove_skill all land one row in THIS
-    // workspace.
+    // add_skill / edit_skill / remove_skill all land one row in THIS workspace.
     try std.testing.expect(!contains(prompt, "SKILL.MD"));
     try std.testing.expect(!contains(prompt, ".nalar/skills/"));
     try std.testing.expect(!contains(prompt, "is_global"));
 }
 
-// -------------------------------------------------------------------------
-// GitWorktreeToolRule + PullRequestToolRule — the session VCS-binding
-// mandates.
+// GitWorktreeToolRule + PullRequestToolRule — the session VCS-binding mandates.
 
 test "GitWorktreeToolRule mandates the tool, forbids the hand-rolled command, names the hatch" {
     const prompt: []const u8 = GitWorktreeToolRule;
@@ -1724,17 +1609,13 @@ test "GitWorktreeToolRule mandates the tool, forbids the hand-rolled command, na
     try std.testing.expect(contains(prompt, "MUST use"));
     try std.testing.expect(contains(prompt, "NOT a substitute"));
     try std.testing.expect(contains(prompt, "git worktree"));
-    // The reason, so a paraphrased rule still carries it: it is the session
-    // BINDING the tool writes — what the UI and the other tools read — not
-    // merely the directory.
+    // The reason, so a paraphrased rule still carries it: it is the session BINDING the tool writes — what the UI and the other tools read — not merely the directory.
     try std.testing.expect(contains(prompt, "sessions.git_worktree_cwd"));
     // The task-note contract the kanban dialog bakes in.
     try std.testing.expect(contains(prompt, "#Notes UseGitWorktree"));
     try std.testing.expect(contains(prompt, "Base:"));
     try std.testing.expect(contains(prompt, "clear=true"));
-    // The escape hatch: this tool is NOT in DEFAULT_AGENT_TOOLS, so an
-    // unconditional rule naming it is only honest if it also says how to
-    // equip it.
+    // The escape hatch: this tool is NOT in DEFAULT_AGENT_TOOLS, so an unconditional rule naming it is only honest if it also says how to equip it.
     try std.testing.expect(contains(prompt, "search_tool"));
     try std.testing.expect(contains(prompt, "use_tool"));
     try std.testing.expect(contains(prompt, "Self-check"));
@@ -1745,8 +1626,7 @@ test "PullRequestToolRule mandates the binding, keeps creation with the forge CL
 
     try std.testing.expect(contains(prompt, "set_pull_request"));
     try std.testing.expect(contains(prompt, "MUST call"));
-    // Creation is NOT this tool's job — the rule must not send the model to
-    // `set_pull_request` to open a PR that does not exist yet.
+    // Creation is NOT this tool's job — the rule must not send the model to `set_pull_request` to open a PR that does not exist yet.
     try std.testing.expect(contains(prompt, "gh pr create"));
     try std.testing.expect(contains(prompt, "glab mr create"));
     try std.testing.expect(contains(prompt, "only attaches"));

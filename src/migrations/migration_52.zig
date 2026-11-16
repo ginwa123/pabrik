@@ -14,15 +14,12 @@ pub const Migration052DropSessionIdFromWorkspaceItemTasks = struct {
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         // Drop the redundant `session_id` column on `workspace_item_tasks`.
         try dropColumnIfExists(.{ .db = db }, allocator, "workspace_item_tasks", "session_id");
-        // The session_id index (created in Migration 034) is now
-        // unused and would just slow writes down. Drop it.
+        // The session_id index (created in Migration 034) is now unused and would just slow writes down.
         try db.exec(allocator,
             "DROP INDEX IF EXISTS idx_workspace_item_tasks_session_id",
             &[_][]const u8{},
         );
-        // ANALYZE so the query planner drops the dropped index from
-        // its stats. Mirrors the ANALYZE-after-DDL pattern used by
-        // Migrations 041/042/043/048/049/050/051.
+        // ANALYZE so the query planner drops the dropped index from its stats.
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

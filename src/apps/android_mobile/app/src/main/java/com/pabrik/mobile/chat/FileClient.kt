@@ -35,21 +35,7 @@ sealed interface FileFetchResult {
     data class Unavailable(val message: String) : FileFetchResult
 }
 
-/**
- * Fetches the bytes behind a `present_files` entry.
- *
- * The endpoint is `GET /api/files/download` (see
- * `src/http_handlers/files_download.zig`), which is cookie-authenticated like
- * every other `/api` route and sandboxed to the *session's* working directory.
- * That session is why this takes a `sessionId` per call rather than holding
- * one: a card can outlive the chat that opened it, and re-reading the id from
- * the current state at click time is how a preview ends up pointed at the wrong
- * workspace.
- *
- * It goes through the binary exchange rather than `AuthTransport` for the
- * reason in `HttpMessages.kt`: a PNG decoded as UTF-8 is a file of replacement
- * characters.
- */
+/** Fetches the bytes behind a `present_files` entry. */
 class FileClient(
     private val sessionStore: SessionStore,
     private val baseUrlProvider: () -> String = { AuthConfig.BASE_URL },
@@ -71,16 +57,12 @@ class FileClient(
 
         val headers = listOf(
             HttpHeader("Cookie", "${AuthConfig.SESSION_COOKIE_NAME}=$cookie"),
-            // The endpoint serves whatever the file is; asking for JSON is how
-            // a viewer app ends up handed a parse error instead of a PDF.
+            // The endpoint serves whatever the file is; asking for JSON is how a viewer app ends up handed a parse error instead of a PDF.
             HttpHeader("Accept", "*/*"),
         )
 
         val response = try {
-            // Same per-call resolution as every other transport in the app: a
-            // file card is a long-lived composable, and a host captured when it
-            // was first composed would download from the server that card was
-            // opened against.
+            // Same per-call resolution as every other transport in the app: a file card is a long-lived composable, and a host captured when it was first composed would …
             val baseUrl = requireUsableBaseUrl(baseUrlProvider())
             transport.execute(
                 HttpRequestSpec(
@@ -103,14 +85,7 @@ class FileClient(
         return interpret(response.statusCode, response.contentType, response.body)
     }
 
-    /**
-     * The one place a status code becomes a verdict.
-     *
-     * The 400/403/404/413 cases are the sandbox talking: a path outside the
-     * session's working directory, a file that has since been deleted, one
-     * bigger than the 50 MiB cap. None of them are worth retrying, so they get
-     * their own words instead of the generic "try again".
-     */
+    /** The one place a status code becomes a verdict. */
     private fun interpret(statusCode: Int, contentType: String, bytes: ByteArray): FileFetchResult {
         if (statusCode == HttpURLConnection.HTTP_UNAUTHORIZED) return FileFetchResult.SignedOut
         if (statusCode == HttpURLConnection.HTTP_FORBIDDEN) {

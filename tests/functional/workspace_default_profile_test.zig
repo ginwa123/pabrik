@@ -1,5 +1,4 @@
-//! Functional test: a chat's DEFAULT model is the ACTIVE PROFILE OF ITS
-//! WORKSPACE (Settings -> Workspace -> "Set active"), not the user-level one.
+//! Functional test: a chat's DEFAULT model is the ACTIVE PROFILE OF ITS WORKSPACE (Settings -> Workspace -> "Set active"), not the user-level one.
 
 const std = @import("std");
 const testing = std.testing;
@@ -20,15 +19,12 @@ const WS_DEFAULT_MODEL = "workspace-active-model";
 const EXPLICIT_MODEL = "explicit-pick-model";
 const USER_KEY = "sk-user-level-key-not-real";
 
-/// Port 1 is never answered, so a turn dispatched to the user-level default
-/// cannot produce a stub hit. That is what makes "the stub recorded nothing"
-/// a usable red signal instead of a timing artefact.
+/// Port 1 is never answered, so a turn dispatched to the user-level default cannot produce a stub hit.
 const DEAD_ENDPOINT = "http://127.0.0.1:1";
 
 const MAX_HEAD_BYTES = 1 << 18;
 
-// The reply is a `const`, so its `model` is baked in; every assertion is on the
-// REQUEST the stub recorded, never on this body.
+// The reply is a `const`, so its `model` is baked in; every assertion is on the REQUEST the stub recorded, never on this body.
 const SSE_OK =
     "data: {\"id\":\"chatcmpl-wsdefault\",\"object\":\"chat.completion.chunk\"," ++
     "\"model\":\"stub-reply\",\"choices\":[{\"index\":0," ++
@@ -39,9 +35,7 @@ const SSE_OK =
     "\"finish_reason\":\"stop\"}]}\n\n" ++
     "data: [DONE]\n\n";
 
-// ============================================================================
 // Stub upstream (same shape as kanban_task_auth_config_test.zig)
-// ============================================================================
 
 const Recorded = struct {
     head: []u8,
@@ -217,9 +211,7 @@ fn recordedModel(body: []const u8) ?[]const u8 {
     };
 }
 
-// ============================================================================
 // Auth-mode wire helpers (mirrors kanban_task_auth_config_test.zig)
-// ============================================================================
 
 fn rawHttp(
     h: *Harness,
@@ -389,9 +381,7 @@ fn logTail(h: *Harness) ![]u8 {
     return h.tailLog(io, gpa, 4000);
 }
 
-// ============================================================================
 // Test
-// ============================================================================
 
 test "a chat's default model is its workspace's active profile" {
     try harness.requirePabrikBin(io, gpa);
@@ -415,9 +405,7 @@ test "a chat's default model is its workspace's active profile" {
     const stub_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/v1/chat/completions", .{stub.port});
     defer gpa.free(stub_url);
 
-    // 1. The user saves their profiles through the real Settings wire. The
-    //    user-level ACTIVE profile points at the dead endpoint: if any turn
-    //    below runs on it, the stub records nothing.
+    // 1.
     {
         const put_body = try std.fmt.allocPrint(
             gpa,
@@ -451,9 +439,7 @@ test "a chat's default model is its workspace's active profile" {
     const kanban_id = try createKanban(&h, cookie, ws_id, "sprint-default");
     defer gpa.free(kanban_id);
 
-    // 3. THE SETTING UNDER TEST — Settings -> Workspace -> "Set active", which
-    //    writes the workspace's own copy. The exact body the settings page PUTs:
-    //    the whole workspace-scoped config it loaded, `active_profile` moved.
+    // 3.
     {
         const body = try std.fmt.allocPrint(
             gpa,
@@ -476,9 +462,7 @@ test "a chat's default model is its workspace's active profile" {
         defer r.deinit();
     }
 
-    // 4. A card created the way the dialog creates one — with NO profile
-    //    picker value ("Default" in the dialog), which is the exact body the
-    //    frontend's `create_session` mode sends.
+    // 4.
     const card_body =
         "{\"mode\":\"create_session\",\"name\":\"default card\"," ++
         "\"description\":\"which model am I on?\"}";
@@ -500,9 +484,7 @@ test "a chat's default model is its workspace's active profile" {
         }
     }
 
-    // 5. The composer's "Default" send: `selected_profile_model` omitted, which
-    //    is what `api.sendChatMessage` puts on the wire when the chip has no
-    //    per-session pick.
+    // 5.
     {
         const body = try std.fmt.allocPrint(
             gpa,
@@ -556,15 +538,12 @@ test "a chat's default model is its workspace's active profile" {
             );
             return error.TestUnexpectedResult;
         }
-        // Positive control on the other half of the merge: the overlay only
-        // named the active profile, so the credential still comes from the
-        // user config.
+        // Positive control on the other half of the merge: the overlay only named the active profile, so the credential still comes from the user config.
         const auth = headerValue(rec.head, "authorization") orelse "";
         try testing.expect(std.mem.indexOf(u8, auth, USER_KEY) != null);
     }
 
-    // 6. An EXPLICIT per-session pick still wins over the workspace default —
-    //    the fix must not flatten the cascade into "always the workspace's".
+    // 6.
     {
         const body = try std.fmt.allocPrint(
             gpa,

@@ -1,6 +1,4 @@
-/** ReadFile.vue — an image read shows the picture. The backend answers with
- * `{path,mime,bytes,attached_as}` and rides the bytes on the tool result's `image_url`, so the
- * card has no `content` to render and used to show `(empty)`. */
+/** ReadFile.vue — an image read shows the picture. */
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

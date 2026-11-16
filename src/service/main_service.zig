@@ -1,5 +1,4 @@
-// src/service/main_service.zig Implements the `pabrik service
-// {start,stop,status,restart}` subcommand.
+// src/service/main_service.zig Implements the `pabrik service {start,stop,status,restart}` subcommand.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,12 +11,10 @@ const cli_parse = @import("../cli/parse.zig");
 
 pub const Subcommand = union(enum) {
     start: struct {
-        /// 0 = auto-pick a random free loopback port (browser mode, plan
-        /// 2026-09-10-web-launch-toggle).
+        /// 0 = auto-pick a random free loopback port (browser mode, plan 2026-09-10-web-launch-toggle).
         port: u16 = 8081,
         no_static_dir: bool = false,
-        /// Absolute path to a static file directory to serve at `/`. When
-        /// null, the daemon serves only API endpoints (no webapp).
+        /// Absolute path to a static file directory to serve at `/`.
         static_dir: ?[]const u8 = null,
         /// Opt-in auth enforcement (mirrors top-level `--auth`).
         auth_enabled: bool = false,
@@ -39,8 +36,7 @@ pub const ParseError = error{
     OutOfMemory,
 };
 
-/// The verbs this parser accepts. A runtime `args[0]` picks one, and the
-/// engine then sees its name at comptime so the flag table can filter.
+/// The verbs this parser accepts.
 const Verb = enum { start, stop, restart };
 
 pub fn parseServiceSubcommand(
@@ -60,8 +56,7 @@ pub fn parseServiceSubcommand(
     return error.UnknownSubcommand;
 }
 
-/// Every field any `service` verb may set. The table refuses a flag the verb
-/// does not list, so a field a verb cannot set stays at its default.
+/// Every field any `service` verb may set.
 const ServiceFlags = struct {
     port: u16 = 8081,
     no_static_dir: bool = false,
@@ -102,13 +97,11 @@ pub const StartError = anyerror;
 pub const StartOptions = struct {
     port: u16,
     no_static_dir: bool,
-    /// Optional absolute path to a static-dir. Passed through to
-    /// runPabrikServer as `--static-dir`. See Subcommand.start.static_dir.
+    /// Optional absolute path to a static-dir.
     static_dir: ?[]const u8 = null,
     state_path: []const u8,
     log_path: []const u8,
-    /// Injectable shutdown callback. Called from the SIGTERM signal handler
-    /// to gracefully close the server and remove the state file.
+    /// Injectable shutdown callback.
     on_shutdown: *const fn () void,
 };
 
@@ -144,9 +137,7 @@ pub fn serviceStart(
     // 4. Install the shutdown-signal handler.
     signal_handlers.installSigtermHandler(opts.on_shutdown);
 
-    // 5. Hand off to the caller-supplied server run-loop. This blocks
-    //    until the server stops (typical: shutdown HTTP endpoint
-    //    called, or SIGTERM received).
+    // 5.
 }
 
 pub const StopError = error{OutOfMemory};
@@ -156,9 +147,7 @@ pub const StopOptions = struct {
     state_path: []const u8,
 };
 
-/// Stop the pabrik service. Idempotent: if no state file exists, this
-/// is a no-op (informational log). If the pid in the state file is
-/// dead, we treat it as stale and remove the file (no error).
+/// Stop the pabrik service.
 pub fn serviceStop(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -180,9 +169,7 @@ pub fn serviceStop(
         _ = helpers.process_status.killProcess(state.pid);
     } else {
         _ = std.c.kill(state.pid, @as(std.c.SIG, @enumFromInt(15))); // SIGTERM
-        // Monotonic ns for deadline tracking (CLOCK_REALTIME can jump
-        // backwards under NTP step — bad for `start + offset` deadlines;
-        // CLOCK_MONOTONIC is immune).
+        // Monotonic ns for deadline tracking (CLOCK_REALTIME can jump backwards under NTP step — bad for `start + offset` deadlines; CLOCK_MONOTONIC is immune).
         const start_ns: u64 = helpers.monotonicTimestampNanos();
         const deadline_ns: u64 = start_ns +
             @as(u64, opts.graceful_timeout_ms) * std.time.ns_per_ms;
@@ -198,8 +185,7 @@ pub fn serviceStop(
     std.Io.Dir.cwd().deleteFile(io, opts.state_path) catch {};
 }
 
-/// Report service status. Logs (using std.log) whether the service is
-/// running, stale, or absent.
+/// Report service status.
 pub fn serviceStatus(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -270,9 +256,7 @@ test "parseServiceSubcommand accepts restart with --port and --graceful-timeout-
 }
 
 test "parseServiceSubcommand accepts restart --static-dir (webapp survives a restart)" {
-    // Regression: the usage text advertised --static-dir for `restart` but
-    // the parser rejected it with UnknownSubcommand, and main.zig never
-    // forwarded the value either — so a restarted daemon silently lost its
+    // Regression: the usage text advertised --static-dir for `restart` but the parser rejected it with UnknownSubcommand, and main.zig never forwarded the value …
     const cmd = try parseServiceSubcommand(&.{
         "restart", "--port", "9999", "--static-dir", "/tmp/webapp",
     });

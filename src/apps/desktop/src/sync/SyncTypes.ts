@@ -1,6 +1,4 @@
-/** Pure domain types for the sync engine, kept separate from both the
- * service definition and the engine so `SyncStore` and `SyncEngine` can
- * depend on them without an import cycle. */
+/** Pure domain types for the sync engine, kept separate from both the service definition and the engine so `SyncStore` and `SyncEngine` can depend on them without … */
 export interface Syncable {
   id: string
   /** Monotonic sort key used for older-page queries (e.g. created_at_nano). */

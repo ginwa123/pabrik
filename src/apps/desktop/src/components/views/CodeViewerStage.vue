@@ -2,8 +2,7 @@
 import CodeEditor from './CodeEditor.vue'
 import type { FolderEntry } from '../../api'
 
-/** The code viewer's three states — loading spinner, error, file — in one place, so both hosts
- * render the identical surface: - `ChatView`'s center column (beside the chat-owned right sidebar). */
+/** The code viewer's three states — loading spinner, error, file — in one place, so both hosts render the identical surface: - `ChatView`'s center column (beside … */
 defineProps<{
   file: FolderEntry
   content: string

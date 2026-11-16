@@ -1,12 +1,8 @@
-//! Repository config can make `git` execute code: `core.fsmonitor`, hooks, and
-//! `diff.external` / `diff.<driver>.textconv`. A command-line `-c` outranks every
-//! config file, so the argv prefix is policy.
+//! Repository config can make `git` execute code: `core.fsmonitor`, hooks, and `diff.external` / `diff.<driver>.textconv`.
 
 const std = @import("std");
 
-/// Global options that disable the repo-controlled exec paths. Order matters
-/// only in that each `-c` owns the token after it; git reads them before the
-/// subcommand, so callers append these directly after the program name.
+/// Global options that disable the repo-controlled exec paths.
 const args_tuple = .{
     "-c", "core.fsmonitor=false",
     "-c", "core.hooksPath=/dev/null",
@@ -23,9 +19,7 @@ pub const git_prefix = .{"git"} ++ args_tuple;
 
 pub const program = "git";
 
-/// Per-invocation opt-outs that keep `diff`, `log` and `show` on git's own
-/// engine. They cannot be `-c <key>=`: `-c diff.external=` sets the EMPTY
-/// string, which git runs as a program named "" — every diff then dies.
+/// Per-invocation opt-outs that keep `diff`, `log` and `show` on git's own engine.
 pub const diff_no_exec = [_][]const u8{ "--no-ext-diff", "--no-textconv" };
 
 /// Subcommands that can print a patch, and so consult those settings.
@@ -40,8 +34,6 @@ pub fn emitsPatch(subcommand: []const u8) bool {
 }
 
 /// `args` plus `diff_no_exec` after the subcommand — an owned copy either way.
-/// The flags are options, so they land before any later `--`; after it git
-/// would read them as pathspecs.
 pub fn hardenArgs(allocator: std.mem.Allocator, args: []const []const u8) ![]const []const u8 {
     if (args.len == 0 or !emitsPatch(args[0])) return try allocator.dupe([]const u8, args);
     var out = std.ArrayList([]const u8).empty;
@@ -52,15 +44,13 @@ pub fn hardenArgs(allocator: std.mem.Allocator, args: []const []const u8) ![]con
     return try out.toOwnedSlice(allocator);
 }
 
-/// Append `git` plus the hardening options. The caller appends `-C <dir>` and
-/// the subcommand, since every call site already builds those itself.
+/// Append `git` plus the hardening options.
 pub fn appendGit(argv: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     try argv.append(allocator, program);
     try argv.appendSlice(allocator, &CONFIG_ARGS);
 }
 
-/// Value of `-c <key>=<value>` for `key`, or null when this prefix does not
-/// set it. Exposed so a caller can assert its own site is covered.
+/// Value of `-c <key>=<value>` for `key`, or null when this prefix does not set it.
 pub fn configValue(key: []const u8) ?[]const u8 {
     var i: usize = 0;
     while (i + 1 < CONFIG_ARGS.len) : (i += 2) {
@@ -102,8 +92,6 @@ test "appendGit leaves the program first and the subcommand last" {
 }
 
 // ─── Behaviour ────────────────────────────────────────────────────────────
-// A repository whose single file is committed as "one" and then changed to
-// "two" in the work tree: a diff of it MUST report that hunk.
 
 const Repo = struct {
     dir: testing.TmpDir,
@@ -209,7 +197,6 @@ test "a subcommand that takes no diff options is handed the caller's argv unchan
     defer allocator.free(res.stdout);
     defer allocator.free(res.stderr);
 
-    // 1 = "not ignored". An injected `--no-ext-diff` would make git reject the
-    // argv instead (check-ignore parses no diff options).
+    // 1 = "not ignored".
     try testing.expectEqual(@as(u32, 1), res.term.exited);
 }

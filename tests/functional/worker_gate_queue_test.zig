@@ -1,5 +1,4 @@
-// Functional wire test: the `worker` table is the single source of truth for
-// "is this session running".
+// Functional wire test: the `worker` table is the single source of truth for "is this session running".
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,8 +9,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `POST /api/llm/session` — the composer's send path for a follow-up
-/// message on an existing session.
+/// `POST /api/llm/session` — the composer's send path for a follow-up message on an existing session.
 fn postMessage(h: *Harness, session_id: []const u8, message: []const u8) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .session_id = session_id,
@@ -24,9 +22,7 @@ fn postMessage(h: *Harness, session_id: []const u8, message: []const u8) !void {
     defer r.deinit();
 }
 
-/// Poll `cond` until it returns true or the deadline passes. `emit_run_agent`
-/// schedules the gate on a concurrent task, so the queue row lands just
-/// after the HTTP response (same write-behind shape as `waitForWorker`).
+/// Poll `cond` until it returns true or the deadline passes.
 fn pollFor(temp_dir: []const u8, sql: []const u8, timeout_ms: i64) !bool {
     const deadline = askuser.nowMs() + timeout_ms;
     while (askuser.nowMs() < deadline) {
@@ -50,9 +46,7 @@ test "follow_up_message_to_running_session_is_queued_and_starts_no_run" {
     const sid_lit = try askuser.sqlLit(session_id);
     defer gpa.free(sid_lit);
 
-    // A live loop heartbeats `last_activity_nano` (unix seconds, despite
-    // the name) every iteration: 100s old reads as running and is far
-    // from the 600s stale threshold, so the cron cannot reap it mid-test.
+    // A live loop heartbeats `last_activity_nano` (unix seconds, despite the name) every iteration: 100s old reads as running and is far from the 600s stale …
     const now_s = std.Io.Timestamp.now(io, .real).toSeconds();
     const seed_sql = try std.fmt.allocPrint(
         gpa,
@@ -62,8 +56,7 @@ test "follow_up_message_to_running_session_is_queued_and_starts_no_run" {
     defer gpa.free(seed_sql);
     try askuser.execSql(h.temp_dir, seed_sql);
 
-    // `CAST(... AS TEXT)`: `sqlite3 -json` renders INTEGER columns as JSON
-    // numbers, and `firstCellString` only accepts strings.
+    // `CAST(...
     const nano_sql = try std.fmt.allocPrint(
         gpa,
         "SELECT CAST(last_activity_nano AS TEXT) AS nano FROM worker WHERE id = {s}",
@@ -92,9 +85,7 @@ test "follow_up_message_to_running_session_is_queued_and_starts_no_run" {
     }
     try testing.expectEqual(@as(i64, 1), try askuser.scalarCount(h.temp_dir, queue_sql));
 
-    // No run started: the worker row is byte-identical (a duplicate run
-    // would have upserted `last_activity_nano` before its first LLM call)
-    // and the run wrote no history rows.
+    // No run started: the worker row is byte-identical (a duplicate run would have upserted `last_activity_nano` before its first LLM call) and the run wrote no …
     const after_nano = (try askuser.firstCellString(h.temp_dir, nano_sql, "nano")) orelse {
         std.debug.print("worker row must still exist after the follow-up\n", .{});
         return error.TestUnexpectedResult;

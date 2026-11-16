@@ -42,9 +42,7 @@ export async function getGitStatus(cwd: string): Promise<GitStatus> {
     return status
   } catch {
     recordGitFailure(cwd)
-    // Stale-while-revalidate: a failed refresh falls back to the last-known status for this cwd so
-    // the branch chip keeps showing something real instead of blanking on a transient backend
-    // error.
+    // Stale-while-revalidate: a failed refresh falls back to the last-known status for this cwd so the branch chip keeps showing something real instead of blanking …
     return readGitStatusCache(cwd) ?? gitUnavailableStatus()
   }
 }
@@ -83,15 +81,12 @@ export async function getGitChanges(cwd: string): Promise<GitChangesResponse> {
     return changes
   } catch {
     recordGitFailure(cwd)
-    // Return non-repo status on error (apiFetch also fires a toast
-    // notification on non-2xx; the empty status fallback ensures the
-    // UI doesn't crash while the user sees the error).
+    // Return non-repo status on error (apiFetch also fires a toast notification on non-2xx; the empty status fallback ensures the UI doesn't crash while the user …
     return noGitChanges()
   }
 }
 
-// Git blame — per-line author + commit time for one file, backing the
-// CodeEditor's inline blame annotation.
+// Git blame — per-line author + commit time for one file, backing the CodeEditor's inline blame annotation.
 export interface GitBlameLine {
   line: number
   commit: string
@@ -112,8 +107,7 @@ export class GitBlameError extends Data.TaggedError('GitBlameError')<{
   readonly reason: string
 }> {}
 
-/** The blame endpoint, WITH the failure in the type — no `try`/`catch`
- * (AGENTS.md, "Frontend — No `try`/`catch` in the desktop app"). */
+/** The blame endpoint, WITH the failure in the type — no `try`/`catch` (AGENTS.md, "Frontend — No `try`/`catch` in the desktop app"). */
 export function fetchGitBlameEffect(
   cwd: string,
   filePath: string,
@@ -129,8 +123,7 @@ export function fetchGitBlameEffect(
   })
 }
 
-/**  * Best-effort blame: a failure yields null (the file paints without chips) on the Effect seam, so
- * no `try`/`catch` sits between the failure and the value. The reason is logged, not discarded. */
+/** Best-effort blame: a failure yields null (the file paints without chips) on the Effect seam, so no `try`/`catch` sits between the failure and the value. */
 export function getGitBlame(cwd: string, filePath: string): Promise<GitBlameResponse | null> {
   return Effect.runPromise(
     fetchGitBlameEffect(cwd, filePath).pipe(
@@ -181,20 +174,15 @@ export async function getGitWorktreeInfo(
   }
 }
 
-// ─── Git branches (kanban worktree base-branch picker) ──────────────────── Wire shape for `GET
-// /api/git/branches?path=<repo>`. Feeds the "New task" dialog's base-branch dropdown so a fresh
-// worktree can branch from e.g. `origin/main` instead of whatever the repo's current HEAD is.
+// ─── Git branches (kanban worktree base-branch picker) ────────────────────
 export interface GitBranchEntry {
-  /** Short ref name, e.g. `origin/main` or `main`. This is the exact
-   *  string baked into the create-task message's `Base:` line. */
+  /** Short ref name, e.g. `origin/main` or `main`. */
   name: string
   /** True for a remote-tracking ref (`origin/...`). */
   is_remote: boolean
-  /** True for the repo's currently checked-out branch (`''` in a bare
-   *  repo / detached HEAD — no row is highlighted). */
+  /** True for the repo's currently checked-out branch (`''` in a bare repo / detached HEAD — no row is highlighted). */
   is_current: boolean
-  /** True for the detected default base (`origin/main` → … ). The
-   *  component uses this to preselect a sensible value. */
+  /** True for the detected default base (`origin/main` → … ). */
   is_default: boolean
 }
 
@@ -222,9 +210,7 @@ export async function listGitBranches(repoPath: string): Promise<GitBranchesResp
   }
 }
 
-// ─── Git commits (read-only lazygit-style history) ──────────────────────── Wire shape for `GET
-// /api/git/commits?path=<repo>[&limit=][&skip=]` and `GET /api/git/commit?path=<repo>&sha=<sha>`.
-// Read-only: list + detail, no checkout/amend/rebase.
+// ─── Git commits (read-only lazygit-style history) ────────────────────────
 export interface GitCommit {
   sha: string
   short_sha: string
@@ -299,9 +285,7 @@ export interface GitCommitFileDiff {
   diff_content: string
 }
 
-/**  * Unified diff of one file at one commit (`git diff <sha>^ <sha>`, root-commit fallback via `git
- * show`). Powers the clickable file rows in the commits view. Returns null on any failure so the
- * row can show an inline error instead of crashing. */
+/** Unified diff of one file at one commit (`git diff <sha>^ <sha>`, root-commit fallback via `git show`). */
 export async function getGitCommitFileDiff(
   cwd: string,
   sha: string,

@@ -1,6 +1,4 @@
-/** FolderExplorer git signs — badges, branch header, folder counts, filter,
- * footer summary. listFolder + getGitChanges are mocked; the spec pins the
- * join between the two (absolute explorer paths vs repo-relative git paths). */
+/** FolderExplorer git signs — badges, branch header, folder counts, filter, footer summary. listFolder + getGitChanges are mocked; the spec pins the join between … */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'

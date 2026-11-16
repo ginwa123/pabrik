@@ -17,9 +17,7 @@ const props = withDefaults(
       model?: string
       base_url?: string
       api_key?: string
-      /**        * Plan 2026-07-07-compaction-inline: per-agent compaction errors. Not currently set by the
-       * backend (null is always valid; > 100 is caught at the HTTP layer), but accepted by the form
-       * so the errors prop type is future-proof. */
+      /** Plan 2026-07-07-compaction-inline: per-agent compaction errors. */
       max_capacity_tokens?: string
       compaction_threshold_percent?: string
     }
@@ -28,8 +26,7 @@ const props = withDefaults(
     nameEditable: boolean
     /** Optional slot name to render after the LLM config form (e.g. 'extra'). */
     extraSlotName?: string
-    /** The workspace whose secrets the Test probe resolves `api_key` against.
-     * Absent in user scope, where a placeholder cannot be resolved. */
+    /** The workspace whose secrets the Test probe resolves `api_key` against. */
     workspaceId?: string
     /** Tailwind max-width class for the dialog. Default `max-w-md` (28rem). */
     maxWidthClass?: 'max-w-md' | 'max-w-lg' | 'max-w-xl' | 'max-w-2xl' | 'max-w-3xl'
@@ -48,32 +45,22 @@ function updateName(val: string) {
   emit('update:modelValue', { ...props.modelValue, name: val })
 }
 function updateConfig(cfg: LlmConfig) {
-  // Editing any field invalidates a previous test result — the agent may now be misconfigured
-  // even though the prior probe succeeded. Clearing prevents stale "looks good!" badges from
-  // lulling the user into saving a broken config.
+  // Editing any field invalidates a previous test result — the agent may now be misconfigured even though the prior probe succeeded.
   testResult.value = null
   emit('update:modelValue', { ...props.modelValue, config: cfg })
 }
 
-// ─── Test button state ───────────────────────────────────────────────────── Mirrors
-// McpServerModal's probe UX: `testResult` carries the last `POST /api/llm/test` response (null =
-// "no probe yet"), `testing` is the loading flag while the HTTP call is in-flight.
+// ─── Test button state ─────────────────────────────────────────────────────
 const testResult = ref<LlmTestResult | null>(null)
 const testing = ref(false)
 
-// Test is enabled when a model is present. api_key is optional —
-// keyless local endpoints (Ollama-style) and stub upstreams are valid
-// probe targets; the backend omits the auth header when empty.
+// Test is enabled when a model is present. api_key is optional — keyless local endpoints (Ollama-style) and stub upstreams are valid probe targets; the backend …
 const testValid = computed(() => props.modelValue.config.model.trim().length > 0)
 
-// Test-result invalidation lives in the edit handlers above
-// (`updateName` / `updateConfig`): every keystroke flows through them,
-// so a stale probe can never outlive the edit that broke it.
+// Test-result invalidation lives in the edit handlers above (`updateName` / `updateConfig`): every keystroke flows through them, so a stale probe can never …
 let prevLlmModalValue = props.modelValue
 onUpdated(() => {
-  // A new modelValue object means the parent reseeded the form (e.g. a
-  // different agent to edit) — any probe result describes the previous
-  // one and must go.
+  // A new modelValue object means the parent reseeded the form (e.g. a different agent to edit) — any probe result describes the previous one and must go.
   if (props.modelValue === prevLlmModalValue) return
   prevLlmModalValue = props.modelValue
   testResult.value = null
@@ -93,8 +80,7 @@ async function onTest() {
       workspace_id: props.workspaceId,
     })
   } catch (err) {
-    // `testLlmProfile` always returns an `LlmTestResult`; this catch
-    // only fires for unexpected exceptions (network down, etc.).
+    // `testLlmProfile` always returns an `LlmTestResult`; this catch only fires for unexpected exceptions (network down, etc.).
     testResult.value = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),

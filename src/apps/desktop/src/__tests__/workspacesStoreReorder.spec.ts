@@ -1,6 +1,4 @@
-/** Unit tests for the workspaces store's reorderWorkspaces action. reorderWorkspaces is the
- * optimistic-update action for workspace-level ordering (the 2026-09-22 revamp removed the sidebar
- * UI; store + API remain). */
+/** Unit tests for the workspaces store's reorderWorkspaces action. reorderWorkspaces is the optimistic-update action for workspace-level ordering (the 2026-09-22 … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -38,9 +36,7 @@ describe('useWorkspacesStore.reorderWorkspaces()', () => {
   })
 
   function seed(store: ReturnType<typeof useWorkspacesStore>, rows: Workspace[]) {
-    // Direct mutation of the ref's inner array (Pinia setup-store
-    // pattern). Equivalent to the user creating 3 workspaces via
-    // the UI.
+    // Direct mutation of the ref's inner array (Pinia setup-store pattern).
     store.workspaces.splice(0, store.workspaces.length, ...rows)
   }
 
@@ -52,8 +48,7 @@ describe('useWorkspacesStore.reorderWorkspaces()', () => {
     // Drag ws_a to the top.
     const promise = store.reorderWorkspaces(['ws_a', 'ws_c', 'ws_b'])
 
-    // Optimistic: order is already updated, even though the
-    // promise hasn't resolved yet.
+    // Optimistic: order is already updated, even though the promise hasn't resolved yet.
     expect(store.workspaces.map((w) => w.id)).toEqual(['ws_a', 'ws_c', 'ws_b'])
     expect(reorderWorkspacesMock).toHaveBeenCalledWith(['ws_a', 'ws_c', 'ws_b'])
 

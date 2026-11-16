@@ -1,11 +1,9 @@
-// src/apps/desktop_app/browser.zig Browser-tab mode for pabrik-desktop
-// (`--browser`).
+// src/apps/desktop_app/browser.zig Browser-tab mode for pabrik-desktop (`--browser`).
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// Build the OS opener argv for `url`. Returned slice borrows `url` (no
-/// allocation) — caller must keep `url` alive until spawn returns.
+/// Build the OS opener argv for `url`.
 pub fn buildOpenArgv(url: []const u8, out: *[3][]const u8) []const []const u8 {
     if (comptime builtin.os.tag == .windows) {
         out[0] = "rundll32";
@@ -23,8 +21,7 @@ pub fn buildOpenArgv(url: []const u8, out: *[3][]const u8) []const []const u8 {
     }
 }
 
-/// Open `url` in the OS default browser (detached, no blocking).
-/// stdio is ignored so no browser stdout pollutes the desktop log.
+/// Open `url` in the OS default browser (detached, no blocking). stdio is ignored so no browser stdout pollutes the desktop log.
 pub fn openBrowser(io: std.Io, url: []const u8) !void {
     var argv_buf: [3][]const u8 = undefined;
     const argv = buildOpenArgv(url, &argv_buf);
@@ -45,9 +42,7 @@ pub fn openBrowser(io: std.Io, url: []const u8) !void {
     std.log.info("Opened browser at {s}", .{url});
 }
 
-// ---------------------------------------------------------------------------
 // Tests (run under `zig build test` via test_runner.zig)
-// ---------------------------------------------------------------------------
 
 const testing = std.testing;
 

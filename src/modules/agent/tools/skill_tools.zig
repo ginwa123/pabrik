@@ -1,5 +1,4 @@
-//! Skill agent tools: `search_skills` + `use_skill` + `remove_skill` +
-//! `add_skill` + `edit_skill` + `set_skill_metadata`.
+//! Skill agent tools: `search_skills` + `use_skill` + `remove_skill` + `add_skill` + `edit_skill` + `set_skill_metadata`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -11,11 +10,9 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const skills_store = pabrikcore.skills_store;
 const workspace_scope = pabrikcore.workspace_scope;
-/// `skills.zig` next to this file is the BODY layer (bundle
-/// materialisation), not a tool definition.
+/// `skills.zig` next to this file is the BODY layer (bundle materialisation), not a tool definition.
 const skills = @import("skills.zig");
-/// THE frontmatter parser/renderer, shared with the importer and with the
-/// `skill_metadata` projection in the store.
+/// THE frontmatter parser/renderer, shared with the importer and with the `skill_metadata` projection in the store.
 const frontmatter = pabrikcore.skill_frontmatter;
 const helpers = @import("helpers");
 const testing = std.testing;
@@ -29,9 +26,7 @@ pub fn resolveWorkspaceScope(
     db: *database.Db,
     caller_session_id: []const u8,
 ) !?[]u8 {
-    // Rejected BEFORE any DB access: `Backend.exec` binds a
-    // zero-length slice as SQL NULL, so querying with "" is not a
-    // harmless no-op.
+    // Rejected BEFORE any DB access: `Backend.exec` binds a zero-length slice as SQL NULL, so querying with "" is not a harmless no-op.
     if (caller_session_id.len == 0) return null;
     return workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id) catch null;
 }
@@ -53,8 +48,7 @@ pub fn scopeErrorJSON(
     return toolErrorJSON(allocator, tool_name, "", msg);
 }
 
-/// One JSON `{"error": "..."}` payload with every per-tool field at its
-/// not-taken default.
+/// One JSON `{"error": "..."}` payload with every per-tool field at its not-taken default.
 pub fn toolErrorJSON(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -111,9 +105,7 @@ pub fn toolErrorJSON(
 
 // ─── locked skills ───
 
-/// The refusal for a skill the human has pinned. `is_can_auto_improve` off
-/// means "the agent may not evolve this", and every agent write tool routes
-/// its refusal through here so the three cannot drift into three wordings.
+/// The refusal for a skill the human has pinned.
 fn lockedSkillJSON(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
@@ -130,8 +122,7 @@ fn lockedSkillJSON(
 
 // ─── search_skills ───
 
-/// Input for `search_skills`. Every field is optional: no args returns the
-/// first page of every skill installed in the caller's workspace.
+/// Input for `search_skills`.
 pub const SearchSkillsInput = struct {
     query: ?[]const u8 = null,
     literal: ?bool = null,
@@ -190,43 +181,33 @@ pub const search_skills_tool = AgentTool{
 
 // ─── use_skill ───
 
-/// Input for `use_skill`. The name is the whole handle — a skill is a
-/// row keyed by `(workspace_id, name)`, not a file.
+/// Input for `use_skill`.
 pub const UseSkillInput = struct {
     name: []const u8 = "",
 };
 
-/// One `skill_metadata` row as the model sees it. The key is already in
-/// `content`, but the parsed value is not: `tags` and `license` reach the
-/// model as data instead of as a block to re-read.
+/// One `skill_metadata` row as the model sees it.
 pub const SkillMetadataJSON = struct {
     key: []const u8,
     value: []const u8,
 };
 
-/// JSON payload for `use_skill` results. `asset_dir` is `null` for a
-/// single-file skill: there is no directory in that case at all, rather
-/// than an empty one that would read as "a bundle with nothing in it".
+/// JSON payload for `use_skill` results.
 pub const UseSkillJSON = struct {
     skill_name: []const u8,
     content: []const u8,
     loaded: bool,
-    /// The skill's `skill_metadata`, key-ordered. Empty for a skill whose
-    /// frontmatter carries nothing but its name and description.
+    /// The skill's `skill_metadata`, key-ordered.
     metadata: []const SkillMetadataJSON = &.{},
-    /// Absolute path of the materialised companion files, when the skill
-    /// is a bundle. This is a MATERIALISATION created per load, not a
-    /// location of record — it may be reaped between turns.
+    /// Absolute path of the materialised companion files, when the skill is a bundle.
     asset_dir: ?[]const u8 = null,
     asset_count: usize = 0,
     @"error": ?[]const u8 = null,
-    /// The workspace's other skill names, on a not-found. "No such skill"
-    /// is only actionable if the model can see what DOES exist.
+    /// The workspace's other skill names, on a not-found.
     available_skills: ?[]const []const u8 = null,
 };
 
-/// Parsed shape of `execute_use_skill_to_string` output, for tests and
-/// for the exec wrapper's auto-save pass.
+/// Parsed shape of `execute_use_skill_to_string` output, for tests and for the exec wrapper's auto-save pass.
 pub const UseSkillOutput = struct {
     skill_name: []const u8 = "",
     content: []const u8 = "",
@@ -269,8 +250,7 @@ pub const use_skill_tool = AgentTool{
     },
 };
 
-/// Execute `use_skill`. Returns an inner JSON string the exec wrapper embeds.
-/// Caller owns the returned memory and must free it.
+/// Execute `use_skill`.
 pub fn execute_use_skill_to_string(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -280,9 +260,7 @@ pub fn execute_use_skill_to_string(
 ) ![]const u8 {
     const name = std.mem.trim(u8, input.name, " \t\n\r");
     if (name.len == 0) return try toolErrorJSON(allocator, "use_skill", "", USE_SKILL_MISSING_NAME);
-    // Not a path segment any more, but it IS the primary key of the row and
-    // the literal argument of every subsequent lookup, so an empty or
-    // malformed value is still worth naming rather than reporting as "not
+    // Not a path segment any more, but it IS the primary key of the row and the literal argument of every subsequent lookup, so an empty or malformed value is still …
     if (!skills_store.isValidSkillName(name)) {
         return try toolErrorJSON(allocator, "use_skill", "", USE_SKILL_MISSING_NAME);
     }
@@ -299,9 +277,7 @@ pub fn execute_use_skill_to_string(
     };
     defer skills_store.freeSkillRow(allocator, row);
 
-    // A bundle's body refers to its companions by relative path
-    // (`scripts/run_eval.py`), so those rows have to exist on disk before the
-    // model can follow them.
+    // A bundle's body refers to its companions by relative path (`scripts/run_eval.py`), so those rows have to exist on disk before the model can follow them.
     var asset_dir: ?[]const u8 = null;
     // The STRING is ours to free once the payload has copied it.
     defer if (asset_dir) |d| allocator.free(d);
@@ -310,9 +286,7 @@ pub fn execute_use_skill_to_string(
     defer skills_store.freeSkillAssetRows(allocator, assets);
     if (assets.len > 0) {
         const materialized = skills.materializeAssetDir(io, allocator, name, assets) catch |err| {
-            // A refused bundle is a real failure: returning the body with
-            // no directory would hand the model instructions to run a
-            // script that is not there.
+            // A refused bundle is a real failure: returning the body with no directory would hand the model instructions to run a script that is not there.
             const detail = try std.fmt.allocPrint(allocator, "{s}: could not materialise this skill's {d} companion file(s).", .{ @errorName(err), assets.len });
             defer allocator.free(detail);
             return try toolErrorJSON(allocator, "use_skill", name, detail);
@@ -343,9 +317,7 @@ pub fn execute_use_skill_to_string(
     }, .{});
 }
 
-/// A skill's stored metadata on the wire shape. Owned; free with
-/// `freeMetadataJSON`. A store failure yields an empty list, not an error:
-/// the body the caller already has IS the instruction set.
+/// A skill's stored metadata on the wire shape.
 fn loadMetadataJSON(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -384,17 +356,14 @@ fn freeMetadataJSON(allocator: std.mem.Allocator, metadata: []const SkillMetadat
     if (metadata.len > 0) allocator.free(metadata);
 }
 
-/// The not-found payload: the truthful "there is no such skill here" shape,
-/// plus the names that DO exist in this workspace. The list is the whole
-/// point.
+/// The not-found payload: the truthful "there is no such skill here" shape, plus the names that DO exist in this workspace.
 fn useSkillNotFound(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
     name: []const u8,
 ) ![]const u8 {
-    // The names are BORROWED from the store rows, so the rows have to outlive
-    // the `Stringify` below.
+    // The names are BORROWED from the store rows, so the rows have to outlive the `Stringify` below.
     var rows: ?[]skills_store.SkillRow = null;
     defer if (rows) |r| skills_store.freeSkillRows(allocator, r);
     var names: std.ArrayList([]const u8) = .empty;
@@ -429,8 +398,7 @@ pub const RemoveSkillInput = struct {
     skill_name: []const u8,
 };
 
-/// JSON payload for `remove_skill` results. No `path`: there is no
-/// directory any more, so there is nothing truthful to echo.
+/// JSON payload for `remove_skill` results.
 pub const RemoveSkillJSON = struct {
     skill_name: []const u8,
     removed: bool,
@@ -475,8 +443,7 @@ pub const remove_skill_tool = AgentTool{
     },
 };
 
-/// Execute `remove_skill`. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned memory and must free it.
+/// Execute `remove_skill`.
 pub fn execute_remove_skill_to_string(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -509,9 +476,7 @@ pub fn execute_remove_skill_to_string(
     };
     defer skills_store.freeSkillRow(allocator, existing);
 
-    // A delete is the most destructive write there is, so a pinned skill is
-    // off-limits for it too — otherwise "remove then re-add" walks straight
-    // around the lock.
+    // A delete is the most destructive write there is, so a pinned skill is off-limits for it too — otherwise "remove then re-add" walks straight around the lock.
     if (!existing.is_can_auto_improve) {
         return try lockedSkillJSON(allocator, "remove_skill", name);
     }
@@ -536,8 +501,6 @@ pub fn execute_remove_skill_to_string(
 }
 
 // ─── shared argument resolution ──────────────────────────────────────────
-// `add_skill` / `edit_skill` are the only tools a model calls with
-// hand-written prose, and the two mistakes it makes most are both handled
 
 /// The first of `args` that is not empty, else null. Borrowed.
 fn firstNonEmpty(args: []const ?[]const u8) ?[]const u8 {
@@ -550,18 +513,13 @@ fn firstNonEmpty(args: []const ?[]const u8) ?[]const u8 {
 
 // ─── add_skill ───
 
-/// Input for `add_skill`. Every field carries a default, which makes it
-/// optional to `std.json.parseFromSlice`.
+/// Input for `add_skill`.
 pub const AddSkillInput = struct {
-    /// Skill identifier. Required, but may be omitted when `content`
-    /// opens with a `name:` frontmatter line.
+    /// Skill identifier.
     name: []const u8 = "",
-    /// When to trigger this skill. Required, but may be omitted when
-    /// `content` opens with a `description:` frontmatter line.
+    /// When to trigger this skill.
     description: []const u8 = "",
-    /// Skill body. A leading `---` frontmatter block is stripped and its
-    /// fields lifted; the body is what gets written after the generated
-    /// frontmatter.
+    /// Skill body.
     content: []const u8 = "",
 };
 
@@ -635,16 +593,14 @@ pub const AddSkillOutput = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Execute `add_skill`. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned memory and must free it.
+/// Execute `add_skill`.
 pub fn executeAddSkillToString(
     allocator: std.mem.Allocator,
     db: *database.Db,
     caller_session_id: []const u8,
     input: AddSkillInput,
 ) ![]const u8 {
-    // `SkillWriteToolRule` shows the skill format as a `---` frontmatter
-    // block, so models routinely paste one into `content`.
+    // `SkillWriteToolRule` shows the skill format as a `---` frontmatter block, so models routinely paste one into `content`.
     var incoming = try frontmatter.parse(allocator, input.content);
     defer incoming.deinit(allocator);
 
@@ -658,9 +614,7 @@ pub fn executeAddSkillToString(
     });
     const content = incoming.body;
 
-    // Every message names the argument AND what to send, because the old
-    // ones ("Description cannot be empty") told the model nothing and it
-    // retried the identical call.
+    // Every message names the argument AND what to send, because the old ones ("Description cannot be empty") told the model nothing and it retried the identical …
     const resolved_name = name orelse
         return try toolErrorJSON(allocator, "add_skill", "", ADD_SKILL_MISSING_NAME);
     if (description == null) {
@@ -698,8 +652,7 @@ pub fn executeAddSkillToString(
         break :blk true;
     };
 
-    // `upsertSkill` is create-or-REPLACE, so re-adding a pinned name is an
-    // edit of a locked skill wearing a create's clothes.
+    // `upsertSkill` is create-or-REPLACE, so re-adding a pinned name is an edit of a locked skill wearing a create's clothes.
     if (replacing_locked) {
         return try lockedSkillJSON(allocator, "add_skill", resolved_name);
     }
@@ -731,9 +684,7 @@ pub fn executeAddSkillToString(
     }, .{});
 }
 
-/// Build skill content with the generated `---` block, plus whatever
-/// metadata `pairs` carries: a model that pastes `tags:`/`origin:` into
-/// `content` keeps them, and the store projects them into rows.
+/// Build skill content with the generated `---` block, plus whatever metadata `pairs` carries: a model that pastes `tags:`/`origin:` into `content` keeps them …
 pub fn buildSkillContent(
     allocator: std.mem.Allocator,
     input: AddSkillInput,
@@ -747,17 +698,13 @@ pub fn buildSkillContent(
 
 // ─── edit_skill ───
 
-/// Input for `edit_skill`. `skill_name` is defaulted so a call that
-/// omits it parses and gets a message naming the field rather than
-/// `error.MissingField`.
+/// Input for `edit_skill`.
 pub const EditSkillInput = struct {
     /// Skill identifier (required)
     skill_name: []const u8 = "",
-    /// New description (optional - omit to keep existing). A `description:`
-    /// line inside `content`'s frontmatter is used when this is null.
+    /// New description (optional - omit to keep existing).
     description: ?[]const u8 = null,
-    /// New skill content (optional - omit to keep existing). A leading
-    /// `---` frontmatter block is stripped and its `description:` lifted.
+    /// New skill content (optional - omit to keep existing).
     content: ?[]const u8 = null,
 };
 
@@ -818,9 +765,7 @@ pub const EDIT_SKILL_NO_CHANGE_EFFECT =
 pub const EDIT_SKILL_NOT_FOUND =
     "edit_skill: no skill named '";
 
-/// JSON payload for `edit_skill` results. `skill_name`/`name` and
-/// `updated`/`edited` are duplicated: the first of each pair matches the
-/// tool schema, the second matches the legacy tag name.
+/// JSON payload for `edit_skill` results.
 pub const EditSkillJSON = struct {
     skill_name: []const u8,
     name: []const u8,
@@ -838,8 +783,7 @@ pub const EditSkillOutput = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Execute `edit_skill`. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned memory and must free it.
+/// Execute `edit_skill`.
 pub fn executeEditSkillToString(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -856,9 +800,7 @@ pub fn executeEditSkillToString(
         return try toolErrorJSON(allocator, "edit_skill", name, msg);
     }
 
-    // A `description:` carried in `content`'s frontmatter counts as a
-    // supplied description, so the model is not told "nothing to change"
-    // for sending one field in the place it was taught to.
+    // A `description:` carried in `content`'s frontmatter counts as a supplied description, so the model is not told "nothing to change" for sending one field in the …
     var incoming = try frontmatter.parse(allocator, input.content orelse "");
     defer incoming.deinit(allocator);
     const lifted_description: ?[]const u8 =
@@ -890,9 +832,7 @@ pub fn executeEditSkillToString(
 
     const new_description = firstNonEmpty(&.{ input.description, lifted_description }) orelse existing.description;
 
-    // The STORED body still carries its own fence, so a new body with no
-    // frontmatter can rebuild the block from it; rendering name+description
-    // alone is what used to delete `origin`/`tags`/`license`.
+    // The STORED body still carries its own fence, so a new body with no frontmatter can rebuild the block from it; rendering name+description alone is what used to …
     var stored = try frontmatter.parse(allocator, existing.content);
     defer stored.deinit(allocator);
 
@@ -936,16 +876,13 @@ pub fn executeEditSkillToString(
 
 // ─── set_skill_metadata ───
 
-/// One key to write. `value` is stored verbatim, in the body's fence; an
-/// empty value is a key with no value, which is legal in YAML.
+/// One key to write.
 pub const SkillMetadataEntry = struct {
     key: []const u8 = "",
     value: []const u8 = "",
 };
 
-/// Input for `set_skill_metadata`. Both lists default to empty, so a call
-/// that omits one still parses and is answered by name instead of
-/// `error.MissingField`.
+/// Input for `set_skill_metadata`.
 pub const SetSkillMetadataInput = struct {
     /// Skill identifier (required). The exact name `search_skills` reported.
     skill_name: []const u8 = "",
@@ -1014,7 +951,6 @@ pub const SET_SKILL_METADATA_NOTHING_TO_CHANGE =
 pub const SET_SKILL_METADATA_NOT_FOUND =
     "set_skill_metadata: no skill named '";
 /// `name`, `description` and `is_can_auto_improve` are columns, not rows.
-/// Naming the right tool for each is the whole point of the refusal.
 pub const SET_SKILL_METADATA_PROMOTED =
     "set_skill_metadata: '";
 pub const SET_SKILL_METADATA_BAD_KEY =
@@ -1022,9 +958,7 @@ pub const SET_SKILL_METADATA_BAD_KEY =
 pub const SET_SKILL_METADATA_DUPLICATE =
     "set_skill_metadata: '";
 
-/// JSON payload for `set_skill_metadata` results. `metadata` is the skill's
-/// metadata AFTER the write — the model verifies in the same turn instead of
-/// spending a `use_skill` on it.
+/// JSON payload for `set_skill_metadata` results.
 pub const SkillMetadataOutput = struct {
     skill_name: []const u8 = "",
     updated: bool = false,
@@ -1066,9 +1000,7 @@ fn pairIndex(pairs: []const frontmatter.Pair, key: []const u8) ?usize {
     return null;
 }
 
-/// True when both sets hold the same keys with the same values. Order-free:
-/// the merged list keeps the stored order and appends new keys, so a
-/// positional comparison would call a pure re-send a change.
+/// True when both sets hold the same keys with the same values. Order-free
 fn samePairSet(a: []const frontmatter.Pair, b: []const frontmatter.Pair) bool {
     if (a.len != b.len) return false;
     for (b) |pair| {
@@ -1078,8 +1010,7 @@ fn samePairSet(a: []const frontmatter.Pair, b: []const frontmatter.Pair) bool {
     return true;
 }
 
-/// Execute `set_skill_metadata`. Returns an inner JSON string the exec
-/// wrapper embeds. Caller owns the returned memory and must free it.
+/// Execute `set_skill_metadata`.
 pub fn executeSetSkillMetadataToString(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1099,8 +1030,7 @@ pub fn executeSetSkillMetadataToString(
         return try toolErrorJSON(allocator, "set_skill_metadata", name, SET_SKILL_METADATA_NOTHING_TO_CHANGE);
     }
 
-    // Every key is checked BEFORE the row is read: a refusal must not depend
-    // on what happens to be stored.
+    // Every key is checked BEFORE the row is read: a refusal must not depend on what happens to be stored.
     for (input.metadata, 0..) |entry, i| {
         if (try metadataKeyIsAllowed(allocator, "set_skill_metadata", name, entry.key)) |refusal| return refusal;
         for (input.metadata[0..i]) |earlier| {
@@ -1138,16 +1068,13 @@ pub fn executeSetSkillMetadataToString(
         return try lockedSkillJSON(allocator, "set_skill_metadata", name);
     }
 
-    // The stored body is the source of truth, so the merge starts from the
-    // pairs it parses to — not from the table, which is only a projection of
-    // them. `stored.body` goes back out byte-identical.
+    // The stored body is the source of truth, so the merge starts from the pairs it parses to — not from the table, which is only a projection of them.
     var stored = try frontmatter.parse(allocator, existing.content);
     defer stored.deinit(allocator);
 
     var merged: std.ArrayList(frontmatter.Pair) = .empty;
     defer merged.deinit(allocator);
-    // The strings this call allocates; the rest are borrowed from `stored`,
-    // which `stored.deinit` frees on its own.
+    // The strings this call allocates; the rest are borrowed from `stored`, which `stored.deinit` frees on its own.
     var owned: std.ArrayList([]const u8) = .empty;
     defer {
         for (owned.items) |slice| allocator.free(slice);
@@ -1188,8 +1115,7 @@ pub fn executeSetSkillMetadataToString(
     }, merged.items, stored.body);
     defer allocator.free(rebuilt);
 
-    // Body unchanged, fence rewritten: `updateSkill` re-projects the
-    // metadata from `rebuilt` in the same transaction.
+    // Body unchanged, fence rewritten: `updateSkill` re-projects the metadata from `rebuilt` in the same transaction.
     const updated = skills_store.updateSkill(allocator, db, workspace_id, name, .{ .content = rebuilt }) catch |err| switch (err) {
         error.NotFound => {
             const msg = try std.fmt.allocPrint(allocator, "{s}{s}' exists in this workspace. Run search_skills to list the installed names.", .{ SET_SKILL_METADATA_NOT_FOUND, name });
@@ -1256,18 +1182,14 @@ pub fn execSetSkillMetadata(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecR
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-// ============================================================================
 // skill_tools.zig — inline tests
-// ============================================================================
 
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
 };
 
-/// Real Migration 101 tables plus the three tables
-/// `workspace_scope.resolveWorkspaceId` reads, so a test can hand the
-/// tools a `caller_session_id` and get a real workspace back.
+/// Real Migration 101 tables plus the three tables `workspace_scope.resolveWorkspaceId` reads, so a test can hand the tools a `caller_session_id` and get a real …
 fn setupSkillsDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -1358,8 +1280,7 @@ test "add_skill writes a row into the CALLER's workspace and reads back through 
     try testing.expect(used_out.value.loaded);
     try testing.expectEqualStrings("round-trip", used_out.value.skill_name);
     try testing.expect(std.mem.indexOf(u8, used_out.value.content, "First body.") != null);
-    // A single-file skill has NO directory — an empty one would read as
-    // "a bundle with nothing in it".
+    // A single-file skill has NO directory — an empty one would read as "a bundle with nothing in it".
     try testing.expect(used_out.value.asset_dir == null);
     try testing.expectEqual(@as(usize, 0), used_out.value.asset_count);
 }
@@ -1389,8 +1310,7 @@ test "add_skill - re-running the same name REPLACES, and reports created: false"
     var second_out = try parseJson(AddSkillOutput, alloc, second);
     defer second_out.deinit();
 
-    // A replacement is not a creation, and reporting it as one is a lie
-    // about what happened to the previous body.
+    // A replacement is not a creation, and reporting it as one is a lie about what happened to the previous body.
     try testing.expect(!second_out.value.created);
 
     const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "refined");
@@ -1408,8 +1328,7 @@ test "add_skill - content carrying frontmatter does NOT double the block" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Exactly the shape a model produces when it pastes the skill format:
-    // frontmatter inside `content`, and NO `description` argument.
+    // Exactly the shape a model produces when it pastes the skill format
     const out = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
         .name = "fm-lifted",
         .description = "",
@@ -1423,8 +1342,7 @@ test "add_skill - content carrying frontmatter does NOT double the block" {
     const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "fm-lifted");
     defer skills_store.freeSkillRow(alloc, row);
 
-    // Exactly TWO fences (the generated block's open + close). Four is the
-    // bug that shipped.
+    // Exactly TWO fences (the generated block's open + close).
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, row.content, "---\n"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, row.content, "name: fm-lifted"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, row.content, "Lifted from content."));
@@ -1438,9 +1356,7 @@ test "add_skill - an empty description round-trips as \"\" (the COALESCE(NULLIF)
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Seeded with no description at all: `Backend.exec` binds a
-    // zero-length slice as SQL NULL, which used to violate NOT NULL and
-    // surface as a failed write.
+    // Seeded with no description at all: `Backend.exec` binds a zero-length slice as SQL NULL, which used to violate NOT NULL and surface as a failed write.
     try seedSkill(alloc, &ctx.db, "ws_1", "no-desc", "", "## Body\n");
 
     const used = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s1", .{ .name = "no-desc" });
@@ -1638,8 +1554,7 @@ test "edit_skill - frontmatter in content lifts the description and is not re-du
 
     try seedSkill(alloc, &ctx.db, "ws_1", "edit-fm", "Original description.", "## When to Use\n\nOriginal body.\n");
 
-    // The model rewrites the body and, out of habit, re-pastes frontmatter
-    // with the new description in it.
+    // The model rewrites the body and, out of habit, re-pastes frontmatter with the new description in it.
     const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
         .skill_name = "edit-fm",
         .content = "---\ndescription: \"Rewritten description.\"\n---\n## When to Use\n\nNew body.\n",
@@ -1664,13 +1579,10 @@ test "edit_skill - an ineffective patch is a TOOL ERROR, never a success with an
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Seeded with EXACTLY what `buildSkillContent` produces, because that is
-    // what the tool stores: seeding a bare body would make the patch below a
-    // real change (the regenerated frontmatter) and the test would be
+    // Seeded with EXACTLY what `buildSkillContent` produces, because that is what the tool stores: seeding a bare body would make the patch below a real change (the …
     try seedSkill(alloc, &ctx.db, "ws_1", "same", "same description", "---\nname: same\ndescription: \"same description\"\n---\nsame body\n");
 
-    // Byte-identical to what is stored. Reporting `updated: true` teaches
-    // the model that an empty edit rewrites a skill.
+    // Byte-identical to what is stored.
     const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
         .skill_name = "same",
         .description = "same description",
@@ -1793,8 +1705,7 @@ test "the workspace comes from the SESSION, in both directions" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Same name, two workspaces: two rows. This is what replaced the
-    // global/local tier — "shared" is now two rows, not a flag.
+    // Same name, two workspaces: two rows.
     try seedSkill(alloc, &ctx.db, "ws_1", "pdf", "A's copy", "A's body");
     try seedSkill(alloc, &ctx.db, "ws_2", "pdf", "B's copy", "B's body");
 
@@ -1828,8 +1739,7 @@ test "an unresolvable session is a refusal, and the TWO refusals differ" {
     try testing.expect(!a.value.loaded);
     try testing.expectEqualStrings(SCOPE_MISSING_SESSION, a.value.@"error" orelse "");
 
-    // A session that is not linked to any workspace. Same shape, DIFFERENT
-    // message — the two need different user actions.
+    // A session that is not linked to any workspace.
     const orphan = try execute_use_skill_to_string(alloc, testing.io, &ctx.db, "s_orphan", .{ .name = "alpha" });
     defer alloc.free(orphan);
     var b = try parseJson(UseSkillOutput, alloc, orphan);
@@ -1838,9 +1748,7 @@ test "an unresolvable session is a refusal, and the TWO refusals differ" {
     try testing.expectEqualStrings(SCOPE_NO_WORKSPACE, b.value.@"error" orelse "");
     try testing.expect(!std.mem.eql(u8, a.value.@"error" orelse "", b.value.@"error" orelse ""));
 
-    // "No skills" and "no workspace" are different facts; a silent empty
-    // answer would read as "your skills are gone". The same resolver
-    // answers for every tool, not just the read one.
+    // "No skills" and "no workspace" are different facts; a silent empty answer would read as "your skills are gone".
     const removed = try execute_remove_skill_to_string(alloc, &ctx.db, "s_orphan", .{ .skill_name = "alpha" });
     defer alloc.free(removed);
     var c = try parseJson(RemoveSkillOutput, alloc, removed);
@@ -1855,9 +1763,7 @@ test "every skill tool refuses an unresolvable workspace with the same message" 
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // One resolver, one pair of messages: `add_skill` reporting "could not
-    // build skills directory path" while `remove_skill` reported "Environment
-    // not available" is how two tools started disagreeing about whether the
+    // One resolver, one pair of messages: `add_skill` reporting "could not build skills directory path" while `remove_skill` reported "Environment not available" is …
     const added = try executeAddSkillToString(alloc, &ctx.db, "s_orphan", .{
         .name = "x",
         .description = "d",
@@ -1880,13 +1786,9 @@ test "every skill tool refuses an unresolvable workspace with the same message" 
     try testing.expectEqualStrings(SCOPE_NO_WORKSPACE, b.value.@"error" orelse "");
 }
 
-// ─── schema contracts ─── Asserted against the LIVE `AgentTool` constants
-// the model receives and the LIVE struct types the exec wrappers parse, not
-// against this file's text.
+// ─── schema contracts ───
 
-/// Every field that described a DIRECTORY TIER, plus the two that only
-/// ever named one. A skill is a row; none of these has anything to say
-/// about a row.
+/// Every field that described a DIRECTORY TIER, plus the two that only ever named one.
 const directory_shaped_fields = [_][]const u8{
     "path",
     "scope",
@@ -1925,8 +1827,7 @@ test "schema contract: no skill tool schema or payload carries a directory-shape
         }
     }
 
-    // The payload structs the exec wrapper deserialises are the other half of
-    // the wire: a field there is a slot for `ignore_unknown_fields` to fill.
+    // The payload structs the exec wrapper deserialises are the other half of the wire: a field there is a slot for `ignore_unknown_fields` to fill.
     inline for (.{
         SearchSkillsInput,
         UseSkillInput,
@@ -1938,8 +1839,7 @@ test "schema contract: no skill tool schema or payload carries a directory-shape
         AddSkillJSON,
         EditSkillJSON,
     }) |T| {
-        // `fields` values hold a `type`, so they must be indexed at comptime
-        // — hence inline for, not a runtime loop.
+        // `fields` values hold a `type`, so they must be indexed at comptime — hence inline for, not a runtime loop.
         inline for (@typeInfo(T).@"struct".fields, 0..) |field, i| {
             _ = i;
             for (directory_shaped_fields) |f| {
@@ -1953,8 +1853,7 @@ test "schema contract: no skill tool schema or payload carries a directory-shape
 }
 
 test "schema contract: no skill input accepts a workspace_id" {
-    // A model-supplied workspace id would be a spoofing vector — the LLM
-    // would be choosing which isolation boundary it writes inside.
+    // A model-supplied workspace id would be a spoofing vector — the LLM would be choosing which isolation boundary it writes inside.
     for (skill_tool_schemas) |tool| {
         for (tool.function.parameters.properties) |prop| {
             if (std.mem.eql(u8, prop.name, "workspace_id")) {
@@ -2057,8 +1956,7 @@ test "add_skill refuses to replace a locked skill but still creates a new name" 
 
     try seedLockedSkill(alloc, &ctx.db, "ws_1", "pinned", "ORIGINAL");
 
-    // `upsertSkill` is create-or-replace, so a re-add of a pinned name would
-    // otherwise walk straight past the lock.
+    // `upsertSkill` is create-or-replace, so a re-add of a pinned name would otherwise walk straight past the lock.
     const replaced = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
         .name = "pinned",
         .description = "a new description",
@@ -2075,8 +1973,7 @@ test "add_skill refuses to replace a locked skill but still creates a new name" 
     try expectBodyIs(survivor.content, "ORIGINAL");
     try testing.expectEqualStrings("pinned by the human", survivor.description);
 
-    // A name that does not exist yet is not locked by anything: the agent
-    // can still grow the library, and what it writes is auto-improvable.
+    // A name that does not exist yet is not locked by anything: the agent can still grow the library, and what it writes is auto-improvable.
     const fresh = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
         .name = "brand-new",
         .description = "written by the agent",
@@ -2100,8 +1997,7 @@ test "remove_skill refuses a locked skill and leaves the row in place" {
 
     try seedLockedSkill(alloc, &ctx.db, "ws_1", "pinned", "KEEPME");
 
-    // Deleting is a write too, and the most destructive one — otherwise
-    // "remove then re-add" is how the lock gets bypassed.
+    // Deleting is a write too, and the most destructive one — otherwise "remove then re-add" is how the lock gets bypassed.
     const out = try execute_remove_skill_to_string(alloc, &ctx.db, "s1", .{ .skill_name = "pinned" });
     defer alloc.free(out);
     var parsed = try parseJson(RemoveSkillOutput, alloc, out);
@@ -2138,7 +2034,6 @@ test "an unlocked skill still edits, and the edit keeps it unlocked" {
 }
 
 // Exec adapter — merged from `skill_tools.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -2151,15 +2046,12 @@ const agent = exec_pabrikcore.agent;
 const exec_skills_store = exec_pabrikcore.skills_store;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
-/// Probe an inner JSON payload for a top-level `"error"` key. The returned
-/// slice borrows from `parsed` — keep it alive through the `wrapToolOutput`
-/// call, then `deinit`.
+/// Probe an inner JSON payload for a top-level `"error"` key.
 const InnerErrorProbe = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Turn a JSON parse failure into a message the model can act on. The old
-/// form was `"add_skill failed: MissingField"` — an error NAME.
+/// Turn a JSON parse failure into a message the model can act on.
 fn describeParseFailure(
     allocator: std.mem.Allocator,
     arguments: []const u8,
@@ -2194,9 +2086,7 @@ pub fn execSearchSkills(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
     };
     defer parsed.deinit();
 
-    // ── Paging bounds ── Rejected, never silently clamped: the model pages
-    // by offset from the `total` it was shown, so a quiet clamp would make
-    // its next call land on the wrong window.
+    // ── Paging bounds ──
     const limit: usize = blk: {
         const raw = parsed.value.limit orelse @as(i64, @intCast(skills_search.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
@@ -2227,9 +2117,7 @@ pub fn execSearchSkills(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
         }
         break :blk @intCast(raw);
     };
-    // ── Workspace scope ── Fail-closed, exactly as `document.zig` does it:
-    // an unresolvable session is a readable refusal, NOT an empty result set.
-    // "this workspace has no matching skills" and "you have no workspace" are
+    // ── Workspace scope ──
     const workspace_id = (resolveWorkspaceScope(ctx.allocator, ctx.db, ctx.session_id) catch null) orelse {
         const msg = try scopeErrorJSON(ctx.allocator, "search_skills", ctx.session_id);
         defer ctx.allocator.free(msg);
@@ -2293,9 +2181,7 @@ pub fn execUseSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         const output = try wrapToolOutput(ctx.allocator, "use_skill", tc.function.arguments, false, err_msg, "");
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
-    // The tool module allocated `inner` from `ctx.allocator`, so the
-    // wrapper owns it. The `skill_save` duplications below are taken
-    // BEFORE this fires, so nothing borrowed outlives the buffer.
+    // The tool module allocated `inner` from `ctx.allocator`, so the wrapper owns it.
     defer ctx.allocator.free(inner);
 
     if (std.json.parseFromSlice(InnerErrorProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true })) |parsed_inner| {
@@ -2308,16 +2194,14 @@ pub fn execUseSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 
     const output = try wrapToolOutput(ctx.allocator, "use_skill", tc.function.arguments, true, null, inner);
 
-    // Check if skill was successfully loaded and extract skill info for
-    // auto-save.
+    // Check if skill was successfully loaded and extract skill info for auto-save.
     if (std.json.parseFromSlice(UseSkillOutput, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true })) |parsed_inner| {
         defer parsed_inner.deinit();
         if (parsed_inner.value.loaded) {
             const skill_name = try ctx.allocator.dupe(u8, parsed_inner.value.skill_name);
             errdefer ctx.allocator.free(skill_name);
             const skill_content = try ctx.allocator.dupe(u8, parsed_inner.value.content);
-            // Return with skill_save info so handle_tool can auto-save to
-            // session_skills.
+            // Return with skill_save info so handle_tool can auto-save to session_skills.
             return ToolExecResult{
                 .output = output,
                 .output_allocated = true,
@@ -2335,8 +2219,7 @@ pub fn execUseSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 // ─── remove_skill ───
 
 pub fn execRemoveSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // `ignore_unknown_fields`, same reason as execAddSkill: a stray key must
-    // not cost the call.
+    // `ignore_unknown_fields`, same reason as execAddSkill: a stray key must not cost the call.
     const parsed = std.json.parseFromSlice(
         RemoveSkillInput,
         ctx.allocator,
@@ -2379,9 +2262,7 @@ pub fn execRemoveSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
 // ─── add_skill ───
 
 pub fn execAddSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // `ignore_unknown_fields` — the sibling `execSearchSkills` has always had
-    // it, and without it a model that volunteers one extra key (`is_global`,
-    // `scope`, `session_id`, …) gets `UnknownField` and the write is lost.
+    // `ignore_unknown_fields` — the sibling `execSearchSkills` has always had it, and without it a model that volunteers one extra key (`is_global`, `scope` …
     const parsed = std.json.parseFromSlice(
         AddSkillInput,
         ctx.allocator,
@@ -2418,9 +2299,7 @@ pub fn execAddSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 
     const output = try wrapToolOutput(ctx.allocator, "add_skill", tc.function.arguments, true, null, inner);
 
-    // The registry entry has auto_save_skill = true → the dispatcher in
-    // handle_tool.zig reads the wrapped JSON `data` (`skill_name`/`content`
-    // keys), then saves to session_skills.
+    // The registry entry has auto_save_skill = true → the dispatcher in handle_tool.zig reads the wrapped JSON `data` (`skill_name`/`content` keys), then saves to …
     _ = SkillSaveInfo;
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
@@ -2468,9 +2347,7 @@ pub fn execEditSkill(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-// ============================================================================
 // skill_tools.zig — inline tests
-// ============================================================================
 
 const exec_sqlite = exec_pabrikcore.sqlite;
 const database = exec_pabrikcore.database;
@@ -2522,9 +2399,7 @@ fn makeTestCtx(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u
         .logger = undefined,
         .session_id = session_id,
         .model = "test-model",
-        // Deliberately a directory that holds no skills: if any wrapper
-        // still reached for `ctx.cwd`, these tests would find nothing and
-        // fail here rather than in production.
+        // Deliberately a directory that holds no skills: if any wrapper still reached for `ctx.cwd`, these tests would find nothing and fail here rather than in …
         .cwd = "/tmp/pabrik-no-such-skills-dir",
         .api_key = "test-key",
         .base_url = "http://test",
@@ -2543,9 +2418,7 @@ fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
     };
 }
 
-/// Flattened, OWNED view of a tool envelope. See `document.zig`
-/// for why this dupes everything instead of handing back `p.value` after
-/// `deinit()`.
+/// Flattened, OWNED view of a tool envelope.
 const Envelope = struct {
     allocator: std.mem.Allocator,
     raw: []const u8 = "",
@@ -2712,9 +2585,7 @@ test "execAddSkill: a hallucinated workspace_id is ignored, not honoured" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // s1 belongs to ws_1. The model asks for ws_2. The wrapper parses with
-    // ignore_unknown_fields, the field is dropped, and the write lands in
-    // ws_1 — the session's own workspace, never the requested one.
+    // s1 belongs to ws_1.
     const result = try execAddSkill(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
         "add_skill",
         "{\"name\":\"spoof\",\"description\":\"d\",\"content\":\"body\",\"workspace_id\":\"ws_2\"}",
@@ -2735,8 +2606,7 @@ test "execAddSkill: a stale is_global from the old schema does not cost the call
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The pre-refactor schema had `is_global`. A model trained on it (or
-    // working from an old prompt) still sends it.
+    // The pre-refactor schema had `is_global`.
     const result = try execAddSkill(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
         "add_skill",
         "{\"name\":\"legacy\",\"description\":\"d\",\"content\":\"body\",\"is_global\":true}",
@@ -2769,8 +2639,7 @@ test "execUseSkill returns the body AND the SkillSaveInfo handle_tool persists" 
     try exec_testing.expectEqualStrings("pdf", env.skill_name);
     try exec_testing.expect(std.mem.indexOf(u8, env.content, "Run scripts/convert.py.") != null);
 
-    // `handle_tool.zig` persists this to session_skills. It is the contract
-    // that file owns, so the return value is what must survive here.
+    // `handle_tool.zig` persists this to session_skills.
     const save = result.skill_save orelse return error.NoSkillSave;
     defer alloc.free(save.name);
     defer alloc.free(save.content);
@@ -2803,9 +2672,7 @@ test "execEditSkill: an ineffective patch surfaces as success=false" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Seeded with EXACTLY what `buildSkillContent` produces — that is what
-    // the tool stores, so anything else would make this patch a real
-    // change and the assertion below would be exec_testing the wrong branch.
+    // Seeded with EXACTLY what `buildSkillContent` produces — that is what the tool stores, so anything else would make this patch a real change and the assertion …
     try exec_seedSkill(alloc, &ctx.db, "ws_1", "same", "same description", "---\nname: same\ndescription: \"same description\"\n---\nsame body\n");
 
     const result = try execEditSkill(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
@@ -2890,8 +2757,7 @@ test "execSearchSkills lists the workspace and NEVER mentions a tier or a path" 
     try exec_testing.expectEqual(@as(usize, 2), env.count);
     try exec_testing.expectEqualStrings("all", env.pattern_mode);
 
-    // The whole point of the row shape: the model gets a NAME to hand
-    // back, and nothing that describes a place that no longer exists.
+    // The whole point of the row shape: the model gets a NAME to hand back, and nothing that describes a place that no longer exists.
     try exec_testing.expect(std.mem.indexOf(u8, env.raw, "\"scope\"") == null);
     try exec_testing.expect(std.mem.indexOf(u8, env.raw, "\"is_global\"") == null);
     try exec_testing.expect(std.mem.indexOf(u8, env.raw, "\"path\"") == null);
@@ -2910,9 +2776,7 @@ test "execSearchSkills: a stale scope argument is ignored, and paging still work
         try exec_seedSkill(alloc, &ctx.db, "ws_1", n, "shared body", "x");
     }
 
-    // `"scope": "global"` used to be a filter with a real meaning. Now it is
-    // an unknown key: dropped, and the search still returns this
-    // workspace's rows.
+    // `"scope": "global"` used to be a filter with a real meaning.
     const result = try execSearchSkills(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
         "search_skills",
         "{\"query\":\"shared\",\"limit\":2,\"scope\":\"global\"}",
@@ -2959,7 +2823,6 @@ test "every skill exec wrapper treats an unresolvable session as a REFUSAL" {
     try exec_seedSkill(alloc, &ctx.db, "ws_1", "alpha", "first", "a");
 
     // "no matching skills" and "you have no workspace" are different facts.
-    // A silent empty page would read as "your skills are gone".
     const tc = makeTestCtx(alloc, &ctx.db, "s_orphan");
 
     const search = try execSearchSkills(tc, fakeToolCall("search_skills", "{}"));
@@ -3037,9 +2900,7 @@ test "execEditSkill: a locked skill is a refusal at the envelope, and the body s
     });
     exec_skills_store.freeSkillRow(alloc, seeded);
 
-    // The tool's inner payload carries `error`, and the `InnerErrorProbe`
-    // re-parse is what turns that into `success: false`. Without it the
-    // model would read a refused edit as a completed one.
+    // The tool's inner payload carries `error`, and the `InnerErrorProbe` re-parse is what turns that into `success: false`.
     const result = try execEditSkill(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall(
         "edit_skill",
         "{\"skill_name\":\"pinned\",\"content\":\"hijacked\"}",
@@ -3066,9 +2927,7 @@ test "add_skill keeps the metadata a pasted frontmatter carries" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Models are taught the format as a `---` block, so they paste one:
-    // `name`/`description` are lifted, and the rest must survive as rows
-    // instead of being thrown away by the regenerated fence.
+    // Models are taught the format as a `---` block, so they paste one
     const added = try executeAddSkillToString(alloc, &ctx.db, "s1", .{
         .name = "tagged",
         .description = "One sentence.",
@@ -3107,8 +2966,7 @@ test "edit_skill with a body-only patch KEEPS the stored metadata" {
 
     try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\ntags: [workflow]\nlicense: MIT\n---\nOld body.\n");
 
-    // The rewrite carries no fence. Rebuilding the block from name and
-    // description alone used to DELETE `tags` and `license` here, silently.
+    // The rewrite carries no fence.
     const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
         .skill_name = "tagged",
         .content = "## New body\n\nRewritten.\n",
@@ -3138,8 +2996,7 @@ test "edit_skill with a new fence REPLACES the stored metadata" {
 
     try seedSkill(alloc, &ctx.db, "ws_1", "tagged", "One sentence.", "---\nname: tagged\ndescription: \"One sentence.\"\ntags: [workflow]\n---\nOld body.\n");
 
-    // A fence in the new body IS the new metadata: the model rewrote it, so
-    // the old `tags` must not survive next to the new ones.
+    // A fence in the new body IS the new metadata: the model rewrote it, so the old `tags` must not survive next to the new ones.
     const out = try executeEditSkillToString(alloc, &ctx.db, "s1", .{
         .skill_name = "tagged",
         .content = "---\ntags: [review]\n---\nNew body.\n",
@@ -3202,8 +3059,7 @@ test "set_skill_metadata sets one key, merges with the stored ones, and leaves t
     defer parsed.deinit();
 
     try testing.expect(parsed.value.updated);
-    // `tags` was not mentioned and survives: the tool merges, it does not
-    // replace the set.
+    // `tags` was not mentioned and survives: the tool merges, it does not replace the set.
     try testing.expectEqual(@as(usize, 2), parsed.value.metadata.len);
     try testing.expectEqualStrings("license", parsed.value.metadata[0].key);
     try testing.expectEqualStrings("MIT", parsed.value.metadata[0].value);

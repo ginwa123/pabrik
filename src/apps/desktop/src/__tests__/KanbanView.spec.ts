@@ -30,9 +30,7 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
 
 function mountView(item: WorkspaceItem, workspaceId = WS_ID) {
   const processingState: Ref<Record<string, boolean>> = ref({})
-  // attachTo: document.body — the detail panel is INLINE (no
-  // Teleport since the Dialog → Detail refactor), so
-  // document.querySelector only sees it when the mount is attached.
+  // attachTo: document.body — the detail panel is INLINE (no Teleport since the Dialog → Detail refactor), so document.querySelector only sees it when the mount is …
   document.body.innerHTML = ''
   return mount(KanbanView, {
     attachTo: document.body,
@@ -63,8 +61,7 @@ describe('KanbanView — header rendering', () => {
     expect(title.text()).toBe('My Sprint')
   })
 
-  // Note: as of feat(kanban): column description + per-board Kanban Settings dialog (#44), the "+
-  // Column" button moved out of the KanbanView header into the new KanbanSettingsDialog.
+  // Note: as of feat(kanban): column description + per-board Kanban Settings dialog (#44), the "+ Column" button moved out of the KanbanView header into the new …
   it('renders the "Settings" button in the header', () => {
     wrapper = mountView(makeItem())
     const btn = wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-open-settings"]`)
@@ -79,8 +76,7 @@ describe('KanbanView — header rendering', () => {
     expect(wrapper.emitted('openSettings')?.[0]).toEqual([])
   })
 
-  // ─── Layout toggle (row mode) ──────────────────────────────────────────── The toggle's
-  // URL/persistence behaviour is covered in KanbanView.rowMode.spec.ts (which mocks vue-router).
+  // ─── Layout toggle (row mode) ────────────────────────────────────────────
   it('renders the Columns/Rows layout toggle in the header', () => {
     wrapper = mountView(makeItem())
     expect(wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-layout-columns"]`).exists()).toBe(
@@ -176,8 +172,7 @@ describe('KanbanView — column rendering', () => {
 
   it('handles kanban_columns being undefined (defensive)', () => {
     const item = makeItem()
-    // Explicit defensive test for kanban_columns being undefined (legacy items in tests, or a fresh
-    // item before the columns have been populated).
+    // Explicit defensive test for kanban_columns being undefined (legacy items in tests, or a fresh item before the columns have been populated).
     item.kanban_columns = undefined
     wrapper = mountView(item)
     const columns = wrapper.findAll('[data-kanban-column]')
@@ -199,9 +194,7 @@ describe('KanbanView — task rendering per column', () => {
   })
 
   it('renders cards from item.tasks filtered by kanban_column_id', () => {
-    // The board shows the cards as <KanbanCard data-kanban-card="...">
-    // elements. We pass tasks via the item and verify they end up in
-    // the right columns.
+    // The board shows the cards as <KanbanCard data-kanban-card="..."> elements.
     wrapper = mountView(
       makeItem({
         kanban_columns: [
@@ -243,9 +236,7 @@ describe('KanbanView — event pass-through', () => {
   })
 
   it('clicking "+ Add" opens the create dialog locally (no addTask emit)', async () => {
-    // After the kanban-add-task-via-detail-dialog feature, the "+ Add" click no longer bubbles up
-    // to AppLayout. KanbanView consumes it locally and opens the KanbanTaskDetailDialog in create
-    // mode (which mounts at the bottom of the template and teleports to document.body).
+    // After the kanban-add-task-via-detail-dialog feature, the "+ Add" click no longer bubbles up to AppLayout.
     wrapper = mountView(
       makeItem({
         kanban_columns: [makeColumn({ id: 'col_x', name: 'todo', position: 0 })],
@@ -258,26 +249,22 @@ describe('KanbanView — event pass-through', () => {
     // No addTask emit (the event is consumed locally).
     expect(wrapper.emitted('addTask')).toBeFalsy()
 
-    // Click the header + Add task button (was per-column footer
-    // before plan: 2026-08-06-kanban-add-task-button-placement).
+    // Click the header + Add task button (was per-column footer before plan: 2026-08-06-kanban-add-task-button-placement).
     await wrapper.find('[data-testid="kanban-add-task-button"]').trigger('click')
     await flushPromises()
 
     // Dialog is now in the DOM (teleported to body).
     const dialog = document.querySelector('[data-testid="kanban-task-detail-dialog"]')
     expect(dialog).not.toBeNull()
-    // The create-mode inputs use the `-create-` testids. The
-    // name input exists and is empty.
+    // The create-mode inputs use the `-create-` testids.
     const nameInput = document.querySelector<HTMLInputElement>(
       '[data-testid="kanban-task-detail-create-name"]',
     )
     expect(nameInput?.value).toBe('')
-    // The column picker defaults to the first column (its
-    // testid is the new dropdown — see KanbanTaskDetailDialog).
+    // The column picker defaults to the first column (its testid is the new dropdown — see KanbanTaskDetailDialog).
     const picker = document.querySelector('[data-testid="kanban-task-detail-column-picker"]')
     expect(picker?.textContent).toContain('todo')
-    // No addTask emit ever fired (the event was removed when the
-    // per-column footer button was deleted).
+    // No addTask emit ever fired (the event was removed when the per-column footer button was deleted).
     expect(wrapper.emitted('addTask')).toBeFalsy()
   })
 
@@ -288,8 +275,7 @@ describe('KanbanView — event pass-through', () => {
         tasks: [{ id: 't1', name: 'Task A', kanban_column_id: 'col_x', kanban_position: 0 }],
       }),
     )
-    // Trigger a drop on the column's drop zone with a kanban MIME
-    // payload. The drop handler in KanbanColumn emits move-task.
+    // Trigger a drop on the column's drop zone with a kanban MIME payload.
     const dropZone = wrapper.find('[data-kanban-drop-zone="col_x"]')
     const getData = vi.fn((mime: string) => (mime === 'application/x-kanban-task-id' ? 't1' : ''))
     const dataTransfer = {
@@ -298,8 +284,7 @@ describe('KanbanView — event pass-through', () => {
     } as unknown as DataTransfer
     await dropZone.trigger('drop', { dataTransfer })
 
-    // The drop emits {taskId, columnId, position} where position is
-    // the current length (1 here — append to end).
+    // The drop emits {taskId, columnId, position} where position is the current length (1 here — append to end).
     expect(wrapper.emitted('moveTask')?.[0]).toEqual([
       { taskId: 't1', columnId: 'col_x', position: 1 },
     ])
@@ -350,18 +335,14 @@ describe('KanbanView — event pass-through', () => {
         tasks: [{ id: 't1', name: 'Task A', kanban_column_id: 'col_x', kanban_position: 0 }],
       }),
     )
-    // Click on the task's WorkspaceItemTaskCard (the card root carries
-    // data-task-card; the outer KanbanCard drag wrapper also carries
-    // data-task-id, so target the card root explicitly).
+    // Click on the task's WorkspaceItemTaskCard (the card root carries data-task-card; the outer KanbanCard drag wrapper also carries data-task-id, so target the …
     const taskBtn = wrapper.find('[data-task-card][data-task-id="t1"]')
     await taskBtn.trigger('click')
     expect(wrapper.emitted('selectTask')?.[0]).toEqual(['t1'])
   })
 })
 
-// ─── Set project root banner (2026-06-24 — cwd backfill UX) ───────────── Regression coverage for
-// the "every kanban task needs a cwd" bug. A kanban with `path = null` (created before the path
-// field existed on the create endpoint) shows a yellow ⚠️ button that opens the FilePickerDialog.
+// ─── Set project root banner (2026-06-24 — cwd backfill UX) ─────────────
 describe('KanbanView — "Set project root" banner', () => {
   let wrapper: VueWrapper | null = null
 
@@ -383,9 +364,7 @@ describe('KanbanView — "Set project root" banner', () => {
   })
 
   it('renders the ⚠️ banner when item.path is undefined (defensive)', () => {
-    // Older kanbans created before the field existed may have an
-    // undefined path (the API returns `null`, but in-flight loads
-    // can produce undefined before the server-side default kicks in).
+    // Older kanbans created before the field existed may have an undefined path (the API returns `null`, but in-flight loads can produce undefined before the …
     const item = makeItem()
     delete item.path
     wrapper = mountView(item)
@@ -403,21 +382,16 @@ describe('KanbanView — "Set project root" banner', () => {
     wrapper = mountView(makeItem({ path: null }))
     const banner = wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-set-project-root"]`)
     expect(banner.exists()).toBe(true)
-    // The banner is gated on the item being the active workspace item
-    // (disabled binding). Just check the click handler is wired; the
-    // picker itself has its own test suite.
+    // The banner is gated on the item being the active workspace item (disabled binding).
     await banner.trigger('click')
-    // No assertion on the picker DOM (it teleports to body and is covered by
-    // FilePickerDialog.spec.ts). The point of this test is that the click is a no-op and doesn't
-    // crash, which is what the mount-time test verifies.
+    // No assertion on the picker DOM (it teleports to body and is covered by FilePickerDialog.spec.ts).
     expect(wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-set-project-root"]`).exists()).toBe(
       true,
     )
   })
 })
 
-// ─── Inline rename pencil (2026-06-30 — kanban header rename) ───────────── The kanban header h3
-// wraps the item name in an InlineEditableText primitive.
+// ─── Inline rename pencil (2026-06-30 — kanban header rename) ─────────────
 describe('KanbanView — inline rename pencil', () => {
   let wrapper: VueWrapper | null = null
 
@@ -434,9 +408,7 @@ describe('KanbanView — inline rename pencil', () => {
   it('renders the item name in an InlineEditableText by default', () => {
     const item = makeItem({ name: 'Sprint 12' })
     wrapper = mountView(item)
-    // The InlineEditableText primitive renders the value inside a child <span
-    // data-testid="…-value">. Asserting on that span confirms the name flows through the primitive
-    // without truncation or extra whitespace.
+    // The InlineEditableText primitive renders the value inside a child <span data-testid="…-value">.
     const valueSpan = wrapper.find(`[data-testid="kanban-view-${ITEM_ID}-rename-value"]`)
     expect(valueSpan.exists()).toBe(true)
     expect(valueSpan.text()).toBe('Sprint 12')
@@ -460,8 +432,7 @@ describe('KanbanView — inline rename pencil', () => {
   })
 })
 
-// ─── viewTaskDetail → KanbanTaskDetailDialog (kanban-task-detail-dialog — Chunk 4) The new info
-// ("ⓘ") button on each task card emits viewTaskDetail up the chain (Card → Column → View).
+// ─── viewTaskDetail → KanbanTaskDetailDialog (kanban-task-detail-dialog — Chunk 4) The new info ("ⓘ") button on each task card emits viewTaskDetail up the chain …
 describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -494,15 +465,12 @@ describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
     // Dialog not in the DOM yet.
     expect(document.querySelector('[data-testid="kanban-task-detail-dialog"]')).toBeNull()
 
-    // Simulate the KanbanColumn emitting viewTaskDetail (this is
-    // what fires when the user clicks the "ⓘ" button on the card).
+    // Simulate the KanbanColumn emitting viewTaskDetail (this is what fires when the user clicks the "ⓘ" button on the card).
     const column = wrapper.findComponent({ name: 'KanbanColumn' })
     column.vm.$emit('viewTaskDetail', 'task_42')
     await flushPromises()
 
-    // The dialog teleports to document.body, so query the document,
-    // not the wrapper (per the vue-teleport-vitest-document-queryselector
-    // skill convention).
+    // The dialog teleports to document.body, so query the document, not the wrapper (per the vue-teleport-vitest-document-queryselector skill convention).
     const dialog = document.querySelector('[data-testid="kanban-task-detail-dialog"]')
     expect(dialog).not.toBeNull()
   })
@@ -527,9 +495,7 @@ describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
     column.vm.$emit('viewTaskDetail', 'task_42')
     await flushPromises()
 
-    // The dialog is now mounted. Verify the pre-filled input has
-    // the task name (the dialog's watch effect resets state when
-    // the active task changes).
+    // The dialog is now mounted.
     const input = document.querySelector<HTMLInputElement>(
       '[data-testid="kanban-task-detail-name"]',
     )
@@ -545,8 +511,6 @@ describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
 
   it('does not emit viewTaskDetail up to AppLayout (dialog is owned by KanbanView)', async () => {
     // Plan rationale: the dialog only needs the kanban's column list (for the metadata strip).
-    // KanbanView already has that in scope, so mounting it here avoids coupling AppLayout to kanban
-    // internals. Verify viewTaskDetail does NOT bubble out of KanbanView.
     const item = makeItem({
       kanban_columns: [makeColumn({ id: 'col_x', name: 'todo', position: 0 })],
       tasks: [{ id: 'task_42', name: 'X', kanban_column_id: 'col_x', kanban_position: 0 }],
@@ -562,9 +526,7 @@ describe('KanbanView — viewTaskDetail (task detail dialog)', () => {
   })
 })
 
-// ─── + Add → create-dialog flow (kanban-add-task-via-detail-dialog) ──── The "+ Add" button on a
-// kanban column no longer bubbles up to AppLayout — KanbanView consumes it locally and opens the
-// KanbanTaskDetailDialog in create mode.
+// ─── + Add → create-dialog flow (kanban-add-task-via-detail-dialog) ────
 describe('KanbanView — create-task flow', () => {
   let wrapper: VueWrapper | null = null
 
@@ -582,9 +544,7 @@ describe('KanbanView — create-task flow', () => {
     vi.restoreAllMocks()
   })
 
-  // We can't directly mock the workspaces store import from here (Pinia store mocking is
-  // project-conventional via spy + setup). Instead we spy on the store's methods via the existing
-  // useWorkspacesStore() call inside KanbanView.
+  // We can't directly mock the workspaces store import from here (Pinia store mocking is project-conventional via spy + setup).
   async function mountAndOpenDialog() {
     const item = makeItem({
       kanban_columns: [
@@ -627,9 +587,7 @@ describe('KanbanView — create-task flow', () => {
     expect(addKanbanSpy).toHaveBeenCalledWith(
       WS_ID,
       ITEM_ID,
-      // CHANGED (2026-08-19): plain Create task now uses mode='create_session' (inserts the
-      // sessions row but no agent run). Legacy mode='create' on the wire stays unchanged for any
-      // external consumer.
+      // CHANGED (2026-08-19): plain Create task now uses mode='create_session' (inserts the sessions row but no agent run).
       'create_session',
       expect.objectContaining({ name: 'My new task' }),
     )
@@ -742,8 +700,7 @@ describe('KanbanView — create-task flow', () => {
     expect(addKanbanSpy).toHaveBeenCalledWith(
       WS_ID,
       ITEM_ID,
-      // CHANGED (2026-08-19): plain Create task now uses
-      // mode='create_session'.
+      // CHANGED (2026-08-19): plain Create task now uses mode='create_session'.
       'create_session',
       expect.objectContaining({
         name: 'Tagged task',
@@ -753,9 +710,7 @@ describe('KanbanView — create-task flow', () => {
     void w
   })
 
-  // Regression: same as above but for the EDIT path. The save emit payload type in
-  // handleTaskDetailSave omitted `tags`, so editing an existing task's tags through the dialog was
-  // a no-op (the API never received them).
+  // Regression: same as above but for the EDIT path.
   it('forwards tags payload to updateTaskDetails when the dialog emits tags (edit mode)', async () => {
     const item = makeItem({
       kanban_columns: [makeColumn({ id: 'col_x', name: 'todo', position: 0 })],
@@ -782,8 +737,7 @@ describe('KanbanView — create-task flow', () => {
     const store = useWorkspacesStore()
     const updateSpy = vi.spyOn(store, 'updateTaskDetails').mockResolvedValue(undefined)
 
-    // Add a new tag without pressing Enter/comma — exercises the
-    // draft-commit safety net.
+    // Add a new tag without pressing Enter/comma — exercises the draft-commit safety net.
     const tagInput = document.querySelector<HTMLInputElement>(
       '[data-testid="kanban-task-detail-tags-field"]',
     )
@@ -792,8 +746,7 @@ describe('KanbanView — create-task flow', () => {
     tagInput!.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
 
-    // Simulate the full pointer sequence: the Save button is :disabled="!canSave", and a draft tag
-    // leaves canSave=false (the draft is in the input's local ref, not yet in tags.value).
+    // Simulate the full pointer sequence: the Save button is :disabled="!canSave", and a draft tag leaves canSave=false (the draft is in the input's local ref, not …
     const saveBtn = document.querySelector<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-save"]',
     )
@@ -816,8 +769,7 @@ describe('KanbanView — create-task flow', () => {
   })
 })
 
-// ─── Header + Add task button (plan 2026-08-06-kanban-add-task-button-placement) ── Replaces the
-// per-column footer + Add button with a single header button.
+// ─── Header + Add task button (plan 2026-08-06-kanban-add-task-button-placement) ──
 describe('KanbanView — header + Add task button', () => {
   let wrapper: VueWrapper | null = null
 
@@ -930,8 +882,7 @@ describe('KanbanView — header + Add task button', () => {
     expect(moveTaskSpy).toHaveBeenCalledWith(WS_ID, ITEM_ID, 'task_new_1', 'col_y', 0)
   })
 
-  // ─── Agent button → settings page navigation — Agent button now lands
-  // on ?tab=tools since the Agent umbrella tab was split into Tools + Knowledge ───
+  // ─── Agent button → settings page navigation — Agent button now lands on ?tab=tools since the Agent umbrella tab was split into Tools + Knowledge ───
   async function mountViewWithRouter(item: WorkspaceItem) {
     const { createRouter, createMemoryHistory } = await import('vue-router')
     const router = createRouter({
@@ -964,8 +915,7 @@ describe('KanbanView — header + Add task button', () => {
     await flushPromises()
     const btn = wrapper!.find(`[data-testid="kanban-view-${ITEM_ID}-open-agent-settings"]`)
     await btn.trigger('click')
-    // The event no longer exists on defineEmits — wrapper.emitted()
-    // returns undefined for unknown events.
+    // The event no longer exists on defineEmits — wrapper.emitted() returns undefined for unknown events.
     expect(wrapper!.emitted('openAgentSettings')).toBeUndefined()
   })
 })

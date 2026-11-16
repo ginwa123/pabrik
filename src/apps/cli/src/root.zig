@@ -1,19 +1,14 @@
-//! Public API surface for the `pabrikcli` package. Re-exports the modules
-//! consumed by the CLI executable and the test runner. Keeping the surface
-//! small makes the build graph cheap to recompute.
+//! Public API surface for the `pabrikcli` package.
 
 pub const config = @import("config.zig");
 pub const client = @import("client.zig");
 pub const format = @import("format.zig");
 pub const commands = @import("commands/root.zig");
 
-/// Re-export kabelweb's client so subcommands can reach it via the `cli`
-/// namespace: `cli.custom_http_client.Client`.
+/// Re-export kabelweb's client so subcommands can reach it via the `cli` namespace: `cli.custom_http_client.Client`.
 pub const custom_http_client = @import("kabelweb").client;
 
-// Test imports — keep them sorted alphabetically. Each implementation file
-// carries its own tests inline (merged from the former `*_test.zig` files),
-// so importing the implementation is what makes those tests discoverable.
+// Test imports — keep them sorted alphabetically.
 test {
     _ = @import("config.zig");
     _ = @import("client.zig");

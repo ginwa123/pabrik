@@ -11,8 +11,7 @@ pub const WriteFileInput = struct {
     path: []const u8,
     content: []const u8,
     create_with_dir: bool = false,
-    /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it.
+    /// REQUIRED on the wire.
     cwd: []const u8 = "",
 };
 
@@ -24,8 +23,7 @@ pub const WriteFileResult = struct {
     }
 };
 
-/// Parent directory to create for `path`, or null when there is nothing to
-/// create. This replaces a hand-rolled "index of the last separator" scan.
+/// Parent directory to create for `path`, or null when there is nothing to create.
 pub fn parentDirToCreate(path: []const u8) ?[]const u8 {
     return std.fs.path.dirname(path);
 }
@@ -47,8 +45,7 @@ pub fn writeFile(
     input: WriteFileInput,
 ) !WriteFileResult {
     const path = input.path;
-    // See helpers/path_validate.zig — a malformed NT name panics the
-    // process rather than failing this call.
+    // See helpers/path_validate.zig — a malformed NT name panics the process rather than failing this call.
     if (invalidPathReason(path)) |reason| {
         std.log.debug("write_file rejected path: {s}", .{reason});
         return error.InvalidPathReason;
@@ -87,9 +84,7 @@ pub fn writeFile(
     };
 }
 
-/// JSON payload for a write result: mirrors the old `<file_write>` tag
-/// 1:1. The old success envelope omitted `<error>`; that becomes an
-/// explicit null. `std.json` handles all escaping — no manual layer.
+/// JSON payload for a write result: mirrors the old `<file_write>` tag 1:1.
 pub const WriteFileJSON = struct {
     file_write: []const u8,
     @"error": ?[]const u8 = null,
@@ -165,9 +160,7 @@ pub const write_file_tool = AgentTool{
 const testing = std.testing;
 const absPath = @import("helpers").test_path.absPath;
 
-// ---------------------------------------------------------------------------
 // Test helpers
-// ---------------------------------------------------------------------------
 
 fn deleteFile(path: []const u8) void {
     std.Io.Dir.cwd().deleteFile(testing.io, path) catch {};
@@ -177,9 +170,7 @@ fn deleteDir(path: []const u8) void {
     std.Io.Dir.cwd().deleteDir(testing.io, path) catch {};
 }
 
-// Best-effort cleanup for a test's full directory tree. Deletes the leaf
-// file, then each parent directory in DEEPEST-FIRST order so each rmdir sees
-// an empty directory.
+// Best-effort cleanup for a test's full directory tree.
 fn deleteTestTree(parents_deep_first: []const []const u8, leaf_file: []const u8) void {
     deleteFile(leaf_file);
     for (parents_deep_first) |dir| {
@@ -188,8 +179,6 @@ fn deleteTestTree(parents_deep_first: []const []const u8, leaf_file: []const u8)
 }
 
 /// Read back a file's full contents into a freshly allocated slice.
-/// Limit is 4 MiB so tests that write up to 1 MiB (e.g. the large-content
-/// test) can read back the full content without hitting StreamTooLong.
 fn readFileContents(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(testing.io, path, allocator, .limited(4 << 20));
 }
@@ -201,9 +190,7 @@ fn fileSize(path: []const u8) u64 {
     return std.Io.File.length(f, testing.io) catch 0;
 }
 
-// ===========================================================================
 // Section 1: Happy path (sanity baseline)
-// ===========================================================================
 
 test "writeFile - writes ASCII content to a new file in cwd" {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -312,9 +299,7 @@ test "writeFile - writing same path twice leaves only the second contents" {
     try testing.expectEqualStrings("second version wins", read);
 }
 
-// ===========================================================================
 // Section 2: create_with_dir = true (proactive parent-dir creation)
-// ===========================================================================
 
 test "writeFile - create_with_dir=true creates missing parent directory" {
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -378,8 +363,7 @@ test "writeFile - create_with_dir=true on existing parent dir is a no-op (idempo
     // Create the parent dir first
     try std.Io.Dir.cwd().createDir(testing.io, dir, .default_dir);
 
-    // Now write — create_with_dir=true must succeed without erroring on the
-    // already-existing parent (createDirPath is idempotent on POSIX).
+    // Now write — create_with_dir=true must succeed without erroring on the already-existing parent (createDirPath is idempotent on POSIX).
     var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "into existing parent",
@@ -392,9 +376,7 @@ test "writeFile - create_with_dir=true on existing parent dir is a no-op (idempo
     try testing.expectEqualStrings("into existing parent", read);
 }
 
-// ===========================================================================
 // Section 3: create_with_dir = false (the FileNotFound fallback branch)
-// ===========================================================================
 
 test "writeFile - create_with_dir=false auto-creates parent on FileNotFound fallback" {
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -406,9 +388,7 @@ test "writeFile - create_with_dir=false auto-creates parent on FileNotFound fall
         deleteDir(dir);
     }
 
-    // create_with_dir defaults to false → the function should still
-    // succeed by hitting the FileNotFound catch-all path which calls
-    // createDirPath and re-creates the file.
+    // create_with_dir defaults to false → the function should still succeed by hitting the FileNotFound catch-all path which calls createDirPath and re-creates the …
     var _wf_r = try writeFile(testing.allocator, testing.io, .{
         .path = path,
         .content = "fallback worked",
@@ -444,9 +424,7 @@ test "writeFile - create_with_dir=false auto-creates deeply nested missing paren
     try testing.expectEqualStrings("fallback deep", read);
 }
 
-// ===========================================================================
 // Section 4: Empty content
-// ===========================================================================
 
 test "writeFile - empty content produces a zero-byte file" {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -483,9 +461,7 @@ test "writeFile - overwriting with empty content truncates to zero bytes" {
     try testing.expectEqual(@as(u64, 0), fileSize(path));
 }
 
-// ===========================================================================
 // Section 5: Content shape edge cases
-// ===========================================================================
 
 test "writeFile - multibyte UTF-8 content preserved byte-for-byte" {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -607,13 +583,9 @@ test "writeFile - large content (1 MiB) written completely" {
     try testing.expectEqual(@as(u8, 'A'), read[size / 2]);
 }
 
-// ===========================================================================
-// Section 5b: Large content — overwrite semantics + edge cases (added
-// 2026-08-15) These tests pin the write_file contract on LARGE payloads
+// Section 5b: Large content — overwrite semantics + edge cases (added 2026-08-15) These tests pin the write_file contract on LARGE payloads
 
-/// Fill a buffer with a deterministic repeating pattern (NOT a single
-/// byte). Lets tests detect "buffer got the wrong prefix / wrong
-/// suffix" errors that a uniform-fill test would miss.
+/// Fill a buffer with a deterministic repeating pattern (NOT a single byte).
 fn fillPattern(buf: []u8, seed: u8) void {
     var s: u32 = seed;
     for (buf) |*b| {
@@ -627,8 +599,7 @@ test "writeFile - large content (10 MiB) with random pattern preserved byte-for-
     const path = try absPath(&path_buf, "test_wf_large_10mb.bin");
     defer deleteFile(path);
 
-    // 10 MiB = 10x the previous 1 MiB test, exercises multiple
-    // writeStreamingAll chunk boundaries on most std.Io implementations.
+    // 10 MiB = 10x the previous 1 MiB test, exercises multiple writeStreamingAll chunk boundaries on most std.Io implementations.
     const size: usize = 10 * (1 << 20);
     const content = try testing.allocator.alloc(u8, size);
     defer testing.allocator.free(content);
@@ -647,8 +618,7 @@ test "writeFile - large content (10 MiB) with random pattern preserved byte-for-
     try testing.expectEqual(@as(usize, size), read.len);
     // Byte-exact equality across the full 10 MiB — most thorough check.
     try testing.expectEqualSlices(u8, content, read);
-    // Spot-check a few indices known to be at chunk boundaries on
-    // typical 4 KiB page-sized writes (0, 4K, 8K, 1M, 5M, 9.9M).
+    // Spot-check a few indices known to be at chunk boundaries on typical 4 KiB page-sized writes (0, 4K, 8K, 1M, 5M, 9.9M).
     const spot_indices = [_]usize{ 0, 4096, 8192, (1 << 20), 5 * (1 << 20), 9_900_000 };
     for (spot_indices) |i| {
         try testing.expectEqual(content[i], read[i]);
@@ -656,16 +626,12 @@ test "writeFile - large content (10 MiB) with random pattern preserved byte-for-
 }
 
 /// Read the test file at any size up to a generous ceiling (16 MiB).
-/// The base `readFileContents` is capped at 4 MiB, which is too small
-/// for the 10 MiB test above.
 fn readFileContentsLarge(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(testing.io, path, allocator, .limited(16 << 20));
 }
 
 test "writeFile - large content OVERWRITES smaller existing file (truncate)" {
-    // Pre-seed with 1 MiB of a unique 8-byte sentinel pattern (the "dead beef
-    // cafe babe f0 0d fa ce" magic), then overwrite with 5 MiB of LCG pattern
-    // data.
+    // Pre-seed with 1 MiB of a unique 8-byte sentinel pattern (the "dead beef cafe babe f0 0d fa ce" magic), then overwrite with 5 MiB of LCG pattern data.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_overwrite.bin");
     defer deleteFile(path);
@@ -711,7 +677,6 @@ test "writeFile - large content OVERWRITES smaller existing file (truncate)" {
 
 test "writeFile - large content overwritten by much SMALLER content (truncate)" {
     // Pre-seed with 8 MiB of pattern data, then overwrite with just 1 KiB.
-    // Verifies the file shrinks to EXACTLY 1 KiB, not "8 MiB minus 1 KiB".
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_truncate.bin");
     defer deleteFile(path);
@@ -744,9 +709,7 @@ test "writeFile - large content overwritten by much SMALLER content (truncate)" 
 }
 
 test "writeFile - large content with multi-byte UTF-8 (byte count preserved)" {
-    // 1 MiB of 4-byte UTF-8 emojis (🚀 = F0 9F 9A 80). Each "char" is 4
-    // bytes, so 1 MiB = 262_144 emojis. This stresses the
-    // writeStreamingAll path on byte-aligned UTF-8 boundaries.
+    // 1 MiB of 4-byte UTF-8 emojis (🚀 = F0 9F 9A 80).
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_utf8.bin");
     defer deleteFile(path);
@@ -775,8 +738,6 @@ test "writeFile - large content with multi-byte UTF-8 (byte count preserved)" {
     defer testing.allocator.free(read);
     try testing.expectEqualSlices(u8, content, read);
     // Validate UTF-8 boundary integrity — no malformed sequences.
-    // Walk through and assert every 4 bytes match the emoji pattern
-    // (except the final <4-byte tail of 'U's).
     const full_emoji_bytes = (size / 4) * 4;
     var j: usize = 0;
     while (j < full_emoji_bytes) : (j += 4) {
@@ -814,21 +775,17 @@ test "writeFile - large content with embedded NUL bytes (binary stream preserved
     const read = try readFileContentsLarge(testing.allocator, path);
     defer testing.allocator.free(read);
     try testing.expectEqualSlices(u8, content, read);
-    // Spot-check NUL positions (every 5th byte from 0 — choose indices
-    // that are multiples of 5 so we know they're NUL by construction).
+    // Spot-check NUL positions (every 5th byte from 0 — choose indices that are multiples of 5 so we know they're NUL by construction).
     try testing.expectEqual(@as(u8, 0), read[0]);
     try testing.expectEqual(@as(u8, 0), read[5]);
     try testing.expectEqual(@as(u8, 0), read[(1 << 20) - 1]); // 1048575 = 5 * 209715
     try testing.expectEqual(@as(u8, 0), read[size - 1 - ((size - 1) % 5)]); // last multiple of 5 in [0, size)
-    // And spot-check a NON-NUL position (idx % 5 == 1) to prove the
-    // pattern is preserved (not all bytes set to NUL).
+    // And spot-check a NON-NUL position (idx % 5 == 1) to prove the pattern is preserved (not all bytes set to NUL).
     try testing.expectEqual(@as(u8, 1), read[1]); // idx 1 → (idx & 0xFF) == 1
 }
 
 test "writeFile - large content with mixed line endings (\\n + \\r\\n + \\r)" {
-    // 256 KiB cycling through \n, \r\n, \r — verifies the write path
-    // doesn't rewrite line endings (would silently break Windows files
-    // written from a Unix agent).
+    // 256 KiB cycling through \n, \r\n, \r — verifies the write path doesn't rewrite line endings (would silently break Windows files written from a Unix agent).
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_line_endings.bin");
     defer deleteFile(path);
@@ -869,8 +826,7 @@ test "writeFile - large content with mixed line endings (\\n + \\r\\n + \\r)" {
 }
 
 test "writeFile - large content overwrite preserves file size exactly (no padding)" {
-    // Pre-seed with 2 MiB of 'A', overwrite with 2 MiB of 'B'. The file MUST
-    // stay at exactly 2 MiB — neither shrunk nor grew.
+    // Pre-seed with 2 MiB of 'A', overwrite with 2 MiB of 'B'.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_large_same_size.bin");
     defer deleteFile(path);
@@ -910,9 +866,7 @@ test "writeFile - large content overwrite preserves file size exactly (no paddin
     try testing.expect(std.mem.indexOfScalar(u8, read, 'A') == null);
 }
 
-// ===========================================================================
 // Section 6: Path shape edge cases
-// ===========================================================================
 
 test "writeFile - a single-component filename under an absolute path works" {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1038,9 +992,7 @@ test "writeFile - a 255-char filename (POSIX max length) succeeds" {
     try testing.expectEqual(@as(u64, 9), fileSize(path));
 }
 
-// ===========================================================================
 // Section 7: WriteFileResult ownership + deinit
-// ===========================================================================
 
 test "writeFileResult.deinit frees the path (no leak)" {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1052,14 +1004,12 @@ test "writeFileResult.deinit frees the path (no leak)" {
         .content = "deinit me",
     });
 
-    // Capture the path's pointer before deinit so we can verify it's been
-    // freed afterwards.
+    // Capture the path's pointer before deinit so we can verify it's been freed afterwards.
     result.deinit(testing.allocator);
 }
 
 test "writeFileResult.path is heap-allocated (independent of input.slice)" {
-    // The returned path must be a fresh allocation (not aliased to the
-    // caller's input slice) — otherwise freeing one would corrupt the other.
+    // The returned path must be a fresh allocation (not aliased to the caller's input slice) — otherwise freeing one would corrupt the other.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const path = try absPath(&path_buf, "test_wf_path_alloc.txt");
     defer deleteFile(path);
@@ -1090,9 +1040,7 @@ test "writeFileResult.path has same bytes as input path" {
     try testing.expectEqualSlices(u8, path, result.path);
 }
 
-// ===========================================================================
 // Section 8: toJSONSuccess
-// ===========================================================================
 
 test "toJSONSuccess carries the file_write path with null error" {
     const wf_path = try testing.allocator.dupe(u8, "/abs/path/to/file.txt");
@@ -1120,9 +1068,7 @@ test "toJSONSuccess keeps special characters raw (JSON needs no XML escaping)" {
     try testing.expect(obj.get("error").? == .null);
 }
 
-// ===========================================================================
 // Section 9: toJSONError
-// ===========================================================================
 
 test "toJSONError for PathNotFound contains descriptive message" {
     const payload = try toJSONError(
@@ -1186,7 +1132,6 @@ test "toJSONError keeps an empty path without crashing" {
 }
 
 // Section 10: Tool schema contract
-// ===========================================================================
 
 test "write_file_tool - type is function" {
     try testing.expectEqualStrings("function", write_file_tool.type);
@@ -1253,9 +1198,7 @@ test "write_file_tool - create_with_dir is NOT required (has default false)" {
     }
 }
 
-// ===========================================================================
 // Section 11: WriteFileInput defaults
-// ===========================================================================
 
 test "WriteFileInput.create_with_dir defaults to false" {
     const input: WriteFileInput = .{
@@ -1265,16 +1208,13 @@ test "WriteFileInput.create_with_dir defaults to false" {
     try testing.expectEqual(false, input.create_with_dir);
 }
 
-// ===========================================================================
 // Section 12: Realistic shape — repeated writes to the same dir
-// ===========================================================================
 
 test "writeFile - 5 sequential writes to files in same dir all succeed" {
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const dir = try absPath(&dir_buf, "test_wf_many_files");
     const names_buf: [5][]const u8 = .{ "f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt" };
-    // One buffer per joined path: each slice must borrow its own buffer,
-    // so they cannot share a single scratch buffer across the loop.
+    // One buffer per joined path: each slice must borrow its own buffer, so they cannot share a single scratch buffer across the loop.
     var path_bufs: [5][std.fs.max_path_bytes]u8 = undefined;
     var paths: [5][]const u8 = undefined;
     for (names_buf, &path_bufs, &paths) |name, *pb, *p| {
@@ -1306,9 +1246,7 @@ test "writeFile - 5 sequential writes to files in same dir all succeed" {
     }
 }
 
-// ===========================================================================
 // Section 13: Stress / concurrency-shape (single-threaded but many ops)
-// ===========================================================================
 
 test "writeFile - 20 alternating-size overwrites all leave correct final state" {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1316,7 +1254,6 @@ test "writeFile - 20 alternating-size overwrites all leave correct final state" 
     defer deleteFile(path);
 
     // Pattern: write 100-byte block, then 1000-byte block, alternating.
-    // The file size should track the LAST write in the pattern.
     var small: [100]u8 = undefined;
     var large: [1000]u8 = undefined;
     @memset(&small, 's');
@@ -1333,17 +1270,14 @@ test "writeFile - 20 alternating-size overwrites all leave correct final state" 
         last_was_large = !last_was_large;
     }
 
-    // After 20 iterations starting with `false` (writes 100-byte first),
-    // the last iteration writes `small` (since even iterations are small).
+    // After 20 iterations starting with `false` (writes 100-byte first), the last iteration writes `small` (since even iterations are small).
     try testing.expectEqual(@as(u64, 100), fileSize(path));
     const read = try readFileContents(testing.allocator, path);
     defer testing.allocator.free(read);
     try testing.expectEqualSlices(u8, &small, read);
 }
 
-// ===========================================================================
 // Section 14: Returned result independent across calls
-// ===========================================================================
 
 test "writeFile - two consecutive calls return independent path allocations" {
     var path_a_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1376,11 +1310,8 @@ test "writeFile - two consecutive calls return independent path allocations" {
 }
 
 // ─── Parent-directory resolution ─────────────────────────────────────────
-// The bug this pins: the previous "index of the last separator" scan cut
-// `C:\notes.txt` at index 2 and handed `"C:"` — a drive-RELATIVE name, not a
 test "parentDirToCreate: nested paths resolve normally (guard, not a regression test)" {
-    // True on every platform: std.fs.path.dirname treats both separators
-    // as separators, so a `/`-joined path has the same parent on Windows.
+    // True on every platform: std.fs.path.dirname treats both separators as separators, so a `/`-joined path has the same parent on Windows.
     try std.testing.expectEqualStrings("/a/b", parentDirToCreate("/a/b/c.txt").?);
     // POSIX-only, and the difference IS the point.
     if (@import("builtin").os.tag == .windows) return;
@@ -1395,9 +1326,7 @@ test "parentDirToCreate: normal nested paths are unchanged" {
     try std.testing.expect(parentDirToCreate("") == null);
 }
 
-// Windows-only: the drive-root case can only be observed on a host whose
-// `std.fs.path.dirname` understands volumes, so the value is asserted here
-// and the `[Windows]` CI cell is what runs it.
+// Windows-only: the drive-root case can only be observed on a host whose `std.fs.path.dirname` understands volumes, so the value is asserted here and the …
 test "parentDirToCreate: a drive-root file resolves to the drive root on Windows" {
     if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
     try std.testing.expectEqualStrings("C:\\", parentDirToCreate("C:\\notes.txt").?);
@@ -1406,19 +1335,14 @@ test "parentDirToCreate: a drive-root file resolves to the drive root on Windows
     try std.testing.expectEqualStrings("C:/a/b", parentDirToCreate("C:/a/b/c.txt").?);
 }
 
-// End-to-end on the platform that has the bug: create_with_dir against a
-// drive-root path must succeed rather than fail inside createDirPath.
+// End-to-end on the platform that has the bug: create_with_dir against a drive-root path must succeed rather than fail inside createDirPath.
 test "writeFile: create_with_dir succeeds for a file in the drive root on Windows" {
     if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
-    // Whether a drive ROOT is writable is a property of the machine, not of
-    // this code, and a GitHub-hosted Windows runner says no: `C:\`'s DACL
-    // grants Authenticated Users "Create folders" but not "Create files", so
+    // Whether a drive ROOT is writable is a property of the machine, not of this code, and a GitHub-hosted Windows runner says no: `C:\`'s DACL grants Authenticated …
     const probe = "C:\\pabrik_wf_probe.txt";
     std.Io.Dir.cwd().deleteFile(std.testing.io, probe) catch {};
     if (std.Io.Dir.cwd().createFile(std.testing.io, probe, .{})) |probe_file| {
-        // `std.Io.File.close(value, io)` — the exact form the helpers above
-        // already use, rather than a method call, so this compiles on the one
-        // platform that ever sees it without me having a Windows compiler to
+        // `std.Io.File.close(value, io)` — the exact form the helpers above already use, rather than a method call, so this compiles on the one platform that ever sees …
         std.Io.File.close(probe_file, std.testing.io);
     } else |err| {
         std.debug.print("skipping: drive root is not writable ({s})\n", .{@errorName(err)});
@@ -1426,9 +1350,7 @@ test "writeFile: create_with_dir succeeds for a file in the drive root on Window
     }
     std.Io.Dir.cwd().deleteFile(std.testing.io, probe) catch {};
 
-    // `std.Io.Timestamp.nanoseconds` is `i96`, and `@truncate` refuses a
-    // signed source ("expected unsigned integer type, found 'i96'"), so
-    // reinterpret it unsigned first and keep the low 32 bits.
+    // `std.Io.Timestamp.nanoseconds` is `i96`, and `@truncate` refuses a signed source ("expected unsigned integer type, found 'i96'"), so reinterpret it unsigned …
     const now_ns = std.Io.Timestamp.now(std.testing.io, .real).nanoseconds;
     const unique = @as(u32, @truncate(@as(u96, @bitCast(now_ns))));
     const target = try std.fmt.allocPrint(std.testing.allocator, "C:\\pabrik_wf_test_{d}.txt", .{unique});
@@ -1448,7 +1370,6 @@ test "writeFile: create_with_dir succeeds for a file in the drive root on Window
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1461,9 +1382,7 @@ const exec_path_validate = @import("helpers").path_validate;
 const exec_testing = std.testing;
 const workspace_fs = @import("../loop/workspace_fs.zig");
 
-/// The file's bytes land wherever the workspace lives. Under `--saas` that is
-/// the guest, which creates and extends the file itself; in every other mode
-/// `forSession` installs nothing and this is the host write it always was.
+/// The file's bytes land wherever the workspace lives.
 fn writeThrough(ctx: ToolExecContext, input: WriteFileInput) !WriteFileResult {
     const guest = try workspace_fs.forSession(ctx.allocator, ctx.db, ctx.session_id);
     if (guest) |handle| {
@@ -1492,9 +1411,7 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
-    // call works in, and the base a relative `path` resolves against. See
-    // helpers/exec_path_validate.zig for the one implementation of that rule.
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this call works in, and the base a relative `path` resolves against.
     exec_path_validate.validateCwd(parsed.value.cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -1504,9 +1421,7 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const path_abs = try exec_path_validate.resolveAgainstCwd(ctx.allocator, parsed.value.cwd, parsed.value.path);
     defer ctx.allocator.free(path_abs);
 
-    // The underlying writer works on the RESOLVED path, so the relative form
-    // the model sent never reaches `std.fs` (a relative path there would
-    // resolve against the SERVER's directory, not `cwd`).
+    // The underlying writer works on the RESOLVED path, so the relative form the model sent never reaches `std.fs` (a relative path there would resolve against the …
     var input = parsed.value;
     input.path = path_abs;
 
@@ -1523,8 +1438,7 @@ pub fn execWriteFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-// The seam is inert without `--saas`: the bytes still land, written by the
-// host, which is what every mode but `--saas` has always done.
+// The seam is inert without `--saas`: the bytes still land, written by the host, which is what every mode but `--saas` has always done.
 test "writeThrough: local mode writes the file the host way" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1547,9 +1461,7 @@ test "writeThrough: local mode writes the file the host way" {
     try std.testing.expectEqualStrings("through the seam", read);
 }
 
-// ---------------------------------------------------------------------------
-// Overwrite-contract regression tests (added 2026-08-15) PR #261 reverted the
-// absolute-path ban from PR #259.
+// Overwrite-contract regression tests (added 2026-08-15) PR #261 reverted the absolute-path ban from PR #259.
 
 /// Args JSON for one `write_file` call.
 fn writeFileArgs(a: std.mem.Allocator, target_path: []const u8, content: []const u8) ![]u8 {
@@ -1561,8 +1473,7 @@ fn writeFileArgs(a: std.mem.Allocator, target_path: []const u8, content: []const
     }, .{});
 }
 
-/// Helper: build a minimal ToolExecContext whose fields execWriteFile doesn't
-/// actually read (db, logger, config, etc.).
+/// Helper: build a minimal ToolExecContext whose fields execWriteFile doesn't actually read (db, logger, config, etc.).
 fn minimalCtx(allocator: std.mem.Allocator) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
@@ -1588,8 +1499,7 @@ fn readAll(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(exec_testing.io, path, allocator, .limited(4 << 20));
 }
 
-/// Helper: assert the exec output is a success JSON envelope whose
-/// `data.file_write` equals the expected path.
+/// Helper: assert the exec output is a success JSON envelope whose `data.file_write` equals the expected path.
 fn expectWriteFileSuccess(output: []const u8, expected_path: []const u8) !void {
     const parsed = try std.json.parseFromSlice(std.json.Value, exec_testing.allocator, output, .{});
     defer parsed.deinit();
@@ -1605,8 +1515,7 @@ fn exec_fileSize(path: []const u8) u64 {
     return std.Io.File.length(f, exec_testing.io) catch 0;
 }
 
-// CONTRACT: execWriteFile must overwrite an existing file with shorter
-// content — the OLD tail bytes must be GONE after the call.
+// CONTRACT: execWriteFile must overwrite an existing file with shorter content — the OLD tail bytes must be GONE after the call.
 test "execWriteFile: overwrites existing file (truncates to shorter content)" {
     var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
     defer arena.deinit();
@@ -1653,9 +1562,7 @@ test "execWriteFile: overwrites existing file (truncates to shorter content)" {
     try exec_testing.expectEqualStrings("BBBBB", read);
 }
 
-// CONTRACT: execWriteFile must overwrite an existing file with LONGER
-// content — the file must extend to the new length and contain ONLY the
-// new bytes (no leftover tail from the original shorter file).
+// CONTRACT: execWriteFile must overwrite an existing file with LONGER content — the file must extend to the new length and contain ONLY the new bytes (no …
 test "execWriteFile: overwrites existing file (extends to longer content)" {
     var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
     defer arena.deinit();
@@ -1694,15 +1601,12 @@ test "execWriteFile: overwrites existing file (extends to longer content)" {
         try exec_testing.expectEqual(@as(u64, longer_payload.len), exec_fileSize(target_path));
         const read = try readAll(a, target_path);
         try exec_testing.expectEqualStrings(longer_payload, read);
-        // CRITICAL: no leftover 'X' bytes — would prove the file was APPENDED,
-        // not truncated-and-overwritten.
+        // CRITICAL: no leftover 'X' bytes — would prove the file was APPENDED, not truncated-and-overwritten.
         try exec_testing.expect(std.mem.indexOf(u8, read, "X") == null);
     }
 }
 
-// CONTRACT: execWriteFile must OVERWRITE, not append, when called twice in
-// a row with the same path. The second call's content must fully REPLACE
-// the first — not be appended.
+// CONTRACT: execWriteFile must OVERWRITE, not append, when called twice in a row with the same path.
 test "execWriteFile: two consecutive calls — second content wins, no append" {
     var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
     defer arena.deinit();
@@ -1749,9 +1653,7 @@ test "execWriteFile: two consecutive calls — second content wins, no append" {
     try exec_testing.expectEqual(@as(usize, "second version wins".len), read.len);
 }
 
-// CONTRACT: execWriteFile must overwrite with empty content too — the
-// file must end up at exactly 0 bytes (not "the old content minus the
-// new content size" — i.e. not partial truncation).
+// CONTRACT: execWriteFile must overwrite with empty content too — the file must end up at exactly 0 bytes (not "the old content minus the new content size" — …
 test "execWriteFile: overwriting with empty content truncates to zero bytes" {
     var arena = std.heap.ArenaAllocator.init(exec_testing.allocator);
     defer arena.deinit();

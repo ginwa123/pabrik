@@ -1,6 +1,4 @@
-/** Repro for the board-URL-renders-chat anomaly (task_1789421136160_2). Screenshots: URL is the
- * board URL (`/app?view=workspace&workspaceId=WS&itemId=BOARD`, sidebar on the board) but <main>
- * still shows the chat transcript. */
+/** Repro for the board-URL-renders-chat anomaly (task_1789421136160_2). */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive } from 'vue'
@@ -97,8 +95,7 @@ function fullPathOf(query: Record<string, string>): string {
   return '/app' + (qs ? `?${qs}` : '')
 }
 
-/**  * Seed the fixture tree AND rewire the API mocks to serve it, so init() populates instead of wiping
- * (lazy init reads the mocks after replacing the tree — a live read would see the wipe). */
+/** Seed the fixture tree AND rewire the API mocks to serve it, so init() populates instead of wiping (lazy init reads the mocks after replacing the tree — a live … */
 function seedFixtureTree() {
   const ws = useWorkspacesStore()
   ws.workspaces = [makeWorkspace()]
@@ -194,12 +191,10 @@ describe('AppLayout — Back/Forward reconciles stores from the URL', () => {
     expect(nav.activeChatId).toBe(`chat-${SESSION_X}`)
     expect(wrapper.find('[data-chat-view]').exists()).toBe(true)
 
-    // Browser Back: URL pops to the board URL. No sidebar handler runs —
-    // only the URL changes (stores stay stale, exactly like popstate).
+    // Browser Back: URL pops to the board URL.
     navigateTo(routeState, {}, `/app/${WS_ID}/projects/${BOARD_ID}`)
 
-    // init() + the Back reconcile are async — wait for the board to
-    // actually render instead of counting ticks.
+    // init() + the Back reconcile are async — wait for the board to actually render instead of counting ticks.
     await vi.waitFor(() => {
       expect(wrapper.find('[data-kanban-view]').exists()).toBe(true)
     })

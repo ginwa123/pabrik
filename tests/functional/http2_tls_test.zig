@@ -1,5 +1,4 @@
-// HTTP/2 over TLS (ALPN) end-to-end tests — **the acceptance contract**. Zig
-// port of `tests/functional/http2_tls_test.py` (same test names, same order).
+// HTTP/2 over TLS (ALPN) end-to-end tests — **the acceptance contract**.
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,13 +12,9 @@ const posix = std.posix;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// The `PABRIK_RUN_KNOWN_BROKEN_TLS` gate that used to live here is gone: the
-// upstream fix is in the pinned kabelweb (PR #7, pinned at `eaf2b583`). The
-// docstring above keeps the diagnosis for the next person who sees `curl: (35)`.
+// The `PABRIK_RUN_KNOWN_BROKEN_TLS` gate that used to live here is gone: the upstream fix is in the pinned kabelweb (PR #7, pinned at `eaf2b583`).
 
-// ============================================================================
 // curl helpers
-// ============================================================================
 
 /// Wall-clock ceiling for one curl invocation.
 const CURL_MAX_TIME_S: u32 = 10;
@@ -48,12 +43,9 @@ fn findCurl() ?[]u8 {
     return null;
 }
 
-/// Skip when this curl cannot ask for h2 at all. CI ships curl 8.22 linked
-/// against nghttp2, so this does not fire there; it keeps the suite honest on
-/// a minimal dev box instead of asserting on a curl that cannot speak HTTP/2.
+/// Skip when this curl cannot ask for h2 at all.
 fn requireHttp2Curl() ![]u8 {
-    // Ownership TRANSFERS to the caller — there is deliberately no `defer
-    // gpa.free(curl)` here.
+    // Ownership TRANSFERS to the caller — there is deliberately no `defer gpa.free(curl)` here.
     const curl = findCurl() orelse {
         std.debug.print("curl not on PATH; skipping\n", .{});
         return error.SkipZigTest;
@@ -101,9 +93,7 @@ const CurlResult = struct {
 
 /// Run curl once and report `(rc, http_code, http_version, stderr)`.
 fn curlRun(curl: []const u8, url: []const u8, extra: []const []const u8, max_time_s: u32) !CurlResult {
-    // Owned separately and freed by the `defer`s below: an `allocPrint`
-    // INLINE in the `appendSlice` argument list would outlive nothing and
-    // leak once per invocation.
+    // Owned separately and freed by the `defer`s below: an `allocPrint` INLINE in the `appendSlice` argument list would outlive nothing and leak once per invocation.
     const max_time_str = try std.fmt.allocPrint(gpa, "{d}", .{max_time_s});
     defer gpa.free(max_time_str);
 
@@ -132,8 +122,7 @@ fn curlRun(curl: []const u8, url: []const u8, extra: []const []const u8, max_tim
             .stderr = try std.fmt.allocPrint(gpa, "curl could not be spawned ({s})", .{@errorName(err)}),
         };
     };
-    // The captured buffers are COPIES of what the caller wants (`code` /
-    // `version` / `stderr` are duped below), so they are freed here.
+    // The captured buffers are COPIES of what the caller wants (`code` /`version` / `stderr` are duped below), so they are freed here.
     defer {
         gpa.free(res.stdout);
         gpa.free(res.stderr);
@@ -142,8 +131,7 @@ fn curlRun(curl: []const u8, url: []const u8, extra: []const []const u8, max_tim
         .exited => |c| @intCast(c),
         else => 124, // killed by a signal — indistinguishable from a hang here
     };
-    // `code version` on stdout; the version may be EMPTY (a failed
-    // transfer writes nothing after the space).
+    // `code version` on stdout; the version may be EMPTY (a failed transfer writes nothing after the space).
     const cut = std.mem.indexOfScalar(u8, res.stdout, ' ') orelse res.stdout.len;
     return .{
         .rc = term_rc,
@@ -153,9 +141,7 @@ fn curlRun(curl: []const u8, url: []const u8, extra: []const []const u8, max_tim
     };
 }
 
-/// `(http_version, body)` for a single request — Python's
-/// `_curl_http_version`, whose `%{http_version}` write-out tells us which
-/// protocol the connection actually used (`"2"` vs `"1.1"`).
+/// `(http_version, body)` for a single request — Python's `_curl_http_version`, whose `%{http_version}` write-out tells us which protocol the connection actually …
 fn curlHttpVersion(curl: []const u8, url: []const u8, extra: []const []const u8) ![2][]u8 {
     const max_time_str = try std.fmt.allocPrint(gpa, "{d}", .{CURL_MAX_TIME_S});
     defer gpa.free(max_time_str);
@@ -199,9 +185,7 @@ fn curlHttpVersion(curl: []const u8, url: []const u8, extra: []const []const u8)
     };
 }
 
-// ============================================================================
 // TLS-aware boot helper
-// ============================================================================
 
 /// Result of `spawnTlsPabrik`: always a harness, plus whether it got ready.
 const Booted = struct {
@@ -209,13 +193,9 @@ const Booted = struct {
     ready: bool,
     detail: []u8,
 
-    /// The Python `finally: booted.harness.teardown()`, and the ONLY teardown
-    /// path: an early `return` after a failed assertion must still stop the
-    /// child and delete the isolated HOME.
+    /// The Python `finally: booted.harness.teardown()`, and the ONLY teardown path: an early `return` after a failed assertion must still stop the child and delete …
     fn deinit(self: *Booted) void {
-        // `Harness.stopBinary` opens with a PLAINTEXT `POST /test/shutdown`
-        // and `catch return`s when it fails — and for a TLS-only listener
-        // that POST connects but never gets a response head, so the
+        // `Harness.stopBinary` opens with a PLAINTEXT `POST /test/shutdown` and `catch return`s when it fails — and for a TLS-only listener that POST connects but never …
         if (self.h.pid) |pid| harness.signalGroup(pid, harness.SIGKILL);
 
         self.h.deinit(io) catch |err| {
@@ -229,9 +209,7 @@ fn dupeEmpty() []u8 {
     return gpa.dupe(u8, "") catch @panic("OOM duping an empty string");
 }
 
-/// Boot `pabrik` the way `Harness.boot` does, but probe for the protocol the
-/// listener was *asked* to speak. `extra_args` is appended after `--port`
-/// (`--tls-selfsigned` etc.).
+/// Boot `pabrik` the way `Harness.boot` does, but probe for the protocol the listener was *asked* to speak.
 fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i64) !Booted {
     const bin = try harness.resolvePabrikBin(io, gpa);
     errdefer gpa.free(bin);
@@ -255,9 +233,7 @@ fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i
     errdefer gpa.free(temp_dir);
     errdefer harness.cleanupExtraDir(io, gpa, temp_dir);
 
-    // Every byte of the child's HOME lives inside `temp_dir`, including
-    // the XDG dirs — the self-signed cert is written to the app data
-    // dir, so a developer's real XDG_DATA_HOME must not be touched.
+    // Every byte of the child's HOME lives inside `temp_dir`, including the XDG dirs — the self-signed cert is written to the app data dir, so a developer's real …
     const xdg_config = try std.fs.path.join(gpa, &.{ temp_dir, ".config" });
     defer gpa.free(xdg_config);
     const xdg_state = try std.fs.path.join(gpa, &.{ temp_dir, ".local", "state" });
@@ -296,15 +272,12 @@ fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i
         .environ_map = &env_map,
         .stdout = .{ .file = log_file },
         .stderr = .{ .file = log_file },
-        // Own process group, so `Harness.deinit`'s `killpg` reaches the
-        // whole tree.
+        // Own process group, so `Harness.deinit`'s `killpg` reaches the whole tree.
         .pgid = if (builtin.os.tag == .windows) null else 0,
     });
-    // Only fires when this function returns an ERROR: on success the pid
-    // belongs to the returned `Booted.h`, which tears the child down.
+    // Only fires when this function returns an ERROR: on success the pid belongs to the returned `Booted.h`, which tears the child down.
     errdefer child.kill(io);
-    // Deliberately NOT `wait`ed: the pid is handed to `Harness`, which
-    // signals by process group exactly like the Python harness did.
+    // Deliberately NOT `wait`ed: the pid is handed to `Harness`, which signals by process group exactly like the Python harness did.
     const child_pid: u32 = @intCast(child.id.?);
 
     var h = Harness{
@@ -331,9 +304,7 @@ fn spawnTlsPabrik(extra_args: []const []const u8, tls: bool, ready_timeout_ms: i
     defer if (last.len > 0) gpa.free(last);
 
     while (true) {
-        // Early exit?  `waitpid(WNOHANG)` reaps, after which `pid = null`
-        // keeps `Harness.deinit` from signalling a pid the kernel may
-        // have recycled.
+        // Early exit?
         if (reapIfExited(&child)) h.pid = null;
 
         if (h.pid == null) {
@@ -404,9 +375,7 @@ fn reapIfExited(child: *std.process.Child) bool {
     return true;
 }
 
-/// One readiness attempt: `true` when ready, otherwise a REASON (owned,
-/// stored into `detail_out`, whose previous value it frees) so the
-/// timeout diagnostic can say what the last probe actually saw.
+/// One readiness attempt: `true` when ready, otherwise a REASON (owned, stored into `detail_out`, whose previous value it frees) so the timeout diagnostic can say …
 fn probe(port: u16, tls: bool, curl: []const u8, detail_out: *[]u8) !bool {
     const note = struct {
         fn set(slot: *[]u8, text: []const u8) void {
@@ -476,9 +445,7 @@ fn probe(port: u16, tls: bool, curl: []const u8, detail_out: *[]u8) !bool {
     return true;
 }
 
-/// Fail the test with the captured boot detail. The deliverable's visible
-/// output IS these failures, so keep them to one readable message instead of
-/// a repr of the whole `Booted`.
+/// Fail the test with the captured boot detail.
 fn requireReady(b: *Booted) !void {
     if (!b.ready) {
         std.debug.print("{s}\n", .{b.detail});
@@ -486,13 +453,9 @@ fn requireReady(b: *Booted) !void {
     }
 }
 
-// ============================================================================
 // Startup-log parsing
-// ============================================================================
 
 /// Extract the certificate path the server printed at startup.
-/// `--tls-selfsigned` generates the cert on first run, so the test cannot
-/// know the path a priori — the contract is that the startup log prints it.
 fn tlsCertPath(h: *Harness) ?[]u8 {
     const text = std.Io.Dir.cwd().readFileAlloc(io, h.log_path, gpa, .limited(1 << 20)) catch return null;
     defer gpa.free(text);
@@ -527,13 +490,9 @@ fn tlsCertPath(h: *Harness) ?[]u8 {
     return gpa.dupe(u8, found) catch null;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// `--tls-selfsigned` + a client that offers h2 (ALPN) → HTTP/2. `curl -k
-// --http2` over an https URL negotiates via ALPN; `%{http_version}` reports
-// `2` only if the server offered `h2` first and our client took it.
+// `--tls-selfsigned` + a client that offers h2 (ALPN) → HTTP/2.
 test "tls_selfsigned_serves_http2" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -559,14 +518,10 @@ test "tls_selfsigned_serves_http2" {
         std.debug.print("unexpected /health body: {s}\n", .{body});
         return error.TestUnexpectedResult;
     }
-    // `defer b.deinit()` above already stopped the child and deleted the
-    // isolated HOME; that mirrors the Python's `finally:
-    // booted.harness.teardown()`.
+    // `defer b.deinit()` above already stopped the child and deleted the isolated HOME; that mirrors the Python's `finally: booted.harness.teardown()`.
 }
 
-// A TLS client that only asks for `http/1.1` is still served, on h1. The ALPN
-// list is `["h2", "http/1.1"]`: the server must not require h2 from every TLS
-// client.
+// A TLS client that only asks for `http/1.1` is still served, on h1.
 test "tls_offers_http11_fallback" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -593,9 +548,7 @@ test "tls_offers_http11_fallback" {
         std.debug.print("expected the http/1.1 fallback, got '{s}'\n", .{res.version});
         return error.TestUnexpectedResult;
     }
-    // `defer b.deinit()` above already stopped the child and deleted the
-    // isolated HOME; that mirrors the Python's `finally:
-    // booted.harness.teardown()`.
+    // `defer b.deinit()` above already stopped the child and deleted the isolated HOME; that mirrors the Python's `finally: booted.harness.teardown()`.
 }
 
 // `--cacert <cert>` verifies for BOTH `localhost` and `127.0.0.1`.
@@ -639,14 +592,10 @@ test "tls_cert_san_matches_localhost" {
             return error.TestUnexpectedResult;
         }
     }
-    // `defer b.deinit()` above already stopped the child and deleted the
-    // isolated HOME; that mirrors the Python's `finally:
-    // booted.harness.teardown()`.
+    // `defer b.deinit()` above already stopped the child and deleted the isolated HOME; that mirrors the Python's `finally: booted.harness.teardown()`.
 }
 
 // Default (no TLS flags): HTTP/1.1 and h2c keep working exactly as today.
-// `--http2 h2c` is passed because it is the pre-existing, non-TLS flag that
-// makes the prior-knowledge assertion meaningful; nothing TLS-related is set.
 test "plaintext_still_works_without_tls_flags" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -688,15 +637,11 @@ test "plaintext_still_works_without_tls_flags" {
     }
 }
 
-// `--tls` with only one path (or a nonexistent path) must fail loudly. The
-// contract: non-zero exit, and the message mentions BOTH the flag (`--tls`)
-// and the offending path — so the failure is actionable.
+// `--tls` with only one path (or a nonexistent path) must fail loudly.
 test "tls_flag_requires_both_files" {
     try harness.requirePabrikBin(io, gpa);
 
-    // A scratch dir for the "does not exist" paths. NOT `h.temp_dir`:
-    // this test never boots a server through the harness, and a scratch
-    // dir is what `pytest`'s `tmp_path` provided.
+    // A scratch dir for the "does not exist" paths. NOT `h.temp_dir`
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
@@ -712,8 +657,7 @@ test "tls_flag_requires_both_files" {
         var r = harness.runPabrikCommand(io, gpa, scratch, &.{
             "--port", "0", "--tls", missing_cert,
         }, 15_000) catch |err| switch (err) {
-            // The flag was accepted and the process ran on — precisely
-            // the failure this test exists to catch.
+            // The flag was accepted and the process ran on — precisely the failure this test exists to catch.
             error.RunTimedOut => {
                 std.debug.print("`--tls <cert.pem>` with no key: the binary started and served instead of exiting non-zero\n", .{});
                 return error.TestUnexpectedResult;
@@ -756,9 +700,7 @@ test "tls_flag_requires_both_files" {
     }
 }
 
-// A TLS listener serves TLS ONLY; plaintext on the same port must fail. The
-// contract says there is no second port and no sniffing: one port, one
-// transport.
+// A TLS listener serves TLS ONLY; plaintext on the same port must fail.
 test "tls_and_h2c_are_mutually_exclusive_on_a_port" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -794,13 +736,10 @@ test "tls_and_h2c_are_mutually_exclusive_on_a_port" {
             return error.TestUnexpectedResult;
         }
     }
-    // `defer b.deinit()` above already stopped the child and deleted the
-    // isolated HOME; that mirrors the Python's `finally:
-    // booted.harness.teardown()`.
+    // `defer b.deinit()` above already stopped the child and deleted the isolated HOME; that mirrors the Python's `finally: booted.harness.teardown()`.
 }
 
-// Body-analysis barrier: an unreferenced helper is never type-checked, so a
-// stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible until a caller appears.
 comptime {
     _ = findCurl;
     _ = requireHttp2Curl;

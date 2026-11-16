@@ -1,6 +1,4 @@
-//! `PATCH /api/llm/message/:message_id`. Body: `{ "is_feed_to_llm": 0 | 1 }`.
-//! Drops one row from the model's context without deleting it: `getLLMHistories`
-//! already filters on the column, and the transcript read path does not.
+//! `PATCH /api/llm/message/:message_id`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -21,8 +19,7 @@ pub const MessagePatchInput = struct {
     is_feed_to_llm: bool,
 };
 
-/// Transport-agnostic: the HTTP handler and `pabrik headless message-feed`
-/// both call this.
+/// Transport-agnostic: the HTTP handler and `pabrik headless message-feed` both call this.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -63,8 +60,7 @@ pub fn messagePatchHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "is_feed_to_llm required" }),
         });
     };
-    // Both shapes are accepted: the wire sends 0/1, a hand-written curl may
-    // send true/false.
+    // Both shapes are accepted: the wire sends 0/1, a hand-written curl may send true/false.
     const feed: bool = switch (raw) {
         .bool => |b| b,
         .integer => |i| i != 0,

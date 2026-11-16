@@ -1,5 +1,4 @@
-/** Tests for AppLayout's URL sync watcher behavior when Sidebar.handleChatsNavigate fires
- * (navigating AWAY from a workspace item to a chat session). */
+/** Tests for AppLayout's URL sync watcher behavior when Sidebar.handleChatsNavigate fires (navigating AWAY from a workspace item to a chat session). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -138,9 +137,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
       has_more: false,
       next_cursor: null,
     })
-    // Same rationale as taskClickUrlOverwrite.spec.ts:194 — without
-    // this, AppLayout's onMounted initializeFromSystemFolder hits the
-    // 404 fetch stub and surfaces as an unhandled rejection.
+    // Same rationale as taskClickUrlOverwrite.spec.ts:194 — without this, AppLayout's onMounted initializeFromSystemFolder hits the 404 fetch stub and surfaces as an …
     vi.spyOn(api, 'getSystemFolder').mockResolvedValue({
       path: '/',
       absolute: '/',
@@ -161,8 +158,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: pushMock } as any)
 
-    // Steps 1–4 of the user report: arrive on the workspace view with
-    // a kanban item active and no chat task open.
+    // Steps 1–4 of the user report: arrive on the workspace view with a kanban item active and no chat task open.
     const wrapper = mountAppLayout({
       view: 'workspace',
       workspaceId: WS_ID,
@@ -170,9 +166,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     })
     await nextTick()
     await nextTick()
-    // initializeFromSystemFolder wipes workspaces on mount (matches the
-    // taskClickUrlOverwrite spec pattern); restore them so the watcher
-    // can resolve activeWorkspace.
+    // initializeFromSystemFolder wipes workspaces on mount (matches the taskClickUrlOverwrite spec pattern); restore them so the watcher can resolve activeWorkspace.
     const ws = useWorkspacesStore()
     ws.workspaces = [makeWorkspace()]
     ws.setActiveWorkspaceItem(FOLDER_ID)
@@ -181,9 +175,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // Step 5: simulate Sidebar.handleChatsNavigate's synchronous block. It calls
-    // setActiveWorkspaceItem(null) + setActiveTask(null) + router.replace({ view: 'chat', session
-    // }) in that order.
+    // Step 5: simulate Sidebar.handleChatsNavigate's synchronous block.
     ws.setActiveWorkspaceItem(null)
     ws.setActiveTask(null)
     replaceMock({
@@ -193,9 +185,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     await nextTick()
     await nextTick()
 
-    // Assert: the mirror watcher must NOT have called router.replace with a `?view=workspace` query
-    // (the bug). The destination's own router.replace({view: 'chat', session: S}) is the
-    // authoritative URL update and must not be clobbered.
+    // Assert: the mirror watcher must NOT have called router.replace with a `?view=workspace` query (the bug).
     const clobberCalls = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (call: any[]) => {
@@ -215,9 +205,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: pushMock } as any)
 
-    // Start with NO active workspace item and an empty URL — this simulates a future code path
-    // (keyboard shortcut, deep link, localStorage restoration) that programmatically sets an
-    // activeWorkspaceItem. The watcher MUST mirror that to the URL.
+    // Start with NO active workspace item and an empty URL — this simulates a future code path (keyboard shortcut, deep link, localStorage restoration) that …
     useRouteMock.mockReturnValue({
       query: {},
       path: '/app',
@@ -236,9 +224,7 @@ describe("AppLayout — Sidebar chat click does NOT get its URL overwritten by t
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // Programmatic setActiveWorkspaceItem (oldItemId is null → itemId
-    // is FOLDER_ID, a truthy value). The watcher's mirror must fire
-    // exactly once with the kanban item's id in the URL.
+    // Programmatic setActiveWorkspaceItem (oldItemId is null → itemId is FOLDER_ID, a truthy value).
     ws.setActiveWorkspaceItem(FOLDER_ID)
     await nextTick()
     await nextTick()

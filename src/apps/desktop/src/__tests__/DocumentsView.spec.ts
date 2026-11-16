@@ -1,6 +1,4 @@
-/** The documents viewer (Migration 095). The behaviours that are easy to break and invisible until
- * a user hits them: 1. `content` is a WHOLE-body replace, so "omitted" and "cleared" must stay
- * distinguishable in the editor. */
+/** The documents viewer (Migration 095). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -52,14 +50,11 @@ beforeEach(() => {
   getDocument.mockReset()
   updateDocument.mockReset()
   deleteDocument.mockReset()
-  // Seed the workspace itself, not the raw `activeWorkspaceId` ref. The view resolves its workspace
-  // through the `activeWorkspace` computed (precedence: explicit → persisted → item-owning → first
-  // workspace), so seeding the ref alone no longer gives it anything to fetch against.
+  // Seed the workspace itself, not the raw `activeWorkspaceId` ref.
   useWorkspacesStore().workspaces = [
     { id: 'ws_1', name: 'agentic coding', icon: '📁', expanded: true, items: [] },
   ]
-  // Seed the list so `loadDocument` serves from cache, the way it does in
-  // the real app (the sidebar has already listed the workspace).
+  // Seed the list so `loadDocument` serves from cache, the way it does in the real app (the sidebar has already listed the workspace).
   useDocumentsStore().documents = [DOC]
   useDocumentsStore().loaded = true
 })
@@ -77,9 +72,7 @@ describe('DocumentsView — rendering', () => {
   })
 
   it('escapes raw HTML in the body instead of executing it', async () => {
-    // The XSS guard. An agent that read a file and quoted its contents
-    // into a document is enough to make this reachable, so the escaping
-    // in helpers/markdown.ts is load-bearing — not paranoia.
+    // The XSS guard.
     useDocumentsStore().documents = [{ ...DOC, content: '<img src=x onerror="window.__pwned=1">' }]
     const wrapper = await mountView()
     await flushPromises()
@@ -98,8 +91,7 @@ describe('DocumentsView — rendering', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    // A silently empty view is indistinguishable from a deleted
-    // document — the user cannot tell a 404 from a blank note.
+    // A silently empty view is indistinguishable from a deleted document — the user cannot tell a 404 from a blank note.
     expect(wrapper.find('[data-testid="documents-view-error"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -120,8 +112,7 @@ describe('DocumentsView — editing', () => {
     await wrapper.get('[data-testid="documents-save"]').trigger('click')
     await flushPromises()
 
-    // The regression this guards: a store that always sends
-    // `{title, content}` would blank the body on every rename.
+    // The regression this guards: a store that always sends `{title, content}` would blank the body on every rename.
     const call = updateDocument.mock.calls[0]
     expect(call).toBeDefined()
     const [ws, id, patch] = call as [string, string, Record<string, unknown>]
@@ -176,8 +167,7 @@ describe('DocumentsView — editing', () => {
     await wrapper.get('[data-testid="documents-cancel"]').trigger('click')
     await nextTick()
 
-    // Re-opening the editor must show what is STORED, not the abandoned
-    // draft — otherwise a second edit silently re-applies the first.
+    // Re-opening the editor must show what is STORED, not the abandoned draft — otherwise a second edit silently re-applies the first.
     await wrapper.get('[data-testid="documents-edit"]').trigger('click')
     await nextTick()
     const body = wrapper.get('[data-testid="documents-content-input"]')
@@ -197,8 +187,7 @@ describe('DocumentsView — editing', () => {
     await wrapper.get('[data-testid="documents-preview-toggle"]').trigger('click')
     await nextTick()
     expect(wrapper.find('[data-testid="documents-preview"]').exists()).toBe(false)
-    // The textarea stays mounted: a v-if here drops the caret and the
-    // scroll position on every preview toggle.
+    // The textarea stays mounted: a v-if here drops the caret and the scroll position on every preview toggle.
     expect(wrapper.find('[data-testid="documents-content-input"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -215,8 +204,6 @@ describe('DocumentsView — delete and navigation', () => {
     await flushPromises()
 
     // A deleted document left selected renders a permanently empty view.
-    // The document owns its path, so deleting leaves the page by going
-    // back to the workspace root.
     expect(deleteDocument).toHaveBeenCalledWith('ws_1', 'doc_1')
     expect(router.currentRoute.value.path).toBe('/app/ws_1')
     wrapper.unmount()
@@ -231,8 +218,7 @@ describe('DocumentsView — delete and navigation', () => {
     await wrapper.get('[data-testid="documents-delete"]').trigger('click')
     await flushPromises()
 
-    // Navigating away on a failed delete loses the user's place for a
-    // request that did not happen.
+    // Navigating away on a failed delete loses the user's place for a request that did not happen.
     expect(router.currentRoute.value.path).toBe('/app/ws_1/doc/doc_1')
     expect(wrapper.find('[data-testid="documents-rendered"]').exists()).toBe(true)
     wrapper.unmount()
@@ -248,8 +234,7 @@ describe('DocumentsView — delete and navigation', () => {
     await wrapper.setProps({ documentId: 'doc_2' })
     await flushPromises()
 
-    // The Back/Forward case: the component stays mounted, so an
-    // onMounted-only fetch would leave doc_1's body under doc_2's title.
+    // The Back/Forward case: the component stays mounted, so an onMounted-only fetch would leave doc_1's body under doc_2's title.
     expect(wrapper.get('[data-testid="documents-title"]').text()).toBe('Other doc')
     expect(wrapper.get('[data-testid="documents-rendered"]').html()).toContain('different body')
     wrapper.unmount()

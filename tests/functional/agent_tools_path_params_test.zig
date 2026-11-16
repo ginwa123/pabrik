@@ -1,6 +1,4 @@
-// Functional test for the agent tools' `cwd` / path-parameter contract. Boots
-// a real `pabrik` binary against an isolated tmpdir HOME and reads the
-// published schema from `GET /api/agent-tools/registry`.
+// Functional test for the agent tools' `cwd` / path-parameter contract.
 
 const std = @import("std");
 const testing = std.testing;
@@ -25,7 +23,6 @@ const PATH_TOOLS = [_][]const u8{
 /// Tools that must NOT publish a `cwd` parameter.
 const CWD_FREE_TOOLS = [_][]const u8{
     // No filesystem parameter at all — the negative control.
-    // `cwd` dropped the same day, for reasons recorded at each tool.
     "create_kanban_task",
     "add_mcp_server",
 };
@@ -33,8 +30,7 @@ const CWD_FREE_TOOLS = [_][]const u8{
 /// The dead tools swept out of the tree (and the registry) on 2026-10-14.
 const REMOVED_TOOLS = [_][]const u8{ "change_agent", "list_agents", "remove_agent" };
 
-/// Look up one tool object by name. Borrows from `tools`, which must outlive
-/// the result.
+/// Look up one tool object by name.
 fn findTool(tools: std.json.Array, name: []const u8) ?std.json.ObjectMap {
     for (tools.items) |item| {
         if (item != .object) continue;
@@ -97,9 +93,7 @@ test "registry publishes `cwd` as REQUIRED on every path-taking tool" {
             std.debug.print("'{s}' does not publish a REQUIRED `cwd` parameter\n", .{name});
             return error.TestUnexpectedResult;
         }
-        // The parameter the cwd is a base FOR must still be there: dropping
-        // `path` would make `cwd` the only directory input, which is not the
-        // shape any of these tools document.
+        // The parameter the cwd is a base FOR must still be there: dropping `path` would make `cwd` the only directory input, which is not the shape any of these tools …
         const path_param_name: []const u8 = if (std.mem.eql(u8, name, "present_files")) "files" else "path";
         if (findParam(tool, path_param_name) == null) {
             std.debug.print("'{s}' lost its `{s}` parameter\n", .{ name, path_param_name });
@@ -123,9 +117,7 @@ test "registry publishes NO `cwd` for the tools that dropped it" {
 
     const tools = (doc.get("tools") orelse return error.TestUnexpectedResult).array;
 
-    // Positive control: the same query that finds nothing below DOES find a
-    // `cwd` on a path tool, so an empty `parameters` array would fail here
-    // instead of passing everywhere.
+    // Positive control: the same query that finds nothing below DOES find a `cwd` on a path tool, so an empty `parameters` array would fail here instead of passing …
     const probe = findTool(tools, "read_file") orelse return error.TestUnexpectedResult;
     try testing.expect(findParam(probe, "cwd") != null);
 
@@ -156,9 +148,7 @@ test "registry no longer publishes the swept dead tools" {
 
     const tools = (doc.get("tools") orelse return error.TestUnexpectedResult).array;
 
-    // Control: the lookup used below finds a name that IS registered, so a
-    // mistyped field (`tool_name` instead of `name`) cannot make every
-    // absence assertion pass for the wrong reason.
+    // Control: the lookup used below finds a name that IS registered, so a mistyped field (`tool_name` instead of `name`) cannot make every absence assertion pass …
     try testing.expect(findTool(tools, "read_file") != null);
 
     for (REMOVED_TOOLS) |name| {

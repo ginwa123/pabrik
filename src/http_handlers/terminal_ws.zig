@@ -8,19 +8,13 @@ const terminal_guest = @import("terminal_guest.zig");
 const auth_common = @import("auth_common.zig");
 const ws_frames = gserverz.ws_frames;
 
-/// How long one pump tick blocks waiting for activity. This is the
-/// websocket's latency floor, and the one number the two hosts disagree
-/// on: POSIX `poll(2)` wakes the instant the shell writes, so it can
+/// How long one pump tick blocks waiting for activity.
 const pump_tick_ms: c_int = if (terminal_session.pty_backend == .conpty) 20 else 100;
 
-/// The guest path has no pty fd to poll, so one tick is "ask the VM, then wait
-/// this long on the client socket". Shorter than the host path's tick because
-/// the wait doubles as the terminal's output latency.
+/// The guest path has no pty fd to poll, so one tick is "ask the VM, then wait this long on the client socket".
 const guest_pump_tick_ms: c_int = 50;
 
 /// Max buffered client bytes before a complete frame must arrive.
-/// Control frames are tiny (keystrokes, resize JSON); anything larger
-/// is a protocol error and ends the socket.
 const max_pending: usize = 64 * 1024;
 /// PTY bytes forwarded per loop iteration (split into 16 KiB frames).
 const max_forward_per_tick: usize = 64 * 1024;
@@ -35,9 +29,7 @@ pub const WsControl = struct {
     rows: ?u16 = null,
 };
 
-/// Wire length of the FIRST frame in `buf` (header + mask key +
-/// payload). Client frames must be masked; unmasked → InvalidFrame.
-/// Short buffer → IncompleteFrame. Absurd lengths → FrameTooLarge.
+/// Wire length of the FIRST frame in `buf` (header + mask key + payload).
 pub fn frameWireLen(buf: []const u8) !usize {
     if (buf.len < 2) return error.IncompleteFrame;
     const masked = (buf[1] & 0x80) != 0;
@@ -157,13 +149,10 @@ pub fn terminalWsHandler(
         return pumpGuest(server, allocator, client_fd, id, guest, socket);
     }
     const session = terminal_session.getSessionForOwner(id, owner) orelse return;
-    // Attach = explicit user action (tab switch): refresh the user
-    // stamp so switching back to a session keeps it alive.
+    // Attach = explicit user action (tab switch): refresh the user stamp so switching back to a session keeps it alive.
     terminal_session.touchUser(session);
 
     // No PTY backend on this host: the close handshake runs on return.
-    // Both real backends pump through the SAME loop below — POSIX forkpty
-    // and Windows ConPTY differ only in `waitReadable`, which picks the
     if (comptime terminal_session.is_pty_os) {
         return pump(server, allocator, client_fd, id, session);
     } else {
@@ -181,8 +170,6 @@ fn pump(
 ) !void {
     _ = session;
     // Attach flush: everything currently buffered, then stream.
-    // Owned copy under the session lock — no borrow survives the
-    // unlock, so a concurrent drain realloc can't free what we send.
     {
         const attached = terminal_session.getSession(id) orelse return;
         const out = terminal_session.readOutputAlloc(allocator, attached, 0) catch return;
@@ -204,9 +191,7 @@ fn pump(
     defer pending.deinit(allocator);
 
     while (true) {
-        // Re-resolve the session every tick: DELETE or the idle sweep
-        // may have freed it while we held no lock. A null lookup ends
-        // the socket; the session is gone so there is nothing to pump.
+        // Re-resolve the session every tick: DELETE or the idle sweep may have freed it while we held no lock.
         const live = terminal_session.getSession(id) orelse return;
         // Multiplex console + socket (no threads — one tick, both sides).
         const ready = terminal_session.waitReadable(live, client_fd, pump_tick_ms);
@@ -273,9 +258,7 @@ fn pump(
     }
 }
 
-/// Attach and stream a terminal inside a workspace VM. With no local pty fd to
-/// multiplex, each tick asks the guest for what it has, then waits on the client
-/// socket for the slice the host pty path would have spent in `poll`.
+/// Attach and stream a terminal inside a workspace VM.
 fn pumpGuest(
     server: *gserverz.GinwaServer,
     allocator: std.mem.Allocator,
@@ -305,8 +288,7 @@ fn pumpGuest(
     defer pending.deinit(allocator);
 
     while (true) {
-        // The registry may drop the session (DELETE or the idle sweep) while we
-        // hold no lock; a missing id ends the socket.
+        // The registry may drop the session (DELETE or the idle sweep) while we hold no lock; a missing id ends the socket.
         const live = terminal_guest.getSession(id) orelse return;
         const out = terminal_guest.readOutputAlloc(allocator, socket, live, cursor) catch return;
         defer allocator.free(out.data);
@@ -353,8 +335,7 @@ fn pumpGuest(
     }
 }
 
-/// One client control frame, for a terminal inside a workspace VM. Returns false
-/// when the socket should close (the shell has exited).
+/// One client control frame, for a terminal inside a workspace VM.
 fn handleGuestControl(
     server: *gserverz.GinwaServer,
     allocator: std.mem.Allocator,
@@ -384,9 +365,7 @@ fn handleGuestControl(
     }
     return true; // unknown type — ignore, keep the socket.
 }
-// ---------------------------------------------------------------------
-// Inline tests (framing + control parsing; the live socket is covered by the
-// functional WS harness test).
+// Inline tests (framing + control parsing; the live socket is covered by the functional WS harness test).
 
 const testing = std.testing;
 

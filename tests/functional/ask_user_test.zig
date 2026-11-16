@@ -1,6 +1,4 @@
-// Functional wire tests for the pending-question round trip (Migration 088):
-// both anchors the answer endpoint accepts — an assistant row carrying an
-// `<ask_user>` block, and a tool-result row left behind by the deleted tool.
+// Functional wire tests for the pending-question round trip (Migration 088)
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,13 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// NOTE FOR `ask_user_multi_question_test.zig`: the seeding helpers here
-// (`requireSqlite3Cli`, `sqliteRun`, `sqlLit`, `firstCellString`,
-// `scalarCount`, `toolEnvelopeJson`, `ToolCall`, `seedQuestion`,
+// NOTE FOR `ask_user_multi_question_test.zig`: the seeding helpers here (`requireSqlite3Cli`, `sqliteRun`, `sqlLit`, `firstCellString`, `scalarCount` …
 
-// ============================================================================
 // Helpers — sqlite3 CLI
-// ============================================================================
 
 pub fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -28,8 +22,7 @@ pub fn exitCode(term: std.process.Child.Term) ?u8 {
 /// The resolved `sqlite3` CLI for the CURRENT test.
 var sqlite_cli: []const u8 = "";
 
-/// True iff `bin` speaks `-json` AND can load the app's schema. TWO probes,
-/// because one is not enough.
+/// True iff `bin` speaks `-json` AND can load the app's schema.
 fn sqliteCliWorks(bin: []const u8) bool {
     const res = std.process.run(gpa, io, .{
         .argv = &.{
@@ -62,9 +55,7 @@ pub fn requireSqlite3Cli() ![]u8 {
         defer gpa.free(cand);
         std.Io.Dir.cwd().access(io, cand, .{ .execute = true }) catch continue;
         if (!sqliteCliWorks(cand)) continue;
-        // `cand` is freed by the loop body's `defer` when this iteration
-        // ends, so the global must point at the OWNED copy, not at `cand` — a
-        // borrowed-into-the-global pointer reads freed memory and the next
+        // `cand` is freed by the loop body's `defer` when this iteration ends, so the global must point at the OWNED copy, not at `cand` — a borrowed-into-the-global …
         const owned = try gpa.dupe(u8, cand);
         sqlite_cli = owned;
         return owned;
@@ -102,8 +93,7 @@ pub fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
-/// Run one statement against the harness's DB, return the CLI's stdout
-/// (owned).
+/// Run one statement against the harness's DB, return the CLI's stdout (owned).
 pub fn sqliteRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -147,9 +137,7 @@ pub fn firstRow(parsed: *const std.json.Parsed(std.json.Value)) !?std.json.Objec
     };
 }
 
-/// The first row's `col`, dupe'd into `gpa` so it outlives the parse. A SQL
-/// NULL (Python's `row["answer"] or ""`) collapses to `""` here, which is the
-/// same collapse the Python helper performed at its call sites.
+/// The first row's `col`, dupe'd into `gpa` so it outlives the parse.
 pub fn firstCellString(temp_dir: []const u8, sql: []const u8, col: []const u8) !?[]u8 {
     const out = try sqliteRun(temp_dir, sql);
     defer gpa.free(out);
@@ -179,13 +167,9 @@ pub fn scalarCount(temp_dir: []const u8, sql: []const u8) !i64 {
     };
 }
 
-// ============================================================================
 // Helpers — envelopes
-// ============================================================================
 
-/// The inner `data` payload `execAskUser` produces while pending. Field order
-/// matches the Python dict literal so the seeded bytes are the same bytes
-/// Python wrote (the assertions compare exact substrings of the stored text).
+/// The inner `data` payload `execAskUser` produces while pending.
 pub const PendingEnvelope = struct {
     status: []const u8 = "pending",
     question_id: []const u8,
@@ -225,8 +209,7 @@ const ToolEnvelope = struct {
     parameters: AskParams,
     success: bool = true,
     data: PendingEnvelope,
-    // `error` is a Zig keyword; the escaped identifier still serialises
-    // under the wire key `error`.
+    // `error` is a Zig keyword; the escaped identifier still serialises under the wire key `error`.
     @"error": ?[]const u8 = null,
     v: i64 = 1,
 };
@@ -246,9 +229,7 @@ pub fn toolEnvelopeJson(question_id: []const u8, question: []const u8) ![]u8 {
     }, .{});
 }
 
-// ============================================================================
 // Helpers — wire
-// ============================================================================
 
 /// Monotonic milliseconds (`.awake`, not the wall clock).
 pub fn nowMs() i64 {
@@ -301,8 +282,7 @@ pub fn postAnswer(h: *Harness, session_id: []const u8, body_spec: AnswerBody, ex
     return h.http(io, .POST, path, .{ .json_body = body, .expect = expect });
 }
 
-/// A required string field — Python's `body["status"]`, which RAISED on a
-/// missing key rather than degrading to `""`.
+/// A required string field — Python's `body["status"]`, which RAISED on a missing key rather than degrading to `""`.
 pub fn wantStr(doc: *const harness.Json, key: []const u8) ![]const u8 {
     return doc.str(key) orelse {
         std.debug.print("expected string key `{s}` in the answer response\n", .{key});
@@ -334,8 +314,7 @@ pub fn wantContains(content: []const u8, needle: []const u8) !void {
     }
 }
 
-/// Assert `content` does NOT contain `needle` — Python's
-/// `assert needle not in content`.
+/// Assert `content` does NOT contain `needle` — Python's `assert needle not in content`.
 pub fn wantAbsent(content: []const u8, needle: []const u8) !void {
     if (std.mem.indexOf(u8, content, needle) != null) {
         std.debug.print("did not expect {s} in the stored row, got:\n{s}\n", .{ needle, content });
@@ -343,9 +322,7 @@ pub fn wantAbsent(content: []const u8, needle: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Helpers — the block anchor
-// ============================================================================
 
 pub const BlockSeed = struct {
     question_id: []u8,
@@ -358,8 +335,7 @@ pub const BlockSeed = struct {
     }
 };
 
-/// What the loop writes when an assistant message ends with an `ask_user`
-/// block: the prose, the block, and one pending row anchored at the message.
+/// What the loop writes when an assistant message ends with an `ask_user` block: the prose, the block, and one pending row anchored at the message.
 pub fn seedBlockQuestion(
     h: *Harness,
     session_id: []const u8,
@@ -416,12 +392,9 @@ pub fn seedBlockQuestion(
     };
 }
 
-// ============================================================================
 // Helpers — seeded DB state
-// ============================================================================
 
 /// What `_seed_question` hands back: `(question_id, tool_result_row_id)`.
-/// Both fields are OWNED.
 pub const Seeded = struct {
     question_id: []u8,
     tool_row_id: []u8,
@@ -448,8 +421,7 @@ pub fn seedQuestion(
 
     const now_ns = nowNs();
 
-    // The assistant row that made the call (tool_calls_json is what makes
-    // the chain a valid assistant(tool_calls) + tool(result) pair).
+    // The assistant row that made the call (tool_calls_json is what makes the chain a valid assistant(tool_calls) + tool(result) pair).
     {
         const calls_json = try std.json.Stringify.valueAlloc(
             gpa,
@@ -583,8 +555,6 @@ pub fn expectQuestionAnswer(temp_dir: []const u8, question_id: []const u8, want:
 }
 
 /// `_tool_row_content` — the `response_content` of one `llm_history` row.
-/// OWNED: Python returned a `str` copied out of the driver, and the Zig
-/// caller compares it after this frame's buffers are gone.
 pub fn toolRowContent(temp_dir: []const u8, row_id: []const u8) ![]u8 {
     const lit = try sqlLit(row_id);
     defer gpa.free(lit);
@@ -609,9 +579,7 @@ pub fn workerExists(temp_dir: []const u8, session_id: []const u8) !bool {
     return (try firstRow(&parsed)) != null;
 }
 
-/// `_wait_for_worker` — the resume runs in a concurrent task, so the worker
-/// row lands just after the HTTP response. Poll briefly instead of
-/// asserting immediately.
+/// `_wait_for_worker` — the resume runs in a concurrent task, so the worker row lands just after the HTTP response.
 pub fn waitForWorker(temp_dir: []const u8, session_id: []const u8, timeout_ms: i64) !bool {
     const deadline = nowMs() + timeout_ms;
     while (nowMs() < deadline) {
@@ -621,15 +589,12 @@ pub fn waitForWorker(temp_dir: []const u8, session_id: []const u8, timeout_ms: i
     return false;
 }
 
-/// A cancellable sleep in whole milliseconds. `Io.sleep` reports
-/// cancellation, which a test cannot act on.
+/// A cancellable sleep in whole milliseconds.
 pub fn sleepMs(ms: i64) void {
     std.Io.sleep(io, .fromMilliseconds(ms), .awake) catch {};
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Happy path: the model's view of the answer + a new run.
 test "answer_rewrites_the_tool_row_and_resumes_the_run" {
@@ -672,8 +637,7 @@ test "answer_rewrites_the_tool_row_and_resumes_the_run" {
     try expectQuestionStatus(h.temp_dir, seeded.question_id, "answered");
     try expectQuestionAnswer(h.temp_dir, seeded.question_id, "staging");
 
-    // 2. the tool-result ROW was rewritten in place — same row id, which is
-    //    what the model reads on the next run.
+    // 2. the tool-result ROW was rewritten in place — same row id, which is what the model reads on the next run.
     {
         const content = try toolRowContent(h.temp_dir, seeded.tool_row_id);
         defer gpa.free(content);
@@ -689,8 +653,7 @@ test "answer_rewrites_the_tool_row_and_resumes_the_run" {
     }
 }
 
-// The card parses the row with `unwrapToolOutput`, which THROWS unless the
-// envelope has `tool`, `parameters`, `success` and `v`.
+// The card parses the row with `unwrapToolOutput`, which THROWS unless the envelope has `tool`, `parameters`, `success` and `v`.
 test "rewritten_row_satisfies_the_frontend_envelope_contract" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();
@@ -739,8 +702,7 @@ test "rewritten_row_satisfies_the_frontend_envelope_contract" {
     }
 }
 
-// Same contract on the Skip path — the card must be able to show `skipped`
-// and disable its inputs.
+// Same contract on the Skip path — the card must be able to show `skipped` and disable its inputs.
 test "skipped_question_rewrites_the_row_too" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();
@@ -867,8 +829,7 @@ test "empty_answer_is_rejected_on_the_wire" {
             .answer = bad,
         }, &.{400});
         defer r.deinit();
-        // The STATUS ITSELF is the assertion, so read it rather than
-        // trusting `.expect` alone.
+        // The STATUS ITSELF is the assertion, so read it rather than trusting `.expect` alone.
         try testing.expectEqual(@as(u16, 400), r.status);
     }
 
@@ -946,8 +907,7 @@ test "body_requires_a_question_key" {
     );
     defer seeded.deinit();
 
-    // `question_id` and `tool_call_id` both left null → OMITTED, so the
-    // body is literally `{"answer":"staging"}`.
+    // `question_id` and `tool_call_id` both left null → OMITTED, so the body is literally `{"answer":"staging"}`.
     var r = try postAnswer(&h, session_id, .{ .answer = "staging" }, &.{400});
     defer r.deinit();
     try testing.expectEqual(@as(u16, 400), r.status);
@@ -991,8 +951,7 @@ test "tool_call_id_is_accepted_as_the_fallback_key" {
     try wantContains(content, "\"answer\":\"staging\"");
 }
 
-// Skip is not Stop: the run must continue, and the model is told not to
-// guess instead of being handed an answer.
+// Skip is not Stop: the run must continue, and the model is told not to guess instead of being handed an answer.
 test "skip_settles_the_question_and_still_resumes" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();
@@ -1039,8 +998,7 @@ test "skip_settles_the_question_and_still_resumes" {
     }
 }
 
-// The user is never dead-ended: sending a message settles the question and
-// the model is told the human moved on (it must not read `pending`).
+// The user is never dead-ended: sending a message settles the question and the model is told the human moved on (it must not read `pending`).
 test "a_new_message_instead_of_an_answer_settles_it_as_abandoned" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();
@@ -1112,8 +1070,6 @@ test "a_new_message_instead_of_an_answer_settles_it_as_abandoned" {
 }
 
 // Route-order regression guard: `/answer` must resolve to its OWN handler.
-// The contract the UI reads: the answer replaces the block the model wrote,
-// under the same row id the card is drawn under.
 test "a question written as a block is answered in place" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();
@@ -1219,8 +1175,7 @@ test "answer_route_is_not_shadowed_by_sibling_routes" {
     const session_id = try createSession(&h, "ask-user-probe");
     defer gpa.free(session_id);
 
-    // Wrong method on the right path → 404/405, never a sibling handler's 200
-    // with sibling keys.
+    // Wrong method on the right path → 404/405, never a sibling handler's 200 with sibling keys.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/answer", .{session_id});
         defer gpa.free(path);
@@ -1261,8 +1216,7 @@ test "answer_route_is_not_shadowed_by_sibling_routes" {
     }
 }
 
-// Body-analysis barrier: an unreferenced helper is never type-checked, so a
-// stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible until a caller appears.
 comptime {
     _ = requireSqlite3Cli;
     _ = sqliteCliWorks;

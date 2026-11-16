@@ -1,5 +1,4 @@
-/** Behavioural tests for AppLayout's translate-element + resize-element handlers (Step 4 of the
- * drag/resize wire). */
+/** Behavioural tests for AppLayout's translate-element + resize-element handlers (Step 4 of the drag/resize wire). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 

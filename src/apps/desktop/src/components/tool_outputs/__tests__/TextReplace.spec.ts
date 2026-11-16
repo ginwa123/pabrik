@@ -6,9 +6,7 @@ import { defineComponent, h, provide } from 'vue'
 import TextReplace from '../TextReplace.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
 
-// ────────────────────────────────────────────────────────────────────────
 // Test helpers
-// ────────────────────────────────────────────────────────────────────────
 const makeContent = (opts: { path?: string; success?: boolean; error?: string } = {}) => {
   const path = opts.path ?? '/repo/src/foo.ts'
   const success = opts.success ?? true
@@ -45,12 +43,9 @@ const makeWrapper = (
   return mount(TextReplace, { props })
 }
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 beforeAll(() => {
   // jsdom 29 dropped localStorage from default globals — install a stub.
-  // TextReplace itself doesn't read localStorage, but the DiffView child does.
   Object.defineProperty(globalThis, 'localStorage', {
     value: (() => {
       const store = new Map<string, string>()
@@ -111,8 +106,6 @@ describe('TextReplace', () => {
     await wrapper.setProps({ expanded: true })
 
     // Click an after-side line number (the edited line is line 2).
-    // Vue Test Utils' `.find()` only matches single-attribute selectors;
-    // combine multiple attributes via `.findAll(...)[0]`.
     const afterLineRows = wrapper.findAll('[data-side="after"][data-line="2"]')
     expect(afterLineRows.length).toBe(1)
     const afterLineRow = afterLineRows[0]!
@@ -136,8 +129,7 @@ describe('TextReplace', () => {
     })
 
     wrapper = makeWrapper(
-      // cwd omitted — TextReplace should not call the handler even if
-      // the line-number click registers.
+      // cwd omitted — TextReplace should not call the handler even if the line-number click registers.
       { content: makeContent({ path: '/repo/src/foo.ts' }) },
       openFn,
     )

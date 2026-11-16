@@ -1,6 +1,4 @@
-/** Behavioural tests for the keyboard shortcuts added in Chunk 4 of the right-click group menu
- * plan: - Cmd/Ctrl+A: select all elements on the active page - Cmd/Ctrl+]: bring forward -
- * Cmd/Ctrl+Shift+]: bring to front - Cmd/Ctrl+[: send backward - Cmd/Ctrl+Shift+[: send to back. */
+/** Behavioural tests for the keyboard shortcuts added in Chunk 4 of the right-click group menu plan: - Cmd/Ctrl+A: select all elements on the active page - … */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -91,9 +89,7 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
     const _store = useWorkspacesStore()
     _store.setActiveDesignPage('page_1')
     vi.spyOn(_store, 'deleteDesignElement').mockImplementation(deleteDesignElementSpy)
-    // NOTE: do NOT mock `store.reorderDesignElements` — that would short-circuit the real store
-    // action before it can call the (mocked) api function. The api spy alone catches the call and
-    // records the api-level args (4-tuple, not 5-tuple).
+    // NOTE: do NOT mock `store.reorderDesignElements` — that would short-circuit the real store action before it can call the (mocked) api function.
     const wrapper = mount(DesignView, {
       props: { item: { ...ITEM, design_elements: elements }, workspaceId: 'ws_1', itemId: 'item_1' },
     })
@@ -111,8 +107,7 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
       rootEl.setPointerCapture = () => {}
       rootEl.releasePointerCapture = () => {}
       rootEl.hasPointerCapture = (): boolean => true
-      // First click is plain (replace selection); subsequent ones
-      // use Shift to add.
+      // First click is plain (replace selection); subsequent ones use Shift to add.
       const shiftKey = ids.indexOf(id) > 0
       rootEl.dispatchEvent(new PointerEvent('pointerdown', {
         button: 0, pointerId: 1, clientX: 100, clientY: 100,
@@ -198,19 +193,16 @@ describe('DesignView keyboard shortcuts (Chunk 4)', () => {
     try {
       selectElements(wrapper, ['el_a'])
       await flushPromises()
-      // Dispatch a keydown whose target is an <input>. The handler's
-      // first guard returns early when target is INPUT/TEXTAREA.
+      // Dispatch a keydown whose target is an <input>.
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'a', metaKey: true, bubbles: true,
-          // jsdom's KeyboardEvent constructor doesn't accept `target`
-          // directly; set it on the event afterwards.
+          // jsdom's KeyboardEvent constructor doesn't accept `target` directly; set it on the event afterwards.
         }),
       )
       await flushPromises()
       const layers = wrapper.findComponent({ name: 'LayersPanel' })
-      // Selection should still be {el_a} — Cmd+A ignored because the event was dispatched on
-      // document (no target input).
+      // Selection should still be {el_a} — Cmd+A ignored because the event was dispatched on document (no target input).
       const ids = layers.props('selectedIds') as string[]
       expect(ids.length).toBeGreaterThanOrEqual(1)
     } finally {

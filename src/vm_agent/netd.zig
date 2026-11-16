@@ -1,6 +1,4 @@
-//! `pabrik-vm-netd` — the in-guest network forwarder: loopback, the tenant's
-//! resolver config, an HTTP proxy on 127.0.0.1:3128 and a DNS proxy on
-//! 127.0.0.1:53, each carried out of the VM over vsock to the host.
+//! `pabrik-vm-netd` — the in-guest network forwarder: loopback, the tenant's resolver config, an HTTP proxy on 127.0.0.1:3128 and a DNS proxy on 127.0.0.1:53 …
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -18,12 +16,10 @@ const af_inet: u32 = 2;
 /// Where netd listens for the tenant: the proxy and the resolver.
 const proxy_port: u16 = 3128;
 const dns_port: u16 = 53;
-/// The tenant's loopback: netd binds and dials nothing else. With the opt-in
-/// tap mode the guest also has `eth0`, which netd never uses.
+/// The tenant's loopback: netd binds and dials nothing else.
 const loopback_text = "127.0.0.1";
 
-/// One request head, read whole. 16 KiB is past any real head, and the cap is
-/// what keeps a flooding client from growing netd's stack.
+/// One request head, read whole. 16 KiB is past any real head, and the cap is what keeps a flooding client from growing netd's stack.
 const max_head: usize = 16 * 1024;
 /// The handshake line and its reply: a host name, a port and a DENY reason.
 const handshake_max: usize = 512;
@@ -32,8 +28,7 @@ const deny_bytes: usize = 1024;
 /// The relay's chunk, so most of a copy crosses in one read and one write.
 const relay_chunk: usize = 64 * 1024;
 
-/// One UDP query — 1200 bytes is the EDNS-safe ceiling — and one reply from
-/// the host, capped by `egress.resolver_response_cap`.
+/// One UDP query — 1200 bytes is the EDNS-safe ceiling — and one reply from the host, capped by `egress.resolver_response_cap`.
 const dns_query_max: usize = 1200;
 const dns_reply_max: usize = 4096;
 /// A DNS header: an id, flags and four counts. Shorter is not a query.
@@ -43,8 +38,7 @@ const dns_header_bytes: usize = 12;
 const poll_slice_ms: i32 = 1000;
 const head_slices: u32 = 10;
 const reply_slices: u32 = 10;
-/// Each of the DNS path's two reads gets 5 s, so one datagram holds the
-/// parent for at most 10 s before it is answered with SERVFAIL.
+/// Each of the DNS path's two reads gets 5 s, so one datagram holds the parent for at most 10 s before it is answered with SERVFAIL.
 const dns_slices: u32 = 5;
 /// The relay polls in 5 s slices and gives up after 120 s of no traffic.
 const relay_slice_ms: i32 = 5000;
@@ -64,22 +58,18 @@ const iff_running: i16 = 0x40;
 const char_dev: u32 = 0o020000;
 const resolv_path = "/etc/resolv.conf";
 const resolv_text = "nameserver 127.0.0.1\noptions timeout:2 attempts:3 ndots:2\n";
-/// Readable by any tenant process, writable only by root. The egress profile
-/// is the same: every workload has to read it, only root may rewrite it.
+/// Readable by any tenant process, writable only by root.
 const tenant_readable_mode: u32 = 0o644;
 /// `wait4`'s WNOHANG: reaping must never block the listeners.
 const wno_hang: u32 = 1;
 
-/// What an `https://` request line gets: it cannot be served, and the bare
-/// `400` this replaced left clients guessing. busybox `wget https://…` sends
-/// exactly this, so it is told to tunnel instead of retrying blind.
+/// What an `https://` request line gets: it cannot be served, and the bare `400` this replaced left clients guessing. busybox `wget https://…` sends exactly this …
 const needs_connect =
     "HTTP/1.1 501 Not Implemented\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n" ++
     "an https:// URL in a plain request line cannot be proxied: this client is not tunnelling.\n" ++
     "Use a client that sends CONNECT (git, curl, python, apk) — busybox wget cannot.\n";
 
-/// Answers netd writes itself. Each one closes the connection: a proxied
-/// exchange is never reused for a second request.
+/// Answers netd writes itself.
 const bad_request = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 const bad_gateway = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 const forbidden = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -91,16 +81,14 @@ var listen_udp: ?linux.fd_t = null;
 
 // ─── shapes ──────────────────────────────────────────────────────────────
 
-/// `struct ifreq` as these two ioctls see it: 16 bytes of name, the flags,
-/// then padding out to the 40-byte view the kernel reads.
+/// `struct ifreq` as these two ioctls see it: 16 bytes of name, the flags, then padding out to the 40-byte view the kernel reads.
 const IfReq = extern struct {
     name: [16]u8,
     flags: i16,
     pad: [22]u8 = .{0} ** 22,
 };
 
-/// The head read so far: `head` ends at the blank line, and `buffered` also
-/// carries any body bytes that arrived in the same reads.
+/// The head read so far: `head` ends at the blank line, and `buffered` also carries any body bytes that arrived in the same reads.
 const Head = struct {
     head: []const u8,
     buffered: []const u8,
@@ -113,12 +101,10 @@ const RequestLine = struct {
     version: []const u8,
 };
 
-/// The shapes a request target can have. `https_absolute` cannot work: an
-/// `https://` URL in a plain request line means the client is not tunnelling.
+/// The shapes a request target can have.
 const DestKind = enum { connect, absolute, https_absolute, bad };
 
-/// Where a request is bound: the egress host and port, and for absolute form
-/// the origin-form path the request line has to be rewritten to.
+/// Where a request is bound: the egress host and port, and for absolute form the origin-form path the request line has to be rewritten to.
 const Dest = struct {
     kind: DestKind,
     host: []const u8,
@@ -174,8 +160,7 @@ fn readExact(fd: linux.fd_t, buf: []u8, slice_ms: i32, slices: u32) bool {
     return off == buf.len;
 }
 
-/// One `\n`-terminated reply line without its newline, or null on the 512
-/// byte cap, a dead host or the deadline.
+/// One `\n`-terminated reply line without its newline, or null on the 512 byte cap, a dead host or the deadline.
 fn readReplyLine(fd: linux.fd_t, buf: []u8) ?[]const u8 {
     var have: usize = 0;
     var left: u32 = reply_slices;
@@ -210,14 +195,12 @@ fn sleepMs(ms: u64) void {
 
 // ─── guest setup ─────────────────────────────────────────────────────────
 
-/// `_exit(0)` for a forked child: the thread's own exit, so a child that
-/// somehow grew a second thread cannot take the parent down with it.
+/// `_exit(0)` for a forked child: the thread's own exit, so a child that somehow grew a second thread cannot take the parent down with it.
 fn childExit() noreturn {
     linux.exit(0);
 }
 
-/// SIGPIPE would kill a relay's child mid-write; ignore it and let `write`
-/// report the broken pipe instead.
+/// SIGPIPE would kill a relay's child mid-write; ignore it and let `write` report the broken pipe instead.
 fn ignoreSigpipe() void {
     const act = linux.Sigaction{
         .handler = .{ .handler = linux.SIG.IGN },
@@ -234,8 +217,7 @@ fn socketInet(kind: u32) ?linux.fd_t {
     return @intCast(rc);
 }
 
-/// One decimal octet of a dotted quad: digits only, and a leading zero only
-/// when the number is 0.
+/// One decimal octet of a dotted quad: digits only, and a leading zero only when the number is 0.
 fn parseOctet(part: []const u8) ?u32 {
     if (part.len == 0 or part.len > 3) return null;
     if (part.len > 1 and part[0] == '0') return null;
@@ -248,9 +230,7 @@ fn parseOctet(part: []const u8) ?u32 {
     return value;
 }
 
-/// Four strict octets (`127.1` is refused, so is `256.0.0.1`), returned as the
-/// octets' big-endian number, which `sockaddr.in` wants byte-swapped on the
-/// way in — the same treatment its port field gets.
+/// Four strict octets (`127.1` is refused, so is `256.0.0.1`), returned as the octets' big-endian number, which `sockaddr.in` wants byte-swapped on the way in — …
 fn parseIpv4(text: []const u8) ?u32 {
     var value: u32 = 0;
     var parts: usize = 0;
@@ -265,8 +245,7 @@ fn parseIpv4(text: []const u8) ?u32 {
     return value;
 }
 
-/// Create the device node at `path` unless it is already there: the kernel
-/// answers `EEXIST` for a node the agent made, which is not a failure.
+/// Create the device node at `path` unless it is already there: the kernel answers `EEXIST` for a node the agent made, which is not a failure.
 fn makeNode(path: []const u8, major: u32, minor: u32) bool {
     var buf: [64]u8 = undefined;
     const path_z = cstr(path, &buf) orelse return false;
@@ -275,8 +254,7 @@ fn makeNode(path: []const u8, major: u32, minor: u32) bool {
     return err == .SUCCESS or err == .EXIST;
 }
 
-/// The three device nodes netd wants present, so a redirected child has the
-/// usual `/dev/null`, `/dev/zero` and `/dev/urandom`.
+/// The three device nodes netd wants present, so a redirected child has the usual `/dev/null`, `/dev/zero` and `/dev/urandom`.
 fn ensureDev() void {
     _ = linux.mkdir("/dev", 0o755);
     var present: usize = 0;
@@ -286,9 +264,7 @@ fn ensureDev() void {
     logLine(if (present == 3) "device nodes ready" else "MISSING device nodes");
 }
 
-/// Raise `lo` with `SIOCSIFFLAGS`: the kernel has the interface, nothing in
-/// the guest ever brings it up, and every listener below needs it. A failure
-/// is logged, not fatal — the binds will say so themselves.
+/// Raise `lo` with `SIOCSIFFLAGS`: the kernel has the interface, nothing in the guest ever brings it up, and every listener below needs it.
 fn bringLoopbackUp() bool {
     const fd = socketInet(linux.SOCK.DGRAM) orelse return false;
     defer _ = linux.close(fd);
@@ -310,8 +286,7 @@ fn bindLoopback(fd: linux.fd_t, port: u16) bool {
     return linux.errno(linux.bind(fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in))) == .SUCCESS;
 }
 
-/// A listening TCP socket on 127.0.0.1:port, or null when the kernel refuses
-/// the socket, the address or the listen.
+/// A listening TCP socket on 127.0.0.1:port, or null when the kernel refuses the socket, the address or the listen.
 fn bindLoopbackTcp(port: u16) ?linux.fd_t {
     const fd = socketInet(linux.SOCK.STREAM) orelse return null;
     const one: i32 = 1;
@@ -333,8 +308,7 @@ fn bindLoopbackUdp(port: u16) ?linux.fd_t {
     return fd;
 }
 
-/// Write the resolver config, creating `/etc` if the image has none. The
-/// nameserver is netd itself, so a lookup lands on the DNS proxy below.
+/// Write the resolver config, creating `/etc` if the image has none.
 fn writeResolvConf() bool {
     _ = linux.mkdir("/etc", 0o755);
     var buf: [64]u8 = undefined;
@@ -346,8 +320,7 @@ fn writeResolvConf() bool {
     return writeAll(fd, resolv_text);
 }
 
-/// Write the egress profile: every login shell gets the proxy the workload is
-/// handed at exec time, so `sh -l` and the terminal tab reach the host too.
+/// Write the egress profile: every login shell gets the proxy the workload is handed at exec time, so `sh -l` and the terminal tab reach the host too.
 fn writeProfileScript() bool {
     _ = linux.mkdir("/etc", 0o755);
     _ = linux.mkdir("/etc/profile.d", 0o755);
@@ -360,9 +333,7 @@ fn writeProfileScript() bool {
     return writeAll(fd, egress.profile_script);
 }
 
-/// A connected AF_VSOCK stream to the host, retried for up to 3 s: the host
-/// side of a hybrid-vsock port appears on the guest's first dial, and until it
-/// does `connect` answers ECONNREFUSED (a new workspace's first fetch got 502).
+/// A connected AF_VSOCK stream to the host, retried for up to 3 s: the host side of a hybrid-vsock port appears on the guest's first dial, and until it does …
 fn connectVsock(port: u32) ?linux.fd_t {
     var attempt: usize = 0;
     while (attempt < vsock.dial_attempts) : (attempt += 1) {
@@ -396,9 +367,7 @@ fn connectVsock(port: u32) ?linux.fd_t {
 
 // ─── proxy ───────────────────────────────────────────────────────────────
 
-/// The index just past the blank line that ends a head, for `\r\n\r\n` or a
-/// bare `\n\n`. The CRLF form is tested first: a body starting with a newline
-/// must not be mistaken for the end of the head.
+/// The index just past the blank line that ends a head, for `\r\n\r\n` or a bare `\n\n`.
 fn headEnd(buf: []const u8) ?usize {
     var at: usize = 0;
     while (at < buf.len) : (at += 1) {
@@ -409,8 +378,7 @@ fn headEnd(buf: []const u8) ?usize {
     return null;
 }
 
-/// Read until the blank line that ends the head, or null on the 16 KiB cap,
-/// a dead client or the 10 s deadline.
+/// Read until the blank line that ends the head, or null on the 16 KiB cap, a dead client or the 10 s deadline.
 fn readHead(fd: linux.fd_t, buf: []u8) ?Head {
     var have: usize = 0;
     var left: u32 = head_slices;
@@ -428,9 +396,7 @@ fn readHead(fd: linux.fd_t, buf: []u8) ?Head {
     return null;
 }
 
-/// The bytes a client sent in the same read as its head. They belong to the
-/// tunnel: a client may pipeline a TLS ClientHello straight after `CONNECT`
-/// instead of waiting for the `200`, and dropping them fails the handshake.
+/// The bytes a client sent in the same read as its head.
 fn pipelinedBytes(got: Head) []const u8 {
     return got.buffered[got.head.len..];
 }
@@ -474,9 +440,7 @@ fn parsePort(text: []const u8) ?u16 {
     return @intCast(value);
 }
 
-/// Split a request target into the egress host and port. `CONNECT` carries
-/// `host[:port]`; an absolute-form target carries `http://host[:port]/path`
-/// and reports the path back so the request line can be rewritten to it.
+/// Split a request target into the egress host and port.
 fn parseDest(method: []const u8, target: []const u8) Dest {
     if (std.mem.eql(u8, method, "CONNECT")) {
         const colon = std.mem.indexOfScalar(u8, target, ':');
@@ -508,8 +472,7 @@ fn parseDest(method: []const u8, target: []const u8) Dest {
     return .{ .kind = .bad, .host = "", .port = 0, .origin = "" };
 }
 
-/// The one-line egress handshake `PABRIK-EGRESS/1 <host> <port>\n`. Null when
-/// the host is empty, the port is refused, or the line cannot fit 512 bytes.
+/// The one-line egress handshake `PABRIK-EGRESS/1 <host> <port>\n`.
 fn handshakeLine(buf: []u8, host: []const u8, port: u16) ?[]const u8 {
     if (host.len == 0 or port == 0) return null;
     for (host) |c| {
@@ -524,8 +487,7 @@ fn ready(pfd: linux.pollfd) bool {
     return pfd.revents & (linux.POLL.IN | linux.POLL.HUP | linux.POLL.ERR) != 0;
 }
 
-/// Move whatever `src` has to `dst`, once. `eof` is the peer closing its end,
-/// which the caller has to forward as a half-close rather than a teardown.
+/// Move whatever `src` has to `dst`, once.
 fn pumpOnce(src: linux.fd_t, dst: linux.fd_t, buf: []u8) Pump {
     const n = linux.read(src, buf.ptr, buf.len);
     const read_err = linux.errno(n);
@@ -540,9 +502,7 @@ fn pumpOnce(src: linux.fd_t, dst: linux.fd_t, buf: []u8) Pump {
     return .moved;
 }
 
-/// Pump both ways until both directions are done or 120 s pass with nothing
-/// moving. A direction that ends is half-closed, so its peer still sees the
-/// rest of the stream and then a clean EOF.
+/// Pump both ways until both directions are done or 120 s pass with nothing moving.
 fn relay(client_fd: linux.fd_t, vsock_fd: linux.fd_t) void {
     var buf: [relay_chunk]u8 = undefined;
     var client_open = true;
@@ -589,8 +549,7 @@ fn relay(client_fd: linux.fd_t, vsock_fd: linux.fd_t) void {
     }
 }
 
-/// The `403` a host `DENY` becomes: the reason is body text, and the status
-/// can never be a `200` whatever the host said.
+/// The `403` a host `DENY` becomes: the reason is body text, and the status can never be a `200` whatever the host said.
 fn denyClient(conn_fd: linux.fd_t, reason: []const u8) void {
     const text = std.mem.trim(u8, reason, " \t\r\n");
     var buf: [deny_bytes]u8 = undefined;
@@ -605,17 +564,14 @@ fn denyClient(conn_fd: linux.fd_t, reason: []const u8) void {
     _ = writeAll(conn_fd, reply);
 }
 
-/// Dial the host once at boot and drop it: the guest-to-host vsock pairing is
-/// set up on the first dial, so paying that here keeps it out of a workload's
-/// first request (which is where it used to surface, as a 502).
+/// Dial the host once at boot and drop it: the guest-to-host vsock pairing is set up on the first dial, so paying that here keeps it out of a workload's first …
 fn warmEgress(port: u32) bool {
     const fd = connectVsock(port) orelse return false;
     _ = linux.close(fd);
     return true;
 }
 
-/// One client connection, in its own forked child: read the head, work out
-/// the destination, open the egress tunnel, then relay until either side ends.
+/// One client connection, in its own forked child: read the head, work out the destination, open the egress tunnel, then relay until either side ends.
 fn serveTcpClient(conn_fd: linux.fd_t) void {
     var buf: [max_head]u8 = undefined;
     const got = readHead(conn_fd, &buf) orelse {
@@ -678,16 +634,13 @@ fn serveTcpClient(conn_fd: linux.fd_t) void {
     }
     if (dest.kind == .connect) {
         if (!writeAll(conn_fd, established)) return;
-        // TLS over the tunnel starts here: whatever the client pipelined behind
-        // its CONNECT line is already in this read.
+        // TLS over the tunnel starts here: whatever the client pipelined behind its CONNECT line is already in this read.
         if (!writeAll(egress_fd, pipelinedBytes(got))) {
             _ = writeAll(conn_fd, bad_gateway);
             return;
         }
     } else {
-        // Into the tunnel: the rewritten request line, then the caller's own
-        // header lines and the blank line, then any body that arrived with
-        // them. The client sees nothing but the server's answer.
+        // Into the tunnel: the rewritten request line, then the caller's own header lines and the blank line, then any body that arrived with them.
         const rest_at = if (line_end < got.head.len) line_end + 1 else got.head.len;
         if (!writeAll(egress_fd, fixed[0..fixed_len]) or
             !writeAll(egress_fd, got.head[rest_at..]) or
@@ -700,8 +653,7 @@ fn serveTcpClient(conn_fd: linux.fd_t) void {
     relay(conn_fd, egress_fd);
 }
 
-/// Accept one client and fork it. The parent closes its copy of the accepted
-/// fd at once, so only the child owns the connection.
+/// Accept one client and fork it.
 fn acceptAndFork(listen_fd: linux.fd_t) bool {
     const rc = linux.accept(listen_fd, null, null);
     if (linux.errno(rc) != .SUCCESS) return false;
@@ -733,8 +685,7 @@ fn reapChildren() void {
 
 // ─── dns ─────────────────────────────────────────────────────────────────
 
-/// The SERVFAIL answer a failed lookup gets: the query echoed back, QR set,
-/// RCODE 2 in the flag byte, and the three record counts at bytes 6..12 zeroed.
+/// The SERVFAIL answer a failed lookup gets: the query echoed back, QR set, RCODE 2 in the flag byte, and the three record counts at bytes 6..12 zeroed.
 fn servfailFrom(query: []const u8, out: []u8) ?[]const u8 {
     if (query.len < dns_header_bytes or query.len > out.len) return null;
     @memcpy(out[0..query.len], query);
@@ -744,8 +695,7 @@ fn servfailFrom(query: []const u8, out: []u8) ?[]const u8 {
     return out[0..query.len];
 }
 
-/// One query over a fresh vsock stream: a 2-byte big-endian length, the
-/// message, and the same framing back — a length of 0 is a refusal.
+/// One query over a fresh vsock stream: a 2-byte big-endian length, the message, and the same framing back — a length of 0 is a refusal.
 fn dnsOverVsock(query: []const u8, out: []u8) ?[]const u8 {
     const fd = connectVsock(resolver_port) orelse return null;
     defer _ = linux.close(fd);
@@ -760,9 +710,7 @@ fn dnsOverVsock(query: []const u8, out: []u8) ?[]const u8 {
     return out[0..len];
 }
 
-/// One datagram on the resolver socket, answered from the same socket. The
-/// exchange is serial in the parent: it is a bounded round trip, and forking
-/// per datagram would cost more than it saves.
+/// One datagram on the resolver socket, answered from the same socket.
 fn dnsExchange(udp_fd: linux.fd_t) bool {
     var query: [dns_query_max]u8 = undefined;
     var peer: linux.sockaddr.in = .{ .port = 0, .addr = 0 };
@@ -795,9 +743,7 @@ pub fn main() void {
     logLine(if (listen_udp != null) "dns listening on 127.0.0.1:53" else "MISSING dns listener");
     logLine(if (warmEgress(egress_port) and warmEgress(resolver_port)) "egress tunnel primed" else "MISSING egress tunnel");
 
-    // One loop over both listeners plus a tick. A listener that is readable
-    // but yields nothing (EMFILE, a reset between poll and accept) waits before
-    // the next pass: `poll` re-arms instantly, so this loop would own the vCPU.
+    // One loop over both listeners plus a tick.
     var tcp_failures: u32 = 0;
     var dns_failures: u32 = 0;
     while (true) {
@@ -860,8 +806,7 @@ test "parseDest covers CONNECT, absolute form and the rest" {
     try std.testing.expectEqual(DestKind.bad, parseDest("GET", "/index.html").kind);
     try std.testing.expectEqual(DestKind.bad, parseDest("GET", "http://").kind);
 
-    // What busybox `wget https://…` sends: an https URL in a plain request
-    // line, i.e. no tunnel. It must be told so, not answered with a 400.
+    // What busybox `wget https://…` sends: an https URL in a plain request line, i.e. no tunnel.
     const h = parseDest("GET", "https://github.com/ginwa123/pabrik/info/refs?x=1");
     try std.testing.expectEqual(DestKind.https_absolute, h.kind);
     try std.testing.expectEqualStrings("github.com", h.host);
@@ -899,8 +844,7 @@ test "servfailFrom echoes the query with RCODE 2 and no records" {
 }
 
 test "bytes that arrived with the head go into the tunnel" {
-    // A CONNECT whose TLS ClientHello came in the same read: the head ends at
-    // the blank line and everything after it is the client's handshake.
+    // A CONNECT whose TLS ClientHello came in the same read: the head ends at the blank line and everything after it is the client's handshake.
     const connect = "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n";
     var one_read: [connect.len + 6]u8 = undefined;
     @memcpy(one_read[0..connect.len], connect);
@@ -908,8 +852,7 @@ test "bytes that arrived with the head go into the tunnel" {
     const got = Head{ .head = one_read[0..connect.len], .buffered = &one_read };
     try std.testing.expectEqualSlices(u8, "\x16\x03\x01\x02\x00\x01", pipelinedBytes(got));
 
-    // A head that is alone in its read has nothing to forward, and a head with
-    // a body does not leak the body into the tunnel twice.
+    // A head that is alone in its read has nothing to forward, and a head with a body does not leak the body into the tunnel twice.
     const alone = Head{ .head = one_read[0..connect.len], .buffered = one_read[0..connect.len] };
     try std.testing.expectEqual(@as(usize, 0), pipelinedBytes(alone).len);
 }

@@ -8,50 +8,9 @@ import com.pabrik.mobile.cache.RecentsCacheDao
 import com.pabrik.mobile.storage.KeystoreSealingCipher
 import com.pabrik.mobile.storage.SealingCipher
 
-/**
- * Last-known sidebar data, so a cold boot or an offline launch paints real rows
- * instead of an error screen.
- *
- * **Scope: exactly two endpoints**, deliberately — `GET /api/workspaces?is_include_items=false`
- * and `GET /api/session?workspace_id=…`. These are the two the sidebar renders and the
- * two the Vue web's sidebar primitives mirror (`workspacesCache.ts`, `SessionEngineDb`).
- * The web also caches git status, task media, auth/me and message history, but none of
- * those are on this screen, and a general-purpose cache would be harder to reason about
- * than two named accessors. Adding a third endpoint here should be a deliberate change
- * to this interface, not a side effect of some new caller.
- *
- * Three rules make this safe on a phone, and all three are load-bearing:
- *
- * 1. **Namespaced per user.** `logout()` only clears the session
- *    cookie, so an unscoped cache would put the previous account's workspaces
- *    and chat titles on screen for the next person who signs in on a shared
- *    device. Every read and write requires a non-blank `userId`.
- * 2. **Partitioned per workspace.** Recents are scoped server-side, so the cache
- *    is keyed the same way. Painting workspace A's rows under workspace B's name
- *    is the failure this prevents.
- * 3. **Encrypted at rest.** Chat titles are user content and a SQLite file is
- *    plaintext on disk, so the title column is sealed with a Keystore AES-GCM
- *    key under its own alias. This mirrors
- *    [com.pabrik.mobile.auth.SessionCookieStore], so a suspected cache leak and
- *    a suspected credential leak stay separate investigations that can be
- *    rotated separately.
- *
- * Every operation is fail-silent: a corrupt payload, an undecryptable entry or
- * a Keystore that refuses to open degrades to a plain cache miss. A broken
- * cache must never be the reason the app fails.
- *
- * There is **no TTL**, matching `workspacesCache.ts`. That is only safe because
- * every paint is immediately followed by a live fetch — an invariant
- * [HomeViewModel] enforces by construction, not by convention.
- */
+/** Last-known sidebar data, so a cold boot or an offline launch paints real rows instead of an error screen. */
 interface RecentsCache {
-    /**
-     * A null or blank `userId` is a miss, never an unscoped read. That is
-     * stricter than the desktop's `userScopedKey`, which falls back to an
-     * UNSCOPED key when identity is unresolved; on a phone that fallback is
-     * precisely the case where one account's rows leak to the next, so callers
-     * cannot opt into it.
-     */
+    /** A null or blank `userId` is a miss, never an unscoped read. */
     fun readWorkspaces(userId: String?): List<WorkspaceOption>?
 
     fun writeWorkspaces(userId: String?, workspaces: List<WorkspaceOption>)
@@ -64,31 +23,7 @@ interface RecentsCache {
     fun clear()
 }
 
-/**
- * [RecentsCache] on Room, one row per workspace and per chat, sealed with a
- * Keystore key wherever the content is user text.
- *
- * ### What SQL took over
- *
- * The old store keyed each list by a hand-built string
- * (`chats::u:<userId>::w:<workspaceId>`) and held a JSON array as the value.
- * Both of the ways that could go wrong are now structural:
- *
- * - **Isolation** is the primary key. A user id is a column, so it cannot be
- *   confused with a separator, spliced into a neighbour's namespace, or reach
- *   another partition by any spelling of it.
- * - **Order** is a `position` column. A JSON array carried its order for free;
- *   rows do not, and `ORDER BY name` would have re-sorted the drawer into
- *   alphabetical order under a user who never asked for it.
- *
- * ### What sealing costs, stated plainly
- *
- * Only `name` and `title` are sealed. The id, position and timestamp columns
- * stay in the clear because the query needs them — `ORDER BY position` cannot
- * run on ciphertext. A read therefore decrypts one column per row, which is
- * the price of keeping the database a plain SQLite file the JVM tests can open
- * for real; `SealingCipher` explains why SQLCipher was not used instead.
- */
+/** [RecentsCache] on Room, one row per workspace and per chat, sealed with a Keystore key wherever the content is user text. */
 class RoomRecentsCache(
     private val dao: RecentsCacheDao,
     private val cipher: SealingCipher,
@@ -104,16 +39,10 @@ class RoomRecentsCache(
         return quietly(null) {
             val rows = dao.workspacesFor(user)
             when {
-                // Nothing cached. A row store cannot tell "never fetched" from
-                // "this account has no workspaces", and `HomeViewModel` cannot
-                // either: it treats both as "nothing to paint, go and fetch",
-                // and the fetch is what decides which of the two it was.
+                // Nothing cached.
                 rows.isEmpty() -> null
 
-                // One unopenable row invalidates the whole list, exactly as one
-                // undecryptable preference did before. A half-readable drawer
-                // would paint a subset of the user's workspaces and call it
-                // truth; a miss shows the loading state until the fetch lands.
+                // One unopenable row invalidates the whole list, exactly as one undecryptable preference did before.
                 else -> {
                     val names = rows.map { cipher.open(it.nameSealed) }
                     if (names.any { it == null }) {
@@ -173,17 +102,7 @@ class RoomRecentsCache(
 
     override fun clear() = quietly(Unit) { dao.clearAll() }
 
-    /**
-     * Sealing, all-or-nothing.
-     *
-     * A list where one row failed to seal would paint a workspace under its
-     * real name next to one under a blank, and the correction would then depend
-     * on the user noticing rather than on the next fetch. Half a list is worse
-     * than none, so one failure drops the whole write.
-     *
-     * Returns null rather than throwing: the caller turns that into "skip this
-     * write", which is the fail-silent contract above.
-     */
+    /** Sealing, all-or-nothing. */
     private fun List<WorkspaceOption>.toEntities(userId: String): List<CachedWorkspaceEntity>? {
         val out = ArrayList<CachedWorkspaceEntity>(size)
         forEachIndexed { index, workspace ->
@@ -229,21 +148,10 @@ class RoomRecentsCache(
     }
 
     private companion object {
-        /**
-         * Distinct from the session cookie's and the `/me` cache's aliases:
-         * chat titles are a third kind of thing to rotate independently, and
-         * the value of keeping the old SharedPreferences store's alias is that
-         * an upgrade rotates nothing.
-         */
+        /** Distinct from the session cookie's and the `/me` cache's aliases */
         const val KEY_ALIAS = "pabrik_cache_key_v1"
     }
 }
 
-/**
- * A null or blank identity cannot address a partition, so it is not a partition.
- *
- * `internal` rather than file-private so the projects cache enforces the same
- * rule from the same definition — a second copy is a second chance to spell the
- * guard differently, and the whole point is that it has exactly one spelling.
- */
+/** A null or blank identity cannot address a partition, so it is not a partition. */
 internal fun String?.orNull(): String? = this?.takeIf { it.isNotBlank() }

@@ -5,15 +5,11 @@ pub const memories = @import("memories.zig");
 const MemoryInfo = memories.MemoryInfo;
 
 /// Wrapper struct used for JSON serialization of the memories list.
-/// `std.json.Stringify.valueAlloc` reads field names as JSON keys, so
-/// the output shape is `{"memories":[{...},{...}]}`.
 pub const MemoriesListData = struct {
     memories: []const MemoryInfo,
 };
 
-/// Tool definition for `list_memory`. This tool is intentionally
-/// parameter-less: memories live in a single global config folder and there
-/// is no per-session or per-cwd variant.
+/// Tool definition for `list_memory`.
 pub const list_memory_tool = AgentTool{
     .type = "function",
     .function = .{
@@ -64,9 +60,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
 
-// -------------------------------------------------------------------------
 // Pure serialization tests (no filesystem)
-// -------------------------------------------------------------------------
 
 test "toJson on empty list produces parsed memories=[] with no error" {
     const alloc = std.testing.allocator;
@@ -127,9 +121,7 @@ test "toJson includes all four fields per memory" {
     try std.testing.expectEqual(@as(u64, 1024), parsed.value.memories[0].size);
 }
 
-// -------------------------------------------------------------------------
 // freeMemoriesList — no panic on empty
-// -------------------------------------------------------------------------
 
 test "freeMemoriesList handles empty list without panicking" {
     const alloc = std.testing.allocator;
@@ -138,13 +130,10 @@ test "freeMemoriesList handles empty list without panicking" {
     memories.freeMemoriesList(alloc, list);
 }
 
-// -------------------------------------------------------------------------
 // execute_list_memory — filesystem integration tests
-// -------------------------------------------------------------------------
 
 test "execute_list_memory returns missing-dir empty XML, no crash" {
     // Point HOME at a path that does NOT contain a memories/ subdir.
-    // The tool should return <memories></memories>, not throw.
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
@@ -212,9 +201,7 @@ test "execute_list_memory lists .md files in HOME/.config/pabrik/memories" {
 
     var env = std.process.Environ.Map.init(alloc);
     defer env.deinit();
-    // Set HOME only so get_global_memories_path falls back to HOME/.config/pabrik/memories,
-    // which matches where the test created the files. Setting XDG_CONFIG_HOME would
-    // make the tool look at ${XDG_CONFIG_HOME}/pabrik/memories (XDG spec) instead.
+    // Set HOME only so get_global_memories_path falls back to HOME/.config/pabrik/memories, which matches where the test created the files.
     try env.put("HOME", tmp_home);
 
     const output = try execute_list_memory(alloc, io, &env);
@@ -291,7 +278,6 @@ test "execute_list_memory with null environment returns error XML" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -302,9 +288,7 @@ const list_memory_mod = pabrikcore.list_memory_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 pub fn execListMemory(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // Memories are global only — no cwd involvement. The env comes from ctx
-    // (same path as list_skills); on null we emit an error-tagged XML so the
-    // LLM gets a structured failure instead of a panic.
+    // Memories are global only — no cwd involvement.
     const inner = list_memory_mod.execute_list_memory(ctx.allocator, ctx.io, ctx.environment) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);

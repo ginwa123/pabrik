@@ -1,9 +1,7 @@
 import { apiFetch } from './client'
 import type { DesignElement, DesignElementGeometry } from './designElements'
 
-/** PATCH
- * /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/geometry ⚠️
- * DEPRECATED — replaced by `translateDesignElement` (move) and `resizeDesignElement` (resize). */
+/** PATCH /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/geometry ⚠️ DEPRECATED — replaced by `translateDesignElement` (move) … */
 export async function updateDesignElementGeometry(
   workspaceId: string,
   itemId: string,
@@ -17,9 +15,7 @@ export async function updateDesignElementGeometry(
   )
 }
 
-/** POST
- * /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/translate NEW
- * (2026-08-06) — single-element translate (move). */
+/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/translate NEW (2026-08-06) — single-element translate (move). */
 export async function translateDesignElement(
   workspaceId: string,
   itemId: string,
@@ -34,9 +30,7 @@ export async function translateDesignElement(
   )
 }
 
-/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/resize
- * NEW (2026-08-06) — single-element resize. The body carries absolute `(x, y, width, height,
- * rotation?)` fields. At least one field is required. */
+/** POST /api/workspaces/:workspaceId/items/:itemId/design/pages/:pageId/elements/:elementId/resize NEW (2026-08-06) — single-element resize. */
 export async function resizeDesignElement(
   workspaceId: string,
   itemId: string,
@@ -50,8 +44,7 @@ export async function resizeDesignElement(
   )
 }
 
-/**  * Per-element geometry patch for the batch endpoint. All fields are optional; null means "leave
- * unchanged". Mirror of the single `updateDesignElementGeometry` shape but reusable for N elements. */
+/** Per-element geometry patch for the batch endpoint. */
 export interface GeometryBatchUpdate {
   element_id: string
   x?: number
@@ -61,15 +54,12 @@ export interface GeometryBatchUpdate {
   rotation?: number
 }
 
-/** Response from `POST .../geometry-batch`. `updated` is the
- * post-batch element list in input order. */
+/** Response from `POST .../geometry-batch`. */
 export interface GeometryBatchUpdateResponse {
   updated: DesignElement[]
 }
 
-/** Atomic N-element geometry update. Used by the canvas drag handler when multiple elements are
- * selected (multi-element drag, group / frame being moved) so the N per-element PATCHes collapse
- * into ONE PATCH per pointermove. */
+/** Atomic N-element geometry update. */
 export async function updateDesignElementsGeometryBatch(
   workspaceId: string,
   itemId: string,
@@ -82,8 +72,7 @@ export async function updateDesignElementsGeometryBatch(
   )
 }
 
-/** Server-side cascade move. Each item's `(dx, dy)` applies to the element AND every transitive
- * descendant of that element via a single recursive CTE inside one SQL transaction. */
+/** Server-side cascade move. */
 export interface MoveBatchItem {
   element_id: string
   /** Translation delta in CSS px. Cascades to descendants. */
@@ -115,9 +104,7 @@ export async function moveDesignElementsBatch(
   )
 }
 
-/** Move an element to a different page in the same design item. Mirrors the backend `POST
- * .../elements/:element_id/move-to-page` endpoint. Changes the element's `page_id` (and `position`
- * on the target page) instead of `x`/`y`. */
+/** Move an element to a different page in the same design item. */
 export interface MoveElementToPageInput {
   /** REQUIRED. The destination page id. Must be on the same design item. */
   new_page_id: string

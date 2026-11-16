@@ -1,5 +1,4 @@
-// Functional tests for memories + skills. Zig port of
-// `tests/functional/memories_skills_test.py` (same test names, same order).
+// Functional tests for memories + skills.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,14 +7,10 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Python `_seed_skill_row`'s un-formatted default `content`: the body only,
-/// because the seed helper writes the fence from the row's name and
-/// description.
+/// Python `_seed_skill_row`'s un-formatted default `content`: the body only, because the seed helper writes the fence from the row's name and description.
 const DEFAULT_SKILL_CONTENT = "\nbody\n";
 
-// ============================================================================
 // sqlite3 CLI helpers
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -24,8 +19,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
-/// in SQLite 3.33 (2020).
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -69,8 +63,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
-/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -94,8 +86,7 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     return res.stdout;
 }
 
-/// Run `sql` against the harness DB, returning the CLI's stdout. The DB
-/// must already exist - the server creates it at boot.
+/// Run `sql` against the harness DB, returning the CLI's stdout.
 fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     const db = try harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
     defer gpa.free(db);
@@ -106,9 +97,7 @@ fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     return sqliteRun(db, sql);
 }
 
-/// Python `_seed_skill_row`. There is no HTTP create route for skills -
-/// `add_skill` is an agent tool - so a test that needs a row to read writes
-/// one, body and the name/description rows projected out of it.
+/// Python `_seed_skill_row`.
 fn seedSkillRow(
     temp_dir: []const u8,
     workspace_id: []const u8,
@@ -149,9 +138,7 @@ fn seedSkillRow(
     defer gpa.free(out);
 }
 
-// ============================================================================
 // Filesystem helpers
-// ============================================================================
 
 fn pathExists(path: []const u8) bool {
     std.Io.Dir.cwd().access(io, path, .{}) catch return false;
@@ -163,9 +150,7 @@ fn readTextFile(path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
 }
 
-/// Python `_get_memory_disk_path`. Memories live in
-/// $XDG_CONFIG_HOME/pabrik/memories/<name> or
-/// $HOME/.config/pabrik/memories/<name> (Windows: %APPDATA%/pabrik).
+/// Python `_get_memory_disk_path`.
 fn memoryDiskPath(temp_dir: []const u8, name: []const u8) ![]u8 {
     // Check XDG/.config first (current Windows isolation), then APPDATA.
     const config_base = try harness.harnessPath(
@@ -183,16 +168,12 @@ fn memoryDiskPath(temp_dir: []const u8, name: []const u8) ![]u8 {
         gpa.free(config_base);
         return appdata_base;
     }
-    // Default for new writes: use the XDG/.config location (matches
-    // harness's isolated XDG_CONFIG_HOME on Windows and HOME/.config on
-    // Linux).
+    // Default for new writes: use the XDG/.config location (matches harness's isolated XDG_CONFIG_HOME on Windows and HOME/.config on Linux).
     gpa.free(appdata_base);
     return config_base;
 }
 
-// ============================================================================
 // HTTP helpers
-// ============================================================================
 
 /// Python `_create_workspace`. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -216,8 +197,7 @@ fn freeNames(names: [][]u8) void {
     gpa.free(names);
 }
 
-/// Python `_list_memories` -> the set of names. Owned slice of owned
-/// strings; free with `freeNames`.
+/// Python `_list_memories` -> the set of names.
 fn listMemoryNames(h: *Harness) ![][]u8 {
     var r = try h.http(io, .GET, "/api/memories", .{ .expect = &.{200} });
     defer r.deinit();
@@ -259,13 +239,11 @@ fn namesContain(names: []const []u8, needle: []const u8) bool {
 const SkillEntry = struct {
     name: []u8,
     description: ?[]u8,
-    /// Every key the entry carries, owned. Backs the "exactly
-    /// `{name, description}`" assertion.
+    /// Every key the entry carries, owned.
     keys: [][]u8,
 };
 
-/// `GET /api/workspaces/:workspace_id/skills` — one flat array of `{name,
-/// description}`.
+/// `GET /api/workspaces/:workspace_id/skills` — one flat array of `{name, description}`.
 const SkillList = struct {
     entries: []SkillEntry,
 
@@ -346,8 +324,7 @@ fn listSkills(h: *Harness, workspace_id: []const u8) !SkillList {
     return .{ .entries = try entries.toOwnedSlice(gpa) };
 }
 
-/// `POST /api/memories {"name": ..., "content": ...}`. Returns the
-/// response body (owned) so the caller can assert on the envelope.
+/// `POST /api/memories {"name": ..., "content": ...}`.
 fn createMemory(h: *Harness, name: []const u8, content: []const u8) ![]u8 {
     const body = try std.json.Stringify.valueAlloc(
         gpa,
@@ -461,8 +438,7 @@ fn expectFalse(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void 
     }
 }
 
-/// Python `set(obj) == {...}` on a borrowed ObjectMap: the object
-/// carries EXACTLY these keys.
+/// Python `set(obj) == {...}` on a borrowed ObjectMap: the object carries EXACTLY these keys.
 fn expectExactKeys(obj: std.json.ObjectMap, want: []const []const u8, ctx: []const u8) !void {
     var keys: std.ArrayList([]const u8) = .empty;
     defer keys.deinit(gpa);
@@ -481,8 +457,7 @@ fn expectKeyAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !v
     }
 }
 
-/// Python `assert "path" not in skill` / `assert key not in obj` on an
-/// OWNED key list.
+/// Python `assert "path" not in skill` / `assert key not in obj` on an OWNED key list.
 fn expectKeysExactly(keys: []const []const u8, want: []const []const u8, ctx: []const u8) !void {
     if (keys.len != want.len) {
         const rendered = try renderOwnedKeys(keys);
@@ -514,8 +489,7 @@ fn renderOwnedKeys(keys: []const []const u8) ![]u8 {
     return std.mem.join(gpa, ", ", sorted.items);
 }
 
-/// Python `assert r.json().get("success", True) is True` - absent counts
-/// as success; present-and-true counts; anything else fails.
+/// Python `assert r.json().get("success", True) is True` - absent counts as success; present-and-true counts; anything else fails.
 fn expectSuccessTrueOrAbsent(doc: *const harness.Json, ctx: []const u8) !void {
     const v = doc.get("success") orelse return;
     const got = switch (v) {
@@ -532,9 +506,7 @@ fn expectSuccessTrueOrAbsent(doc: *const harness.Json, ctx: []const u8) !void {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced fn body is never
-    // type-checked, so a stdlib rename inside one hides until a caller
-    // appears.
+    // Body-analysis barrier: an unreferenced fn body is never type-checked, so a stdlib rename inside one hides until a caller appears.
     _ = createWorkspace;
     _ = listMemoryNames;
     _ = listSkills;
@@ -545,9 +517,7 @@ comptime {
     _ = parseSqliteJson;
 }
 
-// ============================================================================
 // Test 1: create + list a global memory
-// ============================================================================
 
 // POST /api/memories creates a .md file at $HOME/.config/pabrik/memories/<name>.
 test "create_global_memory_writes_to_disk" {
@@ -595,9 +565,7 @@ test "create_global_memory_writes_to_disk" {
     }
 }
 
-// ============================================================================
 // Test 2: list 3 memories
-// ============================================================================
 
 // Create 3 memories; list shows all 3.
 test "list_memories_returns_created" {
@@ -628,9 +596,7 @@ test "list_memories_returns_created" {
     }
 }
 
-// ============================================================================
 // Test 3: update memory overwrites the file
-// ============================================================================
 
 // PUT /api/memories/:name with new content overwrites the file.
 test "update_memory_overwrites_file" {
@@ -687,9 +653,7 @@ test "update_memory_overwrites_file" {
     }
 }
 
-// ============================================================================
 // Test 4: delete memory removes the file
-// ============================================================================
 
 // DELETE /api/memories/:name removes the .md file.
 test "delete_memory_removes_file" {
@@ -725,9 +689,7 @@ test "delete_memory_removes_file" {
     }
 }
 
-// ============================================================================
 // Test 5: local memory under a cwd
-// ============================================================================
 
 // POST /api/local-memories with cwd creates the file under that cwd.
 test "create_local_memory_under_cwd" {
@@ -737,8 +699,7 @@ test "create_local_memory_under_cwd" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // The Python `item_workspace_path` fixture: a directory OUTSIDE the
-    // harness tempdir that the test points the API at.
+    // The Python `item_workspace_path` fixture: a directory OUTSIDE the harness tempdir that the test points the API at.
     const cwd = try harness.makeScratchDir(gpa);
     defer gpa.free(cwd);
     defer harness.cleanupExtraDir(io, gpa, cwd);
@@ -774,13 +735,9 @@ test "create_local_memory_under_cwd" {
     }
 }
 
-// ============================================================================
 // Test 6: skill listing - a seeded row lists under its workspace
-// ============================================================================
 
-// A skill is a row in the workspace's `skills` table. It used to be a
-// `SKILL.MD` file under `~/.config/pabrik/skills/`, which the API re-walked
-// on every request and merged with a project-local copy.
+// A skill is a row in the workspace's `skills` table.
 test "skill_list_is_workspace_scoped" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -825,9 +782,7 @@ test "skill_list_is_workspace_scoped" {
     try expectKeysExactly(entry.keys, &.{ "name", "description", "is_can_auto_improve" }, "listed skill");
 }
 
-// The workspace_id in the URL is the isolation boundary. A skill file used to
-// be visible from every workspace that happened to share a machine; a row is
-// not.
+// The workspace_id in the URL is the isolation boundary.
 test "skill_list_does_not_leak_across_workspaces" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -865,12 +820,9 @@ test "skill_list_does_not_leak_across_workspaces" {
     }
 }
 
-// ============================================================================
 // Test 7: skill detail + delete
-// ============================================================================
 
-// GET the body, DELETE the row - both under the workspace. The delete takes
-// the name as a PATH SEGMENT now, not as `?name=...&is_global=...&cwd=...`.
+// GET the body, DELETE the row - both under the workspace.
 test "skill_detail_and_delete" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -912,14 +864,11 @@ test "skill_detail_and_delete" {
         };
         try expectStr(skill, "name", "to-delete", "skill detail");
         try expectStr(skill, "description", "Will be deleted.", "skill detail");
-        // Byte-exact: `skill_eval` identities are sha256(body), so a body
-        // that came back trimmed would stale every cached verdict
-        // silently.
+        // Byte-exact: `skill_eval` identities are sha256(body), so a body that came back trimmed would stale every cached verdict silently.
         try expectStr(skill, "content", content, "skill detail");
         if (std.mem.indexOf(u8, content, "---") != 0) return error.TestUnexpectedResult;
         try expectInt(skill, "asset_count", 0, "skill detail");
-        // `path` and `is_global` described a directory; there is no
-        // directory.
+        // `path` and `is_global` described a directory; there is no directory.
         try expectKeyAbsent(skill, "path", "skill detail");
         try expectKeyAbsent(skill, "is_global", "skill detail");
         try expectStr(root, "error_message", "", "skill detail");
@@ -965,13 +914,9 @@ test "skill_detail_and_delete" {
     }
 }
 
-// ============================================================================
 // Test 8: memory and skill namespaces don't collide
-// ============================================================================
 
-// A memory named 'foo.md' and a skill named 'foo' are independent rows. The
-// memory is a file under `~/.config/pabrik/memories/`; the skill is a row in
-// the `skills` table.
+// A memory named 'foo.md' and a skill named 'foo' are independent rows.
 test "memory_and_skill_namespaces_dont_collide" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

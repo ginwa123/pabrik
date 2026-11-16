@@ -7,27 +7,19 @@ export type StatusBadgeRow = {
 export const isAwaitingReview = (row: StatusBadgeRow): boolean =>
   row.needs_human_review === true && row.last_finish_reason === 'stop'
 
-// The `last_finish_reason === 'stop'` gate is load-bearing: without it a
-// stale `needs_human_review: false` + `finish_reason: 'tool_calls'`
-// state paints a phantom "reviewed" checkmark mid-turn.
+// The `last_finish_reason === 'stop'` gate is load-bearing: without it a stale `needs_human_review: false` + `finish_reason: 'tool_calls'` state paints a phantom …
 export const isReviewed = (row: StatusBadgeRow): boolean =>
   !isAwaitingReview(row) && row.last_finish_reason === 'stop'
 
 // Migration 082 - "AI is ahead of you" stale-dot check.
-// Both come from the backend as unix-ms strings (Migration 075
-// convention) - we compare as numbers.
 export const isStale = (human: string | undefined, updated: string | undefined): boolean => {
   if (!human) return false
   if (!updated) return false
-  // Both fields are SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS') - identical format - so
-  // lexicographic string comparison is the most accurate (and fastest) way to detect 'updated_at >
-  // human_time'.
+  // Both fields are SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS') - identical format - so lexicographic string comparison is the most accurate (and fastest) …
   return updated > human
 }
 
-// Single-badge rule: the orange awaiting-review dot already covers
-// the "AI is ahead" state, so the amber stale dot stays hidden then.
-// Without this both dots paint together (same SQL predicate).
+// Single-badge rule: the orange awaiting-review dot already covers the "AI is ahead" state, so the amber stale dot stays hidden then.
 export type StaleDotRow = StatusBadgeRow & {
   last_human_touched_at?: string
   updated_at?: string
@@ -69,8 +61,7 @@ export const branchTitle = (item: ChatRow, status?: string, conflict?: boolean):
           : conflict
             ? `${branch} — merge conflicts`
             : branch
-  // Surface the worktree path alongside the branch so the full
-  // checkout location stays discoverable on hover.
+  // Surface the worktree path alongside the branch so the full checkout location stays discoverable on hover.
   if (item.git_worktree_cwd) return `${base} — ${item.git_worktree_cwd}`
   return base
 }

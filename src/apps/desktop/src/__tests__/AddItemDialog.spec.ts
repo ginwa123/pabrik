@@ -1,13 +1,9 @@
-/** Tests for AddItemDialog — the modal that creates a new project from a folder. After the
- * migration to FilePickerDialog, the wrapper modal's own behavior is what we test here: open/close
- * lifecycle, name input, "Choose folder" button, the create event shape. */
+/** Tests for AddItemDialog — the modal that creates a new project from a folder. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import AddItemDialog from '../components/dialogs/AddItemDialog.vue'
 
 // ─── Mocks ─────────────────────────────────────────────────────────────────
-// Stub the FilePickerDialog — we only care that the parent wires up the picker's events. Real
-// picker behavior is tested in FilePickerDialog.spec.ts.
 vi.mock('../components/FilePickerDialog.vue', () => ({
   default: {
     name: 'FilePickerDialog',
@@ -42,9 +38,7 @@ function clickInDom(selector: string) {
 }
 
 function mountDialog(initialShow = true) {
-  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for
-  // each mount, and these accumulate in jsdom even after wrapper.unmount() (the divs persist as
-  // empty containers).
+  // Wipe the body before each mount. attachTo: document.body creates a new <div data-v-app> for each mount, and these accumulate in jsdom even after …
   document.body.innerHTML = ''
   return mount(AddItemDialog, {
     attachTo: document.body,
@@ -231,9 +225,7 @@ describe('AddItemDialog — name input', () => {
     expect(submitBtn?.disabled).toBe(true)
   })
 
-  // ─── Empty/whitespace name → visible error message ───────────────────── The dialog now shows an
-  // inline "Name is required" error after the user has interacted with the name field
-  // (typed-then-cleared OR blurred with whitespace).
+  // ─── Empty/whitespace name → visible error message ─────────────────────
   it('whitespace-only name shows visible "Name is required" error', async () => {
     wrapper = mountDialog(true)
     await flushPromises()
@@ -293,9 +285,7 @@ describe('AddItemDialog — name input', () => {
     wrapper = mountDialog(true)
     await flushPromises()
 
-    // Focus then blur the empty name field — nameTouched flips via
-    // @blur even without an @input. Simulates the user clicking
-    // the field then clicking away.
+    // Focus then blur the empty name field — nameTouched flips via @blur even without an @input.
     const nameInput = findInDom<HTMLInputElement>('[data-testid="add-item-name"]')!
     nameInput.focus()
     nameInput.dispatchEvent(new Event('blur', { bubbles: true }))
@@ -315,8 +305,7 @@ describe('AddItemDialog — name input', () => {
     await flushPromises()
     expect(findInDom('[data-testid="add-item-name-error"]')).not.toBeNull()
 
-    // Close + reopen → state must reset so the user doesn't see
-    // the error flash on a freshly-opened dialog.
+    // Close + reopen → state must reset so the user doesn't see the error flash on a freshly-opened dialog.
     await wrapper.setProps({ show: false })
     await flushPromises()
     await wrapper.setProps({ show: true })

@@ -1,6 +1,4 @@
-//! The real transport: kabelweb's libcurl-backed client behind the
-//! `Transport` seam. libcurl returns typed errors instead of printing, so a
-//! failed request never lands in the log.
+//! The real transport: kabelweb's libcurl-backed client behind the `Transport` seam. libcurl returns typed errors instead of printing, so a failed request never …
 
 const std = @import("std");
 const transport = @import("transport.zig");
@@ -9,8 +7,7 @@ const kabelweb = @import("kabelweb").client;
 pub const HttpTransport = struct {
     client: kabelweb.Client,
     io: std.Io,
-    /// kabelweb's client is thread-unsafe by design (one libcurl handle per
-    /// worker) and the store is shared by the server's worker pool.
+    /// kabelweb's client is thread-unsafe by design (one libcurl handle per worker) and the store is shared by the server's worker pool.
     lock: std.Io.Mutex = .init,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) HttpTransport {
@@ -57,8 +54,7 @@ pub const HttpTransport = struct {
             .method = method(req.method),
             .url = req.url,
             .headers = headers.items,
-            // `null` means "no body": a bodiless PUT (bucket create) must not
-            // grow a Content-Length of its own.
+            // `null` means "no body": a bodiless PUT (bucket create) must not grow a Content-Length of its own.
             .body = if (req.body.len > 0) req.body else null,
         }, .{ .timeout_ms = 30_000 }) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -75,8 +71,7 @@ pub const HttpTransport = struct {
     }
 };
 
-/// The `Content-Length` the server reported. A HEAD response carries the
-/// object size here and an empty body.
+/// The `Content-Length` the server reported.
 fn contentLength(headers: []const kabelweb.Header) ?u64 {
     for (headers) |h| {
         if (std.ascii.eqlIgnoreCase(h.name, "content-length")) {

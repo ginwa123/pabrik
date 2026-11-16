@@ -156,8 +156,7 @@ describe('useKanbanTagSuggestions', () => {
     const wsId = ref('')
     const itemId = ref('')
     const c = useKanbanTagSuggestions(wsId, itemId)
-    // refs start empty → no fetch, but loaded stays false so the
-    // next ensureLoaded() retries when args become available
+    // refs start empty → no fetch, but loaded stays false so the next ensureLoaded() retries when args become available
     await c.ensureLoaded()
     expect(api.getKanbanTagSuggestions).not.toHaveBeenCalled()
     expect(c.loaded.value).toBe(false)

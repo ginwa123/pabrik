@@ -1,18 +1,13 @@
 <script setup lang="ts">
-/** PabrikGeneralSection — General tab in USER settings: the settings that apply to every
- * workspace (notifications, web launch, chat view). Retry backoff is per-workspace — see
- * `PabrikRuntimeSection`. */
+/** PabrikGeneralSection — General tab in USER settings: the settings that apply to every workspace (notifications, web launch, chat view). */
 import UiIcon from '../ui/UiIcon.vue'
 
 export interface PabrikGeneralSettings {
-  /** OS notification on `finish_reason === 'stop'`. Mirrors
-   * `PabrikConfig.notify_on_complete`. Default false. */
+  /** OS notification on `finish_reason === 'stop'`. */
   notify_on_complete: boolean
-  /** OS notification on transport error / TooManyRetries / outer catch.
-   * Mirrors `PabrikConfig.notify_on_error`. Default false. */
+  /** OS notification on transport error / TooManyRetries / outer catch. */
   notify_on_error: boolean
-  /** Serve this same UI in the system browser on a random local port.
-   * Mirrors `PabrikConfig.web_launch_enabled`. Default false. */
+  /** Serve this same UI in the system browser on a random local port. */
   web_launch_enabled: boolean
   chat_view: 'dev' | 'compact'
 }
@@ -24,8 +19,7 @@ const CHAT_VIEW_OPTIONS = [
 
 const model = defineModel<PabrikGeneralSettings>({ required: true })
 
-/** Live browser URL for the web-launch pill. Null = not running /
- * unknown (pill shows a waiting hint instead of Open/Copy targets). */
+/** Live browser URL for the web-launch pill. */
 withDefaults(defineProps<{ webUrl?: string | null }>(), { webUrl: null })
 
 const emit = defineEmits<{

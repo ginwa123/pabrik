@@ -1,6 +1,4 @@
-//! The console's view layer: read what the page shows, hand it to the templates
-//! as a context, and get HTML back. The page therefore arrives with its rows and
-//! counts in it, and the browser fetches no data of its own.
+//! The console's view layer: read what the page shows, hand it to the templates as a context, and get HTML back.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -12,8 +10,7 @@ const Template = kabelweb.Template;
 const admin_machines = @import("admin_machines.zig");
 const admin_store = @import("admin_store.zig");
 
-/// The page's entry template, and the parts it includes. All of them are
-/// embedded, so the binary needs no template directory at run time.
+/// The page's entry template, and the parts it includes.
 pub const entry = @embedFile("page/index.html");
 
 pub const Part = struct {
@@ -29,8 +26,7 @@ pub const parts = [_]Part{
     .{ .name = "foot.html", .body = @embedFile("page/foot.html") },
 };
 
-/// The `{% include %}` loader: a part ships inside the binary, so a name is a
-/// lookup, not a file read.
+/// The `{% include %}` loader: a part ships inside the binary, so a name is a lookup, not a file read.
 fn loadPart(_: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]u8 {
     for (parts) |candidate| {
         if (std.mem.eql(u8, path, candidate.name)) return allocator.dupe(u8, candidate.body);
@@ -46,8 +42,7 @@ pub fn part(name: []const u8) []const u8 {
     return "";
 }
 
-/// A section of the console. Each one is a path of its own, and each one is a
-/// view: the server reads what that view shows.
+/// A section of the console.
 pub const Section = enum {
     accounts,
     machines,
@@ -57,22 +52,19 @@ pub const Section = enum {
 pub const signed_out_notice =
     "This console belongs to the installation's owner. Sign in as the owner to see the accounts and the machines.";
 
-/// Render the page for one section. `owner` false renders the frame and the
-/// explanation, and no data at all — the same rule the JSON endpoints enforce.
+/// Render the page for one section.
 pub fn renderPage(
     allocator: std.mem.Allocator,
     db: *database.Db,
     section: Section,
     owner: bool,
 ) ![]u8 {
-    // Everything the context points at lives in this arena, which is why the
-    // maps and the rendered rows can be handed straight to the templates.
+    // Everything the context points at lives in this arena, which is why the maps and the rendered rows can be handed straight to the templates.
     var arena_state = std.heap.ArenaAllocator.init(allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    // Nothing is read for a visitor who is not the owner: not the accounts, not
-    // the machines, not even the counts, which say how big the installation is.
+    // Nothing is read for a visitor who is not the owner: not the accounts, not the machines, not even the counts, which say how big the installation is.
     const nobody = admin_store.Overview{};
     const counts = if (owner) (admin_store.overview(arena, db) catch nobody) else nobody;
     const users: []admin_store.UserRow = if (owner)
@@ -105,8 +97,7 @@ pub fn renderPage(
     try ctx.put("note", .{ .string = if (owner) machines.reason else "" });
     try ctx.put("searchable", .{ .bool = owner and machines.manager and machines.machines.len > 0 });
 
-    // The numbers the resize dialog refuses a size against, rendered as the
-    // page's own JSON so the script needs no request to learn them.
+    // The numbers the resize dialog refuses a size against, rendered as the page's own JSON so the script needs no request to learn them.
     try ctx.put("min_vcpus", .{ .int = vmd.limits.min_vcpus });
     try ctx.put("max_vcpus", .{ .int = vmd.limits.max_vcpus });
     try ctx.put("min_mem_mib", .{ .int = vmd.limits.min_mem_mib });
@@ -137,8 +128,7 @@ fn userValues(arena: std.mem.Allocator, users: []const admin_store.UserRow) ![]T
     return out;
 }
 
-/// One `Value` per machine. The formatted sizes are done here rather than in the
-/// template, because a template that does arithmetic on MiB reads badly.
+/// One `Value` per machine.
 fn machineValues(arena: std.mem.Allocator, machines: []const admin_machines.Machine) ![]Template.Value {
     const out = try arena.alloc(Template.Value, machines.len);
     for (machines, 0..) |machine, i| {
@@ -171,9 +161,7 @@ fn mibLabel(allocator: std.mem.Allocator, mib: u32) ![]const u8 {
     return std.fmt.allocPrint(allocator, "{d} MiB", .{mib});
 }
 
-// =====================================================================
 // Tests — the whole view, against an in-memory database.
-// =====================================================================
 
 const testing = std.testing;
 const admin_common = @import("admin_common.zig");
@@ -197,8 +185,7 @@ fn addUser(
     role: []const u8,
     active: bool,
 ) !void {
-    // `COALESCE(CAST(? AS TEXT), '')` because an empty slice binds as NULL, and `name` is
-    // NOT NULL: without it, an account with no name cannot be inserted at all.
+    // `COALESCE(CAST(?
     try db.exec(allocator,
         \\INSERT INTO users (id, email, name, password_hash, role, is_active, created_at)
         \\VALUES (?, ?, COALESCE(CAST(? AS TEXT), ''), 'x', ?, ?,
@@ -234,8 +221,7 @@ test "the accounts page arrives with its rows, counts and no second section" {
     try testing.expect(contains(html, "id=\"count-total\">2<"));
     try testing.expect(contains(html, "id=\"count-owners\">1<"));
     try testing.expect(contains(html, "id=\"count-active\">1<"));
-    // The rail marks the section the path named, and only that section is in
-    // the document.
+    // The rail marks the section the path named, and only that section is in the document.
     try testing.expect(contains(html, "href=\"/admin/accounts\" data-section=\"accounts\" aria-current=\"page\""));
     try testing.expect(contains(html, "id=\"section-accounts\""));
     try testing.expect(!contains(html, "id=\"section-machines\""));
@@ -256,16 +242,13 @@ test "the machines page explains a manager it cannot reach, and offers nothing" 
 
     try testing.expect(contains(html, "id=\"section-machines\""));
     try testing.expect(!contains(html, "id=\"section-accounts\""));
-    // Why there is no manager differs by platform, so gate on the same
-    // `vmd.supported` that `snapshot` gates on: Linux looked for a socket and
-    // found none, everywhere else the manager was never built in.
+    // Why there is no manager differs by platform, so gate on the same `vmd.supported` that `snapshot` gates on: Linux looked for a socket and found none, everywhere …
     if (comptime vmd.supported) {
         try testing.expect(contains(html, "no manager socket was given"));
     } else {
         try testing.expect(contains(html, "built for another platform"));
     }
-    // Whatever the platform, the section explains itself: an empty table with no
-    // reason is the one outcome that would leave an operator stuck.
+    // Whatever the platform, the section explains itself: an empty table with no reason is the one outcome that would leave an operator stuck.
     try testing.expect(contains(html, "id=\"machines-note\""));
     try testing.expect(!contains(html, "<p id=\"machines-note\" class=\"note\"></p>"));
     try testing.expect(!contains(html, "data-action=\"resize\""));
@@ -303,8 +286,7 @@ test "a visitor who is not the owner gets the frame and the reason, and no data"
         const html = try renderPage(alloc, db, section, false);
         defer alloc.free(html);
 
-        // The notice names the rule; its apostrophe arrives escaped, which is
-        // also the proof that the templates escape what they are given.
+        // The notice names the rule; its apostrophe arrives escaped, which is also the proof that the templates escape what they are given.
         try testing.expect(contains(html, "This console belongs to the installation"));
         try testing.expect(contains(html, "installation&#x27;s owner"));
         try testing.expect(!contains(html, "alice@example.com"));
@@ -346,9 +328,7 @@ test "every template part parses, and the entry includes all of them" {
 }
 
 test "a machine row carries every number its Resize button needs" {
-    // No manager on a test host, so the section is rendered with one fabricated
-    // machine: the only way to pin the row's markup, which is what the dialog
-    // reads. Lose an attribute and Resize opens on the wrong size, or none.
+    // No manager on a test host, so the section is rendered with one fabricated machine: the only way to pin the row's markup, which is what the dialog reads.
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -394,8 +374,7 @@ test "a machine row carries every number its Resize button needs" {
 }
 
 test "an account the console cannot explain is still a link to its own row" {
-    // The buttons carry the id the script needs; a template change that drops
-    // it would leave every row's controls pointing at nothing.
+    // The buttons carry the id the script needs; a template change that drops it would leave every row's controls pointing at nothing.
     const alloc = testing.allocator;
     var fixture: test_db.Fixture = .{};
     defer fixture.deinit();

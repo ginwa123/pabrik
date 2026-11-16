@@ -1,5 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/document-folders`. Creates a folder,
-//! at the root when `parent_id` is absent or null.
+//! `POST /api/workspaces/:workspace_id/document-folders`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -83,8 +82,7 @@ pub fn documentFoldersCreateHandler(
     };
     defer folders_store.freeFolderRow(allocator, output.folder);
 
-    // Every window showing this workspace refetches; the payload only names
-    // what moved, because the list read is the source of truth.
+    // Every window showing this workspace refetches; the payload only names what moved, because the list read is the source of truth.
     document_events.emitDocumentsChanged(
         allocator,
         di.event_bus,

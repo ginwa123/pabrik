@@ -2,9 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ConversationPanel from '../chat_right_sidebar/ConversationPanel.vue'
 
-/** The Conversation tab: the forge's own thread, read only. These lock the
- *  behaviour a reviewer depends on — the body, the comments, the verdicts,
- *  and the one rule that matters: a comment is text, never HTML. */
+/** The Conversation tab: the forge's own thread, read only. */
 const { getPrConversationMock } = vi.hoisted(() => ({
   getPrConversationMock: vi.fn(),
 }))
@@ -59,9 +57,7 @@ describe('ConversationPanel', () => {
 
   it('names its own foreground, so a thread never inherits the host ambient colour', async () => {
     const wrapper = await mountPanel()
-    // A forge's body is prose. Prose that inherits the host's colour inherits the browser's
-    // default black, which is invisible on the dark theme — the panel states the theme's
-    // foreground itself, the way the kanban card does.
+    // A forge's body is prose.
     const style = wrapper.get('[data-testid="pr-conversation-panel"]').attributes('style') ?? ''
     expect(style).toContain('color: var(--semantic-text)')
   })

@@ -1,6 +1,4 @@
-/** Regression tests for the workspace item row activity marker. The per-TASK row already has its
- * marker, and the per-ITEM row (the project row) must have one too — so a user who collapsed the
- * task list can still tell "this project is busy". */
+/** Regression tests for the workspace item row activity marker. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref, type Ref } from 'vue'
@@ -114,9 +112,7 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('shows no item-row chip for an unrelated session', async () => {
-    // Guards the key-by-id contract: a session id that does NOT
-    // match any task.id must not trigger the chip, even if the
-    // map is non-empty.
+    // Guards the key-by-id contract: a session id that does NOT match any task.id must not trigger the chip, even if the map is non-empty.
     const { wrapper, setBusy } = mountWorkspaceItem()
     setBusy(['session_someone_else'])
     await nextTick()
@@ -126,8 +122,7 @@ describe('WorkspaceItem item-row elapsed chip', () => {
 
   it('shows no item-row chip when the item has no tasks', async () => {
     const { wrapper, setBusy } = mountWorkspaceItem([])
-    // Even a non-empty busy set must not produce a chip if
-    // the item has no tasks at all (no keys to match).
+    // Even a non-empty busy set must not produce a chip if the item has no tasks at all (no keys to match).
     setBusy(['task_alpha', 'task_beta'])
     await nextTick()
     expect(visibleItemSpinners(wrapper)).toHaveLength(0)
@@ -135,9 +130,7 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('the elapsed chip takes the single meta slot ahead of the loading spinner', async () => {
-    // The right side is ONE exclusive slot (elapsed > spinner > dot > count, #875), so a busy item
-    // that is also still fetching its folder listing shows the elapsed chip — not two markers
-    // fighting for the same edge.
+    // The right side is ONE exclusive slot (elapsed > spinner > dot > count, #875), so a busy item that is also still fetching its folder listing shows the elapsed …
     const processingState: Ref<Record<string, boolean>> = ref({ task_alpha: true })
     const now = Date.now()
     const workerActivity = ref<Record<string, WorkerActivity>>({
@@ -157,8 +150,7 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('the elapsed chip takes the single meta slot ahead of the active dot', async () => {
-    // Same exclusive slot: a selected item that is also being worked on shows the elapsed chip, and
-    // the active dot yields to it — the row never renders two trailing markers.
+    // Same exclusive slot: a selected item that is also being worked on shows the elapsed chip, and the active dot yields to it — the row never renders two trailing …
     const { wrapper, setBusy } = mountWorkspaceItem(itemWithTasks.tasks, true)
     setBusy(['task_alpha'])
     await nextTick()
@@ -167,8 +159,7 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('item-loading spinner still hides the active dot (preserved right-slot priority)', async () => {
-    // Even though the active dot no longer competes with the processing slider, it must still be
-    // hidden while the loading spinner is showing (original behavior, untouched by this change).
+    // Even though the active dot no longer competes with the processing slider, it must still be hidden while the loading spinner is showing (original behavior …
     const processingState: Ref<Record<string, boolean>> = ref({})
     const wrapper = mount(WorkspaceItem, {
       props: {
@@ -183,9 +174,7 @@ describe('WorkspaceItem item-row elapsed chip', () => {
   })
 
   it('item elapsed chip appears AFTER the chevron in DOM order', async () => {
-    // The chip sits AFTER the chevron + content in DOM order, not
-    // before. Verified by finding the chevron in the row's HTML
-    // BEFORE the chip testid.
+    // The chip sits AFTER the chevron + content in DOM order, not before.
     const { wrapper, setBusy } = mountWorkspaceItem()
     setBusy(['task_alpha'])
     await nextTick()

@@ -1,5 +1,4 @@
-// src/apps/desktop_app/webview_lib.zig Thin Zig binding for the vendored
-// webview/webview library (vendor/webview/webview.h, upstream 0.12.0).
+// src/apps/desktop_app/webview_lib.zig Thin Zig binding for the vendored webview/webview library (vendor/webview/webview.h, upstream 0.12.0).
 
 const std = @import("std");
 
@@ -31,9 +30,7 @@ pub const Error = enum(c_int) {
     }
 };
 
-// ---------------------------------------------------------------------------
 // C API (extern — implemented by vendor/webview/webview.cc)
-// ---------------------------------------------------------------------------
 
 pub extern "c" fn webview_create(debug: c_int, window: ?*anyopaque) ?*Webview;
 pub extern "c" fn webview_destroy(w: *Webview) Error;
@@ -61,8 +58,7 @@ pub extern "c" fn webview_bind(
 pub extern "c" fn webview_unbind(w: *Webview, name: [*:0]const u8) Error;
 pub extern "c" fn webview_return(w: *Webview, id: [*:0]const u8, status: c_int, result: [*:0]const u8) Error;
 
-/// Hook run once the native window exists and the event loop is about to
-/// start — the only moment a tray icon can join the platform main loop.
+/// Hook run once the native window exists and the event loop is about to start — the only moment a tray icon can join the platform main loop.
 pub const Ready = struct {
     ctx: *anyopaque,
     attach: *const fn (ctx: *anyopaque, view: *Webview) void,
@@ -99,9 +95,7 @@ pub fn showHtml(view: *Webview, html: [*:0]const u8) bool {
     return webview_set_html(view, html).succeeded();
 }
 
-/// High-level convenience: create a windowed webview, navigate, run the main
-/// loop until the window closes, then destroy. Mirrors the old webview.run()
-/// contract so main.zig stays simple.
+/// High-level convenience: create a windowed webview, navigate, run the main loop until the window closes, then destroy.
 pub fn runWindow(
     title: [*:0]const u8,
     url: [*:0]const u8,
@@ -123,13 +117,10 @@ pub fn runWindowPage(
     force_x11: bool,
     ready: ?Ready,
 ) !void {
-    // Pin WebKitGTK hardware compositing before WebKit initialises
-    // (task_1787761084050_0).
+    // Pin WebKitGTK hardware compositing before WebKit initialises (task_1787761084050_0).
     _ = setEnvIfUnset("WEBKIT_FORCE_COMPOSITING_MODE", "1");
 
-    // Idle-freeze fix (task_1788487031990_1): `--x11` was parsed into
-    // `cli.Config.force_x11` but never consumed, so Wayland users had no
-    // opt-out when the compositor stopped sending frame callbacks.
+    // Idle-freeze fix (task_1788487031990_1): `--x11` was parsed into `cli.Config.force_x11` but never consumed, so Wayland users had no opt-out when the compositor …
     if (force_x11) {
         _ = setEnvIfUnset("GDK_BACKEND", "x11");
     }
@@ -149,7 +140,6 @@ pub fn runWindowPage(
     _ = webview_run(w);
 }
 
-// ---------------------------------------------------------------------------
 // Static-contract tests: the binding must stay 1:1 with the vendored header.
 
 const testing = std.testing;
@@ -168,8 +158,7 @@ test "binding matches vendored webview.h C API signatures" {
     const header = try readVendorHeader(allocator);
     defer allocator.free(header);
 
-    // Every function we extern-declare must exist in the vendored header
-    // with the same name. If upstream renames/removes one, this fails.
+    // Every function we extern-declare must exist in the vendored header with the same name.
     const needles = [_][]const u8{
         "webview_t webview_create(int debug, void *window)",
         "webview_error_t webview_destroy(webview_t w)",
@@ -199,9 +188,7 @@ test "binding matches vendored webview.h C API signatures" {
 }
 
 test "vendored webview.h has the NVIDIA dmabuf workaround built in" {
-    // The whole reason for this swap: upstream applies the
-    // WEBKIT_DISABLE_DMABUF_RENDERER workaround itself when the
-    // WebKit-version + X11 + NVIDIA conditions match.
+    // The whole reason for this swap: upstream applies the WEBKIT_DISABLE_DMABUF_RENDERER workaround itself when the WebKit-version + X11 + NVIDIA conditions match.
     const allocator = testing.allocator;
     const header = try readVendorHeader(allocator);
     defer allocator.free(header);
@@ -223,9 +210,7 @@ test "vendored webview.h has the NVIDIA dmabuf workaround built in" {
 }
 
 test "vendored webview.h enables clipboard access + devtools on debug" {
-    // Two behaviors our old linux.zig provided manually that the
-    // library must now provide for us: paste-images clipboard access
-    // and developer extras under debug=true.
+    // Two behaviors our old linux.zig provided manually that the library must now provide for us: paste-images clipboard access and developer extras under debug=true.
     const allocator = testing.allocator;
     const header = try readVendorHeader(allocator);
     defer allocator.free(header);
@@ -253,12 +238,9 @@ test "Error.succeeded mirrors WEBVIEW_SUCCEEDED semantics" {
     try testing.expect(!Error.missing_dependency.succeeded());
 }
 
-// ---------------------------------------------------------------------------
-// runWindow() must pin WebKitGTK env vars BEFORE webview_create
-// (task_1787761084050_0 / desktop scroll-perf cross-platform plan).
+// runWindow() must pin WebKitGTK env vars BEFORE webview_create (task_1787761084050_0 / desktop scroll-perf cross-platform plan).
 
-/// Idempotent env-var pin: set `key=value` in the process environment, but
-/// only if the variable is NOT already set.
+/// Idempotent env-var pin: set `key=value` in the process environment, but only if the variable is NOT already set.
 const builtin = @import("builtin");
 extern "c" fn unsetenv(name: [*:0]const u8) c_int;
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
@@ -270,9 +252,7 @@ fn setEnvIfUnset(key: [*:0]const u8, value: [*:0]const u8) bool {
 }
 
 test "setEnvIfUnset sets the variable on first call and reports true" {
-    // Use a per-test unique name so concurrent test runs in the same
-    // process don't collide. PABRIK_TEST_SETENV_FRESH_VAR is unlikely to
-    // exist in the wild.
+    // Use a per-test unique name so concurrent test runs in the same process don't collide.
     const key = "PABRIK_TEST_SETENV_FRESH_VAR";
     // Defensive: clear any leftover from a prior failed run.
     _ = unsetenv(key);
@@ -288,8 +268,7 @@ test "setEnvIfUnset sets the variable on first call and reports true" {
 
 test "setEnvIfUnset preserves existing user override and reports false" {
     const key = "PABRIK_TEST_SETENV_PRESERVE_VAR";
-    // Seed: user has explicitly set the variable to "0" (a hypothetical
-    // opt-out). setEnvIfUnset must not change it.
+    // Seed: user has explicitly set the variable to "0" (a hypothetical opt-out). setEnvIfUnset must not change it.
     try testing.expectEqual(@as(c_int, 0), setenv(key, "0", 1));
     try testing.expectEqualStrings("0", std.mem.span(std.c.getenv(key).?));
 

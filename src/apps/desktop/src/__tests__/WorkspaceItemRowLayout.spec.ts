@@ -1,6 +1,4 @@
-/** Behavioural test for the WorkspaceItem row layout contract (task i-see-bad-ui-ux follow-up:
- * centered project names on agent site). The item row is a flex row: chevron + name + ONE right
- * cluster. */
+/** Behavioural test for the WorkspaceItem row layout contract (task i-see-bad-ui-ux follow-up */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -94,9 +92,7 @@ describe('WorkspaceItem — row layout single right cluster', () => {
   })
 
   it('row button left-aligns text (native button centers without text-left)', async () => {
-    // Native <button> UA stylesheet is text-align:center, which inherits into the flex-1 truncate
-    // name span and centers titles (screenshot: pabrik / website pabrik / ruangsql all centered).
-    // text-left on the button overrides the UA default; text-left on the name is defense in depth.
+    // Native <button> UA stylesheet is text-align:center, which inherits into the flex-1 truncate name span and centers titles (screenshot: pabrik / website pabrik / …
     const wrapper = mountItem(makeFolderItem())
     await flushPromises()
     await nextTick()

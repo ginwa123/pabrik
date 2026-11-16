@@ -1,5 +1,4 @@
 //! `GET /api/llm/session/:session_id/usage` — token usage + cache hit rate.
-//! DERIVED, not stored.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -10,32 +9,23 @@ const gserverz = pabrikcore.gserverz;
 pub const SessionUsageError = error{
     QueryFailed,
     /// `std.json.Stringify.valueAlloc` can fail with `OutOfMemory`.
-    /// Unreachable on the per-request arena, but the type system
-    /// requires the variant.
     OutOfMemory,
 };
 
-/// Wire shape. `cache_hit_rate` is a percentage in 0..100 with two decimals,
-/// or `null` when the session has no input tokens at all (nothing to divide
-/// by) — never a fabricated 0 for an empty session.
+/// Wire shape.
 pub const SessionUsageJson = struct {
     session_id: []const u8,
     cache_hit_rate: ?f64 = null,
     cache_read_tokens: i64 = 0,
     cache_creation_tokens: i64 = 0,
     total_input_tokens: i64 = 0,
-    /// Rows that reported cache counters (`cache_read` or `cache_creation`
-    /// non-zero). 0 means the provider reported none — see the file header.
+    /// Rows that reported cache counters (`cache_read` or `cache_creation` non-zero). 0 means the provider reported none — see the file header.
     calls_with_cache: i64 = 0,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// One aggregate row per session. Every column is COALESCE'd because SQLite
-/// answers `SUM` over zero rows with NULL, and this backend reads a NULL as
-/// an empty slice — indistinguishable from the string "".
+/// One aggregate row per session.
 const USAGE_SQL =
     \\SELECT COALESCE(SUM(prompt_tokens), 0),
     \\       COALESCE(SUM(cache_read_input_tokens), 0),
@@ -45,14 +35,12 @@ const USAGE_SQL =
     \\FROM llm_history WHERE session_id = ?
 ;
 
-/// `i64` from a column read as text; a NULL (empty slice) or garbage reads as
-/// 0, which is the same value the COALESCE would have produced.
+/// `i64` from a column read as text; a NULL (empty slice) or garbage reads as 0, which is the same value the COALESCE would have produced.
 fn colInt(text: []const u8) i64 {
     return std.fmt.parseInt(i64, text, 10) catch 0;
 }
 
-/// Two decimals, so the wire value is stable and a client never renders
-/// `93.66666666666667`.
+/// Two decimals, so the wire value is stable and a client never renders `93.66666666666667`.
 fn round2(x: f64) f64 {
     return @round(x * 100.0) / 100.0;
 }
@@ -67,8 +55,7 @@ fn useCase(
     var cache_creation: i64 = 0;
     var calls_with_cache: i64 = 0;
 
-    // Empty id: nothing to aggregate, and an empty bind would reach SQLite as
-    // NULL — skip the query rather than rely on that.
+    // Empty id: nothing to aggregate, and an empty bind would reach SQLite as NULL — skip the query rather than rely on that.
     if (session_id.len > 0) {
         var rows = db.query(allocator, USAGE_SQL, &.{session_id}) catch return error.QueryFailed;
         defer rows.deinit();
@@ -100,9 +87,7 @@ fn useCase(
     }, .{});
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// GET /api/llm/session/:session_id/usage
 pub fn sessionUsageHandler(
@@ -142,9 +127,7 @@ pub fn sessionUsageHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = response });
 }
 
-// =====================================================================
 // Tests — the aggregate itself (in-memory SQLite)
-// =====================================================================
 
 const testing = std.testing;
 
@@ -162,9 +145,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Only the columns USAGE_SQL reads. A minimal schema is deliberate: if
-    // the query ever grows a dependency on another column, this setup stops
-    // compiling/running rather than silently passing.
+    // Only the columns USAGE_SQL reads.
     try db.exec(alloc,
         \\CREATE TABLE llm_history (
         \\  id TEXT PRIMARY KEY,
@@ -193,8 +174,7 @@ fn insertRow(ctx: *TestCtx, id: []const u8, session_id: []const u8, prompt: i64,
     try ctx.db.exec(testing.allocator, sql, &.{});
 }
 
-/// Parse the useCase's JSON so a claim about a FIELD is a claim about that
-/// field, not about the whole blob.
+/// Parse the useCase's JSON so a claim about a FIELD is a claim about that field, not about the whole blob.
 fn run(ctx: *TestCtx, session_id: []const u8) !std.json.Parsed(std.json.Value) {
     const json = try useCase(testing.allocator, &ctx.db, session_id);
     defer testing.allocator.free(json);
@@ -214,8 +194,7 @@ test "useCase: cache hit rate is cache-read over total input, across every row o
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Two calls with different cache behaviour, plus one input row that
-    // carries no usage at all (the user message every turn writes).
+    // Two calls with different cache behaviour, plus one input row that carries no usage at all (the user message every turn writes).
     try insertRow(&ctx, "h1", "s1", 1000, 900, 0);
     try insertRow(&ctx, "h2", "s1", 500, 100, 50);
     try insertRow(&ctx, "h3", "s1", 0, 0, 0);
@@ -251,9 +230,7 @@ test "useCase: a session with no rows reports zeros and a null rate, never a fab
 }
 
 test "useCase: tokens recorded with no cache counters keep rate 0 and calls_with_cache 0" {
-    // The positive control for the absence claim above: this session HAS
-    // input tokens, so the rate is a real 0 — while `calls_with_cache == 0`
-    // still tells a client the provider reported nothing (see file header).
+    // The positive control for the absence claim above: this session HAS input tokens, so the rate is a real 0 — while `calls_with_cache == 0` still tells a client …
     var ctx = try setupDb();
     defer teardown(&ctx);
 
@@ -301,8 +278,7 @@ test "useCase: a fully cached session reads 100%, and an empty id short-circuits
 }
 
 test "wire: the response carries exactly the documented keys" {
-    // Pins the contract a client codes against: a renamed or dropped field is
-    // a breaking change, and this is the only place that says so.
+    // Pins the contract a client codes against: a renamed or dropped field is a breaking change, and this is the only place that says so.
     var ctx = try setupDb();
     defer teardown(&ctx);
     try insertRow(&ctx, "h1", "s1", 1000, 250, 0);
@@ -325,9 +301,7 @@ test "wire: the response carries exactly the documented keys" {
 }
 
 test "wire: the serialized body is byte-stable — field order, float rendering, null rate" {
-    // The whole response is asserted as TEXT because three separate things a
-    // client depends on are invisible to a field-by-field check: the field
-    // ORDER, the rendering of the rate (Zig's shortest round-trip form emits
+    // The whole response is asserted as TEXT because three separate things a client depends on are invisible to a field-by-field check: the field ORDER, the …
     var ctx = try setupDb();
     defer teardown(&ctx);
     try insertRow(&ctx, "h1", "s1", 1000, 900, 0);

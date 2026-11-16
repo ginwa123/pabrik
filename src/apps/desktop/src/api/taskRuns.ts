@@ -14,12 +14,9 @@ export interface KanbanCreateTaskPayload {
   videoUrls?: string[]
   // Migration 070 — per-task cwd override. Absolute path on disk or '' for cwd-less.
   cwd?: string
-  // Migration 063 — only meaningful for create_and_run; for plain create,
-  // the backend atomically inserts the sessions row when this is '1'.
+  // Migration 063 — only meaningful for create_and_run; for plain create, the backend atomically inserts the sessions row when this is '1'.
   isAutoRetryUntilStop?: string
-  // Migration 112 — the skills this task asks the agent to use, in pick
-  // order. The exact `skills.name` values from the New-task dialog's picker.
-  // Persisted on the task row; empty/undefined = no skill.
+  // Migration 112 — the skills this task asks the agent to use, in pick order.
   skillNames?: string[]
 }
 
@@ -40,9 +37,7 @@ export interface KanbanCreateAndRunPayload {
   skill_names?: string[]
 }
 
-/** New mode (`create_session`) — inserts the sessions row keyed by task.id + persists
- * selected_profile_model + emits session_created SSE, but does NOT call emit_run_agent. Returns
- * `session: { id, name, status: 'idle' }`. */
+/** New mode (`create_session`) — inserts the sessions row keyed by task.id + persists selected_profile_model + emits session_created SSE, but does NOT call … */
 export interface KanbanCreateSessionOnlyPayload {
   mode: 'create_session'
   name: string
@@ -119,8 +114,7 @@ export async function createKanbanTask(
   })
 }
 
-/** Manually fire a workspace routine. Returns the session_id (which equals the routine id — every
- * fire appends to the same session chat). */
+/** Manually fire a workspace routine. */
 export async function runWorkspaceRoutine(
   workspaceId: string,
   itemId: string,
@@ -132,8 +126,7 @@ export async function runWorkspaceRoutine(
   )
 }
 
-/** Trigger an LLM worker on an existing task's session WITHOUT queueing a new user message. For
- * tasks with chat history, the agent resumes the conversation. */
+/** Trigger an LLM worker on an existing task's session WITHOUT queueing a new user message. */
 export async function startAgentOnTask(
   workspaceId: string,
   itemId: string,

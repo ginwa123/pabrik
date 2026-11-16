@@ -1,33 +1,24 @@
-//! Data model for the `workspace_routines` entity table. One row per Routine
-//! workspace item (`item_type='routine'`).
+//! Data model for the `workspace_routines` entity table.
 
 const std = @import("std");
 
 pub const EntityId = []u8;
 
 id: EntityId,
-/// The workspace_item this routine belongs to. Same string as `id` per
-/// the 1-1 invariant.
+/// The workspace_item this routine belongs to.
 workspace_item_id: EntityId,
-/// Free-form description. Empty slice is the canonical "no description"
-/// sentinel (matches `agents.description`).
+/// Free-form description.
 description: []u8 = &.{},
-/// The agent prompt fired on each run. Empty = manual-run only
-/// (same as empty schedule).
+/// The agent prompt fired on each run.
 instruction: []u8 = &.{},
-/// Standard 5-field cron expression (e.g. `"0 9 * * *"` for daily
-/// 09:00). Empty string = manual-run only (no auto-fire).
-/// Validated by `loop/cron.zig`.
+/// Standard 5-field cron expression (e.g.
 schedule: []u8 = &.{},
 cwd: []u8 = &.{},
 enabled: bool = true,
 last_run_at: ?[]u8 = null,
-/// Next scheduled fire time (`YYYY-MM-DD HH:MM:SS`). NULL on disk
-/// (empty slice on the wire) when `schedule` is empty or the routine
-/// is disabled.
+/// Next scheduled fire time (`YYYY-MM-DD HH:MM:SS`).
 next_run_at: ?[]u8 = null,
 /// One of `"idle"` | `"firing"` | `"running"` | `"failed"`.
-/// The DB column has no CHECK constraint.
 last_status: []u8 = &.{},
 last_error: ?[]u8 = null,
 created_at: ?[]u8 = null,

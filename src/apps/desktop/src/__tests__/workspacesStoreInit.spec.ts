@@ -1,5 +1,4 @@
-/**  * Unit tests for the workspaces store's init() flow. Mocks api.getWorkspaces,
- * api.getWorkspacesItems, and api.getTasks to assert the 3-call flow + task-attachment logic. */
+/** Unit tests for the workspaces store's init() flow. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -28,16 +27,12 @@ describe('useWorkspacesStore.init()', () => {
   const getWorkspacesMock = vi.fn()
   const getWorkspacesItemsMock = vi.fn()
   const getTasksMock = vi.fn()
-  // NEW (auto-expand-design-pages plan, 2026-08-06): init() now fires listDesignPages for every
-  // design item in parallel with the tasks fetch.
+  // NEW (auto-expand-design-pages plan, 2026-08-06): init() now fires listDesignPages for every design item in parallel with the tasks fetch.
   const listDesignPagesMock = vi.fn()
-  // NEW (kanban-prefetch-on-init plan, 2026-08-06): init() now
-  // fires listKanbanColumns + per-column getTasks (with column_id)
-  // for every kanban item. Track the new mocks separately.
+  // NEW (kanban-prefetch-on-init plan, 2026-08-06): init() now fires listKanbanColumns + per-column getTasks (with column_id) for every kanban item.
   const listKanbanColumnsMock = vi.fn()
 
-  // Re-created per beforeEach so tests start with a clean Map. The shared
-  // helper just builds the stub; lifecycle is the test's responsibility.
+  // Re-created per beforeEach so tests start with a clean Map.
   let localStorageStub: Storage
   let app: VueApp
 
@@ -51,9 +46,7 @@ describe('useWorkspacesStore.init()', () => {
       configurable: true,
     })
 
-    // init() calls installSessionEventHandlers() which uses
-    // useSseBus() — install a stub bus before the store's init()
-    // runs so the install path doesn't throw.
+    // init() calls installSessionEventHandlers() which uses useSseBus() — install a stub bus before the store's init() runs so the install path doesn't throw.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -62,50 +55,37 @@ describe('useWorkspacesStore.init()', () => {
     vi.spyOn(api, 'getWorkspaces').mockImplementation(getWorkspacesMock)
     vi.spyOn(api, 'getWorkspacesItems').mockImplementation(getWorkspacesItemsMock)
     vi.spyOn(api, 'getTasks').mockImplementation(getTasksMock)
-    // NEW (auto-expand-design-pages plan): mock listDesignPages so the design-page fetch in init()
-    // doesn't hit the network.
+    // NEW (auto-expand-design-pages plan): mock listDesignPages so the design-page fetch in init() doesn't hit the network.
     vi.spyOn(api, 'listDesignPages').mockImplementation(listDesignPagesMock)
-    // NEW (kanban-prefetch-on-init plan): mock listKanbanColumns so
-    // the kanban-columns fetch in init() doesn't hit the network.
+    // NEW (kanban-prefetch-on-init plan): mock listKanbanColumns so the kanban-columns fetch in init() doesn't hit the network.
     vi.spyOn(api, 'listKanbanColumns').mockImplementation(listKanbanColumnsMock)
-    // Reset call history so toHaveBeenCalledTimes assertions stay scoped to a single test.
-    // vi.restoreAllMocks() (in afterEach) restores spy implementations but does NOT clear vi.fn()
-    // call history, so without this the second test sees the first test's calls and the call-count.
+    // Reset call history so toHaveBeenCalledTimes assertions stay scoped to a single test. vi.restoreAllMocks() (in afterEach) restores spy implementations but does …
     listDesignPagesMock.mockClear()
     listKanbanColumnsMock.mockClear()
-    // getTasks is reused for per-column kanban task fetches. Clear its call history too so the
-    // kanban-prefetch tests can assert call counts for column_id-tagged calls without seeing the
-    // earlier board-wide tests' state.
+    // getTasks is reused for per-column kanban task fetches.
     getTasksMock.mockClear()
   })
 
-  // Helper for design-item fixtures: produces the shape the backend returns so we can assert
-  // against `design_pages` and the `item_type === 'design'` branch in init() without breaking
-  // existing tests.
+  // Helper for design-item fixtures: produces the shape the backend returns so we can assert against `design_pages` and the `item_type === 'design'` branch in …
   function makeDesignItem(overrides: Record<string, unknown> = {}) {
     return {
       id: 'item_design',
       name: 'design',
       item_type: 'design',
       workspace_id: 'ws_1',
-      // Other fields the in-memory WorkspaceItem type requires —
-      // init() doesn't read them so we can pass empty values.
+      // Other fields the in-memory WorkspaceItem type requires — init() doesn't read them so we can pass empty values.
       ...overrides,
     }
   }
 
-  // Helper for kanban-item fixtures. Mirrors makeDesignItem but
-  // uses item_type='kanban' so init() routes it through the
-  // kanban-prefetch fan-out.
+  // Helper for kanban-item fixtures.
   function makeKanbanItem(overrides: Record<string, unknown> = {}) {
     return {
       id: 'item_kanban',
       name: 'kanban',
       item_type: 'kanban',
       workspace_id: 'ws_1',
-      // kanban_columns are populated by listKanbanColumns in init(); start with an empty array so
-      // the per-column fetches have no work to do unless the test stubs a populated columns
-      // response.
+      // kanban_columns are populated by listKanbanColumns in init(); start with an empty array so the per-column fetches have no work to do unless the test stubs a …
       kanban_columns: [],
       tasks: [],
       ...overrides,
@@ -134,14 +114,11 @@ describe('useWorkspacesStore.init()', () => {
     await store.init()
 
     expect(getWorkspacesMock).toHaveBeenCalledTimes(1)
-    // Lazy loading (2026-09-22 revamp plan): only the active workspace (first row — no
-    // explicit/persisted choice here) is fetched; the other row stays seeded-empty until visited
-    // via ensureWorkspaceItemsLoaded.
+    // Lazy loading (2026-09-22 revamp plan): only the active workspace (first row — no explicit/persisted choice here) is fetched; the other row stays seeded-empty …
     expect(getWorkspacesItemsMock).toHaveBeenCalledTimes(1)
     expect(getWorkspacesItemsMock).toHaveBeenNthCalledWith(1, 'ws_1')
     expect(store.workspaces.find((ws) => ws.id === 'ws_2')!.items).toEqual([])
-    // item_1a triggers one getTasks call — per-item tasks follow the
-    // same active-only gate.
+    // item_1a triggers one getTasks call — per-item tasks follow the same active-only gate.
     expect(getTasksMock).toHaveBeenCalledTimes(1)
     expect(getTasksMock).toHaveBeenCalledWith('ws_1', 'item_1a')
   })
@@ -233,8 +210,7 @@ describe('useWorkspacesStore.init()', () => {
     expect(store.loadingError).toBeNull()
   })
 
-  // NEW (auto-expand-design-pages plan, 2026-08-06): init() must fetch design pages for every
-  // design item in parallel with the tasks fetch.
+  // NEW (auto-expand-design-pages plan, 2026-08-06): init() must fetch design pages for every design item in parallel with the tasks fetch.
   it('fetches design pages for every design item in init()', async () => {
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
@@ -247,8 +223,7 @@ describe('useWorkspacesStore.init()', () => {
       ],
       count: 3,
     })
-    // Two design items → two listDesignPages calls. Folder item does
-    // NOT fire listDesignPages.
+    // Two design items → two listDesignPages calls.
     listDesignPagesMock
       .mockResolvedValueOnce({
         pages: [
@@ -269,8 +244,7 @@ describe('useWorkspacesStore.init()', () => {
     expect(listDesignPagesMock).toHaveBeenCalledTimes(2)
     expect(listDesignPagesMock).toHaveBeenNthCalledWith(1, 'ws_1', 'item_design_a')
     expect(listDesignPagesMock).toHaveBeenNthCalledWith(2, 'ws_1', 'item_design_c')
-    // Sidebar's <DesignPageRow> reads from this cache; populated
-    // entries mean the rows will render as soon as init() resolves.
+    // Sidebar's <DesignPageRow> reads from this cache; populated entries mean the rows will render as soon as init() resolves.
     expect(store.designPagesByItemId['item_design_a']).toHaveLength(2)
     expect(store.designPagesByItemId['item_design_c']).toHaveLength(1)
     expect(store.designPagesByItemId['item_design_a']?.[0]?.id).toBe('page_a1')
@@ -279,8 +253,6 @@ describe('useWorkspacesStore.init()', () => {
 
   it('does NOT fire listDesignPages for non-design items in init()', async () => {
     // Belt-and-braces: the folder item in the previous test never triggered a listDesignPages call.
-    // This test makes that contract explicit so a future refactor doesn't accidentally broaden the
-    // filter and fetch pages for, e.g., kanban items.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -302,9 +274,7 @@ describe('useWorkspacesStore.init()', () => {
   })
 
   it('keeps the workspace when a per-design-item pages fetch fails', async () => {
-    // Best-effort contract — same as the per-item tasks fetch. A single bad listDesignPages call
-    // logs and leaves the cache empty for that item, but the workspace tree still loads. The
-    // chevron-toggle lazy fetch in WorkspaceItem.vue is the fallback that retries the failing item.
+    // Best-effort contract — same as the per-item tasks fetch.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -329,14 +299,12 @@ describe('useWorkspacesStore.init()', () => {
     expect(store.workspaces[0]!.items).toHaveLength(2)
     // Succeeded design item: cache populated.
     expect(store.designPagesByItemId['item_design_a']).toHaveLength(1)
-    // Failed design item: cache entry absent (fetchDesignPages
-    // never assigned to designPagesByItemId on rejection).
+    // Failed design item: cache entry absent (fetchDesignPages never assigned to designPagesByItemId on rejection).
     expect(store.designPagesByItemId['item_design_b']).toBeUndefined()
   })
 
   it('init populates the cache before isLoading flips to false (instant open)', async () => {
-    // The whole point of the fix: when init() resolves, the sidebar's design-pages section should
-    // be ready to render with the page list — no "click the chevron to populate" gate.
+    // The whole point of the fix: when init() resolves, the sidebar's design-pages section should be ready to render with the page list — no "click the chevron to …
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -360,12 +328,9 @@ describe('useWorkspacesStore.init()', () => {
     expect(store.designPagesByItemId['item_design']?.[0]?.name).toBe('AI Chat View')
   })
 
-  // NEW (kanban-prefetch-on-init plan, 2026-08-06): init() must fire per-column task fetches for
-  // every kanban item so the board renders populated when the user clicks the kanban (matches the
-  // design-pages eager-fetch contract).
+  // NEW (kanban-prefetch-on-init plan, 2026-08-06): init() must fire per-column task fetches for every kanban item so the board renders populated when the user …
   it('fetches kanban columns + per-column tasks for every kanban item in init()', async () => {
-    // 1 kanban item with 2 columns → 1 listKanbanColumns call +
-    // 2 getTasks calls (one per column, both with column_id set).
+    // 1 kanban item with 2 columns → 1 listKanbanColumns call + 2 getTasks calls (one per column, both with column_id set).
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -383,9 +348,7 @@ describe('useWorkspacesStore.init()', () => {
       ],
       count: 2,
     })
-    // Mock the board-wide fetch for the folder item (which fires in the existing tasks block
-    // because folder is not kanban/design). This must be queued FIRST because Promise.all runs in
-    // parallel — the order of consumption is non-deterministic from the test's perspective.
+    // Mock the board-wide fetch for the folder item (which fires in the existing tasks block because folder is not kanban/design).
     getTasksMock.mockResolvedValueOnce({ tasks: [], has_more: false, next_cursor: null })
     // 2 per-column task fetches — each with a unique column_id.
     getTasksMock
@@ -426,9 +389,7 @@ describe('useWorkspacesStore.init()', () => {
     // 1 listKanbanColumns call for the kanban item — never for the folder.
     expect(listKanbanColumnsMock).toHaveBeenCalledTimes(1)
     expect(listKanbanColumnsMock).toHaveBeenNthCalledWith(1, 'ws_1', 'item_kanban_a')
-    // Filter getTasks calls to the KANBAN branch: every getTasks call from the kanban-prefetch
-    // block passes column_id as the 7th argument (after wsId, itemId, limit, cursor, sortBy,
-    // direction).
+    // Filter getTasks calls to the KANBAN branch: every getTasks call from the kanban-prefetch block passes column_id as the 7th argument (after wsId, itemId, limit …
     const kanbanCalls = getTasksMock.mock.calls.filter(
       (call) => call[6] !== undefined, // 7th arg = column_id
     )
@@ -453,23 +414,19 @@ describe('useWorkspacesStore.init()', () => {
       'col_b',
       undefined,
     ])
-    // Cache populated — kanban_columns has the loaded columns,
-    // item.tasks has the merged tasks from both columns.
+    // Cache populated — kanban_columns has the loaded columns, item.tasks has the merged tasks from both columns.
     const item = store.workspaces[0]!.items.find((i) => i.id === 'item_kanban_a')!
     expect(item.kanban_columns).toHaveLength(2)
     expect(item.tasks).toHaveLength(3)
     expect(item.tasks!.map((t) => t.id).sort()).toEqual(['task_a1', 'task_b1', 'task_b2'])
-    // columnPagination entries are set so the onMount path
-    // (KanbanView.loadColumnsAndTasks) sees them as already
-    // fetched — its `needFetch` filter excludes them.
+    // columnPagination entries are set so the onMount path (KanbanView.loadColumnsAndTasks) sees them as already fetched — its `needFetch` filter excludes them.
     expect(item.columnPagination).toBeDefined()
     expect(item.columnPagination!['col_a']?.hasMore).toBe(false)
     expect(item.columnPagination!['col_b']?.hasMore).toBe(false)
   })
 
   it('does NOT fire kanban fetches for non-kanban items in init()', async () => {
-    // Regression guard: a future refactor must not broaden the
-    // filter to fetch kanban columns for folder/chat/design items.
+    // Regression guard: a future refactor must not broaden the filter to fetch kanban columns for folder/chat/design items.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -481,8 +438,7 @@ describe('useWorkspacesStore.init()', () => {
       ],
       count: 3,
     })
-    // Mock the BOARD-WIDE getTasks fires for folder + chat. The design item skips it (design has no
-    // tasks list per the design-pages-in-workspace-tree plan, 2026-08-06).
+    // Mock the BOARD-WIDE getTasks fires for folder + chat.
     getTasksMock.mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
     listDesignPagesMock.mockResolvedValueOnce({
       pages: [{ id: 'page_x', workspace_item_id: 'item_design', name: 'X', position: 0 }],
@@ -492,13 +448,9 @@ describe('useWorkspacesStore.init()', () => {
     const store = useWorkspacesStore()
     await store.init()
 
-    // Zero kanban items → zero listKanbanColumns calls. The kanban
-    // branch is gated on item_type === 'kanban'; a future refactor
-    // that broadens the filter would be caught here.
+    // Zero kanban items → zero listKanbanColumns calls.
     expect(listKanbanColumnsMock).toHaveBeenCalledTimes(0)
-    // Filter getTasks calls to the KANBAN branch: every getTasks call from the kanban-prefetch
-    // block passes column_id as the 7th argument. The board-wide fetch (folder + chat) does NOT
-    // pass column_id. So we assert zero column_id-tagged calls.
+    // Filter getTasks calls to the KANBAN branch: every getTasks call from the kanban-prefetch block passes column_id as the 7th argument.
     const kanbanCalls = getTasksMock.mock.calls.filter(
       (call) => call[6] !== undefined, // 7th arg = column_id
     )
@@ -506,9 +458,7 @@ describe('useWorkspacesStore.init()', () => {
   })
 
   it('keeps the workspace when a per-column kanban fetch fails', async () => {
-    // Best-effort contract — same as the per-item tasks fetch. A single bad column fetch logs and
-    // leaves that column's pagination entry missing, but the workspace tree still loads and other
-    // columns' tasks populate.
+    // Best-effort contract — same as the per-item tasks fetch.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })
@@ -523,8 +473,7 @@ describe('useWorkspacesStore.init()', () => {
       ],
       count: 2,
     })
-    // First column succeeds, second rejects. The try/catch in
-    // init()'s kanban block logs the error but doesn't fail init.
+    // First column succeeds, second rejects.
     getTasksMock
       .mockResolvedValueOnce({
         tasks: [
@@ -548,8 +497,7 @@ describe('useWorkspacesStore.init()', () => {
   })
 
   it('init populates the kanban cache before isLoading flips to false (instant open)', async () => {
-    // The "instant open" invariant — when init() resolves, the kanban item's tasks should be ready
-    // to render without needing a click.
+    // The "instant open" invariant — when init() resolves, the kanban item's tasks should be ready to render without needing a click.
     getWorkspacesMock.mockResolvedValueOnce({
       workspaces: [{ id: 'ws_1', name: 'W1', icon: '📁' }],
     })

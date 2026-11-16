@@ -1,5 +1,4 @@
-/** UseSkill.vue — the `use_skill` card. The tool call is `{ name }` and the payload is `{
- * skill_name, content, loaded, asset_dir, asset_count, error?, available_skills? }`. */
+/** UseSkill.vue — the `use_skill` card. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import UseSkill from '../UseSkill.vue'
@@ -70,8 +69,7 @@ describe('UseSkill.vue — loaded', () => {
   })
 
   it('does not render the materialised asset_dir', () => {
-    // It is reaped per load, so printing it teaches the user a path that
-    // will be gone by the time they look.
+    // It is reaped per load, so printing it teaches the user a path that will be gone by the time they look.
     const wrapper = mount(UseSkill, {
       props: { content: loadedPayload, expanded: true } as never,
     })

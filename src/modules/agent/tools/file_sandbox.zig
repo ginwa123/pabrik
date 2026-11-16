@@ -1,6 +1,4 @@
 //! `file_sandbox` — ONE rule for "may this file be shown to the browser?".
-//! Two callers must agree, and they used to disagree: 1. `present_files`
-//! (agent tool, `present_files.zig`) — builds the card. 2.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -28,8 +26,7 @@ fn isSep(c: u8, style: PathStyle) bool {
     };
 }
 
-/// Drop the Win32 "extended-length" prefix that `GetFinalPathNameByHandle`
-/// (i.e.
+/// Drop the Win32 "extended-length" prefix that `GetFinalPathNameByHandle` (i.e.
 fn stripLeadingMarkers(path: []const u8, style: PathStyle) []const u8 {
     if (std.mem.startsWith(u8, path, "\\\\?\\UNC\\")) return path["\\\\?\\UNC\\".len..];
     if (std.mem.startsWith(u8, path, "\\\\?\\")) return path["\\\\?\\".len..];
@@ -37,8 +34,7 @@ fn stripLeadingMarkers(path: []const u8, style: PathStyle) []const u8 {
     return path;
 }
 
-/// Trailing separators carry no meaning for a containment check, but a
-/// drive root does: `C:\` must not degrade to the drive-relative `C:`.
+/// Trailing separators carry no meaning for a containment check, but a drive root does: `C:\` must not degrade to the drive-relative `C:`.
 fn trimTrailingSeparators(path: []const u8, style: PathStyle) []const u8 {
     var end = path.len;
     while (end > 1 and isSep(path[end - 1], style)) {
@@ -48,9 +44,7 @@ fn trimTrailingSeparators(path: []const u8, style: PathStyle) []const u8 {
     return path[0..end];
 }
 
-/// Byte-for-byte prefix comparison with the two Windows relaxations folded
-/// in: case-insensitivity, and `/` ≡ `\` (a session row may spell the root
-/// `C:/Users/...` while the canonicalized target is `C:\Users\...`).
+/// Byte-for-byte prefix comparison with the two Windows relaxations folded in: case-insensitivity, and `/` ≡ `\` (a session row may spell the root `C:/Users/...` …
 fn prefixMatches(a: []const u8, b: []const u8, style: PathStyle) bool {
     for (a, b) |ca, cb| {
         const same = switch (style) {
@@ -71,17 +65,14 @@ pub fn isInsideRoot(root: []const u8, resolved: []const u8, style: PathStyle) bo
 
     const n = @min(r.len, t.len);
     if (!prefixMatches(r[0..n], t[0..n], style)) return false;
-    // A root that already ends in a separator is a filesystem root (`/`),
-    // a drive root (`C:\`) or a UNC share root — everything below matches.
+    // A root that already ends in a separator is a filesystem root (`/`), a drive root (`C:\`) or a UNC share root — everything below matches.
     if (isSep(r[r.len - 1], style)) return true;
     if (t.len == r.len) return true;
     if (t.len < r.len) return false;
     return isSep(t[r.len], style);
 }
 
-/// True when any path segment is exactly `..`. Both separators are split
-/// on, so a Windows path is not judged by posix rules. `..` inside a
-/// filename (`report..html`, `..hidden`) is NOT a traversal.
+/// True when any path segment is exactly `..`.
 pub fn hasParentSegment(path: []const u8) bool {
     var outer = std.mem.splitScalar(u8, path, '/');
     while (outer.next()) |segment| {
@@ -93,8 +84,7 @@ pub fn hasParentSegment(path: []const u8) bool {
     return false;
 }
 
-/// `std.fs.path.isAbsolute` for an explicit style, so the Windows rules are
-/// reachable from a posix test run.
+/// `std.fs.path.isAbsolute` for an explicit style, so the Windows rules are reachable from a posix test run.
 pub fn isAbsoluteFor(path: []const u8, style: PathStyle) bool {
     return switch (style) {
         .posix => std.fs.path.isAbsolutePosix(path),
@@ -146,8 +136,7 @@ pub const SessionRootError = error{
     QueryFailed,
 };
 
-/// Resolve the session's sandbox root: `git_worktree_cwd` when set, else
-/// `cwd`.
+/// Resolve the session's sandbox root: `git_worktree_cwd` when set, else `cwd`.
 pub fn resolveSessionRoot(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -168,18 +157,14 @@ pub fn resolveSessionRoot(
     const cwd = row.values[1];
     const root = if (worktree_cwd.len > 0) worktree_cwd else cwd;
     if (root.len == 0) return error.NoWorkingDirectory;
-    // `root` is later handed to `std.Io.Dir.realPathFileAbsoluteAlloc`, which
-    // asserts `path.isAbsolute(...)`.
+    // `root` is later handed to `std.Io.Dir.realPathFileAbsoluteAlloc`, which asserts `path.isAbsolute(...)`.
     if (!isAbsoluteFor(root, nativeStyle())) return error.NoWorkingDirectory;
     return allocator.dupe(u8, root) catch return error.OutOfMemory;
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// Written before the implementation.
 
-/// Two sibling temp dirs, each with its realpath, plus a scratch file
-/// writer. Used to express "inside" vs "outside" without assuming a
-/// particular temp layout.
+/// Two sibling temp dirs, each with its realpath, plus a scratch file writer.
 const Sandbox = struct {
     inside: std.testing.TmpDir,
     outside: std.testing.TmpDir,
@@ -235,8 +220,7 @@ fn writeFileAt(dir: std.Io.Dir, io: std.Io, rel: []const u8, contents: []const u
     try file.writeStreamingAll(io, contents);
 }
 
-/// The style of the host running these tests, for the FS-touching cases
-/// (the pure string cases below pin both styles explicitly).
+/// The style of the host running these tests, for the FS-touching cases (the pure string cases below pin both styles explicitly).
 const native = nativeStyle();
 
 // ── isInsideRoot: posix ────────────────────────────────────────────────
@@ -248,8 +232,7 @@ test "isInsideRoot: posix accepts the root itself and any child" {
 }
 
 test "isInsideRoot: a sibling that shares the root's prefix is OUTSIDE" {
-    // The reason for the boundary check: a bare `startsWith` would serve
-    // /tmp/abcd/secret.txt as if it were /tmp/abc/secret.txt.
+    // The reason for the boundary check: a bare `startsWith` would serve /tmp/abcd/secret.txt as if it were /tmp/abc/secret.txt.
     try testing.expect(!isInsideRoot("/tmp/abc", "/tmp/abcd/secret.txt", .posix));
     try testing.expect(!isInsideRoot("/tmp/abc", "/tmp/abc-backup.tar", .posix));
 }
@@ -272,9 +255,7 @@ test "isInsideRoot: the filesystem root contains everything under it" {
 }
 
 test "isInsideRoot: posix treats a backslash as an ordinary filename character" {
-    // Pins that the Windows separator normalization is NOT applied to posix
-    // paths — `a\b` is a single filename on Linux, and widening the
-    // separator set here would let `root` match a sibling it does not own.
+    // Pins that the Windows separator normalization is NOT applied to posix paths — `a\b` is a single filename on Linux, and widening the separator set here would …
     try testing.expect(isInsideRoot("/tmp/abc", "/tmp/abc/we\\ird.txt", .posix));
     try testing.expect(!isInsideRoot("/tmp/abc", "/tmp/abc\\evil/file.txt", .posix));
 }
@@ -293,9 +274,7 @@ test "isInsideRoot: windows accepts backslash and forward-slash children" {
 }
 
 test "isInsideRoot: windows compares case-insensitively" {
-    // Windows paths are case-insensitive, and the two sides of the
-    // comparison are canonicalized by different code paths (the session row
-    // vs GetFinalPathNameByHandle), so the on-disk casing can differ.
+    // Windows paths are case-insensitive, and the two sides of the comparison are canonicalized by different code paths (the session row vs …
     try testing.expect(isInsideRoot("C:\\Users\\Gilang\\work", "c:\\users\\gilang\\work\\a.txt", .windows));
     try testing.expect(isInsideRoot("c:\\USERS\\gilang", "C:\\Users\\Gilang\\a.txt", .windows));
 }
@@ -305,8 +284,7 @@ test "isInsideRoot: posix style is case-sensitive for the same pair" {
 }
 
 test "isInsideRoot: windows strips the \\\\?\\ verbatim prefix on either side" {
-    // realPathFileAbsolute on Windows returns GetFinalPathNameByHandle output
-    // (`\\?\C:\...`); a root taken from the DB may not carry the prefix.
+    // realPathFileAbsolute on Windows returns GetFinalPathNameByHandle output (`\\?\C:\...`); a root taken from the DB may not carry the prefix.
     try testing.expect(isInsideRoot("\\\\?\\C:\\work", "C:\\work\\a.txt", .windows));
     try testing.expect(isInsideRoot("C:\\work", "\\\\?\\C:\\work\\a.txt", .windows));
     try testing.expect(isInsideRoot("\\\\?\\C:\\work", "\\\\?\\C:\\work\\a.txt", .windows));
@@ -362,8 +340,7 @@ test "isAbsoluteFor: posix accepts /x and rejects x" {
 }
 
 test "isAbsoluteFor: posix rejects a Windows drive path" {
-    // A `C:\...` path handed to a Linux pabrik is not a path on this host —
-    // treating it as absolute is how a "present" card becomes a 404.
+    // A `C:\...` path handed to a Linux pabrik is not a path on this host — treating it as absolute is how a "present" card becomes a 404.
     try testing.expect(!isAbsoluteFor("C:\\Users\\gilang\\Downloads\\r.html", .posix));
     try testing.expect(!isAbsoluteFor("\\\\?\\C:\\work", .posix));
 }
@@ -377,9 +354,7 @@ test "isAbsoluteFor: windows accepts drive, UNC and rooted forms" {
 }
 
 test "isAbsoluteFor: windows rejects drive-relative and plain relative paths" {
-    // `C:x` resolves against the process's per-drive current directory, so
-    // it is NOT absolute and must not be handed to realPath (whose assert
-    // aborts the process rather than returning an error).
+    // `C:x` resolves against the process's per-drive current directory, so it is NOT absolute and must not be handed to realPath (whose assert aborts the process …
     try testing.expect(!isAbsoluteFor("C:x", .windows));
     try testing.expect(!isAbsoluteFor("x", .windows));
     try testing.expect(!isAbsoluteFor("", .windows));
@@ -415,8 +390,7 @@ test "resolveInsideRoot: a nested file inside the root is allowed" {
 }
 
 test "resolveInsideRoot: a sibling dir outside the root is rejected" {
-    // The reported Windows failure, expressed portably: the agent wrote
-    // (or found) a file outside the session working directory.
+    // The reported Windows failure, expressed portably: the agent wrote (or found) a file outside the session working directory.
     const alloc = testing.allocator;
     var sb = try setupSandbox(alloc);
     defer sb.deinit(alloc);
@@ -532,8 +506,7 @@ fn setupDb() !TestDb {
     var db: database.Db = .{};
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
-    // Column nullability matches production (Migration 046): both columns are
-    // nullable, which is why the resolver COALESCEs them.
+    // Column nullability matches production (Migration 046): both columns are nullable, which is why the resolver COALESCEs them.
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
@@ -585,9 +558,7 @@ test "resolveSessionRoot: a session with no working directory fails closed" {
 }
 
 test "resolveSessionRoot: a relative cwd is refused, never handed to realPath" {
-    // `realPathFileAbsolute` ASSERTS isAbsolute — in a safe build that
-    // aborts the whole server instead of returning an error, so the guard
-    // has to live here.
+    // `realPathFileAbsolute` ASSERTS isAbsolute — in a safe build that aborts the whole server instead of returning an error, so the guard has to live here.
     var ctx = try setupDb();
     defer ctx.deinit();
     try seedSession(&ctx.db, "task_d", "relative/cwd", "");
@@ -614,8 +585,7 @@ test "resolveSessionRoot: a Windows cwd is judged by the native path style" {
 }
 
 test "resolveSessionRoot: the resolved root is absolute for the native style" {
-    // Whatever the host, the two callers must agree: the handler feeds this
-    // string to realPathFileAbsolute, whose assert is a process abort.
+    // Whatever the host, the two callers must agree: the handler feeds this string to realPathFileAbsolute, whose assert is a process abort.
     const alloc = testing.allocator;
     var sb = try setupSandbox(alloc);
     defer sb.deinit(alloc);

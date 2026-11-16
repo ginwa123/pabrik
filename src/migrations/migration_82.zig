@@ -8,9 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 082 - Add `sessions.last_human_touched_at_nano`. Sibling of
-/// Migration 065 (which added the same column shape to
-/// `workspace_item_tasks`).
+/// Migration 082 - Add `sessions.last_human_touched_at_nano`.
 pub const Migration082AddSessionHumanTouchedAt = struct {
     pub const version: u32 = 82;
     pub const name = "add_session_human_touched_at";
@@ -20,13 +18,9 @@ pub const Migration082AddSessionHumanTouchedAt = struct {
             .{ .db = db },
             allocator,
             "sessions",
-            // The SQL column name and the `column` probe arg must match
-            // exactly - `addColumnIfMissing` issues `SELECT 1 FROM
-            // pragma_table_info('sessions') WHERE name = '<column>'` first to
+            // The SQL column name and the `column` probe arg must match exactly - `addColumnIfMissing` issues `SELECT 1 FROM pragma_table_info('sessions') WHERE name = …
             "last_human_touched_at_nano",
-            // name + type - `addColumnIfMissing` uses this verbatim as `ALTER
-            // TABLE {table} ADD COLUMN {definition}`, so omitting the column
-            // name would create a column literally named "INTEGER".
+            // name + type - `addColumnIfMissing` uses this verbatim as `ALTER TABLE {table} ADD COLUMN {definition}`, so omitting the column name would create a column …
             "last_human_touched_at_nano " ++ dialect.epoch_type,
         );
     }

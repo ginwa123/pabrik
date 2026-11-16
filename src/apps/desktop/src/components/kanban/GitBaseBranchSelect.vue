@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** GitBaseBranchSelect — searchable ref picker for the kanban "New task" dialog's git-worktree
- * block. Why a dedicated component: a real repo has hundreds of refs (this one has ~770), so a
- * plain <select> is unusable. */
+/** GitBaseBranchSelect — searchable ref picker for the kanban "New task" dialog's git-worktree block. */
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 
 import { listGitBranches, type GitBranchEntry } from '@/api'
@@ -10,8 +8,7 @@ import UiIcon from '../ui/UiIcon.vue'
 const props = withDefaults(
   defineProps<{
     modelValue: string
-    /**      * Absolute path of the repo whose refs are listed. Empty = the dialog could not resolve a
-     * project root; the picker then shows an empty list and relies on hand-typed input. */
+    /** Absolute path of the repo whose refs are listed. */
     repoPath?: string
     disabled?: boolean
   }>(),
@@ -24,11 +21,9 @@ const open = ref(false)
 const search = ref('')
 const loading = ref(false)
 const branches = ref<GitBranchEntry[]>([])
-/**  * Cache key: the repo path the current `branches` were loaded for, so re-opening the same dropdown
- * does not refetch but switching project roots does. */
+/** Cache key: the repo path the current `branches` were loaded for, so re-opening the same dropdown does not refetch but switching project roots does. */
 const loadedFor = ref<string | null>(null)
-/** True once a load has completed (successfully or not) for `loadedFor`.
- *  Drives the "no branches found" message so it is not shown mid-load. */
+/** True once a load has completed (successfully or not) for `loadedFor`. */
 const loadAttempted = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const searchRef = ref<HTMLInputElement | null>(null)
@@ -41,8 +36,7 @@ const filtered = computed<GitBranchEntry[]>(() => {
   return branches.value.filter((b) => b.name.toLowerCase().includes(q))
 })
 
-/** Typed ref that is not (yet) in the listed branches. Offering it lets the user name a ref the
- * picker cannot see — e.g. an `origin/<branch>` that has not been fetched, or a tag. */
+/** Typed ref that is not (yet) in the listed branches. */
 const customRef = computed(() => {
   const q = search.value.trim()
   if (q === '') return ''
@@ -140,7 +134,6 @@ onMounted(() => document.addEventListener('mousedown', onDocumentMouseDown))
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentMouseDown))
 
 // A new project root invalidates the cache; the next open refetches.
-// Runs on update with a prev-value guard instead of a watcher.
 const prevRepoPath = ref(props.repoPath)
 onUpdated(() => {
   if (props.repoPath !== prevRepoPath.value) {

@@ -1,6 +1,4 @@
-//! The manager a `--saas` boot starts when it finds none: resolve the host
-//! artifacts, fork `pabrik-vmd serve` into its own session, wait for its ping.
-//! The candidate lists are env-only, so their order is testable off-box.
+//! The manager a `--saas` boot starts when it finds none: resolve the host artifacts, fork `pabrik-vmd serve` into its own session, wait for its ping.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -43,8 +41,7 @@ pub const Artifacts = struct {
     kernel: []const u8,
     fc: []const u8,
     root: []const u8,
-    /// The agent the manager serves to a guest's bootstrap. Empty means it
-    /// serves none, and every guest runs the agent on its own disk.
+    /// The agent the manager serves to a guest's bootstrap.
     agent: []const u8 = "",
 };
 
@@ -91,8 +88,7 @@ pub fn argvFor(artifacts: Artifacts, socket_path: []const u8, buf: *[max_argv][]
         "--root",       artifacts.root,
         "",             "", // the agent, when there is one
     };
-    // The twelve fixed words (the program, the command and five pairs); the
-    // two agent slots follow when there is one.
+    // The twelve fixed words (the program, the command and five pairs); the two agent slots follow when there is one.
     var len: usize = 12;
     if (artifacts.agent.len > 0) {
         words[len] = "--agent";
@@ -138,8 +134,7 @@ pub fn vmdCandidates(a: std.mem.Allocator, env: *const std.process.Environ.Map, 
     return list;
 }
 
-/// `PABRIK_VM_AGENT`, then beside the manager binary. The agent is optional:
-/// without one every guest runs the agent on its own disk.
+/// `PABRIK_VM_AGENT`, then beside the manager binary. The agent is optional
 pub fn agentCandidates(a: std.mem.Allocator, env: *const std.process.Environ.Map, exe_dir: ?[]const u8) !Candidates {
     var list: Candidates = .empty;
     errdefer freeCandidates(&list, a);
@@ -189,8 +184,7 @@ pub const Result = union(enum) {
     refused: Refusal,
 };
 
-/// Resolve, fork, wait. Never spawns outside Linux, and never leaves the caller
-/// guessing: a refusal names the artifact that was missing.
+/// Resolve, fork, wait.
 pub fn ensure(
     a: std.mem.Allocator,
     io: std.Io,
@@ -237,8 +231,7 @@ fn resolve(a: std.mem.Allocator, io: std.Io, env: *const std.process.Environ.Map
     const firecrackers = try fcCandidates(a, env, home);
     found.fc = firstUsable(io, firecrackers.items, .{ .execute = true });
 
-    // The agent the manager serves to a guest's bootstrap. Optional: without
-    // one every guest runs the agent that is on its own disk.
+    // The agent the manager serves to a guest's bootstrap.
     const agents = try agentCandidates(a, env, exe_dir);
     found.agent = firstUsable(io, agents.items, .{ .read = true });
     return found;
@@ -301,12 +294,10 @@ fn ensureDirPath(path: []const u8) !void {
     }
 }
 
-/// `prctl(2)`'s PR_SET_PDEATHSIG: the signal the kernel sends this process
-/// when its parent dies.
+/// `prctl(2)`'s PR_SET_PDEATHSIG: the signal the kernel sends this process when its parent dies.
 const pr_set_pdeathsig: i32 = 1;
 
-/// Fork the manager into its own session, with the VM root's log on both
-/// streams: a manager's stdout is never the server's.
+/// Fork the manager into its own session, with the VM root's log on both streams: a manager's stdout is never the server's.
 fn spawnDetached(a: std.mem.Allocator, artifacts: Artifacts, socket_path: []const u8) ?i32 {
     var words_buf: [max_argv][]const u8 = undefined;
     const words = argvFor(artifacts, socket_path, &words_buf);
@@ -327,9 +318,7 @@ fn spawnDetached(a: std.mem.Allocator, artifacts: Artifacts, socket_path: []cons
     if (linux.errno(child) != .SUCCESS) return null;
     if (child == 0) {
         _ = linux.setsid();
-        // The kernel ends the manager when the server that started it dies:
-        // SIGUSR1, because the service is gone and the manager takes the
-        // workspace VMs it owns down with it.
+        // The kernel ends the manager when the server that started it dies
         _ = linux.prctl(pr_set_pdeathsig, @intFromEnum(linux.SIG.USR1), 0, 0, 0);
         if (linux.getppid() != parent_pid) linux.exit(0);
         _ = linux.chdir("/");
@@ -442,9 +431,7 @@ test "argvFor: the agent is handed to the manager when there is one" {
     try testing.expectEqualStrings("/opt/pabrik/pabrik-vm-agent", argv[13]);
 }
 
-/// The candidate lists are built with `std.fs.path.join`, so the expectations
-/// have to be too: a join is host-separated and a literal "/" is not a path
-/// on Windows.
+/// The candidate lists are built with `std.fs.path.join`, so the expectations have to be too: a join is host-separated and a literal "/" is not a path on Windows.
 fn expectPath(parts: []const []const u8, actual: []const u8) !void {
     const expected = try std.fs.path.join(testing.allocator, parts);
     defer testing.allocator.free(expected);

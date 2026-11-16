@@ -1,6 +1,4 @@
-/** The v2 profile form's OWN contract: the fact line and the model picker. The existing
- * LlmConfigForm specs cover what the form EMITS. These cover what it TELLS YOU — which is the whole
- * point of the redesign, and the part that would otherwise be untested decoration. */
+/** The v2 profile form's OWN contract: the fact line and the model picker. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 
@@ -12,9 +10,7 @@ vi.mock('../api', () => ({
   getModelCatalog: vi.fn(),
 }))
 
-/**  * Typed explicitly: with `as const`-style inference the nullable fields narrow to the literal
- * `null`, so passing an override that sets one to a NUMBER is a type error (`vue-tsc` catches it;
- * `vitest` alone would not). */
+/** Typed explicitly: with `as const`-style inference the nullable fields narrow to the literal `null`, so passing an override that sets one to a NUMBER is a type … */
 interface FormValue {
   model: string
   base_url: string
@@ -45,8 +41,7 @@ function mountForm(overrides: Partial<FormValue> = {}) {
   return mount(LlmConfigForm, { props: { modelValue: { ...baseValue, ...overrides } } })
 }
 
-/** A catalog fake that pages the way the endpoint does: the page size the form asks for decides
- * how many rows exist to render, so a test can tell a clipped list from a small page. */
+/** A catalog fake that pages the way the endpoint does: the page size the form asks for decides how many rows exist to render, so a test can tell a clipped list … */
 function stubCatalogPage(total: number): void {
   vi.mocked(getModelCatalog).mockImplementation(async (_q, _provider, limit) => {
     const page = Math.min(limit ?? total, total)
@@ -132,8 +127,7 @@ describe('LlmConfigForm — the fact line', () => {
     const wrapper = mountForm({ compaction_threshold_percent: 50 })
     await flushPromises()
 
-    // Same window, different threshold -> a visibly different promise, without
-    // the user having to compute it.
+    // Same window, different threshold -> a visibly different promise, without the user having to compute it.
     expect(wrapper.find('[data-testid=model-fact-line]').text()).toContain('compacts at 500k')
   })
 
@@ -166,8 +160,7 @@ describe('LlmConfigForm — the fact line', () => {
         source: 'builtin',
         context_window: 200_000,
         reason: 'no catalog yet — the built-in window applies until the first sync',
-        // What the backend now sends when the last `POST /api/models/refresh`
-        // (or the hourly timer) failed: the parse error that kept the DB empty.
+        // What the backend now sends when the last `POST /api/models/refresh` (or the hourly timer) failed: the parse error that kept the DB empty.
         last_sync_error: 'InvalidPayloadJson',
         last_sync_at_ms: 1_760_000_000_000,
       },
@@ -177,8 +170,7 @@ describe('LlmConfigForm — the fact line', () => {
     await flushPromises()
 
     const line = wrapper.find('[data-testid=model-fact-line]').text()
-    // The CAUSE, not just the state: "nothing synced yet" would tell the user to
-    // wait, which is exactly the wrong advice when the sync is failing.
+    // The CAUSE, not just the state: "nothing synced yet" would tell the user to wait, which is exactly the wrong advice when the sync is failing.
     expect(line).toContain('catalog sync failed')
     expect(line).toContain('InvalidPayloadJson')
     expect(line).toContain('200k')
@@ -300,8 +292,7 @@ describe('LlmConfigForm — the model picker', () => {
   })
 
   it('scrolls the matches past the fold instead of clipping them', async () => {
-    // jsdom has no layout engine, so the reachable-rows proxy is the scroll container a
-    // browser would honour.
+    // jsdom has no layout engine, so the reachable-rows proxy is the scroll container a browser would honour.
     stubCatalogPage(1130)
     const wrapper = mountForm()
     await flushPromises()

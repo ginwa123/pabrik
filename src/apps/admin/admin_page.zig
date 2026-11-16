@@ -1,6 +1,4 @@
-//! The admin console's HTTP face: who is asking, which section they asked for,
-//! and the stylesheet and script that go with it. The page itself is rendered by
-//! `admin_views.zig`.
+//! The admin console's HTTP face: who is asking, which section they asked for, and the stylesheet and script that go with it.
 
 const std = @import("std");
 const gserverz = @import("kabelweb").server;
@@ -13,8 +11,7 @@ const runtime = @import("runtime.zig");
 const page_css = @embedFile("admin.css");
 const page_js = @embedFile("admin.js");
 
-/// One file the console serves as-is. The page is not one of these: it is
-/// rendered per request, because it carries the data.
+/// One file the console serves as-is.
 pub const Asset = struct {
     body: []const u8,
     content_type: []const u8,
@@ -39,9 +36,7 @@ fn serve(allocator: std.mem.Allocator, asset: Asset) gserverz.HttpResponse {
         .withHeader("X-Content-Type-Options", "nosniff");
 }
 
-/// Render one section. The page loads without a session — it has to, to say
-/// anything at all — but a visitor who is not the owner gets the frame and the
-/// reason, never the data.
+/// Render one section.
 fn page(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,

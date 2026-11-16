@@ -6,9 +6,7 @@ const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dialect = common.dialect;
 
-/// Migration 148 — a document and a document folder can carry their own glyph,
-/// the same way a project row does since Migration 147. NULL is "no override":
-/// a document falls back to `file`, a folder to `folder` / `folder-open`.
+/// Migration 148 — a document and a document folder can carry their own glyph, the same way a project row does since Migration 147.
 pub const Migration148AddDocumentIcon = struct {
     pub const version: u32 = 148;
     pub const name = "add_document_icon";
@@ -105,8 +103,7 @@ test "Migration148 leaves every pre-existing row with no override" {
 
     try Migration148AddDocumentIcon.up(&ctx.db, testing.allocator);
 
-    // NULL, not '' and not a default glyph: the row must read back as "no
-    // override" so the UI keeps deriving the fallback.
+    // NULL, not '' and not a default glyph: the row must read back as "no override" so the UI keeps deriving the fallback.
     var doc = try ctx.db.queryRow(testing.allocator, "SELECT COALESCE(icon, '<null>') FROM documents WHERE id = 'doc_a'", &[_][]const u8{});
     defer doc.deinit(testing.allocator);
     try testing.expectEqualStrings("<null>", doc.values[0]);

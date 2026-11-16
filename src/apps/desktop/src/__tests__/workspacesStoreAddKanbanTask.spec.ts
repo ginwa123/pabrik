@@ -1,5 +1,4 @@
-/** Tests for workspacesStore.addKanbanTask — single store action replacing the addTask +
- * runAgentOnNewTask dance in the kanban flow. */
+/** Tests for workspacesStore.addKanbanTask — single store action replacing the addTask + runAgentOnNewTask dance in the kanban flow. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -110,9 +109,7 @@ describe('workspacesStore.addKanbanTask', () => {
     ).rejects.toThrow('boom')
   })
 
-  // =====================================================================
   // mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session)
-  // =====================================================================
   it("mode='create_session' calls api.createKanbanTask with mode='create_session' + selected_profile_model + returns session", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'Fix bug', task_type: 'standard' } as any

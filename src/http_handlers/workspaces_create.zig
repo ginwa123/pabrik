@@ -24,9 +24,7 @@ pub fn workspacesCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequ
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    // The owner is derived server-side from the `pabrik_session` cookie —
-    // never from the request body, which a client controls (a body-supplied
-    // owner id would be a spoofing vector).
+    // The owner is derived server-side from the `pabrik_session` cookie — never from the request body, which a client controls (a body-supplied owner id would be a …
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, di.auth_enabled, req.headers) catch {
         return res.jsonResponse(.{
             .status_code = 500,
@@ -70,14 +68,12 @@ fn useCase(
     io: std.Io,
     body: []const u8,
     owner: []const u8,
-    /// Needed to resolve the default project's `path` ($HOME). Read from
-    /// the singleton by the handler, never from the request body.
+    /// Needed to resolve the default project's `path` ($HOME).
     environment: ?*const std.process.Environ.Map,
 ) WorkspacesCreateError!provisioning.ProvisionedWorkspace {
     if (body.len == 0) return error.MissingBody;
 
-    // Per pabrik-http-handler-thin-wrapper-pattern.md: parseFromSliceLeaky
-    // is the correct API for per-request arena allocators.
+    // Per pabrik-http-handler-thin-wrapper-pattern.md: parseFromSliceLeaky is the correct API for per-request arena allocators.
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, body, .{}) catch {
         return error.InvalidJson;
     };
@@ -85,12 +81,9 @@ fn useCase(
     const name = root.get("name") orelse return error.MissingName;
     if (name != .string) return error.NameNotString;
 
-    // A workspace created by a `--saas` server is VM-backed; one created by a
-    // local server is not (Migration 115).
+    // A workspace created by a `--saas` server is VM-backed; one created by a local server is not (Migration 115).
     const is_vm = workspace_vm.creationIsVm(runtime_mode.currentMode());
 
-    // Id generation, the `position = MAX + 1` formula, the paired
-    // `workspace_members` grant and the attached default project all live in
-    // workspace_provisioning.zig — the same code the automatic per-user
+    // Id generation, the `position = MAX + 1` formula, the paired `workspace_members` grant and the attached default project all live in workspace_provisioning.zig — …
     return provisioning.createWorkspaceRow(allocator, sqlite_db, io, name.string, owner, environment, is_vm);
 }

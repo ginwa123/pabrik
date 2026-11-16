@@ -121,8 +121,7 @@ describe('TaskEngineDb cache-first revalidation', () => {
     const empty = await run(engine.loadDelta(ctx, 10))
 
     expect(empty?.items).toEqual([])
-    // A complete page lists every row in the context — 'same' is gone
-    // server-side, so the next offline prime must not resurrect it.
+    // A complete page lists every row in the context — 'same' is gone server-side, so the next offline prime must not resurrect it.
     expect(await run(engine.primeFromCache(ctx, 10))).toEqual([])
   })
 

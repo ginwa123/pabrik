@@ -4,24 +4,13 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 
-/**
- * A response body as bytes, plus the header line the caller needs to make a
- * decision about them.
- *
- * The `body: String?` on [HttpResponseSpec] is a UTF-8 *decode* of the stream,
- * which is fine for JSON and catastrophic for a PNG: every invalid sequence
- * becomes U+FFFD and the bytes are gone. There is no way back to the original
- * from that string, so a file preview has to read the stream itself.
- */
+/** A response body as bytes, plus the header line the caller needs to make a decision about them. */
 data class BinaryHttpResponseSpec(
     val statusCode: Int,
     val contentType: String = "",
     val body: ByteArray = ByteArray(0),
 ) {
-    // data class + ByteArray is the one combination where the generated
-    // equals/hashCode compare identity, which makes a test that asserts on a
-    // fetched body pass or fail for reasons unrelated to the bytes. Compare
-    // them the way a test means to.
+    // data class + ByteArray is the one combination where the generated equals/hashCode compare identity, which makes a test that asserts on a fetched body pass or …
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is BinaryHttpResponseSpec) return false
@@ -39,15 +28,7 @@ fun interface BinaryHttpExchange {
     fun execute(request: HttpRequestSpec): BinaryHttpResponseSpec
 }
 
-/**
- * The binary sibling of [HttpsHttpExchange] — same connection settings, same
- * "one call site" promise, one extra job: it does not decode.
- *
- * A cap is mandatory rather than defensive. The server refuses anything over
- * 50 MiB, so without a cap a hostile or misconfigured path could make the app
- * OOM on a `readBytes()` — a phone dies where a desktop would grumble. One byte
- * over the cap reads as "too large", exactly like the server's own 413.
- */
+/** The binary sibling of [HttpsHttpExchange] — same connection settings, same "one call site" promise, one extra job: it does not decode. */
 class HttpsBinaryExchange(
     private val connectTimeoutMillis: Int = HttpsHttpExchange.DEFAULT_TIMEOUT_MILLIS,
     private val readTimeoutMillis: Int = HttpsHttpExchange.DEFAULT_TIMEOUT_MILLIS,
@@ -55,9 +36,7 @@ class HttpsBinaryExchange(
 ) : BinaryHttpExchange {
 
     override fun execute(request: HttpRequestSpec): BinaryHttpResponseSpec {
-        // The same opener the JSON exchange uses, so "may this build speak plain
-        // HTTP" is decided in exactly one place and a file download can never
-        // disagree with an API call about it.
+        // The same opener the JSON exchange uses, so "may this build speak plain HTTP" is decided in exactly one place and a file download can never disagree with an API …
         val connection = HttpsHttpExchange.openFor(request.url)
 
         try {
@@ -92,24 +71,12 @@ class HttpsBinaryExchange(
     }
 
     private companion object {
-        /**
-         * Matches `MAX_DOWNLOAD_BYTES` in `src/http_handlers/files_download.zig`
-         * (50 MiB). Kept in step by `HttpsBinaryExchangeTest`.
-         */
+        /** Matches `MAX_DOWNLOAD_BYTES` in `src/http_handlers/files_download.zig` (50 MiB). */
         const val DEFAULT_MAX_BYTES = 50 * 1024 * 1024
     }
 }
 
-/**
- * Read at most [maxBytes]; throw when there is more.
- *
- * `InputStream.readBytes()` would happily allocate whatever the server sent,
- * so the cap is enforced *while* reading rather than after — checking
- * `contentLength` first is a hint the server controls, not a guarantee.
- *
- * Top-level and `internal` rather than private so the unit test can drive it
- * from a `ByteArrayInputStream`; a socket is not available on the JVM.
- */
+/** Read at most [maxBytes]; throw when there is more. */
 internal fun InputStream?.readBytesCapped(maxBytes: Int): ByteArray {
     if (this == null) return ByteArray(0)
     return use { stream ->
@@ -127,7 +94,4 @@ internal fun InputStream?.readBytesCapped(maxBytes: Int): ByteArray {
 
 private const val READ_CHUNK_BYTES = 16 * 1024
 
-// The timeout and Accept defaults come from HttpsHttpExchange's companion
-// rather than being restated here: RecordingAuthTransport already rewrites the
-// recorded Accept line, and a second copy of "application/json" would be one
-// more place for a file request to quietly stop being a file request.
+// The timeout and Accept defaults come from HttpsHttpExchange's companion rather than being restated here: RecordingAuthTransport already rewrites the recorded …

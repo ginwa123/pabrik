@@ -1,6 +1,4 @@
-/** Session-list child of the generic sync engine (sidebar local-first). Mirrors ChatEngineDb:
- * cache-then-revalidate over api.getChats, each row keeping the full server object in `raw` so
- * cached mounts render through the single ChatsList mapper with no shape drift. */
+/** Session-list child of the generic sync engine (sidebar local-first). Mirrors ChatEngineDb */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Chat } from '../api'
@@ -42,9 +40,7 @@ export interface SessionDelta extends SyncDelta<SessionRow> {
 
 export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
   constructor(
-    // Namespace indirection (NOT a bare `getChats` import): the property
-    // is read at call time so `vi.spyOn(api, 'getChats')` — the seam
-    // every ChatsList spec uses — intercepts engine fetches too.
+    // Namespace indirection (NOT a bare `getChats` import): the property is read at call time so `vi.spyOn(api, 'getChats')` — the seam every ChatsList spec uses — …
     private fetchFn: typeof api.getChats = (...args) => api.getChats(...args),
     storeName = 'sessions',
     store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -70,9 +66,7 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     return this.fetchDeltaPage(cursor, limit, ctx)
   }
 
-  /**    * Page-1 revalidate: the backend cursor only pages older, so a stored cursor is useless for
-   * "what's new" — always fetch the head of the list desc and let the caller merge by id. `_cursor`
-   * is accepted for the base-class contract and ignored. */
+  /** Page-1 revalidate: the backend cursor only pages older, so a stored cursor is useless for "what's new" — always fetch the head of the list desc and let the … */
   fetchDeltaPage(
     _cursor: string | null,
     limit: number,
@@ -82,8 +76,7 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     return Effect.tryPromise({
       try: async () => {
         const data = await this.fetchFn('updated_at', 'desc', limit, undefined, workspaceId)
-        // `getChats` renders every transport failure as an empty page; read the flag back so an
-        // outage surfaces as a failed refresh instead of a scope with nothing in it.
+        // `getChats` renders every transport failure as an empty page; read the flag back so an outage surfaces as a failed refresh instead of a scope with nothing in it.
         if (data.failed) throw new Error('session list request failed')
         return data
       },
@@ -106,11 +99,8 @@ export class SessionEngineDb extends BaseSyncEngine<SessionRow, SessionCtx> {
     )
   }
 
-  /**    * Background refresh for a cached mount: fetch page 1, persist it. Now honest about failure — a
-   * rejected fetch surfaces as `SyncRemoteError` instead of the old `catch { return null }`, so a
-   * caller can tell "no new sessions" from "the sidebar could not refresh". */
+  /** Background refresh for a cached mount: fetch page 1, persist it. */
   loadDelta(ctx: SessionCtx, limit: number): Effect.Effect<SessionDelta, SyncError> {
-    // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     return Effect.gen(function* () {

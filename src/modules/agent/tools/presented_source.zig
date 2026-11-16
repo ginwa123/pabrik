@@ -1,6 +1,4 @@
-//! Where a presented file's bytes live: this host in local mode, the
-//! workspace's VM under `--saas`. `present_files` and `GET /api/files/download`
-//! both ask this seam, so the card's size and its bytes cannot come from two places.
+//! Where a presented file's bytes live: this host in local mode, the workspace's VM under `--saas`.
 
 const std = @import("std");
 const workspace_fs = @import("../loop/workspace_fs.zig");
@@ -17,9 +15,7 @@ pub const Probe = struct {
     missing: bool = false,
 };
 
-/// The two questions a presented file raises — may it be shown, and how big is
-/// it — plus the bytes the browser is handed. Every substrate answers the same
-/// three, so nothing above this line knows which one it is talking to.
+/// The two questions a presented file raises — may it be shown, and how big is it — plus the bytes the browser is handed.
 pub const Source = struct {
     ptr: *const anyopaque,
     vtable: *const VTable,
@@ -77,8 +73,7 @@ pub const Host = struct {
     }
 };
 
-/// The tenant tree inside a workspace's VM. The host opens nothing: every
-/// answer comes back over the fs RPC.
+/// The tenant tree inside a workspace's VM.
 pub const Guest = struct {
     fs: *const workspace_fs.Fs,
 
@@ -108,8 +103,7 @@ pub const Guest = struct {
     }
 };
 
-/// A Source over an in-memory tree: the bytes exist only here and never on this
-/// host, which is the `--saas` shape a test can hold without a VM.
+/// A Source over an in-memory tree: the bytes exist only here and never on this host, which is the `--saas` shape a test can hold without a VM.
 pub const Memory = struct {
     allocator: std.mem.Allocator,
     files: std.StringHashMapUnmanaged(Entry) = .empty,
@@ -174,8 +168,7 @@ pub const Memory = struct {
     }
 };
 
-/// Containment for a tree that has no host paths: the same string rule the host
-/// applies after canonicalization, and the path itself is already canonical.
+/// Containment for a tree that has no host paths: the same string rule the host applies after canonicalization, and the path itself is already canonical.
 fn admitPath(_: *const anyopaque, allocator: std.mem.Allocator, root: []const u8, abs: []const u8) file_sandbox.ResolveError![]u8 {
     if (!file_sandbox.isAbsoluteFor(abs, .posix)) return error.NotAbsolute;
     if (file_sandbox.hasParentSegment(abs)) return error.PathTraversal;

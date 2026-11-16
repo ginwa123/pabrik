@@ -7,8 +7,7 @@ const on_event_design = @import("on_event_design.zig");
 
 const SseEvent = on_event_sent.SseEvent;
 
-/// Emit a `design_element_created` SSE event. Called from
-/// `design_model.addElement` on every successful insert.
+/// Emit a `design_element_created` SSE event.
 pub fn onEventSendDesignElementCreated(
     allocator: std.mem.Allocator,
     payload: on_event_design.DesignElementCreatedData,
@@ -27,15 +26,12 @@ pub fn onEventSendDesignElementCreated(
         .event_type = "design_element_created",
     };
 
-    // event_bus.emit returns void and silently no-ops when no
-    // subscriber is registered — so tests that don't stand up an SSE
-    // server still pass.
+    // event_bus.emit returns void and silently no-ops when no subscriber is registered — so tests that don't stand up an SSE server still pass.
     const di = pabrikcore.getSingleton() catch return;
     di.event_bus.emit(SseEvent, "design_element", event);
 }
 
-/// Emit a `design_element_updated` SSE event. Called from
-/// `design_model.updateElement` on every successful update.
+/// Emit a `design_element_updated` SSE event.
 pub fn onEventSendDesignElementUpdated(
     allocator: std.mem.Allocator,
     payload: on_event_design.DesignElementUpdatedData,
@@ -57,9 +53,7 @@ pub fn onEventSendDesignElementUpdated(
     di.event_bus.emit(SseEvent, "design_element", event);
 }
 
-/// Emit a `design_elements_geometry_batch_updated` SSE event. Called from
-/// `design_model.updateElementsBatch` after a single atomic transaction moves
-/// 1+ elements.
+/// Emit a `design_elements_geometry_batch_updated` SSE event.
 pub fn onEventSendDesignElementsGeometryBatchUpdated(
     allocator: std.mem.Allocator,
     payload: on_event_design.DesignElementsGeometryBatchUpdatedData,
@@ -81,8 +75,7 @@ pub fn onEventSendDesignElementsGeometryBatchUpdated(
     di.event_bus.emit(SseEvent, "design_element", event);
 }
 
-/// Emit a `design_element_deleted` SSE event. Called from
-/// `design_model.deleteElement` on every successful delete.
+/// Emit a `design_element_deleted` SSE event.
 pub fn onEventSendDesignElementDeleted(
     allocator: std.mem.Allocator,
     payload: on_event_design.DesignElementDeletedData,
@@ -104,8 +97,7 @@ pub fn onEventSendDesignElementDeleted(
     di.event_bus.emit(SseEvent, "design_element", event);
 }
 
-/// Emit a `design_page_deleted` SSE event. Called from
-/// `design_model.deletePage` on every successful page delete.
+/// Emit a `design_page_deleted` SSE event.
 pub fn onEventSendDesignPageDeleted(
     allocator: std.mem.Allocator,
     payload: on_event_design.DesignPageDeletedData,

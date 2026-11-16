@@ -1,6 +1,4 @@
-//! A throwaway database for the console's tests: `:memory:` on sqlite, a temp
-//! database on postgres. A postgres build without `POSTGRES_TEST_CONNINFO`
-//! skips, unless `PABRIK_DB_TESTS_REQUIRE_SERVER=1` demands a failure.
+//! A throwaway database for the console's tests: `:memory:` on sqlite, a temp database on postgres.
 
 const std = @import("std");
 const databases = @import("databases");

@@ -69,7 +69,6 @@ test "isWorkerRunning tolerates an empty session_id without crashing" {
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
-    // Empty string is a valid (zero-length) session_id — the query just
-    // returns false because no row matches.
+    // Empty string is a valid (zero-length) session_id — the query just returns false because no row matches.
     try testing.expect(!isWorkerRunning(testing.allocator, &s.db, ""));
 }

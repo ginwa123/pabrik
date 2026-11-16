@@ -1,5 +1,4 @@
-//! Data model for the `sessions` entity table. One row per active chat
-//! session.
+//! Data model for the `sessions` entity table.
 
 const std = @import("std");
 
@@ -7,33 +6,23 @@ pub const EntityId = []u8;
 
 id: EntityId,
 name: []u8,
-/// One of `"active"` | `"unknown"`. The DB column has no CHECK
-/// constraint, so unknown values are stored verbatim.
+/// One of `"active"` | `"unknown"`.
 status: []u8,
 cwd: ?[]u8 = null,
 workspace_id: ?[]u8 = null,
 created_at: ?[]u8 = null,
 updated_at: ?[]u8 = null,
-/// Migration 035 — name of the LLM profile from
-/// `LlmConfig.profiles`. NULL when the session uses the
-/// backend-default profile.
+/// Migration 035 — name of the LLM profile from `LlmConfig.profiles`.
 selected_profile_model: ?[]u8 = null,
-/// Migration 046 — absolute path of the git worktree bound to this
-/// session. NULL when no worktree is bound.
+/// Migration 046 — absolute path of the git worktree bound to this session.
 git_worktree_cwd: ?[]u8 = null,
-/// Migration 086 — normalized pull/merge-request URL attached to this
-/// session by the set_pull_request agent tool. NULL when no PR is bound.
+/// Migration 086 — normalized pull/merge-request URL attached to this session by the set_pull_request agent tool.
 pr_url: ?[]u8 = null,
-/// Migration 086 — effective provider resolved at write time
-/// ("github" | "gitlab" | "generic"). Stored (not re-derived) so reads
-/// stay deterministic on self-hosted forges. NULL when no PR is bound.
+/// Migration 086 — effective provider resolved at write time ("github" | "gitlab" | "generic").
 pr_provider: ?[]u8 = null,
-/// Migration 063 — opt-in flag for unattended mode. Wire-format is
-/// `"0"` / `"1"` to match the SQL INTEGER column.
+/// Migration 063 — opt-in flag for unattended mode.
 is_auto_retry_until_stop: bool = false,
-/// Migration 063 — denormalized cache of the most recent
-/// `finish_reason` the workflow observed. Empty until the first
-/// successful turn; never NULL at the API edge.
+/// Migration 063 — denormalized cache of the most recent `finish_reason` the workflow observed.
 last_finish_reason: []u8 = &.{},
 
 const Self = @This();

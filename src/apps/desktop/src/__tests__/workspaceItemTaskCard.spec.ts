@@ -1,5 +1,4 @@
-/** Component tests for <WorkspaceItemTaskCard> — the bordered kanban- card variant of the per-task
- * UI. */
+/** Component tests for <WorkspaceItemTaskCard> — the bordered kanban- card variant of the per-task UI. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -66,8 +65,7 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
   })
 
   it('hides description line when description is undefined', () => {
-    // explicitly pass undefined — the production ref to an unset
-    // description is JS-undefined, NOT empty string.
+    // explicitly pass undefined — the production ref to an unset description is JS-undefined, NOT empty string.
     wrapper = mountCard({ id: 't1', name: 'Alpha', description: undefined })
     expect(wrapper.find('[data-testid="task-description"]').exists()).toBe(false)
   })
@@ -77,16 +75,13 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
     expect(wrapper.text()).toContain('Alpha')
   })
 
-  // The hover action strip (pin / rename / details / delete) was removed in favour of the card's
-  // right-click context menu.
+  // The hover action strip (pin / rename / details / delete) was removed in favour of the card's right-click context menu.
   it('renders NO hover action buttons in the top row', () => {
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
     // The two that carried a test id...
     expect(wrapper.find('[data-testid="task-pin-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="view-task-detail-btn"]').exists()).toBe(false)
-    // ...and the rename / delete buttons, which never had one. The top
-    // row is the first child div; its only <button> descendants would
-    // be the action strip.
+    // ...and the rename / delete buttons, which never had one.
     const topRow = wrapper.find('[data-task-id="t1"]').element.children[0] as HTMLElement
     expect(topRow.querySelectorAll('button').length).toBe(0)
   })
@@ -101,16 +96,14 @@ describe('WorkspaceItemTaskCard data-attribute contract', () => {
 
   it('emits selectTask when clicked', async () => {
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
-    // Trigger click on the root button via the data-task-id selector
-    // (works regardless of variant since it is on the root <button>).
+    // Trigger click on the root button via the data-task-id selector (works regardless of variant since it is on the root <button>).
     await wrapper.find('[data-task-id="t1"]').trigger('click')
     expect(wrapper.emitted('selectTask')).toBeTruthy()
     expect(wrapper.emitted('selectTask')?.[0]).toEqual(['t1'])
   })
 })
 
-/**  * Card-ux-v2 tests: the richer card layout (description with line-clamp-2 + meta row with
- * last-updated time and task-type badge). */
+/** Card-ux-v2 tests: the richer card layout (description with line-clamp-2 + meta row with last-updated time and task-type badge). */
 describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -133,11 +126,9 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
     wrapper = mountCard({ id: 't1', name: 'Alpha', description: 'A long note' })
     const desc = wrapper.find('[data-testid="task-description"]')
     expect(desc.exists()).toBe(true)
-    // card-ux-v2: 2-line clamp is more minimalist than the previous
-    // 3-line clamp. Verified by checking the class string.
+    // card-ux-v2: 2-line clamp is more minimalist than the previous 3-line clamp.
     expect(desc.classes().join(' ')).toContain('line-clamp-2')
-    // Regression guard: confirm we removed the 1-line `truncate` class
-    // (the legacy v1 had it; v2 uses line-clamp-2).
+    // Regression guard: confirm we removed the 1-line `truncate` class (the legacy v1 had it; v2 uses line-clamp-2).
     expect(desc.classes().join(' ')).not.toContain('truncate')
   })
 
@@ -147,9 +138,7 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   })
 
   it('meta row renders last-updated "just now" for an updatedAt of NOW', () => {
-    // Pin Date.now() to a known instant, then supply a task whose
-    // updatedAt is the same instant. The formatter should report
-    // "just now" (within the < 45s threshold).
+    // Pin Date.now() to a known instant, then supply a task whose updatedAt is the same instant.
     const now = new Date('2026-07-01T12:00:00Z')
     vi.setSystemTime(now)
     wrapper = mountCard({ id: 't1', name: 'Alpha', updatedAt: now })
@@ -217,12 +206,10 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   })
 
   it('pinned indicator appears in TOP row (not meta row) when is_pinned is true', () => {
-    // card-ux-v2: pin indicator moved from the meta row (which is now reserved for "time + type
-    // label" only) to the top row, sitting right after the task name.
+    // card-ux-v2: pin indicator moved from the meta row (which is now reserved for "time + type label" only) to the top row, sitting right after the task name.
     wrapper = mountCard({ id: 't1', name: 'Alpha', is_pinned: true })
     expect(wrapper.find('[data-testid="task-pin-indicator"]').exists()).toBe(true)
-    // Meta-row pin pill was REMOVED in card-ux-v2 — the top-row
-    // indicator is the canonical surface for the pinned state.
+    // Meta-row pin pill was REMOVED in card-ux-v2 — the top-row indicator is the canonical surface for the pinned state.
     expect(wrapper.find('[data-testid="task-meta-pinned"]').exists()).toBe(false)
   })
 
@@ -235,9 +222,7 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
     wrapper = mountCard({
       id: 't1',
       name: 'Daily sync',
-      // Legacy wire value — the backend normalizes these to 'standard' (Migration 084), but an old
-      // cached payload could still carry it. `as never` keeps tsc honest about the narrowed Task
-      // union while testing the runtime behavior.
+      // Legacy wire value — the backend normalizes these to 'standard' (Migration 084), but an old cached payload could still carry it.
       task_type: 'routine' as never,
     })
     expect(wrapper.find('[data-testid="task-meta-type-routine"]').exists()).toBe(false)
@@ -260,9 +245,7 @@ describe('WorkspaceItemTaskCard card-ux-v2 (richer card layout)', () => {
   })
 
   it('meta row renders time + type (no pin) when all set', () => {
-    // card-ux-v2: the meta row is now reserved for time + type label
-    // only — the pinned state is shown in the TOP row instead, so
-    // this card meta row has 2 elements (time + type) not 3.
+    // card-ux-v2: the meta row is now reserved for time + type label only — the pinned state is shown in the TOP row instead, so this card meta row has 2 elements …
     const now = new Date('2026-07-01T12:00:00Z')
     vi.setSystemTime(now)
     const past = new Date(now.getTime() - 30 * 60_000) // 30m ago
@@ -332,9 +315,7 @@ describe('WorkspaceItemTaskCard card-ux-v3 (Jira-style type accent)', () => {
   })
 
   it('type accent is combined with dropIndicator box-shadow (both layered)', () => {
-    // When BOTH the type accent AND the dropIndicator apply, the resulting box-shadow must contain
-    // BOTH inset values (the drop indicator first, the type accent second). This is the Jira-style
-    // layered shadow pattern.
+    // When BOTH the type accent AND the dropIndicator apply, the resulting box-shadow must contain BOTH inset values (the drop indicator first, the type accent …
     const style = rootStyleFor(
       {
         id: 't1',
@@ -350,16 +331,13 @@ describe('WorkspaceItemTaskCard card-ux-v3 (Jira-style type accent)', () => {
   })
 })
 
-/** Static-contract test: WorkspaceItem.vue (the only non-KanbanCard consumer) MUST import the Row
- * variant, not the Card. The Card is exclusively used by the kanban tree (KanbanCard →
- * KanbanColumn). */
+/** Static-contract test: WorkspaceItem.vue (the only non-KanbanCard consumer) MUST import the Row variant, not the Card. */
 describe('WorkspaceItem.vue — task component invariant', () => {
   const SIDEBAR_PATH = resolve(__dirname, '..', 'components', 'workspace', 'WorkspaceItem.vue')
 
   it('does not import <WorkspaceItemTaskCard> (Card is kanban-only)', () => {
     const source = readFileSync(SIDEBAR_PATH, 'utf8')
-    // Anchored on the import-from path so we don't trip over type
-    // defs or comments mentioning the variant concept.
+    // Anchored on the import-from path so we don't trip over type defs or comments mentioning the variant concept.
     expect(source).not.toMatch(/from\s+['"].*WorkspaceItemTaskCard\.vue['"]/)
   })
 
@@ -374,9 +352,7 @@ describe('WorkspaceItem.vue — task component invariant', () => {
   })
 })
 
-/** card-ux-v6 tests: the 3D layered-shadow card (replaces the v5 visible border). The card now uses
- * a layered box-shadow for depth — outer drop shadow + inset bevel highlight — instead of a 1px
- * gray border. */
+/** card-ux-v6 tests: the 3D layered-shadow card (replaces the v5 visible border). */
 describe('WorkspaceItemTaskCard card-ux-v6 (3D shadow + constant width)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -396,14 +372,11 @@ describe('WorkspaceItemTaskCard card-ux-v6 (3D shadow + constant width)', () => 
   })
 
   it('card root has w-full class (constant-width contract)', () => {
-    // Without w-full, the <button> would default to inline-block and size to its content. With
-    // w-full every card spans the full width of the parent column's cards area, regardless of how
-    // long the task name is.
+    // Without w-full, the <button> would default to inline-block and size to its content.
     wrapper = mountCard({ id: 't1', name: 'A short task' })
     expect(wrapper.find('[data-task-card]').classes()).toContain('w-full')
 
-    // Even with a very long title, width stays constant (truncate
-    // handles the text overflow).
+    // Even with a very long title, width stays constant (truncate handles the text overflow).
     const longWrapper = mountCard({
       id: 't2',
       name: 'a-very-long-task-name-that-would-normally-blow-out-the-width',
@@ -412,9 +385,7 @@ describe('WorkspaceItemTaskCard card-ux-v6 (3D shadow + constant width)', () => 
   })
 
   it('card root does NOT carry a 1px border (v6 replaces border with shadow)', () => {
-    // Regression guard: card-ux-v6 deliberately removed the visible
-    // border. A future refactor that re-adds `border` (e.g.
-    // copy-paste from v5) would fail this test.
+    // Regression guard: card-ux-v6 deliberately removed the visible border.
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
     const classes = wrapper.find('[data-task-card]').classes()
     expect(classes).not.toContain('border')
@@ -428,16 +399,12 @@ describe('WorkspaceItemTaskCard card-ux-v6 (3D shadow + constant width)', () => 
     expect(style).toContain('0 1px 3px 0 rgba(0, 0, 0, 0.5)')
     // Second drop shadow for the soft halo.
     expect(style).toContain('0 1px 2px -1px rgba(0, 0, 0, 0.4)')
-    // Inset 1px bevel highlight — the "edge of the card" without
-    // a hard outline. White at 6% opacity is enough to read as a
-    // bevel in dark mode without becoming a visible line.
+    // Inset 1px bevel highlight — the "edge of the card" without a hard outline.
     expect(style).toContain('inset 0 0 0 1px rgba(255, 255, 255, 0.06)')
   })
 
   it('card has a card-bg color at idle (paired with the shadow for the 3D surface)', () => {
-    // Without a card-bg, the v6 shadow would float on the column bg with no surface to "lift off
-    // of". Setting backgroundColor to --semantic-card-bg at idle gives the card a tangible surface
-    // for the shadow to render against.
+    // Without a card-bg, the v6 shadow would float on the column bg with no surface to "lift off of".
     wrapper = mountCard({ id: 't1', name: 'Alpha' })
     const style = wrapper.find('[data-task-card]').attributes('style') ?? ''
     expect(style).toContain('--semantic-card-bg')
@@ -462,9 +429,7 @@ describe('WorkspaceItemTaskCard card-ux-v6 (3D shadow + constant width)', () => 
   })
 
   it('3D shadow coexists with the Jira-style type accent (memory card)', () => {
-    // The v6 base shadow must layer cleanly with the v3 type accent — they're both box-shadows on
-    // the same element, so they stack via the multi-value comma syntax. Memory cards should show
-    // BOTH the outer drop shadow AND the blue left stripe.
+    // The v6 base shadow must layer cleanly with the v3 type accent — they're both box-shadows on the same element, so they stack via the multi-value comma syntax.
     wrapper = mountCard({
       id: 't1',
       name: 'project-notes',

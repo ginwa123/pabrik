@@ -1,6 +1,4 @@
 //! `pabrik headless storage …` — the object store with no server and no port.
-//! Every op goes through the same `Storage` interface the document store will
-//! use, so an agent can exercise it without a database, a bucket or a socket.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -22,8 +20,7 @@ pub const Backend = runtime.Backend;
 /// Resolve the backend: the flag, then `PABRIK_STORAGE_BACKEND`, then `fs`.
 pub const resolveBackend = runtime.resolveBackend;
 
-/// S3 settings from the environment. Every slice borrows from `environment`,
-/// which outlives the store.
+/// S3 settings from the environment.
 pub const resolveS3Config = runtime.resolveS3Config;
 
 /// Resolve the store root: the flag, then the environment, then `$HOME`.
@@ -83,8 +80,7 @@ pub fn run(
             return runWith(allocator, io, backend.asStorage(), a);
         },
         .rustfs => {
-            // The supervised backend owns a process, so it goes through the
-            // runtime rather than being built here.
+            // The supervised backend owns a process, so it goes through the runtime rather than being built here.
             const built = try runtime.Runtime.fromBackend(allocator, io, environment, .rustfs);
             const owned = built orelse return error.UnknownBackend;
             defer owned.deinit();
@@ -93,8 +89,7 @@ pub fn run(
     }
 }
 
-/// The op table, over a plain `Storage` so a test can drive it against the
-/// in-memory backend without touching the filesystem.
+/// The op table, over a plain `Storage` so a test can drive it against the in-memory backend without touching the filesystem.
 pub fn runWith(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -145,8 +140,7 @@ pub fn runWith(
     }
 }
 
-/// The body for a `put`: `--body-file` wins over `--body` when both are given,
-/// because a file is the only way to send bytes a shell would mangle.
+/// The body for a `put`: `--body-file` wins over `--body` when both are given, because a file is the only way to send bytes a shell would mangle.
 fn readBody(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -310,8 +304,7 @@ test "headless storage: resolveRoot prefers the flag, then the environment, then
     } else {
         const from_home = try resolveRoot(alloc, &env, null);
         defer alloc.free(from_home);
-        // Built with the same join the implementation uses: the separator is
-        // platform-specific, so a hardcoded '/' fails on Windows.
+        // Built with the same join the implementation uses: the separator is platform-specific, so a hardcoded '/' fails on Windows.
         const expected_home = try std.fs.path.join(alloc, &.{ "/home/tester", DEFAULT_ROOT_SUFFIX });
         defer alloc.free(expected_home);
         try testing.expectEqualStrings(expected_home, from_home);

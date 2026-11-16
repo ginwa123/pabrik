@@ -9,8 +9,7 @@ import {
   type InvokedSkill,
 } from '../../helpers/skillEnvelope'
 
-/** How much of a body a row shows before "Show all" — enough to recognise the
- * skill, short enough that three invocations still fit on one screen. */
+/** How much of a body a row shows before "Show all" — enough to recognise the skill, short enough that three invocations still fit on one screen. */
 const PREVIEW_LINES = 12
 
 const props = defineProps<{ content: string }>()

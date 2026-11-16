@@ -1,5 +1,4 @@
-// Functional tests for kanban advanced (Tier 1.3). Zig port of
-// `tests/functional/kanban_advanced_test.py` (same test names, same order).
+// Functional tests for kanban advanced (Tier 1.3).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn boot() !Harness {
     return Harness.boot(io, gpa, .{});
@@ -29,8 +26,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     });
 }
 
-/// Create a kanban and return the ITEM id (owned). The response envelope is
-/// `{item, columns}`; the id is unwrapped from `item` here.
+/// Create a kanban and return the ITEM id (owned).
 fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":{f}}}", .{std.json.fmt(name, .{})});
     defer gpa.free(body);
@@ -94,8 +90,7 @@ fn objectName(v: std.json.Value) ?[]const u8 {
     };
 }
 
-/// Copy the `columns` array of a response into owned `Column`s, in wire
-/// order (position order IS the contract several tests below assert).
+/// Copy the `columns` array of a response into owned `Column`s, in wire order (position order IS the contract several tests below assert).
 fn columnsFrom(doc: *const harness.Json) ![]Column {
     const arr = doc.array("columns") orelse {
         std.debug.print("response has no `columns` array\n", .{});
@@ -132,8 +127,7 @@ fn listColumns(h: *Harness, ws_id: []const u8, kanban_id: []const u8) ![]Column 
     return columnsFrom(&doc);
 }
 
-/// `POST .../kanban/columns` → the new column (owned). `position` null omits
-/// the key, so the backend appends at `MAX(position) + 1`.
+/// `POST .../kanban/columns` → the new column (owned).
 fn addColumn(h: *Harness, ws_id: []const u8, kanban_id: []const u8, name: []const u8, position: ?i64) !Column {
     var body: std.Io.Writer.Allocating = .init(gpa);
     defer body.deinit();
@@ -162,9 +156,7 @@ fn addColumn(h: *Harness, ws_id: []const u8, kanban_id: []const u8, name: []cons
     return .{ .id = try gpa.dupe(u8, id), .name = try gpa.dupe(u8, doc.str("name") orelse "") };
 }
 
-/// `POST .../tasks` → the new task id (owned). `tags` is a JSON STRING
-/// carrying a JSON array (`'["bug"]'`), which is why it goes through
-/// `encodeJsonString` rather than being interpolated.
+/// `POST .../tasks` → the new task id (owned).
 fn addTask(
     h: *Harness,
     ws_id: []const u8,
@@ -236,12 +228,9 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Test 1: PATCH column renames it
-// ============================================================================
 
-// PATCH /columns/:col_id {name: 'new'} → the board envelope `{columns,
-// count}` comes back so the frontend can re-render without a GET.
+// PATCH /columns/:col_id {name: 'new'} → the board envelope `{columns, count}` comes back so the frontend can re-render without a GET.
 test "patch_column_renames_it" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -303,13 +292,9 @@ test "patch_column_renames_it" {
     }
 }
 
-// ============================================================================
 // Test 2: PATCH column with empty body returns 400
-// ============================================================================
 
-// PATCH /columns/:col_id {} → 400. `kanban_columns_update.zig` returns
-// `error.NothingToUpdate` when all three fields are absent and the
-// handler maps that to 400.
+// PATCH /columns/:col_id {} → 400.
 test "patch_column_rejects_empty_body" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -347,9 +332,7 @@ test "patch_column_rejects_empty_body" {
     }
 }
 
-// ============================================================================
 // Test 3: PATCH column with {position: N} reorders within the board
-// ============================================================================
 
 // PATCH /columns/:col_id {position: 0} moves the column to the top.
 test "patch_column_reorders_within_board" {
@@ -409,12 +392,9 @@ test "patch_column_reorders_within_board" {
     }
 }
 
-// ============================================================================
 // Test 4: DELETE column with tasks still assigned returns 409
-// ============================================================================
 
-// DELETE /columns/:col_id with 1+ tasks assigned → 409, and the message
-// names the task count.
+// DELETE /columns/:col_id with 1+ tasks assigned → 409, and the message names the task count.
 test "delete_column_with_tasks_returns_409" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -478,13 +458,9 @@ test "delete_column_with_tasks_returns_409" {
     }
 }
 
-// ============================================================================
 // Test 5: DELETE column succeeds when empty
-// ============================================================================
 
-// DELETE /columns/:col_id on an EMPTY column → 200 {success, column_id}. This
-// complements `test_delete_column_orphans_tasks` (in
-// kanban_lifecycle_test.py) by pinning the SUCCESS path.
+// DELETE /columns/:col_id on an EMPTY column → 200 {success, column_id}.
 test "delete_empty_column_succeeds" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -535,12 +511,9 @@ test "delete_empty_column_succeeds" {
     }
 }
 
-// ============================================================================
 // Test 6: GET /kanban/tags returns empty for a fresh kanban
-// ============================================================================
 
-// A freshly-created kanban has no tasks → /tags returns an empty list
-// and `has_more: false`.
+// A freshly-created kanban has no tasks → /tags returns an empty list and `has_more: false`.
 test "kanban_tags_list_empty_for_no_tasks" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -583,12 +556,9 @@ test "kanban_tags_list_empty_for_no_tasks" {
     }
 }
 
-// ============================================================================
 // Test 7: GET /kanban/tags returns the distinct tag set
-// ============================================================================
 
-// 6 tasks across 3 tags → /tags returns 3 unique tags (not 6), and the
-// per-tag `count` reflects usage.
+// 6 tasks across 3 tags → /tags returns 3 unique tags (not 6), and the per-tag `count` reflects usage.
 test "kanban_tags_list_returns_distinct_tag_set" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -653,8 +623,7 @@ test "kanban_tags_list_returns_distinct_tag_set" {
         return error.TestUnexpectedResult;
     }
 
-    // Each suggestion carries a `count`; the tag used twice has
-    // count >= 2 (the "did the join even fire" case).
+    // Each suggestion carries a `count`; the tag used twice has count >= 2 (the "did the join even fire" case).
     for (tags.items) |item| {
         const n = objectName(item) orelse continue;
         if (!std.mem.eql(u8, n, "bug")) continue;
@@ -676,13 +645,9 @@ test "kanban_tags_list_returns_distinct_tag_set" {
     }
 }
 
-// ============================================================================
 // Test 8: copy_spec_from merge (append) mode keeps existing columns
-// ============================================================================
 
-// POST /copy_spec_from/:source with {mode: 'append'} preserves the
-// target's existing columns AND appends the source's — 3 + 3 = 6, with
-// each source name now appearing twice.
+// POST /copy_spec_from/:source with {mode: 'append'} preserves the target's existing columns AND appends the source's — 3 + 3 = 6, with each source name now …
 test "copy_spec_from_append_keeps_existing_columns" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -744,9 +709,7 @@ test "copy_spec_from_append_keeps_existing_columns" {
     }
 }
 
-// ============================================================================
 // Test 9: copy_spec_from 404 when the source does not exist
-// ============================================================================
 
 // POST /copy_spec_from/item_nope → 404.
 test "copy_spec_from_404_for_nonexistent_source" {
@@ -782,13 +745,9 @@ test "copy_spec_from_404_for_nonexistent_source" {
     }
 }
 
-// ============================================================================
 // Test 10: copy_spec_from rejects a self-copy
-// ============================================================================
 
-// POST /copy_spec_from/<self> → 400. `kanban_copy_spec.zig` treats
-// `item_id == source_item_id` as a self-copy and returns
-// `error.SourceItemIdRequired`.
+// POST /copy_spec_from/<self> → 400.
 test "copy_spec_from_rejects_self_copy" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -822,9 +781,7 @@ test "copy_spec_from_rejects_self_copy" {
     }
 }
 
-// ============================================================================
 // Test 11: copy_spec_from rejects an invalid mode
-// ============================================================================
 
 // POST /copy_spec_from/:source with {mode: 'garbage'} → 400.
 test "copy_spec_from_rejects_invalid_mode" {
@@ -862,8 +819,7 @@ test "copy_spec_from_rejects_invalid_mode" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = boot;
     _ = createWorkspace;

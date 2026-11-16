@@ -1,5 +1,4 @@
-// End-to-end functional test for the MCP Streamable HTTP transport (plan
-// 2026-08-28-mcp-streamable-http, Task 5 / PR #TBD).
+// End-to-end functional test for the MCP Streamable HTTP transport (plan 2026-08-28-mcp-streamable-http, Task 5 / PR #TBD).
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,22 +12,16 @@ const posix = std.posix;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Generous, exactly as the Python comment explains: the full `zig build
-/// functional-test` run saturates the box (zig compiling + parallel pnpm),
-/// and cold node + MCP-SDK import can exceed 5s with an alive-but-silent
+/// Generous, exactly as the Python comment explains: the full `zig build functional-test` run saturates the box (zig compiling + parallel pnpm), and cold node + …
 const MCP_STARTUP_TIMEOUT_MS: i64 = 15_000;
 
 /// The spec revision `@modelcontextprotocol/sdk` v1.30.0 implements.
 const PROTOCOL_VERSION = "2025-11-25";
 
-/// The three tools `mcp-http-hello-world` must advertise, SORTED —
-/// Python compared a `sorted(...)` list for equality, so the order is part
-/// of the assertion.
+/// The three tools `mcp-http-hello-world` must advertise, SORTED — Python compared a `sorted(...)` list for equality, so the order is part of the assertion.
 const EXPECTED_TOOLS = [_][]const u8{ "print_exit", "print_hello", "print_name" };
 
-// ============================================================================
 // Helpers — the fixture server
-// ============================================================================
 
 /// The resolved argv for the fixture server. OWNED slice of OWNED strings.
 const McpArgv = struct {
@@ -41,9 +34,7 @@ const McpArgv = struct {
     }
 };
 
-/// Resolve the fixture's argv, or SKIP. POSIX:
-/// `zig-out/bin/mcp-http-hello-world` is a `#!/bin/sh` + `exec node
-/// …/dist/index.js` wrapper and is directly executable.
+/// Resolve the fixture's argv, or SKIP. POSIX
 fn resolveMcpHttpArgv() !McpArgv {
     const bin = harness.mcpHttpHelloWorldBin(io, gpa) catch |err| switch (err) {
         error.BinaryNotFound => {
@@ -67,8 +58,7 @@ fn resolveMcpHttpArgv() !McpArgv {
     };
     defer gpa.free(node);
 
-    // Repo root is two levels above zig-out/bin (bin → zig-out → repo root),
-    // mirroring the wrapper's own `$SCRIPT_DIR/../../` lookup.
+    // Repo root is two levels above zig-out/bin (bin → zig-out → repo root), mirroring the wrapper's own `$SCRIPT_DIR/../../` lookup.
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const len = std.Io.Dir.cwd().realPathFile(io, bin, &buf) catch 0;
     const dir = if (len == 0) std.fs.path.dirname(bin) orelse "." else std.fs.path.dirname(buf[0..len]) orelse ".";
@@ -111,20 +101,17 @@ const McpServer = struct {
     scratch: []u8,
     stderr_path: []u8,
     port: u16,
-    /// Set once `waitpid` reaped the child, so `deinit` does not `kill` a
-    /// pid the kernel may already have recycled.
+    /// Set once `waitpid` reaped the child, so `deinit` does not `kill` a pid the kernel may already have recycled.
     reaped: bool = false,
     /// True once `spawn` returned.
     spawned: bool = false,
 
     fn deinit(self: *McpServer) void {
         if (self.spawned and !self.reaped and self.child.id != null) {
-            // `Child.kill` already reaps; there is deliberately no `wait`
-            // after it — `wait` asserts `child.id != null` and would panic.
+            // `Child.kill` already reaps; there is deliberately no `wait` after it — `wait` asserts `child.id != null` and would panic.
             self.child.kill(io);
         }
-        // Registered BEFORE the free below, so the delete runs while the
-        // path is still valid (defers are LIFO).
+        // Registered BEFORE the free below, so the delete runs while the path is still valid (defers are LIFO).
         harness.cleanupExtraDir(io, gpa, self.scratch);
         gpa.free(self.scratch);
         gpa.free(self.stderr_path);
@@ -144,8 +131,7 @@ fn sleepMs(ms: i64) void {
 fn spawnMcpHttpHelloWorld(argv: *const McpArgv, port: u16, timeout_ms: i64) !*McpServer {
     const s = try gpa.create(McpServer);
 
-    // Registered FIRST so it runs LAST: `errdefer`s are LIFO, and the
-    // order below must be kill → free paths → cleanup dir → destroy.
+    // Registered FIRST so it runs LAST: `errdefer`s are LIFO, and the order below must be kill → free paths → cleanup dir → destroy.
     errdefer gpa.destroy(s);
 
     s.reaped = false;
@@ -179,9 +165,7 @@ fn spawnMcpHttpHelloWorld(argv: *const McpArgv, port: u16, timeout_ms: i64) !*Mc
         .argv = full.items,
         .stdin = .ignore,
         .stdout = .ignore,
-        // `.file` hands the CHILD its own dup of the descriptor, so the
-        // handle must stay open across the spawn — hence the `defer`
-        // above, which fires after this function returns, not before.
+        // `.file` hands the CHILD its own dup of the descriptor, so the handle must stay open across the spawn — hence the `defer` above, which fires after this function …
         .stderr = .{ .file = log },
     });
     s.spawned = true;
@@ -211,15 +195,12 @@ fn spawnMcpHttpHelloWorld(argv: *const McpArgv, port: u16, timeout_ms: i64) !*Mc
     }
 }
 
-/// True iff the child has already exited — and remember that it did, so the
-/// pid is never `wait`ed twice.
+/// True iff the child has already exited — and remember that it did, so the pid is never `wait`ed twice.
 fn hasExited(s: *McpServer) bool {
     if (s.reaped or s.child.id == null) return true;
     if (comptime builtin.os.tag == .windows) return false;
     const pid: std.posix.pid_t = @intCast(s.child.id.?);
-    // `std.posix` exposes no `waitpid` wrapper in 0.16 — only the raw
-    // system layer — so this is `waitpid(2)` by hand, which is the whole
-    // of Python's `proc.poll()` under the hood.
+    // `std.posix` exposes no `waitpid` wrapper in 0.16 — only the raw system layer — so this is `waitpid(2)` by hand, which is the whole of Python's `proc.poll()` …
     var status: u32 = 0;
     const got = posix.system.waitpid(pid, &status, std.posix.W.NOHANG);
     if (got == pid) {
@@ -229,16 +210,12 @@ fn hasExited(s: *McpServer) bool {
     return false;
 }
 
-/// A free port for the fixture. The harness's picker skips the reserved
-/// 8081 and probes with SO_REUSEADDR, which is exactly what
-/// `_find_free_port`'s bind-port-0 dance achieved.
+/// A free port for the fixture.
 fn findFreePort() !u16 {
     return harness.findFreePortRandom(gpa);
 }
 
-// ============================================================================
 // Helpers — the JSON-RPC wire
-// ============================================================================
 
 /// One raw MCP HTTP exchange. Caller owns every field.
 const McpExchange = struct {
@@ -253,8 +230,7 @@ const McpExchange = struct {
     }
 };
 
-/// POST a JSON-RPC body to `<port>/mcp` and capture (status, content type,
-/// body) WITHOUT asserting anything about them.
+/// POST a JSON-RPC body to `<port>/mcp` and capture (status, content type, body) WITHOUT asserting anything about them.
 fn postMcp(port: u16, payload: []const u8, headers: []const std.http.Header, out: *McpExchange) !void {
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/mcp", .{port});
     defer gpa.free(url);
@@ -284,9 +260,7 @@ fn postMcp(port: u16, payload: []const u8, headers: []const std.http.Header, out
     var resp = try req.receiveHead(&.{});
     out.status = @intFromEnum(resp.head.status);
 
-    // Headers BEFORE the body: `resp.reader()` calls
-    // `head.invalidateStrings()`, so reading `head` afterwards is a
-    // use-after-free.
+    // Headers BEFORE the body: `resp.reader()` calls `head.invalidateStrings()`, so reading `head` afterwards is a use-after-free.
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -306,9 +280,7 @@ fn postMcp(port: u16, payload: []const u8, headers: []const std.http.Header, out
 
 /// The LAST event's `data:` payload of an SSE body.
 fn sseLastData(body: []const u8) ![]u8 {
-    // NO `defer` here: the returned slice IS `last`, so a deferred free would
-    // hand the caller 0xaa-poisoned memory the moment it returned — and the
-    // JSON parse two frames later then fails with a SyntaxError that reads
+    // NO `defer` here: the returned slice IS `last`, so a deferred free would hand the caller 0xaa-poisoned memory the moment it returned — and the JSON parse two …
     var last: ?[]u8 = null;
     errdefer if (last) |l| gpa.free(l);
 
@@ -346,15 +318,11 @@ fn sseLastData(body: []const u8) ![]u8 {
 }
 
 /// The parsed JSON-RPC response, from JSON or from an SSE stream.
-/// `.alloc_always`: the caller deinits the `McpExchange` before it is done
-/// with the parsed document, so nothing may borrow the response buffer.
 fn parseMcpResponse(x: *const McpExchange) !std.json.Parsed(std.json.Value) {
     const trimmed = std.mem.trim(u8, x.content_type, " \t\r\n");
 
     if (std.mem.startsWith(u8, trimmed, "text/event-stream")) {
-        // The extracted payload is OWNED here, so it is freed on every
-        // exit below — and the returned `Parsed` does not borrow it
-        // (`.alloc_always`).
+        // The extracted payload is OWNED here, so it is freed on every exit below — and the returned `Parsed` does not borrow it (`.alloc_always`).
         const payload = try sseLastData(x.body);
         defer gpa.free(payload);
         return parseAllocAlways(payload);
@@ -369,8 +337,7 @@ fn parseMcpResponse(x: *const McpExchange) !std.json.Parsed(std.json.Value) {
     return error.TestUnexpectedResult;
 }
 
-/// `.alloc_always` — the caller deinits the `McpExchange` before it is
-/// done with the document, so nothing may borrow the response buffer.
+/// `.alloc_always` — the caller deinits the `McpExchange` before it is done with the document, so nothing may borrow the response buffer.
 fn parseAllocAlways(payload: []const u8) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, gpa, payload, .{ .allocate = .alloc_always }) catch |err| {
         std.debug.print(
@@ -410,8 +377,7 @@ fn wantStr(doc: *const std.json.Parsed(std.json.Value), key: []const u8) ![]cons
     };
 }
 
-/// `result.content[0].text` — the exact indexing Python did, so a missing
-/// link fails here instead of degrading to "".
+/// `result.content[0].text` — the exact indexing Python did, so a missing link fails here instead of degrading to "".
 fn contentText(result: std.json.ObjectMap) ![]const u8 {
     const content_val = result.get("content") orelse {
         std.debug.print("MCP response has no `result.content`\n", .{});
@@ -432,8 +398,7 @@ fn contentText(result: std.json.ObjectMap) ![]const u8 {
     };
 }
 
-/// One JSON-RPC exchange: POST, then parse. The exchange is deinited
-/// before this returns, so the caller owns only the `Parsed`.
+/// One JSON-RPC exchange: POST, then parse.
 fn roundTrip(port: u16, payload: []const u8, headers: []const std.http.Header) !std.json.Parsed(std.json.Value) {
     var x: McpExchange = .{};
     defer x.deinit();
@@ -441,12 +406,9 @@ fn roundTrip(port: u16, payload: []const u8, headers: []const std.http.Header) !
     return parseMcpResponse(&x);
 }
 
-// ============================================================================
 // Helpers — the PabrikConfig layer
-// ============================================================================
 
-/// `GET /api/config/pabrik`, re-parsed into an OWNING `std.json.Parsed` the
-/// caller can MUTATE and re-serialize.
+/// `GET /api/config/pabrik`, re-parsed into an OWNING `std.json.Parsed` the caller can MUTATE and re-serialize.
 fn fetchConfig(h: *Harness) !std.json.Parsed(std.json.Value) {
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
@@ -494,13 +456,9 @@ fn putHttpServer(
 
 const HeaderPair = struct { key: []const u8, value: []const u8 };
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// Direct MCP wire roundtrip — no pabrik involved. Spawn the
-// mcp-http-hello-world binary, POST a tools/list + a tools/call, assert the
-// responses match what the SDK server would return.
+// Direct MCP wire roundtrip — no pabrik involved.
 test "http_mcp_direct_roundtrip_no_pabrik" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -533,9 +491,7 @@ test "http_mcp_direct_roundtrip_no_pabrik" {
             else => return error.TestUnexpectedResult,
         };
 
-        // Python: `sorted(t["name"] for t in tools) == [...]` — a set
-        // comparison in disguise, so BOTH the count and the order after
-        // sorting are asserted here.
+        // Python: `sorted(t["name"] for t in tools) == [...]` — a set comparison in disguise, so BOTH the count and the order after sorting are asserted here.
         var names: std.ArrayList([]const u8) = .empty;
         defer names.deinit(gpa);
         for (tools.items) |t| {
@@ -596,9 +552,7 @@ test "http_mcp_direct_roundtrip_no_pabrik" {
     }
 }
 
-// Spec (revision 2025-11-25) says: 'A server that supports clients
-// implementing protocol versions earlier than 2025-06-18 (which did not
-// define the MCP-Protocol-Version header) MAY treat a request that omits the
+// Spec (revision 2025-11-25) says: 'A server that supports clients implementing protocol versions earlier than 2025-06-18 (which did not define the …
 test "http_mcp_missing_protocol_version_is_lenient" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -614,8 +568,7 @@ test "http_mcp_missing_protocol_version_is_lenient" {
         \\{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}
     , &.{}, &x);
 
-    // Server treats missing header as 2025-03-26 → request SUCCEEDS (200 OK),
-    // same as a spec-compliant request.
+    // Server treats missing header as 2025-03-26 → request SUCCEEDS (200 OK), same as a spec-compliant request.
     try testing.expectEqual(@as(u16, 200), x.status);
 
     var parsed = try parseMcpResponse(&x);
@@ -624,9 +577,7 @@ test "http_mcp_missing_protocol_version_is_lenient" {
     try testing.expectEqualStrings("1", try wantStr(&parsed, "id"));
 }
 
-// Targeting a protocol revision the server doesn't support must
-// return 400 with an UnsupportedProtocolVersion error. We send
-// "1999-01-01" (a deliberately bogus version) and expect 400.
+// Targeting a protocol revision the server doesn't support must return 400 with an UnsupportedProtocolVersion error.
 test "http_mcp_unsupported_protocol_version_returns_400" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -656,9 +607,7 @@ test "http_mcp_unsupported_protocol_version_returns_400" {
     }
 }
 
-// Boot pabrik, configure mcp_servers with a real url pointing at a live
-// mcp-http-hello-world server, fetch the config back, assert the url
-// round-trips.
+// Boot pabrik, configure mcp_servers with a real url pointing at a live mcp-http-hello-world server, fetch the config back, assert the url round-trips.
 test "pabrik_config_round_trips_http_mcp_server" {
     var argv = try resolveMcpHttpArgv();
     defer argv.deinit();
@@ -682,9 +631,7 @@ test "pabrik_config_round_trips_http_mcp_server" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python: `servers = got.get("mcp_servers") or {}` then a named
-    // lookup — a missing block and a missing server both end at the same
-    // assert, so both land in `serverEntry`.
+    // Python: `servers = got.get("mcp_servers") or {}` then a named lookup — a missing block and a missing server both end at the same assert, so both land in …
     const servers = doc.object("mcp_servers") orelse {
         std.debug.print("http MCP servers missing from the GET response (no `mcp_servers` block)\n", .{});
         return error.TestUnexpectedResult;
@@ -707,9 +654,7 @@ test "pabrik_config_round_trips_http_mcp_server" {
         return error.TestUnexpectedResult;
     }
 
-    // Python: `entry.get("headers") == {"X-Trace-Id": "test-roundtrip"}` —
-    // a dict equality, so the map is compared by its single key AND its
-    // length (an extra header would fail the Python assert too).
+    // Python: `entry.get("headers") == {"X-Trace-Id": "test-roundtrip"}` — a dict equality, so the map is compared by its single key AND its length (an extra header …
     const hdrs_val = entry.get("headers") orelse {
         std.debug.print("http entry lost its headers: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -759,9 +704,7 @@ test "pabrik_http_client_calls_real_mcp_server" {
     defer gpa.free(url);
     try putHttpServer(&h, "http_test", url, null);
 
-    // TODO(port): the agent-loop invocation the Python docstring describes
-    // (`initial["active_workspace_id"]` + `active_agent_id` driving a chat
-    // turn through `handle_mcp_tool.zig`) was NOT implemented in the Python
+    // TODO(port): the agent-loop invocation the Python docstring describes (`initial["active_workspace_id"]` + `active_agent_id` driving a chat turn through …
     var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
     defer r.deinit();
     var doc = try r.json();
@@ -788,8 +731,7 @@ test "pabrik_http_client_calls_real_mcp_server" {
     }
 }
 
-// Body-analysis barrier: an unreferenced helper is never type-checked, so a
-// stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible until a caller appears.
 comptime {
     _ = resolveMcpHttpArgv;
     _ = whichOnPath;

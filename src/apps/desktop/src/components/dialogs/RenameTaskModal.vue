@@ -5,9 +5,7 @@ const props = withDefaults(
   defineProps<{
     show: boolean
     currentName: string
-    /** Dialog heading / field label / input placeholder. The defaults say "Task" because the kanban
-     * card was the first caller, but the same modal is reused by the sidebar chat-row context menu,
-     * where "Rename Task" would name a concept the user is not looking at. */
+    /** Dialog heading / field label / input placeholder. */
     heading?: string
     label?: string
     placeholder?: string
@@ -54,9 +52,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

@@ -1,5 +1,4 @@
-/** gitStatusMap — pure join logic between `GET /api/git/changes` and the explorer tree. No DOM, no
- * fetch: takes the wire response, returns data. */
+/** gitStatusMap — pure join logic between `GET /api/git/changes` and the explorer tree. */
 import { describe, expect, it } from 'vitest'
 import {
   buildGitStatusMap,
@@ -16,8 +15,7 @@ const CHANGES: GitChangesResponse = {
   has_changes: true,
   staged_files: [
     { index_status: 'A', worktree_status: ' ', path: 'src/new.ts' },
-    // Staged new file, then edited again in the worktree: present in BOTH
-    // lists (backend puts it in staged AND modified). Staged must win.
+    // Staged new file, then edited again in the worktree: present in BOTH lists (backend puts it in staged AND modified).
     { index_status: 'A', worktree_status: 'M', path: 'src/staged_then_edited.ts' },
   ],
   modified_files: [

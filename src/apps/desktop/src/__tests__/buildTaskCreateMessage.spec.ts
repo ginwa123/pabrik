@@ -1,5 +1,4 @@
-/** Tests for buildTaskCreateMessage — the `create_and_run` user-message formatter (plan:
- * 2026-09-11-kanban-create-task-message-format-worktree-toggle). */
+/** Tests for buildTaskCreateMessage — the `create_and_run` user-message formatter (plan */
 import { describe, expect, it } from 'vitest'
 
 import { buildTaskCreateMessage } from '@/components/kanban/buildTaskCreateMessage'
@@ -78,8 +77,7 @@ describe('buildTaskCreateMessage', () => {
   })
 
   it('toggle on + base without a path → Base line still emitted', () => {
-    // The agent may derive the path itself from the task name, but the
-    // base ref is only knowable from this line.
+    // The agent may derive the path itself from the task name, but the base ref is only knowable from this line.
     expect(buildTaskCreateMessage('My task', '', true, '', 'origin/main')).toBe(
       'Task : My task\n\n#Notes UseGitWorktree\nBase: origin/main',
     )
@@ -104,8 +102,7 @@ describe('buildTaskCreateMessage', () => {
   })
 
   it('toggle on without a base keeps the pre-existing message shape', () => {
-    // Regression guard: existing tasks (no Base line) must produce the
-    // exact same bytes as before this option existed.
+    // Regression guard: existing tasks (no Base line) must produce the exact same bytes as before this option existed.
     expect(
       buildTaskCreateMessage('My task', 'blablabla', true, '/tmp/wt/x'),
     ).toBe(
@@ -114,9 +111,7 @@ describe('buildTaskCreateMessage', () => {
   })
 })
 
-// Migration 112 — the `#Skill <name>` lines are NOT built here any more. The
-// backend appends one per skill from the task's skill_names, so the agent
-// receives each directive exactly once instead of twice.
+// Migration 112 — the `#Skill <name>` lines are NOT built here any more.
 describe('buildTaskCreateMessage - no #Skill directive (Migration 112)', () => {
   it('never emits a #Skill line, whatever the task carries', () => {
     const message = buildTaskCreateMessage(
@@ -133,8 +128,7 @@ describe('buildTaskCreateMessage - no #Skill directive (Migration 112)', () => {
   })
 })
 
-// The `#Notes AutoMerge` flag — the note that tells the agent to wait for CI
-// and merge the pull request itself.
+// The `#Notes AutoMerge` flag — the note that tells the agent to wait for CI and merge the pull request itself.
 describe('buildTaskCreateMessage - #Notes AutoMerge', () => {
   it('emits nothing when the flag is off', () => {
     expect(buildTaskCreateMessage('My task', 'desc', false, '', '', false, 'squash')).toBe(

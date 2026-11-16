@@ -1,6 +1,4 @@
-/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. Used by the kanban
- * tree to edit a task's name + description with optional metadata (column, type, pinned). Mount
- * pattern: same as KanbanSettingsDialog.spec.ts. */
+/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -156,9 +154,7 @@ describe('KanbanTaskDetailDialog — save / cancel', () => {
   })
 
   it('emits update:show=false on close (for v-model:show wiring)', async () => {
-    // Regression: KanbanView binds `v-model:show` which requires `update:show` events, not the
-    // legacy `close` event. Without this emit, the X / Cancel / backdrop / Escape handlers cannot
-    // close the dialog.
+    // Regression: KanbanView binds `v-model:show` which requires `update:show` events, not the legacy `close` event.
     const w = mountDialog()
     await flushPromises()
     clickInDom('[data-testid="kanban-task-detail-close"]')
@@ -168,9 +164,7 @@ describe('KanbanTaskDetailDialog — save / cancel', () => {
   })
 
   it('emits update:show=false when the backdrop is clicked', async () => {
-    // The backdrop click handler closes the dialog via the same
-    // `handleClose` path as the X button — regression net for the
-    // @click.self="handleClose" binding on the outer wrapper.
+    // The backdrop click handler closes the dialog via the same `handleClose` path as the X button — regression net for the @click.self="handleClose" binding on the …
     const w = mountDialog()
     await flushPromises()
     const backdrop = findInDom<HTMLDivElement>(
@@ -265,8 +259,7 @@ describe('KanbanTaskDetailDialog — metadata strip', () => {
     expect(findInDom('[data-testid="kanban-task-detail-metadata"]')).toBeNull()
   })
 
-  // ─── Read-only cwd strip (removed by 2026-08-14-kanban-task-detail-edit-cwd) The read-only cwd
-  // strip was removed in favour of the always-visible cwd picker.
+  // ─── Read-only cwd strip (removed by 2026-08-14-kanban-task-detail-edit-cwd) The read-only cwd strip was removed in favour of the always-visible cwd picker.
   it('edit mode: does NOT render the legacy read-only cwd strip', async () => {
     mountDialog({ ...TASK, cwd: '/home/foo/bar' })
     await flushPromises()

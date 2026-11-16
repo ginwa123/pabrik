@@ -1,5 +1,4 @@
-/** The HTML branch of the document page: an `html` document renders in a
- *  sandboxed iframe, and Save stores the page source the user typed. */
+/** The HTML branch of the document page: an `html` document renders in a sandboxed iframe, and Save stores the page source the user typed. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -125,8 +124,7 @@ describe('DocumentsView — html documents', () => {
         release = resolve
       }),
     )
-    // A list row: metadata only, no body. This is what the sidebar holds
-    // before the single-document read lands.
+    // A list row: metadata only, no body.
     const { content: _omit, ...listRow } = HTML_DOC
     useDocumentsStore().documents = [listRow]
 

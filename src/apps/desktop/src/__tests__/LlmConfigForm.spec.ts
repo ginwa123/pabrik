@@ -4,12 +4,9 @@ import { describe, expect, it } from 'vitest'
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
 import { activeScheme } from '../theme/runtime'
 
-/**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
- * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
- * tolerant so it can be used for components that have no Advanced section at all. */
+/** Mount and open `Advanced`. */
 async function mountOpen(component: unknown, opts?: unknown) {
-  // `as never` keeps `mount`'s overload resolution from narrowing the SECOND
-  // argument to a VNode-props shape at every call site.
+  // `as never` keeps `mount`'s overload resolution from narrowing the SECOND argument to a VNode-props shape at every call site.
   const w = mount(component as never, opts as never) as VueWrapper
   const toggle = w.find('[data-testid=advanced-toggle]')
   if (toggle.exists()) await toggle.trigger('click')
@@ -25,9 +22,7 @@ const baseValue = {
   temperature: 'auto',
   url_style: 'openai',
   api_key: '',
-  // Transport discriminator + its CLI knobs. Absent `backend` reads as
-  // "http" (the backend's documented default), so these are optional in the
-  // form's type — but the specs set them so intent is explicit.
+  // Transport discriminator + its CLI knobs.
   backend: 'http',
   config_dir: null as string | null,
   max_turns: null as number | null,
@@ -47,9 +42,7 @@ describe('LlmConfigForm', () => {
     expect(wrapper.find('[data-testid=model-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(true)
     const selects = wrapper.findAll('select')
-    // backend, thinking, url_style, reasoning_effort — 4 selects. (temperature is freetext input,
-    // not a select.) (plan 2026-08-23-model-thinking added reasoning_effort; plan 2026-09-01 gates
-    // it per style; the `backend` discriminator added the transport select.)
+    // backend, thinking, url_style, reasoning_effort — 4 selects.
     expect(selects.length).toBe(4)
     expect(wrapper.find('[data-testid=temperature-input]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=reasoning-effort-select]').exists()).toBe(true)
@@ -118,8 +111,7 @@ describe('LlmConfigForm', () => {
 
   it('has NO override checkbox — an empty context-window field is the inherit state', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
-    // The checkbox is gone on purpose: a control whose only job is to enable the
-    // field beneath it is noise when "empty" already means "inherit".
+    // The checkbox is gone on purpose: a control whose only job is to enable the field beneath it is noise when "empty" already means "inherit".
     expect(wrapper.find('[data-testid="profile-capacity-override-checkbox"]').exists()).toBe(false)
     const input = wrapper.find('[data-testid="agent-capacity-input"]')
     expect((input.element as HTMLInputElement).value).toBe('')
@@ -154,8 +146,7 @@ describe('LlmConfigForm', () => {
     const first = wrapper.emitted('update:modelValue')?.[0]?.[0] as typeof baseValue
     expect(first.max_capacity_tokens).toBe(350000)
 
-    // A cleared override must be `null`: an empty slice binds as SQL NULL
-    // server-side, and `""` is not a number the cascade can fall through on.
+    // A cleared override must be `null`: an empty slice binds as SQL NULL server-side, and `""` is not a number the cascade can fall through on.
     await input.setValue('')
     const second = wrapper.emitted('update:modelValue')?.[1]?.[0] as typeof baseValue
     expect(second.max_capacity_tokens).toBeNull()
@@ -262,9 +253,7 @@ describe('LlmConfigForm', () => {
     }
   })
 
-  // Task task_1788535488395_0 (WebView2 white select): every select/input carries an inline
-  // color-scheme hint so WebView2 renders native controls in the app's scheme. The global
-  // `color-scheme: var(--color-scheme)` rule in style.css is the primary fix.
+  // Task task_1788535488395_0 (WebView2 white select): every select/input carries an inline color-scheme hint so WebView2 renders native controls in the app's …
   it('selects carry the active theme scheme for WebView2', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const selects = wrapper.findAll('select')
@@ -275,9 +264,7 @@ describe('LlmConfigForm', () => {
   })
 })
 
-/**  * The transport discriminator. `backend` is orthogonal to `url_style`: it says WHICH transport runs
- * the call, while `url_style` keeps describing the HTTP body shape. A claude-code profile has no
- * URL, no key and no request body, so those controls are hidden rather than shown-but-ignored. */
+/** The transport discriminator. */
 describe('LlmConfigForm — backend gating', () => {
   it('offers http, claude-code and opencode as backends', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
@@ -365,8 +352,7 @@ describe('LlmConfigForm — backend gating', () => {
   })
 
   it('treats an ABSENT backend as http — the documented default', async () => {
-    // A profile written before this field existed must render exactly as it
-    // did: every HTTP control present, no CLI knob.
+    // A profile written before this field existed must render exactly as it did: every HTTP control present, no CLI knob.
     const { backend: _omitted, ...withoutBackend } = baseValue
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...withoutBackend } } })
     expect(wrapper.find('[data-testid=base-url-input]').exists()).toBe(true)

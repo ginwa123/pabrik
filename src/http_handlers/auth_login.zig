@@ -1,6 +1,4 @@
 //! `POST /api/auth/login` — verify email+password, mint a session cookie.
-//! Always registered (even when `--auth` is off) so the frontend can probe
-//! auth state uniformly.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -117,9 +115,7 @@ pub fn authLoginHandler(
     // Best-effort last_login stamp; login already succeeded.
     db.exec(allocator, "UPDATE users SET last_login_at = datetime('now') WHERE id = ?", &[_][]const u8{user_id}) catch {};
 
-    // An account with no workspaces lands on "No workspace selected" — an
-    // empty sidebar behind a single "+ New workspace" button. Provision one
-    // named "Default" now that the account is usable.
+    // An account with no workspaces lands on "No workspace selected" — an empty sidebar behind a single "+ New workspace" button.
     const provisioned = provisioning.ensureDefaultWorkspace(
         allocator,
         db,
@@ -140,7 +136,6 @@ pub fn authLoginHandler(
         .user = .{ .id = user_id, .email = user_email, .name = user_name, .role = user_role },
     }, .{});
     const cookie = try auth_common.setCookieValue(allocator, raw_token[0..]);
-    // NOTE: `jsonResponse` builds a FRESH response (drops prior headers),
-    // so `withHeader` must come AFTER it, not before.
+    // NOTE: `jsonResponse` builds a FRESH response (drops prior headers), so `withHeader` must come AFTER it, not before.
     return res.jsonResponse(.{ .status_code = 200, .data = data }).withHeader("Set-Cookie", cookie);
 }

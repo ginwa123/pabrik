@@ -16,20 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * The holder's persistence policy, against a real `SharedPreferences` file.
- *
- * Two things are worth proving and neither is `normalizeBaseUrl`, which
- * [ServerUrlTest] already has:
- *
- *  1. **A refusal changes nothing.** A rejected value must not reach the store
- *     *or* the in-memory value, or a person who typed a typo and pressed Save
- *     would find the app silently pointed at the typo for the rest of the
- *     process — the one outcome worse than the rejection.
- *  2. **A stored value that no longer normalizes is dropped, not obeyed.** The
- *     build it was written under may have been more permissive than this one,
- *     and a release APK must not inherit a debug-only `http://10.0.2.2:8080`.
- */
+/** The holder's persistence policy, against a real `SharedPreferences` file. */
 @RunWith(RobolectricTestRunner::class)
 class ServerUrlStoreTest {
 
@@ -37,15 +24,11 @@ class ServerUrlStoreTest {
 
     @Before
     fun setUp() {
-        // The holder is a process singleton, so every test starts from the
-        // build default and an unbound store — the same escape hatch
-        // `SseBusHolder.reset()` exists for.
+        // The holder is a process singleton, so every test starts from the build default and an unbound store — the same escape hatch `SseBusHolder.reset()` exists for.
         ServerUrl.reset()
         store = PrefsBaseUrlStore(ApplicationProvider.getApplicationContext())
         store.clear()
-        // `MainActivity.onCreate` does this before anything can reach the UI, and
-        // `update` has nowhere to write without it — the same ordering the app
-        // depends on, asserted here rather than assumed.
+        // `MainActivity.onCreate` does this before anything can reach the UI, and `update` has nowhere to write without it — the same ordering the app depends on …
         ServerUrl.install(store)
     }
 
@@ -57,9 +40,7 @@ class ServerUrlStoreTest {
 
     @Test
     fun `an uninstalled holder answers with the build default`() {
-        // What every transport sees before `MainActivity.onCreate` has
-        // installed anything. It has to be the build's own host, because it is
-        // also the value the functional UI suite drives with `-PpabrikBaseUrl`.
+        // What every transport sees before `MainActivity.onCreate` has installed anything.
         assertEquals(BuildConfig.API_BASE_URL, ServerUrl.value)
         assertEquals(BuildConfig.API_BASE_URL, AuthConfig.BASE_URL)
     }
@@ -101,12 +82,7 @@ class ServerUrlStoreTest {
 
     @Test
     fun `a stored value this build cannot use is dropped rather than obeyed`() {
-        // Two different real situations, one per variant, and the stored value
-        // has to be unusable in whichever variant is running or the test proves
-        // nothing. Debug: a hostname that is not one of the three loopback
-        // addresses, which the platform refuses cleartext to. Release: any
-        // cleartext URL at all, which is the "a release APK restoring a device
-        // last used by a debug build pointed at a local pabrik" case.
+        // Two different real situations, one per variant, and the stored value has to be unusable in whichever variant is running or the test proves nothing.
         val unusable = if (BuildConfig.ALLOW_INSECURE_HTTP) {
             "http://stale-host.example:8080"
         } else {
@@ -140,19 +116,14 @@ class ServerUrlStoreTest {
 
     @Test
     fun `the flow emits so a screen showing the host can redraw`() = runBlocking {
-        // `MainActivity` collects this; without an emission the server row
-        // would keep showing the previous host after a change, which is the one
-        // piece of information the person who just typed it is checking.
+        // `MainActivity` collects this; without an emission the server row would keep showing the previous host after a change, which is the one piece of information the …
         val seen = mutableListOf<String>()
         val collector = launch(start = CoroutineStart.UNDISPATCHED) {
             ServerUrl.current.collect { seen += it }
         }
 
         ServerUrl.update("https://third.example")
-        // `StateFlow.value =` *resumes* the collector; it does not run it on the
-        // setter's thread. Without a yield the cancel below wins the race and
-        // the assertion would pass against a list that never had the chance to
-        // grow — which is the test that proves nothing while looking green.
+        // `StateFlow.value =` *resumes* the collector; it does not run it on the setter's thread.
         yield()
         ServerUrl.resetToBuildDefault()
         yield()

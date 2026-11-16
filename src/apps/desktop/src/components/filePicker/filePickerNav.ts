@@ -17,8 +17,7 @@ export function useFilePickerNav<T>(deps: FilePickerNavDeps<T>) {
     // Build ancestor chain root → … → target.
     const chain: string[] = []
     if (!targetPath) {
-      // System root (''): a single backend call with '' so the caller's
-      // loadItems can route to getSystemFolder (backend home / USERPROFILE).
+      // System root (''): a single backend call with '' so the caller's loadItems can route to getSystemFolder (backend home / USERPROFILE).
       chain.push('')
     } else if (isWindowsAbs(targetPath)) {
       // Windows: chain from the drive/UNC root down.
@@ -51,8 +50,7 @@ export function useFilePickerNav<T>(deps: FilePickerNavDeps<T>) {
   }
 
   async function navigateTo(path: string) {
-    // NOTE: '' is meaningful (system root → getSystemFolder), so unlike the
-    // old `path || '/'` fallback we pass the value through untouched.
+    // NOTE: '' is meaningful (system root → getSystemFolder), so unlike the old `path || '/'` fallback we pass the value through untouched.
     const target = path
     if (target === deps.currentPath.value) return
     deps.currentPath.value = target

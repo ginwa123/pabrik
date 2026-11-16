@@ -3,15 +3,13 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
-// Route `delete_worker` through `pabrikcore` (the `root` module) instead of
-// @import'ing it directly.
+// Route `delete_worker` through `pabrikcore` (the `root` module) instead of @import'ing it directly.
 const delete_worker_mod = pabrikcore.ai_mod.delete_worker;
 const event_bus_mod = pabrikcore.event_bus;
 const logger_mod = pabrikcore.loggermod;
 const testing = std.testing;
 
-/// How old `worker.last_activity_nano` must be (in seconds) before the
-/// cleanup tick considers the row stale. 10 minutes per the user spec.
+/// How old `worker.last_activity_nano` must be (in seconds) before the cleanup tick considers the row stale. 10 minutes per the user spec.
 pub const stale_threshold_seconds: i64 = 600;
 
 pub const CleanupStaleWorkerInput = struct {
@@ -28,8 +26,7 @@ pub const CleanupResult = struct {
     deleted_count: usize = 0,
 };
 
-/// Delete every worker row whose `last_activity_nano` is older than `now_unix
-/// - threshold_seconds` (or NULL).
+/// Delete every worker row whose `last_activity_nano` is older than `now_unix - threshold_seconds` (or NULL).
 pub fn cleanupStaleWorkers(input: CleanupStaleWorkerInput) anyerror!CleanupResult {
     const allocator = input.allocator;
     const db = input.db;
@@ -87,8 +84,7 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
     const allocator = di.allocator;
     const logger = di.logger;
 
-    // Per-tick arena — all SQL allocations live for the duration of
-    // the cleanupStaleWorkers call. Cheaper than per-row alloc/free.
+    // Per-tick arena — all SQL allocations live for the duration of the cleanupStaleWorkers call.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -111,8 +107,6 @@ pub fn handle(ctx: ?*anyopaque, now_unix: i64) void {
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
-// Tests are intentionally INLINE in this file (no separate _test.zig),
-// matching the project's existing convention for files that have both impl +
 
 const TestCtx = struct {
     db: database.Db,
@@ -140,9 +134,7 @@ fn setupCtx() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Minimal schema matching the production worker table (after
-    // migration 075). We use the column types from
-    // src/migrations/migration.zig:294-330 + 3198-3218.
+    // Minimal schema matching the production worker table (after migration 075).
     try db.exec(arena_alloc,
         \\CREATE TABLE worker (
         \\    id TEXT PRIMARY KEY,
@@ -161,9 +153,7 @@ fn setupCtx() !TestCtx {
     };
 }
 
-/// Insert a worker row with an explicit `last_activity_nano` value
-/// (passed as a string — SQLite type-coerces into INTEGER). Returns
-/// the row's id for convenience.
+/// Insert a worker row with an explicit `last_activity_nano` value (passed as a string — SQLite type-coerces into INTEGER).
 fn seedWorker(
     db: *database.Db,
     arena_alloc: std.mem.Allocator,
@@ -221,8 +211,7 @@ test "cleanupStaleWorkers keeps a worker whose last_activity_nano is fresher tha
     const a = ctx.arena.allocator();
     const now: i64 = 1_000_000;
 
-    // 599 seconds before now — strictly FRESHER than the 600-second
-    // threshold (uses `<`, not `<=`).
+    // 599 seconds before now — strictly FRESHER than the 600-second threshold (uses `<`, not `<=`).
     try seedWorker(&ctx.db, a, "w_fresh", "s_fresh", "999_401");
 
     _ = try cleanupStaleWorkers(.{
@@ -310,8 +299,7 @@ test "cleanupStaleWorkers does NOT delete a worker whose last_activity_nano is e
     var ctx = try setupCtx();
     defer ctx.deinit();
     const a = ctx.arena.allocator();
-    // now_unix - threshold_seconds = 1000 - 600 = 400 (boundary)
-    // `<` means 400 is NOT considered stale.
+    // now_unix - threshold_seconds = 1000 - 600 = 400 (boundary) `<` means 400 is NOT considered stale.
     const now: i64 = 1000;
     try seedWorker(&ctx.db, a, "w_boundary", "s_boundary", "400");
 
@@ -349,9 +337,7 @@ test "cleanupStaleWorkers keeps a fresh worker row" {
 // ─── Failure-tolerance test ─────────────────────────────────────────────
 
 test "cleanupStaleWorkers returns the DB error when the worker table itself is missing" {
-    // Simulate the "table does not exist" failure path by creating a DB with
-    // NO worker table and confirming the helper propagates the error rather
-    // than panicking.
+    // Simulate the "table does not exist" failure path by creating a DB with NO worker table and confirming the helper propagates the error rather than panicking.
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -374,8 +360,7 @@ test "cleanupStaleWorkers returns the DB error when the worker table itself is m
         .now_unix = 1_000_000,
     });
 
-    // A missing table is reported, not swallowed: sqlite fails at prepare,
-    // postgres at execute, so accept either variant.
+    // A missing table is reported, not swallowed: sqlite fails at prepare, postgres at execute, so accept either variant.
     if (result) |_| {
         return error.ExpectedMissingTableError;
     } else |err| switch (err) {

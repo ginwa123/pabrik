@@ -1,5 +1,4 @@
-/** Unit tests for the workspaces store's `pinTask` action — the optimistic update behind the
- * pin/unpin button on a per-task row in `WorkspaceItemTask.vue`. */
+/** Unit tests for the workspaces store's `pinTask` action — the optimistic update behind the pin/unpin button on a per-task row in `WorkspaceItemTask.vue`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -53,9 +52,7 @@ describe('useWorkspacesStore.pinTask()', () => {
   })
 
   function seed(store: ReturnType<typeof useWorkspacesStore>, rows: Workspace[]) {
-    // Mirrors the seed pattern in workspacesStoreItemReorder.spec.ts
-    // (which works in the existing test suite): replace the
-    // workspaces array in place so Vue reactivity is preserved.
+    // Mirrors the seed pattern in workspacesStoreItemReorder.spec.ts (which works in the existing test suite): replace the workspaces array in place so Vue …
     store.workspaces.splice(0, store.workspaces.length, ...rows)
   }
 

@@ -6,9 +6,7 @@ const Backend = common.Backend;
 const addColumnIfMissing = common.addColumnIfMissing;
 const dialect = common.dialect;
 
-/// Migration 147 — a project row can carry its own glyph, a NAME from the
-/// frontend's `ICON_PATHS` registry. NULL is "no override" (the row falls back
-/// to `folder` / `folder-open`), so the column is nullable with no DEFAULT.
+/// Migration 147 — a project row can carry its own glyph, a NAME from the frontend's `ICON_PATHS` registry.
 pub const Migration147AddWorkspaceItemIcon = struct {
     pub const version: u32 = 147;
     pub const name = "add_workspace_item_icon";
@@ -104,8 +102,7 @@ test "Migration147 leaves every pre-existing row with no override" {
 
     try Migration147AddWorkspaceItemIcon.up(&ctx.db, testing.allocator);
 
-    // NULL, not '' and not 'folder': the row must read back as "no override"
-    // so the UI keeps deriving the glyph from the expanded state.
+    // NULL, not '' and not 'folder': the row must read back as "no override" so the UI keeps deriving the glyph from the expanded state.
     var row = try ctx.db.queryRow(testing.allocator, "SELECT COALESCE(icon, '<null>') FROM workspace_items WHERE id = 'item_a'", &[_][]const u8{});
     defer row.deinit(testing.allocator);
     try testing.expectEqualStrings("<null>", row.values[0]);

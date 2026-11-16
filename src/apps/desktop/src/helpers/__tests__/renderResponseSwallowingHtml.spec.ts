@@ -1,10 +1,8 @@
-/** A finished reply must never lose the text after an element or comment the model left open: the
- * parser reads on to the matching end tag — or to the end of the message — and paints none of it. */
+/** A finished reply must never lose the text after an element or comment the model left open: the parser reads on to the matching end tag — or to the end of the … */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderResponse, renderMarkdown, _resetRenderResponseCache } from '../renderResponse'
 
-// The swallowed tail is still in the DOM as these elements' text, so a raw textContent read would
-// pass with the fix removed; drop them first so the assertion covers what actually paints.
+// The swallowed tail is still in the DOM as these elements' text, so a raw textContent read would pass with the fix removed; drop them first so the assertion …
 const NEVER_DISPLAYED = 'style,script,title,textarea,xmp,noscript'
 
 const visibleText = (html: string): string => {

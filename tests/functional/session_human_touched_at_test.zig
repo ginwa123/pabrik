@@ -1,6 +1,4 @@
 // Functional tests for Migration 082 — `sessions.last_human_touched_at_nano`.
-// Zig port of `tests/functional/session_human_touched_at_test.py` (same test
-// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,19 +7,14 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers — wire
-// ============================================================================
 
-/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step
-/// must not extend a poll deadline).
+/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step must not extend a poll deadline).
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `PUT /api/llm/session/:session_id {"name": ...}`. Auto-creates the row,
-/// which is exactly the "spin up a session without invoking /api/llm/session"
-/// the Python helper documented.
+/// `PUT /api/llm/session/:session_id {"name": ...}`.
 fn putSession(h: *Harness, sid: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{sid});
     defer gpa.free(path);
@@ -32,9 +25,7 @@ fn putSession(h: *Harness, sid: []const u8, name: []const u8) !void {
     defer r.deinit();
 }
 
-/// The single `sessions[]` entry whose `session_id == id`. Borrows from
-/// `doc`, so the caller must keep the `Response` it was parsed from alive for
-/// the duration of the borrow.
+/// The single `sessions[]` entry whose `session_id == id`.
 fn findSessionInList(doc: *const harness.Json, id: []const u8) !std.json.Value {
     const sessions = doc.array("sessions") orelse {
         std.debug.print("session list has no `sessions` array\n", .{});
@@ -65,9 +56,7 @@ fn findSessionInList(doc: *const harness.Json, id: []const u8) !std.json.Value {
     return found.?;
 }
 
-/// `GET /api/llm/session?limit=100`, the only GET shape the list
-/// endpoint exposes (there is no single-GET `/api/llm/session/:id` for
-/// the list's fields).
+/// `GET /api/llm/session?limit=100`, the only GET shape the list endpoint exposes (there is no single-GET `/api/llm/session/:id` for the list's fields).
 fn fetchList(h: *Harness) !harness.Response {
     return h.http(io, .GET, "/api/llm/session", .{
         .params = &.{.{ .name = "limit", .value = "100" }},
@@ -75,8 +64,7 @@ fn fetchList(h: *Harness) !harness.Response {
     });
 }
 
-/// Python's `entry.get(key) or ""` — a missing key, a JSON `null` and a
-/// non-string all collapse to `""`.
+/// Python's `entry.get(key) or ""` — a missing key, a JSON `null` and a non-string all collapse to `""`.
 fn jsonStringField(value: std.json.Value, key: []const u8) []const u8 {
     const o = switch (value) {
         .object => |m| m,
@@ -88,9 +76,7 @@ fn jsonStringField(value: std.json.Value, key: []const u8) []const u8 {
     };
 }
 
-// ============================================================================
 // Helpers — sqlite3 CLI
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -99,8 +85,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
-/// in SQLite 3.33 (2020).
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -149,8 +134,6 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
-/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -173,8 +156,7 @@ fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     return res.stdout;
 }
 
-/// INSERT a `sessions` row with the DEFAULT (NULL) stamp, bypassing the
-/// helper which always triggers a stamp via the PUT path.
+/// INSERT a `sessions` row with the DEFAULT (NULL) stamp, bypassing the helper which always triggers a stamp via the PUT path.
 fn insertNullStampRow(temp_dir: []const u8, sid: []const u8, name: []const u8) !void {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -193,9 +175,7 @@ fn insertNullStampRow(temp_dir: []const u8, sid: []const u8, name: []const u8) !
     defer gpa.free(out);
 }
 
-/// The RAW column, bypassing the SELECT-layer conversion: null when the row
-/// is missing, null when the column is NULL (pre-Migration-082 or never
-/// touched).
+/// The RAW column, bypassing the SELECT-layer conversion: null when the row is missing, null when the column is NULL (pre-Migration-082 or never touched).
 fn selectHumanTouched(temp_dir: []const u8, sid: []const u8) !?i64 {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -237,8 +217,7 @@ fn selectHumanTouched(temp_dir: []const u8, sid: []const u8) !?i64 {
     };
 }
 
-/// True iff `s` is a non-empty run of ASCII digits — the shape Python's
-/// `str.isdigit()` checked on the rendered stamp.
+/// True iff `s` is a non-empty run of ASCII digits — the shape Python's `str.isdigit()` checked on the rendered stamp.
 fn allDigits(s: []const u8) bool {
     if (s.len == 0) return false;
     for (s) |c| {
@@ -247,12 +226,9 @@ fn allDigits(s: []const u8) bool {
     return true;
 }
 
-// ============================================================================
 // Test 1: PUT stamps the column
-// ============================================================================
 
-// PUT /api/llm/session/:session_id (any field) bumps the
-// sessions.last_human_touched_at_nano column. Task 4 invariant.
+// PUT /api/llm/session/:session_id (any field) bumps the sessions.last_human_touched_at_nano column.
 test "put_session_stamps_last_human_touched_at_nano" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -263,17 +239,14 @@ test "put_session_stamps_last_human_touched_at_nano" {
 
     const sid = "sess_human_touched_put_001";
 
-    // Insert a row directly with NULL stamp (bypasses the helper which
-    // always triggers a stamp via the PUT path - we need a NULL column
-    // as the baseline to assert "PUT bumps it").
+    // Insert a row directly with NULL stamp (bypasses the helper which always triggers a stamp via the PUT path - we need a NULL column as the baseline to assert …
     try insertNullStampRow(h.temp_dir, sid, "Baseline row");
     if ((try selectHumanTouched(h.temp_dir, sid)) != null) {
         std.debug.print("the baseline row must start with a NULL stamp\n", .{});
         return error.TestUnexpectedResult;
     }
 
-    // First PUT sets the stamp (any field triggers it - the handler
-    // stamps AFTER applying the update, so even a no-op body works).
+    // First PUT sets the stamp (any field triggers it - the handler stamps AFTER applying the update, so even a no-op body works).
     try putSession(&h, sid, "renamed");
 
     const stamp = (try selectHumanTouched(h.temp_dir, sid)) orelse {
@@ -293,13 +266,9 @@ test "put_session_stamps_last_human_touched_at_nano" {
     }
 }
 
-// ============================================================================
 // Test 2: GET surfaces the wire field as SQLite datetime UTC
-// ============================================================================
 
-// GET /api/llm/session (the list endpoint - pabrik has no single-GET
-// `/api/llm/session/:id` route) returns last_human_touched_at in the
-// SELECT-layer-converted wire shape: SQLite datetime UTC ('YYYY-MM-DD
+// GET /api/llm/session (the list endpoint - pabrik has no single-GET `/api/llm/session/:id` route) returns last_human_touched_at in the SELECT-layer-converted …
 test "get_session_returns_last_human_touched_as_sqlite_datetime" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -324,8 +293,7 @@ test "get_session_returns_last_human_touched_as_sqlite_datetime" {
         std.debug.print("expected 19 chars, got {d}: '{s}'\n", .{ human.len, human });
         return error.TestUnexpectedResult;
     }
-    // Format: digits + hyphens + space + colon separators, no unix-ms
-    // digits.
+    // Format: digits + hyphens + space + colon separators, no unix-ms digits.
     const want_seps = [_]struct { at: usize, c: u8 }{
         .{ .at = 4, .c = '-' },
         .{ .at = 7, .c = '-' },
@@ -342,8 +310,7 @@ test "get_session_returns_last_human_touched_as_sqlite_datetime" {
             return error.TestUnexpectedResult;
         }
     }
-    // Not the raw unix-ms integer (which would be a long string of
-    // digits).
+    // Not the raw unix-ms integer (which would be a long string of digits).
     if (allDigits(human)) {
         std.debug.print(
             "wire field should be a SQLite datetime, not raw unix-ms: '{s}'\n",
@@ -353,13 +320,9 @@ test "get_session_returns_last_human_touched_as_sqlite_datetime" {
     }
 }
 
-// ============================================================================
 // Test 3: legacy NULL rows return empty string on the wire
-// ============================================================================
 
-// A legacy row (column is NULL because the row existed before Migration 082
-// ran, or was created via raw SQL bypassing the migration) returns
-// `last_human_touched_at: ""` on the wire.
+// A legacy row (column is NULL because the row existed before Migration 082 ran, or was created via raw SQL bypassing the migration) returns …
 test "get_session_returns_empty_when_last_human_touched_never_stamped" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -378,8 +341,7 @@ test "get_session_returns_empty_when_last_human_touched_never_stamped" {
     defer doc.deinit();
 
     const entry = try findSessionInList(&doc, sid);
-    // The SELECT-layer uses `CASE WHEN ... IS NULL ... THEN ''` so the
-    // JSON serializer emits a JSON empty string (not null).
+    // The SELECT-layer uses `CASE WHEN ...
     const human = jsonStringField(entry, "last_human_touched_at");
     if (human.len != 0) {
         std.debug.print(
@@ -390,13 +352,9 @@ test "get_session_returns_empty_when_last_human_touched_never_stamped" {
     }
 }
 
-// ============================================================================
 // Test 4: GET /api/llm/session (list) includes the new field
-// ============================================================================
 
-// GET /api/llm/session (the list endpoint) returns last_human_touched_at
-// on every session. Same SELECT-layer conversion as the single-GET
-// path, so the wire shape is consistent across endpoints.
+// GET /api/llm/session (the list endpoint) returns last_human_touched_at on every session.
 test "list_sessions_includes_last_human_touched" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -422,9 +380,7 @@ test "list_sessions_includes_last_human_touched" {
     }
     const entry = try findSessionInList(&doc, sid);
 
-    // Field is present (even if its value is empty for legacy rows) —
-    // this is the `in` check Python made on the DICT, which needs an
-    // object view rather than the collapsing `jsonStringField`.
+    // Field is present (even if its value is empty for legacy rows) — this is the `in` check Python made on the DICT, which needs an object view rather than the …
     const o = switch (entry) {
         .object => |m| m,
         else => return error.TestUnexpectedResult,
@@ -453,12 +409,9 @@ test "list_sessions_includes_last_human_touched" {
     }
 }
 
-// ============================================================================
 // Test 5: subsequent PUTs overwrite (most-recent-wins)
-// ============================================================================
 
-// A second PUT bumps the stamp forward - the helper is idempotent but
-// always overwrites with `now_unix_ms` (null arg). Plan D1.
+// A second PUT bumps the stamp forward - the helper is idempotent but always overwrites with `now_unix_ms` (null arg).
 test "subsequent_puts_overwrite_last_human_touched" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -476,8 +429,7 @@ test "subsequent_puts_overwrite_last_human_touched" {
         return error.TestUnexpectedResult;
     };
 
-    // Brief sleep so the second timestamp is strictly greater
-    // (unix-ms resolution, so even 1ms is enough on most systems).
+    // Brief sleep so the second timestamp is strictly greater (unix-ms resolution, so even 1ms is enough on most systems).
     std.Io.sleep(io, .fromMilliseconds(50), .awake) catch {};
 
     try putSession(&h, sid, "second");
@@ -495,8 +447,7 @@ test "subsequent_puts_overwrite_last_human_touched" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = nowMs;
     _ = putSession;

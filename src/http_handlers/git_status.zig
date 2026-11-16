@@ -24,8 +24,6 @@ pub fn gitStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     const is_git_repo = git_check.term.exited == 0;
 
     // If not a git repo, return early with a 200 + is_git_repo=false body.
-    // This is NOT a server error — it's a perfectly valid answer to "what's
-    // the git status of <path>?" (answer: not a git repo).
     if (!is_git_repo) {
         const response = http_response.GitStatusResponse{
             .is_git_repo = false,

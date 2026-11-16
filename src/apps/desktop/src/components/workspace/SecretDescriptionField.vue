@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// One row's description. It shows the stored text, and swaps in an inline editor on click. The
-// draft stays local and is emitted only on Save, so a half-typed sentence never reaches the store.
+// One row's description.
 import { nextTick, ref } from 'vue'
 
 const props = withDefaults(

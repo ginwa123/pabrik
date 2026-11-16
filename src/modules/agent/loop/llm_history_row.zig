@@ -25,7 +25,6 @@ pub const LLMHistory = struct {
     completion_tokens: u32 = 0,
     total_tokens: u32 = 0,
     /// Anthropic-only: cache WRITE tokens (cache_creation_input_tokens).
-    /// Billed at ~1.25x input rate. 0 for OpenAI rows.
     cache_creation_input_tokens: u32 = 0,
     /// Anthropic-only: cache READ tokens (cache_read_input_tokens).
     cache_read_input_tokens: u32 = 0,
@@ -35,11 +34,9 @@ pub const LLMHistory = struct {
     diffview_after: ?[]const u8 = null,
     image_urls: ?[][]const u8 = null,
     video_urls: ?[][]const u8 = null,
-    /// The chat's file attachments, as the JSON payload the model path
-    /// reads (name, mime, bytes, and the text or the base64).
+    /// The chat's file attachments, as the JSON payload the model path reads (name, mime, bytes, and the text or the base64).
     file_attachments: ?[]const u8 = null,
-    /// The same attachments as metadata only (name, mime, bytes) — what the
-    /// read path emits, so the bytes never cross the wire twice.
+    /// The same attachments as metadata only (name, mime, bytes) — what the read path emits, so the bytes never cross the wire twice.
     file_attachments_meta: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
     tool_calls_json: []const u8,
@@ -115,8 +112,7 @@ test "LLMHistory default fields are safe to read without explicit init" {
 }
 
 test "LLMHistory.deinit frees every owned slice on a minimal-init history" {
-    // Every owned slice field is filled with a separate heap allocation so
-    // the testing allocator's canary catches any leak OR double-free.
+    // Every owned slice field is filled with a separate heap allocation so the testing allocator's canary catches any leak OR double-free.
     var h = LLMHistory{
         .id = try testing.allocator.dupe(u8, "h_id"),
         .session_id = try testing.allocator.dupe(u8, "h_sid"),
@@ -143,13 +139,11 @@ test "LLMHistory.deinit frees every owned slice on a minimal-init history" {
         .tool_call_id = try testing.allocator.dupe(u8, "tci"),
     };
     h.deinit(testing.allocator);
-    // No leak, no double-free — the testing allocator would have raised a
-    // panic in either case at the end of the test scope.
+    // No leak, no double-free — the testing allocator would have raised a panic in either case at the end of the test scope.
 }
 
 test "LLMHistory.deinit skips nullable fields when they are null" {
-    // NOTE: `.agent`, `.session_name`, `.tool_name` have non-null defaults
-    // ("Agent", "", "") that are string literals, not heap allocations.
+    // NOTE: `.agent`, `.session_name`, `.tool_name` have non-null defaults ("Agent", "", "") that are string literals, not heap allocations.
     var h = LLMHistory{
         .id = try testing.allocator.dupe(u8, "x"),
         .session_id = try testing.allocator.dupe(u8, "y"),
@@ -159,8 +153,7 @@ test "LLMHistory.deinit skips nullable fields when they are null" {
         .finish_reason = try testing.allocator.dupe(u8, ""),
         .role = try testing.allocator.dupe(u8, ""),
         .tool_calls_json = try testing.allocator.dupe(u8, ""),
-        // Heap-own the three non-null string fields so deinit doesn't
-        // try to free string-literal defaults.
+        // Heap-own the three non-null string fields so deinit doesn't try to free string-literal defaults.
         .agent = try testing.allocator.dupe(u8, "Agent"),
         .session_name = try testing.allocator.dupe(u8, ""),
         .tool_name = try testing.allocator.dupe(u8, ""),
@@ -170,8 +163,7 @@ test "LLMHistory.deinit skips nullable fields when they are null" {
 }
 
 test "LLMHistory.deinit handles empty image_urls array (no element frees)" {
-    // Heap-own `.agent`, `.session_name`, `.tool_name` — see the note on
-    // the "skips nullable fields" test above for why this is required.
+    // Heap-own `.agent`, `.session_name`, `.tool_name` — see the note on the "skips nullable fields" test above for why this is required.
     var h = LLMHistory{
         .id = try testing.allocator.dupe(u8, "i"),
         .session_id = try testing.allocator.dupe(u8, "s"),

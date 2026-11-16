@@ -4,9 +4,7 @@ import { createApp } from 'vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-/** Regression cover for the bug behind
- * `chat_row_context_menu_ui_test.py::test_stop_agent_cancels_the_running_worker`: `App.vue` used to
- * subscribe via `__getSseBusGlobalClient()?.onStateChange(...)`. */
+/** Regression cover for the bug behind `chat_row_context_menu_ui_test.py::test_stop_agent_cancels_the_running_worker`: `App.vue` used to subscribe via … */
 describe('sseBus onStateChange — subscribers survive a late-created client', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -50,9 +48,7 @@ describe('sseBus onStateChange — subscribers survive a late-created client', (
   it('delivers to a subscriber registered before the client exists', () => {
     const bus = installSseBus(createApp({}), { tabSharing: 'off' })
 
-    // Subscribe FIRST — this is the App.vue onMounted ordering, and the
-    // exact moment the old client-reaching form silently dropped the
-    // callback because `_globalClient` was still null.
+    // Subscribe FIRST — this is the App.vue onMounted ordering, and the exact moment the old client-reaching form silently dropped the callback because …
     const seen: SseState[] = []
     const off = bus.onStateChange?.((s) => seen.push(s))
     expect(typeof off).toBe('function')

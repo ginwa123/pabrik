@@ -1,6 +1,4 @@
-/** lineGutter — maps whole-file diff lines to per-line gutter marks for the Code view (`added` /
- * `modified` / `deleted`), plus change blocks for the up/down navigator. Keys are NEW-file line
- * numbers: the Code view renders worktree content, so every mark must address a visible row. */
+/** lineGutter — maps whole-file diff lines to per-line gutter marks for the Code view (`added` /`modified` / `deleted`), plus change blocks for the up/down … */
 import { describe, expect, it } from 'vitest'
 import { buildLineGutter } from '../lineGutter'
 import { parseUnifiedDiff } from '../../components/views/chat_right_sidebar/parseUnifiedDiff'

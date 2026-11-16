@@ -1,5 +1,4 @@
-/** Shared test helpers. Keep this file dependency-light — only `vitest` and Node built-ins. Tests
- * in this directory import from `./helpers` to avoid duplicating boilerplate across spec files. */
+/** Shared test helpers. */
 export function makeLocalStorageStub(): Storage {
   const backing = new Map<string, string>()
   return {

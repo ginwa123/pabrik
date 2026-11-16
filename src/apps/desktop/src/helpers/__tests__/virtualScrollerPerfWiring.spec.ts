@@ -1,5 +1,4 @@
-/** P1 performance wiring tests for VirtualScroller.vue (task_1787551495337_9, "make virtual
- * scroller more smooth"). What P1 changes, and what each test pins: 1. */
+/** P1 performance wiring tests for VirtualScroller.vue (task_1787551495337_9, "make virtual scroller more smooth"). */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -59,9 +58,7 @@ describe('VirtualScroller scroll pipeline', () => {
   })
 
   it('collapses a burst of scroll events into ONE range recompute per flush', async () => {
-    // Vue's async render queue is the coalescer: N scroll events between two scheduler flushes
-    // mutate scrollTop.value N times (cheap ref writes with equality checks) but trigger exactly
-    // ONE component re-render and ONE visibleRange evaluation.
+    // Vue's async render queue is the coalescer: N scroll events between two scheduler flushes mutate scrollTop.value N times (cheap ref writes with equality checks) …
     const { wrapper, el } = mountScroller({ items: makeItems(100), buffer: 5 })
     await nextTick()
 
@@ -73,8 +70,7 @@ describe('VirtualScroller scroll pipeline', () => {
     await nextTick()
 
     const vm = getVm(wrapper)
-    // Final position wins: scrollTop=10000 → startIndex=50; buffer=5 →
-    // start=45.
+    // Final position wins: scrollTop=10000 → startIndex=50; buffer=5 → start=45.
     expect(vm.effectiveRange.start).toBe(45)
     wrapper.unmount()
   })
@@ -86,8 +82,7 @@ describe('VirtualScroller scroll pipeline', () => {
     el.scrollTop = 400
     el.dispatchEvent(new Event('scroll'))
 
-    // The @scroll emit must stay synchronous per event — ChatView's
-    // direction tracking and stick-to-bottom gating depend on it.
+    // The @scroll emit must stay synchronous per event — ChatView's direction tracking and stick-to-bottom gating depend on it.
     expect(wrapper.emitted('scroll')).toHaveLength(1)
     wrapper.unmount()
   })
@@ -121,9 +116,7 @@ describe('VirtualScroller batched height measurement', () => {
       Object.defineProperty(child, 'offsetHeight', { value: 300, configurable: true })
     }
 
-    // Spy on the internal rebuild by watching the exposed scrollInfo totalItems stability —
-    // instead, count rebuilds indirectly: the deep watch on itemHeights debounces 50ms; a batched
-    // write means ONE debounce timer covers the whole batch and ONE rebuild runs.
+    // Spy on the internal rebuild by watching the exposed scrollInfo totalItems stability — instead, count rebuilds indirectly: the deep watch on itemHeights …
     el.scrollTop = 0
     el.dispatchEvent(new Event('scroll'))
 
@@ -156,8 +149,7 @@ describe('VirtualScroller adaptive item-height estimation', () => {
   })
 
   it('estimates unmeasured items from the running median of measured heights', async () => {
-    // 200 items at defaultItemHeight=64. Scroll to the middle so items around index ~90-110 render,
-    // mock them all to 300px real height, flush measurement.
+    // 200 items at defaultItemHeight=64.
     const items = makeItems(200)
     const { wrapper, el } = mountScroller({
       items,
@@ -184,17 +176,14 @@ describe('VirtualScroller adaptive item-height estimation', () => {
     await vi.advanceTimersByTimeAsync(120)
     await nextTick()
 
-    // Read the positioning values from the contentShift emit (P2: no
-    // spacer DIVs anymore — the payload carries topSpacer/bottomSpacer).
+    // Read the positioning values from the contentShift emit (P2: no spacer DIVs anymore — the payload carries topSpacer/bottomSpacer).
     const events = wrapper.emitted<[shift: { topSpacer: number; bottomSpacer: number; total: number }]>(
       'contentShift',
     )
     expect(events).toBeTruthy()
     const last = events![events!.length - 1]![0]
 
-    // 2026-09-06 (task_1788648119245_5): ALL unmeasured items estimate at the adaptive median
-    // (~300px, clamped to [32,1600]), NOT the static 64px prop — the 64px fallback collapsed the
-    // model total to less than half the real height with 100+ messages (audit T2).
+    // 2026-09-06 (task_1788648119245_5): ALL unmeasured items estimate at the adaptive median (~300px, clamped to [32,1600]), NOT the static 64px prop — the 64px …
     expect(last.bottomSpacer).toBeGreaterThan(30000)
     expect(last.bottomSpacer).toBeLessThan(60000)
     wrapper.unmount()
@@ -209,8 +198,7 @@ describe('VirtualScroller adaptive item-height estimation', () => {
     })
     await nextTick()
 
-    // No measurements have run (no scroll, jsdom offsetHeight=0 filtered). Bottom spacer must
-    // reflect the raw prop.
+    // No measurements have run (no scroll, jsdom offsetHeight=0 filtered).
     const events = wrapper.emitted<[shift: { topSpacer: number; bottomSpacer: number; total: number }]>(
       'contentShift',
     )

@@ -1,5 +1,4 @@
-//! `POST /api/agents/:agent_id/system_prompt`. Adds a named system-prompt
-//! block to an Agent. Body: `{title?, content}`.
+//! `POST /api/agents/:agent_id/system_prompt`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,9 +8,7 @@ const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for system-prompt-create. Decoupled from the
-/// `SystemPromptCreateInput` domain struct so the wire format can
-/// evolve independently without touching the use-case.
+/// HTTP request body for system-prompt-create.
 const CreateSystemPromptBody = struct {
     title: []const u8 = "",
     content: []const u8 = "",
@@ -36,9 +33,7 @@ pub const SystemPromptCreateError = error{
     RefetchFailed,
     /// Refetched row vanished (should be impossible — surfaces as 500).
     RowVanished,
-    /// `std.fmt.allocPrint` failed on id generation. Unreachable under arena
-    /// allocator (test builds with `testing.allocator` can hit it), but the
-    /// type system requires the variant so `try` propagates a typed error.
+    /// `std.fmt.allocPrint` failed on id generation.
     OutOfMemory,
 };
 
@@ -49,15 +44,12 @@ pub const SystemPromptCreateInput = struct {
     content: []const u8,
 };
 
-/// Output of the system-prompt-create use-case. `system_prompt` is owned by
-/// the caller (lifetime = request arena).
+/// Output of the system-prompt-create use-case.
 pub const SystemPromptCreateOutput = struct {
     system_prompt: SystemPrompt,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a system-prompt row for the given agent.
 fn useCase(
@@ -89,13 +81,9 @@ fn useCase(
     return .{ .system_prompt = system_prompt };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentSystemPromptCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -158,8 +146,6 @@ pub fn agentSystemPromptCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). Behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -179,17 +165,13 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try Migration116.up(&db, testing.allocator);
-    // Production DBs run every migration in order — the harness must
-    // mirror that, or the agent_system_prompt table (Migration 080) is
-    // missing and the INSERT in useCase fails with PrepareFailed.
+    // Production DBs run every migration in order — the harness must mirror that, or the agent_system_prompt table (Migration 080) is missing and the INSERT in …
 
     // Seed: 1 workspace_item of type 'agent' + matching agents row.
     try db.exec(testing.allocator,

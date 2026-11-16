@@ -1,6 +1,4 @@
-// src/apps/desktop_app/tray_macos.zig
-// macOS tray backend: an NSStatusItem with its NSMenu, built through the
-// Objective-C runtime. A runtime class pair forwards clicks into the model.
+// src/apps/desktop_app/tray_macos.zig macOS tray backend: an NSStatusItem with its NSMenu, built through the Objective-C runtime.
 
 const std = @import("std");
 const tray = @import("tray.zig");
@@ -16,8 +14,7 @@ extern "c" fn objc_allocateClassPair(superclass: Class, name: [*:0]const u8, ext
 extern "c" fn objc_registerClassPair(cls: Class) void;
 extern "c" fn class_addMethod(cls: Class, name: Sel, imp: *const anyopaque, types: [*:0]const u8) bool;
 
-/// `objc_msgSend` is variadic in C, so each call site casts it to the
-/// concrete signature it is making.
+/// `objc_msgSend` is variadic in C, so each call site casts it to the concrete signature it is making.
 fn send0(comptime Ret: type, target: Id, message: Sel) Ret {
     const Fn = fn (Id, Sel) callconv(.c) Ret;
     const call: *const Fn = @ptrCast(&objc_msgSend);
@@ -148,8 +145,7 @@ fn menuItem(action: tray.Action, tag: i64) Id {
 fn iconImage(icon: tray.IconSource) Id {
     const path = switch (icon) {
         .file => |value| value,
-        // A bare theme name has no file to load, so the button falls back
-        // to its text title.
+        // A bare theme name has no file to load, so the button falls back to its text title.
         .theme => return null,
     };
     const allocated = send0(Id, class("NSImage"), selector("alloc")) orelse return null;

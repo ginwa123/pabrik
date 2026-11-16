@@ -5,19 +5,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The one part of [ExternalFileOpener] that is a pure function, and the part
- * that matters: a presented file's `label` is a string the model chose, and it
- * is about to become a filename under the app's cache directory.
- */
+/** The one part of [ExternalFileOpener] that is a pure function, and the part that matters: a presented file's `label` is a string the model chose, and it is … */
 class ExternalFileOpenerTest {
 
-    /**
-     * The traversal case. A label of `../../databases/pabrik` is a perfectly
-     * legal string for a model to emit, and unsanitised it would write outside
-     * the cache directory — over the app's own database — from a card the
-     * reader only tapped "Open" on.
-     */
+    /** The traversal case. */
     @Test
     fun `a traversal label cannot escape the cache directory`() {
         val cleaned = ExternalFileOpener.sanitize("../../databases/pabrik")
@@ -33,10 +24,7 @@ class ExternalFileOpenerTest {
         assertTrue(cleaned.endsWith("shadow"))
     }
 
-    /**
-     * The extension survives, because a file with none confuses a few file
-     * managers even when the mime is what actually routes the intent.
-     */
+    /** The extension survives, because a file with none confuses a few file managers even when the mime is what actually routes the intent. */
     @Test
     fun `the extension is kept`() {
         assertTrue(ExternalFileOpener.sanitize("report.final.pdf").endsWith(".pdf"))

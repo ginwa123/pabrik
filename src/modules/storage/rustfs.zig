@@ -1,15 +1,11 @@
-//! Supervises a local rustfs process so an install needs no separate service:
-//! it starts `rustfs server <data_dir> --address 127.0.0.1:<port>`, waits for
-//! the port, and terminates it on shutdown.
+//! Supervises a local rustfs process so an install needs no separate service
 
 const std = @import("std");
 const builtin = @import("builtin");
 
 const windows = std.os.windows;
 
-/// Windows has no process-group signal, so a hard-killed parent leaves the
-/// child running. A job object with KILL_ON_JOB_CLOSE is the OS-level answer:
-/// the kernel kills every process in the job when this process dies.
+/// Windows has no process-group signal, so a hard-killed parent leaves the child running.
 const Job = struct {
     handle: windows.HANDLE,
 
@@ -51,9 +47,7 @@ const Job = struct {
     extern "kernel32" fn AssignProcessToJobObject(job: windows.HANDLE, process: windows.HANDLE) callconv(.winapi) windows.BOOL;
     extern "kernel32" fn CloseHandle(handle: windows.HANDLE) callconv(.winapi) windows.BOOL;
 
-    /// Put `process` in a job that dies with this process. Null when the OS
-    /// refuses (a nested job, a restricted token): the caller keeps working,
-    /// it just loses the hard-kill guarantee.
+    /// Put `process` in a job that dies with this process.
     fn adopt(process: windows.HANDLE) ?Job {
         if (comptime builtin.os.tag != .windows) {
             return null;
@@ -124,8 +118,7 @@ pub const Supervisor = struct {
     secret_key: []u8,
     data_dir: []u8,
     pid_file: []u8,
-    /// Windows only: the job the child belongs to, so a hard-killed parent
-    /// still takes it down. Null on POSIX and when the OS refused the job.
+    /// Windows only: the job the child belongs to, so a hard-killed parent still takes it down.
     job: ?Job = null,
 
     /// Start rustfs and wait until its S3 port answers.
@@ -137,9 +130,7 @@ pub const Supervisor = struct {
         if (opts.data_dir.len == 0) return error.DataDirFailed;
         std.Io.Dir.cwd().createDirPath(io, opts.data_dir) catch return error.DataDirFailed;
 
-        // A previous run killed hard (SIGKILL, a crash, the OOM killer) left
-        // rustfs behind, and a second instance on the same volume is a
-        // corruption risk. Reap it before starting a new one.
+        // A previous run killed hard (SIGKILL, a crash, the OOM killer) left rustfs behind, and a second instance on the same volume is a corruption risk.
         stopStale(io, allocator, opts.pid_file);
 
         const self = allocator.create(Supervisor) catch return error.OutOfMemory;
@@ -166,8 +157,7 @@ pub const Supervisor = struct {
         defer env.deinit();
         env.put("RUSTFS_ACCESS_KEY", opts.access_key) catch return error.OutOfMemory;
         env.put("RUSTFS_SECRET_KEY", opts.secret_key) catch return error.OutOfMemory;
-        // The console is a second listener on a second port; pabrik never uses
-        // it, and leaving it on would collide with a second pabrik instance.
+        // The console is a second listener on a second port; pabrik never uses it, and leaving it on would collide with a second pabrik instance.
         env.put("RUSTFS_CONSOLE_ENABLE", "false") catch return error.OutOfMemory;
 
         const log_path = std.fs.path.join(allocator, &.{ opts.data_dir, "rustfs.log" }) catch
@@ -196,9 +186,7 @@ pub const Supervisor = struct {
             .pid_file = pid_file,
         };
 
-        // POSIX only: `child.id` is a HANDLE on Windows, and the sweep below
-        // is the POSIX half of the hard-kill story. Windows gets the job
-        // object instead, which survives a `TerminateProcess` on this process.
+        // POSIX only: `child.id` is a HANDLE on Windows, and the sweep below is the POSIX half of the hard-kill story.
         if (comptime builtin.os.tag != .windows) {
             writePidFile(io, allocator, opts.pid_file, child.id orelse 0);
         } else {
@@ -216,8 +204,7 @@ pub const Supervisor = struct {
     pub fn deinit(self: *Supervisor) void {
         // `kill` reaps the child itself; a following `wait` would assert.
         self.child.kill(self.io);
-        // Closing the job after the child is gone is a no-op for it; the
-        // handle must not leak.
+        // Closing the job after the child is gone is a no-op for it; the handle must not leak.
         if (self.job) |job| job.close();
         std.Io.Dir.cwd().deleteFile(self.io, self.pid_file) catch {};
         self.allocator.free(self.endpoint);
@@ -247,8 +234,6 @@ fn writePidFile(io: std.Io, allocator: std.mem.Allocator, path: []const u8, pid:
 }
 
 /// Stop the process named by a pid file left behind by a hard-killed run.
-/// The name check is what makes this safe: a reused pid belongs to something
-/// else and is left alone. Windows has no pid file, so the sweep is a no-op.
 const stopStale = if (builtin.os.tag == .windows) stopStaleNoop else stopStalePosix;
 
 fn stopStaleNoop(io: std.Io, allocator: std.mem.Allocator, pid_file: []const u8) void {
@@ -274,14 +259,12 @@ fn stopStalePosix(io: std.Io, allocator: std.mem.Allocator, pid_file: []const u8
     std.posix.kill(pid, .KILL) catch {};
 }
 
-/// Whether `pid` is a rustfs/pabrik-fs process. False for a dead pid, and
-/// false for a live pid that is something else.
+/// Whether `pid` is a rustfs/pabrik-fs process.
 fn isOurRustfs(io: std.Io, pid: i32) bool {
     if (comptime builtin.os.tag == .linux) {
         var path_buf: [64]u8 = undefined;
         const path = std.fmt.bufPrint(&path_buf, "/proc/{d}/comm", .{pid}) catch return false;
-        // Not `readFileAlloc`: /proc reports size 0, and the alloc path then
-        // returns an empty slice without reading.
+        // Not `readFileAlloc`: /proc reports size 0, and the alloc path then returns an empty slice without reading.
         const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch return false;
         defer file.close(io);
         var read_buf: [64]u8 = undefined;
@@ -314,9 +297,7 @@ fn sleepMillis(io: std.Io, ms: u32) void {
     pause.sleep(io) catch {};
 }
 
-/// Poll the loopback port until it answers HTTP, or the budget runs out. A
-/// bare TCP connect is not enough: rustfs binds the listener before it can
-/// serve, and a restart on an existing volume answers 503 while it recovers.
+/// Poll the loopback port until it answers HTTP, or the budget runs out.
 pub fn waitUntilReady(io: std.Io, port: u16, timeout_ms: u32) bool {
     var waited: u32 = 0;
     while (waited < timeout_ms) : (waited += READY_POLL_MS) {
@@ -350,9 +331,7 @@ fn answersHttp(io: std.Io, port: u16) bool {
 const testing = std.testing;
 
 test "waitUntilReady: a port nothing listens on is not ready" {
-    // A refused connect on Windows prints a stack trace in Debug builds and
-    // would trip the clean-output gate. A zero budget answers "not ready"
-    // without touching the socket; the connect path is std's, not ours.
+    // A refused connect on Windows prints a stack trace in Debug builds and would trip the clean-output gate.
     const budget: u32 = if (comptime builtin.os.tag == .windows) 0 else 200;
     try testing.expect(!waitUntilReady(testing.io, 1, budget));
 }

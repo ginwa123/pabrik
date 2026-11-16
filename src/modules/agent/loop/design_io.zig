@@ -4,12 +4,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const c = std.c;
 
-/// Win32 API externs for cross-platform atomic-write/delete support. Loaded
-/// at module scope only when `builtin.os.tag == .windows`.
+/// Win32 API externs for cross-platform atomic-write/delete support.
 const win32_apis = if (builtin.os.tag == .windows) struct {
     // HANDLE on Windows is `*anyopaque` (per `std.os.windows.HANDLE`).
-    // CreateFileW returns INVALID_HANDLE_VALUE (a sentinel pointer) on
-    // failure — it does NOT return NULL.
     const HANDLE = *anyopaque;
     const INVALID_HANDLE_VALUE_PTR: usize = std.math.maxInt(usize);
     const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(INVALID_HANDLE_VALUE_PTR);
@@ -59,8 +56,7 @@ const win32_apis = if (builtin.os.tag == .windows) struct {
     extern "kernel32" fn GetLastError() callconv(.winapi) u32;
 } else struct {};
 
-/// Convert a UTF-8 path slice to a NUL-terminated UTF-16 LE slice for Win32
-/// APIs. Caller owns the returned slice.
+/// Convert a UTF-8 path slice to a NUL-terminated UTF-16 LE slice for Win32 APIs.
 fn pathToWideZ(path: []const u8, buf: []u16) ![:0]u16 {
     if (builtin.os.tag != .windows) unreachable;
     const needed = std.unicode.calcUtf16LeLen(path) catch return error.PathTooLong;
@@ -83,9 +79,7 @@ pub fn sanitizeFilename(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
             else => try out.append(allocator, ch),
         }
     }
-    // Strip leading dots (hidden-file convention). Use orderedRemove
-    // so each strip is O(n); the prefix is typically short so this is
-    // fine in practice.
+    // Strip leading dots (hidden-file convention).
     while (out.items.len > 0 and out.items[0] == '.') {
         _ = out.orderedRemove(0);
     }
@@ -94,8 +88,7 @@ pub fn sanitizeFilename(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Atomically write `content` to `path`: 1. Write content to `<path>.tmp` via
-/// `c.open(O_WRONLY|O_CREAT|O_EXCL)` 2. `fsync(2)` the tmp file 3.
+/// Atomically write `content` to `path`: 1.
 pub fn atomicWriteFile(allocator: std.mem.Allocator, path: []const u8, content: []const u8) !void {
     _ = allocator;
 
@@ -107,8 +100,7 @@ pub fn atomicWriteFile(allocator: std.mem.Allocator, path: []const u8, content: 
 }
 
 fn atomicWriteFilePosix(path: []const u8, content: []const u8) !void {
-    // Build the `.tmp` path. We use std.fmt.bufPrint into a stack buffer and
-    // then NUL-terminate the result.
+    // Build the `.tmp` path.
     var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
     const path_z_len = std.fmt.bufPrint(path_buf[0..path_buf.len - 1], "{s}", .{path}) catch
         return error.PathTooLong;
@@ -139,26 +131,19 @@ fn atomicWriteFilePosix(path: []const u8, content: []const u8) !void {
         written += @intCast(n);
     }
 
-    // 3. fsync — guarantees the data is on stable storage before the rename
-    // atomically swaps it into place. Without fsync, a power loss between
-    // write and rename could surface as a .tmp file at the target.
+    // 3. fsync — guarantees the data is on stable storage before the rename atomically swaps it into place.
     _ = c.fsync(fd);
 
-    // 4. Atomic rename. POSIX guarantees that concurrent readers see
-    // either the old or the new file, never a half-written one.
+    // 4.
     if (c.rename(&tmp_buf, &path_buf) != 0) return error.RenameFailed;
 }
 
 fn atomicWriteFileWindows(path: []const u8, content: []const u8) !void {
-    // Build wide-string versions of the target path and the `.tmp` path on a
-    // stack buffer large enough for any realistic path. std.fs.max_path_bytes
-    // is the POSIX max path length; Win32 paths can be longer (32767 wide
+    // Build wide-string versions of the target path and the `.tmp` path on a stack buffer large enough for any realistic path. std.fs.max_path_bytes is the POSIX max …
     var path_w_buf: [std.fs.max_path_bytes]u16 = undefined;
     const path_w = try pathToWideZ(path, &path_w_buf);
 
-    // Append ".tmp" to path_w in-place. Sized at compile time so no
-    // alloc; if path is near max_path_bytes the .tmp suffix won't fit
-    // and we error out.
+    // Append ".tmp" to path_w in-place.
     var tmp_w_buf: [std.fs.max_path_bytes]u16 = undefined;
     if (path_w.len + 5 > tmp_w_buf.len) return error.PathTooLong;
     @memcpy(tmp_w_buf[0..path_w.len], path_w);
@@ -179,16 +164,13 @@ fn atomicWriteFileWindows(path: []const u8, content: []const u8) !void {
         win32_apis.FILE_ATTRIBUTE_NORMAL,
         null,
     );
-    // Win32 NULL handle is rare for CreateFileW (it returns the sentinel)
-    // but safe to check — both are failure indicators.
+    // Win32 NULL handle is rare for CreateFileW (it returns the sentinel) but safe to check — both are failure indicators.
     const handle_addr: usize = @intFromPtr(handle);
     if (handle_addr == 0 or handle_addr == win32_apis.INVALID_HANDLE_VALUE_PTR) {
         return error.WriteTmpFailed;
     }
 
-    // 2. Write the entire content (loop on partial writes). WriteFile
-    // takes a u32 byte count per call — chunk to ~4 MB to stay under
-    // the u32 limit for large content.
+    // 2.
     var written_total: usize = 0;
     while (written_total < content.len) {
         const chunk_len: u32 = @intCast(@min(content.len - written_total, std.math.maxInt(u32)));
@@ -205,17 +187,14 @@ fn atomicWriteFileWindows(path: []const u8, content: []const u8) !void {
             return error.WriteFailed;
         }
         written_total += written_chunk;
-        // WriteFile can return success with written_chunk=0 (broken
-        // handle, disk full, etc.). Treat as failure to avoid an
-        // infinite loop.
+        // WriteFile can return success with written_chunk=0 (broken handle, disk full, etc.).
         if (written_chunk == 0) {
             _ = win32_apis.CloseHandle(handle);
             return error.WriteFailed;
         }
     }
 
-    // 3. FlushFileBuffers — equivalent to fsync(2). Ensures the data
-    // is on stable storage before the rename atomically swaps it in.
+    // 3.
     _ = win32_apis.FlushFileBuffers(handle);
 
     // 4. Close the handle BEFORE MoveFileExW.
@@ -223,8 +202,7 @@ fn atomicWriteFileWindows(path: []const u8, content: []const u8) !void {
 
     // 5. Atomic rename via MoveFileExW with MOVEFILE_REPLACE_EXISTING.
     if (win32_apis.MoveFileExW(tmp_w.ptr, path_w.ptr, win32_apis.MOVEFILE_REPLACE_EXISTING) == 0) {
-        // Best-effort cleanup of the orphan .tmp so the next call doesn't
-        // get ERROR_FILE_EXISTS from CREATE_NEW.
+        // Best-effort cleanup of the orphan .tmp so the next call doesn't get ERROR_FILE_EXISTS from CREATE_NEW.
         _ = win32_apis.DeleteFileW(tmp_w.ptr);
         return error.RenameFailed;
     }
@@ -302,9 +280,7 @@ fn deleteFileIfExistsWindows(path: []const u8) !void {
     var path_w_buf: [std.fs.max_path_bytes]u16 = undefined;
     const path_w = try pathToWideZ(path, &path_w_buf);
 
-    // DeleteFileW returns nonzero on success, 0 on failure. ERROR_FILE_NOT_FOUND
-    // (2) means the file doesn't exist; we treat that as a no-op like
-    // POSIX ENOENT. Any other error becomes error.UnlinkFailed.
+    // DeleteFileW returns nonzero on success, 0 on failure.
     const ok = win32_apis.DeleteFileW(path_w.ptr);
     if (ok != 0) return;
     const err = win32_apis.GetLastError();
@@ -312,9 +288,7 @@ fn deleteFileIfExistsWindows(path: []const u8) !void {
     return error.UnlinkFailed;
 }
 
-/// Recursively delete a directory and all its contents. Walks the directory
-/// tree depth-first, unlinks files, recurses into subdirectories, then rmdirs
-/// the emptied directory.
+/// Recursively delete a directory and all its contents.
 pub fn deleteDirectoryRecursively(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -364,8 +338,6 @@ pub fn deleteDirectoryRecursively(
 
 
 // ─── Inline tests (formerly design_io_test.zig) ──────────────────────────
-// Tests for sanitizeFilename, atomicWriteFile, deleteFileIfExists,
-// deleteDirectoryRecursively. Inlined here per the agent-loop convention.
 
 const testing = std.testing;
 
@@ -382,9 +354,7 @@ test "sanitizeFilename replaces /, \\, NUL with _" {
         defer testing.allocator.free(result);
         try testing.expectEqualStrings("win_card", result);
     }
-    // NUL gets replaced with '_' — the binary buffer can't contain
-    // a literal NUL in a Zig slice but a 1-char input gets the
-    // single NUL replaced.
+    // NUL gets replaced with '_' — the binary buffer can't contain a literal NUL in a Zig slice but a 1-char input gets the single NUL replaced.
     var buf: [1]u8 = .{0};
     const result = try sanitizeFilename(testing.allocator, &buf);
     defer testing.allocator.free(result);
@@ -403,8 +373,6 @@ test "sanitizeFilename strips leading dots" {
         try testing.expectEqualStrings("card", result);
     }
     // "../foo" → pass 1: ".._foo" → leading-dot strip: "_foo".
-    // (Both dots are at the start, so the second pass strips them
-    // away, leaving only the substituted underscore.)
     {
         const result = try sanitizeFilename(testing.allocator, "../foo");
         defer testing.allocator.free(result);
@@ -419,15 +387,13 @@ test "sanitizeFilename returns untitled for empty input (no fallback on slashes/
         defer testing.allocator.free(result);
         try testing.expectEqualStrings("untitled", result);
     }
-    // "..." → pass 1 keeps the dots → leading-dot strip removes
-    // them all → empty → "untitled".
+    // "..." → pass 1 keeps the dots → leading-dot strip removes them all → empty → "untitled".
     {
         const result = try sanitizeFilename(testing.allocator, "...");
         defer testing.allocator.free(result);
         try testing.expectEqualStrings("untitled", result);
     }
-    // "////" → pass 1 replaces each / with _ → "____" — no leading
-    // dots, no empty result, so the literal "____" is returned.
+    // "////" → pass 1 replaces each / with _ → "____" — no leading dots, no empty result, so the literal "____" is returned.
     {
         const result = try sanitizeFilename(testing.allocator, "////");
         defer testing.allocator.free(result);
@@ -441,8 +407,7 @@ test "atomicWriteFile writes content that can be read back" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // Get the tmpdir's absolute directory path first (dir.realPath,
-    // not file.realPathFile which requires the file to exist).
+    // Get the tmpdir's absolute directory path first (dir.realPath, not file.realPathFile which requires the file to exist).
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const dir_len = try tmp.dir.realPath(testing.io, &dir_buf);
     const tmpdir_path: []const u8 = dir_buf[0..dir_len];
@@ -451,8 +416,7 @@ test "atomicWriteFile writes content that can be read back" {
 
     try atomicWriteFile(testing.allocator, path, "<div>hello</div>");
 
-    // Read back. Uses Dir.readFileAlloc per project memory
-    // `zig-0.16-stdfs-cwd-removed.md` (std.fs.cwd() is gone in 0.16).
+    // Read back.
     const content = try tmp.dir.readFileAlloc(testing.io, "test.html", testing.allocator, .limited(1024));
     defer testing.allocator.free(content);
     try testing.expectEqualStrings("<div>hello</div>", content);
@@ -479,9 +443,7 @@ test "atomicWriteFile overwrites an existing file" {
 // ─── deleteFileIfExists ──────────────────────────────────────────────────
 
 test "deleteDirectoryRecursively refuses a relative path instead of aborting" {
-    // The first thing the helper does is `openDirAbsolute`, which asserts
-    // `path.isAbsolute(...)`; in Debug/ReleaseSafe that assertion ABORTS the
-    // whole process instead of returning an error.
+    // The first thing the helper does is `openDirAbsolute`, which asserts `path.isAbsolute(...)`; in Debug/ReleaseSafe that assertion ABORTS the whole process …
     const result = deleteDirectoryRecursively(testing.allocator, testing.io, "relative/design");
     try testing.expectError(error.RmdirFailed, result);
 }
@@ -536,9 +498,7 @@ test "deleteDirectoryIfEmpty removes an empty directory" {
     const empty_path = try std.fs.path.join(testing.allocator, &.{ tmpdir_path, "empty" });
     defer testing.allocator.free(empty_path);
 
-    // Create the empty directory inside the test tmpdir. Uses
-    // Io.Dir.cwd().createDirPath which is the Io-native mkdir-p
-    // (per project memory zig-0.16-stdfs-cwd-removed.md).
+    // Create the empty directory inside the test tmpdir.
     try std.Io.Dir.cwd().createDirPath(testing.io, empty_path);
 
     // Sanity: it exists.
@@ -583,8 +543,7 @@ test "deleteDirectoryIfEmpty returns DirNotEmpty when a file remains inside" {
     try std.Io.Dir.cwd().createDirPath(testing.io, non_empty_path);
     try atomicWriteFile(testing.allocator, user_note_path, "user file");
 
-    // deleteDirectoryIfEmpty should refuse (DirNotEmpty) — protecting
-    // the user's file from being swept away with the page.
+    // deleteDirectoryIfEmpty should refuse (DirNotEmpty) — protecting the user's file from being swept away with the page.
     try testing.expectError(error.DirNotEmpty, deleteDirectoryIfEmpty(testing.allocator, non_empty_path));
 
     // The user's file MUST still exist.

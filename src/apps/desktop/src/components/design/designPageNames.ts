@@ -1,6 +1,4 @@
-// Compute the next available placeholder name for a new design page. Mirrors the macOS / Figma
-// convention: the very first untitled page is `"Untitled"` (no suffix), every subsequent one is
-// `"Untitled N"` where `N` is `max(existing numbers) + 1`.
+// Compute the next available placeholder name for a new design page.
 const UNTITLEDBASE_NAME = 'Untitled'
 const UNTITLEDPATTERN = /^Untitled (\d+)$/
 export const computeNextUntitledName = (existingPages: ReadonlyArray<{ name: string }>): string => {
@@ -19,9 +17,7 @@ export const computeNextUntitledName = (existingPages: ReadonlyArray<{ name: str
       }
     }
   }
-  // Very first page: no unnumbered, no numbered → "Untitled". Everything else: take maxNumbered +
-  // 1. If only an unnumbered "Untitled" exists (maxNumbered === 0), return "Untitled 1" because we
-  // can't collide with the existing literal.
+  // Very first page: no unnumbered, no numbered → "Untitled".
   if (!hasUnnumbered && maxNumbered === 0) return UNTITLEDBASE_NAME
   return `${UNTITLEDBASE_NAME} ${maxNumbered + 1}`
 }

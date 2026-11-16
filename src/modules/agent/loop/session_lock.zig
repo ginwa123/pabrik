@@ -1,6 +1,4 @@
-//! One run thread per session, enforced by an OPTIMISTIC lock: the `worker` row
-//! is the lock, `worker.run_token` is the lease, and the claim is one
-//! compare-and-swap statement — no transaction, because SQLite has one writer.
+//! One run thread per session, enforced by an OPTIMISTIC lock: the `worker` row is the lock, `worker.run_token` is the lease, and the claim is one …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -11,8 +9,7 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const testing = std.testing;
 
-/// A claimed session. `token` identifies THIS run; every later write carries it
-/// so a run that lost its slot can never touch the row a different run owns.
+/// A claimed session.
 pub const RunLease = struct {
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -32,8 +29,7 @@ pub const AcquireResult = union(enum) {
     busy,
 };
 
-/// Per-iteration state, read in the same statement that proves the lease is
-/// still ours.
+/// Per-iteration state, read in the same statement that proves the lease is still ours.
 pub const IterationState = struct {
     is_auto_retry_until_stop: bool,
     is_cancelled: bool,
@@ -44,8 +40,7 @@ var token_counter = std.atomic.Value(u64).init(0);
 fn newRunToken(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     const now_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
     const n = token_counter.fetchAdd(1, .monotonic);
-    // `run-<pid>-<nanos>-<n>`: the pid lets a second process ask whether the
-    // owner is still alive before it takes a lease over (see `isOwnerAlive`).
+    // `run-<pid>-<nanos>-<n>`: the pid lets a second process ask whether the owner is still alive before it takes a lease over (see `isOwnerAlive`).
     return std.fmt.allocPrint(allocator, "run-{d}-{d}-{d}", .{
         helpers.process_status.getCurrentProcessIdInt(),
         now_ns,
@@ -53,8 +48,7 @@ fn newRunToken(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     });
 }
 
-/// The pid embedded in a lease token, or null when the token was written by an
-/// older build (or is empty).
+/// The pid embedded in a lease token, or null when the token was written by an older build (or is empty).
 pub fn ownerPid(token: []const u8) ?i32 {
     var it = std.mem.splitScalar(u8, token, '-');
     if (!std.mem.eql(u8, it.next() orelse return null, "run")) return null;
@@ -63,15 +57,13 @@ pub fn ownerPid(token: []const u8) ?i32 {
     return if (pid > 0) pid else null;
 }
 
-/// Is the process that wrote `token` still running? A token with no pid (an
-/// older build) answers `false`, so a boot may take it over.
+/// Is the process that wrote `token` still running?
 pub fn isOwnerAlive(token: []const u8) bool {
     const pid = ownerPid(token) orelse return false;
     return helpers.process_status.isProcessRunning(pid);
 }
 
-/// Take over a row that carries no lease (a fresh row, or one a previous
-/// process left behind). `WHERE ... run_token = ''` is the compare.
+/// Take over a row that carries no lease (a fresh row, or one a previous process left behind).
 const take_free_row_sql =
     \\UPDATE worker
     \\SET session_id = ?,
@@ -84,9 +76,7 @@ const take_free_row_sql =
     \\RETURNING run_token;
 ;
 
-/// No row at all: insert ours. `DO NOTHING` on a concurrent insert turns that
-/// race into "no row returned" — the loser reports `.busy` instead of
-/// overwriting the winner's lease.
+/// No row at all: insert ours.
 const insert_claim_sql =
     \\INSERT INTO worker (
     \\    id,
@@ -110,8 +100,7 @@ const insert_claim_sql =
     \\RETURNING run_token;
 ;
 
-/// Claim the session's single run slot. `.busy` means a different run holds the
-/// lease right now — the caller must not enter the loop.
+/// Claim the session's single run slot.
 pub fn acquire(input: AcquireInput) !AcquireResult {
     const allocator = input.allocator;
     const db = input.db;
@@ -147,9 +136,7 @@ fn lease(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8,
     };
 }
 
-/// Run one claiming statement. A returned row means the statement really
-/// changed the row; `RowNotFound` means the `WHERE` matched nothing (held by
-/// another run, or a losing insert).
+/// Run one claiming statement.
 fn claimedRow(
     db: *database.Db,
     allocator: std.mem.Allocator,
@@ -164,9 +151,7 @@ fn claimedRow(
     return true;
 }
 
-/// Re-check the lease and read this iteration's state. `null` means the
-/// session is not ours any more (row gone, or another run claimed it) — the
-/// loop must leave.
+/// Re-check the lease and read this iteration's state.
 pub fn beginIteration(
     allocator: std.mem.Allocator,
     db: *database.Db,

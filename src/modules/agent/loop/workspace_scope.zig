@@ -5,8 +5,7 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const policy = @import("../../../vmd/policy.zig");
 
-/// Resolve which workspace a chat session belongs to. Resolution order (first
-/// hit wins): 1.
+/// Resolve which workspace a chat session belongs to.
 pub fn resolveWorkspaceId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -29,8 +28,7 @@ pub fn resolveWorkspaceId(
         }
     }
 
-    // 2. The session's own stamp. A `--saas` session's cwd is the guest root,
-    // which matches no host item path, so the row is the answer.
+    // 2.
     if (try stampedWorkspaceId(allocator, db, session_id)) |id| return id;
 
     // 3. Cwd heuristic.
@@ -43,8 +41,7 @@ pub fn resolveWorkspaceId(
     return match.workspace_id;
 }
 
-/// The workspace id a session row carries, when it carries one. Migration 25
-/// added the column; a schema that predates it answers null rather than error.
+/// The workspace id a session row carries, when it carries one.
 pub fn stampedWorkspaceId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -61,8 +58,7 @@ pub fn stampedWorkspaceId(
     return try allocator.dupe(u8, row.values[0]);
 }
 
-/// The workspace a session is task-linked to, and nothing else: the caller that
-/// needs "is this session already owned?" without the cwd heuristic.
+/// The workspace a session is task-linked to, and nothing else: the caller that needs "is this session already owned?" without the cwd heuristic.
 pub fn taskWorkspaceId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -82,8 +78,6 @@ pub fn taskWorkspaceId(
 }
 
 /// True when both sessions resolve to the same non-null workspace.
-/// Empty ids, unresolvable sessions, and cross-workspace pairs all
-/// return false (fail closed). A session always matches itself.
 pub fn isSameWorkspace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -100,9 +94,7 @@ pub fn isSameWorkspace(
     return std.mem.eql(u8, a.?, b.?);
 }
 
-/// Every session id belonging to `workspace_id`: task-linked sessions plus
-/// cwd-matched sessions (longest-prefix-wins per session, so a session can
-/// never appear in two workspaces).
+/// Every session id belonging to `workspace_id`: task-linked sessions plus cwd-matched sessions (longest-prefix-wins per session, so a session can never appear in …
 pub fn workspaceSessionIds(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -136,9 +128,7 @@ pub fn workspaceSessionIds(
         }
     }
 
-    // Cwd-matched sessions (heuristic). Sessions already claimed above
-    // resolve via the task link first inside resolveWorkspaceId, so
-    // re-resolving them here is consistent, not double-counted.
+    // Cwd-matched sessions (heuristic).
     {
         var rows = try db.query(allocator, "SELECT id FROM sessions", &.{});
         defer rows.deinit();
@@ -165,8 +155,7 @@ pub fn freeSessionIds(allocator: std.mem.Allocator, ids: [][]u8) void {
     allocator.free(ids);
 }
 
-/// The `cwd` recorded on a session, or null when the row is gone or the
-/// column is empty.
+/// The `cwd` recorded on a session, or null when the row is gone or the column is empty.
 pub fn sessionCwd(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -182,8 +171,7 @@ pub fn sessionCwd(
     return null;
 }
 
-/// The winning item of the longest-prefix match: both the workspace it
-/// belongs to and the directory it names. Both slices are owned by the caller.
+/// The winning item of the longest-prefix match: both the workspace it belongs to and the directory it names.
 pub const WorkspaceMatch = struct {
     workspace_id: []u8,
     root: []u8,
@@ -194,9 +182,7 @@ pub const WorkspaceMatch = struct {
     }
 };
 
-/// The host directory a session's workspace lives in, by the same order and
-/// longest-prefix rule `resolveWorkspaceId` uses. A session whose workspace
-/// cannot be located has no root, and its commands must not be guessed at.
+/// The host directory a session's workspace lives in, by the same order and longest-prefix rule `resolveWorkspaceId` uses.
 pub fn resolveWorkspaceRoot(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -219,9 +205,7 @@ pub fn resolveWorkspaceRoot(
     defer allocator.free(cwd);
     if (cwd.len == 0) return null;
 
-    // A `--saas` session's cwd is the guest root, which no host item path can be
-    // a prefix of — including a brand-new workspace's first chat, whose only
-    // workspace is the one stamped on the row. There the guest IS the root.
+    // A `--saas` session's cwd is the guest root, which no host item path can be a prefix of — including a brand-new workspace's first chat, whose only workspace is …
     if (std.mem.eql(u8, cwd, policy.guest_root) or
         std.mem.startsWith(u8, cwd, policy.guest_root ++ "/"))
     {
@@ -235,9 +219,7 @@ pub fn resolveWorkspaceRoot(
     return match.root;
 }
 
-/// The workspace an absolute directory belongs to, for a caller that has a
-/// path and no session — the HTTP handlers. Same longest-prefix rule as a
-/// session's cwd, and the same fail-closed answer when nothing matches.
+/// The workspace an absolute directory belongs to, for a caller that has a path and no session — the HTTP handlers.
 pub fn resolveWorkspaceForPath(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -247,8 +229,7 @@ pub fn resolveWorkspaceForPath(
     return matchWorkspaceByPath(allocator, db, abs_path);
 }
 
-/// Longest-prefix match of `cwd` against `workspace_items.path`. A path
-/// matches when it equals `cwd` or is a `/`-bounded prefix of it.
+/// Longest-prefix match of `cwd` against `workspace_items.path`.
 fn matchWorkspaceByPath(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -261,8 +242,7 @@ fn matchWorkspaceByPath(
     defer rows.deinit();
 
     var best_len: usize = 0;
-    // Owned copies of the winner (row memory is freed on every row.deinit,
-    // so the winner must be duped to survive).
+    // Owned copies of the winner (row memory is freed on every row.deinit, so the winner must be duped to survive).
     var winner: ?[]u8 = null;
     var winner_root: ?[]u8 = null;
     errdefer if (winner) |w| allocator.free(w);
@@ -348,7 +328,6 @@ fn setupDb() !TestCtx {
     , &.{});
 
     // Workspace w1: item i1 (/proj/a) with task-linked session s1.
-    // Workspace w2: item i2 (/proj/b) with task-linked session s2.
     try db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('i1', 'w1', 'kanban', 'A', '/proj/a', 1),
@@ -493,8 +472,7 @@ test "resolveWorkspaceRoot: a guest-root cwd is rooted at the guest root, from t
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    // A brand-new workspace's first chat: no kanban task, no item path that could
-    // describe `/workspace`, only the workspace stamped on the row.
+    // A brand-new workspace's first chat: no kanban task, no item path that could describe `/workspace`, only the workspace stamped on the row.
     try ctx.db.exec(alloc,
         \\INSERT INTO sessions (id, name, status, cwd, workspace_id)
         \\VALUES ('s6', 'First chat', 'active', '/workspace', 'w1')
@@ -520,8 +498,7 @@ test "resolveWorkspaceRoot: an unowned guest-root cwd has no root" {
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    // The guest root alone names no workspace, and a command placed in the wrong
-    // workspace's VM is worse than a refusal.
+    // The guest root alone names no workspace, and a command placed in the wrong workspace's VM is worse than a refusal.
     try ctx.db.exec(alloc,
         \\INSERT INTO sessions (id, name, status, cwd, workspace_id)
         \\VALUES ('s8', 'Loose chat', 'active', '/workspace', NULL)

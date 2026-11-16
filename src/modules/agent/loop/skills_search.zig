@@ -7,14 +7,11 @@ const test_db = pabrikcore.test_db;
 const progressive_regex = @import("progressive_regex.zig");
 const skills_store = pabrikcore.skills_store;
 
-/// Default page size and the hard ceiling. The result rides in the context
-/// window, so a single call may never return the whole library.
+/// Default page size and the hard ceiling.
 pub const DEFAULT_SEARCH_LIMIT: usize = 40;
 pub const MAX_SEARCH_LIMIT: usize = 200;
 
-/// One skill, as the matcher sees it: name + description, borrowed from
-/// the store row it came from. There is no tier and no path — see the
-/// file header for why both are gone.
+/// One skill, as the matcher sees it: name + description, borrowed from the store row it came from.
 pub const SkillRow = struct {
     name: []const u8,
     description: []const u8,
@@ -40,8 +37,7 @@ pub fn collectRows(
     return out.toOwnedSlice(allocator);
 }
 
-/// How a query was interpreted. Rendered into the result so the model can
-/// tell a real regex hit from a literal fallback without guessing.
+/// How a query was interpreted.
 pub const QueryMode = enum {
     /// No query given: every row.
     all,
@@ -49,8 +45,7 @@ pub const QueryMode = enum {
     regex,
     /// `literal: true` was passed: case-insensitive substring.
     literal,
-    /// The query did not compile as a regex and was matched as a literal
-    /// substring instead. `QueryResult.warning` says why.
+    /// The query did not compile as a regex and was matched as a literal substring instead.
     regex_fallback,
 };
 
@@ -62,9 +57,7 @@ pub const MatchOptions = struct {
 pub const QueryResult = struct {
     rows: []const SkillRow,
     mode: QueryMode,
-    /// Non-empty only when the query was reinterpreted or the match ran out
-    /// of budget. Rendered as `pattern_warning`. Always a STATIC string, so
-    /// no result owns an allocation the caller can leak.
+    /// Non-empty only when the query was reinterpreted or the match ran out of budget.
     warning: []const u8 = "",
 };
 
@@ -85,9 +78,7 @@ fn exhaustedWarning() []const u8 {
     return "the pattern was too expensive to finish matching, so some skills were skipped — anchor it with '^' or pass literal:true";
 }
 
-/// Match rows by `query`, a case-insensitive unanchored REGEX over the
-/// skill's NAME and DESCRIPTION — the same contract `search_tool` uses, so
-/// the model needs only one mental model for "search a catalog".
+/// Match rows by `query`, a case-insensitive unanchored REGEX over the skill's NAME and DESCRIPTION — the same contract `search_tool` uses, so the model needs …
 pub fn matchQuery(
     allocator: std.mem.Allocator,
     rows: []const SkillRow,
@@ -160,8 +151,7 @@ pub const PageParams = struct {
     warning: []const u8,
 };
 
-/// The `offset`/`limit` window of `rows`. Paging is applied HERE rather than
-/// in `matchQuery` so the pre-page `total` stays available to the renderer.
+/// The `offset`/`limit` window of `rows`.
 pub fn pageSlice(rows: []const SkillRow, offset: usize, limit: usize) []const SkillRow {
     if (offset >= rows.len or limit == 0) return &.{};
     const end = if (limit > rows.len - offset) rows.len else offset + limit;
@@ -183,9 +173,7 @@ fn modeStr(mode: QueryMode) []const u8 {
     };
 }
 
-/// `search_skills` result: `{"query","pattern_mode","pattern_warning",
-/// "count","total","offset","limit","skills","truncated","next_offset",
-/// "hint"}`.
+/// `search_skills` result: `{"query","pattern_mode","pattern_warning", "count","total","offset","limit","skills","truncated","next_offset", "hint"}`.
 pub fn renderSearchResult(
     allocator: std.mem.Allocator,
     page: []const SkillRow,
@@ -235,9 +223,7 @@ pub fn renderSearchResult(
     }, .{});
 }
 
-// ───────────────────────── tests ───────────────────────── The regex /
-// paging / warning machinery is unchanged, so those tests are unchanged too —
-// only the row shape they build lost its tier and path.
+// ───────────────────────── tests ─────────────────────────
 
 /// Parsed shape of `renderSearchResult` output.
 const RenderedSearch = struct {
@@ -305,16 +291,14 @@ test "matchQuery regex matches name OR description, case-insensitively" {
 test "matchQuery literal:true treats metacharacters verbatim" {
     const alloc = testing.allocator;
 
-    // As a REGEX, "zig." is "zig" followed by any character, and matches the
-    // skill named `zig-cross-platform`.
+    // As a REGEX, "zig." is "zig" followed by any character, and matches the skill named `zig-cross-platform`.
     const as_regex = try matchQuery(alloc, &test_rows, "zig.", .{});
     defer alloc.free(as_regex.rows);
     try testing.expectEqual(QueryMode.regex, as_regex.mode);
     try testing.expectEqual(@as(usize, 1), as_regex.rows.len);
     try testing.expectEqualStrings("zig-cross-platform", as_regex.rows[0].name);
 
-    // As a LITERAL it is the 4-character text "zig.", which no row carries —
-    // the flag is the only thing making those two answers differ.
+    // As a LITERAL it is the 4-character text "zig.", which no row carries — the flag is the only thing making those two answers differ.
     const as_literal = try matchQuery(alloc, &test_rows, "zig.", .{ .literal = true });
     defer alloc.free(as_literal.rows);
     try testing.expectEqual(QueryMode.literal, as_literal.mode);
@@ -437,15 +421,13 @@ test "renderSearchResult emits no tier and no path on any row" {
     });
     defer alloc.free(out);
 
-    // Read the RAW string rather than the parsed struct: parsing with
-    // `ignore_unknown_fields` would hide exactly the thing this asserts.
+    // Read the RAW string rather than the parsed struct: parsing with `ignore_unknown_fields` would hide exactly the thing this asserts.
     try testing.expect(std.mem.indexOf(u8, out, "\"scope\"") == null);
     try testing.expect(std.mem.indexOf(u8, out, "\"is_global\"") == null);
     try testing.expect(std.mem.indexOf(u8, out, "\"path\"") == null);
     try testing.expect(std.mem.indexOf(u8, out, "SKILL.MD") == null);
 }
 
-// ---------------------------------------------------------------------------
 // End-to-end against the store: the flattening must not widen the set.
 
 const sqlite = pabrikcore.sqlite;
@@ -457,9 +439,7 @@ const StoreTestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// Real Migration 101 tables. Seeded through the store, never with SQL —
-/// a hand-written INSERT bypasses the `COALESCE(NULLIF(?, ''), '')` write
-/// path and would pass while the real tool failed.
+/// Real Migration 101 tables.
 fn setupStoreDb() !StoreTestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -507,8 +487,7 @@ test "collectRows projects one workspace's rows and matches over them" {
     const flat = try collectRows(alloc, rows);
     defer alloc.free(flat);
 
-    // Exactly the two skills of ws_1, borrowed (no copies), and the other
-    // workspace's name appears nowhere in the payload.
+    // Exactly the two skills of ws_1, borrowed (no copies), and the other workspace's name appears nowhere in the payload.
     try testing.expectEqual(@as(usize, 2), flat.len);
     try testing.expectEqualStrings("another", flat[0].name);
     try testing.expectEqualStrings("search-fixture", flat[1].name);
@@ -551,8 +530,7 @@ test "renderSearchResult carries each row's auto-improve lock" {
     var parsed = try parseRendered(alloc, out);
     defer parsed.deinit();
 
-    // Without this the model learns a skill is locked only by being
-    // refused, which costs a round trip per attempt.
+    // Without this the model learns a skill is locked only by being refused, which costs a round trip per attempt.
     try testing.expectEqual(@as(usize, 2), parsed.value.skills.len);
     try testing.expect(parsed.value.skills[0].is_can_auto_improve);
     try testing.expect(!parsed.value.skills[1].is_can_auto_improve);

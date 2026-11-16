@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-/** The app's base layer. A CSS declaration the browser drops is invisible in the unit suite and
- *  fatal on screen, so the base layer is checked here against what a browser actually accepts. */
+/** The app's base layer. */
 const SRC = join(__dirname, '..')
 const CSS = readFileSync(join(SRC, 'style.css'), 'utf8')
 
@@ -17,9 +16,7 @@ const baseBodyRule = (): string => {
 
 describe('the app base layer', () => {
   it('gives the body a colour the browser accepts', () => {
-    // `text-[--color-fg]` is Tailwind v3's spelling; under v4 it compiles to the literal
-    // `color:--color-fg`, which the browser drops. The body then has NO colour, and every text
-    // that does not name its own inherits the browser's black — invisible on the dark theme.
+    // `text-[--color-fg]` is Tailwind v3's spelling; under v4 it compiles to the literal `color:--color-fg`, which the browser drops.
     const rule = baseBodyRule()
     expect(rule).toContain('text-(--color-fg)')
     expect(rule).not.toContain('text-[--color-fg]')
@@ -32,8 +29,7 @@ describe('the app base layer', () => {
   })
 })
 
-/** Every file whose class strings Tailwind compiles. Spec files are excluded: they name the banned
- *  spellings inside the guards that hunt for them. */
+/** Every file whose class strings Tailwind compiles. */
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     if (name === 'node_modules' || name === '__snapshots__') continue
@@ -44,9 +40,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out
 }
 
-/** Tailwind v3's `border-[--color-border]`: v4 emits the bare token as the value, the browser drops
- *  the declaration, and border-color falls back to currentColor — the sidebar's near-white rules.
- *  Comments are stripped first: a quoted spelling there is history, not a class. */
+/** Tailwind v3's `border-[--color-border]`: v4 emits the bare token as the value, the browser drops the declaration, and border-color falls back to currentColor — … */
 const V3_VAR_UTILITY = /(?<![\w-])[a-z-]+-\[--[a-z0-9-]+\]/i
 const withoutComments = (src: string): string =>
   src

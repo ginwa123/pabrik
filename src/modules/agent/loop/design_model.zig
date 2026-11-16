@@ -34,7 +34,6 @@ fn nextPageIdCounter() u64 {
 // ─── DesignPage struct + freePages ────────────────────────────────────────
 
 /// One design-page row, fully duplicated into heap memory.
-/// Free with `freePages(allocator, slice)`.
 pub const DesignPage = struct {
     id: []u8,
     workspace_item_id: []u8,
@@ -77,9 +76,7 @@ pub const SetDesignPageError = error{
     OutOfMemory,
 };
 
-/// Create or update a page for a design item. Idempotent: if a page with the
-/// same (workspace_item_id, name) exists, its width/height are updated;
-/// otherwise a new row is inserted.
+/// Create or update a page for a design item.
 pub fn setDesignPage(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -87,8 +84,7 @@ pub fn setDesignPage(
 ) anyerror![]u8 {
     if (input.page_name.len == 0) return error.BadPageName;
 
-    // 1. Look up the design item's `path`. Returns ItemPathMissing
-    //    if NULL/empty.
+    // 1.
     const path_opt: ?[]u8 = blk: {
         var q = try db.query(allocator,
             "SELECT wi.path FROM workspace_items wi " ++
@@ -110,8 +106,7 @@ pub fn setDesignPage(
         // Existing row → update width/height/updated_at and return.
         defer allocator.free(existing_id);
 
-        // SQLite's argv takes `[]const []const u8`, so stringify the integer
-        // columns.
+        // SQLite's argv takes `[]const []const u8`, so stringify the integer columns.
         const width_str = try std.fmt.allocPrint(allocator, "{d}", .{input.width});
         defer allocator.free(width_str);
         const height_str = try std.fmt.allocPrint(allocator, "{d}", .{input.height});
@@ -128,15 +123,13 @@ pub fn setDesignPage(
     const id = try generatePageId(allocator);
     defer allocator.free(id);
 
-    // SQLite's argv takes `[]const []const u8`, so we have to stringify the
-    // integer columns.
+    // SQLite's argv takes `[]const []const u8`, so we have to stringify the integer columns.
     const width_str = try std.fmt.allocPrint(allocator, "{d}", .{input.width});
     defer allocator.free(width_str);
     const height_str = try std.fmt.allocPrint(allocator, "{d}", .{input.height});
     defer allocator.free(height_str);
 
-    // Generate the per-page chat task id (paired with the page so the 1:1 FK
-    // is always populated on INSERT).
+    // Generate the per-page chat task id (paired with the page so the 1:1 FK is always populated on INSERT).
     var task_id_buf: [64]u8 = undefined;
     const task_id = std.fmt.bufPrint(
         task_id_buf[0..],
@@ -144,9 +137,7 @@ pub fn setDesignPage(
         .{helpers.unixTimestampNanos()},
     ) catch return error.BufferTooSmall;
 
-    // The task's user-visible name matches the per-page naming convention
-    // (`"Design Chat: <page_name>"`) introduced by the 2026-07-28 per-page
-    // chat plan.
+    // The task's user-visible name matches the per-page naming convention (`"Design Chat: <page_name>"`) introduced by the 2026-07-28 per-page chat plan.
     var task_name_buf: [512]u8 = undefined;
     const task_name = std.fmt.bufPrint(
         task_name_buf[0..],
@@ -154,9 +145,7 @@ pub fn setDesignPage(
         .{input.page_name},
     ) catch return error.BufferTooSmall;
 
-    // Insert the per-page chat task FIRST so the workspace_item_tasks row
-    // exists when design_pages INSERT fires (the application-level "FK" we
-    // maintain via the UNIQUE index would otherwise allow a dangling
+    // Insert the per-page chat task FIRST so the workspace_item_tasks row exists when design_pages INSERT fires (the application-level "FK" we maintain via the …
     try db.exec(allocator,
         "INSERT INTO workspace_item_tasks " ++
             "(id, name, workspace_item_id, task_type, description) " ++
@@ -179,8 +168,7 @@ pub fn setDesignPage(
     return allocator.dupe(u8, id);
 }
 
-/// Look up the page id for the given (item_id, page_name). Returns
-/// the owned id slice on hit, or `null` when no such page exists.
+/// Look up the page id for the given (item_id, page_name).
 fn findPageIdByName(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -209,9 +197,7 @@ pub const UpdateDesignPageInput = struct {
     name: ?[]const u8 = null,
 };
 
-/// Update an existing design page by id. UPDATE-only; does NOT insert — see
-/// `setDesignPage` for the upsert path used by the agent's `set_design_page`
-/// tool.
+/// Update an existing design page by id.
 pub fn updateDesignPage(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -220,15 +206,12 @@ pub fn updateDesignPage(
     if (input.page_id.len == 0) return error.PageIdRequired;
     if (input.width < 320 or input.width > 4096) return error.WidthOutOfRange;
     if (input.height < 240 or input.height > 4096) return error.HeightOutOfRange;
-    // Only validate the name when it's actually being updated (avoids
-    // a back-compat break for callers that always pass `name: null`).
+    // Only validate the name when it's actually being updated (avoids a back-compat break for callers that always pass `name: null`).
     if (input.name) |n| {
         if (n.len == 0) return error.BadPageName;
     }
 
-    // Existence check first — distinguishes PageNotFound from a silent
-    // no-op UPDATE on a non-existent row. Also gives us the
-    // workspace_item_id we need to call listPages for the re-fetch.
+    // Existence check first — distinguishes PageNotFound from a silent no-op UPDATE on a non-existent row.
     const item_id_owned: []u8 = blk: {
         var q = try db.query(allocator,
             "SELECT dp.workspace_item_id FROM design_pages dp WHERE dp.id = ?",
@@ -240,9 +223,7 @@ pub fn updateDesignPage(
     };
     defer allocator.free(item_id_owned);
 
-    // Stringify integer cols (db.exec binds only TEXT — see project
-    // memory `sqlite-backend-empty-slice-binds-as-null`). The strings
-    // must be non-empty even for the "zero" case.
+    // Stringify integer cols (db.exec binds only TEXT — see project memory `sqlite-backend-empty-slice-binds-as-null`).
     const width_str = try std.fmt.allocPrint(allocator, "{d}", .{input.width});
     defer allocator.free(width_str);
     const height_str = try std.fmt.allocPrint(allocator, "{d}", .{input.height});
@@ -305,17 +286,13 @@ pub fn updateDesignPage(
         };
     }
 
-    // Row existed at SELECT but vanished by the time listPages ran — race
-    // condition (someone deleted between our UPDATE and our re-fetch).
-    // Surface as DbError so the caller knows something weird happened.
+    // Row existed at SELECT but vanished by the time listPages ran — race condition (someone deleted between our UPDATE and our re-fetch).
     return error.DbError;
 }
 
 // ─── listPages ────────────────────────────────────────────────────────────
 
-/// List the pages of a design workspace item in `position` order. Returns an
-/// owned slice; caller MUST release with `freePages(allocator, slice)`. If
-/// the item has no pages, the slice has length 0 (not an error).
+/// List the pages of a design workspace item in `position` order.
 pub fn listPages(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -364,7 +341,6 @@ pub fn listPages(
 // ─── DesignElement struct + freeElements ───────────────────────────────────
 
 /// One design-page-element row, fully duplicated into heap memory.
-/// Free with `freeElements(allocator, slice)`.
 pub const DesignElement = struct {
     id: []u8,
     page_id: []u8,
@@ -387,9 +363,7 @@ pub const DesignElement = struct {
     text_content: []u8,
     text_style: []u8,
     image_url: []u8,
-    /// FK to a `group`/`frame` element on the same page (NULL for
-    /// top-level). Migration 057 introduced the column; the read-back
-    /// path is exposed in the 2026-07-28-grouped-layers plan (Chunk 1).
+    /// FK to a `group`/`frame` element on the same page (NULL for top-level).
     parent_id: []u8,
     created_at: []u8,
     updated_at: []u8,
@@ -443,9 +417,7 @@ pub const AddElementInput = struct {
     text_content: []const u8 = "",
     text_style: []const u8 = "",
     image_url: []const u8 = "",
-    /// Optional FK to an existing `group` or `frame` on the same page. When
-    /// `null` (the default), the new element is top-level — same as the
-    /// pre-2026-07-29 behavior.
+    /// Optional FK to an existing `group` or `frame` on the same page.
     parent_id: ?[]const u8 = null,
 };
 
@@ -454,19 +426,15 @@ pub const AddElementError = error{
     ItemPathMissing,
     BadName,
     FileWriteFailed,
-    /// `input.parent_id` doesn't reference any element on this page
-    /// (or doesn't reference any element at all).
+    /// `input.parent_id` doesn't reference any element on this page (or doesn't reference any element at all).
     BadParentId,
-    /// `input.parent_id` references an element that is NOT a
-    /// `group` or `frame` (i.e., it's a leaf type like rectangle,
-    /// text, ellipse, or image). Leaf elements can't contain children.
+    /// `input.parent_id` references an element that is NOT a `group` or `frame` (i.e., it's a leaf type like rectangle, text, ellipse, or image).
     ParentNotContainer,
     DbError,
     OutOfMemory,
 };
 
-/// Add a new element to a design page. Atomically writes the element's HTML
-/// to disk and inserts the corresponding metadata row.
+/// Add a new element to a design page.
 pub fn addElement(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -500,8 +468,7 @@ pub fn addElement(
     defer allocator.free(lookup.item_path);
     if (lookup.item_path.len == 0) return error.ItemPathMissing;
 
-    // 1b. Validate parent_id (when provided): the parent element must exist
-    // on the SAME page and must be of type `group` or `frame`.
+    // 1b.
     const parent_id_to_bind: []const u8 = if (input.parent_id) |pid| blk: {
         var q = try db.query(allocator,
             \\SELECT de.page_id, de.type FROM design_page_elements de WHERE de.id = ?
@@ -532,8 +499,7 @@ pub fn addElement(
     const file_path = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ page_dir, sanitized_elem });
     defer allocator.free(file_path);
 
-    // 4. mkdir -p the page directory (createDirPath is the Io-native
-    // mkdir-p equivalent in Zig 0.16).
+    // 4. mkdir -p the page directory (createDirPath is the Io-native mkdir-p equivalent in Zig 0.16).
     std.Io.Dir.cwd().createDirPath(io, page_dir) catch return error.FileWriteFailed;
 
     // 5. Atomic-write the HTML body to disk.
@@ -577,14 +543,10 @@ pub fn addElement(
         id, input.page_id, input.name, file_path,
         x_str, y_str, width_str, height_str, input.page_id,
         elem_type_str, rotation_str, input.fill, corner_radius_str, opacity_str,
-        // Backend.exec binds an empty slice as SQL NULL — that's
-        // exactly what we want for `parent_id = ?` (nullable column) when the
-        // user did not pass parent_id.
+        // Backend.exec binds an empty slice as SQL NULL — that's exactly what we want for `parent_id = ?` (nullable column) when the user did not pass parent_id.
         parent_id_to_bind,
     }) catch |err| {
-        // Surface the actual sqlite error so a 500 "Failed to create element"
-        // tells the user whether it was a FK error, a NOT NULL violation, a
-        // uniqueness collision, a bind error, or something else.
+        // Surface the actual sqlite error so a 500 "Failed to create element" tells the user whether it was a FK error, a NOT NULL violation, a uniqueness collision, a …
         std.log.err(
             "addElement: INSERT failed for page_id={s} name={s} type={s} err={s}",
             .{ input.page_id, input.name, elem_type_str, @errorName(err) },
@@ -646,26 +608,19 @@ pub const UpdateElementInput = struct {
     text_content: ?[]const u8 = null,
     text_style: ?[]const u8 = null,
     image_url: ?[]const u8 = null,
-    /// FK to a `group`/`frame` element on the same page. `null` = leave
-    /// unchanged. Pass `""` (empty string) to clear the parent (reparent to
-    /// top-level).
+    /// FK to a `group`/`frame` element on the same page.
     parent_id: ?[]const u8 = null,
     /// Optional post-update position normalization.
     reposition: ?RepositionMode = null,
 };
 
-/// How to recompute the element's `position` column after a
-/// parent_id change. Currently only one variant; future variants
-/// branch in `updateElement` to do precise-position inserts.
+/// How to recompute the element's `position` column after a parent_id change.
 pub const RepositionMode = enum {
-    /// Land at MAX(position) + 1 of all rows that share the new parent (or
-    /// are top-level when parent_id is empty). The element being moved is
-    /// excluded from the MAX so it lands strictly after its new siblings.
+    /// Land at MAX(position) + 1 of all rows that share the new parent (or are top-level when parent_id is empty).
     last_in_parent,
 };
 
-/// Update an element. Each non-null field is SET in the SQL UPDATE; null
-/// fields are left unchanged.
+/// Update an element.
 pub fn updateElement(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -763,8 +718,7 @@ pub fn updateElement(
     if (input.image_url) |v| { try sets.append(allocator, "image_url = ?"); try args.append(allocator, v); }
     if (input.parent_id) |v| { try sets.append(allocator, "parent_id = ?"); try args.append(allocator, v); }
 
-    // Cycle prevention for the parent_id assignment. Run BEFORE the UPDATE so
-    // a cycle never reaches the database.
+    // Cycle prevention for the parent_id assignment.
     if (input.parent_id) |new_pid| {
         if (std.mem.eql(u8, new_pid, input.element_id)) return error.CycleDetected;
         if (try wouldCreateCycle(db, allocator, input.element_id, new_pid)) {
@@ -773,12 +727,9 @@ pub fn updateElement(
     }
 
     if (input.reposition) |mode| {
-        // Currently only one variant — the `defer _ = mode;` documents
-        // the future branch point for additional RepositionMode variants
-        // (e.g. `before_sibling`, `after_sibling`).
+        // Currently only one variant — the `defer _ = mode;` documents the future branch point for additional RepositionMode variants (e.g.
         defer _ = mode;
-        // The new parent_id is what we just appended to the SET list (or
-        // empty string for top-level).
+        // The new parent_id is what we just appended to the SET list (or empty string for top-level).
         const new_parent_sql: []const u8 = if (input.parent_id) |p| p else "";
         var max_pos_q = try db.query(allocator,
             \\SELECT COALESCE(MAX(position), -1) FROM design_page_elements
@@ -794,9 +745,7 @@ pub fn updateElement(
         try args.append(allocator, owned.items[owned.items.len - 1]);
     }
 
-    // If html changed, look up file_path, atomic-rewrite the file,
-    // and record that we need to UPDATE file_path too if the file
-    // didn't exist before (orphan recovery).
+    // If html changed, look up file_path, atomic-rewrite the file, and record that we need to UPDATE file_path too if the file didn't exist before (orphan recovery).
     var new_file_path_owned: ?[]u8 = null;
     defer if (new_file_path_owned) |p| allocator.free(p);
     if (input.html) |new_html| {
@@ -809,13 +758,9 @@ pub fn updateElement(
         const existing_path = try allocator.dupe(u8, row.values[0]);
         defer allocator.free(existing_path);
 
-        // If file_path was empty (orphan), set it to a freshly-built
-        // path so the rewrite sticks. Otherwise rewrite the file
-        // in place.
+        // If file_path was empty (orphan), set it to a freshly-built path so the rewrite sticks.
         if (existing_path.len == 0) {
-            // Look up the page → item_path + page_name to build a
-            // new file path. JOIN with design_pages and
-            // workspace_items.
+            // Look up the page → item_path + page_name to build a new file path.
             var pq = try db.query(allocator,
                 \\SELECT dp.workspace_item_id, dp.name, wi.path
                 \\FROM design_page_elements de
@@ -828,9 +773,7 @@ pub fn updateElement(
             defer prow.deinit(allocator);
             const sanitized_page = try design_io.sanitizeFilename(allocator, prow.values[1]);
             defer allocator.free(sanitized_page);
-            // Reuse the existing element name (the orphan case
-            // implies the row was created with file_path=''
-            // for some reason; use the row's `name` field).
+            // Reuse the existing element name (the orphan case implies the row was created with file_path='' for some reason; use the row's `name` field).
             const elem_name = try allocator.dupe(u8, "element");
             defer allocator.free(elem_name);
             const new_path = try std.fmt.allocPrint(allocator, "{s}/.pabrik/design/{s}/{s}.html", .{
@@ -867,21 +810,16 @@ pub fn updateElement(
         @memcpy(sql_buf[pos..][0..s.len], s);
         pos += s.len;
     }
-    // The last "set" is the WHERE id = ? — but we appended updated_at
-    // AND element_id separately. Pull the WHERE out: pop the
-    // element_id from sets and use it as the WHERE.
+    // The last "set" is the WHERE id = ? — but we appended updated_at AND element_id separately.
     _ = sets.pop();
-    // Actually we set things up wrong: the element_id is in args as the last
-    // position, but our SET list already includes "updated_at =
-    // datetime('now')" as a set.
+    // Actually we set things up wrong: the element_id is in args as the last position, but our SET list already includes "updated_at = datetime('now')" as a set.
     const where_clause = " WHERE id = ?";
     @memcpy(sql_buf[pos..][0..where_clause.len], where_clause);
     pos += where_clause.len;
 
     try db.exec(allocator, sql_buf[0..pos], args.items);
 
-    // Emit SSE event AFTER the SQL UPDATE succeeded and the SQL actually
-    // changed at least one user-provided column.
+    // Emit SSE event AFTER the SQL UPDATE succeeded and the SQL actually changed at least one user-provided column.
     on_event_sent_design.onEventSendDesignElementUpdated(allocator, .{
         .action = "updated",
         .workspace_id = ctx.workspace_id,
@@ -894,13 +832,10 @@ pub fn updateElement(
 }
 
 // ─── updateElementsBatch ───────────────────────────────────────────────────
-// Atomic N-element geometry update in a single SQL transaction.
 
 pub const BatchGeometryUpdateInput = struct {
     page_id: []const u8,
-    /// Per-element geometry patches. Only geometry fields (x, y, width,
-    /// height, rotation) are honored — name / type / html / etc. are
-    /// ignored (the batch endpoint is drag-specific).
+    /// Per-element geometry patches.
     updates: []const UpdateElementInput,
 };
 
@@ -908,15 +843,12 @@ pub const BatchGeometryUpdateError = error{
     PageNotFound,
     EmptyUpdates,
     ElementNotFound,
-    /// Any DB-side failure (PrepareFailed, ExecuteFailed, BindFailed,
-    /// QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.). The
-    /// handler maps this to 500.
+    /// Any DB-side failure (PrepareFailed, ExecuteFailed, BindFailed, QueryFailed, RowNotFound, DatabaseCorrupt, DiskFull, etc.).
     DbError,
     OutOfMemory,
 };
 
 // ─── moveElementsWithDescendantsBatch ─────────────────────────────────────
-// Server-side cascade: each item's (dx, dy) applies to
 
 pub const MoveItem = struct {
     element_id: []const u8,
@@ -936,7 +868,6 @@ pub const MoveElementsWithDescendantsBatchError = error{
     PageNotFound,
     EmptyItems,
     /// Any element_id is missing from the DB or on a different page.
-    /// Whole batch is rejected — atomicity.
     ElementNotFound,
     /// Any DB-side failure. Maps to 500.
     DbError,
@@ -950,9 +881,7 @@ pub fn updateElementsBatch(
 ) anyerror![]DesignElement {
     if (input.updates.len == 0) return error.EmptyUpdates;
 
-    // 1. Look up the page JOIN (workspace_id, item_id) — needed for the
-    //    SSE event payload. Mirrors the lookup pattern in
-    //    `groupElements` and `updateElement`.
+    // 1.
     const PageContext = struct {
         workspace_id: []u8,
         item_id: []u8,
@@ -975,9 +904,7 @@ pub fn updateElementsBatch(
     defer allocator.free(page_ctx.workspace_id);
     defer allocator.free(page_ctx.item_id);
 
-    // 2. Pre-flight: build a dynamic IN-list SELECT and verify every
-    //    element_id exists on `input.page_id`. If count != updates.len
-    //    → error.ElementNotFound (atomicity — NO writes happen).
+    // 2.
     var in_list_sql: std.ArrayList(u8) = .empty;
     defer in_list_sql.deinit(allocator);
     try in_list_sql.appendSlice(allocator,
@@ -1001,9 +928,7 @@ pub fn updateElementsBatch(
     };
     if (matched_count != input.updates.len) return error.ElementNotFound;
 
-    // 3. Begin transaction. RAII defer pattern: any error below
-    //    fires rollback. After successful commit, mark `committed` to
-    //    skip the deferred rollback.
+    // 3.
     var tx = try db.begin();
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
@@ -1091,8 +1016,7 @@ pub fn updateElementsBatch(
     var element_ids_buf: std.ArrayList([]const u8) = .empty;
     defer element_ids_buf.deinit(allocator);
     for (input.updates) |u| try element_ids_buf.append(allocator, u.element_id);
-    // Unix seconds — `std.time.timestamp()` was removed in Zig 0.16,
-    // use libc `gettimeofday` (matches the rest of this codebase).
+    // Unix seconds — `std.time.timestamp()` was removed in Zig 0.16, use libc `gettimeofday` (matches the rest of this codebase).
     const updated_at: i64 = blk: {
         var tv: std.c.timeval = undefined;
         _ = std.c.gettimeofday(&tv, null);
@@ -1110,7 +1034,6 @@ pub fn updateElementsBatch(
 }
 
 // ─── moveElementsWithDescendantsBatch ─────────────────────────────────────
-// Server-side cascade move.
 
 pub fn moveElementsWithDescendantsBatch(
     allocator: std.mem.Allocator,
@@ -1119,9 +1042,7 @@ pub fn moveElementsWithDescendantsBatch(
 ) anyerror![]DesignElement {
     if (input.items.len == 0) return error.EmptyItems;
 
-    // 1. Look up the page JOIN (workspace_id, item_id) for the SSE
-    //    event payload. Mirrors the lookup pattern in
-    //    `updateElementsBatch` and `groupElements`.
+    // 1.
     const PageContext = struct {
         workspace_id: []u8,
         item_id: []u8,
@@ -1144,8 +1065,7 @@ pub fn moveElementsWithDescendantsBatch(
     defer allocator.free(page_ctx.workspace_id);
     defer allocator.free(page_ctx.item_id);
 
-    // 2. Pre-flight: verify every input element_id exists on
-    //    `input.page_id`. Any miss → ElementNotFound (atomicity).
+    // 2.
     {
         var in_list_sql: std.ArrayList(u8) = .empty;
         defer in_list_sql.deinit(allocator);
@@ -1171,9 +1091,7 @@ pub fn moveElementsWithDescendantsBatch(
         if (matched_count != input.items.len) return error.ElementNotFound;
     }
 
-    // 3. Begin transaction. RAII defer pattern: any error below
-    //    fires rollback. After successful commit, mark `committed` to
-    //    skip the deferred rollback.
+    // 3.
     var tx = try db.begin();
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
@@ -1186,8 +1104,7 @@ pub fn moveElementsWithDescendantsBatch(
     }
 
     for (input.items) |it| {
-        // 4a. Recursive CTE — collect the subtree ids (root + every
-        // transitive descendant).
+        // 4a.
         var subtree_ids: std.ArrayList([]u8) = .empty;
         errdefer {
             for (subtree_ids.items) |id| allocator.free(id);
@@ -1215,8 +1132,7 @@ pub fn moveElementsWithDescendantsBatch(
             subtree_ids.deinit(allocator);
         }
 
-        // 4b. UPDATE x/y for the whole subtree. Build the dynamic
-        //     IN-list and the SET-list, then exec.
+        // 4b.
         {
             var sql_buf: std.ArrayList(u8) = .empty;
             defer sql_buf.deinit(allocator);
@@ -1224,9 +1140,7 @@ pub fn moveElementsWithDescendantsBatch(
                 "UPDATE design_page_elements SET x = x + ?, y = y + ?, updated_at = datetime('now') WHERE id IN (");
             var argv: std.ArrayList([]const u8) = .empty;
             defer argv.deinit(allocator);
-            // Bind dx and dy as text — the codebase convention is that
-            // `tx.exec` only binds TEXT (see `zig-sqlite-patterns.md` §"exec
-            // / query only bind TEXT").
+            // Bind dx and dy as text — the codebase convention is that `tx.exec` only binds TEXT (see `zig-sqlite-patterns.md` §"exec / query only bind TEXT").
             const dx_str = try std.fmt.allocPrint(allocator, "{d}", .{it.dx});
             defer allocator.free(dx_str);
             const dy_str = try std.fmt.allocPrint(allocator, "{d}", .{it.dy});
@@ -1243,8 +1157,7 @@ pub fn moveElementsWithDescendantsBatch(
             try tx.exec(allocator, sql_buf.items, argv.items);
         }
 
-        // 4c. UPDATE width/height/rotation for the root ONLY (when
-        //     non-null). Skip the round-trip when all three are null.
+        // 4c.
         if (it.width != null or it.height != null or it.rotation != null) {
             var sets: std.ArrayList([]const u8) = .empty;
             defer sets.deinit(allocator);
@@ -1294,8 +1207,7 @@ pub fn moveElementsWithDescendantsBatch(
             try tx.exec(allocator, sql_buf[0..pos], argv.items);
         }
 
-        // 4d. Track every affected id (deduped) for the re-SELECT + SSE event
-        // below.
+        // 4d.
         for (subtree_ids.items) |id| {
             var already_seen = false;
             for (affected_ids.items) |existing| {
@@ -1310,9 +1222,7 @@ pub fn moveElementsWithDescendantsBatch(
         }
     }
 
-    // 5. Commit BEFORE re-querying. The project memory
-    //    `zig-sqlite-patterns.md` §"Pitfall 3" documents this
-    //    constraint.
+    // 5.
     try tx.commit();
     committed = true;
 
@@ -1330,8 +1240,7 @@ pub fn moveElementsWithDescendantsBatch(
         try results.append(allocator, el);
     }
 
-    // 7. Emit ONE batch SSE event. Best-effort: failure here does NOT
-    //    fail the request — SSE is a hint, not a hard contract.
+    // 7.
     var element_ids_buf: std.ArrayList([]const u8) = .empty;
     defer element_ids_buf.deinit(allocator);
     for (affected_ids.items) |id| try element_ids_buf.append(allocator, id);
@@ -1352,30 +1261,22 @@ pub fn moveElementsWithDescendantsBatch(
 }
 
 // ─── moveElementToPage ────────────────────────────────────────────────────
-// Cross-page element relocate.
 
 pub const MoveElementToPageInput = struct {
-    /// The page the element currently lives on. The element must exist
-    /// here (any other page → `ElementNotFound`).
+    /// The page the element currently lives on.
     source_page_id: []const u8,
-    /// The element id to move. The cascade moves every transitive
-    /// descendant too when `apply_to_children = true`.
+    /// The element id to move.
     element_id: []const u8,
-    /// The destination page. Must exist and share the design item
-    /// with `source_page_id`.
+    /// The destination page.
     target_page_id: []const u8,
-    /// Default true. When true, every transitive descendant of `element_id`
-    /// moves with it (Figma parity); when false, only the root itself moves
-    /// (descendants stay on the source page as top-level orphans).
+    /// Default true.
     apply_to_children: bool = true,
 };
 
 pub const MoveElementToPageError = error{
-    /// `source_page_id` and `target_page_id` are equal — no-op, rejected
-    /// upfront to avoid an unnecessary transaction.
+    /// `source_page_id` and `target_page_id` are equal — no-op, rejected upfront to avoid an unnecessary transaction.
     SamePage,
-    /// The element_id doesn't exist on the source page (either absent
-    /// entirely or on a different page).
+    /// The element_id doesn't exist on the source page (either absent entirely or on a different page).
     ElementNotFound,
     /// The target page id doesn't match any row in `design_pages`.
     PageNotFound,
@@ -1397,9 +1298,7 @@ pub fn moveElementToPage(
         return error.SamePage;
     }
 
-    // 2. Look up the element + verify it lives on the source page.
-    //    Returns the element's existing page_id + parent_id (NULL →
-    //    '' via COALESCE).
+    // 2.
     const ElementLookup = struct {
         page_id: []u8,
         parent_id: []u8,
@@ -1420,16 +1319,12 @@ pub fn moveElementToPage(
     defer allocator.free(elem_lookup.page_id);
     defer allocator.free(elem_lookup.parent_id);
 
-    // The element may exist on a DIFFERENT page than the one the caller
-    // thinks it's on — treat that as ElementNotFound (don't leak the
-    // cross-page detail to the caller).
+    // The element may exist on a DIFFERENT page than the one the caller thinks it's on — treat that as ElementNotFound (don't leak the cross-page detail to the …
     if (!std.mem.eql(u8, elem_lookup.page_id, input.source_page_id)) {
         return error.ElementNotFound;
     }
 
-    // 3. Look up the source page's (workspace_id, item_id) JOIN for the
-    //    SSE event payload. Source page must exist (it should, since
-    //    the element is on it — but defensive).
+    // 3.
     const SourceContext = struct {
         workspace_id: []u8,
         item_id: []u8,
@@ -1452,8 +1347,7 @@ pub fn moveElementToPage(
     defer allocator.free(source_ctx.workspace_id);
     defer allocator.free(source_ctx.item_id);
 
-    // 4. Look up the target page. Verifies (a) it exists and (b) it
-    //    lives on the same design item as the source page.
+    // 4.
     const target_item_id: []u8 = blk: {
         var q = try db.query(allocator,
             \\SELECT workspace_item_id FROM design_pages WHERE id = ?
@@ -1468,9 +1362,7 @@ pub fn moveElementToPage(
         return error.CrossDesign;
     }
 
-    // 5. Resolve the moved-subtree element ids. - apply_to_children = true →
-    // root + every transitive descendant (recursive CTE, LIMIT 10000 cycle
-    // safety) - apply_to_children = false → just the root
+    // 5.
     var subtree_ids: std.ArrayList([]u8) = .empty;
     defer {
         for (subtree_ids.items) |id| allocator.free(id);
@@ -1502,9 +1394,7 @@ pub fn moveElementToPage(
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
 
-    // 7. UPDATE page_id for every subtree element. One dynamic
-    //    IN-list statement covers the whole subtree (same pattern as
-    //    `moveElementsWithDescendantsBatch`).
+    // 7.
     {
         var sql_buf: std.ArrayList(u8) = .empty;
         defer sql_buf.deinit(allocator);
@@ -1525,8 +1415,7 @@ pub fn moveElementToPage(
         try tx.exec(allocator, sql_buf.items, argv.items);
     }
 
-    // 8. Q4 default — auto-detach the root when its parent isn't in the moved
-    // subtree.
+    // 8.
     if (elem_lookup.parent_id.len > 0) {
         var parent_in_subtree = false;
         for (subtree_ids.items) |id| {
@@ -1544,8 +1433,7 @@ pub fn moveElementToPage(
         }
     }
 
-    // 9. Append-at-end for the root's `position` on the target page (Q5
-    // default).
+    // 9.
     {
         const next_pos_str = blk: {
             var q = try tx.query(allocator,
@@ -1568,9 +1456,7 @@ pub fn moveElementToPage(
     try tx.commit();
     committed = true;
 
-    // 11. Re-SELECT the moved subtree. `getElement` allocates fresh
-    //     strings on each call, so the returned slice is fully owned
-    //     — caller releases with `freeElements`.
+    // 11.
     var results: std.ArrayList(DesignElement) = .empty;
     errdefer {
         for (results.items) |e| freeElement(allocator, e);
@@ -1581,9 +1467,7 @@ pub fn moveElementToPage(
         try results.append(allocator, el);
     }
 
-    // 12. SSE event. Best-effort — failure here does NOT fail the
-    //     request (the optimistic mirror in the frontend store handles
-    //     the primary state; other tabs may need a manual refresh).
+    // 12.
     var element_ids_buf: std.ArrayList([]const u8) = .empty;
     defer element_ids_buf.deinit(allocator);
     for (subtree_ids.items) |id| try element_ids_buf.append(allocator, id);
@@ -1592,9 +1476,7 @@ pub fn moveElementToPage(
         _ = std.c.gettimeofday(&tv, null);
         break :blk @intCast(tv.sec);
     };
-    // The event carries source_page_id for "from" + the moved ids; the
-    // frontend reads page_id from the moved elements themselves to
-    // route the update.
+    // The event carries source_page_id for "from" + the moved ids; the frontend reads page_id from the moved elements themselves to route the update.
     on_event_sent_design.onEventSendDesignElementsGeometryBatchUpdated(allocator, .{
         .workspace_id = source_ctx.workspace_id,
         .item_id = source_ctx.item_id,
@@ -1626,9 +1508,7 @@ pub const GroupElementsError = error{
     OutOfMemory,
 };
 
-/// Create a new `group` (or `frame`) parent element at the UNION bounding box
-/// of the given `child_ids`, and reparent every child to the new parent.
-/// Single transaction — all-or-nothing.
+/// Create a new `group` (or `frame`) parent element at the UNION bounding box of the given `child_ids`, and reparent every child to the new parent.
 pub fn groupElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1637,9 +1517,7 @@ pub fn groupElements(
     if (input.child_ids.len < 2) return error.BadChildId;
     if (input.parent_name.len == 0) return error.BadChildId;
 
-    // 1. Look up the page JOIN: workspace_id, item_id, page_name,
-    //    item_path. Needed for the on-disk HTML write + the SSE
-    //    event payload.
+    // 1.
     const Lookup = struct {
         workspace_id: []u8,
         item_id: []u8,
@@ -1669,8 +1547,7 @@ pub fn groupElements(
     defer allocator.free(lookup.item_path);
     if (lookup.item_path.len == 0) return error.ItemPathMissing;
 
-    // 2. Validate children: all on the same page, none already parented.
-    //    Build a parameterized IN-list dynamically.
+    // 2.
     var in_list_sql: std.ArrayList(u8) = .empty;
     defer in_list_sql.deinit(allocator);
     try in_list_sql.appendSlice(allocator, "SELECT id, page_id, parent_id, x, y, width, height, z_index, position, name FROM design_page_elements WHERE id IN (");
@@ -1738,9 +1615,7 @@ pub fn groupElements(
     var min_y: i64 = std.math.maxInt(i64);
     var max_x: i64 = std.math.minInt(i64);
     var max_y: i64 = std.math.minInt(i64);
-    // Track min_z so the new container can be placed BEHIND its children (a
-    // group/frame is a container, not a peer — it must not occlude its
-    // contents). min_z starts at the same sentinels as min_x/min_y so a
+    // Track min_z so the new container can be placed BEHIND its children (a group/frame is a container, not a peer — it must not occlude its contents). min_z starts …
     var min_z: i64 = std.math.maxInt(i64);
     var max_z: i64 = 0;
     var max_pos: i64 = -1;
@@ -1766,14 +1641,10 @@ pub fn groupElements(
     const file_path = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ page_dir, sanitized_elem });
     defer allocator.free(file_path);
 
-    // mkdir -p the page directory (createDirPath is Io's mkdir-p). Use the
-    // Backend's io — we don't take io as a parameter because the LLM
-    // tool path (set_design_page) passes db without an io handle.
+    // mkdir -p the page directory (createDirPath is Io's mkdir-p).
     std.Io.Dir.cwd().createDirPath(db.io, page_dir) catch return error.FileWriteFailed;
 
-    // Atomic-write an empty wrapper. The group's HTML body is a transparent
-    // container — children render themselves inside their own (separate)
-    // iframes via the design-mode iframe convention.
+    // Atomic-write an empty wrapper.
     const empty_html = "<div style=\"width:100%;height:100%;\"></div>";
     design_io.atomicWriteFile(allocator, file_path, empty_html) catch return error.FileWriteFailed;
 
@@ -1836,14 +1707,11 @@ pub fn groupElements(
 
     try tx.exec(allocator, update_in_list.items, update_args.items);
 
-    // 8. Commit. If commit fails the parent INSERT + child UPDATEs
-    //    roll back atomically — partial-failure leaves no orphans.
+    // 8.
     try tx.commit();
     committed = true;
 
-    // 9. Emit SSE events AFTER commit so multi-tab listeners only
-    //    see state that's already committed. Best-effort: failures
-    //    log but don't fail the request.
+    // 9.
     on_event_sent_design.onEventSendDesignElementCreated(allocator, .{
         .action = "created",
         .workspace_id = lookup.workspace_id,
@@ -1870,9 +1738,7 @@ pub fn groupElements(
 pub const ReparentElementsInput = struct {
     page_id: []const u8,
     element_ids: []const []const u8,
-    /// null = top-level (no parent). Pass "" also accepted as
-    /// top-level — the SQL COALESCE convention normalises both
-    /// shapes to "no parent".
+    /// null = top-level (no parent).
     new_parent_id: ?[]const u8,
     reposition: RepositionMode,
 };
@@ -1888,9 +1754,7 @@ pub const ReparentElementsError = error{
     OutOfMemory,
 };
 
-/// Re-parent N elements atomically (single SQL transaction). Used by the
-/// drag-to-reparent UX so dragging 1 or N selected rows into a group uses one
-/// round-trip instead of N parallel PUTs.
+/// Re-parent N elements atomically (single SQL transaction).
 pub fn reparentElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1898,8 +1762,7 @@ pub fn reparentElements(
 ) anyerror![]DesignElement {
     if (input.element_ids.len == 0) return error.EmptyElementIds;
 
-    // 1. Look up the page JOIN (workspace_id, item_id) for the SSE
-    //    event payload. Same JOIN shape as groupElements.
+    // 1.
     const Lookup = struct {
         workspace_id: []u8,
         item_id: []u8,
@@ -1922,9 +1785,7 @@ pub fn reparentElements(
     defer allocator.free(lookup.workspace_id);
     defer allocator.free(lookup.item_id);
 
-    // 2. Validate the new parent (when non-null). Same shape as
-    // updateElement's parent_id cycle check, plus the page match and
-    // container-type validation that setElementParent already does.
+    // 2.
     if (input.new_parent_id) |new_pid| {
         var q = try db.query(allocator,
             \\SELECT page_id, type FROM design_page_elements WHERE id = ?
@@ -1944,8 +1805,7 @@ pub fn reparentElements(
         }
     }
 
-    // 3. Build the dynamic IN-list SELECT for the requested elements.
-    //    Same IN-list pattern as groupElements.
+    // 3.
     var in_list_sql: std.ArrayList(u8) = .empty;
     defer in_list_sql.deinit(allocator);
     try in_list_sql.appendSlice(allocator, "SELECT page_id FROM design_page_elements WHERE id IN (");
@@ -1958,8 +1818,7 @@ pub fn reparentElements(
     }
     try in_list_sql.append(allocator, ')');
 
-    // 4. Fetch each element's page_id. Reject BadElementId (count
-    //    mismatch) or CrossPageIds (any element on a different page).
+    // 4.
     var element_pages: std.ArrayList([]u8) = .empty;
     defer {
         for (element_pages.items) |p| allocator.free(p);
@@ -1978,24 +1837,19 @@ pub fn reparentElements(
         if (!std.mem.eql(u8, p, input.page_id)) return error.CrossPageIds;
     }
 
-    // 5. Pre-flight cycle check for every element. If ANY element_id
-    //    would close a cycle (appears in the ancestor chain starting
-    //    from new_parent_id), reject the whole batch — no DB writes.
+    // 5.
     for (input.element_ids) |eid| {
         if (try wouldCreateCycle(db, allocator, eid, input.new_parent_id orelse "")) {
             return error.CycleDetected;
         }
     }
 
-    // 6. SQL transaction. defer-rollback guarantees atomicity: if any UPDATE
-    // fails below, the rollback fires automatically.
+    // 6.
     var tx = try db.begin();
     var committed = false;
     defer if (!committed) tx.rollback() catch {};
 
-    // 7. Apply per-element UPDATEs. We re-query MAX(position) for
-    //    each so the second element lands at first+1 (not the first
-    //    again), preserving input order in the new parent's children.
+    // 7.
     var updated_rows: std.ArrayList(DesignElement) = .empty;
     defer {
         for (updated_rows.items) |e| freeElement(allocator, e);
@@ -2003,8 +1857,7 @@ pub fn reparentElements(
     }
     for (input.element_ids, 0..) |eid, i| {
         _ = i;
-        // Per-element MAX position. The new_parent_id for the query
-        // is what we just verified in step 2.
+        // Per-element MAX position.
         const new_parent_sql: []const u8 = if (input.new_parent_id) |p| p else "";
         var max_pos_q = try tx.query(allocator,
             \\SELECT COALESCE(MAX(position), -1) FROM design_page_elements
@@ -2016,9 +1869,7 @@ pub fn reparentElements(
         const max_pos_value = std.fmt.parseInt(i64, max_pos_row.values[0], 10) catch 0;
         const new_position = max_pos_value + 1;
 
-        // The new_parent_id to bind: empty string when top-level
-        // (Backend.exec binds "" as NULL — the COALESCE
-        // convention used everywhere in this codebase).
+        // The new_parent_id to bind: empty string when top-level (Backend.exec binds "" as NULL — the COALESCE convention used everywhere in this codebase).
         const new_parent_to_bind: []const u8 = if (input.new_parent_id) |p| p else "";
         const new_position_str = try std.fmt.allocPrint(allocator, "{d}", .{new_position});
         defer allocator.free(new_position_str);
@@ -2030,8 +1881,7 @@ pub fn reparentElements(
         , &.{ new_parent_to_bind, new_position_str, eid });
     }
 
-    // 8. Re-SELECT the updated rows (in input order) to return to the
-    //    caller. Use the same SELECT shape as listElements.
+    // 8.
     var row_ptrs: std.ArrayList([]u8) = .empty;
     defer {
         for (row_ptrs.items) |p| allocator.free(p);
@@ -2090,8 +1940,7 @@ pub fn reparentElements(
         try updated.append(allocator, e);
     }
 
-    // 9. Emit SSE events (one per element) AFTER the commit so listeners see
-    // state that's already committed.
+    // 9.
     try tx.commit();
     committed = true;
 
@@ -2131,8 +1980,7 @@ pub const ReorderError = error{
     OutOfMemory,
 };
 
-/// Reorder 1+ elements on a page. Returns the updated rows in their new
-/// top-to-bottom z-order.
+/// Reorder 1+ elements on a page.
 pub fn reorderElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2157,8 +2005,7 @@ pub fn reorderElements(
         allocator.free(all);
     };
 
-    // 2. Validate every requested id resolves to a row on this page. Build an
-    // id -> index map.
+    // 2.
     var id_to_idx = std.StringHashMap(usize).init(allocator);
     defer id_to_idx.deinit();
     for (all, 0..) |e, i| try id_to_idx.put(e.id, i);
@@ -2175,9 +2022,7 @@ pub fn reorderElements(
                 try indexes.append(allocator, idx);
                 continue;
             }
-            // id not on this page — probe design_page_elements to see
-            // whether it exists on a DIFFERENT page (CrossPageIds) or
-            // doesn't exist at all (BadElementId).
+            // id not on this page — probe design_page_elements to see whether it exists on a DIFFERENT page (CrossPageIds) or doesn't exist at all (BadElementId).
             var q = db.query(allocator,
                 "SELECT 1 FROM design_page_elements WHERE id = ?",
                 &.{cid}) catch return error.DbError;
@@ -2225,8 +2070,7 @@ pub fn reorderElements(
             }
         },
         .bring_forward => {
-            // For each selected (in INPUT order), swap with the next-sibling
-            // above (the FIRST non-selected element with a HIGHER z_index).
+            // For each selected (in INPUT order), swap with the next-sibling above (the FIRST non-selected element with a HIGHER z_index).
             for (indexes.items) |idx| {
                 const cur_z = all[idx].z_index;
                 // We want the smallest non-selected z that is > cur_z.
@@ -2248,8 +2092,7 @@ pub fn reorderElements(
             }
         },
         .send_backward => {
-            // Mirror of bring_forward: largest selected z swaps
-            // first with the next non-selected z below.
+            // Mirror of bring_forward: largest selected z swaps first with the next non-selected z below.
             for (indexes.items) |idx| {
                 const cur_z = all[idx].z_index;
                 var best: ?usize = null;
@@ -2284,8 +2127,7 @@ pub fn reorderElements(
     free_all = false;
     for (all) |e| freeElement(allocator, e);
     allocator.free(all);
-    // Re-fetch in case the source-of-truth DB rows changed (other
-    // tabs may have reordered while we were processing).
+    // Re-fetch in case the source-of-truth DB rows changed (other tabs may have reordered while we were processing).
     return listElements(allocator, db, input.page_id) catch |err| return switch (err) {
         error.PageNotFound => error.PageNotFound,
         else => error.DbError,
@@ -2296,9 +2138,7 @@ pub fn reorderElements(
 
 pub const UngroupInput = struct {
     page_id: []const u8,
-    /// The id of the `group` or `frame` element to dissolve. The
-    /// children of this element are reparented to the group's parent
-    /// (or top-level if the group had no parent).
+    /// The id of the `group` or `frame` element to dissolve.
     element_id: []const u8,
 };
 
@@ -2313,8 +2153,7 @@ pub const UngroupError = error{
     OutOfMemory,
 };
 
-/// Dissolve a `group` or `frame`: reparent its direct children to the group's
-/// parent (or NULL if top-level), delete the group's row.
+/// Dissolve a `group` or `frame`: reparent its direct children to the group's parent (or NULL if top-level), delete the group's row.
 pub fn ungroupElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2411,8 +2250,7 @@ pub fn ungroupElements(
 
 // ─── listElements / getElement ─────────────────────────────────────────────
 
-/// List all elements of a design page in (z_index, position) order. Returns
-/// an owned slice; caller MUST release with `freeElements(allocator, slice)`.
+/// List all elements of a design page in (z_index, position) order.
 pub fn listElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2482,8 +2320,7 @@ pub fn listElements(
     return rows.toOwnedSlice(allocator);
 }
 
-/// Get a single element by id (excluding HTML body). Returns
-/// `ElementNotFound` if no such row exists.
+/// Get a single element by id (excluding HTML body).
 pub fn getElement(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2549,15 +2386,12 @@ pub fn freeElement(allocator: std.mem.Allocator, e: DesignElement) void {
 
 // ─── PageWithElements (page + elements bundle for REST GET endpoints) ─────
 
-/// One page plus all its elements (no HTML bodies — lazy-loaded via
-/// `loadElementHtml`). Free with `self.deinit(allocator)`.
+/// One page plus all its elements (no HTML bodies — lazy-loaded via `loadElementHtml`).
 pub const PageWithElements = struct {
     page: DesignPage,
     elements: []DesignElement,
 
-    /// Release the page fields, every element's fields, and the
-    /// elements slice in one call. Mirrors the lifecycle of `listPages`
-    /// + `listElements` but bundled.
+    /// Release the page fields, every element's fields, and the elements slice in one call.
     pub fn deinit(self: PageWithElements, allocator: std.mem.Allocator) void {
         allocator.free(self.page.id);
         allocator.free(self.page.workspace_item_id);
@@ -2569,8 +2403,7 @@ pub const PageWithElements = struct {
     }
 };
 
-/// Get ONE design page with all of its elements (no HTML bodies). Returns
-/// `PageNotFound` if no page with that id exists.
+/// Get ONE design page with all of its elements (no HTML bodies).
 pub fn getPageWithElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2588,9 +2421,7 @@ pub fn getPageWithElements(
     defer q.deinit();
 
     const page = (try q.next()) orelse return error.PageNotFound;
-    // The page row is owned by `q` — dup the fields BEFORE row.deinit fires
-    // (the existing listPages pattern uses allocator.dupe inside the loop
-    // body). See project memory `zig-slice-headers-across-defer-lifetimes`.
+    // The page row is owned by `q` — dup the fields BEFORE row.deinit fires (the existing listPages pattern uses allocator.dupe inside the loop body).
     var page_owned: DesignPage = undefined;
     {
         defer page.deinit(allocator);
@@ -2617,23 +2448,18 @@ pub fn getPageWithElements(
 }
 
 /// List ALL pages of a design item, each with its elements (no HTML bodies).
-/// Returns an owned slice; caller MUST call `freePagesWithElements` (or each
-/// result's `deinit` + `allocator.free(slice)`).
 pub fn listPagesWithElements(
     allocator: std.mem.Allocator,
     db: *database.Db,
     item_id: []const u8,
 ) anyerror![]PageWithElements {
     const pages = try listPages(allocator, db, item_id);
-    // Track how many pages we've successfully moved into `rows`. Un-consumed
-    // pages still own their strings (and need freeing on error).
+    // Track how many pages we've successfully moved into `rows`.
     var consumed: usize = 0;
     var backing_slice_freed = false;
     defer {
         if (!backing_slice_freed) {
-            // Error path: free the un-consumed tail's strings, then the
-            // backing slice. The consumed pages are owned by `rows` and will
-            // be freed by its errdefer below (registered AFTER this defer).
+            // Error path: free the un-consumed tail's strings, then the backing slice.
             for (pages[consumed..]) |p| {
                 allocator.free(p.id);
                 allocator.free(p.workspace_item_id);
@@ -2649,20 +2475,15 @@ pub fn listPagesWithElements(
     errdefer {
         for (rows.items) |*r| r.deinit(allocator);
         rows.deinit(allocator);
-        // The outer defer for `pages` cleanup has ALREADY fired by
-        // here (errdefer LIFO ordering — registered last, fires first).
+        // The outer defer for `pages` cleanup has ALREADY fired by here (errdefer LIFO ordering — registered last, fires first).
     }
 
     for (pages) |page| {
         const elements = listElements(allocator, db, page.id) catch |err| {
-            // listElements failed before we moved the page into
-            // rows. The page's strings will be freed by the outer
-            // defer (pages[consumed..] includes this page).
+            // listElements failed before we moved the page into rows.
             return err;
         };
-        // If rows.append fails, we still own `elements` and need
-        // to free them (the page's strings are freed by the outer
-        // defer because consumed was not incremented yet).
+        // If rows.append fails, we still own `elements` and need to free them (the page's strings are freed by the outer defer because consumed was not incremented yet).
         errdefer freeElements(allocator, elements);
         rows.append(allocator, .{
             .page = page,
@@ -2671,9 +2492,7 @@ pub fn listPagesWithElements(
         consumed += 1;
     }
 
-    // Success: backing slice is no longer needed (per-page strings
-    // have all been moved into rows.items). Free the backing slice
-    // and tell the outer defer to skip its work.
+    // Success: backing slice is no longer needed (per-page strings have all been moved into rows.items).
     backing_slice_freed = true;
     allocator.free(pages);
     return rows.toOwnedSlice(allocator);
@@ -2686,8 +2505,6 @@ pub fn freePagesWithElements(allocator: std.mem.Allocator, items: []PageWithElem
 }
 
 // ─── setElementParent ─────────────────────────────────────────────────────
-// Re-parent an existing element to a new `group`/`frame` (or to top-level
-// when `new_parent_id` is null).
 
 pub const SetElementParentError = error{
     ElementNotFound,
@@ -2699,8 +2516,7 @@ pub const SetElementParentError = error{
     OutOfMemory,
 };
 
-/// Cycle detection for reparent operations. Returns `true` iff reparenting
-/// `element_id` to be a child of `new_parent_id` would close a cycle — i.e.
+/// Cycle detection for reparent operations.
 pub fn wouldCreateCycle(
     db: *database.Db,
     allocator: std.mem.Allocator,
@@ -2726,7 +2542,6 @@ pub fn wouldCreateCycle(
 }
 
 /// Re-parent `element_id` to `new_parent_id` (or top-level when null).
-/// Behaviour: 1. Look up `element_id`'s current page_id + parent_id.
 pub fn setElementParent(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -2796,8 +2611,7 @@ pub fn setElementParent(
         return error.ParentNotContainer;
     }
 
-    // 7. Cycle detection via recursive CTE. Walk up the parent chain starting
-    // from `new_parent_id`.
+    // 7.
     {
         var q = try db.query(allocator,
             \\WITH RECURSIVE chain(id) AS (
@@ -2823,16 +2637,13 @@ pub fn setElementParent(
 
 // ─── deleteElement ────────────────────────────────────────────────────────
 
-/// Delete an element. Returns `true` if the row was deleted, `false` if no
-/// such element existed.
+/// Delete an element.
 pub fn deleteElement(
     allocator: std.mem.Allocator,
     db: *database.Db,
     element_id: []const u8,
 ) anyerror!bool {
-    // Look up file_path + workspace_id + item_id + page_id BEFORE delete so
-    // we can both unlink the file and emit a `design_element_deleted` SSE
-    // event with the full id context.
+    // Look up file_path + workspace_id + item_id + page_id BEFORE delete so we can both unlink the file and emit a `design_element_deleted` SSE event with the full …
     const Lookup = struct {
         file_path: []u8,
         page_id: []u8,
@@ -2863,8 +2674,7 @@ pub fn deleteElement(
     defer allocator.free(lookup.workspace_id);
     defer allocator.free(lookup.item_id);
 
-    // NULL-back step: if this element is itself a parent (group/frame),
-    // orphan its children first so they become top-level again.
+    // NULL-back step: if this element is itself a parent (group/frame), orphan its children first so they become top-level again.
     try db.exec(allocator,
         "UPDATE design_page_elements SET parent_id = NULL WHERE parent_id = ?",
         &.{element_id});
@@ -2874,8 +2684,7 @@ pub fn deleteElement(
         "DELETE FROM design_page_elements WHERE id = ?",
         &.{element_id});
 
-    // Defer-pattern: unlink file AFTER SQL succeeded. Swallow errors
-    // (the file may already be missing or read-only).
+    // Defer-pattern: unlink file AFTER SQL succeeded.
     if (lookup.file_path.len > 0) {
         design_io.deleteFileIfExists(allocator, lookup.file_path) catch {};
     }
@@ -2892,8 +2701,6 @@ pub fn deleteElement(
 }
 
 // ─── deletePage ────────────────────────────────────────────────────────────
-// Delete a design page and everything under it: 1. The `design_pages` SQL
-// row. 2.
 pub fn deletePage(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -2901,9 +2708,7 @@ pub fn deletePage(
     page_id: []const u8,
 ) anyerror!bool {
     _ = io; // Per-file deletion uses design_io.deleteFileIfExists which doesn't need an Io.
-    // Look up `workspace_item_id` + `workspace_item_task_id` from
-    // `design_pages` ONLY (no JOIN to `workspace_items`). Both columns live
-    // on `design_pages`; we never read `workspace_items` in this function.
+    // Look up `workspace_item_id` + `workspace_item_task_id` from `design_pages` ONLY (no JOIN to `workspace_items`).
     const page_info: struct {
         item_id: []u8,
         workspace_item_task_id: []u8,
@@ -2925,8 +2730,7 @@ pub fn deletePage(
     defer allocator.free(page_info.item_id);
     defer allocator.free(page_info.workspace_item_task_id);
 
-    // Collect every `file_path` from this page's elements BEFORE the SQL
-    // DELETE so we have an authoritative list of files to unlink.
+    // Collect every `file_path` from this page's elements BEFORE the SQL DELETE so we have an authoritative list of files to unlink.
     var file_paths: std.ArrayList([]u8) = .empty;
     defer {
         for (file_paths.items) |p| allocator.free(p);
@@ -2949,9 +2753,7 @@ pub fn deletePage(
         "DELETE FROM design_pages WHERE id = ?",
         &.{page_id});
 
-    // Cascade-delete the paired workspace_item_tasks row. The
-    // application-level "FK" we maintain via the UNIQUE index has no SQL
-    // cascade, so we do this by hand.
+    // Cascade-delete the paired workspace_item_tasks row.
     if (page_info.workspace_item_task_id.len > 0) {
         db.exec(allocator,
             "DELETE FROM workspace_item_tasks WHERE id = ?",
@@ -2963,13 +2765,10 @@ pub fn deletePage(
         design_io.deleteFileIfExists(allocator, fp) catch {};
     }
 
-    // After unlinking every tracked HTML file, attempt to remove the
-    // now-empty page directory itself (`<item_path>/.pabrik/design/<page>/`).
+    // After unlinking every tracked HTML file, attempt to remove the now-empty page directory itself (`<item_path>/.pabrik/design/<page>/`).
     if (file_paths.items.len > 0) {
         if (std.fs.path.dirname(file_paths.items[0])) |page_dir| {
-            // deleteDirectoryIfEmpty's possible errors: DirNotEmpty —
-            // user-dropped files remain (preserve them) NotADirectory — race
-            // with another rmdir or filesystem oddity PathTooLong — file_path
+            // deleteDirectoryIfEmpty's possible errors: DirNotEmpty — user-dropped files remain (preserve them) NotADirectory — race with another rmdir or filesystem oddity …
             design_io.deleteDirectoryIfEmpty(allocator, page_dir) catch |err| switch (err) {
                 error.DirNotEmpty, error.NotADirectory, error.PathTooLong => {},
                 error.RmdirFailed => std.log.warn(
@@ -2992,9 +2791,7 @@ pub fn deletePage(
 
 // ─── loadElementHtml ──────────────────────────────────────────────────────
 
-/// Read the on-disk HTML body for an element. Returns
-/// `ElementNotFound` if no such row exists; propagates IO errors
-/// from the file read.
+/// Read the on-disk HTML body for an element.
 pub fn loadElementHtml(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -3014,7 +2811,6 @@ pub fn loadElementHtml(
 }
 
 // ─── Behavioural tests for `updateElementsBatch` ─────────────────────────
-// — the backend mitigation that collapses N per-element
 
 const testing_geometry = std.testing;
 
@@ -3332,8 +3128,6 @@ test "updateElementsBatch accepts a single field per update (no other fields req
 }
 
 // ─── updateElement: parent_id + reposition + cycle preflight (Chunk 1) ────
-// Pulled in from design_model_reparent_test.zig — the convention on this
-// project (per the maintainer) is one file per impl, with helpers + tests at
 
 const testing_reparent = std.testing;
 
@@ -3751,14 +3545,10 @@ test "updateElement without reposition leaves position unchanged" {
     defer freeElement(alloc, got);
     try testing_reparent.expectEqualStrings(group_id, got.parent_id);
     // addElement assigns positions sequentially: group=0, leaf=1.
-    // Without reposition, the UPDATE only changes parent_id and
-    // leaves position as-is. So leaf.position stays at 1.
     try testing_reparent.expectEqual(@as(i64, 1), got.position);
 }
 
 // ─── reparentElements: atomic N-element reparent model (Chunk 1b) ─────────
-//
-// Pulled in from design_model_reparent_batch_test.zig.
 
 const testing_reparent_batch = std.testing;
 
@@ -4200,8 +3990,6 @@ test "reparentElements returns BadElementId when an id does not exist" {
 }
 
 // ─── Behavioural tests for `moveElementsWithDescendantsBatch` (Chunk 1) ──
-// Inline tests per the project rule (see
-// `pabrik-agentic-loop-inline-tests-required.md`).
 
 const testing_move_batch = std.testing;
 
@@ -4801,8 +4589,7 @@ test "moveElementsWithDescendantsBatch handles deeply nested subtree (depth 3+)"
     try testing_move_batch.expectEqual(@as(i64, 157), try moveBatchReadY(alloc, &ctx.db, leaf));
 }
 
-// ─── Behavioural tests for `moveElementToPage` (2026-08-06) ───Inline
-// tests per the project rule (see
+// ─── Behavioural tests for `moveElementToPage` (2026-08-06) ───Inline tests per the project rule (see
 
 const testing_move_to_page = std.testing;
 
@@ -4916,8 +4703,7 @@ fn teardownMoveToPageDb(db: *database.Db, threaded: *std.Io.Threaded) void {
     threaded.deinit();
 }
 
-/// Read the element's `page_id` column from the DB (returns the empty
-/// string when NULL is stored).
+/// Read the element's `page_id` column from the DB (returns the empty string when NULL is stored).
 fn moveToPageReadPageId(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -4932,8 +4718,7 @@ fn moveToPageReadPageId(
     return try alloc.dupe(u8, row.values[0]);
 }
 
-/// Read the element's `parent_id` column from the DB (returns the empty
-/// string when NULL is stored).
+/// Read the element's `parent_id` column from the DB (returns the empty string when NULL is stored).
 fn moveToPageReadParentId(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -5044,8 +4829,7 @@ test "moveElementToPage moves a group with 2 children atomically (subtree on tar
         try testing_move_to_page.expectEqualStrings(ctx.target_page_id, el.page_id);
     }
 
-    // Children retain parent_id = group (group is also on the target page,
-    // so the FK is still valid).
+    // Children retain parent_id = group (group is also on the target page, so the FK is still valid).
     const c1_pid = try moveToPageReadParentId(alloc, &ctx.db, child1);
     defer alloc.free(c1_pid);
     try testing_move_to_page.expectEqualStrings(group, c1_pid);
@@ -5117,9 +4901,7 @@ test "moveElementToPage moves a group with grandchildren (depth-2 cascade)" {
 }
 
 test "moveElementToPage auto-clears parent_id when the parent is NOT being moved" {
-    // Q4 default (from the spec): when the selected element has a parent_id
-    // pointing to an element that's NOT in the moved subtree (i.e. the parent
-    // stays on the source page), the parent_id is auto-cleared so the element
+    // Q4 default (from the spec): when the selected element has a parent_id pointing to an element that's NOT in the moved subtree (i.e. the parent stays on the …
     const alloc = testing_move_to_page.allocator;
     var ctx = try setupMoveToPageDbAndItem();
     defer teardownMoveToPageDb(&ctx.db, &ctx.threaded);
@@ -5299,8 +5081,6 @@ test "moveElementToPage rejects ElementNotFound (element not on source page)" {
 }
 
 // ─── updateDesignPage (rename + size) ────────────────────────────────────
-// Inline tests for the optional `name` field on UpdateDesignPageInput
-// (2026-08-06 — design page rename menu).
 
 const testing_update_page = std.testing;
 
@@ -5348,8 +5128,7 @@ fn setupUpdatePageDbAndItem() !struct {
             "VALUES (?, 'ws_1', 'design', 'Design Item')",
         &.{item_id});
 
-    // Direct INSERT (skipping setDesignPage, which requires a non-empty path
-    // on workspace_items).
+    // Direct INSERT (skipping setDesignPage, which requires a non-empty path on workspace_items).
     const page_id = try alloc.dupe(u8, "page_rename_target");
     errdefer alloc.free(page_id);
 
@@ -5391,9 +5170,7 @@ test "updateDesignPage with name=null is back-compat (size-only update)" {
         .height = 1080,
         .name = null,
     });
-    // Manual field-by-field free (the page is returned as a single struct,
-    // not a slice — `freePages` ends with `allocator.free(pages)` which
-    // expects a heap-allocated slice; a single struct return needs the
+    // Manual field-by-field free (the page is returned as a single struct, not a slice — `freePages` ends with `allocator.free(pages)` which expects a heap-allocated …
     defer {
         alloc.free(updated.id);
         alloc.free(updated.workspace_item_id);
@@ -5405,8 +5182,7 @@ test "updateDesignPage with name=null is back-compat (size-only update)" {
 
     try testing_update_page.expectEqual(@as(i64, 1920), updated.width);
     try testing_update_page.expectEqual(@as(i64, 1080), updated.height);
-    // Name preserved (NOT blanked — the dynamic SQL builder skips the
-    // `name = ?` clause when null).
+    // Name preserved (NOT blanked — the dynamic SQL builder skips the `name = ?` clause when null).
     try testing_update_page.expectEqualStrings("Original Name", updated.name);
 }
 
@@ -5434,8 +5210,7 @@ test "updateDesignPage with name persists the new name and keeps size" {
     try testing_update_page.expectEqual(@as(i64, 1440), updated.width);
     try testing_update_page.expectEqual(@as(i64, 1024), updated.height);
 
-    // Round-trip via listPages — catches the "name got bound to the
-    // wrong slot" / "SQL clause skipped silently" bugs.
+    // Round-trip via listPages — catches the "name got bound to the wrong slot" / "SQL clause skipped silently" bugs.
     const pages = try listPages(alloc, &ctx.db, ctx.item_id);
     defer freePages(alloc, pages);
     try testing_update_page.expectEqual(@as(usize, 1), pages.len);
@@ -5456,15 +5231,12 @@ test "updateDesignPage with empty name returns BadPageName" {
     try testing_update_page.expectError(error.BadPageName, result);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_add_element_parent_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 const testing = std.testing;
 
 
-/// Open a fresh in-memory sqlite DB with the minimum tables needed for
-/// the design SQL. Mirrors `design_model_parent_id_test.zig::addElementParentSetupDbAndItem`.
+/// Open a fresh in-memory sqlite DB with the minimum tables needed for the design SQL.
 fn addElementParentSetupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -5759,17 +5531,13 @@ test "addElement without parent_id defaults to top-level (empty parent_id)" {
     try testing.expectEqual(@as(usize, 0), child.parent_id.len);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_delete_page_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
 
 const ITEM_ID = "item_design_delete_page_test";
 
 /// Minimal in-memory DB shape (mirrors `design_model_delete_parent_test.zig`).
-/// Includes `workspace_items.path` so we can also confirm the new code
-/// path works when the item row is deleted FIRST (no path lookup).
 fn deletePageSetupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -5848,9 +5616,7 @@ fn deletePageSetupDb() !struct {
     return .{ .db = db, .threaded = threaded, .item_path = tmpdir_path };
 }
 
-/// Insert one design_page_elements row whose `file_path` is the full absolute
-/// path to its on-disk HTML file. Creates the file + page directory on disk
-/// so deletePage's rmdir step has something to remove.
+/// Insert one design_page_elements row whose `file_path` is the full absolute path to its on-disk HTML file.
 fn deletePageInsertElementWithDiskFile(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -5959,8 +5725,7 @@ test "deletePage removes the design_pages row + cascade-deletes elements" {
     });
     defer alloc.free(page_id);
 
-    // Insert an element via setDesignPage's pairing — but we don't
-    // need the workspace_item_task_id here. Just need the row.
+    // Insert an element via setDesignPage's pairing — but we don't need the workspace_item_task_id here.
     const page_dir = try std.fs.path.join(alloc, &.{ ctx.item_path, ".pabrik/design/Home" });
     defer alloc.free(page_dir);
     const elem_path = try deletePageInsertElementWithDiskFile(
@@ -6008,8 +5773,7 @@ test "deletePage unlinks each element's HTML file individually (per-file, NOT re
     );
     defer alloc.free(forgot_link_path);
 
-    // A non-DB-tracked file the user dropped into the page directory manually
-    // (e.g. a stray `README.md` or `.DS_Store`).
+    // A non-DB-tracked file the user dropped into the page directory manually (e.g. a stray `README.md` or `.DS_Store`).
     const stray_file_path = try std.fs.path.join(alloc, &.{ page_dir, "user-note.txt" });
     defer alloc.free(stray_file_path);
     {
@@ -6026,13 +5790,11 @@ test "deletePage unlinks each element's HTML file individually (per-file, NOT re
     const was_deleted = try deletePage(alloc, ctx.threaded.io(), &ctx.db, page_id);
     try testing.expect(was_deleted);
 
-    // Each DB-tracked file is gone after delete (per-file deletion,
-    // mirrors deleteElement's pattern).
+    // Each DB-tracked file is gone after delete (per-file deletion, mirrors deleteElement's pattern).
     try testing.expect(!fileExists(ctx.threaded.io(), login_btn_path));
     try testing.expect(!fileExists(ctx.threaded.io(), forgot_link_path));
 
-    // The non-DB-tracked file MUST still exist — per-file deletion does NOT
-    // recursively walk the folder.
+    // The non-DB-tracked file MUST still exist — per-file deletion does NOT recursively walk the folder.
     try testing.expect(fileExists(ctx.threaded.io(), stray_file_path));
 }
 
@@ -6050,9 +5812,7 @@ test "deletePage succeeds (no-op on disk) when page has no elements yet" {
     });
     defer alloc.free(page_id);
 
-    // No elements, no on-disk directory → deletePage should still
-    // succeed and remove the SQL row (the new lookup returns null
-    // because there are no file_paths to derive from).
+    // No elements, no on-disk directory → deletePage should still succeed and remove the SQL row (the new lookup returns null because there are no file_paths to …
     const was_deleted = try deletePage(alloc, ctx.threaded.io(), &ctx.db, page_id);
     try testing.expect(was_deleted);
     try testing.expect(!try deletePagePageIdExists(alloc, &ctx.db, page_id));
@@ -6073,7 +5833,6 @@ test "deletePage cascade-deletes the paired workspace_item_tasks row" {
     defer alloc.free(page_id);
 
     // The paired task id is stored on design_pages.workspace_item_task_id.
-    // Read it back.
     var q = try ctx.db.query(alloc,
         "SELECT COALESCE(CAST(workspace_item_task_id AS TEXT), '') FROM design_pages WHERE id = ?",
         &.{page_id});
@@ -6097,9 +5856,7 @@ test "deletePage cascade-deletes the paired workspace_item_tasks row" {
 }
 
 test "deletePage rmdirs the empty page directory (cleans up after per-file unlink)" {
-    // Why this test exists ───────────────────── The per-file unlink step
-    // (`deleteFileIfExists`) leaves an empty `<page>/` directory behind —
-    // which was the root cause of the 2026-08-13 functional-test regression
+    // Why this test exists ───────────────────── The per-file unlink step (`deleteFileIfExists`) leaves an empty `<page>/` directory behind — which was the root …
     const alloc = testing.allocator;
     var ctx = try deletePageSetupDb();
     defer ctx.db.deinit();
@@ -6127,15 +5884,12 @@ test "deletePage rmdirs the empty page directory (cleans up after per-file unlin
     const was_deleted = try deletePage(alloc, ctx.threaded.io(), &ctx.db, page_id);
     try testing.expect(was_deleted);
 
-    // After delete: the page directory itself is gone (rmdir succeeded
-    // because no user-dropped files remain inside).
+    // After delete: the page directory itself is gone (rmdir succeeded because no user-dropped files remain inside).
     try testing.expect(!dirExists(ctx.threaded.io(), page_dir));
 }
 
 test "deletePage preserves a user-dropped file inside the page directory" {
-    // The companion to the rmdir-cleanup test: when the user has dropped a
-    // file (`.DS_Store`, `README.md`, screenshot, etc.) into the page folder,
-    // deletePage MUST keep it.
+    // The companion to the rmdir-cleanup test: when the user has dropped a file (`.DS_Store`, `README.md`, screenshot, etc.) into the page folder, deletePage MUST …
     const alloc = testing.allocator;
     var ctx = try deletePageSetupDb();
     defer ctx.db.deinit();
@@ -6180,14 +5934,11 @@ test "deletePage preserves a user-dropped file inside the page directory" {
     try testing.expect(dirExists(ctx.threaded.io(), page_dir));
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_delete_parent_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
 
-/// Same shape as design_model_test.zig::deleteParentSetupDbAndItem (kept inline
-/// so this file is self-contained for the static checks).
+/// Same shape as design_model_test.zig::deleteParentSetupDbAndItem (kept inline so this file is self-contained for the static checks).
 fn deleteParentSetupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -6274,8 +6025,7 @@ fn deleteParentSetupDbAndItem() !struct {
     };
 }
 
-/// Insert one design element with explicit (id, x, y, width, height,
-/// parent_id) so we can build a parent + N children tree.
+/// Insert one design element with explicit (id, x, y, width, height, parent_id) so we can build a parent + N children tree.
 fn deleteParentInsertElement(
     alloc: std.mem.Allocator,
     db: *database.Db,
@@ -6306,8 +6056,7 @@ fn deleteParentInsertElement(
     , &.{ id, page_id, name, x_str, y_str, w_str, h_str, parent_id });
 }
 
-/// Read parent_id of a row by id. Returns "NULL" when the column is
-/// empty (NULL).
+/// Read parent_id of a row by id.
 fn deleteParentParentIdOf(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) ![]u8 {
     var q = try db.query(alloc,
         "SELECT COALESCE(CAST(parent_id AS TEXT), 'NULL') FROM design_page_elements WHERE id = ?",
@@ -6355,8 +6104,7 @@ test "deleteElement NULLs parent_id on children of a deleted parent" {
     const was_deleted = try deleteElement(alloc, &ctx.db, "elem_parent");
     try testing.expect(was_deleted);
 
-    // The children should STILL exist with parent_id = NULL
-    // (i.e. they became top-level).
+    // The children should STILL exist with parent_id = NULL (i.e. they became top-level).
     const a_pid_after = try deleteParentParentIdOf(alloc, &ctx.db, "elem_child_a");
     defer alloc.free(a_pid_after);
     try testing.expectEqualStrings("NULL", a_pid_after);
@@ -6385,8 +6133,7 @@ test "deleteElement of a leaf element leaves no parent_id side-effects on others
     });
     defer alloc.free(page_id);
 
-    // 3 top-level elements (no parent_id anywhere). Deleting one
-    // should not affect the others' parent_id state.
+    // 3 top-level elements (no parent_id anywhere).
     try deleteParentInsertElement(alloc, &ctx.db, "elem_tl_1", page_id, "TL 1", 0, 0, 50, 50, "");
     try deleteParentInsertElement(alloc, &ctx.db, "elem_tl_2", page_id, "TL 2", 100, 0, 50, 50, "");
     try deleteParentInsertElement(alloc, &ctx.db, "elem_tl_3", page_id, "TL 3", 200, 0, 50, 50, "");
@@ -6419,8 +6166,7 @@ test "deleteElement of a parent with no children just deletes the row" {
     });
     defer alloc.free(page_id);
 
-    // Empty parent (no children reference it). Delete should be a
-    // no-op for other rows + the parent row vanishes.
+    // Empty parent (no children reference it).
     try deleteParentInsertElement(alloc, &ctx.db, "elem_empty_parent", page_id, "EmptyParent", 0, 0, 100, 100, "");
 
     const was_deleted = try deleteElement(alloc, &ctx.db, "elem_empty_parent");
@@ -6431,16 +6177,12 @@ test "deleteElement of a parent with no children just deletes the row" {
     try testing.expectError(error.ElementNotFound, result);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_group_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
 
 
-/// Open a fresh in-memory sqlite DB with the minimum tables needed
-/// for the design SQL. Same shape as
-/// `design_model_test.zig::groupSetupDbAndItem`.
+/// Open a fresh in-memory sqlite DB with the minimum tables needed for the design SQL.
 fn groupSetupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -6527,8 +6269,7 @@ fn groupSetupDbAndItem() !struct {
     };
 }
 
-/// Insert one design element with explicit (x, y, width, height) and
-/// the given name. Returns the generated elem_<id>.
+/// Insert one design element with explicit (x, y, width, height) and the given name.
 fn groupInsertChild(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, name: []const u8, x: i64, y: i64, w: i64, h: i64) ![]u8 {
     // db.exec binds only TEXT — stringify the integer columns.
     const x_str = try std.fmt.allocPrint(alloc, "{d}", .{x});
@@ -6598,9 +6339,7 @@ test "groupElements creates a new parent element and reparents the children" {
     try testing.expectEqual(@as(i64, 150), parent.height);
     try testing.expectEqual(@as(usize, 0), parent.parent_id.len);
 
-    // The group must render BEHIND its children — otherwise an opaque
-    // fill occludes its contents. Children default to z_index 0, so the
-    // group must sit at -1 (min_z - 1).
+    // The group must render BEHIND its children — otherwise an opaque fill occludes its contents.
     try testing.expectEqual(@as(i64, -1), parent.z_index);
 
     // Each child should now have parent_id set to the new parent.
@@ -6765,17 +6504,13 @@ test "updateElement with parent_id = null leaves existing parent_id unchanged" {
     try testing.expectEqual(@as(i64, 99), after.x);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_parent_id_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimum tables needed
-/// for the design SQL. Mirrors `design_model_test.zig::parentIdSetupDbAndItem`
-/// (kept inline here so this file stays self-contained).
+/// Open a fresh in-memory sqlite DB with the minimum tables needed for the design SQL.
 fn parentIdSetupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -6893,8 +6628,7 @@ test "getElement returns empty string for NULL parent_id" {
     const got = try getElement(alloc, &ctx.db, element_id);
     defer freeElement(alloc, got);
 
-    // NULL parent_id → empty string (the SELECT COALESCE pattern is not used
-    // here; the column reads "" via the empty-slice-binds-as-null pattern.
+    // NULL parent_id → empty string (the SELECT COALESCE pattern is not used here; the column reads "" via the empty-slice-binds-as-null pattern.
     try testing.expectEqual(@as(usize, 0), got.parent_id.len);
 }
 
@@ -6914,8 +6648,7 @@ test "getElement returns parent_id value when set" {
     });
     defer alloc.free(page_id);
 
-    // Manually INSERT a parent + child with parent_id set, bypassing
-    // addElement (which always sets parent_id = NULL via INSERT).
+    // Manually INSERT a parent + child with parent_id set, bypassing addElement (which always sets parent_id = NULL via INSERT).
     try ctx.db.exec(alloc,
         \\INSERT INTO design_page_elements
         \\   (id, page_id, name, file_path, x, y, width, height, z_index, position,
@@ -6961,9 +6694,7 @@ test "listElements returns parent_id for every element" {
     });
     defer alloc.free(page_id);
 
-    // Same manual-INSERT pattern as the previous test. Each row is
-    // INSERTed in its own statement so the `?` placeholder count
-    // matches the args count (SQLite positions `?` per-statement).
+    // Same manual-INSERT pattern as the previous test.
     try ctx.db.exec(alloc,
         \\INSERT INTO design_page_elements
         \\   (id, page_id, name, file_path, x, y, width, height, z_index, position,
@@ -7005,9 +6736,7 @@ test "listElements returns parent_id for every element" {
 
     try testing.expectEqual(@as(usize, 3), elements.len);
 
-    // Order by (z_index ASC, position ASC). The top-level "top" is at
-    // position 0 (z 0); "parent" at position 1 (z 0); "child" at
-    // position 2 (z 0).
+    // Order by (z_index ASC, position ASC).
     try testing.expectEqualStrings("top", elements[0].name);
     try testing.expectEqualStrings("parent", elements[1].name);
     try testing.expectEqualStrings("child", elements[2].name);
@@ -7017,14 +6746,10 @@ test "listElements returns parent_id for every element" {
     try testing.expectEqualStrings("elem_parent", elements[2].parent_id);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_reorder_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
-/// Set up an in-memory sqlite DB with the minimum tables `reorderElements`
-/// reads. Mirrors `design_model_group_test.zig::setupDbAndItem` (without
-/// the workspaces + items FK tails that reorderElements doesn't touch).
+/// Set up an in-memory sqlite DB with the minimum tables `reorderElements` reads.
 fn reorderSetupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -7092,8 +6817,7 @@ fn reorderTeardown(s: *@TypeOf(reorderSetupDb() catch @panic("reorderSetupDb fai
     s.threaded.deinit();
 }
 
-/// Insert a design element at a given z_index. Returns the id (duplicated
-/// into the caller's allocator; safe to free with `freeId`).
+/// Insert a design element at a given z_index.
 fn reorderInsertEl(alloc: std.mem.Allocator, db: *database.Db, page_id: []const u8, id: []const u8, z: i64) ![]u8 {
     const z_str = try std.fmt.allocPrint(alloc, "{d}", .{z});
     defer alloc.free(z_str);
@@ -7115,9 +6839,7 @@ fn reorderReadZ(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) !?i6
     return null;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Tests
-// ───────────────────────────────────────────────────────────────────────
 
 test "reorderElements bring_to_front sets selected above untouched elements in input order" {
     var s = try reorderSetupDb();
@@ -7129,16 +6851,13 @@ test "reorderElements bring_to_front sets selected above untouched elements in i
     const c = try reorderInsertEl(s.alloc, &s.db, "page_t1", "c", 2);
     defer s.alloc.free(c);
 
-    // Initial order: a(z=0), b(z=1), c(z=2). Bring {a, c} to front: the
-    // algorithm assigns new z values starting from max_z + 1, walking the
-    // input list in order.
+    // Initial order: a(z=0), b(z=1), c(z=2).
     const result = try reorderElements(s.alloc, &s.db, .{
         .page_id = "page_t1",
         .mode = .bring_to_front,
         .element_ids = &[_][]const u8{ a, c },
     });
-    // Zig defers are LIFO — free the slice header LAST (after we've walked
-    // each element through freeElement), not first.
+    // Zig defers are LIFO — free the slice header LAST (after we've walked each element through freeElement), not first.
     defer s.alloc.free(result);
     defer for (result) |e| freeElement(s.alloc, e);
 
@@ -7157,8 +6876,7 @@ test "reorderElements send_to_back puts selected below untouched in reverse-inpu
     const c = try reorderInsertEl(s.alloc, &s.db, "page_t1", "c", 2);
     defer s.alloc.free(c);
 
-    // Send {a, b} to back: the algorithm iterates the input list in REVERSE
-    // order, assigning new z values starting from min_z - 1.
+    // Send {a, b} to back: the algorithm iterates the input list in REVERSE order, assigning new z values starting from min_z - 1.
     const result = try reorderElements(s.alloc, &s.db, .{
         .page_id = "page_t1",
         .mode = .send_to_back,
@@ -7182,8 +6900,7 @@ test "reorderElements bring_forward swaps the topmost selected with the next sib
     const c = try reorderInsertEl(s.alloc, &s.db, "page_t1", "c", 2);
     defer s.alloc.free(c);
 
-    // bring_forward b: b (z=1) should swap with c (z=2). Result:
-    // b(z=2), a(z=0), c(z=1).
+    // bring_forward b: b (z=1) should swap with c (z=2). Result
     const result = try reorderElements(s.alloc, &s.db, .{
         .page_id = "page_t1",
         .mode = .bring_forward,
@@ -7207,8 +6924,7 @@ test "reorderElements send_backward swaps the bottommost selected with the next 
     const c = try reorderInsertEl(s.alloc, &s.db, "page_t1", "c", 2);
     defer s.alloc.free(c);
 
-    // send_backward b: b (z=1) should swap with a (z=0). Result:
-    // b(z=0), a(z=1), c(z=2).
+    // send_backward b: b (z=1) should swap with a (z=0). Result
     const result = try reorderElements(s.alloc, &s.db, .{
         .page_id = "page_t1",
         .mode = .send_backward,
@@ -7298,14 +7014,11 @@ test "reorderElements returned slice contains the rows in their new top-to-botto
     try testing.expect(seen_a and seen_b and seen_c);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_set_element_parent_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
 
-/// Open a fresh in-memory sqlite DB with the minimum tables needed for
-/// the design SQL. Same shape as `design_model_add_element_parent_test.zig`.
+/// Open a fresh in-memory sqlite DB with the minimum tables needed for the design SQL.
 fn setElementParentSetupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -7461,8 +7174,7 @@ test "setElementParent with null moves element to top-level" {
     });
     defer alloc.free(page_id);
 
-    // Add a parent + child with parent_id set via manual INSERTs
-    // (addElement always sets parent_id = NULL).
+    // Add a parent + child with parent_id set via manual INSERTs (addElement always sets parent_id = NULL).
     try ctx.db.exec(alloc,
         \\INSERT INTO design_page_elements
         \\   (id, page_id, name, file_path, x, y, width, height, z_index, position,
@@ -7572,17 +7284,13 @@ test "setElementParent rejects non-existent element_id" {
     try testing.expectError(error.ElementNotFound, result);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Inlined from design_model_test.zig
-// ════════════════════════════════════════════════════════════════════════════
 
 
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimum tables `design_model`
-/// functions need: `workspace_items` + `design_pages` +
-/// `design_page_elements`.
+/// Open a fresh in-memory sqlite DB with the minimum tables `design_model` functions need: `workspace_items` + `design_pages` + `design_page_elements`.
 fn designModelSetupDbAndItem() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -7598,8 +7306,7 @@ fn designModelSetupDbAndItem() !struct {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // workspace_items. `path` is required by setDesignPage (returns
-    // ItemPathMissing if NULL/empty).
+    // workspace_items.
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
@@ -7608,9 +7315,7 @@ fn designModelSetupDbAndItem() !struct {
         \\    created_at TIMESTAMP, updated_at TIMESTAMP)
     , &.{});
 
-    // workspace_item_tasks (required by setDesignPage since the FK
-    // work — each new page is paired with a chat task row in the
-    // same transaction).
+    // workspace_item_tasks (required by setDesignPage since the FK work — each new page is paired with a chat task row in the same transaction).
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -7622,8 +7327,7 @@ fn designModelSetupDbAndItem() !struct {
         \\    updated_at TIMESTAMP)
     , &.{});
 
-    // design_pages (v6 schema + post-Migration-066
-    // workspace_item_task_id column).
+    // design_pages (v6 schema + post-Migration-066 workspace_item_task_id column).
     try db.exec(alloc,
         \\CREATE TABLE design_pages (
         \\    id TEXT PRIMARY KEY,
@@ -7642,8 +7346,7 @@ fn designModelSetupDbAndItem() !struct {
         \\    FOREIGN KEY (workspace_item_id) REFERENCES workspace_items(id) ON DELETE CASCADE)
     , &.{});
 
-    // design_page_elements (v6 schema — includes the 11 Migration 057
-    // columns, but the tests in this file don't exercise them).
+    // design_page_elements (v6 schema — includes the 11 Migration 057 columns, but the tests in this file don't exercise them).
     try db.exec(alloc,
         \\CREATE TABLE design_page_elements (
         \\    id TEXT PRIMARY KEY, page_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
@@ -7666,8 +7369,7 @@ fn designModelSetupDbAndItem() !struct {
     var tmpdir_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmpdir_len = try tmp.dir.realPath(testing.io, &tmpdir_buf);
     const tmpdir_path = try testing.allocator.dupe(u8, tmpdir_buf[0..tmpdir_len]);
-    // `tmp` is intentionally not cleaned up at this scope — the directory
-    // persists until the OS reclaims the test process's tmp dir.
+    // `tmp` is intentionally not cleaned up at this scope — the directory persists until the OS reclaims the test process's tmp dir.
 
     // Insert the workspace item row (item_type='design' with a real path).
     const item_id_const = "item_design_1";
@@ -7860,8 +7562,6 @@ test "addElement creates a row + writes the HTML file" {
 }
 
 // ─── Test: addElement with empty fill succeeds (NOT NULL constraint) ─────
-// REGRESSION (2026-08-14, "design mode, add element manual not working" —
-// second wave).
 test "addElement with empty fill succeeds (NOT NULL fill column)" {
     const alloc = testing.allocator;
     var ctx = try designModelSetupDbAndItem();
@@ -7878,9 +7578,7 @@ test "addElement with empty fill succeeds (NOT NULL fill column)" {
     });
     defer alloc.free(page_id);
 
-    // The pre-fix bug: passing fill="" with the empty-slice-binds- as-null
-    // optimization makes sqlite3_bind_null fire, which the NOT NULL
-    // constraint rejects.
+    // The pre-fix bug: passing fill="" with the empty-slice-binds- as-null optimization makes sqlite3_bind_null fire, which the NOT NULL constraint rejects.
     const element_id = try addElement(alloc, &ctx.db, ctx.threaded.io(), .{
         .page_id = page_id,
         .name = "kotak",
@@ -7902,9 +7600,7 @@ test "addElement with empty fill succeeds (NOT NULL fill column)" {
     defer freeElement(alloc, row);
     try testing.expectEqualStrings("kotak", row.name);
     try testing.expectEqualStrings("rectangle", row.elem_type);
-    // The column default is '' — empty string in storage is the
-    // schema's intent. The fix normalizes the bind-NULL leak into
-    // either '' (already the default) or the user's value.
+    // The column default is '' — empty string in storage is the schema's intent.
     try testing.expectEqual(@as(usize, 0), row.fill.len);
 }
 
@@ -8075,8 +7771,7 @@ test "getPageWithElements returns page + its elements" {
     try testing.expectEqualStrings(e1_id, bundle.elements[0].id);
     try testing.expectEqualStrings(e2_id, bundle.elements[1].id);
 
-    // Element fields populated (file_path included, but no html body
-    // — loadElementHtml must be called separately to fetch it).
+    // Element fields populated (file_path included, but no html body — loadElementHtml must be called separately to fetch it).
     try testing.expect(bundle.elements[0].file_path.len > 0);
     try testing.expectEqualStrings("rectangle", bundle.elements[0].elem_type);
     try testing.expectEqualStrings("text", bundle.elements[1].elem_type);

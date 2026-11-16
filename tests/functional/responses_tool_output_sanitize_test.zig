@@ -1,5 +1,4 @@
-// Functional wire-replay test for Responses `function_call_output`
-// sanitization.
+// Functional wire-replay test for Responses `function_call_output` sanitization.
 
 const std = @import("std");
 const testing = std.testing;
@@ -17,17 +16,14 @@ const SESSION_ID = "sess_resp_sanitize_001";
 /// The seeded session name, the same string the Python PUT and POSTed.
 const SESSION_NAME = "resp-sanitize";
 
-/// ELF magic + invalid bytes, mimicking `cat` of a binary in tool stdout.
-/// sqlite3 + the JSON wire must carry these EXACT bytes pre-fix.
+/// ELF magic + invalid bytes, mimicking `cat` of a binary in tool stdout. sqlite3 + the JSON wire must carry these EXACT bytes pre-fix.
 const POISONED_STDOUT =
     "/home/ginwa/.config/quickshell/default/qs-glauncher-zig:\n" ++
     "build.zig\n" ++
     "---\n" ++
     "\x7fELF\x02\x01\x01\x00\xff\xfe binary \x80\x81 done\n";
 
-/// The U+FFFD REPLACEMENT CHARACTER as its three UTF-8 bytes — the
-/// sanitizer's marker, and the assertion that stands in for Python's
-/// `"\ufffd" in text`.
+/// The U+FFFD REPLACEMENT CHARACTER as its three UTF-8 bytes — the sanitizer's marker, and the assertion that stands in for Python's `"\ufffd" in text`.
 const REPLACEMENT_CHAR = "\xef\xbf\xbd";
 
 /// Cap on the request head we accumulate before giving up.
@@ -38,12 +34,9 @@ const CAPTURE_BUDGET_MS: i64 = 120_000;
 /// `time.sleep(0.1)` between polls.
 const CAPTURE_INTERVAL_MS: i64 = 100;
 
-// ============================================================================
 // Capture server
-// ============================================================================
 
-/// A minimal TCP server that records full HTTP request bodies and then
-/// hangs up without responding.
+/// A minimal TCP server that records full HTTP request bodies and then hangs up without responding.
 const CaptureServer = struct {
     port: u16,
     server: Io.net.Server,
@@ -98,8 +91,7 @@ const CaptureServer = struct {
 
 fn serve(cs: *CaptureServer) void {
     while (!cs.stop.load(.acquire)) {
-        // `defer` inside a loop body runs at the end of THAT iteration,
-        // so each accepted socket is closed before the next accept.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept.
         var stream = cs.server.accept(io) catch break;
         _ = cs.connections.fetchAdd(1, .monotonic);
         defer stream.close(io);
@@ -108,8 +100,7 @@ fn serve(cs: *CaptureServer) void {
     }
 }
 
-/// Read one request head + body, record the body, then return (the caller's
-/// `defer stream.close` hangs up without a reply).
+/// Read one request head + body, record the body, then return (the caller's `defer stream.close` hangs up without a reply).
 fn captureOne(cs: *CaptureServer, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(io, &rbuf);
@@ -173,8 +164,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-/// Poll until a captured body contains `marker`. Returns an OWNED copy, or
-/// null on timeout.
+/// Poll until a captured body contains `marker`.
 fn waitForBodyWithMarker(cs: *CaptureServer, marker: []const u8) !?[]u8 {
     const deadline = Io.Timestamp.now(io, .awake).toMilliseconds() + CAPTURE_BUDGET_MS;
     while (Io.Timestamp.now(io, .awake).toMilliseconds() < deadline) {
@@ -183,16 +173,13 @@ fn waitForBodyWithMarker(cs: *CaptureServer, marker: []const u8) !?[]u8 {
         for (cs.bodies.items) |b| {
             if (std.mem.indexOf(u8, b, marker) != null) return try gpa.dupe(u8, b);
         }
-        // NOTE: the lock is held across the sleep only because the `defer`
-        // above is scoped to the whole loop body.
+        // NOTE: the lock is held across the sleep only because the `defer` above is scoped to the whole loop body.
         std.Io.sleep(io, .fromMilliseconds(CAPTURE_INTERVAL_MS), .awake) catch {};
     }
     return null;
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// `PUT granular ProfileChange: stub -> capture server + openai-response`.
 fn repointStubAtCapture(h: *Harness, port: u16) !void {
@@ -217,8 +204,7 @@ fn sqlLit(s: []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-/// `X'<hex>'` — an SQL BLOB literal, so the poison stays a BLOB. Upper-case
-/// hex; SQLite accepts either case and requires an even number of digits.
+/// `X'<hex>'` — an SQL BLOB literal, so the poison stays a BLOB.
 fn sqlBlobLit(bytes: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
@@ -236,8 +222,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Candidate `sqlite3` binaries, in preference order. First one that can
-/// actually open an `agent.db` wins.
+/// Candidate `sqlite3` binaries, in preference order.
 const SQLITE_CANDIDATES = [_][]const u8{
     "sqlite3",
     "/usr/bin/sqlite3",
@@ -258,9 +243,7 @@ fn sqliteHasFts5(bin: []const u8) bool {
     return code != null and code.? == 0;
 }
 
-/// Return a `sqlite3` that can open the agent DB, or skip. Returns a BORROW
-/// into `SQLITE_CANDIDATES` (a comptime-known literal), so the caller must
-/// not free it.
+/// Return a `sqlite3` that can open the agent DB, or skip.
 fn requireSqlite3Cli() ![]const u8 {
     for (SQLITE_CANDIDATES) |bin| {
         if (sqliteHasFts5(bin)) return bin;
@@ -304,8 +287,7 @@ const TOOL_CALLS_JSON =
     \\[{"id": "call_01a06fb93f1878c19cd31a8ad82456e3", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"timeout 10 ls -R /tmp | head -n 5\", \"cwd\": \"/tmp\", \"timeout\": 15.0}"}}]
 ;
 
-/// Insert the assistant tool_calls row + the ELF-poisoned tool row for
-/// `SESSION_ID`.
+/// Insert the assistant tool_calls row + the ELF-poisoned tool row for `SESSION_ID`.
 fn seedPoisonedHistory(h: *Harness, bin: []const u8) !void {
     const db = try dbPath(h.temp_dir);
     defer gpa.free(db);
@@ -319,9 +301,7 @@ fn seedPoisonedHistory(h: *Harness, bin: []const u8) !void {
     const poison = try sqlBlobLit(POISONED_STDOUT);
     defer gpa.free(poison);
 
-    // `time.time_ns()` in Python; the real clock here, so the rows sort
-    // after anything the boot already wrote — replay is ordered by
-    // `created_at_nano`.
+    // `time.time_ns()` in Python; the real clock here, so the rows sort after anything the boot already wrote — replay is ordered by `created_at_nano`.
     const now_nano: i128 = Io.Timestamp.now(io, .real).toNanoseconds();
 
     const sql = try std.fmt.allocPrint(gpa,
@@ -367,9 +347,7 @@ fn inputTypes(input: []const std.json.Value) ![]u8 {
     return out.toOwnedSlice();
 }
 
-// ============================================================================
 // Test
-// ============================================================================
 
 // Poisoned tool history replays as valid UTF-8 `function_call_output`.
 test "responses_replay_sanitizes_binary_tool_output" {
@@ -381,8 +359,7 @@ test "responses_replay_sanitizes_binary_tool_output" {
     try server.start();
     defer server.close();
 
-    // `stub_llm_profile` is load-bearing: the profile `repointStubAtCapture`
-    // updates by name only exists because the harness wrote it.
+    // `stub_llm_profile` is load-bearing: the profile `repointStubAtCapture` updates by name only exists because the harness wrote it.
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -390,9 +367,7 @@ test "responses_replay_sanitizes_binary_tool_output" {
 
     try repointStubAtCapture(&h, server.port);
 
-    // Create the session row WITHOUT running the agent (PUT auto-creates
-    // via ensureSessionExists — no LLM call, no worker, so nothing can
-    // queue behind a first run's retry/backoff).
+    // Create the session row WITHOUT running the agent (PUT auto-creates via ensureSessionExists — no LLM call, no worker, so nothing can queue behind a first run's …
     {
         const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{SESSION_ID});
         defer gpa.free(path);
@@ -411,9 +386,7 @@ test "responses_replay_sanitizes_binary_tool_output" {
             .{ SESSION_ID, SESSION_NAME },
         );
         defer gpa.free(body);
-        // Python: `expect=(200, 201, 500)` — the worker runs in the
-        // background and the capture server hangs up on it, so a 500 here
-        // is the EXPECTED outcome, not a failure.
+        // Python: `expect=(200, 201, 500)` — the worker runs in the background and the capture server hangs up on it, so a 500 here is the EXPECTED outcome, not a …
         var r = try h.http(io, .POST, "/api/llm/session", .{
             .json_body = body,
             .expect = &.{ 200, 201, 500 },
@@ -436,9 +409,7 @@ test "responses_replay_sanitizes_binary_tool_output" {
         ) catch return error.OutOfMemory;
         for (seen.items, 0..) |b, i| {
             if (i > 0) msg.writer.writeAll(", ") catch return error.OutOfMemory;
-            // `debugString` returns an OWNED buffer: it must be freed
-            // here, not left to the reporting allocator (a `{s}` format
-            // argument only borrows it for the call).
+            // `debugString` returns an OWNED buffer: it must be freed here, not left to the reporting allocator (a `{s}` format argument only borrows it for the call).
             const quoted = harness.debugString(gpa, b[0..@min(80, b.len)]) catch {
                 msg.writer.writeAll("<unavailable>") catch return error.OutOfMemory;
                 continue;
@@ -518,9 +489,7 @@ test "responses_replay_sanitizes_binary_tool_output" {
         if (std.mem.eql(u8, t, "function_call")) saw_function_call = true;
         if (std.mem.eql(u8, t, "function_call_output")) saw_function_call_output = true;
     }
-    // Python printed `kinds!r` — the LIST — in both messages, and it is the
-    // only thing that tells a reader which of the two replay items is
-    // missing.
+    // Python printed `kinds!r` — the LIST — in both messages, and it is the only thing that tells a reader which of the two replay items is missing.
     if (!saw_function_call) {
         const kinds = try inputTypes(input);
         defer gpa.free(kinds);
@@ -538,8 +507,7 @@ test "responses_replay_sanitizes_binary_tool_output" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = CaptureServer.start;
     _ = CaptureServer.close;

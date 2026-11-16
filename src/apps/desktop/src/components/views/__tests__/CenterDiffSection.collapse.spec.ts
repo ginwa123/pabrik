@@ -1,6 +1,4 @@
-/** CenterDiffSection — the collapse contract, and the ONE trap it hides. The `IntersectionObserver`
- * is the only automatic gate on mounting the heavy diff body, and a COLLAPSED section never
- * intersects. */
+/** CenterDiffSection — the collapse contract, and the ONE trap it hides. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -106,9 +104,7 @@ describe('CenterDiffSection collapse', () => {
 
     await wrapper.setProps({ collapsed: true })
     await nextTick()
-    // `collapsed` reaches the view (which keeps its header and drops the table — asserted directly
-    // in SidebarDiffView.split.spec.ts), and the section keeps its anchor id, so ?diff= / a sidebar
-    // click can still find and re-expand it.
+    // `collapsed` reaches the view (which keeps its header and drops the table — asserted directly in SidebarDiffView.split.spec.ts), and the section keeps its …
     expect(diff.props('collapsed')).toBe(true)
     expect(wrapper.get('[data-testid="center-diff-section"]').attributes('id')).toBe(
       sectionProps.sectionId,

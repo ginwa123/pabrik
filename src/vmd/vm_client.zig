@@ -1,6 +1,4 @@
-//! `VmClient` — pabrik's own side of the guest protocol: boot a Firecracker VM
-//! for a workspace, run commands in it over hybrid vsock, stop it. Every path
-//! is derived from the workspace id; no caller ever passes one.
+//! `VmClient` — pabrik's own side of the guest protocol: boot a Firecracker VM for a workspace, run commands in it over hybrid vsock, stop it.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -9,30 +7,23 @@ const wire = @import("vm_wire");
 
 pub const agent_port: u32 = wire.agent_port;
 pub const max_frame: usize = wire.max_frame;
-/// Opening a terminal forks a guest process that must bind its own listener, so
-/// it gets more than a plain RPC's budget and less than a boot's.
+/// Opening a terminal forks a guest process that must bind its own listener, so it gets more than a plain RPC's budget and less than a boot's.
 const tty_open_guard_ms: u32 = 10_000;
-/// A terminal read/write/resize is answered from a running process, never from
-/// a boot: a peer that has not answered by now is not going to.
+/// A terminal read/write/resize is answered from a running process, never from a boot: a peer that has not answered by now is not going to.
 const tty_call_guard_ms: u32 = 5_000;
 
-/// A duplex open forks a server and binds a port, so it gets the terminal's
-/// budget; a read answers within the guest's own 200 ms wait.
+/// A duplex open forks a server and binds a port, so it gets the terminal's budget; a read answers within the guest's own 200 ms wait.
 const duplex_open_guard_ms: u32 = 10_000;
 const duplex_call_guard_ms: u32 = 5_000;
-/// One `fs.write` frame's bytes. The agent refuses more than this, and a
-/// 64 KiB frame cannot hold much more once base64 and the envelope are paid
-/// for, so the two ends agree on one number.
+/// One `fs.write` frame's bytes.
 pub const fs_write_chunk: usize = 32 * 1024;
 pub const default_mem_mib: u32 = 512;
 pub const default_vcpus: u32 = 1;
 pub const boot_timeout_ms: u32 = 20_000;
-/// A hello probe against a wedged guest must fail, not hang the caller: the
-/// daemon's sweeper holds a workspace lock while it probes.
+/// A hello probe against a wedged guest must fail, not hang the caller: the daemon's sweeper holds a workspace lock while it probes.
 pub const hello_probe_ms: u32 = 2_000;
 pub const poll_slice_ms: i32 = 200;
-/// Guards for the single-round-trip job calls: they do no work in the guest,
-/// so anything approaching these means the guest is wedged.
+/// Guards for the single-round-trip job calls: they do no work in the guest, so anything approaching these means the guest is wedged.
 pub const job_call_guard_ms: u32 = 10_000;
 pub const spawn_guard_ms: u32 = 10_000;
 
@@ -53,28 +44,21 @@ pub const Error = error{
     Timeout,
     OutOfMemory,
     WriteFailed,
-    /// The guest was asked to walk something that is not a directory it will
-    /// enter. Not the same as an empty one, and not this client's to guess at.
+    /// The guest was asked to walk something that is not a directory it will enter.
     WalkNotADirectory,
-    /// The guest refused to open a terminal, or answered something a terminal
-    /// answer cannot be. Distinct from a transport failure.
+    /// The guest refused to open a terminal, or answered something a terminal answer cannot be.
     TtyFailed,
-    /// The terminal's own guest process is gone: the shell exited, or the VM
-    /// was restarted under it. Never a reason to boot anything.
+    /// The terminal's own guest process is gone: the shell exited, or the VM was restarted under it.
     TtyGone,
-    /// The guest refused to open a duplex, or answered something a duplex
-    /// answer cannot be. Distinct from a transport failure.
+    /// The guest refused to open a duplex, or answered something a duplex answer cannot be.
     DuplexFailed,
-    /// The duplex's own guest process is gone: the server exited, or the VM
-    /// was restarted under it.
+    /// The duplex's own guest process is gone: the server exited, or the VM was restarted under it.
     DuplexGone,
     /// The image could not be opened or truncated, or `resize2fs` failed on it.
     DiskGrowFailed,
     /// A disk resize asked for a size the image already has, or a smaller one.
-    /// The filesystem inside an image cannot give blocks back.
     DiskNotGrowing,
-    /// No e2fsprogs on this host, so a grown image cannot be handed to its
-    /// filesystem. Named rather than guessed at.
+    /// No e2fsprogs on this host, so a grown image cannot be handed to its filesystem.
     ResizeToolMissing,
 };
 
@@ -97,8 +81,7 @@ pub const Layout = struct {
     vsock_sock: []u8,
     serial_log: []u8,
     fc_log: []u8,
-    /// The pid of the VMM this workspace is running, if any. It is how a fresh
-    /// manager tells a live VMM from the sockets a hard kill left behind.
+    /// The pid of the VMM this workspace is running, if any.
     fc_pid: []u8,
 
     pub fn deinit(self: Layout, allocator: std.mem.Allocator) void {
@@ -113,8 +96,6 @@ pub const Layout = struct {
 };
 
 /// `<root>/workspaces/<id>/{disk.ext4,api.sock,vsock.sock,serial.log,fc.log}`.
-/// The manager's RPC will take a workspace id and nothing else, and this is the
-/// rule that makes that possible.
 pub fn layoutFor(allocator: std.mem.Allocator, spec: Spec) !Layout {
     const dir = try std.fmt.allocPrint(allocator, "{s}/workspaces/{s}", .{ spec.root, spec.workspace_id });
     errdefer allocator.free(dir);
@@ -167,9 +148,7 @@ const SockaddrUn = extern struct {
 };
 
 pub fn connectUnix(path: []const u8) !linux.fd_t {
-    // No pabrik-vmd exists off Linux (the VM runtime is Linux-only) and the raw
-    // `std.os.linux` syscalls below are meaningless on another kernel: issuing
-    // them there is signal SYS, not a failed connect.
+    // No pabrik-vmd exists off Linux (the VM runtime is Linux-only) and the raw `std.os.linux` syscalls below are meaningless on another kernel: issuing them there …
     if (comptime @import("builtin").os.tag != .linux) return Error.ConnectFailed;
     if (path.len + 1 > 108) return Error.ConnectFailed;
     const rc = linux.socket(unix_af, sock_stream | linux.SOCK.CLOEXEC, 0);
@@ -227,8 +206,7 @@ pub fn cstr(src: []const u8, dst: []u8) ?[*:0]const u8 {
 
 // ─── firecracker control plane ───────────────────────────────────────────
 
-/// One `PUT` over the VMM's unix socket. Hand-rolled HTTP/1.1: the API answers
-/// 204 with no body, so there is nothing to parse past the status line.
+/// One `PUT` over the VMM's unix socket.
 fn apiPut(api_sock: []const u8, endpoint: []const u8, body: []const u8) !void {
     const fd = try connectUnix(api_sock);
     defer _ = linux.close(fd);
@@ -256,8 +234,7 @@ fn spawnFirecracker(spec: Spec, layout: Layout) !linux.pid_t {
     const child = linux.fork();
     if (linux.errno(child) != .SUCCESS) return Error.SpawnFailed;
     if (child == 0) {
-        // The VMM must not write to our stdout: a manager's stdout is its own
-        // output stream. Early Firecracker lines belong in the workspace's log.
+        // The VMM must not write to our stdout: a manager's stdout is its own output stream.
         var log_buf: [4096]u8 = undefined;
         if (cstr(layout.fc_log, &log_buf)) |log_z| {
             const rc = linux.open(log_z, .{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true }, 0o644);
@@ -288,14 +265,12 @@ fn waitForApiSocket(api_sock: []const u8, timeout_ms: u32) !void {
     return Error.ConnectFailed;
 }
 
-/// `<root>/workspaces/<id>` exists. The manager takes its boot lock on that
-/// directory, so it has to exist before the lock, not inside `boot`.
+/// `<root>/workspaces/<id>` exists.
 pub fn ensureWorkspaceDir(layout: Layout) !void {
     try ensureDir(layout.dir);
 }
 
-/// Record the VMM's pid so a later manager can adopt it instead of guessing
-/// from a socket that a hard kill also leaves behind.
+/// Record the VMM's pid so a later manager can adopt it instead of guessing from a socket that a hard kill also leaves behind.
 pub fn writePid(layout: Layout, pid: linux.pid_t) void {
     var buf: [4096]u8 = undefined;
     const path = cstr(layout.fc_pid, &buf) orelse return;
@@ -330,15 +305,13 @@ pub fn readPid(layout: Layout) ?linux.pid_t {
     return @intCast(pid);
 }
 
-/// Signal 0 is the "does this process exist" probe. It goes through the raw
-/// syscall because `std.os.linux`'s `SIG` is an enum with no zero member.
+/// Signal 0 is the "does this process exist" probe.
 fn pidAlive(pid: linux.pid_t) bool {
     const err = linux.errno(linux.syscall2(.kill, @intCast(pid), 0));
     return err == .SUCCESS or err == .PERM;
 }
 
-/// `wait_pid(2)`'s WNOHANG. A VMM we forked becomes a zombie that `kill(pid,
-/// 0)` still reports as alive, so the reap has to happen inside the poll.
+/// `wait_pid(2)`'s WNOHANG.
 const wno_hang: u32 = 1;
 
 pub fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
@@ -355,15 +328,11 @@ pub fn waitGone(pid: linux.pid_t, timeout_ms: u32) bool {
 
 // ─── /proc: the VMM's own numbers, for the idle reaper ───────────────────
 
-/// One tick of `utime`/`stime` is this many milliseconds. USER_HZ is 100 on
-/// every Linux ABI — a frozen constant, not a setting — so no sysconf is
-/// needed and the reading means the same thing on every host.
+/// One tick of `utime`/`stime` is this many milliseconds.
 pub const user_hz: u64 = 100;
 
 fn readSmallFile(path: []const u8, buf: []u8) ?usize {
-    // Off Linux there is no /proc and the raw syscalls below are meaningless:
-    // issuing them reads as "cannot tell", which is exactly what a caller must
-    // never mistake for zero.
+    // Off Linux there is no /proc and the raw syscalls below are meaningless
     if (comptime @import("builtin").os.tag != .linux) return null;
     var path_buf: [64]u8 = undefined;
     if (path.len >= path_buf.len) return null;
@@ -379,9 +348,7 @@ fn readSmallFile(path: []const u8, buf: []u8) ?usize {
     return n;
 }
 
-/// `/proc/<pid>/stat` → utime + stime, in ticks. Counted from the LAST ')' so
-/// a comm holding spaces and parentheses cannot be read as numbers; past it,
-/// state is index 0, so utime (field 14) is 11 and stime (field 15) is 12.
+/// `/proc/<pid>/stat` → utime + stime, in ticks.
 pub fn parseStatCpuTicks(text: []const u8) ?u64 {
     const close = std.mem.lastIndexOfScalar(u8, text, ')') orelse return null;
     var it = std.mem.tokenizeScalar(u8, text[close + 1 ..], ' ');
@@ -398,9 +365,7 @@ pub fn parseStatCpuTicks(text: []const u8) ?u64 {
     return (utime orelse return null) + (stime orelse return null);
 }
 
-/// The VMM's whole-thread-group CPU time. `/proc/<pid>/stat` reports the group
-/// total for a thread-group leader, which a forked Firecracker always is.
-/// Null means "cannot read it", and the reaper treats that as "cannot tell".
+/// The VMM's whole-thread-group CPU time.
 pub fn cpuTicks(pid: linux.pid_t) ?u64 {
     if (pid <= 0) return null;
     var path_buf: [64]u8 = undefined;
@@ -410,8 +375,7 @@ pub fn cpuTicks(pid: linux.pid_t) ?u64 {
     return parseStatCpuTicks(text[0..n]);
 }
 
-/// `/proc/<pid>/status` → `VmRSS:   1234 kB`, in KiB. Only ever used to say how
-/// much a reap released: RSS is the cost of a VM, never a sign of its idleness.
+/// `/proc/<pid>/status` → `VmRSS: 1234 kB`, in KiB.
 pub fn parseRssKib(text: []const u8) ?u32 {
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line| {
@@ -443,8 +407,7 @@ pub const Vm = struct {
     }
 };
 
-/// Firecracker refuses to bind an API socket that already exists, and a killed
-/// VM leaves its sockets behind, so the manager removes them before booting.
+/// Firecracker refuses to bind an API socket that already exists, and a killed VM leaves its sockets behind, so the manager removes them before booting.
 fn removeIfExists(path: []const u8) void {
     var buf: [4096]u8 = undefined;
     const z = cstr(path, &buf) orelse return;
@@ -462,8 +425,7 @@ fn pathExists(path: []const u8) bool {
     return false;
 }
 
-/// The workspace's disk is its own; the base image is never booted directly,
-/// and `--reflink=auto` makes the clone O(1) on this box's btrfs.
+/// The workspace's disk is its own; the base image is never booted directly, and `--reflink=auto` makes the clone O(1) on this box's btrfs.
 pub fn ensureDisk(base: []const u8, disk: []const u8) !void {
     if (pathExists(disk)) return;
     var base_buf: [4096]u8 = undefined;
@@ -484,8 +446,7 @@ pub fn ensureDisk(base: []const u8, disk: []const u8) !void {
     if (!linux.W.IFEXITED(status) or linux.W.EXITSTATUS(status) != 0) return Error.DiskCloneFailed;
 }
 
-/// The image's size in MiB, or 0 when there is no image yet — which is a size
-/// the console can show, not a failure.
+/// The image's size in MiB, or 0 when there is no image yet — which is a size the console can show, not a failure.
 pub fn diskSizeMib(disk: []const u8) u32 {
     var buf: [4096]u8 = undefined;
     const z = cstr(disk, &buf) orelse return 0;
@@ -503,9 +464,7 @@ fn sizeMibOf(fd: linux.fd_t) u32 {
     return if (mib > std.math.maxInt(u32)) std.math.maxInt(u32) else @intCast(mib);
 }
 
-/// Repair the image, truncate it up to `target_mib`, then hand the new blocks
-/// to the filesystem inside it. All of it needs the VM stopped, so the guest
-/// finds the bigger device at boot.
+/// Repair the image, truncate it up to `target_mib`, then hand the new blocks to the filesystem inside it.
 pub fn growDisk(disk: []const u8, target_mib: u32) !void {
     var buf: [4096]u8 = undefined;
     const z = cstr(disk, &buf) orelse return Error.DiskGrowFailed;
@@ -518,8 +477,7 @@ pub fn growDisk(disk: []const u8, target_mib: u32) !void {
         return Error.DiskNotGrowing;
     }
 
-    // A guest that was stopped, not shut down, leaves `needs_recovery` on its
-    // filesystem, and resize2fs refuses such an image outright.
+    // A guest that was stopped, not shut down, leaves `needs_recovery` on its filesystem, and resize2fs refuses such an image outright.
     const fsck = try runHostTool(&e2fsck_candidates, &.{ "-f", "-y" }, z);
     // 1 is "errors corrected", which is the normal answer for a killed guest.
     if (fsck > 2) {
@@ -541,9 +499,7 @@ const resize2fs_candidates = [_][]const u8{
     "/usr/sbin/resize2fs", "/sbin/resize2fs", "/usr/bin/resize2fs", "/bin/resize2fs",
 };
 
-/// e2fsprogs ships its tools in sbin, which is not on every PATH, and `execve`
-/// searches none, so the candidates are absolute. A host without them can
-/// still boot a VM; it just cannot grow a filesystem.
+/// e2fsprogs ships its tools in sbin, which is not on every PATH, and `execve` searches none, so the candidates are absolute.
 fn runHostTool(candidates: []const []const u8, args: []const [*:0]const u8, path_z: [*:0]const u8) !u8 {
     var tool_buf: [4096]u8 = undefined;
     for (candidates) |candidate| {
@@ -569,8 +525,7 @@ fn runHostTool(candidates: []const []const u8, args: []const [*:0]const u8, path
     return Error.ResizeToolMissing;
 }
 
-/// Create the workspace's directory, clone the base image if needed, start the
-/// VMM, configure it, and start the instance.
+/// Create the workspace's directory, clone the base image if needed, start the VMM, configure it, and start the instance.
 pub fn boot(allocator: std.mem.Allocator, spec: Spec) !Vm {
     var layout = try layoutFor(allocator, spec);
     errdefer layout.deinit(allocator);
@@ -622,9 +577,7 @@ pub fn boot(allocator: std.mem.Allocator, spec: Spec) !Vm {
     return .{ .pid = pid, .layout = layout, .spec = spec, .allocator = allocator };
 }
 
-/// `ready` means the agent answered `hello`, not that the process exists — the
-/// guest needs ~1 s after InstanceStart and the muxer accepts a CONNECT before
-/// its listener is up, so the first request must be a retried hello.
+/// `ready` means the agent answered `hello`, not that the process exists — the guest needs ~1 s after InstanceStart and the muxer accepts a CONNECT before its …
 pub fn waitReady(layout: Layout, timeout_ms: u32) !void {
     var waited: u32 = 0;
     while (waited < timeout_ms) : (waited += 100) {
@@ -634,8 +587,7 @@ pub fn waitReady(layout: Layout, timeout_ms: u32) !void {
     return Error.Timeout;
 }
 
-/// One `hello` on a fresh connection. `false` means the guest's listener is not
-/// up yet, which is normal for the first second after InstanceStart.
+/// One `hello` on a fresh connection.
 pub fn helloOnce(layout: Layout) bool {
     var payload: [max_frame]u8 = undefined;
     const fd = connectUnix(layout.vsock_sock) catch return false;
@@ -853,14 +805,12 @@ pub fn exec(allocator: std.mem.Allocator, layout: Layout, request: ExecRequest) 
 
 // ─── detached jobs: spawn, probe, signal, read a log ─────────────────────
 
-/// One request frame in, one reply frame out. `exec` is the only multi-frame
-/// conversation the guest has; everything here is a single round trip.
+/// One request frame in, one reply frame out.
 fn oneShot(allocator: std.mem.Allocator, layout: Layout, payload: []const u8, guard_ms: u32) ![]const u8 {
     return oneShotPort(allocator, layout, agent_port, payload, guard_ms);
 }
 
-/// The same round trip to a port other than the agent's. A terminal answers on
-/// its OWN port, so its reads never queue behind a long `exec` on 5000.
+/// The same round trip to a port other than the agent's.
 fn oneShotPort(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -964,8 +914,7 @@ fn buildSpawnFrame(buf: []u8, request: SpawnRequest) ![]const u8 {
     return buf[0..off];
 }
 
-/// Fork a detached job in the guest and return the pid it was given. The pid
-/// is the guest's, and it leads its own process group there.
+/// Fork a detached job in the guest and return the pid it was given.
 pub fn spawn(allocator: std.mem.Allocator, layout: Layout, request: SpawnRequest) !SpawnResult {
     var frame_buf: [16 * 1024]u8 = undefined;
     const frame = try buildSpawnFrame(&frame_buf, request);
@@ -987,8 +936,7 @@ pub const ProbeResult = struct {
     alive: bool,
 };
 
-/// Is the job still there? Asks the guest, so a pid the HOST also happens to
-/// have says nothing about this answer.
+/// Is the job still there?
 pub fn probe(allocator: std.mem.Allocator, layout: Layout, pid: i64) !ProbeResult {
     var frame_buf: [256]u8 = undefined;
     const frame = try std.fmt.bufPrint(
@@ -1004,8 +952,7 @@ pub fn probe(allocator: std.mem.Allocator, layout: Layout, pid: i64) !ProbeResul
     return .{ .alive = jsonBoolField(parsed.value.object, "alive") };
 }
 
-/// Signal the job's whole group, then the pid itself. `false` means neither
-/// reached anything, which is what a job that already exited reports.
+/// Signal the job's whole group, then the pid itself.
 pub fn signal(allocator: std.mem.Allocator, layout: Layout, pid: i64, sig: i64) !bool {
     var frame_buf: [256]u8 = undefined;
     const frame = try std.fmt.bufPrint(
@@ -1032,8 +979,7 @@ pub const LogChunk = struct {
     }
 };
 
-/// One positional read of a job's log, from inside the guest. The host never
-/// opens the file: a tenant log is not a host path.
+/// One positional read of a job's log, from inside the guest.
 pub fn readLogChunk(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1042,8 +988,7 @@ pub fn readLogChunk(
     max_bytes: usize,
 ) !LogChunk {
     var frame_buf: [16 * 1024]u8 = undefined;
-    // `bufPrint` writes INTO `frame_buf`, so the cursor starts where it stopped
-    // — copying the head onto itself would be an aliased `memcpy`.
+    // `bufPrint` writes INTO `frame_buf`, so the cursor starts where it stopped — copying the head onto itself would be an aliased `memcpy`.
     const head = try std.fmt.bufPrint(
         &frame_buf,
         "{{\"type\":\"read_log\",\"id\":1,\"offset\":{d},\"max_bytes\":{d},\"path\":",
@@ -1085,8 +1030,7 @@ pub const FsStat = struct {
     missing: bool,
 };
 
-/// One path's kind and size, asked of the guest. `missing` is the guest saying
-/// the path is not there, which is not the same as a size of zero.
+/// One path's kind and size, asked of the guest.
 pub fn statFile(allocator: std.mem.Allocator, layout: Layout, path: []const u8) !FsStat {
     var frame_buf: [8 * 1024]u8 = undefined;
     const head = try std.fmt.bufPrint(&frame_buf, "{{\"type\":\"fs.stat\",\"id\":1,\"path\":", .{});
@@ -1121,8 +1065,7 @@ pub const FsChunk = struct {
     }
 };
 
-/// One positional read of a file, from inside the guest. A caller that wants a
-/// whole file loops until `eof`; each reply is bounded by `max_bytes`.
+/// One positional read of a file, from inside the guest.
 pub fn readFile(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1164,8 +1107,7 @@ pub fn readFile(
     };
 }
 
-/// Remove one file (or one empty directory) inside the guest. `false` is the
-/// guest saying there was nothing there.
+/// Remove one file (or one empty directory) inside the guest.
 pub fn removeFile(allocator: std.mem.Allocator, layout: Layout, path: []const u8) !bool {
     var frame_buf: [8 * 1024]u8 = undefined;
     const head = try std.fmt.bufPrint(&frame_buf, "{{\"type\":\"fs.remove\",\"id\":1,\"path\":", .{});
@@ -1195,8 +1137,7 @@ pub const WalkEntry = struct {
     kind: []u8,
 };
 
-/// A walk's answer: every entry the guest reported, and whether its own
-/// ceilings cut the tree short.
+/// A walk's answer: every entry the guest reported, and whether its own ceilings cut the tree short.
 pub const WalkResult = struct {
     entries: []WalkEntry,
     count: usize,
@@ -1219,8 +1160,7 @@ fn buildWriteFrame(
     create_dirs: bool,
 ) ![]const u8 {
     var head_buf: [256]u8 = undefined;
-    // `truncate` is the first piece's business: the pieces after it extend a
-    // file that is already the right length.
+    // `truncate` is the first piece's business: the pieces after it extend a file that is already the right length.
     const head = try std.fmt.bufPrint(
         &head_buf,
         "{{\"type\":\"fs.write\",\"id\":1,\"offset\":{d},\"truncate\":{s},\"create_dirs\":{s},\"data_b64\":\"",
@@ -1246,9 +1186,7 @@ fn buildWriteFrame(
     return buf[0..off];
 }
 
-/// Write `data` to `path` inside the guest, in frame-sized pieces: the first
-/// piece creates the file and the directories it needs, the rest extend it.
-/// The host writes nothing — this is the only path a tenant file is created on.
+/// Write `data` to `path` inside the guest, in frame-sized pieces: the first piece creates the file and the directories it needs, the rest extend it.
 pub fn writeFile(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1274,8 +1212,7 @@ pub fn writeFile(
         defer parsed.deinit();
         const obj = parsed.value.object;
         const kind = jsonStringField(obj, "type") orelse return Error.ProtocolViolation;
-        // The guest refused: a path it will not open, or a parent that is not
-        // there. Its reason is not this client's to invent.
+        // The guest refused: a path it will not open, or a parent that is not there.
         if (std.mem.eql(u8, kind, "fs.error")) return Error.WriteFailed;
         if (!std.mem.eql(u8, kind, "fs.write.ok")) return Error.ProtocolViolation;
         // The guest's own count is the only evidence the bytes landed.
@@ -1289,9 +1226,7 @@ pub fn writeFile(
     return .{ .bytes = sent };
 }
 
-/// A bounded walk of the guest, STREAMED: the agent sends one frame per batch
-/// of entries and the last one carries `done`. Nothing outside the guest tree
-/// is ever named, because every path in the reply is relative to it.
+/// A bounded walk of the guest, STREAMED: the agent sends one frame per batch of entries and the last one carries `done`.
 pub fn walk(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1348,8 +1283,7 @@ pub fn walk(
                 };
                 const entry_path = jsonStringField(entry, "path") orelse return Error.ProtocolViolation;
                 const entry_kind = jsonStringField(entry, "kind") orelse return Error.ProtocolViolation;
-                // Entries are bounded by what was asked for: a guest that
-                // reports more than its ceiling is not answering this call.
+                // Entries are bounded by what was asked for: a guest that reports more than its ceiling is not answering this call.
                 if (out.items.len >= max_entries) return Error.ProtocolViolation;
                 try out.append(allocator, .{
                     .path = try allocator.dupe(u8, entry_path),
@@ -1364,16 +1298,14 @@ pub fn walk(
             break;
         }
     }
-    // The guest counted what it sent; a stream that disagrees with its own
-    // count was cut somewhere, and half a listing is worse than a refusal.
+    // The guest counted what it sent; a stream that disagrees with its own count was cut somewhere, and half a listing is worse than a refusal.
     if (count != out.items.len) return Error.ProtocolViolation;
     return .{ .entries = try out.toOwnedSlice(allocator), .count = count, .truncated = truncated };
 }
 
 // ─── interactive terminals ───────────────────────────────────────────────
 
-/// A terminal the guest created: the id the daemon minted, the pid of the
-/// shell it runs, and the vsock port that terminal answers on.
+/// A terminal the guest created: the id the daemon minted, the pid of the shell it runs, and the vsock port that terminal answers on.
 pub const TtyOpen = struct {
     tty_id: i64,
     pid: i64,
@@ -1391,8 +1323,7 @@ pub const TtyRead = struct {
     }
 };
 
-/// The guest's own reason for refusing to open a terminal. Copied, not
-/// borrowed: the frame it came from is released before the caller reads it.
+/// The guest's own reason for refusing to open a terminal.
 pub const TtyRefusal = struct {
     pub const max = 256;
     message: [max]u8 = [_]u8{0} ** max,
@@ -1403,8 +1334,7 @@ pub const TtyRefusal = struct {
     }
 };
 
-/// Open a terminal in the guest. The agent forks the process that will own the
-/// pty and answer on `tty_port_base + tty_id`.
+/// Open a terminal in the guest.
 pub fn ttyOpen(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1445,9 +1375,7 @@ pub fn ttyOpen(
     return .{ .tty_id = id, .pid = pid, .port = @intCast(port) };
 }
 
-/// What the guest said, in words an operator can act on. The guest answers
-/// "unknown request" when its agent predates the terminal action — the disk
-/// was made from an older image — so the fix replaces the symptom.
+/// What the guest said, in words an operator can act on.
 pub fn refusalText(object: std.json.ObjectMap) []const u8 {
     const message = jsonStringField(object, "message") orelse return "the guest refused the terminal";
     if (std.mem.eql(u8, message, "unknown request")) {
@@ -1456,8 +1384,7 @@ pub fn refusalText(object: std.json.ObjectMap) []const u8 {
     return message;
 }
 
-/// One piece of a terminal's output. An empty `data` with `eof` means "nothing
-/// right now", which is what the caller's next poll asks again.
+/// One piece of a terminal's output.
 pub fn ttyRead(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1471,8 +1398,7 @@ pub fn ttyRead(
         "{{\"type\":\"tty\",\"op\":\"read\",\"id\":1,\"max_bytes\":{d}}}",
         .{@min(max_bytes, policy.max_tty_chunk)},
     );
-    // The guest process that owned the pty is what answered that port, so
-    // nothing listening there IS the exit report — not a failed read.
+    // The guest process that owned the pty is what answered that port, so nothing listening there IS the exit report — not a failed read.
     const text = oneShotPort(allocator, layout, port, frame, tty_call_guard_ms) catch |err| switch (err) {
         error.ConnectFailed, error.HandshakeRejected => return .{
             .data = try allocator.alloc(u8, 0),
@@ -1558,8 +1484,7 @@ pub fn ttyResize(
         "{{\"type\":\"tty\",\"op\":\"resize\",\"id\":1,\"cols\":{d},\"rows\":{d}}}",
         .{ cols, rows },
     );
-    // A window size for a terminal that is already gone is not a failure the
-    // caller can act on.
+    // A window size for a terminal that is already gone is not a failure the caller can act on.
     const text = oneShotPort(allocator, layout, port, frame, tty_call_guard_ms) catch |err| switch (err) {
         error.ConnectFailed, error.HandshakeRejected => return,
         else => return err,
@@ -1567,8 +1492,7 @@ pub fn ttyResize(
     allocator.free(text);
 }
 
-/// Close the terminal and kill its shell. A tty the guest already forgot has
-/// nothing left to ask, so a refused close is success.
+/// Close the terminal and kill its shell.
 pub fn ttyClose(allocator: std.mem.Allocator, layout: Layout, tty_id: i64) !void {
     const port = policy.ttyPort(tty_id) orelse return;
     var frame_buf: [128]u8 = undefined;
@@ -1581,8 +1505,7 @@ pub fn ttyClose(allocator: std.mem.Allocator, layout: Layout, tty_id: i64) !void
 }
 // ─── guest duplexes: an MCP server's two byte streams ────────────────────
 
-/// A duplex the guest created: the id the agent minted, the pid of the server
-/// it runs, and the vsock port that duplex answers on.
+/// A duplex the guest created: the id the agent minted, the pid of the server it runs, and the vsock port that duplex answers on.
 pub const DuplexOpen = struct {
     duplex_id: i64,
     pid: i64,
@@ -1600,8 +1523,7 @@ pub const DuplexRead = struct {
     }
 };
 
-/// Open a duplex in the guest: the agent forks the server and answers on
-/// `duplex_port_base + duplex_id`.
+/// Open a duplex in the guest: the agent forks the server and answers on `duplex_port_base + duplex_id`.
 pub fn duplexOpen(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1653,8 +1575,7 @@ pub fn duplexOpen(
     return .{ .duplex_id = id, .pid = pid, .port = @intCast(port) };
 }
 
-/// One piece of a duplex's output. An empty `data` with `eof` means "nothing
-/// right now", which is what the caller's next poll asks again.
+/// One piece of a duplex's output.
 pub fn duplexRead(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1668,8 +1589,7 @@ pub fn duplexRead(
         "{{\"type\":\"duplex\",\"op\":\"read\",\"id\":1,\"max_bytes\":{d}}}",
         .{@min(max_bytes, policy.max_duplex_chunk)},
     );
-    // The guest process that owned the server is what answered that port, so
-    // nothing listening there IS the exit report — not a failed read.
+    // The guest process that owned the server is what answered that port, so nothing listening there IS the exit report — not a failed read.
     const text = oneShotPort(allocator, layout, port, frame, duplex_call_guard_ms) catch |err| switch (err) {
         error.ConnectFailed, error.HandshakeRejected => return .{
             .data = try allocator.alloc(u8, 0),
@@ -1694,8 +1614,7 @@ pub fn duplexRead(
     };
 }
 
-/// One piece into the server's stdin. Returns how many bytes the guest
-/// accepted; a server that stopped draining is reported, never hidden.
+/// One piece into the server's stdin.
 pub fn duplexWrite(
     allocator: std.mem.Allocator,
     layout: Layout,
@@ -1784,8 +1703,7 @@ test "a guest that refuses for its own reason keeps its own words" {
 }
 
 test "the CPU clock is read from the fields after the comm, whatever comm holds" {
-    // A comm may contain spaces AND parentheses, so the fields are counted from
-    // the LAST ')' — splitting on the first one reads the comm as numbers.
+    // A comm may contain spaces AND parentheses, so the fields are counted from the LAST ')' — splitting on the first one reads the comm as numbers.
     const line = "4242 (fire (cracker) vmm) S 1 4242 4242 0 -1 4194304 1000 0 0 0 120 30 0 0 20 0 4 0 60000 0 0";
     try testing.expectEqual(@as(?u64, 150), parseStatCpuTicks(line));
 }

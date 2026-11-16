@@ -1,5 +1,4 @@
-// Functional tests: `sessions.name` MUST equal `workspace_item_tasks.name`
-// after a kanban task create.
+// Functional tests: `sessions.name` MUST equal `workspace_item_tasks.name` after a kanban task create.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,13 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers — wire
-// ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
-/// `Response` body it was parsed from, so a helper may not RETURN one.
-/// Helpers below return owned bytes and each test parses locally.
+/// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -94,7 +89,6 @@ const KanbanTaskBody = struct {
 };
 
 /// POST `/workspaces/:ws/items/:kanban/kanban/tasks` with the given mode.
-/// Returns the WHOLE response body, owned.
 fn createTaskViaKanbanEndpoint(
     h: *Harness,
     workspace_id: []const u8,
@@ -104,9 +98,7 @@ fn createTaskViaKanbanEndpoint(
     is_auto_retry_until_stop: ?[]const u8,
     queue_message: ?[]const u8,
 ) ![]u8 {
-    // The frontend concatenates name + "\n\n" + description for
-    // `create_and_run`; the handler 400s on an empty queue_message
-    // (kanban_tasks_create.zig:127-135).
+    // The frontend concatenates name + "\n\n" + description for `create_and_run`; the handler 400s on an empty queue_message (kanban_tasks_create.zig:127-135).
     const auto_queue = if (queue_message == null and std.mem.eql(u8, mode, "create_and_run"))
         try std.fmt.allocPrint(gpa, "{s}\n\n{s}", .{ name, "test description" })
     else
@@ -134,8 +126,7 @@ fn createTaskViaKanbanEndpoint(
     return gpa.dupe(u8, r.body);
 }
 
-/// POST `/workspaces/:ws/items/:item/tasks` — the GENERIC endpoint, NOT the
-/// kanban-scoped one. `task_type='standard'` is the default.
+/// POST `/workspaces/:ws/items/:item/tasks` — the GENERIC endpoint, NOT the kanban-scoped one.
 const GenericTaskBody = struct {
     name: []const u8,
     description: []const u8 = "test description",
@@ -190,9 +181,7 @@ fn taskIdOf(body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `resp["id"]` on a response whose ROOT is the task object. The generic
-/// `POST /items/:item/tasks` endpoint answers with the task itself (no `{
-/// task: ... }` envelope), unlike the kanban-scoped one.
+/// `resp["id"]` on a response whose ROOT is the task object.
 fn rootIdOf(body: []const u8) ![]u8 {
     var doc = try parseJson(body);
     defer doc.deinit();
@@ -216,9 +205,7 @@ fn rootIdOf(body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-// ============================================================================
 // Helpers — sqlite3 CLI
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -276,8 +263,6 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
-/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -339,8 +324,7 @@ fn freeOpt(opt: ?[]u8) void {
     if (opt) |s| gpa.free(s);
 }
 
-/// Poll the DB for a `sessions` row matching `session_id` until one appears
-/// OR `timeout_ms` elapses. Required for the lazy-init path (test 7).
+/// Poll the DB for a `sessions` row matching `session_id` until one appears OR `timeout_ms` elapses.
 fn readSessionNameAfter(temp_dir: []const u8, session_id: []const u8, timeout_ms: i64) !?[]u8 {
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + timeout_ms;
     while (true) {
@@ -350,9 +334,7 @@ fn readSessionNameAfter(temp_dir: []const u8, session_id: []const u8, timeout_ms
     }
 }
 
-/// Assert `got` equals `want`, printing the value on failure. TAKES OWNERSHIP
-/// of `got`: it is the `?[]u8` `readSessionName` allocated, and nothing else
-/// holds a reference to it.
+/// Assert `got` equals `want`, printing the value on failure.
 fn expectSessionName(got: ?[]u8, want: ?[]const u8, detail: []const u8) !void {
     defer freeOpt(got);
     const g = got orelse "<no row>";
@@ -369,12 +351,9 @@ fn expectSessionName(got: ?[]u8, want: ?[]const u8, detail: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Test 1: mode='create_session'
-// ============================================================================
 
-// The plain "Create task" button (`mode='create_session'`) must insert a
-// sessions row whose `name` column equals the user-typed task title.
+// The plain "Create task" button (`mode='create_session'`) must insert a sessions row whose `name` column equals the user-typed task title.
 test "create_session_binds_session_name_to_task_name" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -431,9 +410,7 @@ test "create_session_binds_session_name_to_task_name" {
         }
     }
 
-    // If the value is the task_id (e.g. 'task_<timestamp>'), the
-    // INSERT OR IGNORE in kanban_tasks_create.zig step-5 is binding the
-    // wrong column.
+    // If the value is the task_id (e.g.
     try expectSessionName(
         try readSessionName(h.temp_dir, task_id),
         task_title,
@@ -441,13 +418,9 @@ test "create_session_binds_session_name_to_task_name" {
     );
 }
 
-// ============================================================================
 // Test 2: mode='create_and_run'
-// ============================================================================
 
-// `mode='create_and_run'` (the "Create task & run agent" button) must bind
-// `sessions.name = task.name` — same contract as create_session, because both
-// paths share kanban_tasks_create.zig's step-5 full INSERT.
+// `mode='create_and_run'` (the "Create task & run agent" button) must bind `sessions.name = task.name` — same contract as create_session, because both paths …
 test "create_and_run_binds_session_name_to_task_name" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -497,9 +470,7 @@ test "create_and_run_binds_session_name_to_task_name" {
     );
 }
 
-// ============================================================================
 // Test 3: legacy mode='create' WITH unattended flag
-// ============================================================================
 
 // Legacy `mode='create'` is preserved for backward compat.
 test "create_legacy_with_unattended_binds_session_name_to_task_name" {
@@ -530,8 +501,7 @@ test "create_legacy_with_unattended_binds_session_name_to_task_name" {
     const task_id = try taskIdOf(resp);
     defer gpa.free(task_id);
 
-    // Legacy mode returns session=null (the handler doesn't add a
-    // session envelope for mode='create').
+    // Legacy mode returns session=null (the handler doesn't add a session envelope for mode='create').
     {
         var doc = try parseJson(resp);
         defer doc.deinit();
@@ -551,12 +521,9 @@ test "create_legacy_with_unattended_binds_session_name_to_task_name" {
     );
 }
 
-// ============================================================================
 // Test 4: legacy mode='create' WITHOUT unattended flag
-// ============================================================================
 
-// Legacy `mode='create'` with NO unattended flag should leave the sessions
-// table untouched.
+// Legacy `mode='create'` with NO unattended flag should leave the sessions table untouched.
 test "create_legacy_without_unattended_creates_no_session_row" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -575,8 +542,7 @@ test "create_legacy_without_unattended_creates_no_session_row" {
         ws_id,
         kanban_id,
         "Title-only legacy task",
-        // No is_auto_retry_until_stop — handler forwards null into
-        // useCase, so useCase skips its bare sessions INSERT.
+        // No is_auto_retry_until_stop — handler forwards null into useCase, so useCase skips its bare sessions INSERT.
         "create",
         null,
         null,
@@ -592,12 +558,9 @@ test "create_legacy_without_unattended_creates_no_session_row" {
     );
 }
 
-// ============================================================================
 // Test 5: generic endpoint WITH unattended flag
-// ============================================================================
 
-// The generic POST /workspaces/:ws/items/:item/tasks endpoint (NOT the
-// kanban-scoped one) also creates a kanban task when the parent is a kanban.
+// The generic POST /workspaces/:ws/items/:item/tasks endpoint (NOT the kanban-scoped one) also creates a kanban task when the parent is a kanban.
 test "standard_task_via_generic_endpoint_with_unattended_binds_name" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -632,13 +595,9 @@ test "standard_task_via_generic_endpoint_with_unattended_binds_name" {
     );
 }
 
-// ============================================================================
 // Test 6: generic endpoint WITHOUT unattended flag
-// ============================================================================
 
-// Generic POST /tasks endpoint WITHOUT unattended flag must leave the
-// sessions table untouched (useCase skips its bare INSERT). Same rationale as
-// test 4 — the row is created lazily by the chat first-message flow (test 7).
+// Generic POST /tasks endpoint WITHOUT unattended flag must leave the sessions table untouched (useCase skips its bare INSERT).
 test "standard_task_via_generic_endpoint_without_unattended_creates_no_row" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -672,13 +631,9 @@ test "standard_task_via_generic_endpoint_without_unattended_creates_no_row" {
     );
 }
 
-// ============================================================================
 // Test 7: the LAZY-INIT gap — chat first-message must bind the title
-// ============================================================================
 
-// REGRESSION PIN: when a kanban task is created WITHOUT an explicit session
-// INSERT (the legacy mode='create' without unattended, OR the generic /tasks
-// endpoint without unattended, OR the LLM agent tool create_kanban_task when
+// REGRESSION PIN: when a kanban task is created WITHOUT an explicit session INSERT (the legacy mode='create' without unattended, OR the generic /tasks endpoint …
 test "chat_first_message_after_lazy_create_binds_session_name_to_task_name" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -707,9 +662,7 @@ test "chat_first_message_after_lazy_create_binds_session_name_to_task_name" {
         "sanity before chat first-message",
     );
 
-    // 3. Send the first chat message — the frontend's ChatView does this
-    // via api.sendChatMessage, which POSTs to /api/llm/session with
-    // NO `session_name` field.
+    // 3.
     const turn = try std.fmt.allocPrint(gpa,
         \\{{"session_id":"{s}","queue_message":"Hello agent, please help with this task","cwd_session":"","image_urls":"","selected_profile_model":"","is_auto_retry_until_stop":""}}
     , .{task_id});
@@ -722,9 +675,7 @@ test "chat_first_message_after_lazy_create_binds_session_name_to_task_name" {
         defer r.deinit();
     }
 
-    // 4. Poll for the sessions row to appear — the async insert_worker
-    // scheduled by di.emit_run_agent may run microseconds (local dev)
-    // or hundreds of milliseconds (CI runner) after the response.
+    // 4.
     const got = try readSessionNameAfter(h.temp_dir, task_id, 5_000);
     if (got == null) {
         const tail = try h.tailLog(io, gpa, 40);
@@ -738,9 +689,7 @@ test "chat_first_message_after_lazy_create_binds_session_name_to_task_name" {
     }
     defer freeOpt(got);
 
-    // - If got is the task_id: session_create.zig is binding name=session_id
-    // by accident (very wrong). - If got is 'New Session':
-    // session_create.zig's parsed.session_name='' fallback is winning.
+    // - If got is the task_id: session_create.zig is binding name=session_id by accident (very wrong). - If got is 'New Session': session_create.zig's …
     if (!std.mem.eql(u8, got.?, task_title)) {
         const tail = try h.tailLog(io, gpa, 40);
         defer gpa.free(tail);
@@ -755,9 +704,7 @@ test "chat_first_message_after_lazy_create_binds_session_name_to_task_name" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = parseJson;
     _ = objectStr;
     _ = createWorkspace;

@@ -33,9 +33,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// Mock the api module: keep everything from the real api module, only
-// override getChats so each test can drive the wire payload directly.
-// `vi.spyOn(api, 'getChats')` hits under the project's vitest setup.
+// Mock the api module: keep everything from the real api module, only override getChats so each test can drive the wire payload directly.
 vi.mock('../api/index', async () => {
   const actual = await vi.importActual<typeof import('../api/index')>('../api/index')
   return {
@@ -71,16 +69,14 @@ function makeStubClient(state: 'connecting' | { next: 'open'; attempt: number })
   return stub as SseClient
 }
 
-// formatRelativeTime (src/apps/desktop/src/helpers/relativeTime.ts) accepts SQLite datetime UTC
-// strings ('YYYY-MM-DD HH:MM:SS').
+// formatRelativeTime (src/apps/desktop/src/helpers/relativeTime.ts) accepts SQLite datetime UTC strings ('YYYY-MM-DD HH:MM:SS').
 function dateToSqliteUtc(agoMs: number): string {
   const date = new Date(Date.now() - agoMs)
   return date.toISOString().replace('T', ' ').slice(0, 19)
 }
 
 async function flushLoadChats() {
-  // loadChats() in onMounted is async (awaits api.getChats). Wait for
-  // the microtask + a couple Vue ticks before asserting on the DOM.
+  // loadChats() in onMounted is async (awaits api.getChats).
   await new Promise((r) => setTimeout(r, 0))
   await nextTick()
   await nextTick()
@@ -152,8 +148,7 @@ describe('ChatsList - Migration 082 time pill + stale-dot display', () => {
     expect(pill.exists()).toBe(true)
     expect(pill.text()).toBe('1h')
     expect(pill.attributes('title')).toBe('Last human activity')
-    // updated_at > last_human_touched_at is FALSE here (TWO_HOURS_AGO
-    // is older than ONE_HOUR_AGO) - no stale dot.
+    // updated_at > last_human_touched_at is FALSE here (TWO_HOURS_AGO is older than ONE_HOUR_AGO) - no stale dot.
     expect(wrapper.find('[data-testid="chat-stale-dot"]').exists()).toBe(false)
   })
 
@@ -289,8 +284,7 @@ describe('ChatsList - Migration 082 time pill + stale-dot display', () => {
     await nextTick()
     await nextTick()
 
-    // Optimistic patch aligns human time to updated_at so isStale()
-    // flips false immediately — the dot disappears without a refetch.
+    // Optimistic patch aligns human time to updated_at so isStale() flips false immediately — the dot disappears without a refetch.
     expect(wrapper.find('[data-testid="chat-stale-dot"]').exists()).toBe(false)
     // Best-effort backend stamp fired (not awaited by navigation).
     expect(markSessionTouchedMock).toHaveBeenCalledTimes(1)
@@ -388,7 +382,6 @@ describe('ChatsList - Migration 082 time pill + stale-dot display', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="chat-time-pill"]').exists()).toBe(false)
     // No circle spinner anymore — the elapsed time pill is the marker.
-    // Recent rows use the nav test-id; pinned rows use the plain one.
     expect(wrapper.find('[data-testid="session-slider"]').exists()).toBe(false)
     expect(
       wrapper.find('[data-testid="chat-nav-elapsed-chip"]').exists() ||

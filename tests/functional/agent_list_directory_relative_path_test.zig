@@ -1,5 +1,4 @@
-// Wire test: the `list_directory` tool no longer ABORTS the worker when the
-// LLM passes a RELATIVE path.
+// Wire test: the `list_directory` tool no longer ABORTS the worker when the LLM passes a RELATIVE path.
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,14 +10,11 @@ const io = testing.io;
 
 const Io = std.Io;
 
-// The relative path from the crash report, and the tool call id we can
-// look for in the follow-up request (the one that carries the tool
-// RESULT).
+// The relative path from the crash report, and the tool call id we can look for in the follow-up request (the one that carries the tool RESULT).
 const RELATIVE_PATH = "frontend/src";
 const TOOL_CALL_ID = "call_listdir_rel_1";
 
-/// Marker strings that appear in the process log only if the worker
-/// aborted.
+/// Marker strings that appear in the process log only if the worker aborted.
 const CRASH_MARKERS = [_][]const u8{
     "received signal ABRT",
     "reached unreachable code",
@@ -46,13 +42,10 @@ const TEXT_SSE =
     \\
 ;
 
-/// Cap on the request head we accumulate before giving up. A full agent
-/// prompt is tens of KB; 256 KiB is generous.
+/// Cap on the request head we accumulate before giving up.
 const MAX_HEAD_BYTES = 1 << 18;
 
-// ============================================================================
 // Stub upstream
-// ============================================================================
 
 /// A stateful OpenAI-shaped SSE upstream, served from a background thread.
 const Stub = struct {
@@ -61,9 +54,7 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     tool_call_served: std.atomic.Value(bool) = .init(false),
-    /// Number of requests the stub answered. The Python recorded every body
-    /// under a lock; the port only needs the count, because every decision
-    /// the Python's `note()` made is made inline in `handleRequest` below.
+    /// Number of requests the stub answered.
     requests: std.atomic.Value(usize) = .init(0),
 
     fn start(stub: *Stub) !void {
@@ -83,8 +74,7 @@ const Stub = struct {
             var c = conn;
             c.close(io);
         } else |_| {
-            // Listener already gone: `accept` returned an error and the
-            // serve loop has exited. Nothing to wake.
+            // Listener already gone: `accept` returned an error and the serve loop has exited.
         }
 
         stub.thread.join();
@@ -94,9 +84,7 @@ const Stub = struct {
 
 fn serveStub(stub: *Stub) void {
     while (!stub.stop.load(.acquire)) {
-        // `defer` inside a loop body runs at the end of THAT iteration,
-        // so each accepted socket is closed before the next accept —
-        // the connection is what the upstream does per POST.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept — the connection is what the upstream …
         var stream = stub.server.accept(io) catch break;
         defer stream.close(io);
         if (stub.stop.load(.acquire)) break;
@@ -104,8 +92,7 @@ fn serveStub(stub: *Stub) void {
     }
 }
 
-/// The Python's `_StubState.note(body)` — record the request and report
-/// whether THIS one should be answered with the tool call.
+/// The Python's `_StubState.note(body)` — record the request and report whether THIS one should be answered with the tool call.
 fn shouldServeToolCall(stub: *Stub, body: []const u8) bool {
     if (std.mem.indexOf(u8, body, TOOL_CALL_ID) != null) return false; // follow-up turn
     if (stub.tool_call_served.load(.acquire)) return false;
@@ -115,8 +102,7 @@ fn shouldServeToolCall(stub: *Stub, body: []const u8) bool {
     return true;
 }
 
-/// Read one request, decide the reply, send it. THE HEAD AND THE BODY OVERLAP
-/// IN THE SOCKET BUFFER, and getting that wrong hangs the whole suite.
+/// Read one request, decide the reply, send it.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(io, &rbuf);
@@ -139,8 +125,7 @@ fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
 
     const head = acc.written()[0..head_len];
 
-    // Drain whatever of the body is still unread; a client cannot be
-    // answered mid-frame.
+    // Drain whatever of the body is still unread; a client cannot be answered mid-frame.
     var remaining = contentLength(head);
     if (acc.written().len > head_len) remaining -|= acc.written().len - head_len;
     while (remaining > 0) {
@@ -199,9 +184,7 @@ fn contentLength(head: []const u8) usize {
     return std.fmt.parseInt(usize, v, 10) catch 0;
 }
 
-// ============================================================================
 // Polling
-// ============================================================================
 
 /// `deadline = time.monotonic() + 60.0` — the tool-row budget.
 const POLL_BUDGET_MS: i64 = 60_000;
@@ -209,7 +192,6 @@ const POLL_BUDGET_MS: i64 = 60_000;
 const POLL_INTERVAL_MS: i64 = 500;
 
 /// Poll the session-messages endpoint until the list_directory result lands.
-/// Returns an OWNED copy of the row's `content`.
 fn waitForToolRow(h: *Harness, session_id: []const u8) !?[]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -231,8 +213,7 @@ fn waitForToolRow(h: *Harness, session_id: []const u8) !?[]u8 {
         var doc = r.json() catch return null;
         defer doc.deinit();
 
-        // An absent `messages` is Python's `.get("messages", [])` — an empty
-        // list, not an error.
+        // An absent `messages` is Python's `.get("messages", [])` — an empty list, not an error.
         const messages_list = doc.array("messages");
         const messages: []const std.json.Value =
             if (messages_list) |a| a.items else &.{};
@@ -254,12 +235,10 @@ fn waitForToolRow(h: *Harness, session_id: []const u8) !?[]u8 {
             return try gpa.dupe(u8, content);
         }
 
-        // A dead worker never fills the row — fail fast instead of
-        // burning the whole timeout on a crashed process.
+        // A dead worker never fills the row — fail fast instead of burning the whole timeout on a crashed process.
         if (!h.health(io)) return null;
 
-        // Sleep the Python's `time.sleep(0.5)` INTERVAL, capped by what
-        // is left of the budget — never the whole remainder.
+        // Sleep the Python's `time.sleep(0.5)` INTERVAL, capped by what is left of the budget — never the whole remainder.
         const remaining = deadline - Io.Timestamp.now(io, .awake).toMilliseconds();
         if (remaining > 0) {
             const nap = @min(remaining, POLL_INTERVAL_MS);
@@ -269,9 +248,7 @@ fn waitForToolRow(h: *Harness, session_id: []const u8) !?[]u8 {
     return null;
 }
 
-/// The last 4000 BYTES of the log tail, owned. Python:
-/// `harness.tail_log(4000)` then `log_tail[-4000:]`. The harness's `tailLog`
-/// counts LINES, so the byte slice is applied here.
+/// The last 4000 BYTES of the log tail, owned. Python
 fn logExcerpt(h: *Harness) ![]u8 {
     const tail = try h.tailLog(io, gpa, 4000);
     defer gpa.free(tail);
@@ -279,24 +256,18 @@ fn logExcerpt(h: *Harness) ![]u8 {
     return gpa.dupe(u8, clipped);
 }
 
-// ============================================================================
 // Test
-// ============================================================================
 
 // The exact crash call, end-to-end: worker alive + path resolved.
 test "list_directory_relative_path_does_not_abort_worker" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Registered FIRST so it runs LAST: the recorded requests are read
-    // by the assertions, and the serve thread must outlive the harness
-    // teardown's shutdown of the child.
+    // Registered FIRST so it runs LAST: the recorded requests are read by the assertions, and the serve thread must outlive the harness teardown's shutdown of the …
     var stub: Stub = .{ .port = 0, .server = undefined, .thread = undefined };
     try stub.start();
     defer stub.shutdown();
 
-    // `stub_llm_profile` is load-bearing, not a convenience: without a
-    // configured profile the binary has no model to run the turn with, so
-    // nothing ever reaches the stub.
+    // `stub_llm_profile` is load-bearing, not a convenience: without a configured profile the binary has no model to run the turn with, so nothing ever reaches the …
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -318,8 +289,7 @@ test "list_directory_relative_path_does_not_abort_worker" {
         defer r.deinit();
     }
 
-    // 2. Workspace holding <cwd>/frontend/src/index.ts — the layout the
-    // crashed session had.
+    // 2.
     const ws = try harness.harnessPath(gpa, h.temp_dir, &.{"rel-path-ws"});
     defer gpa.free(ws);
     const src_dir = try harness.harnessPath(gpa, ws, &.{ "frontend", "src" });
@@ -350,9 +320,7 @@ test "list_directory_relative_path_does_not_abort_worker" {
     }, .{});
     defer gpa.free(session_body);
     {
-        // Python: `expect=(200, 201, 500)` — the worker runs in the
-        // background, so a 500 here can still be a healthy boot with a
-        // failed turn that the poll below reports on.
+        // Python: `expect=(200, 201, 500)` — the worker runs in the background, so a 500 here can still be a healthy boot with a failed turn that the poll below reports …
         var r = try h.http(io, .POST, "/api/llm/session", .{
             .json_body = session_body,
             .expect = &.{ 200, 201, 500 },
@@ -397,8 +365,7 @@ test "list_directory_relative_path_does_not_abort_worker" {
     };
     defer gpa.free(content);
 
-    // 5. The result is the resolved ABSOLUTE path under the session cwd, and
-    // the listing succeeded (not an error envelope).
+    // 5.
     var envelope = std.json.parseFromSlice(std.json.Value, gpa, content, .{ .allocate = .alloc_always }) catch |err| {
         std.debug.print("tool result content is not JSON ({s}): {s}\n", .{ @errorName(err), content });
         return error.TestUnexpectedResult;
@@ -416,8 +383,7 @@ test "list_directory_relative_path_does_not_abort_worker" {
         std.debug.print("envelope tool mismatch: {s}\n", .{content});
         return error.TestUnexpectedResult;
     }
-    // Python: `envelope["success"] is True` — an IDENTITY check against the
-    // bool `True`, so a `"true"` string or `1` fails.
+    // Python: `envelope["success"] is True` — an IDENTITY check against the bool `True`, so a `"true"` string or `1` fails.
     const success = switch (envelope.value.object.get("success") orelse std.json.Value{ .null = {} }) {
         .bool => |b| b,
         else => {
@@ -474,8 +440,7 @@ test "list_directory_relative_path_does_not_abort_worker" {
         return error.TestUnexpectedResult;
     }
 
-    // 6. Params echo what the model sent (the relative form is preserved
-    //    on the wire even though the listing used the absolute path).
+    // 6.
     const parameters = switch (envelope.value.object.get("parameters") orelse std.json.Value{ .null = {} }) {
         .object => |o| o,
         else => {
@@ -496,8 +461,7 @@ test "list_directory_relative_path_does_not_abort_worker" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = Stub.start;
     _ = Stub.shutdown;

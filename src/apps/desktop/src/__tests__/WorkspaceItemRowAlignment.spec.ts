@@ -1,5 +1,4 @@
-/** The workspace-item row's edge alignment. The row used to be TWO boxes: a padded <button> plus
- * two unpadded action buttons as siblings in the wrapper. */
+/** The workspace-item row's edge alignment. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -36,16 +35,13 @@ function mountItem(item: WorkspaceItemType, isActive = false) {
   })
 }
 
-/**  * The menu is `v-if="menuPos"`, so it only mounts after a real right-click on the row. Trigger it
- * the way a user does rather than poking the composable's ref — the point of these tests is the
- * wired path. */
+/** The menu is `v-if="menuPos"`, so it only mounts after a real right-click on the row. */
 async function openRowMenu(w: VueWrapper) {
   await w.find('button.flex-1').trigger('contextmenu', { clientX: 40, clientY: 40 })
   await nextTick()
 }
 
-/**  * OpenInNewTabMenu is `<Teleport to="body">`, so its rows are NOT inside the wrapper's element tree
- * and `wrapper.find` cannot see them. Read the document instead. */
+/** OpenInNewTabMenu is `<Teleport to="body">`, so its rows are NOT inside the wrapper's element tree and `wrapper.find` cannot see them. */
 function menuRowExists(testid: string): boolean {
   return document.querySelector(`[data-testid="${testid}"]`) !== null
 }
@@ -69,9 +65,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('carries no inline action buttons — the menu is the only door', () => {
-    // The hover-reveal `+` / `x` rendered as oversized boxes on the agent
-    // site, so they were deleted from the row. Add task / Delete live on
-    // the right-click menu (asserted below) — nothing inline remains.
+    // The hover-reveal `+` / `x` rendered as oversized boxes on the agent site, so they were deleted from the row.
     wrapper = mountItem(makeItem())
 
     const button = wrapper.find('button.flex-1')
@@ -84,9 +78,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('renders the chevron as a glyph in the mark column, with no hit box', () => {
-    // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at x=20 while every
-    // section-header chevron started at the gutter. A bare glyph in the mark column starts there
-    // too, and the project name at gutter + mark — matching the section titles.
+    // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at x=20 while every section-header chevron started at the gutter.
     wrapper = mountItem(makeItem())
 
     const chevron = wrapper.find('[data-testid="item-row-chevron"]')
@@ -99,8 +91,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('puts its label at the gutter plus the mark column, and on no other offset', () => {
-    // The row bought its offset with a flex gap once, which is how a project
-    // name and a chat name disagreed. The offset is the 16px mark column now.
+    // The row bought its offset with a flex gap once, which is how a project name and a chat name disagreed.
     wrapper = mountItem(makeItem())
 
     const row = wrapper.find('button.flex-1')
@@ -112,9 +103,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('offers Add task and Delete project in the right-click menu', async () => {
-    // The hover-reveal actions need a second door: hover is undiscoverable
-    // and does nothing on touch. The menu already existed on this row, so
-    // this is two rows on it, not a new component.
+    // The hover-reveal actions need a second door: hover is undiscoverable and does nothing on touch.
     wrapper = mountItem(makeItem())
     await openRowMenu(wrapper)
 
@@ -123,8 +112,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
     expect(menu.props('showAddTask')).toBe(true)
     expect(menu.props('showDeleteItem')).toBe(true)
 
-    // The rows are actually rendered, not just flagged on. Teleported to
-    // body, so read the document rather than the wrapper.
+    // The rows are actually rendered, not just flagged on.
     expect(menuRowExists('add-task-menu-item')).toBe(true)
     expect(menuRowExists('delete-item-menu-item')).toBe(true)
   })
@@ -142,8 +130,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('hides Add task for kanban + routine in the menu', async () => {
-    // The board/scheduler own creation for these types. The row has no
-    // inline buttons at all, so the menu row is where the rule is enforced.
+    // The board/scheduler own creation for these types.
     for (const item_type of ['kanban', 'routine'] as const) {
       wrapper = mountItem(makeItem({ item_type }))
       await openRowMenu(wrapper)
@@ -156,9 +143,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
   })
 
   it('keeps the chevron ahead of the elapsed chip in DOM order', async () => {
-    // Pre-existing contract (workspaceItemProcessingSpinner.spec.ts): the
-    // activity marker sits after the chevron + content, not before. Moving
-    // the actions inside the button must not disturb it.
+    // Pre-existing contract (workspaceItemProcessingSpinner.spec.ts): the activity marker sits after the chevron + content, not before.
     const processingState: Ref<Record<string, boolean>> = ref({})
     const now = Date.now()
     const workerActivity = ref<Record<string, WorkerActivity>>({

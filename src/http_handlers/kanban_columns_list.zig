@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/kanban/columns`. Returns
-//! the kanban column list for a workspace item.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/kanban/columns`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,16 +9,13 @@ const kanban_model = @import("../modules/agent/loop/kanban_model.zig");
 pub const KanbanColumnsListError = error{
     ItemIdRequired,
     QueryFailed,
-    /// `makeKanbanColumnListResponse` returns `![]u8` (its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
+    /// `makeKanbanColumnListResponse` returns `![]u8` (its body uses `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
     OutOfMemory,
 };
 
 pub const KanbanColumnsListResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -34,9 +30,7 @@ fn useCase(
     return try http_response.makeKanbanColumnListResponse(allocator, cols);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn kanbanColumnsListHandler(
     ctx: gserverz.HttpContext,

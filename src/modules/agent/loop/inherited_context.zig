@@ -9,8 +9,7 @@ pub const Mode = union(enum) {
     since_last_user,
 };
 
-/// Cap for the `last:N` selector and the 50-message ceiling used by `all`
-/// and `since_last_user`.
+/// Cap for the `last:N` selector and the 50-message ceiling used by `all` and `since_last_user`.
 const MAX_MESSAGES: u8 = 50;
 pub const DEFAULT_LAST: u8 = 10;
 const MAX_SECTION_BYTES: usize = 20 * 1024; // 20 KB
@@ -26,8 +25,7 @@ pub fn parseMode(raw: []const u8) ParseError!Mode {
     if (std.ascii.startsWithIgnoreCase(trimmed, "last:")) {
         const n_str = trimmed["last:".len..];
         if (n_str.len == 0) return Mode{ .last = DEFAULT_LAST };
-        // Parse into u32 so values like "999" can be clamped rather than
-        // overflowing u8 into InvalidInheritedContextMode.
+        // Parse into u32 so values like "999" can be clamped rather than overflowing u8 into InvalidInheritedContextMode.
         const n = std.fmt.parseInt(u32, n_str, 10) catch return error.InvalidInheritedContextMode;
         if (n == 0) return Mode{ .last = 1 };
         if (n > MAX_MESSAGES) return Mode{ .last = MAX_MESSAGES };
@@ -37,9 +35,7 @@ pub fn parseMode(raw: []const u8) ParseError!Mode {
     return error.InvalidInheritedContextMode;
 }
 
-/// Subagent detection predicate. A sub-agent is a child session whose
-/// `parent_session_id` refers to a different session than its own
-/// `session_id`.
+/// Subagent detection predicate.
 pub fn isSubagent(session_id: []const u8, parent_session_id: []const u8) bool {
     if (parent_session_id.len == 0) return false;
     if (session_id.len == 0) return false;
@@ -59,8 +55,7 @@ const HEADER =
     \\
 ;
 
-/// Fetch user/assistant messages from the parent's history and render them as
-/// a Markdown block.
+/// Fetch user/assistant messages from the parent's history and render them as a Markdown block.
 pub fn formatHistory(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -99,8 +94,7 @@ fn fetchUserAssistantMessages(
     parent_session_id: []const u8,
     mode: Mode,
 ) ![]HistoryRow {
-    // Build the SQL based on the mode. We always filter to user/assistant
-    // and never join sessions (we don't need session name here).
+    // Build the SQL based on the mode.
     var sql: []const u8 = undefined;
     var args: []const []const u8 = undefined;
     var limit_buf: [16]u8 = undefined;
@@ -135,8 +129,7 @@ fn fetchUserAssistantMessages(
             args = &.{parent_session_id};
         },
         .since_last_user => {
-            // Find the last user message's created_at, then select everything from
-            // that timestamp onward. Subquery is portable SQLite.
+            // Find the last user message's created_at, then select everything from that timestamp onward.
             sql =
                 \\SELECT role, response_content FROM llm_history
                 \\WHERE session_id = ? AND role IN ('user', 'assistant') AND response_content != ''
@@ -166,9 +159,7 @@ fn fetchUserAssistantMessages(
     // For `last:N` we ordered DESC to apply LIMIT; reverse to ASC for display.
     if (mode == .last) std.mem.reverse(HistoryRow, raw);
 
-    // Note: the 50-message cap is enforced in `renderHistory` so it can emit
-    // a visible "... (N more messages omitted)" notice. Doing it here would
-    // hide the truncation from the caller.
+    // Note: the 50-message cap is enforced in `renderHistory` so it can emit a visible "...
 
     return raw;
 }
@@ -188,8 +179,7 @@ fn renderHistory(allocator: std.mem.Allocator, messages: []HistoryRow) ![]const 
         const line = try std.fmt.allocPrint(allocator, "- **[{s}]**: {s}\n", .{ m.role, m.content });
         defer allocator.free(line);
 
-        // If adding this line would push us over the byte cap, stop and emit a
-        // truncation notice (counting omitted messages).
+        // If adding this line would push us over the byte cap, stop and emit a truncation notice (counting omitted messages).
         if (total + line.len > MAX_SECTION_BYTES and rendered > 0) {
             const omitted = messages.len - rendered;
             const notice = try std.fmt.allocPrint(allocator, "... ({d} more messages omitted)\n", .{omitted});
@@ -201,8 +191,7 @@ fn renderHistory(allocator: std.mem.Allocator, messages: []HistoryRow) ![]const 
         total += line.len;
         rendered += 1;
 
-        // Hit the 50-message cap — emit a notice and stop. (We do this AFTER
-        // appending the 50th line so the rendered count is exact.)
+        // Hit the 50-message cap — emit a notice and stop.
         if (rendered >= MAX_MESSAGES and messages.len > rendered) {
             const omitted = messages.len - rendered;
             const notice = try std.fmt.allocPrint(allocator, "... ({d} more messages omitted)\n", .{omitted});
@@ -216,7 +205,6 @@ fn renderHistory(allocator: std.mem.Allocator, messages: []HistoryRow) ![]const 
 }
 
 // ─── Inline tests (formerly inherited_context_test.zig) ──────────────────
-// Behavioural tests for parseMode + parseExplicitBlocks.
 
 test "parseMode - null/empty string returns Mode.none" {
     const m = try parseMode("");
@@ -363,9 +351,7 @@ fn seedMessage(
     role: []const u8,
     content: []const u8,
 ) !void {
-    // `created_at_nano` is an epoch column. Callers hand in either the epoch or
-    // a timestamp spelling, so convert once here — relying on sqlite's text
-    // affinity is what let an ISO string sit in a BIGINT column.
+    // `created_at_nano` is an epoch column.
     const insert =
         \\INSERT INTO llm_history (id, session_id, created_at_nano, response_content, role)
         \\VALUES (?, ?, ?, ?, ?)
@@ -412,9 +398,7 @@ test "formatHistory - last:5 filters out tool messages" {
     try std.testing.expect(std.mem.indexOf(u8, out, "**[user]**: Please do X") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "**[assistant]**: On it") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "**[user]**: Thanks") != null);
-    // Tool message must be filtered out. Use a substring that is specific to
-    // the tool payload (`{"result":"ok"}`) and does not collide with the
-    // HEADER's "results" word.
+    // Tool message must be filtered out.
     try std.testing.expect(std.mem.indexOf(u8, out, "**[tool]**") == null);
     try std.testing.expect(std.mem.indexOf(u8, out, "result\":\"ok") == null);
     // Order check: "Hello" must appear before "Please do X"
@@ -456,7 +440,6 @@ test "formatHistory - since_last_user starts at the last user message" {
     defer alloc.free(out);
 
     // 'since_last_user' = from the last user message (m3) to the end.
-    // So we expect: m3 user, m4 assistant. NOT m1 user, m2 assistant.
     try std.testing.expect(std.mem.indexOf(u8, out, "**[user]**: second_user") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "**[assistant]**: after_second") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "first_user") == null);
@@ -520,8 +503,7 @@ test "formatHistory - empty session_id returns empty string (defensive, new arg)
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Seed some history for the "parent" so we can confirm the empty
-    // session_id short-circuit beats the DB read (no DB hit expected).
+    // Seed some history for the "parent" so we can confirm the empty session_id short-circuit beats the DB read (no DB hit expected).
     try seedMessage(alloc, &ctx.db, "m1", "p", "1704067201000000", "user", "should NOT appear");
     try seedMessage(alloc, &ctx.db, "m2", "p", "1704067202000000", "assistant", "should NOT appear");
 
@@ -538,9 +520,7 @@ test "formatHistory - session_id equal parent_session_id returns empty string (N
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // Seed parent history — but the subagent guard says "session equals
-    // parent → not a subagent → empty string". So the seeded messages
-    // must NOT appear in the output.
+    // Seed parent history — but the subagent guard says "session equals parent → not a subagent → empty string".
     try seedMessage(alloc, &ctx.db, "m1", "self", "1704067201000000", "user", "should NOT appear");
     try seedMessage(alloc, &ctx.db, "m2", "self", "1704067202000000", "assistant", "should NOT appear");
 
@@ -559,8 +539,7 @@ test "formatHistory - session_id differs from parent_session_id returns parent h
 
     try seedMessage(alloc, &ctx.db, "m1", "parent_sess", "1704067201000000", "user", "from parent: a question");
     try seedMessage(alloc, &ctx.db, "m2", "parent_sess", "1704067202000000", "assistant", "from parent: an answer");
-    // A row tagged with the SAME session_id as the child (the subagent)
-    // should never come back, because we filter by parent_session_id.
+    // A row tagged with the SAME session_id as the child (the subagent) should never come back, because we filter by parent_session_id.
     try seedMessage(alloc, &ctx.db, "m3", "child_sess", "1704067203000000", "user", "from child — must NOT appear");
 
     const out = try formatHistory(alloc, &ctx.db, "child_sess", "parent_sess", .{ .last = 5 });
@@ -578,9 +557,7 @@ test "formatHistory - 20KB byte cap emits truncation notice" {
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    // 30 messages × 1 KB = 30 KB of content, well over the 20 KB byte cap
-    // but well under the 50-message cap, so the byte cap (not the message
-    // cap) is what fires.
+    // 30 messages × 1 KB = 30 KB of content, well over the 20 KB byte cap but well under the 50-message cap, so the byte cap (not the message cap) is what fires.
     const big_content = try alloc.alloc(u8, 1024);
     defer alloc.free(big_content);
     @memset(big_content, 'x');
@@ -599,8 +576,7 @@ test "formatHistory - 20KB byte cap emits truncation notice" {
 
     // Byte cap should have fired (we seeded 30 KB of content, cap is 20 KB).
     try std.testing.expect(std.mem.indexOf(u8, out, "more messages omitted") != null);
-    // The rendered output (HEADER + bullets + notice) must be ≤ 20 KB +
-    // slack.
+    // The rendered output (HEADER + bullets + notice) must be ≤ 20 KB + slack.
     try std.testing.expect(out.len < 25 * 1024);
 }
 
@@ -635,7 +611,6 @@ test "formatHistory - empty content rows are filtered out" {
     try std.testing.expect(std.mem.indexOf(u8, out, "**[user]**: Hello") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "**[user]**: Bye") != null);
     // The empty-content assistant row should not produce a `- **[assistant]**:` bullet.
-    // We check that if any assistant bullet exists, it must have non-empty content.
     const assistant_idx = std.mem.indexOf(u8, out, "- **[assistant]**") orelse 0;
     if (assistant_idx > 0) {
         // If a bullet line for assistant exists, it must have non-empty content.

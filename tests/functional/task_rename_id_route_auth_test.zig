@@ -1,6 +1,4 @@
-// Renaming a chat from the sidebar context menu — "Workspace not found". Zig
-// port of `tests/functional/task_rename_id_route_auth_test.py` (same test
-// names, same order).
+// Renaming a chat from the sidebar context menu — "Workspace not found".
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawHttp(
@@ -54,8 +50,6 @@ fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force:
 }
 
 /// Log in and return the session token (Python `_login`).
-/// `split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`: the token is
-/// the text BETWEEN the name and the next `;`.
 fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -90,8 +84,7 @@ fn cookieFor(token: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "pabrik_session={s}", .{token});
 }
 
-/// The workspace → kanban → task (+ session) triple. Every string is
-/// owned; the caller frees them through `deinit`.
+/// The workspace → kanban → task (+ session) triple.
 const Seed = struct {
     ws_id: []u8,
     item_id: []u8,
@@ -105,12 +98,9 @@ const Seed = struct {
     }
 };
 
-/// workspace → kanban item → task(+session). Mirrors the frontend's seed
-/// path.
+/// workspace → kanban item → task(+session).
 fn seedWorkspaceItemTask(h: *Harness, cookie: []const u8, name: []const u8) !Seed {
-    // Each id is duped INSIDE the block that owns the response it was
-    // read from: a `harness.Json` aliases the response body, so an id
-    // carried out of the block would point at freed memory.
+    // Each id is duped INSIDE the block that owns the response it was read from: a `harness.Json` aliases the response body, so an id carried out of the block would …
     const ws_id = blk: {
         const body = "{\"name\":\"rename-ws\"}";
         var r = try rawHttp(h, .POST, "/api/workspaces", body, cookie);
@@ -264,9 +254,7 @@ fn sessionName(h: *Harness, cookie: []const u8, session_id: []const u8) ![]u8 {
     return gpa.dupe(u8, name);
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // The context menu's wire body must rename, not 404, when --auth is on.
 test "id_only_rename_works_with_auth_on" {
@@ -324,8 +312,6 @@ test "id_only_rename_works_with_auth_on" {
 }
 
 // Pins the exact failure: a stale `workspace_id` param must not 404 a rename.
-// Asserted on the response BODY so a regression names itself instead of
-// reading as "some 404 happened".
 test "id_only_rename_is_not_a_workspace_lookup" {
     try harness.requirePabrikBin(io, gpa);
 

@@ -1,17 +1,14 @@
-//! Builds the `## Kanban Knowledge` system-prompt section for sessions bound
-//! to a kanban workspace-item WITH an `agent_kanbans` row (Migration 081).
+//! Builds the `## Kanban Knowledge` system-prompt section for sessions bound to a kanban workspace-item WITH an `agent_kanbans` row (Migration 081).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_kanban_db = @import("../../../models/agent_kanban.db.zig");
 
-/// 100 MiB per-file OOM safety. NOT a content budget — purely to prevent
-/// the server from OOM-ing on a misconfigured path like `/dev/zero`.
+/// 100 MiB per-file OOM safety.
 pub const MAX_FILE_BYTES_OOM_SAFETY: usize = 100 * 1024 * 1024;
 
-/// Resolve the workspace_item_id for a session. Returns "" when the
-/// session doesn't exist (no workspace_item_tasks row).
+/// Resolve the workspace_item_id for a session.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -29,8 +26,7 @@ fn resolveWorkspaceItemId(
     return try allocator.dupe(u8, "");
 }
 
-/// Read a single file's full contents. Caller owns the returned slice.
-/// Returns `null` (logged + skipped by caller) on failure.
+/// Read a single file's full contents.
 fn readFileContents(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -54,7 +50,6 @@ fn readFileContents(
 }
 
 /// Resolve `workspace_item_id` → is-it-a-configured-kanban check.
-/// True only when item_type == 'kanban' AND an agent_kanbans row exists.
 fn isConfiguredKanbanItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -73,8 +68,7 @@ fn isConfiguredKanbanItem(
     return false;
 }
 
-/// Build the `## Kanban Knowledge` system-prompt section. Returns an
-/// owned slice (empty for non-configured-kanban sessions). Caller frees.
+/// Build the `## Kanban Knowledge` system-prompt section.
 pub fn makeAgentKanbanKnowledge(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -144,8 +138,7 @@ pub fn makeAgentKanbanKnowledge(
             continue;
         }
 
-        // File-backed entry — read FIRST so an unreadable file is
-        // skipped without leaking its header into the section.
+        // File-backed entry — read FIRST so an unreadable file is skipped without leaking its header into the section.
         const contents = readFileContents(io, allocator, row.file_path) catch continue;
         const owned = contents orelse continue;
         defer allocator.free(owned);
@@ -168,8 +161,7 @@ pub fn makeAgentKanbanKnowledge(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;
@@ -239,8 +231,7 @@ fn insertConfig(ctx: *TestCtx, config_id: []const u8, workspace_item_id: []const
 
 var test_file_counter: std.atomic.Value(u64) = .init(0);
 
-/// Writes `contents` to a uniquely-named file inside `tmp` and returns its
-/// ABSOLUTE path (caller-owned: `alloc.free` it).
+/// Writes `contents` to a uniquely-named file inside `tmp` and returns its ABSOLUTE path (caller-owned: `alloc.free` it).
 fn writeTestFile(tmp: *std.testing.TmpDir, allocator: std.mem.Allocator, io: std.Io, contents: []const u8) ![]u8 {
     const n = test_file_counter.fetchAdd(1, .seq_cst);
     var name_buf: [64]u8 = undefined;

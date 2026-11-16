@@ -1,6 +1,4 @@
-// Functional tests for the kanban create_and_run message format. Zig port of
-// `tests/functional/kanban_task_create_message_format.py` (same test names,
-// same order).
+// Functional tests for the kanban create_and_run message format.
 
 const std = @import("std");
 const testing = std.testing;
@@ -13,19 +11,14 @@ const io = testing.io;
 const USER_MESSAGE_TIMEOUT_S: f64 = 20.0;
 const POLL_INTERVAL_MS: u32 = 200;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// Python `worker_harness` fixture. Own boot with a stub LLM profile so
-/// create_and_run workers drain.
+/// Python `worker_harness` fixture.
 fn bootWorkerHarness() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
 
-// ============================================================================
 // HTTP helpers
-// ============================================================================
 
 /// Python `_create_workspace`. Owned.
 fn createWorkspace(h: *Harness) ![]u8 {
@@ -105,8 +98,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Python `_create_task`: POST the exact wire body the frontend sends
-/// for each mode. Returns the WHOLE body (owned).
+/// Python `_create_task`: POST the exact wire body the frontend sends for each mode.
 fn createTask(
     h: *Harness,
     workspace_id: []const u8,
@@ -124,8 +116,7 @@ fn createTask(
             .description = description,
             .queue_message = queue_message,
         },
-        // `queue_message` is OMITTED when the caller did not pass one -
-        // Python only added the key when it was not None.
+        // `queue_message` is OMITTED when the caller did not pass one -Python only added the key when it was not None.
         .{ .emit_null_optional_fields = false },
     );
     defer gpa.free(body);
@@ -174,8 +165,7 @@ fn taskIdFrom(create_body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The user-role rows of a session, as an OWNED body slice. Python
-/// `_user_role_messages` returned a list of dicts.
+/// The user-role rows of a session, as an OWNED body slice.
 fn userRoleMessagesBody(h: *Harness, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -264,9 +254,7 @@ fn countUserMessages(messages_body: []const u8) !usize {
     return n;
 }
 
-/// Python `_wait_for_user_message`: poll until the queue-drained user row
-/// lands (create_and_run is async). Returns the user-role CONTENT of the
-/// first drained row, owned.
+/// Python `_wait_for_user_message`: poll until the queue-drained user row lands (create_and_run is async).
 fn waitForUserMessage(h: *Harness, session_id: []const u8, timeout_s: f64) ![]u8 {
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() +
         @as(i64, @intFromFloat(timeout_s * 1000.0));
@@ -293,9 +281,7 @@ fn waitForUserMessage(h: *Harness, session_id: []const u8, timeout_s: f64) ![]u8
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // git fixture helpers
-// ============================================================================
 
 /// Write `contents` to `path` (absolute), creating/truncating it.
 fn writeFileAt(path: []const u8, contents: []const u8) !void {
@@ -304,8 +290,7 @@ fn writeFileAt(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Python `_git`: `subprocess.run(["git", "-C", repo, *args],
-/// check=True)`. Skips the test when `git` cannot be spawned at all.
+/// Python `_git`: `subprocess.run(["git", "-C", repo, *args], check=True)`.
 fn git(repo: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -326,9 +311,7 @@ fn git(repo: []const u8, args: []const []const u8) !void {
     }
 }
 
-/// Python `_make_repo_with_branches`. Create a throwaway repo with one local
-/// branch, two remote-tracking refs, and a symbolic `origin/HEAD` (the row
-/// the parser must drop). Returns the repo path (owned) under `root`.
+/// Python `_make_repo_with_branches`.
 fn makeRepoWithBranches(root: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ root, "branches-repo" });
     errdefer gpa.free(repo);
@@ -346,8 +329,7 @@ fn makeRepoWithBranches(root: []const u8) ![]u8 {
         "commit", "--quiet",
         "-m",     "init",
     });
-    // Fabricate remote-tracking refs — no network, no `origin` remote
-    // needed.
+    // Fabricate remote-tracking refs — no network, no `origin` remote needed.
     try git(repo, &.{ "update-ref", "refs/remotes/origin/main", "HEAD" });
     try git(repo, &.{ "update-ref", "refs/remotes/origin/feature-x", "HEAD" });
     try git(repo, &.{ "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main" });
@@ -356,9 +338,7 @@ fn makeRepoWithBranches(root: []const u8) ![]u8 {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced fn body is never
-    // type-checked, so a stdlib rename inside one hides until a caller
-    // appears.
+    // Body-analysis barrier: an unreferenced fn body is never type-checked, so a stdlib rename inside one hides until a caller appears.
     _ = bootWorkerHarness;
     _ = createWorkspace;
     _ = createKanban;
@@ -372,9 +352,7 @@ comptime {
     _ = git;
 }
 
-// ============================================================================
 // Test 1: name + description, toggle OFF
-// ============================================================================
 
 // queue_message `Task : <name>\nDescription: <desc>` drains verbatim.
 test "create_and_run_formats_task_and_description" {
@@ -412,9 +390,7 @@ test "create_and_run_formats_task_and_description" {
     }
 }
 
-// ============================================================================
 // Test 2: name only, toggle OFF — no Description line
-// ============================================================================
 
 test "create_and_run_omits_description_line_when_empty" {
     try harness.requirePabrikBin(io, gpa);
@@ -457,9 +433,7 @@ test "create_and_run_omits_description_line_when_empty" {
     }
 }
 
-// ============================================================================
 // Test 3: toggle ON appends the worktree note
-// ============================================================================
 
 test "create_and_run_appends_worktree_note_when_toggled" {
     try harness.requirePabrikBin(io, gpa);
@@ -496,9 +470,7 @@ test "create_and_run_appends_worktree_note_when_toggled" {
     }
 }
 
-// ============================================================================
 // Test 4: create_session keeps the server-side composition
-// ============================================================================
 
 // Scope lock: plain Create task is untouched by the frontend-only change.
 test "create_session_keeps_server_composition" {
@@ -526,8 +498,7 @@ test "create_session_keeps_server_composition" {
     const task_id = try taskIdFrom(create_body);
     defer gpa.free(task_id);
 
-    // create_session is SYNCHRONOUS: the row is already there, so no
-    // poll (Python called `_user_role_messages` directly).
+    // create_session is SYNCHRONOUS: the row is already there, so no poll (Python called `_user_role_messages` directly).
     const messages_body = try userRoleMessagesBody(&h, task_id);
     defer gpa.free(messages_body);
 
@@ -546,9 +517,7 @@ test "create_session_keeps_server_composition" {
     }
 }
 
-// ============================================================================
 // Test 5: toggle ON + custom path appends the Path line
-// ============================================================================
 
 // The worktree path input lands as the `Path:` line after the note.
 test "create_and_run_appends_worktree_path_when_provided" {
@@ -589,13 +558,9 @@ test "create_and_run_appends_worktree_path_when_provided" {
     }
 }
 
-// ============================================================================
 // Test 6: toggle ON + path + base branch appends the Base line
-// ============================================================================
 
-// The base-branch picker lands as the `Base:` line after `Path:`. This is the
-// wire half of the feature: the agent only knows which ref to branch the
-// worktree FROM because this line reaches llm_history verbatim.
+// The base-branch picker lands as the `Base:` line after `Path:`.
 test "create_and_run_appends_worktree_base_branch_when_provided" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootWorkerHarness();
@@ -672,9 +637,7 @@ test "create_and_run_without_base_keeps_the_old_message_shape" {
     }
 }
 
-// ============================================================================
 // GET /api/git/branches — the dropdown's data source
-// ============================================================================
 
 // Default hoisted, then remotes, then locals; symbolic HEAD dropped.
 test "git_branches_lists_refs_in_picker_order" {
@@ -684,9 +647,7 @@ test "git_branches_lists_refs_in_picker_order" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Scratch root: a sibling of the harness tempdir under the OS temp root,
-    // so the orphan reaper (which only matches `pabrik-func-*`) cannot take
-    // the fixture mid-test.
+    // Scratch root: a sibling of the harness tempdir under the OS temp root, so the orphan reaper (which only matches `pabrik-func-*`) cannot take the fixture …
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch);
     defer harness.cleanupExtraDir(io, gpa, scratch);
@@ -760,8 +721,7 @@ test "git_branches_lists_refs_in_picker_order" {
         std.debug.print("local-dev missing from branches\n", .{});
         return error.TestUnexpectedResult;
     }
-    // The symbolic ref shortens to a bare `origin` — it must never
-    // surface as a selectable base branch.
+    // The symbolic ref shortens to a bare `origin` — it must never surface as a selectable base branch.
     if (has(names.items, "origin")) {
         std.debug.print("symbolic origin/HEAD surfaced as a bare `origin`\n", .{});
         return error.TestUnexpectedResult;
@@ -770,8 +730,7 @@ test "git_branches_lists_refs_in_picker_order" {
         std.debug.print("symbolic origin/HEAD surfaced as a bare `HEAD`\n", .{});
         return error.TestUnexpectedResult;
     }
-    // Detected default first, then the other remote-tracking ref, then
-    // the local branch.
+    // Detected default first, then the other remote-tracking ref, then the local branch.
     if (names.items.len == 0 or !std.mem.eql(u8, names.items[0], "origin/main")) {
         const rendered = try renderNames(names.items);
         defer gpa.free(rendered);
@@ -909,8 +868,7 @@ fn boolFlag(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !bool {
     };
 }
 
-/// Python `by_name[name] == {name, is_remote, is_current, is_default}`
-/// — i.e. the object carries EXACTLY those four keys with those values.
+/// Python `by_name[name] == {name, is_remote, is_current, is_default}` — i.e. the object carries EXACTLY those four keys with those values.
 fn expectBranchFlags(b: std.json.ObjectMap, want: BranchFlags, name: []const u8) !void {
     var count: usize = 0;
     var it = b.iterator();

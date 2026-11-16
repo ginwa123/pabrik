@@ -16,8 +16,7 @@ pub const Migration009RemoveCreatedColumn = struct {
         // Rename old table
         try db.exec(allocator, "ALTER TABLE llm_history RENAME TO llm_history_old", &[_][]const u8{});
 
-        // Create new table with `created_at` (the column this migration was
-        // supposed to consolidate). Columns added by later migrations (e.g.
+        // Create new table with `created_at` (the column this migration was supposed to consolidate).
         const ddl = try std.fmt.allocPrint(allocator,
             \\CREATE TABLE IF NOT EXISTS llm_history (
             \\    id TEXT PRIMARY KEY,

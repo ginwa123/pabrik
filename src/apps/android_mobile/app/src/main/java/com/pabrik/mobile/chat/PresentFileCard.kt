@@ -51,14 +51,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * What the card currently has to show for one file.
- *
- * Deliberately not a sealed interface of "every possible thing" — [Kind] is
- * decided by the pure [PresentFiles.kindOf], and the loaded states carry only
- * the payload that renderer needs. Anything unaccounted for lands in [Failed]
- * with a sentence rather than an empty box.
- */
+/** What the card currently has to show for one file. */
 internal sealed interface FilePreviewState {
     data object Loading : FilePreviewState
     data class Image(val bitmap: ImageBitmap) : FilePreviewState
@@ -67,30 +60,13 @@ internal sealed interface FilePreviewState {
     data object NotApplicable : FilePreviewState
 }
 
-/**
- * One presented file: its name, its size, and — the point of the card — an
- * actual look at it.
- *
- * Fetches the bytes on composition. That is not "eager" in any meaningful way:
- * a tool card only composes its body when the reader has opened it, so a
- * transcript with twenty `present_files` rows costs nothing until one is
- * expanded. Going further and waiting for a tap would mean the reader has to
- * press a button to find out whether the file is a picture or a wall of text,
- * which is the question the card exists to answer.
- *
- * The decision about *how* to draw the result is [PresentFiles] (pure, unit
- * tested); the decision about *whether the bytes arrived* is [FileClient]
- * (socket, unit tested with a fake exchange); the drawing is here.
- */
+/** One presented file: its name, its size, and — the point of the card — an actual look at it. */
 @Composable
 internal fun PresentFileCard(
     file: ToolBody.PresentedFile,
     sessionId: String,
     modifier: Modifier = Modifier,
-    // Nullable rather than defaulted, so a test can hand in a fake and the
-    // real path stays a decision made once, in the body, off `LocalContext` —
-    // not in a default argument where it would be read during argument
-    // evaluation.
+    // Nullable rather than defaulted, so a test can hand in a fake and the real path stays a decision made once, in the body, off `LocalContext` — not in a default …
     fileClient: FileClient? = null,
     opener: ExternalFileOpener? = null,
 ) {
@@ -107,9 +83,7 @@ internal fun PresentFileCard(
     var isOpening by remember(file.path) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // One effect owns every transition this card can make, so no two of them
-    // can race: the fetch, the image decode and the UTF-8 decode all happen
-    // here and nowhere else.
+    // One effect owns every transition this card can make, so no two of them can race: the fetch, the image decode and the UTF-8 decode all happen here and nowhere …
     LaunchedEffect(file.path, kind, sessionId) {
         if (kind == PresentFileKind.EXTERNAL) {
             state = FilePreviewState.NotApplicable
@@ -125,9 +99,7 @@ internal fun PresentFileCard(
         state = when (val result = withContext(Dispatchers.IO) { client.fetch(sessionId, file.path) }) {
             is FileFetchResult.Loaded -> when (kind) {
                 PresentFileKind.IMAGE -> {
-                    // `Default`, not `IO`: this is CPU-bound work — a 4 MB
-                    // screenshot decoded on the main thread is the dropped
-                    // frame the reader feels as the list stuttering.
+                    // `Default`, not `IO`: this is CPU-bound work — a 4 MB screenshot decoded on the main thread is the dropped frame the reader feels as the list stuttering.
                     val bitmap = withContext(Dispatchers.Default) {
                         BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
                             ?.asImageBitmap()
@@ -140,8 +112,7 @@ internal fun PresentFileCard(
                 }
 
                 PresentFileKind.MARKDOWN, PresentFileKind.CODE, PresentFileKind.TEXT -> {
-                    // Same reasoning as the image above: a half-megabyte
-                    // String(...) is main-thread work if it happens on one.
+                    // Same reasoning as the image above: a half-megabyte String(...) is main-thread work if it happens on one.
                     val decoded = withContext(Dispatchers.Default) {
                         PresentFiles.decodeText(result.bytes)
                     }
@@ -196,9 +167,7 @@ internal fun PresentFileCard(
                     isOpening = true
                     notice = null
                     scope.launch {
-                        // Blocking fetch: the bytes have to exist before the
-                        // viewer app is asked for them, so this is IO-bound and
-                        // cannot ride the main thread.
+                        // Blocking fetch: the bytes have to exist before the viewer app is asked for them, so this is IO-bound and cannot ride the main thread.
                         val problem = withContext(Dispatchers.IO) {
                             externalOpener.open(
                                 sessionId = sessionId,
@@ -273,9 +242,7 @@ private fun LoadingBlock() {
 
 @Composable
 private fun ImagePreviewBlock(bitmap: ImageBitmap) {
-    // Nothing here decodes. The bitmap arrived already decoded from the
-    // effect above, so recomposition — which happens on every keystroke
-    // anywhere in the transcript — costs a draw, not a decode.
+    // Nothing here decodes.
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,8 +254,7 @@ private fun ImagePreviewBlock(bitmap: ImageBitmap) {
         Image(
             bitmap = bitmap,
             contentDescription = "preview",
-            // Fit, never crop: a wireframe screenshot cropped to a box is not
-            // the file the reader asked to see.
+            // Fit, never crop: a wireframe screenshot cropped to a box is not the file the reader asked to see.
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxWidth()
@@ -305,9 +271,7 @@ private fun TextPreviewBlock(kind: PresentFileKind, state: FilePreviewState.Text
             .padding(horizontal = 6.dp, vertical = 6.dp)
             .testTag("present_file_text"),
     ) {
-        // Markdown goes through the transcript's own renderer, so a README and
-        // an assistant reply of the same source look the same — which is the
-        // whole point of having one markdown implementation.
+        // Markdown goes through the transcript's own renderer, so a README and an assistant reply of the same source look the same — which is the whole point of having …
         if (kind == PresentFileKind.MARKDOWN) {
             MarkdownText(source = state.text)
         } else {
@@ -349,13 +313,7 @@ private fun fileMeta(file: ToolBody.PresentedFile): String {
     return if (mime.isEmpty()) "$size · unknown type" else "$size · $mime"
 }
 
-/**
- * The app's [FileClient] for a card, remembered per context.
- *
- * A fresh client per card is harmless — it holds no connection state — but one
- * per recomposition is not, so it is keyed the way any other context-scoped
- * object is.
- */
+/** The app's [FileClient] for a card, remembered per context. */
 @Composable
 private fun rememberFileClient(context: Context): FileClient = remember(context) {
     FileClient(sessionStore = SessionCookieStore(context))

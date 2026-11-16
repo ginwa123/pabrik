@@ -1,8 +1,6 @@
 const std = @import("std");
 
-/// `helpers` package — the project-wide portable sleep / time /
-/// file-existence helpers (`PosixTimespec`, `sleepMillis`, `unixTimestamp`,
-/// `nanosleep`, `clock_gettime`, etc.).
+/// `helpers` package — the project-wide portable sleep / time /file-existence helpers (`PosixTimespec`, `sleepMillis`, `unixTimestamp`, `nanosleep` …
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});

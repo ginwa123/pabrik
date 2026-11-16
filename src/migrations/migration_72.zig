@@ -8,15 +8,13 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 072 — Extract `kanban_column_id` + `kanban_position` from
-/// `workspace_item_tasks` into a dedicated `kanban` join table.
+/// Migration 072 — Extract `kanban_column_id` + `kanban_position` from `workspace_item_tasks` into a dedicated `kanban` join table.
 pub const Migration072ExtractKanbanTable = struct {
     pub const version: u32 = 72;
     pub const name = "extract_kanban_table";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Wrap in a tx (db.begin/tx.exec/tx.commit) so the CREATE+INSERT+DROP
-        // sequence is atomic.
+        // Wrap in a tx (db.begin/tx.exec/tx.commit) so the CREATE+INSERT+DROP sequence is atomic.
         var tx = try db.begin();
         defer tx.commitOrRollback() catch {};
         errdefer tx.rollback() catch {};
@@ -41,9 +39,7 @@ pub const Migration072ExtractKanbanTable = struct {
             &[_][]const u8{},
         );
 
-        // Step 4: drop the per-column index on workspace_item_tasks BEFORE
-        // the INSERT (which would otherwise create a pending read lock on the
-        // same table via the kanban FK validation, blocking the DROP).
+        // Step 4: drop the per-column index on workspace_item_tasks BEFORE the INSERT (which would otherwise create a pending read lock on the same table via the kanban …
         try tx.exec(allocator,
             "DROP INDEX IF EXISTS idx_tasks_column_position",
             &[_][]const u8{},
@@ -70,18 +66,14 @@ pub const Migration072ExtractKanbanTable = struct {
         }
         // else: re-run — backfill already happened on the first run.
 
-        // Step 5 + 6: drop the two columns. dropColumnIfExists is the safe
-        // pattern (used in Migration 052) — fresh-DB users who walked the
-        // canonical schema may not have these columns if we eventually move
+        // Step 5 + 6: drop the two columns. dropColumnIfExists is the safe pattern (used in Migration 052) — fresh-DB users who walked the canonical schema may not have …
         try dropColumnIfExists(.{ .tx = &tx }, allocator, "workspace_item_tasks", "kanban_column_id");
         try dropColumnIfExists(.{ .tx = &tx }, allocator, "workspace_item_tasks", "kanban_position");
 
-        // Commit the transaction. After this, Migration 072 is "done"
-        // and the new schema is durable.
+        // Commit the transaction.
         try tx.commit();
 
-        // ANALYZE so the query planner sees the new index (mirrors
-        // Migration 051 / 041 / 042 / 043 / 048 / 049 / 050).
+        // ANALYZE so the query planner sees the new index (mirrors Migration 051 / 041 / 042 / 043 / 048 / 049 / 050).
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

@@ -1,6 +1,4 @@
-// Functional tests for automatic per-user workspace provisioning. Zig port of
-// `tests/functional/default_workspace_provisioning_test.py` (same test names,
-// same order).
+// Functional tests for automatic per-user workspace provisioning.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Issue a request WITHOUT a status assertion — the caller asserts.
 fn rawWithCookie(
@@ -33,14 +29,12 @@ fn rawWithCookie(
     });
 }
 
-/// Boot a harness with `--auth` (provisioning is only visible behind the
-/// gate, because the owner is resolved from the session cookie).
+/// Boot a harness with `--auth` (provisioning is only visible behind the gate, because the owner is resolved from the session cookie).
 fn bootAuth() !Harness {
     return Harness.boot(io, gpa, .{ .extra_args = &.{"--auth"} });
 }
 
-/// Run `pabrik create-admin` against the harness HOME. `runPabrikCommand`
-/// prepends the resolved binary itself, so `argv` starts at the SUBCOMMAND.
+/// Run `pabrik create-admin` against the harness HOME.
 fn createAdmin(home: []const u8, email: []const u8, password: []const u8, force: bool) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -77,8 +71,7 @@ fn login(h: *Harness, email: []const u8, password: []const u8) ![]u8 {
         std.debug.print("login sent no pabrik_session cookie: {s}\n", .{set_cookie});
         return error.TestUnexpectedResult;
     }
-    // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`:
-    // the token is the text BETWEEN the name and the next `;`.
+    // `set_cookie.split("pabrik_session=", 1)[1].split(";", 1)[0].strip()`
     var attrs = std.mem.splitSequence(u8, set_cookie, ";");
     const first_attr = attrs.next() orelse return error.TestUnexpectedResult;
     const token = std.mem.trim(u8, harness.afterFirst(first_attr, "pabrik_session=") orelse
@@ -159,8 +152,7 @@ fn listWorkspaces(h: *Harness, token: []const u8) ![]WorkspaceRow {
     return rows;
 }
 
-/// Render rows for a failure message without needing a `std.debug.print`
-/// per row.
+/// Render rows for a failure message without needing a `std.debug.print` per row.
 fn describeRows(rows: []const WorkspaceRow) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
@@ -180,8 +172,7 @@ fn exitCode(term: std.process.Child.Term) ?u8 {
     };
 }
 
-/// Skip unless a `sqlite3` CLI is present and speaks `-json`. `-json` landed
-/// in SQLite 3.33 (2020).
+/// Skip unless a `sqlite3` CLI is present and speaks `-json`.
 fn requireSqlite3Cli() !void {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-json", ":memory:", "SELECT 1 AS probe;" },
@@ -225,8 +216,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Run one statement against `db_path`, return the CLI's stdout (owned).
-/// `.timeout 5000` is the `busy_timeout` the server's WAL connection needs; a
-/// bare CLI invocation would otherwise fail with SQLITE_BUSY.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
@@ -353,13 +342,9 @@ fn freeMemberships(rows: []Membership) void {
     gpa.free(rows);
 }
 
-// ============================================================================
 // tests
-// ============================================================================
 
-// PROVISION — first login gives exactly one workspace named "Default",
-// and it is a REAL row the owner is a member of (not a synthetic list
-// entry the UI would 404 on when the user clicks it).
+// PROVISION — first login gives exactly one workspace named "Default", and it is a REAL row the owner is a member of (not a synthetic list entry the UI would 404 …
 test "a_fresh_user_is_given_a_workspace_named_default" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -409,8 +394,7 @@ test "a_fresh_user_is_given_a_workspace_named_default" {
     try testing.expectEqualStrings("owner", members[0].role);
 }
 
-// WITH-PROJECT — an empty Projects list inside the new workspace is the
-// same dead end one level down, so it ships with its default.
+// WITH-PROJECT — an empty Projects list inside the new workspace is the same dead end one level down, so it ships with its default.
 test "the_provisioned_workspace_already_has_a_default_project" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -459,8 +443,7 @@ test "the_provisioned_workspace_already_has_a_default_project" {
         .object => |m| m,
         else => return error.TestUnexpectedResult,
     };
-    // `is_default` is 0/1 on the wire, not a JSON boolean — the same
-    // contract sidebar_new_chat_default_project_test.py pins.
+    // `is_default` is 0/1 on the wire, not a JSON boolean — the same contract sidebar_new_chat_default_project_test.py pins.
     const is_default = switch (item.get("is_default") orelse {
         std.debug.print("default project has no `is_default`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -474,8 +457,7 @@ test "the_provisioned_workspace_already_has_a_default_project" {
     try testing.expect(is_default == 0 or is_default == 1);
     try testing.expectEqual(@as(i64, 1), is_default);
 
-    // Its path is the server user's home, which is what makes a chat
-    // started here resolve a cwd instead of failing.
+    // Its path is the server user's home, which is what makes a chat started here resolve a cwd instead of failing.
     const path_value = switch (item.get("path") orelse {
         std.debug.print("default project has no `path`: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -492,8 +474,7 @@ test "the_provisioned_workspace_already_has_a_default_project" {
     }
 }
 
-// IDEMPOTENT — a login that re-provisions is a workspace that multiplies
-// on every page refresh.
+// IDEMPOTENT — a login that re-provisions is a workspace that multiplies on every page refresh.
 test "logging_in_again_adds_nothing" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -533,8 +514,7 @@ test "logging_in_again_adds_nothing" {
     }
 }
 
-// A user who already made a workspace keeps exactly what they made —
-// provisioning does not add a second "Default".
+// A user who already made a workspace keeps exactly what they made — provisioning does not add a second "Default".
 test "a_user_who_created_a_workspace_keeps_exactly_what_they_made" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -606,8 +586,7 @@ test "a_user_who_created_a_workspace_keeps_exactly_what_they_made" {
     }
 }
 
-// PER-USER — a second admin gets their OWN Default, and Bob's list is
-// his alone.
+// PER-USER — a second admin gets their OWN Default, and Bob's list is his alone.
 test "a_second_admin_gets_their_own_default_not_the_first_ones" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -652,8 +631,7 @@ test "a_second_admin_gets_their_own_default_not_the_first_ones" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = rawWithCookie;
     _ = bootAuth;

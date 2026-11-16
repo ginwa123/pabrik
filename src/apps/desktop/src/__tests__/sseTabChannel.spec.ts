@@ -159,7 +159,6 @@ describe('sseTabChannel — one connection per browser profile', () => {
     expect(b.tab.isLeader()).toBe(false)
 
     // Kill the leader's channel from under it: no `down` message, no heartbeats.
-    // `members()` preserves creation order and the leader was created first.
     hub.kill(hub.members(NAME)[0]!)
     await waitFor(() => b.tab.isLeader())
 
@@ -194,8 +193,7 @@ describe('sseTabChannel — one connection per browser profile', () => {
     await settle(60)
 
     hub.kill(hub.members(NAME)[0]!)
-    // Long past the timeout: a throttled hidden tab must not become the source of
-    // truth for the others.
+    // Long past the timeout: a throttled hidden tab must not become the source of truth for the others.
     await settle(TIMINGS.leaderTimeoutMs * 3)
 
     expect(hiddenFollower.tab.isLeader()).toBe(false)

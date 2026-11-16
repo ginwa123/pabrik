@@ -28,16 +28,13 @@ export async function listFolder(path: string, workspaceId?: string): Promise<Fo
   )
 }
 
-/** The `workspace_id` a folder request carries: SaaS mode lists a workspace's
- *  VM, so a request that does not say which workspace it means is refused.
- *  The app shows one workspace at a time — the current one, unless named. */
+/** The `workspace_id` a folder request carries: SaaS mode lists a workspace's VM, so a request that does not say which workspace it means is refused. */
 function workspaceQuery(workspaceId?: string): string {
   const id = workspaceId || getCurrentWorkspaceId()
   return id ? `&workspace_id=${encodeURIComponent(id)}` : ''
 }
 
-/**  * Server-side recursive file search for the ChatView `@` picker. One round-trip replaces the old
- * N-sequential-fetch full-tree walk; uses `apiFetch` for timeout/auth handling. */
+/** Server-side recursive file search for the ChatView `@` picker. */
 export async function searchFiles(
   cwd: string,
   q: string,
@@ -82,8 +79,7 @@ export interface ReadFileResponse {
 }
 
 export async function readFileContent(cwd: string, filePath: string): Promise<ReadFileResponse> {
-  // silent: true — AppLayout shows a fullscreen error view in the
-  // code editor; a toast on every read failure would be redundant noise.
+  // silent: true — AppLayout shows a fullscreen error view in the code editor; a toast on every read failure would be redundant noise.
   return await apiFetch<ReadFileResponse>(
     `/system/folder?path=${encodeURIComponent(cwd)}&action=read&file=${encodeURIComponent(filePath)}`,
     { silent: true },

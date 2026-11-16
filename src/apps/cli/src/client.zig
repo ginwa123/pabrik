@@ -6,14 +6,11 @@ const custom_http_client = @import("kabelweb").client;
 pub const Response = custom_http_client.Response;
 
 pub const Error = custom_http_client.Error || error{
-    /// Server returned a non-2xx status (the response body is kept
-    /// alongside the error so the CLI can print the server's error
-    /// message verbatim).
+    /// Server returned a non-2xx status (the response body is kept alongside the error so the CLI can print the server's error message verbatim).
     HttpRequestFailed,
 };
 
 /// Build a URL from `server` + `path` (which must start with `/`).
-/// Caller owns the returned slice.
 pub fn buildUrl(
     allocator: std.mem.Allocator,
     server: []const u8,
@@ -32,7 +29,6 @@ const JSON_HEADER = [_]custom_http_client.Header{
 };
 
 /// GET that joins `server + path` and returns the parsed body.
-/// Non-2xx responses become `Error.HttpRequestFailed`.
 pub fn getJson(
     allocator: std.mem.Allocator,
     client: *custom_http_client.Client,
@@ -46,9 +42,7 @@ pub fn getJson(
         url,
         .{ .timeout_ms = 30_000 },
     );
-    // The Response owns its body AND its headers/url_effective/primary_ip;
-    // `Response.deinit` walks all of them. Always run it on the error path
-    // so a 404 doesn't leak the parsed headers / effective URL.
+    // The Response owns its body AND its headers/url_effective/primary_ip; `Response.deinit` walks all of them.
     defer response.deinit(allocator);
     if (response.status_code < 200 or response.status_code >= 300) {
         std.log.warn(
@@ -60,8 +54,7 @@ pub fn getJson(
     return allocator.dupe(u8, response.body);
 }
 
-/// POST with a JSON body. Returns the parsed body or
-/// `Error.HttpRequestFailed` on a non-2xx status.
+/// POST with a JSON body.
 pub fn postJson(
     allocator: std.mem.Allocator,
     client: *custom_http_client.Client,
@@ -89,9 +82,7 @@ pub fn postJson(
     return allocator.dupe(u8, response.body);
 }
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 test "buildUrl: simple join" {
     const u = try buildUrl(testing.allocator, "http://x:8081", "/api/llm/session");
@@ -114,15 +105,11 @@ test "buildUrl: rejects path without leading slash" {
 
 const testing = std.testing;
 
-// ===== Tests merged from client_test.zig (2026-09-29 flatten) ===== Tests
-// for src/client.zig (HTTP transport + JSON helpers).
+// ===== Tests merged from client_test.zig (2026-09-29 flatten) =====
 
-/// Per-spawn context. Heap-allocated by `ClientTestEchoServer.start`, freed by
-/// `ClientTestEchoServer.stop` after the thread joins.
+/// Per-spawn context.
 const ClientTestServerCtx = struct {
     /// Raw HTTP response to write verbatim (status line + headers + body).
-    /// This is what lets the 404 test assert that the client surfaces
-    /// the status as `Error.HttpRequestFailed`.
     raw_response: []const u8,
 };
 
@@ -132,9 +119,7 @@ const ClientTestEchoServer = struct {
     ctx_ptr: *ClientTestServerCtx,
 
     fn start(allocator: std.mem.Allocator, raw_response: []const u8) !ClientTestEchoServer {
-        // Eagerly bring up the listener on the main thread so we can read
-        // back the kernel-assigned ephemeral port (port=0 in `parseIp4(...,
-        // 0)` means "OS picks"; the resolved port only lands in
+        // Eagerly bring up the listener on the main thread so we can read back the kernel-assigned ephemeral port (port=0 in `parseIp4(..., 0)` means "OS picks"; the …
         var threaded = std.Io.Threaded.init(allocator, .{});
         defer threaded.deinit();
         const io = threaded.io();
@@ -144,8 +129,7 @@ const ClientTestEchoServer = struct {
 
         const ctx_ptr = try allocator.create(ClientTestServerCtx);
         ctx_ptr.* = .{ .raw_response = raw_response };
-        // Hand the server fd over to the worker. We pass by-pointer
-        // because std.Thread.spawn only copies the args tuple once.
+        // Hand the server fd over to the worker.
         const srv_ptr = try allocator.create(@TypeOf(server));
         srv_ptr.* = server;
 
@@ -171,8 +155,7 @@ const ClientTestEchoServer = struct {
 
         var buf: [4096]u8 = undefined;
         var reader = conn.reader(io, &buf);
-        // Drain the request: the test sends a small body (or no body at all
-        // for GETs).
+        // Drain the request: the test sends a small body (or no body at all for GETs).
         _ = reader.interface.discard(std.Io.Limit.limited(8 * 1024)) catch {};
 
         var writer = conn.writer(io, &.{});

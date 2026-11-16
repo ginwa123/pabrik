@@ -1,6 +1,4 @@
-//! `DELETE
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
-//! Delete a design element.
+//! `DELETE /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/:element_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,14 +13,11 @@ pub const DesignElementDeleteError = error{
     ElementNotFound,
     /// `deleteElement` failed for some other DB reason.
     DbError,
-    /// `std.json.Stringify.valueAlloc` failed for the response
-    /// envelope (effectively unreachable on the per-request arena).
+    /// `std.json.Stringify.valueAlloc` failed for the response envelope (effectively unreachable on the per-request arena).
     OutOfMemory,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -35,9 +30,7 @@ fn useCase(
     if (!deleted) return error.ElementNotFound;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn designElementsDeleteHandler(
     ctx: gserverz.HttpContext,

@@ -1,6 +1,4 @@
-/** Behaviour of the sidebar row glyphs: which glyph a row resolves to when it
- * has an override, when it has none, and when the stored name is one this
- * build cannot draw. */
+/** Behaviour of the sidebar row glyphs: which glyph a row resolves to when it has an override, when it has none, and when the stored name is one this build cannot … */
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -63,8 +61,7 @@ describe('isUiIconName', () => {
   })
 
   it('rejects a prototype key, which would otherwise render an empty glyph', () => {
-    // `'constructor' in ICON_PATHS` is true, so an `in`-based guard would let
-    // this through and `ICON_PATHS['constructor']` would draw nothing.
+    // `'constructor' in ICON_PATHS` is true, so an `in`-based guard would let this through and `ICON_PATHS['constructor']` would draw nothing.
     expect(isUiIconName('constructor')).toBe(false)
     expect(isUiIconName('toString')).toBe(false)
   })
@@ -82,9 +79,7 @@ describe('ICON_PICKER_NAMES', () => {
   })
 
   it('offers only names the server will accept', () => {
-    // The server rejects anything outside [a-z0-9-]{1,64} (icon_name.zig
-    // isValidIconName). A registry key like `chevron_down` would be offered by
-    // the picker and 400'd on save, so the two shapes have to stay in step.
+    // The server rejects anything outside [a-z0-9-]{1,64} (icon_name.zig isValidIconName).
     const serverAccepts = /^[a-z0-9-]{1,64}$/
     const rejected = ICON_PICKER_NAMES.filter((name) => !serverAccepts.test(name))
     expect(rejected).toEqual([])

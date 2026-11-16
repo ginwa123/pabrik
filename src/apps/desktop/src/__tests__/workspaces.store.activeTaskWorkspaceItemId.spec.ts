@@ -1,6 +1,4 @@
-/** Tests for workspacesStore.activeTaskWorkspaceItemId (added by
- * , Task 1). The "which kanban item owns
- * the active task" lookup used to be a local computed in AppLayout.vue (lines 701-712). */
+/** Tests for workspacesStore.activeTaskWorkspaceItemId (added by , Task 1). */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -50,8 +48,7 @@ const makeWorkspace = (items: WorkspaceItem[]): Workspace => ({
 describe('workspacesStore.activeTaskWorkspaceItemId', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    // The store calls localStorage on init / setActiveWorkspaceItem,
-    // so install a stub before any store mutation.
+    // The store calls localStorage on init / setActiveWorkspaceItem, so install a stub before any store mutation.
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,

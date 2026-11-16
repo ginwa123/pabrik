@@ -53,14 +53,11 @@ pub fn deleteQueuedMessage(
                 .event_type = "queue_deleted",
             };
 
-            // Per-session emit (kept for any future server-side fan-out that
-            // needs only this session's queue messages).
+            // Per-session emit (kept for any future server-side fan-out that needs only this session's queue messages).
             const key = try std.fmt.allocPrint(allocator, "queue_messages_{s}", .{session_id});
             defer allocator.free(key);
             ev.emit(SseEvent, key, event);
-            // Central broadcast: subscribers to bare "queue" receive ALL sessions'
-            // queue messages (including deletes). The frontend listener filter
-            // narrows to the current session_id on the JS side.
+            // Central broadcast: subscribers to bare "queue" receive ALL sessions' queue messages (including deletes).
             ev.emit(SseEvent, "queue", event);
         }
     }
@@ -118,9 +115,7 @@ test "deleteQueuedMessage is a no-op when the row does not exist" {
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
-    // No INSERT — DELETE matching zero rows is not an error. Tighten
-    // the assertion: after the call, the table is still empty (count=0)
-    // — proves the function did not accidentally delete a phantom row.
+    // No INSERT — DELETE matching zero rows is not an error.
     try deleteQueuedMessage(.{
         .allocator = testing.allocator,
         .db = &s.db,

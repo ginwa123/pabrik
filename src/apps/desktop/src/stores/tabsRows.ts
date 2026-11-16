@@ -1,5 +1,4 @@
-/** Pure row arithmetic for the tab store. A strip is a filter over the tab list, so everything that
- * decides *which* tab comes next belongs here, where it can be read and tested without a store. */
+/** Pure row arithmetic for the tab store. */
 import { fallbackTitle, newTabId, ownerOf, type ClosedTab, type Tab } from '../helpers/tabTarget'
 
 /** The row one owner sees. Two sessions never share one, by construction. */

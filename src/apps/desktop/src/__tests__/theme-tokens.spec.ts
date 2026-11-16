@@ -1,6 +1,4 @@
-/** The theme contract: a theme is an entry in `src/theme/themes.ts` plus a
- * `:root[data-theme='<id>']` block in `style.css`. A theme that forgets a colour token or
- * `--color-scheme` inherits the default silently, and this spec is what catches that. */
+/** The theme contract: a theme is an entry in `src/theme/themes.ts` plus a `:root[data-theme='<id>']` block in `style.css`. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -35,9 +33,7 @@ for (const match of CSS.matchAll(/^:root\[data-theme='([a-z0-9-]+)'\]\s*\{([\s\S
 const isColour = (value: string): boolean =>
   /^(#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|color-mix\(|oklch\()/.test(value)
 
-/** A value built from another token is DERIVED, not a per-theme decision: `--tint-error` mixes
- * `--semantic-error`, so whichever palette declares that ink already owns the tint. Restating it in
- * nine blocks would be nine chances to drift. Only a literal colour has to be declared per theme. */
+/** A value built from another token is DERIVED, not a per-theme decision: `--tint-error` mixes `--semantic-error`, so whichever palette declares that ink already … */
 const isDerived = (value: string): boolean => value.includes('var(--')
 
 const COLOUR_TOKENS = [...BASE]

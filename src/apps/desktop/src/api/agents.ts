@@ -35,9 +35,7 @@ export interface AgentRegistryParameter {
   name: string
   /** JSON Schema type, e.g. 'string' | 'array' | 'number' | 'boolean'. */
   type: string
-  /**    * True when the JSON schema lists it in `required`. A REQUIRED `cwd` is what stops a path-taking
-   * tool from silently acting on the server's working directory instead of the one the agent is
-   * editing. */
+  /** True when the JSON schema lists it in `required`. */
   required: boolean
 }
 
@@ -47,17 +45,13 @@ export type AgentRegistryKind = 'builtin' | 'mcp'
 export interface AgentRegistryEntry {
   name: string
   description: string
-  /**    * The tool's full parameter list, in declaration order. Optional on the type only so older mocks
-   * in specs keep compiling; the backend always sends it (`GET /api/agent-tools/registry`). */
+  /** The tool's full parameter list, in declaration order. */
   parameters?: AgentRegistryParameter[]
-  /**    * `mcp` when a configured MCP server advertised the tool, `builtin` for one compiled into the
-   * runtime. Optional for the same reason as `parameters`: older mocks predate it. */
+  /** `mcp` when a configured MCP server advertised the tool, `builtin` for one compiled into the runtime. */
   kind?: AgentRegistryKind
 }
 
-/**  * Create a new agent workspace item. The backend seeds the agent with an empty knowledge list AND
- * an empty tool allowlist (secure-by-default — empty allowlist = zero tools per spec D1). POST
- * /api/workspaces/:workspaceId/items/agent */
+/** Create a new agent workspace item. */
 export async function createAgent(
   workspaceId: string,
   name: string,
@@ -69,8 +63,7 @@ export async function createAgent(
   )
 }
 
-/**  * Get agent + knowledge + tools + system prompts for a workspace_item. Returns the 4 sections
- * AgentView needs in one round-trip. GET /api/workspaces/:workspaceId/items/:itemId/agent */
+/** Get agent + knowledge + tools + system prompts for a workspace_item. */
 export async function getAgent(
   workspaceId: string,
   itemId: string,
@@ -89,8 +82,7 @@ export async function getAgent(
   }>(`/workspaces/${workspaceId}/items/${itemId}/agent`)
 }
 
-/** Update an agent's description.
- * PATCH /api/workspaces/:workspaceId/items/:itemId/agent */
+/** Update an agent's description. */
 export async function updateAgent(
   workspaceId: string,
   itemId: string,
@@ -102,8 +94,7 @@ export async function updateAgent(
   })
 }
 
-// ===================================================================== Workspace routines
-// (Migration 084) — first-class `item_type='routine'` items beside `agent`.
+// ===================================================================== Workspace routines (Migration 084) — first-class `item_type='routine'` items beside …
 export interface WorkspaceRoutine {
   id: string
   workspace_item_id: string
@@ -125,8 +116,7 @@ export interface WorkspaceRoutine {
   updated_at: string
 }
 
-/** Create a new routine workspace item.
- * POST /api/workspaces/:workspaceId/items/routine */
+/** Create a new routine workspace item. */
 export async function createRoutineItem(
   workspaceId: string,
   name: string,
@@ -154,8 +144,7 @@ export async function createRoutineItem(
   )
 }
 
-/** Get the routine bound to a workspace_item.
- * GET /api/workspaces/:workspaceId/items/:itemId/routine */
+/** Get the routine bound to a workspace_item. */
 export async function getRoutineItem(
   workspaceId: string,
   itemId: string,
@@ -165,8 +154,7 @@ export async function getRoutineItem(
   )
 }
 
-/**  * Update a routine's description / instruction / schedule / enabled. Schedule/enabled changes
- * recompute next_run_at server-side. PATCH /api/workspaces/:workspaceId/items/:itemId/routine */
+/** Update a routine's description / instruction / schedule / enabled. */
 export async function updateRoutineItem(
   workspaceId: string,
   itemId: string,
@@ -185,9 +173,7 @@ export async function updateRoutineItem(
   )
 }
 
-/**  * Add a knowledge entry to an agent — either a markdown file path on disk (`filePath`) or inline
- * manual text (`content`). Exactly one of the two must be non-empty (backend XOR-validates). POST
- * /api/agents/:agentId/knowledge */
+/** Add a knowledge entry to an agent — either a markdown file path on disk (`filePath`) or inline manual text (`content`). */
 export async function addAgentKnowledge(
   agentId: string,
   filePath: string,
@@ -241,8 +227,7 @@ export interface AgentSystemPromptRow {
   updated_at: string
 }
 
-/**  * Add a named system-prompt block to an agent. `content` is required (non-empty after trim);
- * `title` optional ('' = untitled). POST /api/agents/:agentId/system_prompt */
+/** Add a named system-prompt block to an agent. */
 export async function addAgentSystemPrompt(
   agentId: string,
   title: string,
@@ -284,9 +269,7 @@ export async function reorderAgentSystemPrompts(
   })
 }
 
-/**  * Get the canonical tool registry (UNIFIED_TOOL_REGISTRY, single source of truth per spec D4).
- * `includeMcp` also lists the workspace's MCP tools (`mcp_<server>_<tool>`) for the composer
- * picker; the other callers leave it off and pay no server roundtrip. GET /api/agent-tools/registry */
+/** Get the canonical tool registry (UNIFIED_TOOL_REGISTRY, single source of truth per spec D4). */
 export async function getAgentToolsRegistry(
   opts: { includeMcp?: boolean; workspaceId?: string | null } = {},
 ): Promise<{ tools: AgentRegistryEntry[] }> {
@@ -299,14 +282,12 @@ export async function getAgentToolsRegistry(
   )
 }
 
-/** Get the enabled tool names for an agent. Empty array = secure-by-default.
- * GET /api/agents/:agentId/tools */
+/** Get the enabled tool names for an agent. */
 export async function getAgentTools(agentId: string): Promise<{ tools: string[] }> {
   return await apiFetch<{ tools: string[] }>(`/agents/${agentId}/tools`)
 }
 
-/**  * Enable a tool for the agent. Backend validates `tool_name` against the registry (400 if unknown)
- * and returns 409 on duplicate. POST /api/agents/:agentId/tools */
+/** Enable a tool for the agent. */
 export async function enableAgentTool(agentId: string, toolName: string): Promise<AgentToolRow> {
   return await apiFetch<AgentToolRow>(`/agents/${agentId}/tools`, {
     method: 'POST',
@@ -314,9 +295,7 @@ export async function enableAgentTool(agentId: string, toolName: string): Promis
   })
 }
 
-/**  * Disable a tool for the agent (deletes the row). `tool_name` must match a tool the agent currently
- * has enabled (the registry name; backend returns 404 on unknown / not-enabled). DELETE
- * /api/agents/:agentId/tools/:toolName */
+/** Disable a tool for the agent (deletes the row). */
 export async function disableAgentTool(agentId: string, toolName: string): Promise<{ ok: true }> {
   return await apiFetch<{ ok: true }>(`/agents/${agentId}/tools/${toolName}`, { method: 'DELETE' })
 }

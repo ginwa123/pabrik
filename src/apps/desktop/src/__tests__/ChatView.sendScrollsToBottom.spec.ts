@@ -1,6 +1,4 @@
-/** Sending or queueing a message must take the transcript to the bottom. ChatView's whole
- * auto-stick is gated on `isAtBottom`: the `messages.length` watcher returns early without it,
- * `onContentShift` skips, and `scrollToBottom(force = false)` does nothing. */
+/** Sending or queueing a message must take the transcript to the bottom. */
 import { describe, expect, it } from 'vitest'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,9 +28,7 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('re-arms the stick synchronously, before it scrolls', () => {
-    // The ordering is the whole fix. `isAtBottom` is read by three gates that
-    // all run after this returns; a flag flipped by the scroll event the write
-    // produces arrives a frame late, and may never arrive at all.
+    // The ordering is the whole fix.
     const arm = followNewest.indexOf('isAtBottom.value = true')
     const stamp = followNewest.indexOf('lastAutoStickAt.value = Date.now()')
     const mark = followNewest.indexOf('markProgrammatic()')
@@ -45,9 +41,7 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('takes the reader to the newest turn before the request is even made', () => {
-    // The reader is looking at history and asks for a turn. The pin has to be
-    // issued as the send starts, not after the response — the response can take
-    // seconds, and the reader is left staring at the history they just left.
+    // The reader is looking at history and asks for a turn.
     const firstPin = submitHandler.indexOf('followNewestTurn(')
     const post = submitHandler.indexOf('api.sendChatMessage(')
 
@@ -56,22 +50,17 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('pins again once the request settles', () => {
-    // There is no optimistic push (see the 2026-08-23 note in the handler), so the first pin aims
-    // at the bottom of the content as it stood BEFORE the turn. The bottom moves when the turn
-    // renders; without a second pin the newest turn is one screen below the fold.
+    // There is no optimistic push (see the 2026-08-23 note in the handler), so the first pin aims at the bottom of the content as it stood BEFORE the turn.
     const settled = submitHandler.slice(submitHandler.indexOf('} finally {'))
     expect(settled).toContain('followNewestTurn(')
   })
 
   it('arms the stick for a queue, which renders no row at all', () => {
-    // A queued turn produces no transcript row — it only appears in the composer's queue panel —
-    // and the row that finally reaches the transcript is the worker draining it, possibly much
-    // later. `queuedMessages` alone is not a scroll problem; the stick it has to arm is.
+    // A queued turn produces no transcript row — it only appears in the composer's queue panel — and the row that finally reaches the transcript is the worker …
     const queuedBranch = queueHandler.slice(0, queueHandler.indexOf("event.action === 'deleted'"))
     expect(queuedBranch).toContain("event.action === 'queued'")
     expect(queuedBranch).toContain('followNewestTurn(')
-    // …and the pin has to come after the queue row is recorded, so a failed
-    // push cannot leave the stick armed for a turn that was never queued.
+    // …and the pin has to come after the queue row is recorded, so a failed push cannot leave the stick armed for a turn that was never queued.
     const push = queuedBranch.indexOf('queuedMessages.value.push(')
     const pin = queuedBranch.indexOf('followNewestTurn(')
     expect(push).toBeGreaterThan(-1)
@@ -79,13 +68,11 @@ describe('ChatView — sending or queueing a turn takes the transcript to the bo
   })
 
   it('leaves the streaming auto-stick alone', () => {
-    // The other half of the contract, and the reason this fix is a helper and not a change to the
-    // gate.
+    // The other half of the contract, and the reason this fix is a helper and not a change to the gate.
     const contentShift = slice('const onContentShift = (shift:', 'const teardownContentShiftRaf')
     expect(contentShift).toContain('if (!isAtBottom.value)')
 
-    // Watch-zero: the messages.length watcher is now an onUpdated
-    // prev-length guard; the isAtBottom gate is unchanged.
+    // Watch-zero: the messages.length watcher is now an onUpdated prev-length guard; the isAtBottom gate is unchanged.
     const lengthGuard = slice(
       '// Auto-stick on new messages',
       '// React to an effective-cwd change',

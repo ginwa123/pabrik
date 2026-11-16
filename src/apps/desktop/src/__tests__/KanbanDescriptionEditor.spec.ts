@@ -1,5 +1,4 @@
-/** Tests for KanbanDescriptionEditor — the kanban task description editor with image
- * paste/paperclip support and the `@`-trigger file picker. */
+/** Tests for KanbanDescriptionEditor — the kanban task description editor with image paste/paperclip support and the `@`-trigger file picker. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import KanbanDescriptionEditor from '../components/kanban/KanbanDescriptionEditor.vue'
@@ -15,9 +14,7 @@ vi.mock('@/api', async (importOriginal) => {
 
 const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 
-/**  * Mock `api.searchFiles` with pre-ranked server rows (Task 3: the server owns ranking now — the old
- * N-sequential-fetch full-tree walk via raw `fetch` is deleted). The picker renders rows directly
- * in server order. */
+/** Mock `api.searchFiles` with pre-ranked server rows (Task 3: the server owns ranking now — the old N-sequential-fetch full-tree walk via raw `fetch` is deleted). */
 function mockSearchResults(
   entries: Array<{ name: string; path: string; is_directory: boolean }>,
 ) {
@@ -112,9 +109,7 @@ describe('KanbanDescriptionEditor', () => {
   })
 
   it('opens the file picker dropdown when the user types @ and inserts /path on selection', async () => {
-    // Server owns ranking: pre-ranked rows in server order (dirs-first
-    // here, mirroring the old client sort). The file button is at
-    // index 1.
+    // Server owns ranking: pre-ranked rows in server order (dirs-first here, mirroring the old client sort).
     mockSearchResults([
       {
         name: 'docs',
@@ -139,23 +134,19 @@ describe('KanbanDescriptionEditor', () => {
     await flushPromises()
     const html = wrapper.html()
     expect(html).toContain('file-picker-list')
-    // Pick the file (main.zig, not the docs directory). The component
-    // sorts directories-first, so the file button is at index 1.
+    // Pick the file (main.zig, not the docs directory).
     const fileButtons = wrapper.findAll('.file-picker-list button')
     expect(fileButtons.length).toBe(2)
     await fileButtons[1]!.trigger('click')
     await flushPromises()
     const updatedTextarea = wrapper.find('textarea').element as HTMLTextAreaElement
-    // The path is inserted WITHOUT the leading `@` (the user dropped the `@` prefix per the latest
-    // UX feedback; the chip detector matches `/path` directly). The path is RELATIVE to the cwd
-    // (mirrors FileInput.vue's `entry.path.replace(rootPath, '')`).
+    // The path is inserted WITHOUT the leading `@` (the user dropped the `@` prefix per the latest UX feedback; the chip detector matches `/path` directly).
     expect(updatedTextarea.value).toContain('/main.zig')
     expect(updatedTextarea.value).not.toContain('@/main.zig')
   })
 
   it('removes an image preview when the user clicks the remove button', async () => {
-    // Seed the modelValue with a base64 image so the editor re-hydrates
-    // the preview on mount.
+    // Seed the modelValue with a base64 image so the editor re-hydrates the preview on mount.
     const png =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
     const wrapper = await mountEditor({
@@ -181,13 +172,9 @@ describe('KanbanDescriptionEditor', () => {
   })
 })
 
-/** Tests for create-mode image paste (no taskId yet). Bug: when the dialog opens in create mode
- * (taskId=''), pasting an image used to fall back to writing the inline `data:image/png;base64,…`
- * payload into the description text. */
+/** Tests for create-mode image paste (no taskId yet). */
 describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () => {
-  // Minimal valid PNG (1x1 transparent) so the editor does not try to
-  // decode/parse anything during the test — we only care about the
-  // (description, previewFiles, pendingFiles) state machine.
+  // Minimal valid PNG (1x1 transparent) so the editor does not try to decode/parse anything during the test — we only care about the (description, previewFiles …
   const TINY_PNG = new Uint8Array([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
     0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
@@ -201,9 +188,7 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     return new File([TINY_PNG], name, { type: 'image/png' })
   }
 
-  /**    * Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor
-   * in the test env, so we use the closest shape and rely on the handler's duck-typing checks
-   * (kind, type, getAsFile()). */
+  /** Build a minimal DataTransferItem-like object. jsdom doesn't expose DataTransferItem constructor in the test env, so we use the closest shape and rely on the … */
   function fakeImageItem(
     file: File,
   ): {
@@ -218,9 +203,7 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     }
   }
 
-  /**    * Build a synthetic ClipboardEvent with a fake clipboardData. jsdom doesn't expose a
-   * ClipboardEvent constructor (DOM v0.x), so we use `new Event('paste', …)` and define
-   * `clipboardData` as a property. Mirrors the same pattern used in FileInput.spec.ts. */
+  /** Build a synthetic ClipboardEvent with a fake clipboardData. jsdom doesn't expose a ClipboardEvent constructor (DOM v0.x), so we use `new Event('paste', …)` and … */
   function fakeClipboardEvent(file: File): ClipboardEvent {
     const item = fakeImageItem(file)
     const dataTransfer = {
@@ -236,16 +219,12 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     return ev
   }
 
-  // Simulate the editor's `handlePaste` flow: dispatch a synthetic PasteEvent
-  // with the file item, which keeps the test scoped to the public API
-  // and avoids depending on internal function names.
+  // Simulate the editor's `handlePaste` flow: dispatch a synthetic PasteEvent with the file item, which keeps the test scoped to the public API and avoids …
   async function pasteImage(wrapper: ReturnType<typeof mount>, file: File) {
     const event = fakeClipboardEvent(file)
     const textarea = wrapper.find('textarea').element as HTMLTextAreaElement
     textarea.dispatchEvent(event)
-    // addImageFile awaits FileReader.onload which fires on the next macrotask (not microtask) tick
-    // — flushPromises alone isn't enough. A short setTimeout gives FileReader time to encode the
-    // File into a data URL before we read the textarea.
+    // addImageFile awaits FileReader.onload which fires on the next macrotask (not microtask) tick — flushPromises alone isn't enough.
     await new Promise((resolve) => setTimeout(resolve, 50))
     await flushPromises()
   }
@@ -349,9 +328,7 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
   })
 
   it('edit mode stages the pasted file into pendingFiles for the host to PATCH (Migration 069)', async () => {
-    // Migration 069 changed edit mode to use the same staged- pendingFiles flow as create mode (the
-    // old `uploadTaskAttachment` endpoint was deleted entirely). The editor's job is just to expose
-    // the file; the host's `updateTaskDetails({ imageUrls })` does the persistence.
+    // Migration 069 changed edit mode to use the same staged- pendingFiles flow as create mode (the old `uploadTaskAttachment` endpoint was deleted entirely).
     const wrapper = await mountEditor({ modelValue: '', taskId: 'task_x' })
     await pasteImage(wrapper, makeFile('inline.png'))
 
@@ -362,9 +339,7 @@ describe('KanbanDescriptionEditor — create-mode image paste (no taskId)', () =
     expect(exposed.pendingFiles[0]!.file.name).toBe('inline.png')
 
     const textarea = wrapper.find('textarea').element as HTMLTextAreaElement
-    // Description text is NEVER touched — no `data:image/`, no
-    // `base64,`, no upload URL. The image lives on the image_urls
-    // column instead.
+    // Description text is NEVER touched — no `data:image/`, no `base64,`, no upload URL.
     expect(textarea.value).not.toContain('data:image/')
     expect(textarea.value).not.toContain('base64,')
     expect(textarea.value).not.toContain('/api/')

@@ -1,5 +1,4 @@
-//! `POST /api/workspaces/:workspace_id/invitations` — ask an existing account
-//! to join. This writes NO membership: the invitee accepts or declines first.
+//! `POST /api/workspaces/:workspace_id/invitations` — ask an existing account to join.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -76,8 +75,7 @@ fn statusFor(err: InvitationsCreateError) u16 {
     };
 }
 
-/// `email` is echoed only for the 404, so the form can say WHICH address found
-/// no account instead of "not found".
+/// `email` is echoed only for the 404, so the form can say WHICH address found no account instead of "not found".
 fn messageFor(
     err: InvitationsCreateError,
     allocator: std.mem.Allocator,

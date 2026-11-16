@@ -4,8 +4,6 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 
 /// Migration 107 — tag each background process with its KIND.
-/// `session_background_process` (migration 014) recorded one thing: a
-/// detached command, its log, and whether it was still alive.
 pub const Migration107AddBackgroundProcessKind = struct {
     pub const version: u32 = 107;
     pub const name = "add_background_process_kind";

@@ -1,5 +1,4 @@
-//! `DELETE /api/workspaces/:workspace_id/invitations/:invitation_id` — an
-//! owner/admin withdraws an ask nobody has answered.
+//! `DELETE /api/workspaces/:workspace_id/invitations/:invitation_id` — an owner/admin withdraws an ask nobody has answered.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

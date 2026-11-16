@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/media`
-//! Lazy media fetch for a kanban task (media-flags change).
+//! `GET /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id/media` Lazy media fetch for a kanban task (media-flags change).
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

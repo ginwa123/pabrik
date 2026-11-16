@@ -111,8 +111,7 @@ pub fn getLLMHistories(
                         try urls.append(allocator, try allocator.dupe(u8, url));
                     }
                 }
-                // CRITICAL: use toOwnedSlice (not `urls.items`) so the
-                // returned slice is sized to `items.len`.
+                // CRITICAL: use toOwnedSlice (not `urls.items`) so the returned slice is sized to `items.len`.
                 break :blk if (urls.items.len > 0) try urls.toOwnedSlice(allocator) else null;
             } else null,
             .video_urls = if (video_url_str.len > 0) blk: {
@@ -144,9 +143,7 @@ fn parseRowBool(s: []const u8) bool {
     return s[0] == '1';
 }
 
-// ─── Tests
-// ──────────────────────────────────────────────────────────────────
-// `getLLMHistories` is a 24-column SELECT with a LEFT JOIN, COALESCE
+// ─── Tests `getLLMHistories` is a 24-column SELECT with a LEFT JOIN, COALESCE
 
 const IdxAgent = 11;
 const IdxSessionName = 12;
@@ -218,8 +215,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Insert a llm_history row with sensible defaults. Caller can override
-/// individual fields by passing custom `image_url`, `is_feed_to_llm`, etc.
+/// Insert a llm_history row with sensible defaults.
 fn seedRow(
     db: *database.Db,
     id: []const u8,
@@ -230,8 +226,7 @@ fn seedRow(
         "VALUES (?, ?, ?, '', 'assistant', 1)", &.{ id, session_id, created_at });
 }
 
-/// Free every `LLMHistory` returned by `getLLMHistories` — the caller
-/// owns each row's heap slices.
+/// Free every `LLMHistory` returned by `getLLMHistories` — the caller owns each row's heap slices.
 fn freeHistories(histories: []LLMHistory) void {
     for (histories) |*h| h.deinit(testing.allocator);
 }
@@ -456,8 +451,7 @@ test "getLLMHistories populates nullable fields when DB has content" {
     try testing.expectEqualStrings("t", result[0].tool_call_id.?);
 }
 
-// Silence "unused" warnings on the column-index constants — they're
-// documentation, not yet used by the tests above.
+// Silence "unused" warnings on the column-index constants — they're documentation, not yet used by the tests above.
 comptime {
     _ = IdxAgent;
     _ = IdxSessionName;

@@ -45,9 +45,7 @@ const emit = defineEmits<{
   select: [pageId: string]
 }>()
 
-// Filter out the current page — picking the same page is a no-op
-// (would error with `SamePage` on the backend). Sorted by `position`
-// ascending so the list mirrors the workspace sidebar ordering.
+// Filter out the current page — picking the same page is a no-op (would error with `SamePage` on the backend).
 const otherPages = computed(() => {
   const filtered = props.pages.filter((p) => p.id !== props.currentPageId)
   return [...filtered].sort((a, b) => a.position - b.position)

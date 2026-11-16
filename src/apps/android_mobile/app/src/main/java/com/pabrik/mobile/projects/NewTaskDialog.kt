@@ -84,19 +84,7 @@ import com.pabrik.mobile.ui.PabrikField
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * The values the "New task" form is opened with, fetched by the caller.
- *
- * A single parameter rather than four, because the form never loads anything
- * itself: the fetch belongs to [com.pabrik.mobile.recents.HomeViewModel] where
- * every other request in this app lives, and a composable that reached for a
- * client would be one no JVM test could render.
- *
- * All four degrade to empty rather than to an error. A create needs none of
- * them: the column picker, the profile picker and the worktree prefill are all
- * optional conveniences around a card the server is perfectly happy to accept
- * with nothing set.
- */
+/** The values the "New task" form is opened with, fetched by the caller. */
 data class NewTaskDialogData(
     /** The board's columns, in board order. Empty = no column picker shown. */
     val columns: List<KanbanColumn> = emptyList(),
@@ -107,27 +95,7 @@ data class NewTaskDialogData(
     val isLoading: Boolean = false,
 )
 
-/**
- * The board's "New task" form, mirroring the web's create-mode dialog.
- *
- * Field for field and in the same order as `KanbanTaskDetail.vue` in create
- * mode — title, column, description, tags, then a Settings block holding the
- * project root, the profile, unattended mode and the git-worktree block, and
- * finally the split "Create task & run agent" / "Create task only" commit row.
- * The reasons for each of those, and the two places where the phone cannot do
- * what the browser does, are on the composable that owns them.
- *
- * Full-screen rather than an `AlertDialog` because the web's form is roughly a
- * phone screen and a half tall and scrolls, and an `AlertDialog` pins its own
- * header and buttons around a body it will not let grow: the Settings block
- * would be unreachable on the device this ships to.
- *
- * Drawn as an overlay in the activity's composition rather than inside a
- * platform `Dialog` window, and the commit row's visibility depends on it —
- * see the comment on the [Surface] below for the whole of it. The caller is
- * responsible for painting it over whatever it covers
- * ([com.pabrik.mobile.network.PabrikNavGraph] mounts it after the `NavHost`).
- */
+/** The board's "New task" form, mirroring the web's create-mode dialog. */
 @Composable
 fun NewTaskDialog(
     projectName: String,
@@ -138,19 +106,7 @@ fun NewTaskDialog(
     errorMessage: String?,
     onSubmit: (KanbanTaskForm) -> Unit,
     onClose: () -> Unit,
-    /**
-     * Turns a picked image URI into the base64 data URL `image_urls` wants.
-     *
-     * Null means "use the real one", which is built from the composition's
-     * context — so a caller never has to thread a `ContentResolver` through the
-     * nav graph to make a paperclip work, and a test can pass a fake to render
-     * the form without an Android runtime.
-     *
-     * It is the chat composer's own reader rather than a second implementation,
-     * because the two surfaces need byte-identical output: the same image picked
-     * from the chat and from a card has to encode the same way or the 10 MB
-     * budget means two different things on two screens.
-     */
+    /** Turns a picked image URI into the base64 data URL `image_urls` wants. */
     imageReader: PickedImageReader? = null,
 ) {
     val context = LocalContext.current
@@ -165,9 +121,7 @@ fun NewTaskDialog(
     var commitMenuOpen by remember { mutableStateOf(false) }
     var readError by remember(projectName) { mutableStateOf<String?>(null) }
 
-    // One launcher for the whole form, for the same reason the chat transcript
-    // has one rather than one per chip: it is a registration against the
-    // activity, and re-registering leaves the previous callback live.
+    // One launcher for the whole form, for the same reason the chat transcript has one rather than one per chip: it is a registration against the activity, and …
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -179,11 +133,7 @@ fun NewTaskDialog(
                 return@launch
             }
             val next = form.imageUrls + attachment.dataUrl
-            // The same 10 MB cap the chat enforces, checked on the *joined*
-            // string because that is what the server measures
-            // (`MAX_IMAGE_URLS_BYTES` in `image_urls_validation.zig`). Refused
-            // here so the reader is told which attachment did not fit instead of
-            // finding out from a 413 that names no file.
+            // The same 10 MB cap the chat enforces, checked on the *joined* string because that is what the server measures (`MAX_IMAGE_URLS_BYTES` in …
             val joined = next.joinToString("||")
             if (joined.toByteArray().size > ChatAttachments.MAX_TOTAL_BYTES) {
                 readError = "That image is too large. The limit is " +
@@ -195,9 +145,7 @@ fun NewTaskDialog(
         }
     }
 
-    // The committed form is what the button is judged on, so a tag still sitting
-    // in the draft counts — the same rule as the web's `commitDraft()` on the
-    // Save button's mousedown.
+    // The committed form is what the button is judged on, so a tag still sitting in the draft counts — the same rule as the web's `commitDraft()` on the Save …
     val committedTags = remember(form.tags, tagDraft) {
         KanbanTags.normalize(form.tags + tagDraft.split(','))
     }
@@ -208,31 +156,10 @@ fun NewTaskDialog(
         onSubmit(form.copy(tags = committedTags, runAgent = runAgent))
     }
 
-    // The form covers the board rather than floating above it, so Back has to be
-    // claimed explicitly: a `Dialog` used to get this from the window for free,
-    // and an overlay that swallowed the screen without taking Back would strand
-    // a reader who presses it on the way out of the form.
+    // The form covers the board rather than floating above it, so Back has to be claimed explicitly: a `Dialog` used to get this from the window for free, and an …
     BackHandler(enabled = !isSubmitting) { onClose() }
 
     // Not a platform `Dialog`, and the reason is a bug this form shipped with.
-    // `Dialog(usePlatformDefaultWidth = false)` measures its content against
-    // `Configuration.screenHeightDp` — the *whole* display, status bar and
-    // navigation bar included — and then calls `window.setLayout()` with the
-    // child's measured size (`DialogLayout.internalOnMeasure` /
-    // `internalOnLayout` in compose-ui's `AndroidDialog.android.kt`). A
-    // `fillMaxSize()` surface therefore fills the raw display, and the pinned
-    // commit row at the bottom of the form lands underneath the navigation bar:
-    // "▶ Create task & run agent" is drawn at the very edge of the screen and
-    // half of it is clipped away, so the one control the whole form exists for
-    // is the one control nobody can see or tap.
-    //
-    // `windowInsetsPadding` cannot rescue that from inside the dialog — the
-    // window is sized from the child, so the decor's own inset padding is
-    // added *on top* of an already-full-height child and pushed off the bottom.
-    // Drawn in the activity's composition instead, the form's bounds are the
-    // window's bounds and [WindowInsets.safeDrawing] is the honest answer to
-    // "where is the safe area", the same one the chat composer and the login
-    // screen already read correctly.
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -254,8 +181,7 @@ fun NewTaskDialog(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    // The IME is part of `safeDrawing`, which the root already
-                    // pads for, so the scroll area stops where the footer does.
+                    // The IME is part of `safeDrawing`, which the root already pads for, so the scroll area stops where the footer does.
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -292,8 +218,7 @@ fun NewTaskDialog(
                     value = form.description,
                     onValueChange = { form = form.copy(description = it) },
                     readOnly = isSubmitting,
-                    // Tall enough to write in: this is the card's face, read
-                    // at a glance on the board.
+                    // Tall enough to write in: this is the card's face, read at a glance on the board.
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 140.dp)
@@ -305,10 +230,7 @@ fun NewTaskDialog(
                     enabled = !isSubmitting,
                     canPick = true,
                     onPick = {
-                        // `PickVisualMedia` needs no runtime permission on
-                        // any API level, so there is nothing to ask for
-                        // first — a permission dialog in front of "attach a
-                        // screenshot" is a dialog that gets in the way.
+                        // `PickVisualMedia` needs no runtime permission on any API level, so there is nothing to ask for first — a permission dialog in front of "attach a screenshot" is …
                         picker.launch(
                             PickVisualMediaRequest(
                                 ActivityResultContracts.PickVisualMedia.ImageOnly,
@@ -359,14 +281,7 @@ fun NewTaskDialog(
     }
 }
 
-/**
- * `‹ Back  ＋ New task` and the ✕, in a band that never scrolls away.
- *
- * A fixed header because the form scrolls: the web makes its header and its
- * action row `position: sticky` for exactly this reason ("sticky so Back/Close
- * stay reachable on long forms"), and on a phone the commit row is 100dp of
- * screen a reader must not have to scroll back to find.
- */
+/** `‹ Back ＋ New task` and the ✕, in a band that never scrolls away. */
 @Composable
 private fun NewTaskHeader(
     isSubmitting: Boolean,
@@ -415,8 +330,7 @@ private fun NewTaskHeader(
             }
         }
         Text(
-            // The web's own create-mode subtitle, verbatim. It is the line that
-            // tells the reader the button is not going to open a chat.
+            // The web's own create-mode subtitle, verbatim.
             text = "Create a new task, or start an agent on it right away.",
             style = MaterialTheme.typography.bodySmall,
             color = PabrikDim,
@@ -425,15 +339,7 @@ private fun NewTaskHeader(
     }
 }
 
-/**
- * The red strip above the body.
- *
- * Above the scroll, not inside it, for the reason the web's is
- * (`KanbanTaskDetail.vue`, "Error banner. Lifted OUT of the scrollable body so
- * it stays permanently visible"): a failed create keeps the form open with
- * everything typed still in it, and an error at the bottom of a scrolled form
- * is an error nobody sees.
- */
+/** The red strip above the body. */
 @Composable
 private fun ErrorBanner(message: String) {
     Box(
@@ -470,19 +376,7 @@ private fun HintText(text: String) {
     )
 }
 
-/**
- * The column chip and its dropdown.
- *
- * Renders nothing at all when the board has no columns — including while the
- * list is still loading. The web does the same (`v-if="isCreateMode &&
- * props.availableColumns.length > 0"`), and a chip that appears a frame later
- * would shift the description field down under the reader's thumb.
- *
- * The chip's value is the chosen column's *name*, and when nothing is chosen it
- * says the first column's name rather than a blank: the server auto-assigns to
- * the first column, so naming it is what is going to happen, and an empty chip
- * would claim the card has no column at all.
- */
+/** The column chip and its dropdown. */
 @Composable
 private fun ColumnPicker(
     columns: List<KanbanColumn>,
@@ -525,12 +419,7 @@ private fun ColumnPicker(
     }
 }
 
-/**
- * The chip both pickers draw, so "Project root" and "Agent" read as a pair.
- *
- * The web builds the same chip twice with the same classes and says why ("Both
- * use the same chip-style trigger so they read as siblings").
- */
+/** The chip both pickers draw, so "Project root" and "Agent" read as a pair. */
 @Composable
 private fun PickerChip(
     label: String,
@@ -571,16 +460,7 @@ private fun PickerChip(
     }
 }
 
-/**
- * The paperclip and the count, under the description.
- *
- * One row rather than the web's floating button because a floating overlay on a
- * scrolling form is a target that moves while a thumb is heading for it. The
- * images themselves are the caller's business — this app already reads picked
- * images into data URLs for the chat composer ([com.pabrik.mobile.chat.ChatAttachment]),
- * and the form reuses exactly that, because `image_urls` wants the same
- * `data:<mime>;base64,…` strings on both surfaces.
- */
+/** The paperclip and the count, under the description. */
 @Composable
 private fun AttachmentRow(
     imageCount: Int,
@@ -624,9 +504,7 @@ private fun AttachmentRow(
             }
         }
         Text(
-            // The web prints "0 chars" beside the field. The count here is the
-            // number of attached images, because a phone reader's only question
-            // about the description is what is *in* it, not how long it is.
+            // The web prints "0 chars" beside the field.
             text = "$imageCount image${if (imageCount == 1) "" else "s"}",
             style = MaterialTheme.typography.labelMedium,
             color = PabrikDim,
@@ -634,13 +512,7 @@ private fun AttachmentRow(
     }
 }
 
-/**
- * The committed chips, the draft field, and the add button.
- *
- * Enter and comma both commit, because the web's `KanbanTagsInput` does and a
- * phone keyboard's primary key is a newline rather than a comma: a reader who
- * typed one tag and pressed the blue key must get a chip, not a newline.
- */
+/** The committed chips, the draft field, and the add button. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagRow(
@@ -689,20 +561,14 @@ private fun TagRow(
         OutlinedTextField(
             value = draft,
             onValueChange = { typed ->
-                // A comma is a commit, not a character: it can never be part of
-                // a tag the server would accept (`tags_validation.zig` allows
-                // only [a-zA-Z0-9_-]), so keeping it would only produce a draft
-                // that is silently dropped at submit.
+                // A comma is a commit, not a character: it can never be part of a tag the server would accept (`tags_validation.zig` allows only [a-zA-Z0-9_-]), so keeping it …
                 if (typed.endsWith(",")) {
                     onDraftChange("")
                 } else {
                     onDraftChange(typed)
                 }
             },
-            // Not `enabled = !isSubmitting`: a field that goes dead the instant
-            // Commit is pressed drops focus and the keyboard, and on a slow
-            // network that is a visible hiccup on a form about to close anyway.
-            // Read-only says the same thing without the flicker.
+            // Not `enabled = !isSubmitting`: a field that goes dead the instant Commit is pressed drops focus and the keyboard, and on a slow network that is a visible …
             readOnly = isSubmitting,
             singleLine = true,
             placeholder = { Text("Add tags (letters, digits, hyphens)…") },
@@ -729,15 +595,7 @@ private fun TagRow(
     }
 }
 
-/**
- * The block below the divider: how this task will run.
- *
- * Grouped under one heading rather than spread through the form because all
- * five controls answer the same question, which is what the web's own comment
- * says it is for ("all three answer the same question: 'how will this task
- * run?'"). Grouping them is also what lets a phone reader find the unattended
- * toggle without reading every field above it.
- */
+/** The block below the divider: how this task will run. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NewTaskSettings(
@@ -773,12 +631,7 @@ private fun NewTaskSettings(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // "Project root" is a text field and not a folder picker: the web
-            // opens `FilePickerDialog`, which browses the *server's* filesystem
-            // from a browser. The phone cannot browse a remote disk, so this is
-            // the one control that is a field rather than a picker — prefilled
-            // with the board's own path, which is what the web prefills it with,
-            // and typed into when the card needs a different root.
+            // "Project root" is a text field and not a folder picker: the web opens `FilePickerDialog`, which browses the *server's* filesystem from a browser.
             OutlinedTextField(
                 value = form.cwd,
                 onValueChange = { onChange(form.copy(cwd = it)) },
@@ -804,10 +657,7 @@ private fun NewTaskSettings(
                     onDismissRequest = { onProfileMenuChange(false) },
                     modifier = Modifier.testTag("create_task_profile_menu"),
                 ) {
-                    // "Default (top-level config)" is a real entry and not the
-                    // absence of one: the web draws it as the first row with a
-                    // tick, and an empty string is an instruction ("use the
-                    // top-level config") rather than "no choice".
+                    // "Default (top-level config)" is a real entry and not the absence of one: the web draws it as the first row with a tick, and an empty string is an instruction …
                     DropdownMenuItem(
                         text = { Text("Default (top-level config)") },
                         trailingIcon = {
@@ -915,14 +765,7 @@ private fun NewTaskSettings(
     }
 }
 
-/**
- * A label, its explanation, and a switch — the shape both toggles share.
- *
- * The switch is the web's amber, not Material's, for the same reason the web
- * hard-codes `#f59e0b`: a "this keeps running after you go to bed" control that
- * looks like every other switch in the app is a control nobody thinks twice
- * about.
- */
+/** A label, its explanation, and a switch — the shape both toggles share. */
 @Composable
 private fun SwitchRow(
     title: String,
@@ -967,18 +810,7 @@ private fun SwitchRow(
     }
 }
 
-/**
- * `Cancel` and the split commit button, pinned to the bottom.
- *
- * The left half creates **and runs** — which is also what the keyboard's Done
- * on the name field does, so the visual default and the keyboard default agree,
- * the same pairing the web draws. The caret's menu holds "Create task only".
- *
- * `Cancel` is a text button rather than a bordered one, for the web's stated
- * reason: "a border on a button means 'this is one of the choices you make',
- * and Cancel is the absence of one. It must not compete with the commit action
- * beside it."
- */
+/** `Cancel` and the split commit button, pinned to the bottom. */
 @Composable
 private fun NewTaskFooter(
     canSubmit: Boolean,
@@ -994,10 +826,7 @@ private fun NewTaskFooter(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(PabrikBackgroundRaised)
-                // No `navigationBarsPadding` here: the form's root already
-                // reserves the safe area for the whole surface, so padding
-                // again would float this row a system-bar's worth above the
-                // screen edge it was drawn to clear.
+                // No `navigationBarsPadding` here: the form's root already reserves the safe area for the whole surface, so padding again would float this row a system-bar's …
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1017,12 +846,7 @@ private fun NewTaskFooter(
                     containerColor = PabrikAccent,
                     contentColor = PabrikBackground,
                 ),
-                // `weight`, not a natural width: `Row` hands each unweighted
-                // child only what the ones before it left behind, so on a narrow
-                // phone the label "▶  Create task & run agent" — the whole point
-                // of the button — was laid out 74dp wide and clipped to
-                // nothing readable. Taking the remaining width says which of
-                // the three controls is the one that matters.
+                // `weight`, not a natural width: `Row` hands each unweighted child only what the ones before it left behind, so on a narrow phone the label "▶ Create task & run …
                 modifier = Modifier
                     .weight(1f)
                     .testTag("create_task_create_and_run"),
@@ -1036,9 +860,7 @@ private fun NewTaskFooter(
                     Spacer(Modifier.width(8.dp))
                     Text("Creating…")
                 } else {
-                    // One line: the label is the whole affordance, and a
-                    // second line would push the pinned row taller than the
-                    // space the safe area leaves it.
+                    // One line: the label is the whole affordance, and a second line would push the pinned row taller than the space the safe area leaves it.
                     Text(
                         "▶  Create task & run agent",
                         maxLines = 1,

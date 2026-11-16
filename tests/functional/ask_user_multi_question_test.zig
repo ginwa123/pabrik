@@ -1,6 +1,4 @@
-// Regression tests for the MULTI-`ask_user` stall. Zig port of
-// `tests/functional/ask_user_multi_question_test.py` (same test names, same
-// order).
+// Regression tests for the MULTI-`ask_user` stall.
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,12 +9,9 @@ const ask = @import("ask_user_test.zig");
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// What `_seed_two_questions_in_one_assistant_turn` hands back:
-/// `((q1_id, q1_row_id), (q2_id, q2_row_id))`. All four are OWNED.
+/// What `_seed_two_questions_in_one_assistant_turn` hands back
 const Pair = struct {
     question_id: []u8,
     tool_row_id: []u8,
@@ -39,8 +34,7 @@ const TwoSeeded = struct {
     }
 };
 
-/// What `handle_tool` writes when ONE assistant message carries TWO
-/// `ask_user` tool calls.
+/// What `handle_tool` writes when ONE assistant message carries TWO `ask_user` tool calls.
 fn seedTwoQuestions(h: *Harness, session_id: []const u8) !TwoSeeded {
     const now_ns = ask.nowNs();
 
@@ -168,8 +162,7 @@ fn seedOneQuestion(h: *Harness, session_id: []const u8) !ask.Seeded {
     return ask.seedQuestion(h, session_id, "q_solo", "call_solo", "Which environment?");
 }
 
-/// An owned list of the session's still-pending question ids, in
-/// `created_at ASC` order.
+/// An owned list of the session's still-pending question ids, in `created_at ASC` order.
 const PendingIds = struct {
     items: [][]u8,
 
@@ -219,9 +212,7 @@ fn pendingIds(temp_dir: []const u8, session_id: []const u8) !PendingIds {
     return .{ .items = items };
 }
 
-/// Assert the session's pending set is EXACTLY `want`, in order. Python's `==
-/// [q1, q2]` is a list equality; there is no `std.json.Value` analogue for
-/// that, so the length plus the order are compared directly.
+/// Assert the session's pending set is EXACTLY `want`, in order.
 fn expectPendingIds(temp_dir: []const u8, session_id: []const u8, want: []const []const u8) !void {
     var got = try pendingIds(temp_dir, session_id);
     defer got.deinit();
@@ -238,9 +229,7 @@ fn expectPendingIds(temp_dir: []const u8, session_id: []const u8, want: []const 
     }
 }
 
-/// `_llm_row_count` — how many transcript rows exist. An LLM call ADDS at
-/// least one row (the assistant row it streams back), so a flat count across
-/// a resume window proves the run never reached the provider.
+/// `_llm_row_count` — how many transcript rows exist.
 fn llmRowCount(temp_dir: []const u8, session_id: []const u8) !i64 {
     const lit = try ask.sqlLit(session_id);
     defer gpa.free(lit);
@@ -266,9 +255,7 @@ fn queuedMessageCount(temp_dir: []const u8, session_id: []const u8) !i64 {
     return ask.scalarCount(temp_dir, sql);
 }
 
-/// `_answer(...)` — POST one answer and return the parsed response body. The
-/// `Response` is consumed and freed here, so nothing borrows across the
-/// return: the caller gets an OWNING `harness.Json`.
+/// `_answer(...)` — POST one answer and return the parsed response body.
 fn answerJson(h: *Harness, session_id: []const u8, question_id: []const u8, answer: []const u8) !harness.Json {
     var r = try ask.postAnswer(h, session_id, .{
         .question_id = question_id,
@@ -285,13 +272,9 @@ fn expectCount(got: i64, want: i64, what: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// Control: the two-question shape is seedable and both rows are live. Without
-// this the other tests could pass for the wrong reason (e.g. the second
-// question silently deduplicated onto the first).
+// Control: the two-question shape is seedable and both rows are live.
 test "two_pending_questions_are_seeded_and_independent" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -362,8 +345,7 @@ test "answering_the_first_of_two_defers_the_resume" {
     }
     try ask.expectQuestionStatus(h.temp_dir, seeded.q1.question_id, "answered");
 
-    // …but NO run was started, and the card is told how many are left so the
-    // UI can say "1 of 2 answered" instead of showing a dead turn.
+    // …but NO run was started, and the card is told how many are left so the UI can say "1 of 2 answered" instead of showing a dead turn.
     if (try ask.wantBool(&body, "resumed")) {
         std.debug.print("answering Q1 must NOT resume the run\n", .{});
         return error.TestUnexpectedResult;
@@ -382,9 +364,7 @@ test "answering_the_first_of_two_defers_the_resume" {
     try expectPendingIds(h.temp_dir, session_id, &.{seeded.q2.question_id});
 }
 
-// The positive half: the LAST answer resumes, and the model reads both. This
-// is what the old code failed to do for the first answer — it now happens
-// once, at the end, instead of never.
+// The positive half: the LAST answer resumes, and the model reads both.
 test "answering_the_last_question_resumes_once_with_both_answers" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -442,9 +422,7 @@ test "answering_the_last_question_resumes_once_with_both_answers" {
     }
 }
 
-// Answering Q2 first must defer exactly like answering Q1 first. The old
-// stall was reachable from the second POST whichever question it was, because
-// the guard is session-scoped, not question-scoped.
+// Answering Q2 first must defer exactly like answering Q1 first.
 test "the_answer_order_does_not_matter" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -492,8 +470,6 @@ test "the_answer_order_does_not_matter" {
 }
 
 // N == 1 must be untouched — the common path cannot afford a regression.
-// `questions_remaining` is the new signal the fix branches on, so an
-// off-by-one there would silently stop every ordinary question from resuming.
 test "a_single_question_still_resumes_immediately" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -532,8 +508,6 @@ test "a_single_question_still_resumes_immediately" {
 }
 
 // Skip is a resolution like any other, so it must defer identically.
-// Otherwise "skip question 1" would start the doomed run that "answer
-// question 1" no longer does.
 test "skipping_one_of_two_also_defers_the_resume" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -583,9 +557,7 @@ test "skipping_one_of_two_also_defers_the_resume" {
     try expectCount(try queuedMessageCount(h.temp_dir, session_id), 0, "session_queue_messages count");
 }
 
-// The stall itself: nothing may be left holding an undelivered answer. The
-// old failure mode was an answer committed with `resumed:false` and no run,
-// queue, or retry left to deliver it.
+// The stall itself: nothing may be left holding an undelivered answer.
 test "a_deferred_answer_is_never_stranded" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try ask.requireSqlite3Cli();
@@ -657,8 +629,7 @@ test "no_endpoint_lists_the_remaining_questions" {
     }
 }
 
-// Body-analysis barrier: an unreferenced helper is never type-checked, so a
-// stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible until a caller appears.
 comptime {
     _ = seedTwoQuestions;
     _ = seedOneQuestion;

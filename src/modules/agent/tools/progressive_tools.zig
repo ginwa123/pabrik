@@ -1,12 +1,10 @@
-//! Agent-callable tools for progressive tool search: `search_tool`,
-//! `view_tool`, `use_tool`. The agent does not receive every tool up front.
+//! Agent-callable tools for progressive tool search: `search_tool`, `view_tool`, `use_tool`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 
-/// Input for `search_tool`. Every field optional: no args returns the first
-/// page of the whole catalog.
+/// Input for `search_tool`.
 pub const SearchToolInput = struct {
     query: ?[]const u8 = null,
     literal: ?bool = null,
@@ -145,26 +143,21 @@ pub const use_tool_tool = AgentTool{
     },
 };
 
-/// Every progressive tool name, in the order they should be appended to the
-/// tools array. The workflow and the exec-registry static contracts both
-/// reference this so a renamed tool cannot drift.
+/// Every progressive tool name, in the order they should be appended to the tools array.
 pub const PROGRESSIVE_TOOL_NAMES = [_][]const u8{
     search_tool_tool.function.name,
     view_tool_tool.function.name,
     use_tool_tool.function.name,
 };
 
-/// The three definitions as a slice, for callers that append them to the
-/// eligible tool set.
+/// The three definitions as a slice, for callers that append them to the eligible tool set.
 pub const ALL_PROGRESSIVE_TOOLS = [_]AgentTool{
     search_tool_tool,
     view_tool_tool,
     use_tool_tool,
 };
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
@@ -186,12 +179,9 @@ test "search_tool: every param optional; description points at view_tool/use_too
     const d = search_tool_tool.function.description;
     try testing.expect(std.mem.indexOf(u8, d, "view_tool") != null);
     try testing.expect(std.mem.indexOf(u8, d, "MCP tools") != null);
-    // The "already-enabled tools are not listed" caveat must be in the
-    // description too, not only the system prompt — the description is the
-    // signal the model reads when deciding whether to call.
+    // The "already-enabled tools are not listed" caveat must be in the description too, not only the system prompt — the description is the signal the model reads …
     try testing.expect(std.mem.indexOf(u8, d, "already in your tool list are excluded") != null);
-    // Paging is advertised at the top level too: the catalog can be big, and
-    // the model must not assume one call returns everything.
+    // Paging is advertised at the top level too: the catalog can be big, and the model must not assume one call returns everything.
     try testing.expect(std.mem.indexOf(u8, d, "PAGED") != null);
     try testing.expect(std.mem.indexOf(u8, d, "offset") != null);
 }
@@ -215,8 +205,7 @@ test "search_tool: limit/offset are documented as the anti-context-flood paging 
     try testing.expectEqualStrings("number", limit_type);
     try testing.expectEqualStrings("number", offset_type);
 
-    // WHY: the catalog grows with every MCP server, and the result rides in
-    // the context window — so the description must say default + max + total.
+    // WHY: the catalog grows with every MCP server, and the result rides in the context window — so the description must say default + max + total.
     try testing.expect(std.mem.indexOf(u8, limit_desc, "default 40, max 200") != null);
     try testing.expect(std.mem.indexOf(u8, limit_desc, "context window") != null);
     try testing.expect(std.mem.indexOf(u8, limit_desc, "<total>") != null);
@@ -237,12 +226,10 @@ test "search_tool: `query` documents regex-by-default WITH the reason, plus the 
         }
     }
 
-    // The parameter starts with a plain substring search no more: it says
-    // "Regex" and the escape hatch that goes with it.
+    // The parameter starts with a plain substring search no more: it says "Regex" and the escape hatch that goes with it.
     try testing.expect(std.mem.indexOf(u8, query_desc, "Regex") != null);
     try testing.expect(std.mem.indexOf(u8, query_desc, "case-insensitively") != null);
-    // WHY a pattern language helps — the concrete "one call instead of N"
-    // examples are the whole point of the description.
+    // WHY a pattern language helps — the concrete "one call instead of N" examples are the whole point of the description.
     try testing.expect(std.mem.indexOf(u8, query_desc, "A pattern finds tools a phrase cannot") != null);
     try testing.expect(std.mem.indexOf(u8, query_desc, "^mcp_.*_create") != null);
     try testing.expect(std.mem.indexOf(u8, query_desc, "doc|docs|documentation") != null);
@@ -255,8 +242,7 @@ test "search_tool: `query` documents regex-by-default WITH the reason, plus the 
     try testing.expect(std.mem.indexOf(u8, query_desc, "plain substring search") != null);
     try testing.expect(std.mem.indexOf(u8, query_desc, "Omit to list the start of the catalog") != null);
 
-    // `literal` mirrors the `search` agent tool's flag: same name, same
-    // boolean type, same "matched verbatim" semantics.
+    // `literal` mirrors the `search` agent tool's flag: same name, same boolean type, same "matched verbatim" semantics.
     try testing.expectEqualStrings("boolean", literal_type);
     try testing.expect(std.mem.indexOf(u8, literal_desc, "literal string") != null);
     try testing.expect(std.mem.indexOf(u8, literal_desc, "verbatim") != null);
@@ -296,7 +282,6 @@ test "every progressive tool carries a non-empty system_prompt" {
 }
 
 // Exec adapter — merged from `progressive_tools.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
@@ -309,8 +294,7 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
 const MAX_DID_YOU_MEAN = 3;
-/// Everything the three adapters need to resolve the catalog. Built once per
-/// dispatch (all allocations land on the per-request arena).
+/// Everything the three adapters need to resolve the catalog.
 const Inputs = struct {
     registered: []const agent.AgentTool,
     mcp: ?[]const agent.AgentTool,
@@ -320,9 +304,7 @@ const Inputs = struct {
 fn loadInputs(ctx: ToolExecContext) !Inputs {
     const registered = tools_equipped.equips(ctx.allocator);
 
-    // The live fetch-once MCP cache — the same source the workflow uses and
-    // the same one `handle_mcp_tool` dispatches against. Never re-fetch from
-    // the servers here.
+    // The live fetch-once MCP cache — the same source the workflow uses and the same one `handle_mcp_tool` dispatches against.
     const di = pabrikcore.getSingleton() catch null;
     const mcp: ?[]const agent.AgentTool = if (di) |d| d.getMcpToolsCached(ctx.allocator) else null;
 
@@ -333,8 +315,7 @@ fn loadInputs(ctx: ToolExecContext) !Inputs {
     return .{ .registered = registered, .mcp = mcp, .equipped_names = names };
 }
 
-/// The workspace item type for this session, or "" when unknown. Borrowed
-/// then duped because `getWorkspaceContext` owns its strings.
+/// The workspace item type for this session, or "" when unknown.
 fn selfItemType(ctx: ToolExecContext) []const u8 {
     const wctx = (llm_history.getWorkspaceContext(ctx.allocator, ctx.db, ctx.session_id) catch return "") orelse return "";
     defer wctx.deinit(ctx.allocator);
@@ -353,9 +334,7 @@ fn buildCatalog(ctx: ToolExecContext, inputs: Inputs) ![]progressive_catalog.Ent
     );
 }
 
-/// Mirror `add_mcp_server`'s envelope semantics: an inner `"error"` key makes
-/// the wrapper report success=false and surfaces the message as the error,
-/// with the full inner JSON still available in `data`.
+/// Mirror `add_mcp_server`'s envelope semantics: an inner `"error"` key makes the wrapper report success=false and surfaces the message as the error, with the …
 fn wrapMaybeError(
     ctx: ToolExecContext,
     tool_name: []const u8,
@@ -368,8 +347,7 @@ fn wrapMaybeError(
     return wrapToolOutput(ctx.allocator, tool_name, args_json, true, null, inner);
 }
 
-/// The `"error"` string of an inner JSON result, or null when the result
-/// carries no error key. Never fails: unparseable output is not an error.
+/// The `"error"` string of an inner JSON result, or null when the result carries no error key.
 fn innerErrorOf(allocator: std.mem.Allocator, inner: []const u8) ?[]const u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, inner, .{}) catch return null;
     const obj = switch (parsed.value) {
@@ -413,9 +391,7 @@ pub fn execSearchTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     const literal = parsed.value.literal orelse false;
     const server = parsed.value.server orelse "";
 
-    // ── Paging bounds ── Rejected, never silently clamped: the model pages
-    // by offset from the `<total>` it was shown, so a quiet clamp would make
-    // its next call land on the wrong window.
+    // ── Paging bounds ──
     const limit: usize = blk: {
         const raw = parsed.value.limit orelse @as(i64, @intCast(progressive_catalog.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
@@ -447,9 +423,7 @@ pub fn execSearchTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     const inputs = try loadInputs(ctx);
     const catalog = try buildCatalog(ctx, inputs);
 
-    // `matchQuery` returns every match (no cap); `pageSlice` + the renderer
-    // apply `offset`/`limit`, and `total` is always the pre-page count so the
-    // model can page deterministically.
+    // `matchQuery` returns every match (no cap); `pageSlice` + the renderer apply `offset`/`limit`, and `total` is always the pre-page count so the model can page …
     const outcome = try progressive_catalog.matchQuery(
         ctx.allocator,
         catalog,
@@ -510,8 +484,7 @@ pub fn execViewTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         return result(ctx, output);
     }
 
-    // 2. Already equipped for this session — show it rather than claiming it
-    //    is unknown. Read-only either way.
+    // 2.
     if (progressive_catalog.findAnyByNameFiltered(inputs.registered, inputs.mcp, name, inputs.equipped_names)) |entry| {
         const inner = try progressive_catalog.renderViewTool(ctx.allocator, entry);
         const output = try wrapToolOutput(ctx.allocator, "view_tool", tc.function.arguments, true, null, inner);
@@ -555,9 +528,7 @@ pub fn execUseTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
 
     const inputs = try loadInputs(ctx);
 
-    // ── The validation rule, checked BEFORE anything else ── If it is
-    // already equipped for this session there is nothing to insert; report it
-    // and write nothing.
+    // ── The validation rule, checked BEFORE anything else ──
     if (progressive_catalog.findAnyByNameFiltered(inputs.registered, inputs.mcp, name, inputs.equipped_names)) |already| {
         const inner = try progressive_catalog.renderUseTool(ctx.allocator, already, false);
         const output = try wrapToolOutput(ctx.allocator, "use_tool", tc.function.arguments, true, null, inner);
@@ -573,8 +544,7 @@ pub fn execUseTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         return result(ctx, output);
     };
 
-    // `saveProgressiveTool` returns whether a row was really inserted; the
-    // result's `inserted` flag is derived from that, never assumed.
+    // `saveProgressiveTool` returns whether a row was really inserted; the result's `inserted` flag is derived from that, never assumed.
     const inserted = try llm_history.saveProgressiveTool(
         ctx.allocator,
         ctx.db,
@@ -594,17 +564,13 @@ pub fn execUseTool(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     return res;
 }
 
-// ============================================================================
 // Adapter integration: the real registry + a real (in-memory) DB
-// ============================================================================
 
 const test_sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const Migration085 = @import("../../../migrations/migration.zig").Migration085AddSessionProgressiveTool;
 
-/// The `data.tools` rows of a rendered envelope result — the catalog rows
-/// only, NOT the `"tool":"search_tool"` name in the `wrapToolOutput` envelope
-/// around them.
+/// The `data.tools` rows of a rendered envelope result — the catalog rows only, NOT the `"tool":"search_tool"` name in the `wrapToolOutput` envelope around them.
 fn catalogData(allocator: std.mem.Allocator, out: []const u8) !std.json.Parsed(std.json.Value) {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     errdefer parsed.deinit();
@@ -640,9 +606,7 @@ fn searchCall(args_json: []const u8) agent.ToolCall {
     } };
 }
 
-/// One `search_tool` dispatch against the REAL registry, with `read_file` and
-/// `search_tool` enabled (so both are legitimately absent from the catalog) and
-/// everything else discoverable.
+/// One `search_tool` dispatch against the REAL registry, with `read_file` and `search_tool` enabled (so both are legitimately absent from the catalog) and …
 fn searchToolOutput(a: std.mem.Allocator, db: *database.Db, io: std.Io, args_json: []const u8) ![]const u8 {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
@@ -680,9 +644,7 @@ test "execSearchTool: a regex finds tools a literal substring could not, end to 
     try test_db.openMemory(&db, threaded.io());
     try Migration085.up(&db, exec_testing.allocator);
 
-    // The literal text "^(list|load|save|search)_" appears in no tool name or
-    // description, so a substring search would return nothing. The rows below
-    // can only come from the pattern language.
+    // The literal text "^(list|load|save|search)_" appears in no tool name or description, so a substring search would return nothing.
     const args = "{\"query\":\"^(list|load|save|search)_\"}";
     const out = try searchToolOutput(a, &db, threaded.io(), args);
 
@@ -697,8 +659,7 @@ test "execSearchTool: a regex finds tools a literal substring could not, end to 
     // …nor are the browsing meta-tools themselves.
     try exec_testing.expect(std.mem.indexOf(u8, out, "\"name\":\"view_tool\"") == null);
 
-    // `literal: true` over the same text finds nothing — the flag is honoured
-    // through the adapter, not just in the pure matcher.
+    // `literal: true` over the same text finds nothing — the flag is honoured through the adapter, not just in the pure matcher.
     const literal_out = try searchToolOutput(
         a,
         &db,
@@ -708,8 +669,7 @@ test "execSearchTool: a regex finds tools a literal substring could not, end to 
     try exec_testing.expect(std.mem.indexOf(u8, literal_out, "\"pattern_mode\":\"literal\"") != null);
     try exec_testing.expect(std.mem.indexOf(u8, literal_out, "\"count\":0") != null);
 
-    // A pattern the engine rejects degrades to a literal substring search and
-    // says so — never a hard failure.
+    // A pattern the engine rejects degrades to a literal substring search and says so — never a hard failure.
     const bad_out = try searchToolOutput(a, &db, threaded.io(), "{\"query\":\"^(list\"}");
     try exec_testing.expect(std.mem.indexOf(u8, bad_out, "\"pattern_mode\":\"literal_fallback\"") != null);
     try exec_testing.expect(std.mem.indexOf(u8, bad_out, "\"pattern_warning\":\"") != null);
@@ -748,16 +708,14 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
         threaded.io(),
         "{\"query\":\"^(list|load|save|search)_\",\"limit\":3,\"offset\":3}",
     );
-    // Page 2 is a WINDOW of at most `limit` rows, so its count is `min(limit,
-    // total - offset)` — NOT `total - offset`.
+    // Page 2 is a WINDOW of at most `limit` rows, so its count is `min(limit, total - offset)` — NOT `total - offset`.
     const page2_expected = @min(@as(usize, 3), total - 3);
     const expect_page2_count = try std.fmt.allocPrint(a, "\"count\":{d}", .{page2_expected});
     try exec_testing.expect(std.mem.indexOf(u8, page2, expect_page2_count) != null);
     try exec_testing.expect(std.mem.indexOf(u8, page2, "\"offset\":3,\"limit\":3") != null);
     try exec_testing.expectEqual(total, try totalOf(a, page2));
 
-    // The last page proves the windowing all the way out: it is the only page
-    // that is NOT truncated, and its count is whatever is left.
+    // The last page proves the windowing all the way out: it is the only page that is NOT truncated, and its count is whatever is left.
     const page3 = try searchToolOutput(
         a,
         &db,
@@ -778,12 +736,10 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
     while (it.next()) |name| {
         try exec_testing.expect(std.mem.indexOf(u8, first, name) == null);
     }
-    // Sanity: the extractor is reading the row block, not the envelope name
-    // (`"tool":"search_tool"` wraps every result).
+    // Sanity: the extractor is reading the row block, not the envelope name (`"tool":"search_tool"` wraps every result).
     try exec_testing.expect(std.mem.indexOf(u8, first, "search_tool") == null);
 
-    // Out-of-range input is rejected with the accepted range, never clamped
-    // (a clamp would desync the model's offset arithmetic).
+    // Out-of-range input is rejected with the accepted range, never clamped (a clamp would desync the model's offset arithmetic).
     const too_big = try searchToolOutput(a, &db, threaded.io(), "{\"query\":\"a\",\"limit\":5000}");
     try exec_testing.expect(std.mem.indexOf(u8, too_big, "\"success\":false") != null);
     try exec_testing.expect(std.mem.indexOf(u8, too_big, "limit must be at most 200") != null);
@@ -795,9 +751,7 @@ test "execSearchTool: limit/offset page the matches and report the true total" {
 
 const exec_testing = std.testing;
 
-/// One `use_tool` dispatch against the REAL registry and a real (in-memory)
-/// DB, on the same allowlist `searchToolOutput` uses — so the name under test
-/// is registered but not enabled, i.e. discoverable, which is the only state
+/// One `use_tool` dispatch against the REAL registry and a real (in-memory) DB, on the same allowlist `searchToolOutput` uses — so the name under test is …
 fn useToolResult(
     a: std.mem.Allocator,
     db: *database.Db,
@@ -831,8 +785,7 @@ fn useToolResult(
 }
 
 test "the three progressive tools are offered to the model and resolve to dispatchable registry entries" {
-    // `equips()` is the list the workflow hands the LLM;
-    // UNIFIED_TOOL_REGISTRY() is the dispatcher's table.
+    // `equips()` is the list the workflow hands the LLM; UNIFIED_TOOL_REGISTRY() is the dispatcher's table.
     const equip = tools_equipped.equips(exec_testing.allocator);
     defer exec_testing.allocator.free(equip);
 
@@ -843,8 +796,7 @@ test "the three progressive tools are offered to the model and resolve to dispat
         }
         try exec_testing.expect(in_equips);
 
-        // Exactly one dispatch entry, carrying the SAME tool def the model was
-        // shown.
+        // Exactly one dispatch entry, carrying the SAME tool def the model was shown.
         var entries: usize = 0;
         for (tools_equipped.UNIFIED_TOOL_REGISTRY()) |entry| {
             if (!std.mem.eql(u8, entry.name, name)) continue;
@@ -868,9 +820,7 @@ test "execUseTool: equipping a catalog tool persists the row and reports it back
     try test_db.openMemory(&db, threaded.io());
     try Migration085.up(&db, exec_testing.allocator);
 
-    // `save_memory` is registered and not in the allowlist, so it is in the
-    // discoverable catalog — proven independently by the regex search test
-    // above, which finds it under `^(list|load|save|search)_`.
+    // `save_memory` is registered and not in the allowlist, so it is in the discoverable catalog — proven independently by the regex search test above, which finds …
     var logger = pabrikcore.loggermod.Logger.init(a, threaded.io(), .{ .min_level = .err });
     const res = try useToolResult(a, &db, threaded.io(), &logger, "{\"name\":\"save_memory\"}");
     try exec_testing.expect(res.output_allocated);
@@ -880,8 +830,7 @@ test "execUseTool: equipping a catalog tool persists the row and reports it back
     try exec_testing.expect(res.progressive_tool_save != null);
     try exec_testing.expectEqualStrings("save_memory", res.progressive_tool_save.?.name);
 
-    // …and the row really is in session_progressive_tool, which is what the
-    // next turn's allowlist and the catalog both read back.
+    // …and the row really is in session_progressive_tool, which is what the next turn's allowlist and the catalog both read back.
     const rows = try llm_history.getProgressiveTools(a, &db, "sess_regex");
     defer for (rows) |r| r.deinit(a);
     try exec_testing.expectEqual(@as(usize, 1), rows.len);

@@ -1,6 +1,4 @@
-//! Agent-callable tool: `update_plan` — write the agent's task plan for the
-//! current session as markdown with a `- [ ]` / `- [x]` checklist. Either a
-//! full rewrite (UPSERT) or a text replace of ONE snippet of the current plan.
+//! Agent-callable tool: `update_plan` — write the agent's task plan for the current session as markdown with a `- [ ]` / `- [x]` checklist.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -12,25 +10,17 @@ const sqlite = pabrikcore.sqlite;
 const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
 
-// Import the storage layer directly (the `pabrikcore.session_plan`
-// alias is wired up in src/root.zig by Task 4; for the pure-fn layer
-// we just need the module itself).
+// Import the storage layer directly (the `pabrikcore.session_plan` alias is wired up in src/root.zig by Task 4; for the pure-fn layer we just need the module …
 const session_plan = @import("../loop/session_plan.zig");
 
-/// Re-export the storage-layer cap so callers/tests don't have to
-/// reach into the storage module. Same value (256 KiB).
+/// Re-export the storage-layer cap so callers/tests don't have to reach into the storage module.
 pub const MAX_PLAN_BYTES: usize = session_plan.MAX_PLAN_BYTES;
 
-/// Input for `update_plan`. Two modes, one tool:
-/// - FULL REWRITE: `content` carries the COMPLETE plan body (1 byte – 256 KiB).
-/// - TEXT REPLACE: `old_text` + `new_text` edit ONE snippet of the plan.
+/// Input for `update_plan`. Two modes, one tool
 pub const UpdatePlanInput = struct {
-    /// The markdown plan body. 1 byte – 256 KiB. Empty content is rejected
-    /// (use a final marker like `# Plan complete` to "close" a plan instead
-    /// of calling with empty). Empty when the text-replace mode is used.
+    /// The markdown plan body. 1 byte – 256 KiB.
     content: []const u8 = "",
     /// The exact text to find in the current plan (text-replace mode).
-    /// Must match exactly once unless `replace_all` is true.
     old_text: []const u8 = "",
     /// The replacement text (text-replace mode). Empty deletes the match.
     new_text: []const u8 = "",
@@ -149,9 +139,7 @@ pub const update_plan_tool = AgentTool{
     },
 };
 
-/// Execute update_plan. Returns a JSON string for the LLM. Caller owns the
-/// returned slice and must free it with `allocator.free()`. Two modes:
-/// `old_text` set → TEXT REPLACE of one snippet; otherwise → FULL REWRITE.
+/// Execute update_plan.
 pub fn executeUpdatePlan(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -185,8 +173,7 @@ pub fn executeUpdatePlan(
     return successJSON(allocator, session_id, updated_at, input.content, 0);
 }
 
-/// The TEXT REPLACE mode: swap `old_text` for `new_text` inside the CURRENT
-/// plan. Every other line of the plan is left exactly as it was.
+/// The TEXT REPLACE mode: swap `old_text` for `new_text` inside the CURRENT plan.
 fn executeTextReplace(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -265,8 +252,7 @@ fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
     return count;
 }
 
-/// Build the plan body with `needle` replaced by `replacement`. When `all`
-/// is false only the FIRST occurrence is replaced.
+/// Build the plan body with `needle` replaced by `replacement`.
 fn replaceOccurrences(
     allocator: std.mem.Allocator,
     haystack: []const u8,
@@ -345,8 +331,7 @@ fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std
     return std.json.parseFromSlice(std.json.Value, alloc, out, .{});
 }
 
-/// `update_plan` writes onto the session row, so a test that expects a plan to
-/// land needs the session it lands on.
+/// `update_plan` writes onto the session row, so a test that expects a plan to land needs the session it lands on.
 fn seedSession(db: *database.Db, session_id: []const u8) !void {
     try db.exec(
         testing.allocator,
@@ -372,7 +357,6 @@ test "executeUpdatePlan: success returns payload with session_id + updated_at + 
     defer alloc.free(result);
 
     // Payload shape: {"session_id":...,"updated_at":...,"plan":...}.
-    // The frontend reads the `plan` field back to render the checklist.
     const parsed = try parseTestJson(alloc, result);
     defer parsed.deinit();
     const obj = parsed.value.object;
@@ -389,8 +373,6 @@ test "executeUpdatePlan: success returns payload with session_id + updated_at + 
 }
 
 // ─── Test 1b: JSON preserves raw special chars verbatim ───────────────────
-// The agent may write `<`, `>`, `&` in their plan markdown (e.g. for
-// comparison prose like `arr[i] > 0`).
 
 test "executeUpdatePlan: JSON preserves raw <, >, & inside plan body" {
     const alloc = testing.allocator;
@@ -420,8 +402,6 @@ test "executeUpdatePlan: JSON preserves raw <, >, & inside plan body" {
 }
 
 // ─── Test 1c: literal "]]>" inside the body round-trips through JSON ─────
-// The literal `]]>` sequence needed CDATA splitting under the old XML
-// envelope.
 
 test "executeUpdatePlan: ]]> inside plan body round-trips verbatim" {
     const alloc = testing.allocator;
@@ -501,9 +481,7 @@ test "update_plan_tool JSON schema: the description names BOTH modes" {
     // Function name.
     try testing.expectEqualStrings("update_plan", tool.function.name);
 
-    // The description is the agent's primary "when to call this" signal, and
-    // the tool has TWO modes now — the model can only pick the right one if
-    // the description names both the full-rewrite and the text-replace half.
+    // The description is the agent's primary "when to call this" signal, and the tool has TWO modes now — the model can only pick the right one if the description …
     const description = tool.function.description;
     try testing.expect(std.mem.indexOf(u8, description, "update_plan") != null);
     try testing.expect(std.mem.indexOf(u8, description, "checklist") != null);
@@ -513,8 +491,6 @@ test "update_plan_tool JSON schema: the description names BOTH modes" {
 }
 
 // ─── Text-replace mode ────────────────────────────────────────────────────
-// Mode 2: `old_text` → `new_text` inside the CURRENT plan. Only the named
-// text changes; every other line of the plan stays byte-for-byte.
 
 test "update_plan: the text-replace mode flips one checklist item and leaves the rest of the plan untouched" {
     const alloc = testing.allocator;
@@ -723,7 +699,6 @@ test "update_plan: a call with neither content nor old_text writes nothing" {
 }
 
 // Exec adapter — merged from `update_plan.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
@@ -764,9 +739,7 @@ pub fn execUpdatePlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer ctx.allocator.free(inner);
 
-    // Detect the `{"error":...}` shape and surface it as a tool failure (so
-    // the LLM sees success=false rather than a successful wrapper around an
-    // error body).
+    // Detect the `{"error":...}` shape and surface it as a tool failure (so the LLM sees success=false rather than a successful wrapper around an error body).
     var inner_parsed: ?std.json.Parsed(std.json.Value) = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch null;
     defer if (inner_parsed) |*par| par.deinit();
     if (inner_parsed) |par| {
@@ -849,8 +822,7 @@ test "execUpdatePlan: writes the plan onto the session row and returns wrapped s
     const result = try execUpdatePlan(tcx, tc);
     defer if (result.output_allocated) alloc.free(result.output);
 
-    // The wrapped envelope carries success=true with the inner payload
-    // in `data`.
+    // The wrapped envelope carries success=true with the inner payload in `data`.
     try exec_testing.expect(result.output_allocated);
     const env_parsed = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
     defer env_parsed.deinit();
@@ -862,9 +834,7 @@ test "execUpdatePlan: writes the plan onto the session row and returns wrapped s
     try exec_testing.expectEqualStrings("sess_exec", data.get("session_id").?.string);
     try exec_testing.expect(data.get("updated_at").?.string.len > 0);
 
-    // The inner payload MUST echo the just-written plan body via the
-    // `plan` field — the frontend renders the checklist from this
-    // field, NOT from the tool's input arguments.
+    // The inner payload MUST echo the just-written plan body via the `plan` field — the frontend renders the checklist from this field, NOT from the tool's input …
     try exec_testing.expectEqualStrings("# Plan\n- [ ] step", data.get("plan").?.string);
 
     // Verify the plan landed on the session row.
@@ -889,8 +859,6 @@ test "execUpdatePlan: empty content returns wrapped error envelope" {
 
     try exec_testing.expect(result.output_allocated);
     // Error path: success=false, `error` message, `data` null.
-    // (wrapToolOutput deliberately nulls `data` on the error branch — the
-    // inner pure-fn JSON is intentionally not surfaced.
     const env2 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
     defer env2.deinit();
     try exec_testing.expect(!env2.value.object.get("success").?.bool);
@@ -922,9 +890,7 @@ test "execUpdatePlan: malformed JSON returns wrapped parse error" {
     const env3 = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
     defer env3.deinit();
     try exec_testing.expect(!env3.value.object.get("success").?.bool);
-    // The message must tell the model WHAT was wrong with its JSON, not
-    // just name the Zig error. `{not json at all` is a syntax error, so
-    // the explanation names JSON and the usual causes.
+    // The message must tell the model WHAT was wrong with its JSON, not just name the Zig error.
     const plan_err = env3.value.object.get("error").?.string;
     try exec_testing.expect(std.mem.indexOf(u8, plan_err, "JSON") != null);
     try exec_testing.expect(std.mem.indexOf(u8, plan_err, "SyntaxError") == null);
@@ -936,7 +902,6 @@ test "execUpdatePlan: malformed JSON returns wrapped parse error" {
 }
 
 // ─── Test 4 (regression): plan mentioning "error" text still succeeds ─────
-// The success payload echoes plan markdown in the `plan` field.
 test "execUpdatePlan: plan containing error-like text does not misfire" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
@@ -962,8 +927,6 @@ test "execUpdatePlan: plan containing error-like text does not misfire" {
 }
 
 // ─── Test 5 (regression): plan with error-like JSON text still succeeds ───
-// Even when the plan text contains an `"error":...`-looking fragment, the
-// payload is a success object without a top-level `error` string field, so
 test "execUpdatePlan: plan containing error-like JSON text still succeeds" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();

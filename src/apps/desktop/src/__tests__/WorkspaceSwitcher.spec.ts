@@ -1,5 +1,4 @@
-/** Behavioural tests for the header WorkspaceSwitcher dropdown. Props-driven component — no
- * store/router needed. */
+/** Behavioural tests for the header WorkspaceSwitcher dropdown. */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 
@@ -153,8 +152,7 @@ describe('WorkspaceSwitcher collapsed mode', () => {
     await wrapper.find('[data-testid="workspace-switcher-trigger"]').trigger('click')
     await wrapper.vm.$nextTick()
 
-    // Teleported OUT of the component tree — lives on document.body
-    // so the panel escapes the narrow collapsed sidebar's overflow.
+    // Teleported OUT of the component tree — lives on document.body so the panel escapes the narrow collapsed sidebar's overflow.
     const panel = document.body.querySelector('[data-testid="workspace-switcher-panel"]')
     expect(panel).not.toBeNull()
     expect(wrapper.find('[data-testid="workspace-switcher-panel"]').exists()).toBe(false)
@@ -170,9 +168,7 @@ describe('WorkspaceSwitcher collapsed mode', () => {
   })
 })
 
-// ─── Pending invitations ──────────────────────────────────────────────── An invite is a REQUEST:
-// it renders above the workspace list, and until it is accepted the workspace
-// is not in that list at all.
+// ─── Pending invitations ────────────────────────────────────────────────
 const INVITATION = {
   id: 'inv_1',
   workspace_id: 'ws_invited',

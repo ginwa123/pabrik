@@ -1,6 +1,4 @@
-/** Tests for KanbanMove.vue — the tool_output component that renders the XML response from the
- * `kanban_move_task` agent tool. The component is purely presentational (no API calls), so no mocks
- * are needed. Mirrors the SetGitWorktree tool_output style. */
+/** Tests for KanbanMove.vue — the tool_output component that renders the XML response from the `kanban_move_task` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 

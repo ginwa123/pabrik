@@ -1,5 +1,4 @@
-//! Shared parts of the admin console: who counts as the installation owner,
-//! and the pure helpers every admin endpoint repeats.
+//! Shared parts of the admin console: who counts as the installation owner, and the pure helpers every admin endpoint repeats.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -19,8 +18,7 @@ pub fn roleName(role: Role) []const u8 {
     return @tagName(role);
 }
 
-/// The synthetic account every installation starts with. It is not a person:
-/// it can never sign in, so the console never lists or edits it.
+/// The synthetic account every installation starts with. It is not a person
 pub const system_user_id = "user_system";
 
 /// Who may use the admin console.
@@ -33,9 +31,7 @@ pub const Access = enum {
     not_owner,
 };
 
-/// Decide whether this request may act on ANY account. With `--auth` off the
-/// operator owns the installation, so every request is the owner; with it on
-/// the session's own `users.role` decides.
+/// Decide whether this request may act on ANY account.
 pub fn resolveAccess(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -72,9 +68,7 @@ pub const password_alphabet = "abcdefghijkmnpqrstuvwxyz23456789";
 
 pub const temporary_password_len = 16;
 
-/// Build a temporary password from random bytes. `byte & 0x1f` is uniform
-/// over 32 values, so every alphabet character is equally likely. The caller
-/// draws the bytes, which keeps this pure.
+/// Build a temporary password from random bytes.
 pub fn temporaryPassword(allocator: std.mem.Allocator, random_bytes: []const u8) ![]const u8 {
     if (random_bytes.len < temporary_password_len) return error.NotEnoughRandomBytes;
     const out = try allocator.alloc(u8, temporary_password_len);
@@ -96,9 +90,7 @@ pub fn newUserId(allocator: std.mem.Allocator, random_bytes: []const u8) ![]cons
     return std.fmt.allocPrint(allocator, "user_{s}", .{hex[0..]});
 }
 
-/// The email as it is stored: trimmed and lowercased. `users.email` is
-/// UNIQUE, so two spellings of one address would be two accounts, and
-/// lowercasing makes the console agree with the login form.
+/// The email as it is stored: trimmed and lowercased.
 pub fn normaliseEmail(allocator: std.mem.Allocator, raw: []const u8) ![]const u8 {
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
     return std.ascii.allocLowerString(allocator, trimmed);
@@ -115,8 +107,7 @@ pub fn isValidEmail(email: []const u8) bool {
     return true;
 }
 
-/// End every session of `user_id`. A reset password must not leave a
-/// session that was opened with the old one still working.
+/// End every session of `user_id`.
 pub fn revokeSessions(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -129,9 +120,7 @@ pub fn revokeSessions(
     );
 }
 
-/// The current UTC time in `datetime('now')`'s format, moved by
-/// `offset_secs` (negative = the past). Written here rather than by
-/// `datetime('now', ...)`, which postgres does not have.
+/// The current UTC time in `datetime('now')`'s format, moved by `offset_secs` (negative = the past).
 pub fn utcStamp(allocator: std.mem.Allocator, io: std.Io, offset_secs: i64) ![]u8 {
     const stamp = std.Io.Timestamp.now(io, .real);
     const now: i64 = @intCast(@divTrunc(stamp.nanoseconds, std.time.ns_per_s));

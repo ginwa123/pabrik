@@ -22,9 +22,7 @@ const selectedId = computed<string | null>(() =>
   props.selectedIds.length === 1 ? (props.selectedIds[0] ?? null) : null,
 )
 
-// True while the active page's element fetch is in flight. Without it
-// the canvas renders "Click + Element to add your first element" during
-// the fetch — a false statement about the page's data.
+// True while the active page's element fetch is in flight.
 const isElementsLoading = computed(() => {
   const itemId = props.itemId
   if (!itemId || !props.pageId) return false

@@ -9,8 +9,7 @@ import { __resetWindowIdForTests } from '../../../helpers/windowId'
 import { useTabsStore } from '../../../stores/tabs'
 import { makeLocalStorageStub } from '../../../__tests__/helpers'
 
-// The strip's counts come from the same folder snapshot the right sidebar uses; the spec answers for
-// it so the numbers are deterministic.
+// The strip's counts come from the same folder snapshot the right sidebar uses; the spec answers for it so the numbers are deterministic.
 vi.mock('../../../helpers/folderDiffCache', () => ({ fetchFolderDiff: vi.fn() }))
 
 const mockDiff = fetchFolderDiff as unknown as ReturnType<typeof vi.fn>
@@ -60,9 +59,7 @@ function mountStrip(props: Record<string, unknown>, provided?: TabStripActions) 
   })
 }
 
-/** Two sessions, each with a file, so every assertion can prove the row is the owner's own. The
- * active tab is left on session B's file, which is what happens in the app: you are looking at one
- * session, so the other session's row has no active tab. */
+/** Two sessions, each with a file, so every assertion can prove the row is the owner's own. */
 function seedTwoSessions() {
   const tabs = useTabsStore()
   tabs.open({ query: { view: 'chat', session: 'sa' }, title: 'fix zig test output' })
@@ -239,8 +236,7 @@ describe('SessionTabStrip', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="session-tab-unseen"]').exists()).toBe(false)
 
-    // 2. the agent edits it, and the user opens another file: looking at the new tab is the gesture
-    //    that refreshes, and it finds the first file changed underneath
+    // 2. the agent edits it, and the user opens another file: looking at the new tab is the gesture that refreshes, and it finds the first file changed underneath
     mockDiff.mockResolvedValue(diffWith(9, 4))
     // opened in the background so the click below is the gesture that activates it
     tabs.openInBackground({ query: fileIn('sa', 'src/other.ts') })

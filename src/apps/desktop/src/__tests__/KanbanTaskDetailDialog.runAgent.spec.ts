@@ -1,6 +1,4 @@
-/** Tests for the "Create task & run agent" button in KanbanTaskDetailDialog (create mode). Mount
- * pattern: same as KanbanTaskDetailDialog.spec.ts. <Teleport to="body">, so use `attachTo:
- * document.body` + `document.querySelector` (NOT `wrapper.find`). */
+/** Tests for the "Create task & run agent" button in KanbanTaskDetailDialog (create mode). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -121,8 +119,6 @@ describe('KanbanTaskDetailDialog — Create task & run agent', () => {
         // NEW (plan: 2026-08-06-kanban-no-base64-in-desc).
         pendingFiles: [],
         // NEW (Migration 070 — kanban-cwd-session-optional plan).
-        // Empty string = no per-task cwd. See comment on the
-        // earlier "emits create" test for the full rationale.
         cwdSession: '',
         skillNames: [],
       },
@@ -198,8 +194,7 @@ describe('KanbanTaskDetailDialog — Create task & run agent', () => {
     const toggle = findInDom<HTMLInputElement>(
       '[data-testid="kanban-task-detail-unattended-toggle"]',
     )
-    // The toggle's @change handler reads target.checked; flip it
-    // to true so the change event reflects the user "turning it on".
+    // The toggle's @change handler reads target.checked; flip it to true so the change event reflects the user "turning it on".
     if (toggle) toggle.checked = true
     toggle?.dispatchEvent(new Event('change', { bubbles: true }))
     await flushPromises()

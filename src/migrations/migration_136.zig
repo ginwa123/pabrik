@@ -4,9 +4,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 136 - the foreign keys postgres never declared: its `CREATE TABLE`
-/// carries a no-op check instead, because a child can be created before its
-/// parent. A session survives its workspace; every other child goes with it.
+/// Migration 136 - the foreign keys postgres never declared: its `CREATE TABLE` carries a no-op check instead, because a child can be created before its parent.
 pub const Migration136EnforceForeignKeys = struct {
     pub const version: u32 = 136;
     pub const name = "enforce_foreign_keys";

@@ -1,5 +1,4 @@
-// API Service - Centralized API calls for desktop backend
-// All components should use this file instead of making direct fetch calls
+// API Service - Centralized API calls for desktop backend All components should use this file instead of making direct fetch calls
 export * from './client'
 export * from './files'
 export * from './workspaces'

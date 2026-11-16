@@ -1,6 +1,4 @@
-/**
- * KanbanDependsInput: never offers the task itself, emits the id array on pick and on chip remove, marks incomplete deps distinctly.
- */
+/** KanbanDependsInput: never offers the task itself, emits the id array on pick and on chip remove, marks incomplete deps distinctly. */
 import { describe, expect, it } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import KanbanDependsInput from '../components/kanban/KanbanDependsInput.vue'

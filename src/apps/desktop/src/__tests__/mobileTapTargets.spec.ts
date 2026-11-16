@@ -26,9 +26,7 @@ function phoneBlock(): string {
   return blocks.join('\n')
 }
 
-/** CSS is the only place a tap target can regress with every other gate stays green: neither vitest
- * nor vue-tsc sees a width. The browser numbers behind this contract are in PR #1288 (the workspace
- * switcher was an 18px line, New Chat 40px, the section headers 27px, switcher rows 34px). */
+/** CSS is the only place a tap target can regress with every other gate stays green: neither vitest nor vue-tsc sees a width. */
 describe('phone tap targets in the sidebar', () => {
   const block = phoneBlock()
 
@@ -53,8 +51,7 @@ describe('phone tap targets in the sidebar', () => {
   })
 
   it('lets the board header wrap, so the page cannot be scrolled sideways', () => {
-    // The header carried 690px of content in a 390px box; focusing a form field in the task
-    // detail then scrolled <main> and dragged that overlay off the left edge.
+    // The header carried 690px of content in a 390px box; focusing a form field in the task detail then scrolled <main> and dragged that overlay off the left edge.
     expect(block).toContain('.kanban-board-header')
     expect(block).toContain('flex-wrap: wrap')
     expect(block).toContain('.kanban-search')

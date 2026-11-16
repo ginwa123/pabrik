@@ -7,9 +7,7 @@ export interface ContextMenuState {
   targetIds: string[]
 }
 
-/** Drives a Teleport-based right-click menu (used by both the design layers panel and the design
- * canvas). Owns the open/close lifecycle and the document-level listeners that dismiss the menu on
- * click-outside, Escape, window resize, or scroll. */
+/** Drives a Teleport-based right-click menu (used by both the design layers panel and the design canvas). */
 export function useDesignContextMenu() {
   const state = ref<ContextMenuState>({
     visible: false,
@@ -52,8 +50,7 @@ export function useDesignContextMenu() {
     document.addEventListener('click', handleDocumentClick)
     document.addEventListener('keydown', handleDocumentKeydown)
     window.addEventListener('resize', handleWindowResize)
-    // Capture phase so we catch scroll inside any overflow container
-    // (e.g. the layers panel) before the scroll bubbles up.
+    // Capture phase so we catch scroll inside any overflow container (e.g. the layers panel) before the scroll bubbles up.
     window.addEventListener('scroll', handleWindowScroll, true)
   })
 

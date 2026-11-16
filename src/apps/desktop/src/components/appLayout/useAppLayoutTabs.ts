@@ -39,8 +39,7 @@ export function useAppLayoutTabs(deps: TabsDeps): UseAppLayoutTabsReturn {
       return
     }
 
-    // A chat (with or without a session) wins over any workspace item — the same
-    // sequence the sidebar's chat path performs.
+    // A chat (with or without a session) wins over any workspace item — the same sequence the sidebar's chat path performs.
     workspacesStore.setActiveTask(null)
     workspacesStore.setActiveWorkspaceItem(null)
     if (query.session) navigationStore.setActiveChat(query.session, chatName ?? '')
@@ -57,13 +56,9 @@ export function useAppLayoutTabs(deps: TabsDeps): UseAppLayoutTabsReturn {
     router.replace({ path: tab.path, query })
   }
 
-  /** The funnel. Every navigation in the app lands here — sidebar clicks, the chats list,
-   * kanban/design chat dialogs, deep links, the Back button — so no call site has to know the tab
-   * strip exists, and a view type added later becomes tabbable for free. */
+  /** The funnel. */
   function syncFromRoute() {
-    // The item's type decides whether a task chat belongs to the item's tab (kanban/design open it as
-    // a dialog inside that view) or gets its own. Only trust it when it describes the item this URL
-    // points at — on a cold boot the tree may not be loaded yet, and the store adopts the tab later.
+    // The item's type decides whether a task chat belongs to the item's tab (kanban/design open it as a dialog inside that view) or gets its own.
     const active = workspacesStore.activeWorkspaceItem
     const urlItemId = parseItemIdWithChat((route.query.itemId as string) ?? '').itemId
     const itemType = active && active.id === urlItemId ? (active.item_type ?? null) : null
@@ -73,23 +68,18 @@ export function useAppLayoutTabs(deps: TabsDeps): UseAppLayoutTabsReturn {
 
   let tabsFunnelReady = false
 
-  // Registered AFTER the restore block above, and Vue fires `onMounted` hooks
-  // in registration order — so a cold boot is already resolved by the time
-  // this runs, and it stays synchronous so it cannot shift mount timing.
+  // Registered AFTER the restore block above, and Vue fires `onMounted` hooks in registration order — so a cold boot is already resolved by the time this runs, and …
   onMounted(() => {
     tabsFunnelReady = true
     syncFromRoute()
   })
 
-  /**  * Shortcuts and the live title feed are window-scoped wiring, so they live here and are torn down
-   * with the layout. Every handler re-applies the URL through `applyActiveTabToUrl`, so the shortcut
-   * map can never leave the URL pointing at a tab the user is no longer on. */
+  /** Shortcuts and the live title feed are window-scoped wiring, so they live here and are torn down with the layout. */
   const stopTabShortcuts = useTabShortcuts({
     isEnabled: () => tabsStore.enabled,
     tabCount: () => tabsStore.tabCount,
     handlers: {
-      // The row belongs to one session, so "new tab" cannot mean "new session": it is the way back
-      // to the session's own (pinned) tab, and the rail is where sessions are opened.
+      // The row belongs to one session, so "new tab" cannot mean "new session": it is the way back to the session's own (pinned) tab, and the rail is where sessions …
       newTab: () => {
         tabsStore.goHome()
         applyActiveTabToUrl()
@@ -117,8 +107,7 @@ export function useAppLayoutTabs(deps: TabsDeps): UseAppLayoutTabsReturn {
     },
   })
 
-  // The tab title feed is owned by App.vue (it installs the SSE bus), so nothing
-  // to unregister here — only the shortcuts, which live in this component.
+  // The tab title feed is owned by App.vue (it installs the SSE bus), so nothing to unregister here — only the shortcuts, which live in this component.
   onUnmounted(() => {
     stopTabShortcuts()
   })

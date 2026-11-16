@@ -2,9 +2,7 @@
 const std = @import("std");
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
-// ============================================================================
 // Data Structures
-// ============================================================================
 
 pub const ChunkInfo = struct {
     chunk_id: u32,
@@ -49,9 +47,7 @@ pub const FileEntry = struct {
     mtime: i64,
 };
 
-// ============================================================================
 // Constants
-// ============================================================================
 
 const BINARY_EXTENSIONS = &[_][]const u8{
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2",
@@ -64,9 +60,7 @@ const DECLARATION_PATTERNS = &[_][]const u8{
     "test ", "comptime ", "export fn ", "extern fn ",
 };
 
-// ============================================================================
 // Normalization
-// ============================================================================
 
 pub fn normalize(v: []f32) void {
     var sum: f32 = 0;
@@ -76,9 +70,7 @@ pub fn normalize(v: []f32) void {
     for (v) |*x| x.* *= inv;
 }
 
-// ============================================================================
 // Dot Product for Cosine Similarity
-// ============================================================================
 
 pub fn dotProduct(a: []const f32, b: []const f32) f32 {
     std.debug.assert(a.len == b.len);
@@ -87,9 +79,7 @@ pub fn dotProduct(a: []const f32, b: []const f32) f32 {
     return sum;
 }
 
-// ============================================================================
 // File Extension Detection
-// ============================================================================
 
 fn isBinaryExtension(path: []const u8) bool {
     const ext = std.fs.path.extension(path);
@@ -108,9 +98,7 @@ pub fn isBinaryContent(content: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Gitignore Parsing (simplified from glob.zig)
-// ============================================================================
 
 pub const GitignoreEntry = struct {
     negated: bool,
@@ -277,13 +265,10 @@ pub fn gitignoreGlobMatch(glob: []const u8, text: []const u8, nocase: bool) bool
     return ti == text.len;
 }
 
-// ============================================================================
 // Directory Pattern Detection for Gitignore
-// ============================================================================
 
 fn isGitignoreDirPattern(pattern: []const u8) bool {
-    // Gitignore patterns ending with / match directories
-    // e.g., "build/" matches "build/", "build/output", "build/a/b/c"
+    // Gitignore patterns ending with / match directories e.g., "build/" matches "build/", "build/output", "build/a/b/c"
     return pattern.len > 0 and pattern[pattern.len - 1] == '/';
 }
 
@@ -313,9 +298,7 @@ pub fn gitignoreMatch(pattern: []const u8, path: []const u8, is_dir: bool) bool 
     return gitignoreGlobMatch(pattern, path, false);
 }
 
-// ============================================================================
 // File Walking
-// ============================================================================
 
 pub fn walkWorkspace(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) ![]FileEntry {
     var files = std.ArrayList(FileEntry).empty;
@@ -409,9 +392,7 @@ fn walkDirRecursive(
     }
 }
 
-// ============================================================================
 // Chunking
-// ============================================================================
 
 pub fn chunkFile(
     allocator: std.mem.Allocator,
@@ -665,9 +646,7 @@ fn countTokens(content: []const u8) usize {
     return @divFloor(content.len, 4);
 }
 
-// ============================================================================
 // Hashing
-// ============================================================================
 
 pub fn computeHash(content: []const u8) [32]u8 {
     var hash: [32]u8 = undefined;
@@ -686,21 +665,15 @@ pub fn computeChunkHashes(chunks: []const ChunkInfo) []ChunkHash {
     return hashes.items;
 }
 
-// ============================================================================
 // Index Path Helpers
-// ============================================================================
 
 pub fn getIndexDir(root_cwd: []const u8) ![]const u8 {
-    // Everything built from this path is handed to `createFileAbsolute` /
-    // `openFileAbsolute`, which ASSERT the path is absolute and ABORT the
-    // whole process (Debug/ReleaseSafe) instead of returning an error.
+    // Everything built from this path is handed to `createFileAbsolute` /`openFileAbsolute`, which ASSERT the path is absolute and ABORT the whole process …
     if (!std.fs.path.isAbsolute(root_cwd)) return error.IndexRootNotAbsolute;
     return try std.fs.path.join(std.heap.page_allocator, &.{ root_cwd, ".pabrik", "semantic_index" });
 }
 
-// ============================================================================
 // Binary Index I/O
-// ============================================================================
 
 pub fn writeChunks(allocator: std.mem.Allocator, io: std.Io, dir_path: []const u8, chunks: []const ChunkInfo) !void {
     const chunks_path = try std.fs.path.join(allocator, &.{ dir_path, "chunks.bin" });
@@ -937,9 +910,7 @@ pub fn writeManifest(io: std.Io, dir_path: []const u8, manifest: *const IndexMan
     try std.Io.File.writeStreamingAll(file, io, manifest_content.items);
 }
 
-// ============================================================================
 // Search
-// ============================================================================
 
 pub fn search(
     allocator: std.mem.Allocator,
@@ -956,19 +927,15 @@ pub fn search(
     _ = query;
     _ = limit;
 
-    // Placeholder - actual implementation would: 1. Embed the query 2.
-    // Compute dot product with all embeddings 3. Return top-k results
+    // Placeholder - actual implementation would: 1.
 
     return error.OutOfMemory;
 }
 
-// ===== Tests merged from indexing_semantic_search_test.zig (2026-09-29
-// flatten) =====
+// ===== Tests merged from indexing_semantic_search_test.zig (2026-09-29 flatten) =====
 const testing = std.testing;
 
-// ============================================================================
 // Test: Chunk Single Function
-// ============================================================================
 
 test "testChunkSingleFunction" {
     const allocator = testing.allocator;
@@ -994,9 +961,7 @@ test "testChunkSingleFunction" {
     try testing.expect(!chunks[0].oversized);
 }
 
-// ============================================================================
 // Test: Chunk Multiple Functions
-// ============================================================================
 
 test "testChunkMultipleFunctions" {
     const allocator = testing.allocator;
@@ -1029,9 +994,7 @@ test "testChunkMultipleFunctions" {
     }
 }
 
-// ============================================================================
 // Test: Chunk Non-Code File (Markdown)
-// ============================================================================
 
 test "testChunkNonCode" {
     const allocator = testing.allocator;
@@ -1056,9 +1019,7 @@ test "testChunkNonCode" {
     try testing.expect(chunks.len >= 1);
 }
 
-// ============================================================================
 // Test: Gitignore Glob Matching
-// ============================================================================
 
 test "testGitignoreGlob" {
     // Test *.o pattern
@@ -1069,14 +1030,11 @@ test "testGitignoreGlob" {
     try testing.expect(gitignoreMatch("build/", "build/output", true));
     try testing.expect(gitignoreMatch("build/", "build/", true));
 
-    // Test negation pattern - this tests the matching logic
-    // *.o should NOT match keep.o when the glob is properly respecting characters
+    // Test negation pattern - this tests the matching logic *.o should NOT match keep.o when the glob is properly respecting characters
     try testing.expect(!gitignoreGlobMatch("build/*.txt", "keep.o", false));
 }
 
-// ============================================================================
 // Test: Binary Content Detection
-// ============================================================================
 
 test "testBinarySniff" {
     // Null byte in content
@@ -1087,9 +1045,7 @@ test "testBinarySniff" {
     try testing.expect(!isBinaryContent("line1\nline2\nline3"));
 }
 
-// ============================================================================
 // Test: Normalization
-// ============================================================================
 
 test "testNormalization" {
     var v: [4]f32 = .{ 3.0, 4.0, 0.0, 0.0 };
@@ -1103,9 +1059,7 @@ test "testNormalization" {
     try testing.expect(@abs(mag - 1.0) < 0.0001);
 }
 
-// ============================================================================
 // Test: Dot Product
-// ============================================================================
 
 test "testDotProduct" {
     const a: [3]f32 = .{ 1.0, 2.0, 3.0 };
@@ -1116,9 +1070,7 @@ test "testDotProduct" {
     try testing.expect(@abs(result - 32.0) < 0.0001);
 }
 
-// ============================================================================
 // Test: Hash Computation
-// ============================================================================
 
 test "testHashDiff" {
     const content1 = "hello world";
@@ -1133,9 +1085,7 @@ test "testHashDiff" {
     try testing.expect(!std.mem.eql(u8, &hash1, &hash3));
 }
 
-// ============================================================================
 // Test: Search Results Structure
-// ============================================================================
 
 test "testSearchResultsStructure" {
     const result = SearchResult{
@@ -1153,9 +1103,7 @@ test "testSearchResultsStructure" {
     try testing.expectEqual(@as(f32, 0.95), result.score);
 }
 
-// ============================================================================
 // Test: Chunk Info Structure
-// ============================================================================
 
 test "testChunkInfoStructure" {
     const chunk = ChunkInfo{
@@ -1172,9 +1120,7 @@ test "testChunkInfoStructure" {
     try testing.expect(!chunk.oversized);
 }
 
-// ============================================================================
 // Test: File Entry Structure
-// ============================================================================
 
 test "testFileEntryStructure" {
     const entry = FileEntry{
@@ -1190,9 +1136,7 @@ test "testFileEntryStructure" {
 
 // NOTE: the former `testSearchEmptyIndex` was dropped with the flatten.
 
-// ============================================================================
 // Test: Index Manifest Structure
-// ============================================================================
 
 test "testIndexManifestStructure" {
     const manifest = IndexManifest{

@@ -1,5 +1,4 @@
-/** Static contract: ChatView swaps its main column to a full-height diff when a sidebar file is
- * clicked (center-stage design — no dialog, no overlay sidebar). */
+/** Static contract: ChatView swaps its main column to a full-height diff when a sidebar file is clicked (center-stage design — no dialog, no overlay sidebar). */
 import { describe, expect, it } from 'vitest'
 import { readChatViewSource as readChatViewBundle } from '../../../__tests__/helpers/chatViewSource'
 
@@ -37,8 +36,7 @@ describe('ChatView center-stage diff', () => {
   })
 
   it('hides messages+composer while a center stage shows (state preserved)', () => {
-    // One gate for BOTH center stages (stacked diff + code viewer) so the
-    // composer can never float over either one.
+    // One gate for BOTH center stages (stacked diff + code viewer) so the composer can never float over either one.
     expect(chatViewSrc).toMatch(/v-show="!showCenterStage"\s+ref="messagesWrapperRef"/)
     expect(chatViewSrc).toMatch(/v-if="!hideInput"\s+v-show="!showCenterStage"/)
     expect(chatViewSrc).toMatch(
@@ -47,8 +45,7 @@ describe('ChatView center-stage diff', () => {
   })
 
   it('drops stale diffs on cwd change', () => {
-    // No watcher any more: every assignment site calls `noteCwdMutation(prevCwd)`, which runs the
-    // hook only when the effective cwd really changed — the old watcher's own condition.
+    // No watcher any more: every assignment site calls `noteCwdMutation(prevCwd)`, which runs the hook only when the effective cwd really changed — the old watcher's …
     expect(chatViewSrc).toMatch(
       /if \(effectiveCwd\.value !== prevCwd\) onEffectiveCwdChanged\(effectiveCwd\.value\)/,
     )

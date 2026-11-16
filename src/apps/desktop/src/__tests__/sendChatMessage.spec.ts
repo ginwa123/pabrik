@@ -57,8 +57,7 @@ describe('sendChatMessage', () => {
   })
 })
 
-/** The attachment wire format. `image_urls` / `video_urls` ride as ONE string joined with `||` — the
- * same separator the three kanban task endpoints in this module already sent. */
+/** The attachment wire format. */
 describe('sendChatMessage — attachment wire format', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -123,9 +122,7 @@ describe('sendChatMessage — attachment wire format', () => {
       ['data:video/webm;base64,BBB'],
     )
     expect(body.image_urls).toBe(PNG_A)
-    // Order is `splitMediaUrls`'s, not this test's: the explicit `videoUrls`
-    // argument seeds the list before the inline `data:video/` entries are
-    // appended. Pre-existing, and irrelevant to the delimiter.
+    // Order is `splitMediaUrls`'s, not this test's: the explicit `videoUrls` argument seeds the list before the inline `data:video/` entries are appended.
     expect(body.video_urls).toBe('data:video/webm;base64,BBB||data:video/mp4;base64,AAA')
   })
 })

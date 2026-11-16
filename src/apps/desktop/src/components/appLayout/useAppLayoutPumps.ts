@@ -24,8 +24,7 @@ type PumpsDeps = {
   isTabsFunnelReady: () => boolean
 }
 
-/** The setup-time side of the layout: store subscription pumps, the route-change pump and the mount
- * arms — all explicit, no reactive watchers. */
+/** The setup-time side of the layout: store subscription pumps, the route-change pump and the mount arms — all explicit, no reactive watchers. */
 export function useAppLayoutPumps(deps: PumpsDeps): void {
   const {
     route,
@@ -48,8 +47,7 @@ export function useAppLayoutPumps(deps: PumpsDeps): void {
     isTabsFunnelReady,
   } = deps
 
-  // ─── Subscription pumps (replace every watcher removed above) ──────────── Two explicit
-  // mechanisms, no reactive watchers: 1.
+  // ─── Subscription pumps (replace every watcher removed above) ────────────
   let prevPumpItemId: string | null = workspacesStore.activeWorkspaceItemId
   let prevPumpPageId: string | null | undefined = workspacesStore.activeDesignPageId
   let prevPumpCwd = rightSidebarCwd.value ?? ''
@@ -58,8 +56,7 @@ export function useAppLayoutPumps(deps: PumpsDeps): void {
     const nextChatId = navigationStore.activeChatId
     if (nextChatId !== prevPumpChatId) {
       prevPumpChatId = nextChatId
-      // Chat session switched (Sidebar, ChatsList, or handleNavigate all funnel through
-      // setActiveChat).
+      // Chat session switched (Sidebar, ChatsList, or handleNavigate all funnel through setActiveChat).
       clearAllOverlays()
     }
   })
@@ -92,9 +89,7 @@ export function useAppLayoutPumps(deps: PumpsDeps): void {
   let prevRoutePath: string | null = null
   let prevRouteQuery: unknown = null
   let prevFunnelFullPath: string | null = null
-  // Router-absent unit mounts: `route` may be undefined — optional chaining
-  // keeps the pump idle instead of throwing (same guard the old watchers
-  // carried via their try/catch sources).
+  // Router-absent unit mounts: `route` may be undefined — optional chaining keeps the pump idle instead of throwing (same guard the old watchers carried via their …
   if (route) {
     prevRoutePath = route.path
     prevRouteQuery = route.query
@@ -108,8 +103,7 @@ export function useAppLayoutPumps(deps: PumpsDeps): void {
     if (path !== prevRoutePath || query !== prevRouteQuery) {
       prevRoutePath = path
       prevRouteQuery = query
-      // NOT prevFunnelFullPath: the funnel below must still see this navigation, otherwise a replace
-      // that changes the query (opening a file, a diff) never becomes a tab.
+      // NOT prevFunnelFullPath: the funnel below must still see this navigation, otherwise a replace that changes the query (opening a file, a diff) never becomes a …
       syncTaskFromItemId()
       void reconcileRoute()
     }
@@ -119,9 +113,7 @@ export function useAppLayoutPumps(deps: PumpsDeps): void {
     }
   })
 
-  // Mount arms (replace the old `{ immediate: true }` watchers): - initSseStores: no-op until the
-  // workspace id is truthy; the store pump retries on every later mutation. - restoreUrlState: covers
-  // fixtures seeded before mount; the store pump covers the async initializeFromSystemFolder path.
+  // Mount arms (replace the old `{ immediate: true }` watchers): - initSseStores: no-op until the workspace id is truthy; the store pump retries on every later …
   onMounted(() => {
     void initSseStores(activeWorkspaceId.value)
     void restoreUrlState()

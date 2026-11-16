@@ -18,29 +18,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The blank screen, on a device, against the real `NavController`.
- *
- * The failure is a property of the controller rather than of any screen, so it
- * does not need Compose to be shown: a back stack with one destination plus the
- * no-argument `popBackStack()` is the whole of it, and `NavHost` renders nothing
- * for the empty stack that call leaves behind.
- *
- * It runs without the Compose test rule on purpose — that rule needs Espresso, and
- * Espresso's input injector does not work on every API level this app supports.
- * `PabrikNavGraphBackInstrumentedTest` covers the same ground through the real
- * `NavHost` wherever that rule does run.
- */
+/** The blank screen, on a device, against the real `NavController`. */
 @RunWith(AndroidJUnit4::class)
 class NavControllerBackStackTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
-    /**
-     * `NavController` is main-thread-confined — its lifecycle entries refuse to
-     * attach anywhere else — and the instrumentation thread is not the main
-     * thread, so every controller interaction goes through the main looper.
-     */
+    /** `NavController` is main-thread-confined — its lifecycle entries refuse to attach anywhere else — and the instrumentation thread is not the main thread, so … */
     private fun onMain(block: () -> Unit) =
         InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
 
@@ -60,13 +44,7 @@ class NavControllerBackStackTest {
         }
     }
 
-    /**
-     * Leaves a leaf as the *only* destination: navigate out to it, then drop the
-     * shell underneath. Any `popUpTo(SHELL)` navigation does this, and so does
-     * `handleDeepLink` for a `pabrik://` link that arrives without
-     * `FLAG_ACTIVITY_NEW_TASK` — it navigates with `popUpTo(graph, inclusive)`, so
-     * nothing of the app's own history is guaranteed to be beneath the leaf.
-     */
+    /** Leaves a leaf as the *only* destination: navigate out to it, then drop the shell underneath. */
     private fun NavHostController.leaveOnlyTheLeaf(sessionId: String = "sess_1") {
         navigate(PabrikRoutes.chat(sessionId))
         popBackStack(PabrikRoutes.SHELL, inclusive = false)
@@ -78,8 +56,7 @@ class NavControllerBackStackTest {
 
     @Test
     fun theInclusivePopIsWhatEmptiesTheBackStack() = onMain {
-        // The defect, stated as the library's own behaviour so the fix is anchored
-        // to something checkable rather than to a rendering.
+        // The defect, stated as the library's own behaviour so the fix is anchored to something checkable rather than to a rendering.
         val controller = controller()
         controller.leaveOnlyTheLeaf()
         assertTrue(
@@ -95,10 +72,7 @@ class NavControllerBackStackTest {
                 "what NavHost renders as nothing",
             controller.currentBackStackEntry,
         )
-        // `visibleEntries` still holds the outgoing entry for the length of the exit
-        // transition, so the window keeps the screen it was leaving for a moment and
-        // then goes blank. That tail is why the failure reads as a screen that was
-        // fine a second ago rather than as a screen that never worked.
+        // `visibleEntries` still holds the outgoing entry for the length of the exit transition, so the window keeps the screen it was leaving for a moment and then goes …
     }
 
     @Test

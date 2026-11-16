@@ -1,5 +1,4 @@
-/** Snap-to-edges math for design-mode drag. Algorithm: 1. The dragged element's bbox at the
- * cursor's current position. 2. */
+/** Snap-to-edges math for design-mode drag. */
 export interface Bbox { id: string; x: number; y: number; width: number; height: number }
 export interface SnapGuide { axis: 'x' | 'y'; position: number }
 export interface SnapResult {
@@ -36,7 +35,6 @@ export function computeSnapDelta(
     otherElementEdgesY.push(e.y, e.y + e.height, e.y + e.height / 2)
   }
   // Snap-to-start targets: the original left, center, and right edges of the dragged element.
-  // Within 6px of start, the cursor gets pulled back to the original position (Figma UX).
   const snapToStartX: number[] = [
     dragged.x, dragged.x + dragged.width, dragged.x + dragged.width / 2,
   ]
@@ -52,8 +50,7 @@ export function computeSnapDelta(
   let elementSnapXFired = false
   let elementSnapYFired = false
 
-  // Stage 1: element-to-element snap (6px threshold, strict). Note the `dist > 0` guard: a snap
-  // fires only when the cursor is APPROACHING the target (distance > 0).
+  // Stage 1: element-to-element snap (6px threshold, strict).
   for (const movedEdgeX of movedEdgesX) {
     for (const t of otherElementEdgesX) {
       const dist = Math.abs(movedEdgeX - t)
@@ -77,9 +74,7 @@ export function computeSnapDelta(
     }
   }
 
-  // Stage 2: snap-to-start fallback. Only fires when no other- element snap fired on that axis. The
-  // dragged element's original edges are added as targets so a tiny drag (within 6px of start)
-  // pulls the cursor back to the original position.
+  // Stage 2: snap-to-start fallback.
   if (!elementSnapXFired) {
     for (const movedEdgeX of movedEdgesX) {
       for (const t of snapToStartX) {
@@ -108,9 +103,7 @@ export function computeSnapDelta(
   const finalDx = rawDx + (bestSnapX?.correction ?? 0)
   const finalDy = rawDy + (bestSnapY?.correction ?? 0)
   const guides: SnapGuide[] = []
-  // Emit guides for element-edge alignment snaps. Skip the
-  // snap-to-start case — snapping back to the original position is
-  // silent (no alignment line, just the cursor returning).
+  // Emit guides for element-edge alignment snaps.
   if (bestSnapX && !bestSnapX.isStart) {
     guides.push({ axis: 'x', position: bestSnapX.position })
   }

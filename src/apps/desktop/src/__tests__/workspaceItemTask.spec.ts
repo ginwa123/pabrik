@@ -8,9 +8,7 @@ import WorkspaceItemTaskRow from '../components/workspace/WorkspaceItemTaskRow.v
 import type { WorkerActivity } from '../components/WorkerElapsedChip.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// Stub vue-router — WorkspaceItemTaskRow reads useRoute() via useCurrentMainView() to drive its
-// active state. We mock useRoute to return a per-test controlled query so the row's active styling
-// can be exercised against any URL.
+// Stub vue-router — WorkspaceItemTaskRow reads useRoute() via useCurrentMainView() to drive its active state.
 const { useRouteMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
     query: {} as Record<string, string>,
@@ -76,12 +74,10 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   it('renders the task name and a bullet by default (no spinner, no active styling)', async () => {
     const { wrapper } = mountTask()
     expect(wrapper.text()).toContain('Alpha task')
-    // The circle spinner was removed — the time pill is the only activity
-    // marker. Idle rows render neither.
+    // The circle spinner was removed — the time pill is the only activity marker.
     expect(wrapper.findAll('[data-testid="task-spinner"]')).toHaveLength(0)
     expect(wrapper.find('[data-testid="task-elapsed-chip"]').exists()).toBe(false)
-    // Lock in the row-variant contract (post-2026-07-02 split): the Row component always carries
-    // data-task-row and never data-task-card.
+    // Lock in the row-variant contract (post-2026-07-02 split): the Row component always carries data-task-row and never data-task-card.
     expect(wrapper.find('[data-task-row]').exists()).toBe(true)
     expect(wrapper.find('[data-task-card]').exists()).toBe(false)
     // Bullet is a span.w-1.h-1.rounded-full — at least one exists.
@@ -94,9 +90,7 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     // The circle spinner was removed — the time pill is the only marker.
     expect(wrapper.findAll('[data-testid="task-spinner"]')).toHaveLength(0)
     expect(wrapper.find('[data-testid="task-elapsed-chip"]').exists()).toBe(true)
-    // Bullet must NOT render while the worker runs (single visual marker per row). The bullet
-    // selector is w-1.5.h-1.5; the slider track sits below the row, so the w-1.5 selector catches
-    // only the bullet.
+    // Bullet must NOT render while the worker runs (single visual marker per row).
     expect(wrapper.findAll('span.w-1.h-1.rounded-full')).toHaveLength(0)
   })
 
@@ -116,15 +110,12 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     const { wrapper } = mountTask()
     const bullet = wrapper.find('span.w-1.h-1.rounded-full')
     expect(bullet.exists()).toBe(true)
-    // activeTaskId is null in a fresh Pinia → bullet gets the dim
-    // (semantic-text-dim) background.
+    // activeTaskId is null in a fresh Pinia → bullet gets the dim (semantic-text-dim) background.
     expect(bullet.attributes('style')).toContain('--semantic-text-dim')
   })
 
   it('applies active styling (aqua bullet + active background) when URL is ?view=workspace&itemId=Y/chat/task_X', async () => {
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now ?view=workspace&itemId=Y/chat/task_X.
-    // useCurrentMainView parses the /chat/ suffix and exposes chatTaskId on the workspace view
-    // variant. The task row's active highlight reads kind='workspace' + chatTaskId.
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now ?view=workspace&itemId=Y/chat/task_X. useCurrentMainView parses the /chat/ suffix and exposes chatTaskId on …
     const ITEM_ID = 'item_test'
     useRouteMock.mockReturnValue({
       query: {
@@ -177,9 +168,7 @@ describe('WorkspaceItemTaskRow per-task row', () => {
     expect(wrapper.emitted('selectTask')).toBeUndefined()
   })
 
-  // ─── Right-click action menu ──────────────────────────────────────────── The row's three hover
-  // buttons (pin / rename / delete) were migrated into <OpenInNewTabMenu>. Every action must still
-  // fire with the SAME emitted payload, or the change silently removed functionality.
+  // ─── Right-click action menu ────────────────────────────────────────────
   const openRowMenu = async (wrapper: ReturnType<typeof mountTask>['wrapper']) => {
     await wrapper.find('[data-task-row]').trigger('contextmenu', { clientX: 40, clientY: 80 })
     await nextTick()
@@ -238,9 +227,7 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('does NOT emit selectTask when a menu row is picked', async () => {
-    // The old inline buttons needed event.stopPropagation so the click did not bubble to the row's
-    // @click. The teleported menu never traverses the row, so this asserts the outcome survived
-    // rather than relying on a guard that no longer has anything to guard.
+    // The old inline buttons needed event.stopPropagation so the click did not bubble to the row's @click.
     const { wrapper } = mountTask()
     // Each pick closes the menu, so reopen between the two.
     await openRowMenu(wrapper)
@@ -254,13 +241,11 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('renders NO hover action buttons in the row', async () => {
-    // The buttons ate ~72px of a ~200px panel and truncated the task
-    // name. A regression that re-adds one costs that width back.
+    // The buttons ate ~72px of a ~200px panel and truncated the task name.
     const { wrapper } = mountTask()
     expect(wrapper.find('[data-testid="task-pin-toggle"]').exists()).toBe(false)
     expect(wrapper.find('button[title="Rename Task"]').exists()).toBe(false)
-    // The row root is a <div role="button">, so any <button> left in the
-    // row would be a re-added action.
+    // The row root is a <div role="button">, so any <button> left in the row would be a re-added action.
     expect(wrapper.findAll('button')).toHaveLength(0)
 
     wrapper.unmount()
@@ -277,8 +262,7 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('emits the four renameTask args in the documented order', async () => {
-    // Belt-and-braces check for the event payload shape, in case a future refactor re-orders the
-    // arguments.
+    // Belt-and-braces check for the event payload shape, in case a future refactor re-orders the arguments.
     const { wrapper } = mountTask({
       workspaceId: 'ws_order',
       itemId: 'item_order',
@@ -295,9 +279,7 @@ describe('WorkspaceItemTaskRow per-task row', () => {
   })
 
   it('opens the action menu from the ContextMenu key, anchored at the row', async () => {
-    // Removing the hover buttons removed the only discoverable route to
-    // rename / delete, so the keyboard path is a hard requirement —
-    // without it the change is an accessibility regression.
+    // Removing the hover buttons removed the only discoverable route to rename / delete, so the keyboard path is a hard requirement — without it the change is an …
     const { wrapper } = mountTask()
     await wrapper.find('[data-task-row]').trigger('keydown', { key: 'ContextMenu' })
     await nextTick()

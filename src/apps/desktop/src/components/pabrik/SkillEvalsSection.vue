@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** SkillEvalsSection — the `skill_evals.enabled` toggle in Pabrik settings. This switch is the ONLY
- * control for the `run_skill_eval` tool. */
+/** SkillEvalsSection — the `skill_evals.enabled` toggle in Pabrik settings. */
 import { computed } from 'vue'
 
 export interface SkillEvalsSettings {
@@ -10,15 +9,11 @@ export interface SkillEvalsSettings {
 
 const model = defineModel<SkillEvalsSettings>({ required: true })
 
-/**  * Whether the backend reported the block at all. A config with no `skill_evals` key still comes
- * back with the object (defaults), so this is only false if the GET failed entirely — worth
- * surfacing, because it means the value on screen is a guess rather than the server's state. */
+/** Whether the backend reported the block at all. */
 const props = defineProps<{ loaded?: boolean }>()
 const isLoaded = computed(() => props.loaded !== false)
 
-/** Assign a FRESH object rather than mutating `model.enabled` in place — `defineModel` only emits
- * `update:modelValue` on reassignment, so an in-place write would leave the orchestrator's watcher
- * (and therefore the dirty pill) unaware that anything changed. */
+/** Assign a FRESH object rather than mutating `model.enabled` in place — `defineModel` only emits `update:modelValue` on reassignment, so an in-place write would … */
 function onToggle(event: Event) {
   model.value = { ...model.value, enabled: (event.target as HTMLInputElement).checked }
 }

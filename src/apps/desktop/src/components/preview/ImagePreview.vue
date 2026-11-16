@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 
-/** Full-screen image preview overlay. Renders nothing when `src` is an empty string; otherwise
- * teleports a dimmed backdrop + image + close button to <body>. Clicking the backdrop or pressing
- * Escape emits `close`. */
+/** Full-screen image preview overlay. */
 const props = defineProps<{
   src: string
 }>()

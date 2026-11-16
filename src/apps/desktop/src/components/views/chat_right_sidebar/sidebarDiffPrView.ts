@@ -6,9 +6,7 @@ export const prHasConflict = (mergeable: string, mergeState: string): boolean =>
   // GitHub says CONFLICTING / DIRTY.
   if (m === 'CONFLICTING') return true
   if (s === 'DIRTY') return true
-  // GitLab's `detailed_merge_status` has its own vocabulary. Without these rows a conflicted MR
-  // renders as mergeable, which is the worst direction to be wrong in — the user is told to merge
-  // something that cannot merge.
+  // GitLab's `detailed_merge_status` has its own vocabulary.
   if (m === 'CONFLICTED') return true
   if (m === 'NOT_MERGEABLE') return true
   return false
@@ -29,8 +27,7 @@ export const prStatusStyleOf = (status: string): { backgroundColor: string; colo
   return { backgroundColor: 'var(--color-green)', color: 'var(--color-bg)' }
 }
 
-// The request's own words. The number is a lookup key; the title is what
-// a reviewer reads first, and it was nowhere on the screen.
+// The request's own words.
 export const prTitleOf = (data: GitPrStatus | null, title: string): string =>
   data?.title ?? title ?? ''
 

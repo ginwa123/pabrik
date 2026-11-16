@@ -23,16 +23,12 @@ export function useChatViewSession({ chatId, sessionId }: ChatViewSessionDeps) {
   const messageCursor = ref<string | null>(null)
   const PAGE_SIZE = 1000
 
-  // ── Sub-agent peek ──────────────────────────────────────────────── Owns the slide-over panel for
-  // watching a single sub-agent's progress. The composable is only mounted when `peekPanel` is
-  // non-null (lazy) so we don't open SSE channels speculatively.
+  // ── Sub-agent peek ────────────────────────────────────────────────
   const nav = useNavigationStore()
   const router = useRouter()
   const route = useRoute()
 
-  // Attached PR URL for the sidebar's PR-changes mode (set_pull_request
-  // tool). Empty = worktree-changes mode. Re-synced with the worktree
-  // binding so a mid-chat attach/clear flips the panel without reload.
+  // Attached PR URL for the sidebar's PR-changes mode (set_pull_request tool).
   const chatPrUrl = ref('')
   const chatPrProvider = ref('')
 
@@ -41,9 +37,7 @@ export function useChatViewSession({ chatId, sessionId }: ChatViewSessionDeps) {
     router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
   }
 
-  /**  * A `read_workspace_session` search hit pointed at a different conversation. The card is
-   * presentation-only, so the navigation decision lives here. Mirrors `ChatsList.setActive`:
-   * canonical path URL when a workspace is in scope, legacy query form only as a fallback. */
+  /** A `read_workspace_session` search hit pointed at a different conversation. */
   const workspacesStore = useWorkspacesStore()
 
   function onOpenWorkspaceSession(sessionId: string): void {
@@ -56,9 +50,7 @@ export function useChatViewSession({ chatId, sessionId }: ChatViewSessionDeps) {
     router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
   }
 
-  // SSE connection. Both the `llm` and `queue` channels now flow through the global `sseBus` (opened
-  // once by App.vue). The bus's single global SseClient carries ALL 5 channels (including bare 'llm'
-  // and bare 'queue').
+  // SSE connection.
   const isStreaming = ref(false)
   const streamingContent = ref('')
   let streamContentVersion = 0
@@ -71,9 +63,7 @@ export function useChatViewSession({ chatId, sessionId }: ChatViewSessionDeps) {
   // Queue state
   const queuedMessages = ref<api.QueuedMessage[]>([])
 
-  // ─── Scroll logger ──────────────────────────────────────────────────────────── A dedicated logger
-  // for the scroll subsystem. Bound to the active chat so every line is tagged with chatId. See
-  // helpers/scrollLogger.ts for what fields every line carries and why.
+  // ─── Scroll logger ────────────────────────────────────────────────────────────
   let scrollLogger: ScrollLogger = createScrollLogger(chatId)
   const refreshScrollLogger = () => {
     scrollLogger = createScrollLogger(sessionId.value || chatId)

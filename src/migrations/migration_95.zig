@@ -14,9 +14,7 @@ pub const Migration095AddWorkspaceIdToAgentMemories = struct {
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         try addColumnIfMissing(.{ .db = db }, allocator, "agent_memories", "workspace_id", "workspace_id TEXT NOT NULL DEFAULT ''");
 
-        // Every read path filters `workspace_id = ?` and the FTS path orders
-        // by the join's own rank, so a leading `workspace_id` column lets
-        // SQLite seek straight to the calling workspace's rows instead of
+        // Every read path filters `workspace_id = ?` and the FTS path orders by the join's own rank, so a leading `workspace_id` column lets SQLite seek straight to the …
         try db.exec(allocator,
             \\CREATE INDEX IF NOT EXISTS idx_agent_memories_workspace
             \\ON agent_memories(workspace_id, updated_at DESC)

@@ -1,6 +1,4 @@
-/** SkillInvocationCard renders the `<slash_skills>` envelope the server appends
- * to a `/skill-` message: the human's words stay primary, the bodies collapse
- * behind one header. Purely presentational, so only the clipboard is stubbed. */
+/** SkillInvocationCard renders the `<slash_skills>` envelope the server appends to a `/skill-` message: the human's words stay primary, the bodies collapse behind … */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

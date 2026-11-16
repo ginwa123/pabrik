@@ -1,6 +1,4 @@
-//! Builds the `## Routine System Prompt` system-prompt section for sessions
-//! bound to a routine workspace-item WITH an `agent_routines` row (Migration
-//! 081).
+//! Builds the `## Routine System Prompt` system-prompt section for sessions bound to a routine workspace-item WITH an `agent_routines` row (Migration 081).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -35,7 +33,6 @@ fn resolveWorkspaceItemId(
 }
 
 /// Resolve `workspace_item_id` → is-it-a-configured-routine check.
-/// True only when item_type == 'routine' AND an agent_routines row exists.
 fn isConfiguredRoutineItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -54,8 +51,7 @@ fn isConfiguredRoutineItem(
     return false;
 }
 
-/// Build the `## Routine System Prompt` system-prompt section. Returns an
-/// owned slice (empty for non-configured-routine sessions). Caller frees.
+/// Build the `## Routine System Prompt` system-prompt section.
 pub fn makeAgentRoutineSystemPrompt(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -72,8 +68,7 @@ pub fn makeAgentRoutineSystemPrompt(
         return try allocator.dupe(u8, "");
     }
 
-    // Fetch the prompt rows (position DESC — same ordering convention as
-    // agent_routine_knowledges).
+    // Fetch the prompt rows (position DESC — same ordering convention as agent_routine_knowledges).
     const prompts = agent_routine_db.listSystemPrompts(allocator, .{ .db = db }, workspace_item_id) catch
         return try allocator.dupe(u8, "");
     defer {
@@ -126,8 +121,7 @@ pub fn makeAgentRoutineSystemPrompt(
         try out.appendSlice(allocator, "\n");
     }
 
-    // Every row was whitespace-only → emit nothing (matches the
-    // "no rows" contract instead of a bare header).
+    // Every row was whitespace-only → emit nothing (matches the "no rows" contract instead of a bare header).
     if (std.mem.indexOf(u8, out.items, "### ") == null) {
         out.deinit(allocator);
         return try allocator.dupe(u8, "");
@@ -138,8 +132,7 @@ pub fn makeAgentRoutineSystemPrompt(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;
@@ -361,8 +354,7 @@ test "makeAgentRoutineSystemPrompt: resolves routine-fire sessions via workspace
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Fire path: session id IS the routine id (fire.zig sid = routine.id),
-    // with NO workspace_item_tasks row.
+    // Fire path: session id IS the routine id (fire.zig sid = routine.id), with NO workspace_item_tasks row.
     try insertWorkspaceItem(&ctx, "ws_item_1", "routine");
     try insertRoutine(&ctx, "ws_item_1", "ws_item_1");
     try insertConfig(&ctx, "ws_item_1", "ws_item_1");

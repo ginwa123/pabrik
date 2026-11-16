@@ -40,8 +40,6 @@ onMounted(async () => {
     return
   }
 
-  // The failure is rendered from `failure`, so it reaches the user; there is no
-  // Effect seam here because the SDK is a plain promise.
   /* eslint-disable local/no-try-catch -- the reason is rendered, not swallowed */
   try {
     const mounted = await mountOfficeEditor(target, parsed.kind, parsed.snapshot)

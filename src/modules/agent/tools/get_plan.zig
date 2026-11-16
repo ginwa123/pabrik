@@ -1,5 +1,4 @@
-//! Agent-callable tool: `get_plan` — fetch the agent's current task plan for
-//! the current session as markdown.
+//! Agent-callable tool: `get_plan` — fetch the agent's current task plan for the current session as markdown.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -8,9 +7,7 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 
-// Import the storage layer directly (the `pabrikcore.session_plan`
-// alias is wired up in src/root.zig by Task 4; for the pure-fn layer
-// we just need the module itself). Same pattern as update_plan.zig.
+// Import the storage layer directly (the `pabrikcore.session_plan` alias is wired up in src/root.zig by Task 4; for the pure-fn layer we just need the module …
 const session_plan = @import("../loop/session_plan.zig");
 
 /// Input for `get_plan`. Empty struct — no params, session_id is implicit.
@@ -47,8 +44,7 @@ pub const get_plan_tool = AgentTool{
     },
 };
 
-/// Execute get_plan. Returns a JSON string for the LLM. Caller owns the
-/// returned slice and must free it with `allocator.free()`.
+/// Execute get_plan.
 pub fn executeGetPlan(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -57,8 +53,7 @@ pub fn executeGetPlan(
     const helpers = @import("helpers");
     const sanitize = helpers.sanitize_control_chars;
 
-    // session_plan.getPlan returns an allocated copy of the markdown body,
-    // or an allocated "" when absent (canonical "no plan" sentinel).
+    // session_plan.getPlan returns an allocated copy of the markdown body, or an allocated "" when absent (canonical "no plan" sentinel).
     const plan = try session_plan.getPlan(allocator, db, session_id);
     defer allocator.free(plan);
 
@@ -101,8 +96,7 @@ fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std
     return std.json.parseFromSlice(std.json.Value, alloc, out, .{});
 }
 
-/// `update_plan` writes the plan onto the session row, so a test that expects a
-/// plan to land needs the session it lands on.
+/// `update_plan` writes the plan onto the session row, so a test that expects a plan to land needs the session it lands on.
 fn seedSession(db: *database.Db, session_id: []const u8) !void {
     try db.exec(
         testing.allocator,
@@ -155,8 +149,7 @@ test "executeGetPlan: returns empty:true when no plan exists (D6)" {
     const result = try executeGetPlan(alloc, &ctx.db, "nonexistent");
     defer alloc.free(result);
 
-    // Payload shape: {"empty":true} — the agent uses the absence
-    // signal as a "use update_plan to lay out a plan" cue.
+    // Payload shape: {"empty":true} — the agent uses the absence signal as a "use update_plan to lay out a plan" cue.
     const parsed = try parseTestJson(alloc, result);
     defer parsed.deinit();
     try testing.expect(parsed.value.object.get("empty").?.bool);
@@ -173,8 +166,7 @@ test "executeGetPlan: JSON preserves raw special chars verbatim (no XML escape)"
     defer ctx.db.deinit();
     try seedSession(&ctx.db, "test_session_escape");
 
-    // Write a plan containing `<hello>` and `&` — these MUST survive
-    // verbatim in the JSON string (no &lt; / &amp; substitution).
+    // Write a plan containing `<hello>` and `&` — these MUST survive verbatim in the JSON string (no &lt; / &amp; substitution).
     const session_id = "test_session_escape";
     const seed_result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, session_id, .{
         .content = "Note: <hello> & 'world'",
@@ -184,8 +176,7 @@ test "executeGetPlan: JSON preserves raw special chars verbatim (no XML escape)"
     const result = try executeGetPlan(alloc, &ctx.db, session_id);
     defer alloc.free(result);
 
-    // Raw `<hello>` and `&` MUST appear in the payload verbatim —
-    // that's the point of plain JSON strings for free-form content.
+    // Raw `<hello>` and `&` MUST appear in the payload verbatim — that's the point of plain JSON strings for free-form content.
     try testing.expect(std.mem.indexOf(u8, result, "<hello>") != null);
     try testing.expect(std.mem.indexOf(u8, result, " & ") != null);
     // The XML-escaped forms MUST NOT appear.
@@ -197,9 +188,7 @@ test "executeGetPlan: JSON preserves raw special chars verbatim (no XML escape)"
     try testing.expectEqualStrings("Note: <hello> & 'world'", parsed.value.object.get("plan").?.string);
 }
 
-// ─── Test 4: `]]>` inside the body round-trips through JSON
-// ───────────────── The literal `]]>` sequence needed CDATA splitting under
-// the old XML envelope.
+// ─── Test 4: `]]>` inside the body round-trips through JSON ───────────────── The literal `]]>` sequence needed CDATA splitting under the old XML envelope.
 
 test "executeGetPlan: ]]> inside plan body round-trips verbatim" {
     const alloc = testing.allocator;
@@ -233,15 +222,12 @@ test "get_plan_tool JSON schema: name='get_plan', no required params, no propert
     // Function name.
     try testing.expectEqualStrings("get_plan", tool.function.name);
 
-    // Description must mention the tool name AND the <empty/> absent
-    // signal — the description is the agent's primary "when to call
-    // this" signal.
+    // Description must mention the tool name AND the <empty/> absent signal — the description is the agent's primary "when to call this" signal.
     const description = tool.function.description;
     try testing.expect(std.mem.indexOf(u8, description, "get_plan") != null);
     try testing.expect(std.mem.indexOf(u8, description, "empty") != null);
 
-    // Required: empty slice — get_plan needs no input (D3 — session_id
-    // is implicit).
+    // Required: empty slice — get_plan needs no input (D3 — session_id is implicit).
     try testing.expectEqual(@as(usize, 0), tool.function.parameters.required.len);
 
     // Properties: empty slice — no input parameters at all.
@@ -249,7 +235,6 @@ test "get_plan_tool JSON schema: name='get_plan', no required params, no propert
 }
 
 // Exec adapter — merged from `get_plan.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
@@ -265,8 +250,6 @@ const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 pub fn execGetPlan(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // No input to parse — the schema declares zero required params.
-    // Use `tc.function.arguments` for the envelope's `<parameters>`
-    // block verbatim (the LLM is expected to send `{}`).
     const inner = executeGetPlan(ctx.allocator, ctx.db, ctx.session_id) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -367,8 +350,7 @@ test "execGetPlan: present plan returns wrapped envelope with plan field" {
     defer ctx.db.deinit();
     try seedSession(&ctx.db, "sess_with_plan");
 
-    // Seed the plan via the pure-fn layer (mirrors production wiring: an
-    // earlier update_plan call already populated the row).
+    // Seed the plan via the pure-fn layer (mirrors production wiring: an earlier update_plan call already populated the row).
     {
         const seed_envelope = try exec_update_plan_mod.executeUpdatePlan(alloc, &ctx.db, "sess_with_plan", .{
             .content = "# Goal\n\n- [x] done\n- [ ] pending\n",

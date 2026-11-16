@@ -1,5 +1,4 @@
-//! `POST /api/agents/:agent_id/tools`. Enables a tool for an agent. Body:
-//! `{tool_name}`.
+//! `POST /api/agents/:agent_id/tools`. Enables a tool for an agent. Body
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -10,9 +9,7 @@ const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const helpers = @import("helpers");
 const agent_db = @import("../models/agent.db.zig");
 
-/// HTTP request body for tool-create. Decoupled from the `ToolCreateInput`
-/// domain struct so the wire format can evolve independently (e.g. adding `?`
-/// optional fields) without touching the use-case.
+/// HTTP request body for tool-create.
 const CreateToolBody = struct {
     tool_name: []const u8,
 };
@@ -30,16 +27,13 @@ pub const ToolCreateError = error{
     UnknownTool,
     /// The agent already has this tool enabled (UNIQUE violation).
     DuplicateTool,
-    /// `db.exec` failed on the INSERT (for a reason other than
-    /// UNIQUE — surfaced as 500 to differentiate from `DuplicateTool`).
+    /// `db.exec` failed on the INSERT (for a reason other than UNIQUE — surfaced as 500 to differentiate from `DuplicateTool`).
     InsertFailed,
     /// Re-fetching the row after INSERT failed.
     RefetchFailed,
     /// Refetched row vanished (should be impossible — surfaces as 500).
     RowVanished,
-    /// `std.fmt.allocPrint` failed on id generation. Unreachable
-    /// under arena allocator but the type system requires the
-    /// variant so `try` propagates a typed error.
+    /// `std.fmt.allocPrint` failed on id generation.
     OutOfMemory,
 };
 
@@ -54,9 +48,7 @@ pub const ToolCreateOutput = struct {
     tool: ToolRow,
 };
 
-/// Validate tool_name exists in UNIFIED_TOOL_REGISTRY. Testable in
-/// isolation (no DB needed) — pulled out as a helper so the use-case
-/// stays focused on DB work.
+/// Validate tool_name exists in UNIFIED_TOOL_REGISTRY.
 fn isKnownTool(tool_name: []const u8) bool {
     const registry = tools_equipped.UNIFIED_TOOL_REGISTRY();
     for (registry) |entry| {
@@ -65,12 +57,9 @@ fn isKnownTool(tool_name: []const u8) bool {
     return false;
 }
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Enable a tool for the given agent. Validates the tool_name is in the
-/// canonical registry, then INSERTs with `enabled = 1`.
+/// Enable a tool for the given agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -82,22 +71,16 @@ fn useCase(
 
     const handle: agent_db.DbOrTx = .{ .db = db };
 
-    // INSERT. A null return means the UNIQUE(agent_id, tool_name)
-    // constraint fired — the agent already has this tool, so the
-    // caller answers 409 rather than 500.
+    // INSERT.
     const tool = (agent_db.insertTool(allocator, handle, input.agent_id, input.tool_name) catch
         return error.InsertFailed) orelse return error.DuplicateTool;
 
     return .{ .tool = tool };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Validates the HTTP request,
-/// resolves the singleton DB handle, delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentToolsCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -152,8 +135,6 @@ pub fn agentToolsCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -173,9 +154,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},

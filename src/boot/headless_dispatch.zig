@@ -1,6 +1,4 @@
-//! `pabrik headless ...` subcommand dispatch. Peeks at argv[1] and returns
-//! false when it does not match, so `main` falls through to the regular
-//! server boot.
+//! `pabrik headless ...` subcommand dispatch.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,9 +25,7 @@ pub fn dispatchHeadless(
     defer rest.deinit(allocator);
     while (it.next()) |a| try rest.append(allocator, a);
 
-    // `--log-file` and the `--database*` family are stripped before the verb
-    // parser sees the argv: no verb parser owns either, and the same
-    // strip-globals-first shape `pabrikcli`'s main.zig uses.
+    // `--log-file` and the `--database*` family are stripped before the verb parser sees the argv: no verb parser owns either, and the same strip-globals-first shape …
     var db_request: db_target.Request = .{};
     var without_db: std.ArrayList([]const u8) = .empty;
     defer without_db.deinit(allocator);
@@ -87,9 +83,7 @@ pub fn dispatchHeadless(
     return true;
 }
 
-/// Boot the backend, run one turn, print the result, tear down. The teardown
-/// is a `defer` rather than an inline sequence so an error return from any
-/// phase still releases the DB handle and the scheduler.
+/// Boot the backend, run one turn, print the result, tear down.
 fn runTurn(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -98,9 +92,7 @@ fn runTurn(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the
-    // caller's frame. See the `boot.zig` module header.
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -140,8 +132,7 @@ fn runTurn(
 
     try writeStdout(io, out.written());
 
-    // A turn that produced nothing is a failure the caller needs to hear
-    // about, so the exit code says so even though the JSON printed fine.
+    // A turn that produced nothing is a failure the caller needs to hear about, so the exit code says so even though the JSON printed fine.
     if (result.timed_out or result.error_name != null or result.assistant_text.len == 0) {
         backend.finish(1);
     }
@@ -156,9 +147,7 @@ fn listSessions(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the
-    // caller's frame. See the `boot.zig` module header.
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -199,9 +188,7 @@ fn listMessages(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the
-    // caller's frame. See the `boot.zig` module header.
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -253,8 +240,7 @@ fn runDocuments(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the caller's frame.
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -277,9 +263,7 @@ fn runDocuments(
     backend.finish(0);
 }
 
-/// Run one object-store op and print its JSON. Deliberately does NOT boot the
-/// backend: the storage layer must work with no database, so a broken
-/// `agent.db` cannot stop an operator from inspecting the store.
+/// Run one object-store op and print its JSON.
 fn runStorage(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -342,8 +326,7 @@ fn runMessage(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the caller's frame.
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -375,8 +358,7 @@ fn runGroup(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the caller's frame.
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -520,9 +502,7 @@ fn runMcpAdd(
     backend.finish(if (ok) 0 else 1);
 }
 
-/// Boot the backend, run one compaction, print its JSON, tear down. The exit
-/// code is 1 when the workspace setting refused the run, so a shell can branch
-/// without parsing the object.
+/// Boot the backend, run one compaction, print its JSON, tear down.
 fn runCompaction(
     allocator: std.mem.Allocator,
     io: std.Io,

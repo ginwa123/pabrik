@@ -10,18 +10,14 @@ const props = defineProps<{
   content: unknown
   expanded?: boolean
   subAgentArgs?: SubAgentArgs[] | null
-  /** 2026-08-23 spawn-subagent-live-progress: live per-sub-agent progress fed from ChatView's
-   * per-tool_call_id map. When set AND `content` has no parsed <results> envelope, the component
-   * renders these rows directly (auto-expanded — no toggle needed). */
+  /** 2026-08-23 spawn-subagent-live-progress: live per-sub-agent progress fed from ChatView's per-tool_call_id map. */
   progress?: SubAgentProgress[] | null
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Rendered via the
-   *  shared ToolParameters block after the agent rows. */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
 const emit = defineEmits<{
-  /** Fired when the user clicks the peek button on a sub-agent row. The parent
-   * (ChatView) opens <SubAgentPeekPanel> with this payload. */
+  /** Fired when the user clicks the peek button on a sub-agent row. */
   peek: [payload: { sessionId: string; agentName: string; instruction: string }]
 }>()
 
@@ -34,8 +30,7 @@ interface AgentResult {
   response: string | null
   error: string | null
   sessionId: string | null
-  /** True when the requested agent_name was not found in
-   * LlmConfig.sub_agents and a random name was used as a fallback. */
+  /** True when the requested agent_name was not found in LlmConfig.sub_agents and a random name was used as a fallback. */
   randomFallback: boolean
 }
 
@@ -108,7 +103,6 @@ const summary = computed(() => {
   return null
 })
 
-// Success count
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const successCount = computed(() => {
   return agents.value.filter(a => a.success).length
@@ -133,8 +127,7 @@ const toggleAgent = (idx: number) => {
 }
 
 const toggle = () => {
-  // In live-progress, starting-placeholder, or pre-thread-failure
-  // mode the body is already shown — toggle is a no-op.
+  // In live-progress, starting-placeholder, or pre-thread-failure mode the body is already shown — toggle is a no-op.
   if (inLiveMode.value || isStarting.value || hasFailed.value) return
   if (agents.value.length > 0) {
     isExpanded.value = !isExpanded.value
@@ -147,8 +140,7 @@ const copyResponse = async (e: Event, response: string) => {
   await navigator.clipboard.writeText(response)
 }
 
-// ─── Live-progress rendering (2026-08-23) ────────────────────────────── Source-of-truth
-// precedence: parsed envelope (from content) > live progress (from props).
+// ─── Live-progress rendering (2026-08-23) ──────────────────────────────
 const liveProgress = computed(() => props.progress ?? [])
 
 const inLiveMode = computed(
@@ -164,9 +156,7 @@ const liveSummary = computed(() => {
   }
 })
 
-// ─── Placeholder-starting fallback (2026-09-04 refresh fix, Task 0) ─── When the backend has
-// written the Phase 1 placeholder envelope (`handle_tool.zig` empty `<data></data>`, no `<results>`
-// yet) and no live `role="subagent_progress"` events have arrived yet.
+// ─── Placeholder-starting fallback (2026-09-04 refresh fix, Task 0) ───
 const hasFailed = computed(() => normalized.value.success === false || normalized.value.error !== null)
 
 const startError = computed(() => {
@@ -178,14 +168,10 @@ const isStarting = computed(
   () => agents.value.length === 0 && summary.value === null && liveProgress.value.length === 0 && !hasFailed.value,
 )
 
-// Expected count from the assistant's `tool_calls_json` args (parsed by
-// ChatView via `parseSpawnSubAgentArgs`). Used only for the starting
-// header copy ("3 sub-agents starting…" vs bare "starting…").
+// Expected count from the assistant's `tool_calls_json` args (parsed by ChatView via `parseSpawnSubAgentArgs`).
 const expectedCount = computed(() => props.subAgentArgs?.length ?? 0)
 
-/**  * Emit a peek event for one sub-agent row. In live-progress mode, rows carry `sessionId` (set by
- * `applyProgressEvent` once the `launched` event arrives with `subagent_session_id`). Same payload
- * shape as the parsed-envelope peek so ChatView's <SubAgentPeekPanel> doesn't need to branch. */
+/** Emit a peek event for one sub-agent row. */
 function peekLiveAgent(idx: number, row: SubAgentProgress) {
   if (!row.sessionId) return
   const instruction = props.subAgentArgs?.[idx]?.instruction ?? ''
@@ -226,9 +212,7 @@ function describeInheritedContext(mode: string): string {
   return mode
 }
 
-// Format elapsed_ms as a short chip (e.g. "12s", "1m 03s"). Defensive
-// against negative / NaN values from clock skew between thread entry
-// and the backend emit.
+// Format elapsed_ms as a short chip (e.g.
 function formatElapsed(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return ''
   const totalSec = Math.floor(ms / 1000)

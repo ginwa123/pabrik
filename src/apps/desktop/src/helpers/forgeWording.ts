@@ -1,13 +1,10 @@
-/** Provider-aware wording for the PR/MR surface. The backend stores a provider per attached change
- * request (`sessions.pr_provider`) and now answers `GET /api/git/pr/status` for GitLab as well as
- * GitHub. */
+/** Provider-aware wording for the PR/MR surface. */
 export interface ForgeWording {
   noun: string
   short: string
   label: string
   forge: string
-  /**    * The CLI the backend spawns for this forge (`gh` / `glab`). Needed for error text: naming `gh`
-   * in a failure a GitLab user triggered is the same class of bug as telling them to install gh. */
+  /** The CLI the backend spawns for this forge (`gh` / `glab`). */
   program: string
   /** True when the forge has no `<url>/conflicts` page to link to. */
   hasConflictPage: boolean
@@ -43,9 +40,7 @@ export function forgeFromPrUrl(prUrl?: string | null): ForgeWording {
   return GITHUB
 }
 
-/**  * The URL that shows this change request's conflicts, or `''` when the forge has no such page.
- * Returning `''` makes the caller render plain text instead of a link that 404s — an honest dead
- * end beats a broken link that looks live. */
+/** The URL that shows this change request's conflicts, or `''` when the forge has no such page. */
 export function conflictsUrl(provider: string | undefined, prUrl: string): string {
   const wording = forgeWording(provider)
   if (!wording.hasConflictPage || !prUrl) return ''

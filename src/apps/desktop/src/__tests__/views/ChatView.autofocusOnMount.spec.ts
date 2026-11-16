@@ -1,6 +1,4 @@
-/** ChatView autofocus on mount — clicking a sidebar session remounts ChatView (`AppLayout
- * :key="activeChatId"`) and the message box should hold focus once history has loaded, so the user
- * types immediately. */
+/** ChatView autofocus on mount — clicking a sidebar session remounts ChatView (`AppLayout :key="activeChatId"`) and the message box should hold focus once history … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -40,8 +38,7 @@ function installApiMocks(): void {
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the mount stalled on the 404 the global fetch stub answers with.
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the mount stalled on the 404 the global fetch stub answers …
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
@@ -121,8 +118,7 @@ describe('ChatView — autofocus input on mount', () => {
       props: { chatId: 'chat-sess_autofocus', chatName: 'Autofocus Chat' },
       attachTo: document.body,
     })
-    // Flush the async onMounted chain: loadChatHistory → snapshot →
-    // connectSse → getQueuedMessages, plus FileInput's nextTick focus.
+    // Flush the async onMounted chain: loadChatHistory → snapshot → connectSse → getQueuedMessages, plus FileInput's nextTick focus.
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 25))
       await nextTick()

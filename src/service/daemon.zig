@@ -1,6 +1,4 @@
 // src/service/daemon.zig Cross-platform daemonization for the pabrik service.
-// ## POSIX (Linux/macOS) Uses the classic double-fork + setsid pattern (per
-// Linux daemon(7)).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,18 +9,13 @@ pub const DaemonError = error{
     OpenLogFailed,
     MkdirFailed,
     PathTooLong,
-    /// Windows: CreateProcessW failed. The original process can NOT
-    /// be turned into a daemon through a return path — callers should
-    /// log + exit(1).
+    /// Windows: CreateProcessW failed.
     SpawnFailed,
 };
 
-// =============================================================================
 // Public cross-platform entry points
-// =============================================================================
 
-/// Cross-platform daemonization. POSIX uses double-fork + setsid. Windows
-/// re-execs the current process with DETACHED_PROCESS.
+/// Cross-platform daemonization.
 pub fn daemonize(allocator: std.mem.Allocator) DaemonError!void {
     switch (builtin.os.tag) {
         .linux, .macos => return daemonizePosixImpl(),
@@ -31,16 +24,12 @@ pub fn daemonize(allocator: std.mem.Allocator) DaemonError!void {
     }
 }
 
-/// Backward-compat alias for `daemonize()` on POSIX. On Windows this
-/// also works (calls into the Windows implementation) so legacy
-/// callers compile on all platforms.
+/// Backward-compat alias for `daemonize()` on POSIX.
 pub fn daemonizePosix(allocator: std.mem.Allocator) DaemonError!void {
     return daemonize(allocator);
 }
 
-/// Walk the parent directory chain of `path` and create each missing
-/// component (idempotent: ignores EEXIST on POSIX, ERROR_ALREADY_EXISTS on
-/// Windows).
+/// Walk the parent directory chain of `path` and create each missing component (idempotent: ignores EEXIST on POSIX, ERROR_ALREADY_EXISTS on Windows).
 pub fn mkdirP(path: []const u8) !void {
     switch (builtin.os.tag) {
         .linux, .macos => return mkdirPPosix(path),
@@ -49,8 +38,7 @@ pub fn mkdirP(path: []const u8) !void {
     }
 }
 
-/// Redirect stdin from /dev/null and stdout/stderr to a log file. Call AFTER
-/// `daemonize()` returns.
+/// Redirect stdin from /dev/null and stdout/stderr to a log file.
 pub fn redirectStdioToLog(log_path: []const u8) !void {
     switch (builtin.os.tag) {
         .linux, .macos => return redirectStdioToLogPosix(log_path),
@@ -59,9 +47,7 @@ pub fn redirectStdioToLog(log_path: []const u8) !void {
     }
 }
 
-// =============================================================================
 // POSIX implementations
-// =============================================================================
 
 fn daemonizePosixImpl() DaemonError!void {
     // First fork.
@@ -72,8 +58,7 @@ fn daemonizePosixImpl() DaemonError!void {
     // In child 1: become session leader.
     if (std.c.setsid() < 0) return error.SessionFailed;
 
-    // Second fork — daemon is no longer session leader, so it can never
-    // reacquire a controlling terminal (Linux daemon(7) idiom).
+    // Second fork — daemon is no longer session leader, so it can never reacquire a controlling terminal (Linux daemon(7) idiom).
     const pid2 = std.c.fork();
     if (pid2 < 0) return error.ForkFailed;
     if (pid2 > 0) std.process.exit(0); // child 1 exits
@@ -84,9 +69,7 @@ fn daemonizePosixImpl() DaemonError!void {
 fn mkdirPPosix(path: []const u8) !void {
     const parent_dir = std.fs.path.dirname(path) orelse return;
     if (parent_dir.len == 0) return;
-    // std.fs.path.componentIterator yields `Component{ .name, .path }` where
-    // `.path` is the CUMULATIVE path-so-far (e.g. for "/a/b/c", second
-    // component is `.name="b" .path="/a/b"`).
+    // std.fs.path.componentIterator yields `Component{ .name, .path }` where `.path` is the CUMULATIVE path-so-far (e.g. for "/a/b/c", second component is `.name="b" …
     var iter = std.fs.path.componentIterator(parent_dir);
     while (iter.next()) |component| {
         var prefix_z: [std.fs.max_path_bytes:0]u8 = undefined;
@@ -108,12 +91,10 @@ fn redirectStdioToLogPosix(log_path: []const u8) !void {
     @memcpy(log_path_z[0..log_path.len], log_path);
     log_path_z[log_path.len] = 0;
 
-    // mkdir -p the parent directory. Without this, a fresh $HOME has
-    // no ~/.local/share/pabrik/ and the open() below fails.
+    // mkdir -p the parent directory.
     try mkdirP(log_path);
 
-    // stdin → /dev/null. std.c.open returns fd_t (i32) on success, -1 on
-    // failure (with errno set).
+    // stdin → /dev/null. std.c.open returns fd_t (i32) on success, -1 on failure (with errno set).
     const devnull_fd: std.c.fd_t = std.c.open(
         "/dev/null",
         .{ .ACCMODE = .RDONLY },
@@ -124,8 +105,7 @@ fn redirectStdioToLogPosix(log_path: []const u8) !void {
         _ = std.c.close(devnull_fd);
     }
 
-    // stdout/stderr → log_path (append). Same variadic-mode requirement
-    // as above — cast 0o644 to std.c.mode_t explicitly.
+    // stdout/stderr → log_path (append).
     const log_fd: std.c.fd_t = std.c.open(&log_path_z, .{
         .ACCMODE = .WRONLY,
         .CREAT = true,
@@ -137,17 +117,14 @@ fn redirectStdioToLogPosix(log_path: []const u8) !void {
     _ = std.c.close(log_fd);
 }
 
-// =============================================================================
 // Windows implementations
-// =============================================================================
 
 const win32_apis = if (builtin.os.tag == .windows) struct {
     const HANDLE = *anyopaque;
     const INVALID_HANDLE_VALUE_PTR: usize = std.math.maxInt(usize);
     const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(INVALID_HANDLE_VALUE_PTR);
 
-    // CreateProcessW dwCreationFlags. DETACHED_PROCESS (0x00000008): no
-    // console window inherited.
+    // CreateProcessW dwCreationFlags.
     const DETACHED_PROCESS: u32 = 0x00000008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
     const CREATE_UNICODE_ENVIRONMENT: u32 = 0x00000400;
@@ -247,39 +224,30 @@ const win32_apis = if (builtin.os.tag == .windows) struct {
     };
 } else struct {};
 
-/// Sentinel env var name. The parent re-execs itself with
-/// `PABRIK_DAEMON_CHILD=1`; the spawned child sees this and returns
-/// from `daemonize` immediately (it IS the daemon).
+/// Sentinel env var name.
 const PABRIK_DAEMON_CHILD: [:0]const u16 = std.unicode.utf8ToUtf16LeStringLiteral("PABRIK_DAEMON_CHILD");
 
 
 fn daemonizeWindows(allocator: std.mem.Allocator) DaemonError!void {
-    // 1. If PABRIK_DAEMON_CHILD is set, we ARE the spawned daemon. Just
-    //    return; the caller is the daemon process.
+    // 1.
     const sentinel = getEnvVarW(allocator, PABRIK_DAEMON_CHILD) catch null;
     if (sentinel) |val| {
         defer allocator.free(val);
         if (val.len > 0) {
-            // Sentinel is set → child path. Validate it's "1" (or any
-            // non-empty value).
+            // Sentinel is set → child path.
             return;
         }
     }
 
-    // 2. Parent path: re-exec ourselves with the sentinel env var set,
-    //    and DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP flags so the
-    //    spawned child has no console and no parent terminal.
+    // 2.
     const app_path_w = getModuleFileNameW_alloc(allocator) catch return error.SpawnFailed;
     defer allocator.free(app_path_w);
 
-    // Build a command line: "<exe>" "<sentinel>=1". Quote minimal — the
-    // exe path won't contain quotes (it's a UTF-16 module file name).
+    // Build a command line: "<exe>" "<sentinel>=1".
     var cmd_line: [std.fs.max_path_bytes * 2]u16 = undefined;
     const cmd_w = buildCommandLine(cmd_line[0..], app_path_w) catch return error.SpawnFailed;
 
-    // Build the env block: copy current env + PABRIK_DAEMON_CHILD=1. Env
-    // block is a sequence of NUL-terminated wide strings, terminated by an
-    // empty wide string (double NUL).
+    // Build the env block: copy current env + PABRIK_DAEMON_CHILD=1.
     var env_block: [std.fs.max_path_bytes * 4]u16 = undefined;
     const env_w = buildEnvBlock(env_block[0..]) catch return error.SpawnFailed;
 
@@ -302,8 +270,7 @@ fn daemonizeWindows(allocator: std.mem.Allocator) DaemonError!void {
     );
     if (ok == 0) return error.SpawnFailed;
 
-    // We don't need the handles — just close them. The child is now
-    // detached and running on its own.
+    // We don't need the handles — just close them.
     _ = win32_apis.CloseHandle(proc_info.hProcess);
     _ = win32_apis.CloseHandle(proc_info.hThread);
 
@@ -311,18 +278,13 @@ fn daemonizeWindows(allocator: std.mem.Allocator) DaemonError!void {
     std.process.exit(0);
 }
 
-/// Walk the parent directory chain of `path` and create each missing
-/// component using Win32 `CreateDirectoryW` (idempotent on
-/// `ERROR_ALREADY_EXISTS`).
+/// Walk the parent directory chain of `path` and create each missing component using Win32 `CreateDirectoryW` (idempotent on `ERROR_ALREADY_EXISTS`).
 fn mkdirPWindows(path: []const u8) !void {
-    // Walk component by component, creating each. Use UTF-16 wide strings
-    // because CreateDirectoryW requires them. Strategy: scan the path for `\`
-    // separators and accumulate each prefix.
+    // Walk component by component, creating each.
     var path_w_buf: [std.fs.max_path_bytes]u16 = undefined;
     const path_w = pathToWideZ(path, &path_w_buf) catch return error.PathTooLong;
 
-    // Start after the first `\` (the drive root, e.g. "C:\"). The
-    // drive root always exists, so creating it would fail.
+    // Start after the first `\` (the drive root, e.g. "C:\").
     var i: usize = 0;
     // Skip the drive prefix like "C:" if present.
     if (path_w.len >= 2 and path_w[1] == ':') {
@@ -346,9 +308,7 @@ fn mkdirPWindows(path: []const u8) !void {
             }
         }
     }
-    // Finally create the deepest directory (everything after the last
-    // separator is the leaf filename; the parent directory is what's already
-    // created). If the path is a directory itself, this also creates it.
+    // Finally create the deepest directory (everything after the last separator is the leaf filename; the parent directory is what's already created).
     var full: [std.fs.max_path_bytes:0]u16 = undefined;
     if (path_w.len >= full.len) return error.PathTooLong;
     @memcpy(full[0..path_w.len], path_w);
@@ -360,9 +320,7 @@ fn mkdirPWindows(path: []const u8) !void {
     }
 }
 
-/// Redirect stdin from NUL and stdout/stderr to a log file using
-/// Win32 `CreateFileW` + `SetStdHandle`. Walks the parent directory
-/// chain first so a fresh `$HOME` works.
+/// Redirect stdin from NUL and stdout/stderr to a log file using Win32 `CreateFileW` + `SetStdHandle`.
 fn redirectStdioToLogWindows(log_path: []const u8) !void {
     // mkdir -p the parent directory.
     try mkdirP(log_path);
@@ -417,13 +375,9 @@ fn redirectStdioToLogWindows(log_path: []const u8) !void {
     _ = win32_apis.CloseHandle(log_handle);
 }
 
-// =============================================================================
 // Windows helpers (UTF-16 conversion, env, command line, exe path)
-// =============================================================================
 
 /// Convert a UTF-8 path slice to a NUL-terminated UTF-16 LE slice.
-/// Returns error.PathTooLong if the wide representation doesn't fit
-/// in `buf` (including the NUL terminator).
 fn pathToWideZ(path: []const u8, buf: []u16) ![:0]u16 {
     if (builtin.os.tag != .windows) unreachable;
     const needed = std.unicode.calcUtf16LeLen(path) catch return error.PathTooLong;
@@ -433,13 +387,11 @@ fn pathToWideZ(path: []const u8, buf: []u16) ![:0]u16 {
     return buf[0..needed :0];
 }
 
-/// Get the current module's file path as a heap-allocated
-/// NUL-terminated UTF-16 string. Caller frees the returned slice.
+/// Get the current module's file path as a heap-allocated NUL-terminated UTF-16 string.
 fn getModuleFileNameW_alloc(allocator: std.mem.Allocator) ![:0]u16 {
     if (builtin.os.tag != .windows) unreachable;
     var buf: [std.fs.max_path_bytes]u16 = undefined;
-    // GetModuleFileNameW returns the length in characters (not
-    // including the NUL terminator). 0 means failure.
+    // GetModuleFileNameW returns the length in characters (not including the NUL terminator). 0 means failure.
     const len = win32_apis.GetModuleFileNameW(null, &buf, buf.len);
     if (len == 0) return error.PathTooLong;
     if (len >= buf.len) return error.PathTooLong;
@@ -450,32 +402,25 @@ fn getModuleFileNameW_alloc(allocator: std.mem.Allocator) ![:0]u16 {
     return result;
 }
 
-/// Get the value of an environment variable as a NUL-terminated
-/// wide string. Returns `null` if the variable is not set.
+/// Get the value of an environment variable as a NUL-terminated wide string.
 fn getEnvVarW(allocator: std.mem.Allocator, name: [:0]const u16) !?[:0]u16 {
     if (builtin.os.tag != .windows) unreachable;
     var buf: [std.fs.max_path_bytes]u16 = undefined;
     // `name.ptr` is `[*]const u16` (many-pointer without sentinel info).
-    // The Win32 API takes `[*:0]const u16` (many-pointer with sentinel
-    // info). Cast to preserve the NUL terminator contract.
     const len = win32_apis.GetEnvironmentVariableW(@ptrCast(name.ptr), &buf, buf.len);
     if (len == 0) return null;
     if (len > buf.len) return error.PathTooLong;
-    // Need to allocate a NUL-terminated copy because buf's NUL is at
-    // buf[len] but the returned slice must be [:0]u16.
+    // Need to allocate a NUL-terminated copy because buf's NUL is at buf[len] but the returned slice must be [:0]u16.
     const result = allocator.allocSentinel(u16, len, 0) catch
         return error.OutOfMemory;
     @memcpy(result[0..len], buf[0..len]);
     return result;
 }
 
-/// Build a command line string for CreateProcessW. Format: `"<exe>"`.
-/// We pass the exe path as a quoted argument so it survives CreateProcessW's
-/// argv parsing even if the path contains spaces.
+/// Build a command line string for CreateProcessW.
 fn buildCommandLine(buf: []u16, exe_path: [:0]const u16) ![:0]u16 {
     if (builtin.os.tag != .windows) unreachable;
-    // Format: "exe_path" NUL
-    // We need 2 (quotes) + exe_path.len + 1 (NUL) characters.
+    // Format: "exe_path" NUL We need 2 (quotes) + exe_path.len + 1 (NUL) characters.
     const needed = exe_path.len + 3;
     if (needed > buf.len) return error.PathTooLong;
 
@@ -486,9 +431,7 @@ fn buildCommandLine(buf: []u16, exe_path: [:0]const u16) ![:0]u16 {
     return buf[0 .. 1 + exe_path.len + 1 :0];
 }
 
-/// Build an environment block for CreateProcessW: a sequence of
-/// NUL-terminated wide strings `NAME=VALUE`, terminated by an empty
-/// wide string (double NUL). We just build `PABRIK_DAEMON_CHILD=1\0\0`.
+/// Build an environment block for CreateProcessW: a sequence of NUL-terminated wide strings `NAME=VALUE`, terminated by an empty wide string (double NUL).
 fn buildEnvBlock(buf: []u16) ![:0]u16 {
     if (builtin.os.tag != .windows) unreachable;
     // "PABRIK_DAEMON_CHILD=1" in UTF-16 = 20 chars + 1 NUL terminator + 1 final NUL.
@@ -505,9 +448,7 @@ fn buildEnvBlock(buf: []u16) ![:0]u16 {
 
 // ===== Tests merged from daemon_test.zig (2026-09-29 flatten) =====
 
-// Tests for src/service/daemon.zig (cross-platform daemonization). ## POSIX
-// daemonize The POSIX daemonize test forks a child process and verifies the
-// grandchild's PPID differs from the original process (which is the daemon(7)
+// Tests for src/service/daemon.zig (cross-platform daemonization).
 
 const testing = std.testing;
 // helpers/ lives at src/helpers/, one directory up from src/service/.
@@ -523,30 +464,22 @@ test "isProcessRunning returns false for negative pid" {
 }
 
 test "isProcessRunning returns true for own pid" {
-    // Use helpers.process.getCurrentProcessId() (returns i32 cross-platform)
-    // rather than std.c.getpid() which returns `*anyopaque` on Windows.
+    // Use helpers.process.getCurrentProcessId() (returns i32 cross-platform) rather than std.c.getpid() which returns `*anyopaque` on Windows.
     try testing.expect(helpers.process_status.isProcessRunning(helpers.process.getCurrentProcessId()));
 }
 
 test "isProcessRunning returns false for nonexistent pid" {
     if (builtin.os.tag == .windows) {
-        // Skip: on Windows we'd need a PID we KNOW doesn't exist and that
-        // doesn't get auto-recycled by the kernel in the test window.
-        // Skip rather than flaky-test.
+        // Skip: on Windows we'd need a PID we KNOW doesn't exist and that doesn't get auto-recycled by the kernel in the test window.
         return;
     }
-    // Pick a PID that's almost certainly not running. 0x7ffffff0 is
-    // near INT_MAX and outside the typical PID range on Linux.
+    // Pick a PID that's almost certainly not running. 0x7ffffff0 is near INT_MAX and outside the typical PID range on Linux.
     try testing.expect(!helpers.process_status.isProcessRunning(0x7ffffff0));
 }
 
-// ============================================================================
 // Cross-platform daemonize() tests
-// ============================================================================
 
-// Static contract: a cross-platform `daemonize()` function must exist. On
-// POSIX it wraps the double-fork + setsid; on Windows it re-execs via
-// CreateProcessW with DETACHED_PROCESS.
+// Static contract: a cross-platform `daemonize()` function must exist.
 test "daemon.daemonize is callable cross-platform" {
     // Just take the address — if this compiles, the function exists.
     const function_pointer = &daemonize;
@@ -554,18 +487,14 @@ test "daemon.daemonize is callable cross-platform" {
     try testing.expect(true);
 }
 
-// Static contract: `daemon.daemonizePosix` is kept as a backward-compat
-// alias for `daemonize` on POSIX. On Windows, the function exists but
-// calls into the Windows implementation (so legacy callers compile).
+// Static contract: `daemon.daemonizePosix` is kept as a backward-compat alias for `daemonize` on POSIX.
 test "daemon.daemonizePosix is callable cross-platform" {
     const function_pointer = &daemonizePosix;
     _ = function_pointer;
     try testing.expect(true);
 }
 
-// ============================================================================
 // Existing POSIX tests
-// ============================================================================
 
 test "POSIX daemonize detaches the grandchild from the original" {
     if (builtin.os.tag == .windows) return;
@@ -598,13 +527,10 @@ test "POSIX daemonize detaches the grandchild from the original" {
     _ = std.c.read(pipe_fds[0], @ptrCast(&ppid_buf), ppid_buf.len);
     _ = std.c.close(pipe_fds[0]);
     // std.c.waitpid takes (pid: pid_t, status: ?*c_int, options: c_int).
-    // The status pointer is optional — pass null to discard exit status.
     _ = std.c.waitpid(pid, null, 0);
 
     const child_ppid = std.mem.readInt(c_int, &ppid_buf, std.builtin.Endian.little);
-    // After double-fork, the grandchild's PPID is either 1 (init) or
-    // the PID of the process that reaped child 1 (usually a subreaper).
-    // The key invariant: PPID is no longer the original parent's PID.
+    // After double-fork, the grandchild's PPID is either 1 (init) or the PID of the process that reaped child 1 (usually a subreaper).
     try testing.expect(child_ppid != original_ppid);
 }
 
@@ -612,9 +538,7 @@ test "mkdirP creates all parent dirs of a fresh nested path" {
     if (builtin.os.tag == .windows) return;
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
-    // Build a path under a fresh tmpdir whose nested parent dir does not
-    // exist. mkdirP must create every component without error and the
-    // leaf's parent dir must exist after the call.
+    // Build a path under a fresh tmpdir whose nested parent dir does not exist. mkdirP must create every component without error and the leaf's parent dir must exist …
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -652,18 +576,13 @@ test "mkdirP is idempotent on an already-existing parent dir" {
     try mkdirP("/tmp/this-is-a-mkdirP-test/service.log");
 }
 
-// ============================================================================
 // Windows-specific cross-platform tests
-// ============================================================================
 
-// On Windows, mkdirP is implemented via CreateDirectoryW. It should
-// still create nested dirs and be idempotent. We run a smoke test
-// using a path under the system temp dir.
+// On Windows, mkdirP is implemented via CreateDirectoryW.
 test "Windows mkdirP creates all parent dirs of a fresh nested path" {
     if (builtin.os.tag != .windows) return;
 
-    // The system temp dir on Windows is %TEMP% (typically
-    // C:\Users\<user>\AppData\Local\Temp).
+    // The system temp dir on Windows is %TEMP% (typically C:\Users\<user>\AppData\Local\Temp).
     var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
     const tmp_z = std.c.getenv("TEMP") orelse std.c.getenv("TMP") orelse return;
     const tmp = std.mem.sliceTo(tmp_z, 0);

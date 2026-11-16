@@ -11,24 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * [PrefsLastPositionStore] against a real `SharedPreferences` file.
- *
- * The whole feature is "the value outlives the process", so a test that used a
- * fake would be testing the fake. These run through Robolectric for the same
- * reason `RoomRecentsCacheTest` does: what is being checked is the *storage
- * contract* of a real Android API, not the logic around it.
- *
- * The rules that matter, and the failure each one prevents:
- *
- * - **One account's chat never becomes another's.** The second person to sign in
- *   on a shared device would open straight into the first person's transcript.
- * - **A workspace switch forgets the chat.** Resuming it would put the user in a
- *   chat that is not in the workspace they are resumed into.
- * - **A blank id is not a position.** Writing one would erase the workspace the
- *   user is actually in and leave the next launch with nothing to resume.
- * - **Sign-out wipes it.** Same leak, one tap away.
- */
+/** [PrefsLastPositionStore] against a real `SharedPreferences` file. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PrefsLastPositionStoreTest {
@@ -148,8 +131,7 @@ class PrefsLastPositionStoreTest {
 
     @Test
     fun `a new store instance sees what the previous one wrote`() {
-        // What "outlives the process" has to mean in practice: a relaunch builds
-        // a fresh store over the same file, and the position is still there.
+        // What "outlives the process" has to mean in practice: a relaunch builds a fresh store over the same file, and the position is still there.
         store().save("user_a", LastPosition(workspaceId = "ws_b", sessionId = "sess_c"))
 
         assertEquals(

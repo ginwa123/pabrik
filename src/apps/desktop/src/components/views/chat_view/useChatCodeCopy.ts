@@ -20,9 +20,7 @@ export function useChatCodeCopy({ virtualScrollerRef, copyCodeContent }: ChatCod
         const content = code.textContent || ''
         const btn = document.createElement('button')
         btn.className = 'code-copy-btn'
-        // Built imperatively (post-render decoration), so it cannot mount a
-        // <UiIcon>; it renders the registry's own `clipboard` paths instead of
-        // a hand-copied <path>, so the copy button stays on the one geometry.
+        // Built imperatively (post-render decoration), so it cannot mount a <UiIcon>; it renders the registry's own `clipboard` paths instead of a hand-copied <path>, so …
         btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS.clipboard.map((d) => `<path d="${d}"/>`).join('')}</svg>`
         btn.title = 'Copy code'
         btn.style.cssText =

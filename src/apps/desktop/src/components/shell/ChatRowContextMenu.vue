@@ -41,9 +41,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-// No `const props =` binding: every prop is read from the template, and an
-// assigned-but-unreferenced `props` trips @typescript-eslint/no-unused-vars
-// even though the template consumes all of them.
+// No `const props =` binding: every prop is read from the template, and an assigned-but-unreferenced `props` trips @typescript-eslint/no-unused-vars even though …
 withDefaults(
   defineProps<{
     x: number
@@ -76,8 +74,7 @@ const emit = defineEmits<{
   openInNewTab: []
 }>()
 
-// ─── Keyboard navigation ────────────────────────────────────────────────── The row is a <button>,
-// so it is already in the tab order; the menu has to be arrow-navigable too.
+// ─── Keyboard navigation ──────────────────────────────────────────────────
 const rootRef = ref<HTMLElement | null>(null)
 
 const navRows = (): HTMLElement[] =>
@@ -86,8 +83,7 @@ const navRows = (): HTMLElement[] =>
 const moveFocus = (delta: number) => {
   const rows = navRows()
   if (rows.length === 0) return
-  // Start from where the pointer actually is, not a stale index — the
-  // row list changes shape when "Stop agent" appears.
+  // Start from where the pointer actually is, not a stale index — the row list changes shape when "Stop agent" appears.
   const at = rows.indexOf(document.activeElement as HTMLElement)
   const from = at >= 0 ? at : -1
   const next = (from + delta + rows.length) % rows.length
@@ -102,12 +98,10 @@ const onKeydown = (event: KeyboardEvent) => {
     event.preventDefault()
     moveFocus(-1)
   }
-  // Escape is intentionally NOT handled here: useContextMenu owns the
-  // outer dismiss and already closes on window keydown.
+  // Escape is intentionally NOT handled here: useContextMenu owns the outer dismiss and already closes on window keydown.
 }
 
-// Hovering a row focuses it, so the arrow keys continue from the row
-// under the pointer instead of snapping back to the top of the menu.
+// Hovering a row focuses it, so the arrow keys continue from the row under the pointer instead of snapping back to the top of the menu.
 const focusRow = (event: MouseEvent) => {
   ;(event.currentTarget as HTMLElement | null)?.focus()
 }

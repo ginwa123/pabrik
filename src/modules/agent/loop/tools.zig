@@ -11,8 +11,7 @@ pub const wrapToolOutput = @import("../tools/tools_wrap_output.zig").wrapToolOut
 pub const withDurationMs = @import("../tools/tools_wrap_output.zig").withDurationMs;
 pub const withPending = @import("../tools/tools_wrap_output.zig").withPending;
 
-// Re-export every migrated exec function. Tool_Registry.zig references
-// these via `agentic_loop_mod.tools.execXxx` etc.
+// Re-export every migrated exec function.
 pub const execReadFile = @import("../tools/read_file.zig").execReadFile;
 pub const execTextReplace = @import("../tools/text_replace.zig").execTextReplace;
 pub const execWriteFile = @import("../tools/write_file.zig").execWriteFile;
@@ -25,8 +24,7 @@ pub const execReadWorkspaceSession = @import("../tools/read_workspace_session.zi
 pub const execRunSession = @import("../tools/run_session.zig").execRunSession;
 // view_session: one session's detail (cwd, worktree, task, running state).
 pub const execViewSession = @import("../tools/view_session.zig").execViewSession;
-// Workspace credential DISCOVERY. The value never leaves the store — this
-// adapter lists names only (see list_secrets.zig).
+// Workspace credential DISCOVERY.
 pub const execListSecrets = @import("../tools/list_secrets.zig").execListSecrets;
 pub const execDocumentMarkdown = @import("../tools/document.zig").execDocumentMarkdown;
 pub const execDocumentView = @import("../tools/document_view.zig").execDocumentView;
@@ -62,35 +60,27 @@ pub const execSearch = @import("../tools/search.zig").execSearch;
 pub const execBash = @import("../tools/command.zig").execBash;
 pub const execPwsh = @import("../tools/command.zig").execPwsh;
 pub const execCommand = @import("../tools/command.zig").execCommand;
-/// `process` — read the delta of a detached process's log, stop it (tree
-/// included), or list what this session started.
+/// `process` — read the delta of a detached process's log, stop it (tree included), or list what this session started.
 pub const execProcess = @import("../tools/process.zig").execProcess;
 // 2026-08-14 — list_directory agent tool (Task 5 of ban-absolute-paths plan).
 pub const execListDirectory = @import("../tools/list_directory.zig").execListDirectory;
 pub const execSpawnSubAgent = @import("../tools/spawn_sub_agent.zig").execSpawnSubAgent;
 pub const execDelegateAgent = @import("../tools/delegate_agent.zig").execDelegateAgent;
 
-// 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
-// update_plan (UPSERT) + get_plan (fetch) — the markdown task plan that
-// persists across iterations and gets re-injected into the system prompt.
+// 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md). update_plan (UPSERT) + get_plan (fetch) — the markdown task plan that …
 pub const execUpdatePlan = @import("../tools/update_plan.zig").execUpdatePlan;
 pub const execGetPlan = @import("../tools/get_plan.zig").execGetPlan;
-// `compaction` — the agent compresses its own context window. Gated by the
-// workspace's `agent_auto_compaction` setting.
+// `compaction` — the agent compresses its own context window.
 pub const execCompaction = @import("../tools/compaction.zig").execCompaction;
 pub const execListAgents = @import("../tools/list_agents.zig").execListAgents;
 pub const execUsedTools = @import("../tools/used_tools.zig").execUsedTools;
-// 2026-08-28 — add_mcp_server agent tool (Step 3 of
-// 2026-08-28-add-mcp-server-agent-tool.md).
+// 2026-08-28 — add_mcp_server agent tool (Step 3 of 2026-08-28-add-mcp-server-agent-tool.md).
 pub const execAddMcpServer = @import("../tools/add_mcp_server.zig").execAddMcpServer;
-// The edit + delete halves of the MCP-server trio. All three share the
-// persist/reload/tools-listing helpers inside add_mcp_server.zig.
+// The edit + delete halves of the MCP-server trio.
 pub const execEditMcpServer = @import("../tools/add_mcp_server.zig").execEditMcpServer;
 pub const execDeleteMcpServer = @import("../tools/add_mcp_server.zig").execDeleteMcpServer;
 
-// Progressive tool search (plan 2026-09-12-progressive-tool-search): the three
-// meta-tools that browse and enable the catalog of tools this session does not
-// already have (MCP tools + not-enabled built-ins).
+// Progressive tool search (plan 2026-09-12-progressive-tool-search): the three meta-tools that browse and enable the catalog of tools this session does not …
 pub const execSearchTool = @import("../tools/progressive_tools.zig").execSearchTool;
 pub const execViewTool = @import("../tools/progressive_tools.zig").execViewTool;
 pub const execUseTool = @import("../tools/progressive_tools.zig").execUseTool;
@@ -123,35 +113,22 @@ pub const ToolExecContext = struct {
     selected_profile_model: []const u8 = "",
     cwd_override: ?[]const u8 = null,
     /// The active design page id (when the LLM is in a design-item session).
-    /// Empty string means "no active design page" — the design tools
-    /// (move_design_element, set_design_page, etc.) require this.
     active_page_id: []const u8 = "",
-    /// The parent's tool_call id for THIS dispatch. 2026-08-23 spawn-
-    /// subagent-live-progress: `execSpawnSubAgent` needs this to key its
-    /// per-tool progress events (ChatView.vue's frontend reducer routes by
+    /// The parent's tool_call id for THIS dispatch. 2026-08-23 spawn-subagent-live-progress: `execSpawnSubAgent` needs this to key its per-tool progress events …
     tool_call_id: []const u8 = "",
-    /// This session's resolved `allowed_tools` CSV (the agent/kanban
-    /// allowlist, or "" / "all" for no filtering).
+    /// This session's resolved `allowed_tools` CSV (the agent/kanban allowlist, or "" / "all" for no filtering).
     allowed_tools: []const u8 = "",
-    /// Whether this is a sub-agent session. Mirrors the flag the workflow
-    /// uses for the anti-recursion strip; the catalog honours it too so a
-    /// sub-agent cannot discover its way back to `spawn_sub_agent`.
+    /// Whether this is a sub-agent session.
     is_sub_agent: bool = false,
-    /// The `llm_history` tool-result row this dispatch belongs to (set by
-    /// `handle_tool` Phase 3 from its placeholder list).
+    /// The `llm_history` tool-result row this dispatch belongs to (set by `handle_tool` Phase 3 from its placeholder list).
     llm_history_id: []const u8 = "",
-    /// The SSE bus a tool broadcasts a mutation on (today only the document
-    /// tools — see `document_events.zig`). Null in tests and in any host that
-    /// has no bus, which makes the emit a no-op.
+    /// The SSE bus a tool broadcasts a mutation on (today only the document tools — see `document_events.zig`).
     event_bus: ?*pabrikcore.event_bus.EventBus = null,
-    /// The Stop button, for a tool that blocks its thread (`command`): null in
-    /// tests, so nothing polls a context that was built directly.
+    /// The Stop button, for a tool that blocks its thread (`command`): null in tests, so nothing polls a context that was built directly.
     cancel_hook: ?pabrikcore.shell_tool.CancelHook = null,
 };
 
-/// Set by `use_tool` when it actually INSERTed a `session_progressive_tool`
-/// row. `handle_tool` persists it; the flag exists so the tool result's
-/// `inserted` value can never disagree with the database.
+/// Set by `use_tool` when it actually INSERTed a `session_progressive_tool` row.
 pub const ProgressiveToolSaveInfo = struct {
     name: []const u8,
     server_name: []const u8,
@@ -160,16 +137,14 @@ pub const ProgressiveToolSaveInfo = struct {
 pub const ToolExecResult = struct {
     output: []const u8,
     output_allocated: bool = false,
-    /// A `data:image/<mime>;base64,...` URL the result carries to the model as
-    /// an `image_url` part. Owned by the result when non-null.
+    /// A `data:image/<mime>;base64,...` URL the result carries to the model as an `image_url` part.
     image_url: ?[]const u8 = null,
     temperature: ?f32 = null,
     is_thinking: ?bool = null,
     skill_save: ?SkillSaveInfo = null,
     agent_save: ?AgentSaveInfo = null,
     progressive_tool_save: ?ProgressiveToolSaveInfo = null,
-    /// The tool asked the agentic loop to END THIS TURN once the whole tool
-    /// batch has been dispatched and persisted (`command`'s `is_stop`).
+    /// The tool asked the agentic loop to END THIS TURN once the whole tool batch has been dispatched and persisted (`command`'s `is_stop`).
     stop_loop: bool = false,
 
     pub fn deinit(self: *const ToolExecResult, allocator: std.mem.Allocator) void {

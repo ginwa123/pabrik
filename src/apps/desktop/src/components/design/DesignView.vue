@@ -82,8 +82,7 @@ import { useDesignHandlers } from '../../composables/useDesignHandlers'
 import { useDesignHistory } from '../../composables/useDesignHistory'
 import { useDesignContextMenu } from '../../composables/useDesignContextMenu'
 import {
-  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the sidebar tree now owns the page list
-  // via `designPagesByItemId` in the workspaces store.
+  // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the sidebar tree now owns the page list via `designPagesByItemId` in the workspaces store.
   type DesignElement as DesignElementApi,
   type DesignPage,
 } from '../../api'
@@ -111,17 +110,13 @@ const emit = defineEmits<DesignViewEmits>()
 
 const workspacesStore = useWorkspacesStore()
 
-// Chunk 5: reorder dispatch. Calls the workspace store's reorderDesignElements action (which is
-// itself a stub for now — the backend endpoint lands in a follow-up; the model function is already
-// implemented in design_model.zig).
+// Chunk 5: reorder dispatch.
 async function dispatchReorder(
   mode: 'bring_to_front' | 'send_to_back' | 'bring_forward' | 'send_backward',
 ): Promise<void> {
   if (!props.workspaceId || !effectiveItemId.value || !activePageId.value) return
   if (selectedIds.value.size === 0) return
   // Undo/redo plan (Chunk 5): capture the current top-to-bottom z- order BEFORE the reorder call.
-  // The composable's applyInverse for `reorder` is currently a no-op (no absolute-z-order endpoint
-  // yet); this entry at least records what the order was at gesture time.
   const beforeOrder = elements.value.slice().sort((a, b) => b.z_index - a.z_index).map((e) => e.id)
   try {
     await workspacesStore.reorderDesignElements(
@@ -142,22 +137,16 @@ async function dispatchReorder(
 // ─── Effective ids ─────────────────────────────────────────────────────
 const effectiveItemId = computed(() => props.itemId || props.item.id)
 
-// ─── Pages state ─────────────────────────────────────────────────────── NEW
-// (design-pages-in-workspace-tree plan, 2026-08-06): pages now live in the workspaces store's
-// `designPagesByItemId` cache, NOT in DesignView-local state.
+// ─── Pages state ───────────────────────────────────────────────────────
 const pages = computed<DesignPage[]>(() => {
   if (!effectiveItemId.value) return []
   return workspacesStore.designPagesByItemId[effectiveItemId.value] ?? []
 })
-// Single source of truth: the store's `activeDesignPageId` (set by the sidebar tree, the URL
-// restore, and this component's page handlers). The computed setter routes every local assignment
-// through the store, so sidebar-driven changes are visible here without a mirror.
+// Single source of truth: the store's `activeDesignPageId` (set by the sidebar tree, the URL restore, and this component's page handlers).
 const activePageId = computed<string>({
   get: () => workspacesStore.activeDesignPageId,
   set: (v: string) => {
-    // Skip no-op sets: the old local-ref assignment only propagated (via its watcher) when the
-    // value actually changed. Blindly writing would wipe a preset store page (e.g. loadPages
-    // falling back to '' when the page list is empty — see AppLayout.createElement.spec.ts).
+    // Skip no-op sets: the old local-ref assignment only propagated (via its watcher) when the value actually changed.
     const next = v ?? ''
     if (workspacesStore.activeDesignPageId !== next) workspacesStore.setActiveDesignPage(next)
   },
@@ -169,26 +158,18 @@ const activePage = computed(() => pages.value.find((p) => p.id === activePageId.
 
 // ─── Elements state (mirrors item.design_elements) ─────────────────────
 const elements = computed<DesignElementApi[]>(() => {
-  // The store's `design_elements` array is the source of truth (other
-  // tabs / SSE events update it). When it doesn't match the active
-  // page id (because the user just switched pages), fall back to [].
+  // The store's `design_elements` array is the source of truth (other tabs / SSE events update it).
   const stored = props.item.design_elements ?? []
   return stored.filter((e) => e.page_id === activePageId.value)
 })
 
-// ─── Selection state ─────────────────────────────────────────────────── Multi-select (Figma
-// model). Empty Set = nothing selected. Plain click = exclusive select (replaces the selection);
-// Shift+click = toggle membership (adds/removes without affecting the rest); Escape = clear all.
+// ─── Selection state ───────────────────────────────────────────────────
 const selectedIds = ref<Set<string>>(new Set())
 
-// Per-element nudge offset accumulator. The keyboard handler reads `el.x + offset[id].x` instead of
-// `el.x` so consecutive ArrowLeft presses compose (the second press starts where the first one
-// ended).
+// Per-element nudge offset accumulator.
 const nudgeOffsets = new Map<string, { x: number; y: number }>()
 
-// PropertiesPanel only renders its single-element form when exactly one NEW (Chunk 6 of
-// grouped-layers plan): useDesignHandlers composable providing `groupSelection` for the Cmd+G
-// shortcut.
+// PropertiesPanel only renders its single-element form when exactly one NEW (Chunk 6 of grouped-layers plan): useDesignHandlers composable providing …
 const designHandlers = useDesignHandlers({
   workspaceId: computed(() => props.workspaceId),
   itemId: computed(() => effectiveItemId.value),
@@ -196,31 +177,22 @@ const designHandlers = useDesignHandlers({
   selectedIds,
 })
 
-// Undo/redo history composable (Chunk 3 of undo/redo plan). The
-// composable reads activeWorkspaceId/itemId/pageId from the store
-// directly, so we only need to pass the pageId ref.
+// Undo/redo history composable (Chunk 3 of undo/redo plan).
 const history = useDesignHistory(computed(() => activePageId.value))
 
-// ─── Snap guides state ──────────────────────────────────────────────── While a drag is in
-// progress, snap math (computeSnapDelta) emits the 1px violet alignment guides the user should see.
+// ─── Snap guides state ────────────────────────────────────────────────
 const snapGuides = ref<SnapGuide[]>([])
 
-// ─── Preview/Edit mode ────────────────────────────────────────────────── When `isPreviewMode ===
-// true`, each element's iframe gets `pointer-events: auto` (so the user can type into inputs /
-// click buttons inside the rendered HTML) and the edit chrome (resize handles, selection outline.
+// ─── Preview/Edit mode ──────────────────────────────────────────────────
 const isPreviewMode = ref<boolean>(false)
 
 const togglePreviewMode = (): void => {
   isPreviewMode.value = !isPreviewMode.value
-  // Exiting Preview mode clears the selection so the user isn't surprised
-  // by a now-visible resize handle on an element they didn't pick during
-  // preview.
+  // Exiting Preview mode clears the selection so the user isn't surprised by a now-visible resize handle on an element they didn't pick during preview.
   if (!isPreviewMode.value) selectedIds.value = new Set()
 }
 
-// ─── Keyboard shortcuts ──────────────────────────────────────────────── True while the user is
-// holding the Space bar. Drives the body's cursor (grab / grabbing) and gates the pointer-drag pan
-// handler on the canvas container.
+// ─── Keyboard shortcuts ────────────────────────────────────────────────
 const isSpacePressed = ref(false)
 
 const readStoredNumber = (key: string, fallback: number): number => {
@@ -261,9 +233,7 @@ const loadPages = async (): Promise<void> => {
   pagesLoading.value = true
   pagesError.value = null
   try {
-    // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the store owns the cache.
-    // fetchDesignPages is idempotent via an in-flight guard, so concurrent calls (sidebar expand +
-    // canvas mount) share the same network request.
+    // NEW (design-pages-in-workspace-tree plan, 2026-08-06): the store owns the cache. fetchDesignPages is idempotent via an in-flight guard, so concurrent calls …
     const fetched = await workspacesStore.fetchDesignPages(props.workspaceId, effectiveItemId.value)
     // Pick the active page in this priority: 1.
     const storePageId = workspacesStore.activeDesignPageId
@@ -276,9 +246,7 @@ const loadPages = async (): Promise<void> => {
     } else if (!activePageId.value || !fetched.some((p) => p.id === activePageId.value)) {
       choosePage(fetched[0]?.id ?? '')
     } else {
-      // Choice unchanged but the cursor may be stale (e.g. a sidebar
-      // switch landed on this same page via the store): converge the
-      // choice cursor and run effects only if the page is unclaimed.
+      // Choice unchanged but the cursor may be stale (e.g. a sidebar switch landed on this same page via the store): converge the choice cursor and run effects only if …
       lastChosenPage.value = activePageId.value
       claimAndActivatePage()
     }
@@ -290,8 +258,7 @@ const loadPages = async (): Promise<void> => {
   }
 }
 
-// Choice gate: replicates the old local-ref assignment semantics — the store (and the effects) only
-// see a choice that differs from the last one this component made.
+// Choice gate: replicates the old local-ref assignment semantics — the store (and the effects) only see a choice that differs from the last one this component …
 const lastChosenPage = ref('')
 
 const canvasContextMenu = useDesignContextMenu()
@@ -381,8 +348,7 @@ const {
 
 const { handleGroupDrag, handleDragStart, handleDragEnd } = useDesignGroupDrag(sharedDeps)
 
-// Add a new design page. NEW (design-pages-in-workspace-tree plan, 2026-08-06): routes through the
-// workspaces store so the sidebar tree's DesignPageRow array updates without a refetch.
+// Add a new design page.
 const handleAddPage = async (): Promise<string | undefined> => {
   if (!props.workspaceId || !effectiveItemId.value) return undefined
   if (addPageInFlight.value) return undefined
@@ -407,26 +373,17 @@ const handleAddPage = async (): Promise<string | undefined> => {
   }
 }
 
-// In-flight guard for the + Page button. Prevents a double-click from POSTing two duplicate pages
-// back-to-back while the first request is still in flight. The disabled state is exposed via the +
-// Page button's `:disabled` attribute so the user sees the lock.
+// In-flight guard for the + Page button.
 const addPageInFlight = ref<boolean>(false)
 
-// Exposed via `wrapper.vm.handleSelectPage` in DesignView.pageSync.spec.ts. Vue 3's `<script
-// `<script setup>` auto-surfaces top-level bindings but eslint can't see the `vm.X` reflection path.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const handleSelectPage = (pageId: string): void => {
-  // Mirror to the store first so AppLayout's design handlers (handleDesignUpdateElement /
-  // handleDesignDeleteElement) always see the latest selection, even if the page-change
-  // early-returns below.
+  // Mirror to the store first so AppLayout's design handlers (handleDesignUpdateElement /handleDesignDeleteElement) always see the latest selection, even if the …
   choosePage(pageId)
-  // Re-emit for any external listener (AppLayout's @select-page
-  // does nothing today, but the contract is preserved).
+  // Re-emit for any external listener (AppLayout's @select-page does nothing today, but the contract is preserved).
   emit('selectPage', pageId)
 }
 
-// Delete a design page. Routes through the store so the cache + `activeDesignPageId` fallback happen
-// in one place.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleDeletePage = async (pageId: string): Promise<void> => {
   if (!props.workspaceId || !effectiveItemId.value) return
@@ -439,9 +396,7 @@ const _handleDeletePage = async (pageId: string): Promise<void> => {
   deletePageInFlight.value = true
   try {
     await workspacesStore.deleteDesignPage(props.workspaceId, effectiveItemId.value, pageId)
-    // The store already picked the next-active page. choosePage
-    // converges the choice cursor and runs the elements fetch when
-    // the active page actually changed.
+    // The store already picked the next-active page. choosePage converges the choice cursor and runs the elements fetch when the active page actually changed.
     choosePage(workspacesStore.activeDesignPageId)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -451,13 +406,9 @@ const _handleDeletePage = async (pageId: string): Promise<void> => {
   }
 }
 
-// In-flight guard for the per-page × button. Prevents a double-click from issuing two DELETE calls
-// back-to-back while the first is in flight (which could fire two confirm dialogs in quick
-// succession and confuse the user).
+// In-flight guard for the per-page × button.
 const deletePageInFlight = ref<boolean>(false)
 
-// Keep the legacy handler name as an alias so LayersPanel's `@select="_handleElementSelect"` (a plain
-// elementId with no additive flag) still works; LayersPanel reads Shift from the row click instead.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const _handleElementSelect = (elementId: string): void => {
   handleElementToggle(elementId, false)

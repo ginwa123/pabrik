@@ -10,9 +10,7 @@ import ChatView from '../../components/views/ChatView.vue'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../../helpers/sseClient'
 
-// ── The history seam, hoisted ─────────────────────────────────────────────── This file used to
-// reach the transcript load with `vi.spyOn(api, 'getChatHistory')`, which stopped working when
-// ChatView moved to `fetchChatHistoryEffect`.
+// ── The history seam, hoisted ───────────────────────────────────────────────
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -33,9 +31,7 @@ vi.mock('../../api', async (importOriginal) => {
   }
 })
 
-// ChatView calls useRoute()/useRouter() on mount (URL param sync). In jsdom
-// there is no router — stub the pair (same pattern as
-// AppLayout.chatview.spec.ts).
+// ChatView calls useRoute()/useRouter() on mount (URL param sync).
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
   return {
@@ -49,9 +45,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// `scrollTo` must ASSIGN the position and FIRE the event a browser fires. setup.ts already installs
-// a polyfill that does the assignment, so the `typeof … === 'undefined'` guard this block used to
-// carry never ran.
+// `scrollTo` must ASSIGN the position and FIRE the event a browser fires. setup.ts already installs a polyfill that does the assignment, so the `typeof … === …
 Element.prototype.scrollTo = function scrollToPolyfill(
   this: Element,
   x?: number | ScrollToOptions,
@@ -72,9 +66,7 @@ Element.prototype.scrollTo = function scrollToPolyfill(
   el.dispatchEvent(new Event('scroll'))
 }
 
-// jsdom does NOT lay out elements. scrollHeight and clientHeight default to 0 on every element, so
-// ChatView's restore would see max=0 and no-op. Override the getters on the prototype so every
-// element reports known values from mount onwards.
+// jsdom does NOT lay out elements. scrollHeight and clientHeight default to 0 on every element, so ChatView's restore would see max=0 and no-op.
 Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
   configurable: true,
   get(): number {
@@ -149,9 +141,7 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
     props: { chatId, chatName: 'Test Chat' },
     attachTo: document.body,
   })
-  // The onMounted chain is async: loadChatHistory → connectSse → startGitStatusPoll →
-  // getQueuedMessages → loadProfiles (sync). Wait for the VirtualScroller's `isStreaming` ref (set
-  // after SSE connect) + several ticks.
+  // The onMounted chain is async: loadChatHistory → connectSse → startGitStatusPoll → getQueuedMessages → loadProfiles (sync).
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
@@ -161,21 +151,15 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
   return wrapper
 }
 
-/** Configure the VirtualScroller container's scrollHeight and clientHeight to simulate a known
- * geometry. Without this, jsdom reports 0 for both and the "max <= 0" branch skips any scroll
- * restoration. */
+/** Configure the VirtualScroller container's scrollHeight and clientHeight to simulate a known geometry. */
 function findScrollerContainer(wrapper: VueWrapper): HTMLElement | null {
-  // The VirtualScroller renders a `<div class="virtual-scroller">` container. Find it via the
-  // wrapper's HTML. If it's missing, the test is racing the initial mount — return null and let the
-  // caller wait.
+  // The VirtualScroller renders a `<div class="virtual-scroller">` container.
   const el = wrapper.find('.virtual-scroller')
   return el.exists() ? (el.element as HTMLElement) : null
 }
 
 async function waitForInitialLoad(wrapper: VueWrapper): Promise<void> {
-  // The initial-load branch awaits rAF × 2 (one inside loadChatHistory, one for VirtualScroller's
-  // measureItems). Plus the VirtualScroller's 100ms measureItems delay. A 500ms total wait covers
-  // all cases with margin.
+  // The initial-load branch awaits rAF × 2 (one inside loadChatHistory, one for VirtualScroller's measureItems).
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 25))
     const container = findScrollerContainer(wrapper)
@@ -224,9 +208,7 @@ describe('ChatView — scroll position persistence', () => {
   })
 
   it('falls through to scrollToBottom when the saved position is "near bottom"', async () => {
-    // scrollHeight - clientHeight = 19200 (the max). saved = 19200
-    // → distance from bottom = 0 → "still at bottom" → restore
-    // returns null → ChatView calls scrollToBottom.
+    // scrollHeight - clientHeight = 19200 (the max). saved = 19200 → distance from bottom = 0 → "still at bottom" → restore returns null → ChatView calls …
     localStorage.setItem('chat-scroll-task_nearbottom', '19200')
     installApiMocks()
 
@@ -285,9 +267,7 @@ describe('ChatView — scroll position persistence', () => {
   })
 
   it('keys the save per task (two chats never share a position)', async () => {
-    // The landing position is asserted in ChatView.scrollRestoreLands.spec.ts, where the height
-    // model is real. What THIS file can pin deterministically is the storage contract: each task
-    // writes under its own key, so closing one chat can never move the reader in another.
+    // The landing position is asserted in ChatView.scrollRestoreLands.spec.ts, where the height model is real.
     installApiMocks()
 
     wrapper = await mountChatView('task_A')
@@ -325,8 +305,7 @@ describe('ChatView — scroll position persistence', () => {
     container!.scrollTop = 350
     container!.dispatchEvent(new Event('scroll'))
 
-    // Unmount before the debounce fires. The composable's
-    // onBeforeUnmount flushes pending writes synchronously.
+    // Unmount before the debounce fires.
     wrapper.unmount()
     wrapper = null
 

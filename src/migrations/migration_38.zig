@@ -13,8 +13,7 @@ pub const Migration038DropToolResultsJson = struct {
     pub const name = "drop_tool_results_json";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // SQLite doesn't support DROP COLUMN directly, recreate table
-        // Step 1: Rename old table
+        // SQLite doesn't support DROP COLUMN directly, recreate table Step 1: Rename old table
         try db.exec(allocator, "ALTER TABLE llm_history RENAME TO llm_history_old", &[_][]const u8{});
 
         // Step 2: Create new table without tool_results_json column

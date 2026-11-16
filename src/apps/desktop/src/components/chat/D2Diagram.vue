@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** D2Diagram — one `<d2>…</d2>` block of an assistant turn. The SVG comes from a D2 server (see
- * `helpers/d2.ts`); the URL is async because the source is deflated first, so the draw is keyed on
- * the source the way MermaidDiagram does it and never on a watcher. */
+/** D2Diagram — one `<d2>…</d2>` block of an assistant turn. */
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import DiagramViewer from './DiagramViewer.vue'
@@ -43,8 +41,7 @@ const draw = (): void => {
       if (mine === token) url.value = next
     },
     () => {
-      // No `CompressionStream` in this browser — nothing can be sent, so say that rather than
-      // blaming the server.
+      // No `CompressionStream` in this browser — nothing can be sent, so say that rather than blaming the server.
       if (mine === token) note.value = 'this browser cannot encode the D2 source'
     },
   )

@@ -1,6 +1,4 @@
-/** Wire-body regression tests for the terminal API fns. apiFetch() stringifies `body` itself —
- * these fns must pass plain objects. Passing JSON.stringify(...) double-encodes the payload (the
- * server sees a JSON *string* and answers 400 "Invalid JSON body"). */
+/** Wire-body regression tests for the terminal API fns. apiFetch() stringifies `body` itself — these fns must pass plain objects. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -44,8 +42,7 @@ describe('createTerminalSession', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url] = fetchMock.mock.calls[0] as unknown as [string]
     expect(url).toBe('/api/terminal/sessions')
-    // Parses to an OBJECT (not a string) with the exact fields. `workspace_id` is
-    // what makes a --saas server run the shell inside that workspace's VM.
+    // Parses to an OBJECT (not a string) with the exact fields.
     expect(sentBody(fetchMock)).toEqual({
       workspace_id: 'ws_1',
       cwd: '/tmp/work',

@@ -5,9 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SpawnSubAgent from '../SpawnSubAgent.vue'
 import type { SubAgentProgress } from '../../../helpers/subagentProgress'
 
-// ──────────────────────────────────────────────────────────────────────── Helpers
-// ──────────────────────────────────────────────────────────────────────── Loose props type: tests
-// intentionally pass partial / loosely-typed values (e.g. `null` sessionId, optional `progress`).
+// ──────────────────────────────────────────────────────────────────────── Helpers ──────────────────────────────────────────────────────────────────────── Loose …
 type TestProps = {
   content?: unknown
   expanded?: boolean
@@ -42,9 +40,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Live-progress rendering (NEW — 2026-08-23 feature)
-// ────────────────────────────────────────────────────────────────────────
 describe('SpawnSubAgent.vue — live progress', () => {
   it('renders one row per progress entry when content has no <results> envelope yet', () => {
     const progress: SubAgentProgress[] = [
@@ -63,8 +59,7 @@ describe('SpawnSubAgent.vue — live progress', () => {
     expect(wrapper.text()).toContain('1 running')
     expect(wrapper.text()).toContain('✓ 1') // done
 
-    // Both row names are visible (the component auto-shows the list
-    // while in live mode — no expand toggle required).
+    // Both row names are visible (the component auto-shows the list while in live mode — no expand toggle required).
     expect(wrapper.text()).toContain('agent-a')
     expect(wrapper.text()).toContain('agent-b')
   })
@@ -74,8 +69,7 @@ describe('SpawnSubAgent.vue — live progress', () => {
       sampleProgress('running', { name: 'r1', index: 0, total: 1 }),
     ]
     const wrapper = mountAt({ content: '', progress })
-    // Spinner/running badge text — implementation detail; presence is
-    // enough to prove the row is rendered.
+    // Spinner/running badge text — implementation detail; presence is enough to prove the row is rendered.
     expect(wrapper.text()).toMatch(/running/i)
   })
 
@@ -140,9 +134,7 @@ describe('SpawnSubAgent.vue — live progress', () => {
 
   it('tolerates empty progress array without crashing (shows starting placeholder, not 0)', () => {
     const wrapper = mountAt({ content: '', progress: [] })
-    // Without progress AND without parsed-results content, the card is still in the Phase 1
-    // placeholder state (tool running, no <results> yet) — 2026-09-04 refresh fix shows an honest
-    // "starting…" loading card instead of the confusing "0 sub-agents".
+    // Without progress AND without parsed-results content, the card is still in the Phase 1 placeholder state (tool running, no <results> yet) — 2026-09-04 refresh …
     expect(wrapper.text()).toContain('starting')
     expect(wrapper.text()).not.toContain('0 sub-agents')
   })
@@ -178,9 +170,7 @@ describe('SpawnSubAgent.vue — live progress', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Envelope vs progress precedence (NEW — 2026-08-23 feature)
-// ────────────────────────────────────────────────────────────────────────
 describe('SpawnSubAgent.vue — envelope precedence', () => {
   const envelope = {
     results: [
@@ -197,15 +187,12 @@ describe('SpawnSubAgent.vue — envelope precedence', () => {
   }
 
   it('renders the parsed <results> envelope even if progress prop is also passed', async () => {
-    // Once the tool result lands, the envelope wins — progress prop is ignored. This matches the PR
-    // #299 dedupe principle: the source of truth is the llm_history row, never the SSE-only
-    // progress stream (which is ephemeral).
+    // Once the tool result lands, the envelope wins — progress prop is ignored.
     const progress: SubAgentProgress[] = [
       sampleProgress('running', { name: 'stale', index: 0, total: 1 }),
     ]
     const wrapper = mountAt({ content: envelope, progress, expanded: false })
-    // Expand so the row body is rendered (matches what a user sees
-    // after clicking the header).
+    // Expand so the row body is rendered (matches what a user sees after clicking the header).
     await wrapper.find('[role="button"]').trigger('click')
     expect(wrapper.text()).toContain('alpha')
     expect(wrapper.text()).not.toContain('stale')
@@ -217,13 +204,9 @@ describe('SpawnSubAgent.vue — envelope precedence', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Pre-thread failure (starting-state error — task_1789301896347_4)
-// ────────────────────────────────────────────────────────────────────────
 describe('SpawnSubAgent.vue — pre-thread failure envelope', () => {
-  // What the card receives when exec fails before any thread emits:
-  // innerToolData falls back to the FULL envelope (data is null), which
-  // carries <success>false</success> + <error> but no <agent>/<summary>.
+  // What the card receives when exec fails before any thread emits
   const failedEnvelope = JSON.stringify({
     tool: 'spawn_sub_agent',
     parameters: {},

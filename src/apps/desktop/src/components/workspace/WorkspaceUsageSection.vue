@@ -20,8 +20,7 @@ const RANGES: readonly { value: WorkspaceUsageRange; label: string }[] = [
   { value: '90d', label: '90 days' },
 ]
 
-/** Only THIS workspace's answer renders here: a switch must not paint the previous one's totals
- * under the new header while the fetch is in flight. */
+/** Only THIS workspace's answer renders here: a switch must not paint the previous one's totals under the new header while the fetch is in flight. */
 const usage = computed<WorkspaceUsage | null>(() =>
   store.usage && store.usage.workspace_id === props.workspaceId ? store.usage : null,
 )

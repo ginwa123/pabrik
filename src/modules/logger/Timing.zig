@@ -24,8 +24,7 @@ pub fn formatDuration(ms: i64) Duration {
     return .{ .value = @divTrunc(ms, 3600000), .unit = "h" };
 }
 
-/// Get current timestamp as ISO 8601 string (caller owns memory)
-/// Format: YYYY-MM-DDTHH:MM:SS.mmmZ
+/// Get current timestamp as ISO 8601 string (caller owns memory) Format: YYYY-MM-DDTHH:MM:SS.mmmZ
 pub fn timestampIso(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     const ts_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
     const ts = @divTrunc(ts_ns, std.time.ns_per_s);
@@ -57,8 +56,7 @@ pub fn timestampIso(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     );
 }
 
-/// Get current timestamp as compact format for request IDs
-/// Format: YYYYMMDD-HHMMSS
+/// Get current timestamp as compact format for request IDs Format: YYYYMMDD-HHMMSS
 pub fn timestampCompact(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     const ts_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
     const ts = @divTrunc(ts_ns, std.time.ns_per_s);
@@ -88,8 +86,7 @@ pub fn timestampCompact(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
 
 // Tests
 
-// The timing tests that used to live in timing_test.zig are now inline at the
-// bottom of this file (2026-09-29 flatten).
+// The timing tests that used to live in timing_test.zig are now inline at the bottom of this file (2026-09-29 flatten).
 
 // ===== Tests merged from timing_test.zig (2026-09-29 flatten) =====
 test "timestampMs returns reasonable value" {

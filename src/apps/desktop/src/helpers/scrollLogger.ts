@@ -1,10 +1,7 @@
-/** scrollLogger.ts A focused logger for the ChatView's scroll subsystem. Why this exists: scroll
- * events fire on every pixel of wheel/touch movement — often 60+ times per second — and a single
- * scroll can trigger a cascade of side effects (loadMore → preserve → measure → re-stick). */
+/** scrollLogger.ts A focused logger for the ChatView's scroll subsystem. */
 export type ScrollOrigin = 'user' | 'programmatic'
 
-/** Diagnostic snapshot of the scroll container element. Populated on every log line so a single
- * line can answer "is the container null, is it hidden, is it 0×0 for some other reason?". */
+/** Diagnostic snapshot of the scroll container element. */
 export interface ContainerInfo {
   null: boolean
   tag?: string
@@ -15,8 +12,7 @@ export interface ContainerInfo {
   offsetParent: string | null
 }
 
-/** Diagnostic snapshot of the VirtualScroller **component** (not the inner container). This is the
- * next layer out from `containerInfo` — it tells you whether the ref binding itself is even valid. */
+/** Diagnostic snapshot of the VirtualScroller **component** (not the inner container). */
 export interface ScrollerState {
   refNull: boolean
   containerRefNull: boolean
@@ -27,8 +23,7 @@ export interface ScrollerState {
   exposedKeys: string[]
 }
 
-/** Diagnostic snapshot of the **outer flex wrapper** that contains the VirtualScroller. This is the
- * layer ABOVE the scroller, so it answers "did the layout chain even reach the scroller's parent?". */
+/** Diagnostic snapshot of the **outer flex wrapper** that contains the VirtualScroller. */
 export interface WrapperState {
   refNull: boolean
   offsetHeight: number
@@ -54,9 +49,7 @@ export type ScrollReason =
   | 'load-more-preserve-start'
   | 'load-more-preserve-end'
   | 'post-preserve-stick' // loadMore prepend finished, user was at bottom → explicit re-stick (task_1787638309623_3)
-  // Older-history PREFETCH (task_1789505423062_0) — one page armed ahead of the
-  // scroll reaching the load-more band, so crossing the band commits from
-  // memory instead of waiting out a round trip.
+  // Older-history PREFETCH (task_1789505423062_0) — one page armed ahead of the scroll reaching the load-more band, so crossing the band commits from memory …
   | 'load-more-prefetch-armed' // the speculative page landed and is buffered (not yet in `messages`)
   | 'load-more-prefetch-committed' // the buffered page was prepended (trigger: buffered/foreground/manual)
   | 'load-more-prefetch-skipped' // the arm trigger ran but a state blocked it (extra.skip: PrefetchSkip)
@@ -64,8 +57,7 @@ export type ScrollReason =
   | 'load-more-prefetch-failed' // the speculative request threw (warn level)
   | 'sse-chunk-arrived'
   | 'messages-length-changed'
-  // Per-call handleVirtualScroll diagnostics. Each one fires once
-  // per occurrence (not per frame), so the cost is bounded.
+  // Per-call handleVirtualScroll diagnostics.
   | 'first-scroll' // first scroll event for this chat (no prior deltas)
   | 'direction-change' // user reversed scroll direction (up↔down)
   | 'content-resized' // scrollHeight changed between two scroll events
@@ -76,8 +68,7 @@ export type ScrollReason =
   | 'measure-compensation' // measureItems anchor compensation wrote scrollTop
   | 'scroll-to-bottom-target' // scrollToBottom chose realBottom vs modelBottom
   | 'isAtBottom-decision' // handleVirtualScroll isAtBottom retained vs flipped
-  // Warn-level reason: handleVirtualScroll fired but the container ref chain was null (component
-  // unmounted, inner ref not yet bound, or layout chain broke).
+  // Warn-level reason: handleVirtualScroll fired but the container ref chain was null (component unmounted, inner ref not yet bound, or layout chain broke).
   | 'no-container'
   // Debug-level reason (per-frame sample)
   | 'scroll-sample'
@@ -103,59 +94,43 @@ export interface ScrollContext {
   origin: ScrollOrigin
   /** What triggered this log line. */
   reason: ScrollReason
-  /**    * Diagnostic snapshot of the scroll container element. Always present — see `ContainerInfo` for
-   * what each field tells you. Without this, a `scrollHeight: 0` reading is just a useless zero;
-   * with it, you can see *which* check failed. */
+  /** Diagnostic snapshot of the scroll container element. */
   containerInfo: ContainerInfo
-  /** Which function in ChatView produced this log line, e.g. `'loadChatHistory'`. Set by the call
-   * site — the logger cannot infer it without a stack trace on every call, which is too expensive. */
+  /** Which function in ChatView produced this log line, e.g. `'loadChatHistory'`. */
   caller?: string
   /** Diagnostic snapshot of the VirtualScroller **component** (see `ScrollerState` doc). */
   scrollerState?: ScrollerState
-  /**    * Diagnostic snapshot of the outer flex wrapper (see `WrapperState` doc). Tells you whether the
-   * layout chain reached the scroller's parent. Crucial for distinguishing "wrapper is sized but
-   * scroller isn't" from "wrapper itself is 0 high" — the two cases need different fixes. */
+  /** Diagnostic snapshot of the outer flex wrapper (see `WrapperState` doc). */
   wrapperState?: WrapperState
-  /**    * Short stack trace captured ONLY when the container is null or on warn/error. The single most
-   * useful field for "where did this come from?" — points directly to the line in ChatView that
-   * called the logger with a stale ref. */
+  /** Short stack trace captured ONLY when the container is null or on warn/error. */
   stack?: string
   /** Free-form extras (caller, delta, etc.). */
   extra?: Record<string, unknown>
 }
 
 // ─── Configuration ────────────────────────────────────────────────────────────
-/** Within this many px of the bottom counts as "at the bottom". */
 export const BOTTOM_THRESHOLD = 10
 
-/**  * How far the height MODEL may sit above the real content bottom before
- * `VirtualScroller.bottomScrollTop` switches to the real bottom. Mirrors the scroller's own
- * `HYSTERESIS_PX`. */
+/** How far the height MODEL may sit above the real content bottom before `VirtualScroller.bottomScrollTop` switches to the real bottom. */
 export const MODEL_OVERSHOOT_HYSTERESIS_PX = 50
 
-/** Tolerance for the at-bottom judgement once it is measured against the STABLE anchor
- * (`settledBottom`) rather than a live `bottomScrollTop()`. */
+/** Tolerance for the at-bottom judgement once it is measured against the STABLE anchor (`settledBottom`) rather than a live `bottomScrollTop()`. */
 export const AT_BOTTOM_STABLE_TOLERANCE_PX = BOTTOM_THRESHOLD + MODEL_OVERSHOOT_HYSTERESIS_PX
 
-/** Within this many px of the top counts as "at the top". Mirrors `BOTTOM_THRESHOLD` so the two
- * edges behave symmetrically in the logger. Note: this is the threshold for the `reached-top` /
- * `left-top` state-transition log. */
+/** Within this many px of the top counts as "at the top". */
 export const TOP_THRESHOLD = 10
 
 /** Debug-level scroll samples are throttled to this interval. */
 const DEBUG_THROTTLE_MS = 200
 
-// ─── Programmatic-scroll tracking ───────────────────────────────────────────── Browsers DO fire a
-// `scroll` event when you assign `container.scrollTop`. We can't prevent that, but we CAN mark the
-// next few scroll events as "programmatic" so the logger can label them.
+// ─── Programmatic-scroll tracking ─────────────────────────────────────────────
 let programmaticScrollsRemaining = 0
 let programmaticScrollsResetTimer: ReturnType<typeof setTimeout> | null = null
 
 /** Call this BEFORE a programmatic `scrollTop` assignment. */
 export const markProgrammatic = (): void => {
   programmaticScrollsRemaining += 1
-  // Safety net: if the scroll event never fires (e.g., scrollTop didn't
-  // actually change because we were already there), don't leak the mark.
+  // Safety net: if the scroll event never fires (e.g., scrollTop didn't actually change because we were already there), don't leak the mark.
   if (programmaticScrollsResetTimer) clearTimeout(programmaticScrollsResetTimer)
   programmaticScrollsResetTimer = setTimeout(() => {
     programmaticScrollsRemaining = 0
@@ -171,9 +146,7 @@ export const consumeProgrammatic = (): boolean => {
   return false
 }
 
-// ─── Throttled debug queue ──────────────────────────────────────────────────── Per-frame scroll
-// samples are coalesced: we keep only the most recent context, and flush it 200ms after the last
-// scroll event.
+// ─── Throttled debug queue ────────────────────────────────────────────────────
 let pendingDebugContext: ScrollContext | null = null
 let pendingDebugTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -188,9 +161,7 @@ const flushPendingDebug = (): void => {
 
 // ─── Logger factory ───────────────────────────────────────────────────────────
 export interface ScrollLogger {
-  /**    * Throttled per-frame sample. Safe to call on every scroll event. `origin` is optional: omit it
-   * to let the logger resolve from the `markProgrammatic` counter, or pass an explicit value to
-   * override. */
+  /** Throttled per-frame sample. */
   debug: (
     ctx: Omit<ScrollContext, 'chatId' | 'reason' | 'origin'> & {
       origin?: ScrollOrigin
@@ -221,18 +192,13 @@ export interface ScrollLogger {
       caller?: string
     },
   ) => void
-  /**    * Mark the next scroll event(s) as programmatic. Call BEFORE any `container.scrollTop = …`
-   * assignment. `count` defaults to 1 because each assignment usually produces exactly one scroll
-   * event. */
+  /** Mark the next scroll event(s) as programmatic. */
   markProgrammatic: (count?: number) => void
 }
 
-/**  * Create a scroll logger bound to a chat id. @param chatId The chat session id (used to correlate
- * logs across components and to label every line). */
+/** Create a scroll logger bound to a chat id. @param chatId The chat session id (used to correlate logs across components and to label every line). */
 export const createScrollLogger = (chatId: string): ScrollLogger => {
-  // Auto-derive the context fields the caller usually can't be bothered to pass. We re-read the
-  // container on every call because the geometry changes constantly — caching it would defeat the
-  // purpose. `origin` resolution rule (called per-event): 1.
+  // Auto-derive the context fields the caller usually can't be bothered to pass.
   const resolveOrigin = (explicit?: ScrollOrigin): ScrollOrigin => {
     if (explicit) return explicit
     if (consumeProgrammatic()) return 'programmatic'
@@ -246,9 +212,7 @@ export const createScrollLogger = (chatId: string): ScrollLogger => {
     const { scrollTop, scrollHeight, clientHeight, messages, isAtBottom, extra, containerInfo } =
       partial
     const distanceFromTop = Math.max(0, scrollTop)
-    // Prefer the caller's own number. Callers that know the real bottom edge (`buildScrollContext`
-    // resolves it through the scroller's `bottomScrollTop`) hand one in; recomputing it from the
-    // raw sizer here would print a gap that contradicts the `isAtBottom` on the same line.
+    // Prefer the caller's own number.
     const distanceFromBottom =
       typeof partial.distanceFromBottom === 'number'
         ? Math.max(0, partial.distanceFromBottom)
@@ -298,22 +262,16 @@ export const createScrollLogger = (chatId: string): ScrollLogger => {
 }
 
 // ─── Emit ─────────────────────────────────────────────────────────────────────
-// Single console.* call site so the formatting is consistent and the
-// production gate is in one place.
 let eventCounter = 0
 
 const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): void => {
-  // Production gate: silence per-frame debug spam AND the ~60Hz info
-  // stream that fires during SSE streaming scrolls (scroll-perf Task 6).
-  // Errors/warns always log because they signal real problems.
+  // Production gate: silence per-frame debug spam AND the ~60Hz info stream that fires during SSE streaming scrolls (scroll-perf Task 6).
   if ((level === 'debug' || level === 'info') && !import.meta.env.DEV) return
 
   eventCounter += 1
   let tag = `[scroll#${eventCounter} chat=${ctx.chatId} ${level.toUpperCase()}]`
 
-  // ── Caller / scroller / wrapper metadata in the tag ─────────────────── The most useful single
-  // line you can get when something goes wrong is "which function called me, was the scroller ref
-  // valid, and was the wrapper sized".
+  // ── Caller / scroller / wrapper metadata in the tag ───────────────────
   if (ctx.caller) {
     tag += ` caller=${ctx.caller}`
   }
@@ -336,8 +294,7 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
     }
   }
 
-  // Diagnostic markers for suspicious container states. These tell you *which* check failed in a
-  // single glance — without them, a `scrollHeight: 0` reading is just a useless zero.
+  // Diagnostic markers for suspicious container states.
   if (ctx.scrollHeight === 0 && ctx.clientHeight === 0) {
     tag += ` ⚠ZERO-SIZE(${ctx.containerInfo.tag ?? '?'} d=${ctx.containerInfo.display ?? '?'} oH=${ctx.containerInfo.offsetHeight})`
   } else if (ctx.scrollHeight === 0) {
@@ -347,9 +304,7 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
   }
   const originMark = ctx.origin === 'programmatic' ? '⚙️' : '👆'
   const isAtBottomMark = ctx.isAtBottom ? '⤵' : '↑'
-  // The "short" label is misleading when the container is 0×0 (which
-  // is the whole point of the markers above). Show a more specific
-  // label so the headline alone tells the story.
+  // The "short" label is misleading when the container is 0×0 (which is the whole point of the markers above).
   const positionLabel =
     ctx.scrollHeight === 0
       ? 'zero-sh'
@@ -363,15 +318,12 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
     `(${positionLabel}) ` +
     `msgs=${ctx.messages}`
 
-  // ── Lazy stack capture for hard-to-debug cases ───────────────────────── `new Error().stack` is
-  // expensive (allocates an Error + walks the stack), so we only do it when the log line is
-  // actually hard to diagnose from the other fields:.
+  // ── Lazy stack capture for hard-to-debug cases ─────────────────────────
   if (!ctx.stack && (ctx.containerInfo.null || level === 'warn' || level === 'error')) {
     try {
       const err = new Error()
       const raw = err.stack ?? ''
-      // Drop frames that are inside this file (the logger itself) —
-      // the caller is what we want.
+      // Drop frames that are inside this file (the logger itself) — the caller is what we want.
       const frames = raw
         .split('\n')
         .filter((line) => !line.includes('scrollLogger.ts'))
@@ -383,15 +335,13 @@ const emit = (ctx: ScrollContext, level: 'debug' | 'info' | 'warn' | 'error'): v
     }
   }
 
-  // Two-line format: first line is the headline (scannable in DevTools'
-  // log group), second line is the full context object (collapsible).
+  // Two-line format: first line is the headline (scannable in DevTools' log group), second line is the full context object (collapsible).
   if (level === 'error') {
     console.error(line1, ctx)
   } else if (level === 'warn') {
     console.warn(line1, ctx)
   } else {
-    // info and debug both use console.log with the object so the user
-    // can click to expand.
+    // info and debug both use console.log with the object so the user can click to expand.
     console.log(line1, ctx)
   }
 }
@@ -417,9 +367,7 @@ const buildContainerInfo = (container: HTMLElement | null | undefined): Containe
   return info
 }
 
-/** Build the diagnostic `ScrollerState` block for a VirtualScroller component ref. Reads the
- * component instance to determine whether the ref is even populated, whether the inner container is
- * populated, and which exposed methods exist. */
+/** Build the diagnostic `ScrollerState` block for a VirtualScroller component ref. */
 const buildScrollerState = (scrollerRef: { value: unknown } | null | undefined): ScrollerState => {
   if (!scrollerRef) {
     return {
@@ -458,9 +406,7 @@ const buildScrollerState = (scrollerRef: { value: unknown } | null | undefined):
   }
 }
 
-/** THE bottom edge, in scrollTop coordinates — the same number the VirtualScroller's
- * `scrollToBottom` is about to target. `scrollHeight - clientHeight` is only the bottom edge when
- * the sizer agrees with the real content. */
+/** THE bottom edge, in scrollTop coordinates — the same number the VirtualScroller's `scrollToBottom` is about to target. */
 const resolveBottomEdge = (
   scrollerRef: { value: unknown } | null | undefined,
   container: HTMLElement | null | undefined,
@@ -472,9 +418,7 @@ const resolveBottomEdge = (
   return Number.isFinite(edge) ? edge : domEdge
 }
 
-/**  * Build the diagnostic `WrapperState` block for the outer flex wrapper. Tells you whether the
- * layout chain reached the scroller's parent. Like `buildContainerInfo`, only pays the
- * `getComputedStyle` cost when dimensions are weird. */
+/** Build the diagnostic `WrapperState` block for the outer flex wrapper. */
 const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): WrapperState => {
   if (!wrapperRef) {
     return { refNull: true, offsetHeight: 0, clientHeight: 0, offsetParent: null }
@@ -489,8 +433,7 @@ const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): W
     clientHeight: wrapper.clientHeight,
     offsetParent: wrapper.offsetParent ? wrapper.offsetParent.tagName : null,
   }
-  // getComputedStyle forces a style recalc — only do it when
-  // dimensions are suspicious, same logic as buildContainerInfo.
+  // getComputedStyle forces a style recalc — only do it when dimensions are suspicious, same logic as buildContainerInfo.
   if (wrapper.offsetHeight === 0 || wrapper.clientHeight === 0) {
     const style = getComputedStyle(wrapper)
     info.display = style.display
@@ -499,18 +442,13 @@ const buildWrapperState = (wrapperRef: { value: unknown } | null | undefined): W
   return info
 }
 
-/** Build a context object from a container element + the caller's snapshot of state. Use this
- * inside event handlers so the field computation is centralized. Important: this function does NOT
- * include `origin` in the returned object. */
+/** Build a context object from a container element + the caller's snapshot of state. */
 export const buildScrollContext = (
   container: HTMLElement | null | undefined,
   fallback: Pick<ScrollContext, 'chatId' | 'messages' | 'isAtBottom'> & {
-    /**      * The VirtualScroller ref from ChatView. Optional — when omitted, `scrollerState` is not
-     * populated. Pass the full ref object (`virtualScrollerRef`), NOT `virtualScrollerRef.value` —
-     * the logger inspects both the ref and the component instance. */
+    /** The VirtualScroller ref from ChatView. */
     virtualScrollerRef?: { value: unknown } | null
-    /** The outer flex wrapper ref from ChatView. Optional — when
-     * omitted, `wrapperState` is not populated. */
+    /** The outer flex wrapper ref from ChatView. */
     wrapperRef?: { value: unknown } | null
   },
   partial: Partial<Pick<ScrollContext, 'origin' | 'reason' | 'extra' | 'caller'>> = {},
@@ -534,8 +472,6 @@ export const buildScrollContext = (
         ? Math.min(1, Math.max(0, scrollTop / (scrollHeight - clientHeight)))
         : -1,
     // `origin` is intentionally omitted — see the doc comment above.
-    // Callers that explicitly want to override (rare) can still pass
-    // it via `partial.origin`, and `ScrollLogger` will honor it.
     reason: partial.reason,
     extra: partial.extra,
     caller: partial.caller,

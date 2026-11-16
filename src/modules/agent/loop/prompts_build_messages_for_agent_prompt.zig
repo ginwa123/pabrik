@@ -17,15 +17,12 @@ const database = pabrikcore.database;
 const TUIHistory = @import("models.zig").TUIHistory;
 const tool_models = pabrikcore.tool_models;
 
-// Inner prompt-template modules. Imported directly (not via
-// `pabrikcore.prompt`) because the orchestrator-side file owns the
-// `build_agent_prompt` rendering assembly as of the 2026-08-23 move.
+// Inner prompt-template modules.
 const prompts_const = @import("../prompts/prompts.zig");
 const memory_prompts = @import("../prompts/memory.zig");
 const tool_memories_mod = @import("../tools/memories.zig");
 
-// Per-file tool system prompts are now stored directly in each tool's
-// `AgentTool.function.system_prompt` field (see schemas.zig).
+// Per-file tool system prompts are now stored directly in each tool's `AgentTool.function.system_prompt` field (see schemas.zig).
 const config_mod = pabrikcore.config;
 const tool_eligibility = @import("tool_eligibility.zig");
 const custom_http_client = @import("kabelweb").client;
@@ -121,9 +118,7 @@ pub fn buildMessages(
             \\
         );
     }
-    // The four "tools the agent must actually use" mandates: the special tool
-    // (search the catalog for a tool), the special skills (load the skill a
-    // task needs), memory (load prior context / persist new facts), and
+    // The four "tools the agent must actually use" mandates: the special tool (search the catalog for a tool), the special skills (load the skill a task needs) …
     try final_system.appendSlice(allocator, prompts_const.ProgressiveToolRule);
     try final_system.appendSlice(allocator, prompts_const.SkillsToolRule);
     try final_system.appendSlice(allocator, prompts_const.MemoryToolRule);
@@ -137,9 +132,7 @@ pub fn buildMessages(
     try final_system.appendSlice(allocator, prompts_const.PullRequestToolRule);
     // The `#Notes AutoMerge` flag: wait for CI, then merge.
     try final_system.appendSlice(allocator, prompts_const.AutoMergeToolRule);
-    // The `<ask_user>` block IS the desktop question card: without this rule
-    // the model answers in prose. A sub-agent cannot reach the human — the loop
-    // strips its block — so it gets no rule.
+    // The `<ask_user>` block IS the desktop question card: without this rule the model answers in prose.
     if (!is_sub_agent) {
         try final_system.appendSlice(allocator, prompts_const.AskUserRule);
     }
@@ -147,9 +140,7 @@ pub fn buildMessages(
     if (hasTool(filtered_tools, "list_secrets")) {
         try final_system.appendSlice(allocator, prompts_const.SecretsToolRule);
     }
-    // The spawned agent's own configuration — the persona the parent picked
-    // when it named this agent. Empty for a top-level session, so the
-    // section never appears there.
+    // The spawned agent's own configuration — the persona the parent picked when it named this agent.
     if (activeAgentContent.len > 0) {
         try final_system.appendSlice(allocator, "\n\n## Your Active Agent Configuration\n\n");
         try final_system.appendSlice(allocator, activeAgentContent);
@@ -245,9 +236,7 @@ pub fn buildMessages(
         try final_system.appendSlice(allocator, agentKanbanKnowledgeContent);
     }
 
-    // Agent-Routines mirror (Migration 087): routine system prompt +
-    // knowledge resolve via workspace_routines (fire sessions) or
-    // workspace_item_tasks (chats under a routine item).
+    // Agent-Routines mirror (Migration 087): routine system prompt + knowledge resolve via workspace_routines (fire sessions) or workspace_item_tasks (chats under a …
     const agentRoutineSystemPromptContent = try agentic_loop.prompts_mod.makeAgentRoutineSystemPrompt(allocator, io, db, session_id);
     defer allocator.free(agentRoutineSystemPromptContent);
     if (agentRoutineSystemPromptContent.len > 0) {
@@ -324,9 +313,7 @@ pub fn buildMessages(
     return try allMessages.toOwnedSlice(allocator);
 }
 
-/// A resolved `<ask_user>` block is rewritten INSIDE the model's own assistant
-/// message, so a resumed run would end on an assistant turn — which a provider
-/// reads as "keep writing this message".
+/// A resolved `<ask_user>` block is rewritten INSIDE the model's own assistant message, so a resumed run would end on an assistant turn — which a provider reads …
 fn handBackResolvedQuestion(
     allocator: std.mem.Allocator,
     allMessages: *std.ArrayList(agent.AgentMessage),
@@ -347,9 +334,7 @@ fn handBackResolvedQuestion(
     try allMessages.append(allocator, .{ .role = .user, .content = turn });
 }
 
-/// Build activity info string for the agent prompt
-/// Uses worker table as the SOLE source of active workers info
-/// Filters out current session to avoid self-reference
+/// Build activity info string for the agent prompt Uses worker table as the SOLE source of active workers info Filters out current session to avoid self-reference
 fn buildActivityInfo(allocator: std.mem.Allocator, io: std.Io, db: *database.Db, current_session_id: []const u8) ![]const u8 {
     const workers = try llm_history.getActiveWorker(allocator, db);
     defer {
@@ -421,8 +406,7 @@ pub fn formatRelativeTime(seconds: i64) []const u8 {
     }
 }
 
-/// Strip SSE "data:" prefix from response body if present
-/// MCP servers may return responses in SSE format: "data: {...}\n\n"
+/// Strip SSE "data:" prefix from response body if present MCP servers may return responses in SSE format: "data: {...}\n\n"
 fn stripSsePrefix(body: []const u8) ?[]const u8 {
     const trimmed = std.mem.trim(u8, body, " \t\r\n");
     if (std.mem.startsWith(u8, trimmed, "data:")) {
@@ -440,8 +424,7 @@ pub const McpToolError = error{
     JsonParseError,
     InvalidResponse,
     OutOfMemory,
-    /// MCP server config declares more than 16 custom headers; we
-    /// stack-allocate the request header slice so there's a hard cap.
+    /// MCP server config declares more than 16 custom headers; we stack-allocate the request header slice so there's a hard cap.
     TooManyHeaders,
 };
 
@@ -469,16 +452,14 @@ const ListToolsResult = struct {
     tools: []const McpToolResponse,
 };
 
-/// Everything the `tools/list` pass needs about the caller. `io` and `db`
-/// are only reached by the guest transport; the HTTP one stays host-side.
+/// Everything the `tools/list` pass needs about the caller.
 pub const McpToolsContext = struct {
     scope: mcp_scope.Scope = .{},
     db: ?*pabrikcore.database.Db = null,
     io: ?std.Io = null,
 };
 
-/// Fetch MCP tools from all configured servers `cancel_fn` (default null) —
-/// when set, polled between bytes read from each MCP transport.
+/// Fetch MCP tools from all configured servers `cancel_fn` (default null) — when set, polled between bytes read from each MCP transport.
 pub fn buildMCPToolsRun(
     allocator: std.mem.Allocator,
     mcpServers: std.json.Value,
@@ -505,26 +486,20 @@ pub fn buildMCPToolsRun(
             else => continue,
         };
 
-        // MCP server toggle: skip explicitly-disabled servers BEFORE any
-        // spawn/connect.
+        // MCP server toggle: skip explicitly-disabled servers BEFORE any spawn/connect.
         if (server_obj.get("enabled")) |enabled_val| {
             if (enabled_val == .bool and !enabled_val.bool) continue;
         }
 
-        // Transport dispatch: stdio (command) takes precedence over
-        // HTTP (url). If the entry has a `command`, route to the stdio
-        // helper; otherwise fall through to the existing HTTP path.
+        // Transport dispatch: stdio (command) takes precedence over HTTP (url).
         if (server_obj.get("command")) |_| {
-            // 30s default for tools/list — see mcp_stdio.zig's plan for the
-            // per-call timeouts. We forward the workflow's cancel-callback so
-            // the Stop button propagates within one syscall of the cancel.
+            // 30s default for tools/list — see mcp_stdio.zig's plan for the per-call timeouts.
             const deadline_ns: u64 = 30 * std.time.ns_per_s;
             const stdio_tools = fetchToolsFromServerStdio(allocator, server_name, server_obj, deadline_ns, cancel_fn, ctx) catch |err| {
                 std.log.info("Failed to fetch MCP tools from stdio server '{s}': {s}", .{ server_name, @errorName(err) });
                 continue;
             };
-            // `appendSlice` copies the structs (the name/description strings
-            // stay shared); free the intermediate slice itself.
+            // `appendSlice` copies the structs (the name/description strings stay shared); free the intermediate slice itself.
             defer allocator.free(stdio_tools);
             try all_tools.appendSlice(allocator, stdio_tools);
             continue;
@@ -555,8 +530,6 @@ pub fn buildMCPToolsRun(
         }
 
         // Fetch tools from this server via the new mcp_http client.
-        // The HttpRegistry caches one HttpClient per server name; we
-        // get a fresh list of tools for each buildMCPToolsRun call.
         const std_header_slice = blk: {
             var buf: [16]custom_http_client.Header = undefined;
             var count: usize = 0;
@@ -591,9 +564,7 @@ pub fn buildMCPToolsRun(
     return try all_tools.toOwnedSlice(allocator);
 }
 
-/// Convert []mcp_types.McpTool to []tool_models.AgentTool. Each tool's
-/// inputSchema.properties JSON object is walked: each property's name, type,
-/// and description are extracted into a `ToolProperty`.
+/// Convert []mcp_types.McpTool to []tool_models.AgentTool.
 fn convertMcpToolsToAgentTools(
     allocator: std.mem.Allocator,
     mcp_tools: []const mcp_types.McpTool,
@@ -602,14 +573,10 @@ fn convertMcpToolsToAgentTools(
     var out: std.ArrayList(tool_models.AgentTool) = .empty;
     defer out.deinit(allocator);
     for (mcp_tools) |t| {
-        // Build the AgentTool name as "mcp_<server>_<tool>" — matches
-        // the stdio path so dispatch in handle_mcp_tool.zig can parse
-        // it back out.
+        // Build the AgentTool name as "mcp_<server>_<tool>" — matches the stdio path so dispatch in handle_mcp_tool.zig can parse it back out.
         const full_name = try std.fmt.allocPrint(allocator, "mcp_{s}_{s}", .{ server_name, t.name });
 
-        // Walk the inputSchema.properties (a std.json.Value object)
-        // and build a []ToolProperty. The JSON schema looks like:
-        //   { "type": "object", "properties": { "name": { "type": "string", "description": "..." } } }
+        // Walk the inputSchema.properties (a std.json.Value object) and build a []ToolProperty.
         var properties: std.ArrayList(tool_models.ToolProperty) = .empty;
         defer properties.deinit(allocator);
         var required: std.ArrayList([]const u8) = .empty;
@@ -648,8 +615,7 @@ fn convertMcpToolsToAgentTools(
             }
         }
 
-        // The mcp_types.McpTool.inputSchema struct has a `required` field —
-        // pull it if present.
+        // The mcp_types.McpTool.inputSchema struct has a `required` field — pull it if present.
 
         out.append(allocator, .{
             .type = "function",
@@ -700,8 +666,7 @@ fn fetchToolsFromServerStdio(
         allocator.free(argv);
     }
 
-    // The same placement rule the tool call uses: a `--saas` server belongs in
-    // the tenant's VM, and a route that cannot reach it is not a host fallback.
+    // The same placement rule the tool call uses: a `--saas` server belongs in the tenant's VM, and a route that cannot reach it is not a host fallback.
     var route = guest_mcp.route(allocator, workspace_vm.mcpPlacementForProcess(), .{
         .db = ctx.db,
         .workspace_id = ctx.scope.workspace_id,
@@ -716,24 +681,19 @@ fn fetchToolsFromServerStdio(
     }
     const retry_io = ctx.io orelse pabrikcore.mcpStdioRegistry(allocator).io;
 
-    // Retry loop for cold-start race: process.spawn returns before the child
-    // (python → SDK connect → _stdin.on('data')) has attached its stdin
-    // listener.
+    // Retry loop for cold-start race: process.spawn returns before the child (python → SDK connect → _stdin.on('data')) has attached its stdin listener.
     const retry_attempts: u8 = 10;
     const retry_delay_ms: i64 = 200;
     var last_err: anyerror = error.MCPServerSpawnFailed;
     var attempt: u8 = 0;
     while (attempt < retry_attempts) : (attempt += 1) {
-        // Bounded + cancellable: an unbounded wait here is multiplied by the
-        // ten attempts below, so a busy server would park a session (and every
-        // session behind it) for as long as the holder ran.
+        // Bounded + cancellable: an unbounded wait here is multiplied by the ten attempts below, so a busy server would park a session (and every session behind it) for …
         var lease = guest_mcp.acquire(allocator, ctx.io, route, server_name, argv, .{
             .wait_ns = 60 * std.time.ns_per_s,
             .is_cancelled = cancel_fn,
             .scope = ctx.scope,
         }) catch |err| {
-            // Busy is not a spawn failure — retrying stacks the budget ten
-            // times over. Report it instead.
+            // Busy is not a spawn failure — retrying stacks the budget ten times over.
             if (err == error.LeaseTimeout) return error.MCPServerBusy;
             last_err = error.MCPServerSpawnFailed;
             if (attempt + 1 < retry_attempts) {
@@ -749,9 +709,7 @@ fn fetchToolsFromServerStdio(
         const client = lease.transport();
         errdefer lease.markStale();
 
-        // MCP handshake: initialize → initialized → tools/list Many servers
-        // (Python SDK, Node SDK) require initialize before responding to
-        // tools/list.
+        // MCP handshake: initialize → initialized → tools/list Many servers (Python SDK, Node SDK) require initialize before responding to tools/list.
         const init_body = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"pabrik\",\"version\":\"0.0.1\"}}}";
         const initialized_body = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
         const tools_list_body = "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"tools/list\",\"params\":{}}";
@@ -759,9 +717,7 @@ fn fetchToolsFromServerStdio(
         // Send all three as NDJSON in one go (like Test does)
         const do_handshake = struct {
             fn call(c: guest_mcp.Transport, deadline: u64, cancel: ?*const fn () bool) ![]u8 {
-                // Send initialize + initialized + tools/list as NDJSON. Every
-                // send shares the same budget + cancel hook as the reads: an
-                // unbounded send would hold this server's lease open.
+                // Send initialize + initialized + tools/list as NDJSON.
                 try c.send(init_body, deadline, cancel);
                 try c.send(initialized_body, deadline, cancel);
                 try c.send(tools_list_body, deadline, cancel);
@@ -778,9 +734,7 @@ fn fetchToolsFromServerStdio(
             const is_retryable = err == error.UnexpectedEof or err == error.RecvTimeout or err == error.BrokenPipe;
             if (is_retryable and attempt + 1 < retry_attempts) {
                 lease.markStale();
-                // Hand the child back before sleeping: `defer` alone
-                // would hold the per-server lease for the whole backoff,
-                // stalling every other session on this server.
+                // Hand the child back before sleeping: `defer` alone would hold the per-server lease for the whole backoff, stalling every other session on this server.
                 lease.release();
                 std.Io.Clock.Duration.sleep(
                     .{ .raw = std.Io.Duration.fromMilliseconds(retry_delay_ms), .clock = .real },
@@ -792,13 +746,10 @@ fn fetchToolsFromServerStdio(
             if (err == error.UnexpectedEof) return error.MCPServerRecvFailed;
             return err;
         };
-        // `resp` is owned by the client's allocator (its per-client arena),
-        // not ours — free it there (matches the `init_resp` handling in
-        // `do_handshake` above).
+        // `resp` is owned by the client's allocator (its per-client arena), not ours — free it there (matches the `init_resp` handling in `do_handshake` above).
         defer client.allocator().free(resp);
 
-        // Parse result.tools[] into AgentTool records (same parser the HTTP
-        // branch uses after `body_to_parse` is read).
+        // Parse result.tools[] into AgentTool records (same parser the HTTP branch uses after `body_to_parse` is read).
         var parse_arena = std.heap.ArenaAllocator.init(allocator);
         defer parse_arena.deinit();
         const parsed = json.parseFromSlice(json.Value, parse_arena.allocator(), resp, .{
@@ -893,9 +844,7 @@ fn fetchToolsFromServer(
     const request_body = try allocator.dupe(u8, "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tools/list\",\"params\":{}}");
     defer allocator.free(request_body);
 
-    // Flatten the small bounded `_headers` slice + the Accept header into a
-    // `[]const custom_http_client.Header` slice (the type the
-    // custom_http_client.post() API takes).
+    // Flatten the small bounded `_headers` slice + the Accept header into a `[]const custom_http_client.Header` slice (the type the custom_http_client.post() API …
     var header_buf: [16]custom_http_client.Header = undefined;
     var header_count: usize = 0;
     header_buf[header_count] = .{ .name = "Accept", .value = "application/json, text/event-stream" };
@@ -1111,9 +1060,7 @@ pub fn BuildBackgroundProcessPrompt(
 
     // Get all background processes for this session
     const processes = try background_process.getBySession(db, allocator, session_id);
-    // One helper instead of an inline loop: this block used to free three
-    // fields by hand, so adding a fourth to `ProcessInfo` (the `kind` column,
-    // migration 107) turned it into a leak that fails the whole suite.
+    // One helper instead of an inline loop: this block used to free three fields by hand, so adding a fourth to `ProcessInfo` (the `kind` column, migration 107) …
     defer background_process.freeProcessInfos(allocator, processes);
 
     if (processes.len == 0) {
@@ -1121,9 +1068,7 @@ pub fn BuildBackgroundProcessPrompt(
     }
 
     try processesBuilder.appendSlice(allocator, "## Background Processes For This Session\n\n");
-    // `kind` is the load-bearing part of this block now. `service` means the
-    // agent will NEVER be told this process exited — it has to look, and it
-    // has to stop it when it is done.
+    // `kind` is the load-bearing part of this block now.
     try processesBuilder.appendSlice(allocator,
         \\`job` = a bounded command; you WILL be messaged when it exits.
         \\`service` (mode="background_persistence") = SILENT — no message, ever. Read its log
@@ -1196,9 +1141,7 @@ pub fn BuildDynamicAgentContent(
     return result;
 }
 
-// Cap for how many design pages to enumerate in the Design Canvas status
-// prompt. Pages beyond the cap are listed as a count footer. Small enough
-// to keep the prompt compact, large enough to cover most multi-page designs.
+// Cap for how many design pages to enumerate in the Design Canvas status prompt.
 const MAX_DESIGN_PAGES: u32 = 10;
 
 /// Strip the item-type-forbidden tools (kanban ↔ design) from `tools`.
@@ -1212,7 +1155,6 @@ pub fn filteringTools(allocator: std.mem.Allocator, db: *database.Db, session_id
     return tool_eligibility.itemTypeStrip(tools, ctx.self_item_type);
 }
 
-// =============================================================================
 // Moved from src/modules/agent/prompts.zig on 2026-08-23.
 
 /// Get the current operating system as a human-readable string
@@ -1230,12 +1172,9 @@ fn getCurrentOs() []const u8 {
     };
 }
 
-// =============================================================================
 // PROMPT BUILDERS
-// =============================================================================
 
 /// Append a section to the result with a leading "\n\n" separator.
-/// Skips empty sections.
 const appendSection = struct {
     fn func(a: std.mem.Allocator, r: *std.ArrayList(u8), section: []const u8) !void {
         if (section.len > 0) {
@@ -1245,18 +1184,14 @@ const appendSection = struct {
     }
 }.func;
 
-/// A single prompt section in the main agent's system prompt. `requires_tool`
-/// is an optional gate: if set, the section is only rendered when a tool with
-/// that exact name is present in the runtime tool list.
+/// A single prompt section in the main agent's system prompt.
 const PromptSection = struct {
     name: []const u8,
     content: []const u8,
     requires_tool: ?[]const u8 = null,
 };
 
-/// Sections for the LEGACY `build_agent_prompt` below, which the live path no
-/// longer calls: a rule listed here does NOT reach the model. `buildMessages`
-/// assembles the live prompt by hand, and its tests prove what ships.
+/// Sections for the LEGACY `build_agent_prompt` below, which the live path no longer calls: a rule listed here does NOT reach the model.
 const PROMPT_SECTIONS: []const PromptSection = &.{
     .{ .name = "universal_rules", .content = prompts_const.UniversalRules },
     .{ .name = "search_tool_rule", .content = prompts_const.SearchToolRule },
@@ -1299,8 +1234,7 @@ fn hasTool(tools: []const tool_models.AgentTool, name: []const u8) bool {
     return false;
 }
 
-/// Load the contents of all memory files in `~/.config/pabrik/memories/` and
-/// concatenate them as a single markdown blob.
+/// Load the contents of all memory files in `~/.config/pabrik/memories/` and concatenate them as a single markdown blob.
 pub fn loadGlobalKnowledge(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1317,8 +1251,7 @@ pub fn loadGlobalKnowledge(
     errdefer result.deinit(allocator);
 
     for (list) |mem| {
-        // Read the full file — no per-file cap. Pattern matches read_file.zig
-        // and use_skill.zig which also use maxInt(usize) to mean "read all".
+        // Read the full file — no per-file cap.
         const content = std.Io.Dir.cwd().readFileAlloc(
             io,
             mem.path,
@@ -1332,9 +1265,7 @@ pub fn loadGlobalKnowledge(
         try result.appendSlice(allocator, " (`");
         try result.appendSlice(allocator, mem.name);
         try result.appendSlice(allocator, "`)\n\n");
-        // Emit the absolute path as a separate code-span line right below the
-        // heading so the agent can copy it verbatim into `read_file`,
-        // `write_file`, `text_replace`, or `remove_file` without
+        // Emit the absolute path as a separate code-span line right below the heading so the agent can copy it verbatim into `read_file`, `write_file`, `text_replace` …
         try result.appendSlice(allocator, "`");
         try result.appendSlice(allocator, mem.path);
         try result.appendSlice(allocator, "`\n\n");
@@ -1345,8 +1276,7 @@ pub fn loadGlobalKnowledge(
     return result.toOwnedSlice(allocator);
 }
 
-/// Load the contents of all memory files in `<cwd>/.pabrik/memories/` and
-/// concatenate them as a single markdown blob.
+/// Load the contents of all memory files in `<cwd>/.pabrik/memories/` and concatenate them as a single markdown blob.
 pub fn loadLocalKnowledge(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1379,9 +1309,7 @@ pub fn loadLocalKnowledge(
         try result.appendSlice(allocator, " (`");
         try result.appendSlice(allocator, mem.name);
         try result.appendSlice(allocator, "`)\n\n");
-        // Emit the absolute path as a separate code-span line right below the
-        // heading so the agent can copy it verbatim into `read_file`,
-        // `write_file`, `text_replace`, or `remove_file` without
+        // Emit the absolute path as a separate code-span line right below the heading so the agent can copy it verbatim into `read_file`, `write_file`, `text_replace` …
         try result.appendSlice(allocator, "`");
         try result.appendSlice(allocator, mem.path);
         try result.appendSlice(allocator, "`\n\n");
@@ -1392,9 +1320,7 @@ pub fn loadLocalKnowledge(
     return result.toOwnedSlice(allocator);
 }
 
-/// Build main agent prompt with all components combined. Prompt construction
-/// is data-driven via `PROMPT_SECTIONS`. To change what the agent sees, edit
-/// that list — don't touch this function.
+/// Build main agent prompt with all components combined.
 pub fn build_agent_prompt(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1431,7 +1357,6 @@ pub fn build_agent_prompt(
     }
 
     // Local Knowledge — auto-loaded from <cwd>/.pabrik/memories/*.md.
-    // Project-specific memories that ship with the codebase.
     const local_knowledge = try loadLocalKnowledge(allocator, io, cwd);
     defer allocator.free(local_knowledge);
     if (local_knowledge.len > 0) {
@@ -1469,7 +1394,6 @@ pub fn build_agent_prompt(
     }
 
     // Static, cache-friendly: encourages reading sibling project paths for context.
-    // Parity with buildMessages — same constant, same position (right after workspace).
     try result.appendSlice(allocator, prompts_const.CrossProjectCwdRule);
 
     if (kanbanStatusContent.len > 0) {
@@ -1515,20 +1439,14 @@ fn appendToolListing(allocator: std.mem.Allocator, result: *std.ArrayList(u8), t
     }
 }
 
-// ---------------------------------------------------------------------------
 // Available Sub-Agents listing
-// ---------------------------------------------------------------------------
 
-// ============================================================================
 // Unit tests for buildMCPToolsRun (task_1788372445618_0 follow-up)
-// ============================================================================
 
 const testing = std.testing;
 const hf = @import("helpers").host_fixture;
 
-/// The two replies a stdio MCP server owes `buildMCPToolsRun`: the
-/// `initialize` result, then the `tools/list` result naming one tool. A
-/// fixture reading three stdin lines and printing these speaks it all.
+/// The two replies a stdio MCP server owes `buildMCPToolsRun`: the `initialize` result, then the `tools/list` result naming one tool.
 const mcp_stdio_handshake_reply =
     \\{"jsonrpc":"2.0","id":"1","result":{"protocolVersion":"2024-11-05"}}
     \\{"jsonrpc":"2.0","id":"2","result":{"tools":[{"name":"hello","description":"says hi","inputSchema":{"type":"object","properties":{}}}]}}
@@ -1590,9 +1508,7 @@ test "buildMCPToolsRun: server with neither command nor url is skipped" {
 }
 
 test "buildMCPToolsRun: stdio server with bogus command is skipped (no crash)" {
-    // Uses a non-existent binary — acquire fails with ChildSpawnFailed, which
-    // buildMCPToolsRun catches and skips. Proves the spawn-failure path
-    // doesn't crash or propagate the error.
+    // Uses a non-existent binary — acquire fails with ChildSpawnFailed, which buildMCPToolsRun catches and skips.
     const json_text =
         \\{"bad": {"command": "/no/such/binary/should/exist/xyzzy", "args": []}}
     ;
@@ -1619,9 +1535,7 @@ test "buildMCPToolsRun: stdio server with empty command is skipped" {
 }
 
 test "buildMCPToolsRun: disabled servers are skipped (enabled server's tools only)" {
-    // MCP server toggle: a server with explicit `"enabled": false` must be
-    // skipped BEFORE any spawn/connect. Both entries name the SAME fixture
-    // server, so spawning the disabled one yields a 2nd tool, not a failure.
+    // MCP server toggle: a server with explicit `"enabled": false` must be skipped BEFORE any spawn/connect.
     var fx = try hf.Fixture.init(testing.allocator);
     defer fx.deinit();
     const server = try fx.writeProgram("mcp-server", .{
@@ -1658,8 +1572,7 @@ test "buildMCPToolsRun: disabled servers are skipped (enabled server's tools onl
     try outer.put(testing.allocator, try testing.allocator.dupe(u8, "dis"), .{ .object = dis_obj });
 
     const result = try buildMCPToolsRun(testing.allocator, .{ .object = outer }, null, .{});
-    // Kills the spawned `sh` children + frees the registry arena (same
-    // cleanup the bogus-command test does for its failed spawns).
+    // Kills the spawned `sh` children + frees the registry arena (same cleanup the bogus-command test does for its failed spawns).
     defer mcp_stdio.StdioRegistry.deinitGlobal();
     defer {
         if (result) |tools| {
@@ -1682,9 +1595,7 @@ test "buildMCPToolsRun: disabled servers are skipped (enabled server's tools onl
     try testing.expectEqualStrings("mcp_ena_hello", result.?[0].function.name);
 }
 
-// ============================================================================
 // Agent-visibility wiring tests: prove the agent CAN see MCP tools
-// ============================================================================
 
 test "convertMcpToolsToAgentTools: names are mcp_<server>_<tool> (agent sees them)" {
     // Mock one MCP tool like graphify's query_graph
@@ -1736,14 +1647,12 @@ test "fetchToolsFromServerStdio: empty command returns MCPServerCommandNotFound 
 test "fetchToolsFromServerStdio: missing command field returns MCPServerCommandNotFound" {
     var obj = try std.json.ObjectMap.init(testing.allocator, &.{}, &.{});
     defer obj.deinit(testing.allocator);
-    // Has url but no command — fetchToolsFromServerStdio only looks at
-    // command/args, so empty argv → CommandNotFound
+    // Has url but no command — fetchToolsFromServerStdio only looks at command/args, so empty argv → CommandNotFound
     const err = fetchToolsFromServerStdio(testing.allocator, "srv", obj, 1_000_000_000, null, .{});
     try testing.expectError(error.MCPServerCommandNotFound, err);
 }
 
 // ─── Cross-project cwd prompt ───────────────────────────────────────────
-// Static intro + dynamic sibling-cwd loop (workspace_items only).
 
 test "CrossProjectCwdRule content encourages sibling reads without guardrails" {
     const rule = prompts_const.CrossProjectCwdRule;
@@ -1754,7 +1663,6 @@ test "CrossProjectCwdRule content encourages sibling reads without guardrails" {
     try testing.expect(std.mem.indexOf(u8, rule, "do NOT modify") == null);
 }
 
-// -------------------------------------------------------------------------
 // Cross-project cwd, live path.
 
 const migration = @import("../../../migrations/migration.zig");
@@ -1994,8 +1902,7 @@ test "buildMessages: the cross-project block reaches the prompt, after the works
 
     try insertWorkspaceItem(&ctx.db, "item_self", "ws_1", "Self", "/nowhere/self");
     try insertWorkspaceItem(&ctx.db, "item_sibling", "ws_1", "Sibling", "/nowhere/sibling");
-    // A different workspace: a cwd the agent may know about, but which is
-    // NOT reachable from this session's workspace, so it must not show up.
+    // A different workspace: a cwd the agent may know about, but which is NOT reachable from this session's workspace, so it must not show up.
     try insertWorkspaceItem(&ctx.db, "item_other_ws", "ws_2", "Other", "/nowhere/other-workspace");
     try insertWorkspaceTask(&ctx.db, "sess_cross", "item_self");
 
@@ -2025,22 +1932,18 @@ test "buildMessages: the cross-project block reaches the prompt, after the works
     testing.allocator.free(messages);
     defer testing.allocator.free(prompt);
 
-    // The static intro reached the live prompt, and it reads AFTER the
-    // workspace listing (the agent needs to know the workspace id first).
+    // The static intro reached the live prompt, and it reads AFTER the workspace listing (the agent needs to know the workspace id first).
     const ws_at = std.mem.indexOf(u8, prompt, "## Workspace Context") orelse
         return error.WorkspaceBlockMissing;
     const cross_at = std.mem.indexOf(u8, prompt, "## Cross-Project Context") orelse
         return error.CrossProjectBlockMissing;
     try testing.expect(ws_at < cross_at);
 
-    // The dynamic sibling loop ran and listed the sibling cwd. Its row
-    // format ("- `<path>` (<name>) [item_id: `<id>`]") is distinct from the
-    // workspace listing's, so this cannot be satisfied by that block alone.
+    // The dynamic sibling loop ran and listed the sibling cwd.
     try testing.expect(std.mem.indexOf(u8, prompt, "Sibling project directories:") != null);
     try testing.expect(std.mem.indexOf(u8, prompt, "- `/nowhere/sibling` (Sibling) [item_id: `item_sibling`]") != null);
 
-    // Source is workspace_items ONLY: the loop excludes the session's own
-    // item, and a cwd from another workspace never reaches the prompt.
+    // Source is workspace_items ONLY: the loop excludes the session's own item, and a cwd from another workspace never reaches the prompt.
     try testing.expect(std.mem.indexOf(u8, prompt, "[item_id: `item_self`]") == null);
     try testing.expect(std.mem.indexOf(u8, prompt, "/nowhere/other-workspace") == null);
 }

@@ -1,6 +1,4 @@
-/** DiffCommentBox: agnostic persistent comment box for diff review. - textarea draft persisted to
- * localStorage under diff-comment:<cwd>:<filePath>:<start>-<end>; reload restores draft - Save
- * persists + emits save with formatted markdown. */
+/** DiffCommentBox: agnostic persistent comment box for diff review. - textarea draft persisted to localStorage under diff-comment:<cwd>:<filePath>:<start>-<end> … */
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { readFileSync } from "node:fs";

@@ -1,11 +1,8 @@
 export interface SubAgentArgs {
-  /**    * Required. The name of the pre-configured sub-agent from LlmConfig.sub_agents. Also used as the
-   * sub-agent's label in the result XML. */
+  /** Required. */
   agent_name: string
   instruction: string
-  /**    * Required since 2026-09-12 (mirrors the backend parse rule in `spawn_sub_agent.zig`): explicit
-   * non-empty allowlist, never "all". Entries missing/empty/"all" tools are filtered out so the UI
-   * never renders cards for a spawn the backend will reject. */
+  /** Required since 2026-09-12 (mirrors the backend parse rule in `spawn_sub_agent.zig`): explicit non-empty allowlist, never "all". */
   tools: string[]
   timeout_seconds?: number
   inherited_context?: string
@@ -21,9 +18,7 @@ const callFunction = (call: OpaqueCall): Record<string, unknown> | null => {
 const isSpawnCall = (call: OpaqueCall): boolean =>
   callFunction(call)?.['name'] === 'spawn_sub_agent'
 
-/** null when the call's arguments cannot be read; an empty array when it was read but every
- * sub-agent is invalid. The two are different contracts (see
- * `returns an empty array when a sub-agent is missing the required agent_name`). */
+/** null when the call's arguments cannot be read; an empty array when it was read but every sub-agent is invalid. */
 function subAgentArgsFromCall(call: OpaqueCall): SubAgentArgs[] | null {
   const rawArgs = callFunction(call)?.['arguments']
   if (rawArgs == null) return null
@@ -81,8 +76,7 @@ function parseToolCalls(toolCallsJson: string | null | undefined): OpaqueCall[] 
   return Array.isArray(parsed) ? (parsed as OpaqueCall[]) : null
 }
 
-/** Extract the sub_agents array from an assistant message's tool_calls_json, matched by
- * tool_call_id. */
+/** Extract the sub_agents array from an assistant message's tool_calls_json, matched by tool_call_id. */
 export function parseSpawnSubAgentArgs(
   toolCallsJson: string | null | undefined,
   toolCallId: string | null | undefined,
@@ -96,9 +90,7 @@ export function parseSpawnSubAgentArgs(
   return subAgentArgsFromCall(match)
 }
 
-/** Every spawn call of ONE assistant message's tool_calls_json, keyed by tool_call_id. Reads the
- * payload once, so a transcript costs one parse per message instead of one per (call, message)
- * pair. */
+/** Every spawn call of ONE assistant message's tool_calls_json, keyed by tool_call_id. */
 export function indexSpawnSubAgentArgs(
   toolCallsJson: string | null | undefined,
 ): Map<string, SubAgentArgs[]> {

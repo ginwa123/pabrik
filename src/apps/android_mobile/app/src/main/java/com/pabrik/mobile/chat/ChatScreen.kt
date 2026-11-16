@@ -47,76 +47,17 @@ import com.pabrik.mobile.ui.PabrikText
 import com.pabrik.mobile.ui.PabrikTheme
 import kotlinx.coroutines.launch
 
-/**
- * Whether the agent is working, from the two signals that can say so.
- *
- * Neither alone is right, and the gap each one leaves is the same shape — a
- * reader told the agent is idle while it is plainly busy.
- *
- * - [isRunning] is the backend's own answer and it holds between turns, so it
- *   is the one that survives a long tool run that emits no deltas at all. It
- *   arrives over the `workers` channel, so there is a window after a send
- *   returns and before that frame lands.
- * - [isStreaming] is instantaneous, and so covers exactly that window — but it
- *   drops on `chunk_final` and only returns with the next chunk, which turns a
- *   two-minute tool call into a series of silent pauses.
- *
- * The disjunction is also the safe direction for both mistakes: a header that
- * says "Working…" for a moment after a run ended costs a glance, and a header
- * that says "Live" for a two-minute tool call is a report the reader learns to
- * stop believing, which is the failure that actually has to be avoided.
- */
+/** Whether the agent is working, from the two signals that can say so. */
 fun isChatWorking(isRunning: Boolean, isStreaming: Boolean): Boolean = isRunning || isStreaming
 
-/**
- * The header's word for the run, with no queue or agent counts attached.
- *
- * Split out of [ChatStatusLine] so the mapping is testable without a device —
- * which matters because this is a composable whose whole surface is a
- * `when` over two booleans, and a one-line rule that only instrumented tests
- * can reach is a rule that quietly stops being true.
- */
+/** The header's word for the run, with no queue or agent counts attached. */
 fun chatStatusLabel(isWorking: Boolean, isLive: Boolean): String = when {
     isWorking -> "Working…"
     isLive -> "Live"
     else -> "Reconnecting…"
 }
 
-/**
- * The chat as its own destination, with the recents drawer one tap away.
- *
- * A chat is a *view*, so it gets a route rather than living in a local
- * `selectedChatId` boolean. That is what makes it survive process death, work
- * with the system Back button, and be reachable from a shared
- * `pabrik://chat/{sessionId}` link — the same contract the network inspector
- * already has.
- *
- * The top bar leads with a hamburger rather than a back arrow. A reader who
- * came here from the recents list is usually not trying to go back — they are
- * switching to the chat next to this one — and the drawer is the only place
- * that can offer a whole workspace of them plus a way to sign out. An arrow
- * could only ever offer one of those, and it offered it on a screen the reader
- * had to leave the transcript to use.
- *
- * The drawer is the same sidebar the shell shows, supplied by the caller: the
- * screen owns the sheet, the state and the swipe, and must not grow its own
- * idea of what a chat list is. It carries no "all chats" row of its own — the
- * list it opens *is* the list that row used to lead to, so a row that returns
- * the reader to the top of a list already in front of them is a second route to
- * where they are standing. The one way out that is not the drawer is the system
- * Back button, and the graph owns that: see
- * [com.pabrik.mobile.network.PabrikNavGraph].
- *
- * The title and the live indicator live in the route's top bar, and the stop
- * control lives in the composer — beside the send it replaces, so the row
- * never offers "start a turn" and "end a turn" at the same time. There is
- * exactly one title bar and one way to interrupt a run.
- *
- * The bar's `actions` slot carries the one thing a reader inside a chat wants
- * that is not this chat: a new one. Everything else the web puts in a bar —
- * renaming, compacting, the worktree menu — either has no place on a phone
- * bar or is a per-account setting the desktop's settings screen already owns.
- */
+/** The chat as its own destination, with the recents drawer one tap away. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -126,70 +67,29 @@ fun ChatScreen(
     onDraftChanged: (String) -> Unit = {},
     onSend: () -> Unit = {},
     onStop: () -> Unit = {},
-    /**
-     * Re-read the queue behind the composer's panel, and put a waiting turn's
-     * text back in the box. See [ChatView].
-     */
+    /** Re-read the queue behind the composer's panel, and put a waiting turn's text back in the box. */
     onRefreshQueue: () -> Unit = {},
     onUseQueuedMessage: (QueuedChatMessage) -> Unit = {},
-    /**
-     * Put this chat on a different profile, or clear the override with `""`.
-     */
+    /** Put this chat on a different profile, or clear the override with `""`. */
     onSelectModel: (String) -> Unit = {},
-    /**
-     * A picked image, as the picker's own string.
-     *
-     * The picker launcher itself lives in `ChatView`, which owns the
-     * composer — this slot only carries the result down to whoever decodes
-     * it, so the paperclip cannot be wired to a picker that does not open.
-     */
+    /** A picked image, as the picker's own string. */
     onAttachmentPicked: (String) -> Unit = {},
     /** Drop one pending attachment, by the id its row carries. */
     onRemoveAttachment: (String) -> Unit = {},
     onLoadOlder: () -> Unit = {},
     onDismissError: () -> Unit = {},
     onAnswer: (QuestionAnswer) -> Unit = {},
-    /**
-     * The transcript is standing where it belongs and there is nothing left to
-     * wait for.
-     *
-     * A launch holds a screen over this one until this fires, because a chat
-     * that is on screen a frame before its auto-scroll has run shows the top of
-     * the transcript and then jumps to the bottom — the one thing a reader who
-     * just reopened their last chat would notice. See
-     * [com.pabrik.mobile.network.launchGateIsUp].
-     */
+    /** The transcript is standing where it belongs and there is nothing left to wait for. */
     onTranscriptSettled: (String?) -> Unit = {},
-    /**
-     * Whether a worker is registered for this session — the backend's own
-     * definition of "the agent is working", and the one that holds between
-     * turns. `state.isStreaming` is per-*delta*: it drops on `chunk_final` and
-     * only returns with the next chunk, so a long tool run reads as a series of
-     * separate silent pauses. This does not.
-     *
-     * It now drives the status line's word and the stop control as well as the
-     * spinner, because a header that knows a run is going and a header that
-     * will not offer to stop it are telling the reader two different things.
-     * See [isChatWorking] for how the two signals combine.
-     */
+    /** Whether a worker is registered for this session — the backend's own definition of "the agent is working", and the one that holds between turns. */
     isRunning: Boolean = false,
-    /**
-     * What the hamburger opens, and the widest way out of the chat into the
-     * rest of the app.
-     *
-     * It is handed the drawer so it can close it: a chat picked from the list is
-     * a destination the reader is moving to, and leaving the list open on top of
-     * it would hide the very transcript they asked for. Required rather than
-     * defaulted because a hamburger that opens an empty sheet is a control that
-     * does nothing.
-     */
+    /** What the hamburger opens, and the widest way out of the chat into the rest of the app. */
     drawerContent: @Composable (dismissDrawer: () -> Unit) -> Unit,
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val dismissDrawer: () -> Unit = { coroutineScope.launch { drawerState.close() } }
-    // One answer for the label and the stop control, so they can never disagree
-    // about whether there is a run to interrupt.
+    // One answer for the label and the stop control, so they can never disagree about whether there is a run to interrupt.
     val isWorking = isChatWorking(isRunning = isRunning, isStreaming = state.isStreaming)
 
     ModalNavigationDrawer(
@@ -199,8 +99,7 @@ fun ChatScreen(
             .testTag("chat_screen"),
         drawerContent = {
             ModalDrawerSheet(
-                // Same tag as the shell's sheet: it is the same drawer, and a
-                // test should not have to know which route opened it.
+                // Same tag as the shell's sheet: it is the same drawer, and a test should not have to know which route opened it.
                 modifier = Modifier.testTag("sidebar_sheet"),
                 drawerState = drawerState,
                 drawerContainerColor = PabrikBackground,
@@ -245,11 +144,7 @@ fun ChatScreen(
                             )
                         }
                     },
-                    // No action on the right. The drawer's "New Chat" row is the one
-                    // control that both this route and the shell share, so a `+`
-                    // here was a second answer to the same question — and one
-                    // reachable only from this screen, for a page the reader
-                    // reaches from everywhere else.
+                    // No action on the right.
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = PabrikBackground,
                         navigationIconContentColor = PabrikText,
@@ -306,18 +201,13 @@ private fun ChatStatusLine(
         Text(
             text = buildString {
                 append(chatStatusLabel(isWorking = isWorking, isLive = isLive))
-                // A turn that looks like it vanished is usually still queued,
-                // and saying so is the difference between "slow" and "broken".
+                // A turn that looks like it vanished is usually still queued, and saying so is the difference between "slow" and "broken".
                 if (queuedCount > 0) append(" · $queuedCount queued")
-                // A fan-out emits no rows at all until every sub-agent is done,
-                // so without this a two-minute spawn_sub_agent is
-                // indistinguishable from a hang.
+                // A fan-out emits no rows at all until every sub-agent is done, so without this a two-minute spawn_sub_agent is indistinguishable from a hang.
                 if (subAgentsRunning > 0 || subAgentsFailed > 0) {
                     append(" · $subAgentsRunning/$subAgentsTotal agents")
                 }
-                // A fan-out that finished with failures and nothing left running
-                // shows only this, or the header would go quiet right when the
-                // reader is waiting to find out whether it worked.
+                // A fan-out that finished with failures and nothing left running shows only this, or the header would go quiet right when the reader is waiting to find out …
                 if (subAgentsRunning == 0 && subAgentsFailed > 0) {
                     append(" · $subAgentsFailed failed")
                 }
@@ -326,9 +216,7 @@ private fun ChatStatusLine(
             color = if (queuedCount > 0) PabrikMuted else PabrikDim,
             modifier = Modifier.testTag("chat_live_label"),
         )
-        // Trailing, after the label rather than before it: the label is prose
-        // that has to keep its position so the two lines of the top bar do not
-        // dance, and a spinner is decoration on top of whatever it says.
+        // Trailing, after the label rather than before it: the label is prose that has to keep its position so the two lines of the top bar do not dance, and a spinner …
         if (isRunning) {
             Spacer(Modifier.size(6.dp))
             CircularProgressIndicator(
@@ -346,8 +234,7 @@ private fun ChatStatusLine(
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun ChatScreenPreview() {
-    // The preview carries the same drawer the route supplies, so the hamburger
-    // in the bar is never a button that opens nothing.
+    // The preview carries the same drawer the route supplies, so the hamburger in the bar is never a button that opens nothing.
     val previewNow = System.currentTimeMillis()
     PabrikTheme {
         ChatScreen(

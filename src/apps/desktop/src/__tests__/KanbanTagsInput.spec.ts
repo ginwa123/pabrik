@@ -1,6 +1,4 @@
-/** KanbanTagsInput — chip input component. Tests cover: empty state, existing chips render, add via
- * Enter, add via comma, ✕ removes, backspace-on-empty removes last, case-insensitive dedupe (silent
- * no-op), forbidden char error, length cap error. */
+/** KanbanTagsInput — chip input component. */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -184,15 +182,12 @@ describe('KanbanTagsInput', () => {
     const wrapper = mount(KanbanTagsInput, {
       props: { modelValue: [] },
     })
-    // Sanity: the component does NOT auto-commit on input alone —
-    // the bug we are fixing. Typing without Enter/comma/blur is
-    // intentionally a no-op so chip inputs don't surprise users.
+    // Sanity: the component does NOT auto-commit on input alone — the bug we are fixing.
     const input = wrapper.find<HTMLInputElement>('[data-testid="kanban-tags-input-field"]')
     input.element.value = 'draft'
     await input.trigger('input')
     expect(wrapper.emitted('update:modelValue')).toBeFalsy()
-    // Now call the exposed imperative method (the dialog uses this
-    // pattern in handleSave, before reading tags.value).
+    // Now call the exposed imperative method (the dialog uses this pattern in handleSave, before reading tags.value).
     ;(wrapper.vm as unknown as { commitDraft: () => void }).commitDraft()
     await nextTick()
     expect(wrapper.emitted('update:modelValue')![0]).toEqual([['draft']])

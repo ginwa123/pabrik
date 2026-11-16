@@ -4,8 +4,7 @@ import { readChatViewSource } from '../../../__tests__/helpers/chatViewSource'
 
 const src = readChatViewSource()
 
-// Built from parts: written out, this literal is a Tailwind candidate and the
-// scanner would keep the now-dead utility in the shipped stylesheet.
+// Built from parts: written out, this literal is a Tailwind candidate and the scanner would keep the now-dead utility in the shipped stylesheet.
 const OLD_CAP = ['max-w', '4xl'].join('-')
 
 describe('ChatView transcript width', () => {

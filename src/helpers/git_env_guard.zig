@@ -1,6 +1,4 @@
-//! Refuses fixture git when GIT_DIR/GIT_WORK_TREE-style vars are set. `git -C
-//! <fixture>` obeys those over `-C`, so under a git hook every fixture commit
-//! would land in the real repo.
+//! Refuses fixture git when GIT_DIR/GIT_WORK_TREE-style vars are set.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -32,8 +30,7 @@ pub fn ambientGitEnvOverride() ?[]const u8 {
 /// Call before the first git spawn in a fixture: fails the test instead of committing into a real repo.
 pub fn requireCleanGitEnv() error{AmbientGitEnvRedirect}!void {
     if (ambientGitEnvOverride()) |name| {
-        // `zig build test` relays stderr from a PASSING test as a `run test w`
-        // block, and the guard's own test trips this on purpose: gate on is_test.
+        // `zig build test` relays stderr from a PASSING test as a `run test w` block, and the guard's own test trips this on purpose: gate on is_test.
         if (!builtin.is_test) std.debug.print("\n!! refusing fixture git: {s} is set !!\n", .{name});
         return error.AmbientGitEnvRedirect;
     }
@@ -67,15 +64,12 @@ test "ambientGitEnvOverride is null in a clean environment" {
     try std.testing.expect(ambientGitEnvOverride() == null);
 }
 
-// `setenv`/`unsetenv` exist on POSIX only. Windows spells the same thing
-// with the CRT's `_putenv_s`, which is the setter behind the `getenv` this
-// module reads — an empty value REMOVES the variable there.
+// `setenv`/`unsetenv` exist on POSIX only.
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 extern "c" fn unsetenv(name: [*:0]const u8) c_int;
 extern "c" fn _putenv_s(name: [*:0]const u8, value: [*:0]const u8) c_int;
 
-/// Set `name` in the environment `ambientGitEnvOverride` reads it from:
-/// libc's `setenv` on POSIX, the CRT's `_putenv_s` on Windows.
+/// Set `name` in the environment `ambientGitEnvOverride` reads it from
 fn setAmbientVar(name: [*:0]const u8, value: [*:0]const u8) c_int {
     return switch (builtin.os.tag) {
         .windows => _putenv_s(name, value),
@@ -83,8 +77,7 @@ fn setAmbientVar(name: [*:0]const u8, value: [*:0]const u8) c_int {
     };
 }
 
-/// Remove `name` from that same environment — an empty value is how
-/// `_putenv_s` spells `unsetenv`.
+/// Remove `name` from that same environment — an empty value is how `_putenv_s` spells `unsetenv`.
 fn unsetAmbientVar(name: [*:0]const u8) c_int {
     return switch (builtin.os.tag) {
         .windows => _putenv_s(name, ""),

@@ -16,8 +16,7 @@ export function parseBash(data: unknown): ParsedBash {
   const o = unwrapDataRecord(data)
   return {
     command: strOrNullField(o, 'command'),
-    // Second, independent escape guard at the parse seam. The backend strips in
-    // shell.result_to_json; this covers live/partial payloads and any future raw-bytes producer.
+    // Second, independent escape guard at the parse seam.
     stdout: stripAnsiEscapes(strField(o, 'stdout')),
     stderr: stripAnsiEscapes(strField(o, 'stderr')),
     exitCode: numOrNullField(o, 'exit_code'),
@@ -28,8 +27,7 @@ export function parseBash(data: unknown): ParsedBash {
   }
 }
 
-/** Parse a pwsh (PowerShell Core) tool result. Same JSON `data` shape as bash — per plan D2 + D10
- * the schema is structurally identical, only the `tool` field that wraps the envelope differs. */
+/** Parse a pwsh (PowerShell Core) tool result. */
 export function parsePwsh(data: unknown): ParsedBash {
   return parseBash(data)
 }
@@ -39,9 +37,7 @@ export function parseCommand(data: unknown): ParsedBash {
   return parseBash(data)
 }
 
-/**  * Dispatcher: parse a tool result based on the `toolName` it was registered under. 'bash' / 'pwsh'
- * / 'run_command' (legacy alias) / 'command' (unified shell) all use the same payload. New shells
- * with divergent payload shapes must add their own branch here. */
+/** Dispatcher: parse a tool result based on the `toolName` it was registered under. */
 export function parseShell(toolName: string, data: unknown): ParsedBash {
   switch (toolName) {
     case 'bash':

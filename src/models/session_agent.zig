@@ -1,15 +1,11 @@
-//! Data model for the `session_agents` entity table. Maps each session to the
-//! sub-agent name it currently runs (one row per session; PRIMARY KEY on
-//! session_id).
+//! Data model for the `session_agents` entity table.
 
 const std = @import("std");
 
 pub const EntityId = []u8;
 
 session_id: EntityId,
-/// Default is `"Agent"`. Custom sub-agent names like
-/// `"code-reviewer"`, `"frontend-engineer"`, etc. are stored
-/// verbatim.
+/// Default is `"Agent"`.
 agent_name: []u8,
 /// Unix-seconds timestamp of the last sub-agent swap.
 updated_at: i64 = 0,

@@ -1,5 +1,4 @@
-/** Task-list child of the generic sync engine. The cache is local-only. Each context stores the
- * complete first-page response keyed by the same request shape used by the store. */
+/** Task-list child of the generic sync engine. */
 import { Effect } from 'effect'
 import * as api from '../api'
 import type { Task } from '../api'
@@ -63,8 +62,7 @@ export interface TaskDelta extends SyncDelta<TaskRow> {
 
 export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
   constructor(
-    // Read the API namespace at call time so Vitest spies on api.getTasks
-    // remain effective, as they are for the session engine.
+    // Read the API namespace at call time so Vitest spies on api.getTasks remain effective, as they are for the session engine.
     private fetchFn: typeof api.getTasks = (...args) => api.getTasks(...args),
     storeName = 'tasks',
     store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -82,7 +80,6 @@ export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
   }
 
   // BaseSyncEngine uses this only as an internal local bookkeeping value.
-  // It is deliberately not sent to the backend.
   cursorOf(item: TaskRow): string | null {
     return item.sortKey || null
   }
@@ -91,8 +88,7 @@ export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
     limit: number,
     ctx: TaskCtx,
   ): Effect.Effect<Awaited<ReturnType<typeof api.getTasks>>, SyncRemoteError> {
-    // Preserve the pre-cache call shape exactly. In particular, the
-    // default board-wide path still calls getTasks(workspaceId, itemId).
+    // Preserve the pre-cache call shape exactly.
     return Effect.tryPromise({
       try: () =>
         ctx.columnId === undefined &&
@@ -135,25 +131,20 @@ export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
     )
   }
 
-  /**    * Revalidate the same first page used to build this cache context and write the returned rows
-   * through. Older-page pagination is handled by the store and also writes through with putLocal. */
+  /** Revalidate the same first page used to build this cache context and write the returned rows through. */
   loadDelta(ctx: TaskCtx, limit: number): Effect.Effect<TaskDelta, SyncError> {
-    // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     return Effect.gen(function* () {
       const delta = yield* engine.fetchDelta(null, limit, ctx)
       yield* engine.putLocal(ctx, delta.items)
-      // A complete first page lists every row in this context, so cached
-      // rows it omits were deleted or moved out — evict them so future
-      // offline primes do not resurrect them.
+      // A complete first page lists every row in this context, so cached rows it omits were deleted or moved out — evict them so future offline primes do not resurrect …
       if (!delta.hasMore) yield* engine.reconcileCompletePage(ctx, delta.items)
       return delta
     })
   }
 
   private reconcileCompletePage(ctx: TaskCtx, fresh: TaskRow[]): Effect.Effect<void> {
-    // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     return Effect.gen(function* () {
@@ -168,7 +159,6 @@ export class TaskEngineDb extends BaseSyncEngine<TaskRow, TaskCtx> {
   }
 
   putTaskInContexts(requests: TaskCtx[], task: Task): Effect.Effect<void> {
-    // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     const row = toTaskRow(task)

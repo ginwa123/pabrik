@@ -1,6 +1,4 @@
-//! Frame: a 2-D grid of styled cells + the diff algorithm that turns
-//! two frames into a minimal byte stream of cursor moves, SGR codes,
-//! and UTF-8 runes.
+//! Frame: a 2-D grid of styled cells + the diff algorithm that turns two frames into a minimal byte stream of cursor moves, SGR codes, and UTF-8 runes.
 
 const std = @import("std");
 const color = @import("color.zig");
@@ -8,8 +6,7 @@ const color = @import("color.zig");
 pub const Cell = struct {
     char: u21 = ' ',
     fg: ?color.Color = null,
-    /// Default to BLACK so the TUI looks consistent regardless of the
-    /// terminal emulator's default background.
+    /// Default to BLACK so the TUI looks consistent regardless of the terminal emulator's default background.
     bg: ?color.Color = .black,
     bold: bool = false,
 };
@@ -44,8 +41,7 @@ pub const Frame = struct {
         self.cells[@as(usize, y) * self.width + x] = cell;
     }
 
-    /// Write `text` starting at (x, y), clipped to the frame bounds. Returns
-    /// the x position just past the last written char.
+    /// Write `text` starting at (x, y), clipped to the frame bounds.
     pub fn writeText(self: *Frame, x: u16, y: u16, text: []const u8, style: Style) u16 {
         var cx = x;
         var it = std.unicode.Utf8View.initUnchecked(text).iterator();
@@ -64,16 +60,14 @@ pub const Frame = struct {
     }
 };
 
-/// Per-cell style flags used by `writeText` (mirrors style.Style but
-/// without allocation).
+/// Per-cell style flags used by `writeText` (mirrors style.Style but without allocation).
 pub const Style = struct {
     fg: ?color.Color = null,
     bg: ?color.Color = null,
     bold: bool = false,
 };
 
-/// Diff `next` against `prev`, returning an owned byte stream that repaints
-/// only what changed.
+/// Diff `next` against `prev`, returning an owned byte stream that repaints only what changed.
 pub fn diff(
     allocator: std.mem.Allocator,
     prev: ?*const Frame,
@@ -142,14 +136,12 @@ pub fn diff(
     return aw.toOwnedSlice();
 }
 
-// Module-level "last emitted position" for diff(). Not thread-safe by
-// design — Program.run() is single-threaded on the render path.
+// Module-level "last emitted position" for diff().
 var last_x: i32 = -2;
 var last_y: i32 = -2;
 
 fn writeSgr(w: anytype, s: Style) !void {
-    // Reset then re-apply; simplest correct sequence for arbitrary
-    // transitions (bold off requires an explicit 22 on some terminals).
+    // Reset then re-apply; simplest correct sequence for arbitrary transitions (bold off requires an explicit 22 on some terminals).
     try w.writeAll("\x1b[0");
     if (s.bold) try w.writeAll(";1");
     if (s.fg) |fg| try w.print(";{d}", .{fg.fgCode()});
@@ -157,9 +149,7 @@ fn writeSgr(w: anytype, s: Style) !void {
     try w.writeAll("m");
 }
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -225,8 +215,7 @@ test "diff: single cell change emits one move + one rune" {
     defer testing.allocator.free(out);
     try testing.expect(std.mem.indexOf(u8, out, "\x1b[2;4H") != null); // row 2 col 4
     try testing.expect(std.mem.indexOf(u8, out, "X") != null);
-    // Bold SGR — round-3 emitted as `[0;1;40m` (reset + bold + bg black
-    // inherited from the Cell default) instead of the old `[0;1m`.
+    // Bold SGR — round-3 emitted as `[0;1;40m` (reset + bold + bg black inherited from the Cell default) instead of the old `[0;1m`.
     try testing.expect(std.mem.indexOf(u8, out, ";1;40m") != null);
 }
 
@@ -251,14 +240,11 @@ test "diff: emits bg=black SGR codes so terminal shows dark bg even on light the
     next.set(1, 0, .{ .char = 'i' });
     const out = try diff(testing.allocator, &prev, &next);
     defer testing.allocator.free(out);
-    // The SGR sequence is `\x1B[0;<fg>;<bg>m` — fg precedes bg. So
-    // look for `;40m` (the bg=black code, separated from the reset
-    // by the fg code).
+    // The SGR sequence is `\x1B[0;<fg>;<bg>m` — fg precedes bg.
     try testing.expect(std.mem.indexOf(u8, out, ";40m") != null);
 }
 
-// Scroll scenario: prev frame has OLD chat, next frame has NEW chat (the
-// result of scrolling). Every cell carries an explicit bg via the default.
+// Scroll scenario: prev frame has OLD chat, next frame has NEW chat (the result of scrolling).
 test "diff: scroll scenario emits black bg for every changed cell" {
     var prev = try Frame.init(testing.allocator, 10, 4);
     defer prev.deinit(testing.allocator);
@@ -276,8 +262,6 @@ test "diff: scroll scenario emits black bg for every changed cell" {
 
     const out = try diff(testing.allocator, &prev, &next);
     defer testing.allocator.free(out);
-    // The SGR sequence is `\x1B[0;<fg>;<bg>m` — fg precedes bg. So
-    // look for `;40m` (the bg=black code, separated from the reset
-    // by the fg code).
+    // The SGR sequence is `\x1B[0;<fg>;<bg>m` — fg precedes bg.
     try testing.expect(std.mem.indexOf(u8, out, ";40m") != null);
 }

@@ -1,5 +1,4 @@
-/** Tests for AppLayout's URL sync watcher behavior when handleSelectTask is invoked from
- * Sidebar.vue. */
+/** Tests for AppLayout's URL sync watcher behavior when handleSelectTask is invoked from Sidebar.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -150,8 +149,7 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
       has_more: false,
       next_cursor: null,
     })
-    // Mock getSystemFolder so AppLayout's initializeFromSystemFolder path (which runs on mount)
-    // doesn't hit the stubbed 404 fetch and surface as an unhandled rejection.
+    // Mock getSystemFolder so AppLayout's initializeFromSystemFolder path (which runs on mount) doesn't hit the stubbed 404 fetch and surface as an unhandled …
     vi.spyOn(api, 'getSystemFolder').mockResolvedValue({
       path: '/',
       absolute: '/',
@@ -181,26 +179,19 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     })
     await nextTick()
     await nextTick()
-    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites
-    // `workspaces.value` with the (empty) API mock result. Re-set workspaces so the URL watcher's
-    // lookup of activeWorkspace succeeds.
+    // AppLayout.onMounted calls initializeFromSystemFolder() which calls init() which overwrites `workspaces.value` with the (empty) API mock result.
     const ws = useWorkspacesStore()
     ws.workspaces = [makeWorkspace()]
-    // Restore active workspace item (pendingUrlRestore would have
-    // done this in real life, but the test fixture takes the
-    // shortcut).
+    // Restore active workspace item (pendingUrlRestore would have done this in real life, but the test fixture takes the shortcut).
     ws.setActiveWorkspaceItem(FOLDER_ID)
     await nextTick()
     await nextTick()
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // Simulate handleSelectTask: setActiveTask(taskId) + router.push. setActiveTask auto-discovers
-    // the parent item (folder) and sets activeWorkspaceItemId = folder.id.
+    // Simulate handleSelectTask: setActiveTask(taskId) + router.push. setActiveTask auto-discovers the parent item (folder) and sets activeWorkspaceItemId = …
     ws.setActiveTask(TASK_ID)
-    // Simulate handleSelectTask's router.push (the URL it would push
-    // is built by buildTaskUrlQuery; here we mimic the new wire
-    // shape — /chat/<taskId> suffix on itemId, view=workspace).
+    // Simulate handleSelectTask's router.push (the URL it would push is built by buildTaskUrlQuery; here we mimic the new wire shape — /chat/<taskId> suffix on …
     pushMock({
       path: '/app',
       query: {
@@ -213,8 +204,6 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     await nextTick()
 
     // The URL sync watcher must NOT have called replace that would clobber the chat suffix.
-    // (view=workspace writes are still expected — the watcher's chat-suffix guard ensures itemId
-    // stays in the /chat/<taskId> form.)
     const replaceCallsWithBareItemId = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (call: any[]) => {
@@ -234,8 +223,7 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: pushMock } as any)
 
-    // Start on view=workspace showing a DIFFERENT workspace item (item A). The folder (item B) is
-    // expanded in the sidebar but NOT yet the active item.
+    // Start on view=workspace showing a DIFFERENT workspace item (item A).
     const OTHER_ID = 'item_other'
     useRouteMock.mockReturnValue({
       query: { view: 'workspace', workspaceId: WS_ID, itemId: OTHER_ID },
@@ -304,8 +292,7 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // User clicks `llls` under the folder. setActiveTask will mutate activeWorkspaceItemId from
-    // OTHER_ID to FOLDER_ID — a real change.
+    // User clicks `llls` under the folder. setActiveTask will mutate activeWorkspaceItemId from OTHER_ID to FOLDER_ID — a real change.
     ws.isNavigatingToTask = true
     ws.setActiveTask(TASK_ID)
     pushMock({
@@ -322,9 +309,7 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
  
 
-    // The URL sync watcher must NOT have clobbered the URL with view=workspace pointing at OTHER_ID
-    // (the pre-click active item). That was the bug: the watcher fired before router.push applied,
-    // read stale URL, called router.replace({ view: 'workspace', itemId: OTHER_ID }).
+    // The URL sync watcher must NOT have clobbered the URL with view=workspace pointing at OTHER_ID (the pre-click active item).
     const replaceCallsWithViewWorkspace = replaceMock.mock.calls.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (call: any[]) => call[0]?.query?.view === 'workspace',
@@ -405,9 +390,7 @@ describe('AppLayout — handleSelectTask does not get its URL overwritten by the
 
  
 
-    // The flag is NOT set (we're simulating a buggy caller that forgot to flip it). The watcher
-    // SHOULD overwrite the URL — the flag is the only guard, and it's intentionally conservative
-    // (no flag → URL gets synced normally).
+    // The flag is NOT set (we're simulating a buggy caller that forgot to flip it).
     ws.setActiveTask(TASK_ID)
     await nextTick()
     await nextTick()

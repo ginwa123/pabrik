@@ -1,5 +1,4 @@
-/** The attachment strip on a user turn: one chip per attached document, carrying the metadata
- * the read path emits — never the bytes. */
+/** The attachment strip on a user turn: one chip per attached document, carrying the metadata the read path emits — never the bytes. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatAttachments from '@/components/chat/ChatAttachments.vue'

@@ -24,11 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The two sources the spinner is built on, and the only repair for the gap
- * between them: a `Live` transition means the server may have started or
- * finished runs while the socket was down, so the list has to be re-read.
- */
+/** The two sources the spinner is built on, and the only repair for the gap between them: a `Live` transition means the server may have started or finished runs … */
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkerActivityViewModelTest {
 
@@ -91,12 +87,7 @@ class WorkerActivityViewModelTest {
         }
     }
 
-    /**
-     * `resyncTicks` defaults to `emptyFlow()` here on purpose. The production
-     * default is a self-rescheduling `delay()` loop, and `advanceUntilIdle`
-     * never settles against one — every test in this file would hang. A test
-     * that is about the periodic beat passes its own finite flow instead.
-     */
+    /** `resyncTicks` defaults to `emptyFlow()` here on purpose. */
     private fun model(
         ioDispatcher: CoroutineDispatcher,
         store: RunningSessionsStore = RunningSessionsStore(),
@@ -121,8 +112,6 @@ class WorkerActivityViewModelTest {
         val model = model(schedulers.ioDispatcher, store, bus, transport)
 
         // The subscription is process-wide, so it exists from the first frame.
-        // What must not exist is any *reaction*: the set belongs to an account,
-        // and the handshake is a cookie the pump gets exactly one shot at.
         assertEquals(1, bus.subscriberCount)
 
         bus.emit(
@@ -146,9 +135,7 @@ class WorkerActivityViewModelTest {
         model.onUserChanged(null)
         model.onUserChanged("user_1")
 
-        // The subscription lives in `init` and is a fact about the process, not
-        // about the account — so re-announcing the account must not stack a
-        // second one behind the first.
+        // The subscription lives in `init` and is a fact about the process, not about the account — so re-announcing the account must not stack a second one behind the …
         assertEquals(1, bus.subscriberCount)
     }
 
@@ -535,15 +522,11 @@ class WorkerActivityViewModelTest {
         model.onUserChanged("user_a")
         store.replace(setOf("task_a"))
 
-        // No null in between: the auth state went straight from one account to
-        // the other. The ids are not account-scoped, so carrying them across
-        // shows A's busy markers against B's chats.
+        // No null in between: the auth state went straight from one account to the other.
         model.onUserChanged("user_b")
 
         assertTrue(store.runningSessionIds.value.isEmpty())
-        // The socket survives the switch — the root re-opens it — so what must
-        // hold is that the SET is empty, not that a socket went away. Asserting
-        // a teardown here would be asserting the two-socket architecture back.
+        // The socket survives the switch — the root re-opens it — so what must hold is that the SET is empty, not that a socket went away.
         assertEquals(0, bus.closeCount)
     }
 
@@ -588,8 +571,7 @@ class WorkerActivityViewModelTest {
         ticks.emit(Unit)
         schedulers.drain()
 
-        // A beat that outlived the cookie would keep hitting an endpoint the
-        // user no longer has a right to be asking about.
+        // A beat that outlived the cookie would keep hitting an endpoint the user no longer has a right to be asking about.
         assertEquals(1, transport.workerRequests)
         assertTrue(model.runningSessionIds.value.isEmpty())
     }

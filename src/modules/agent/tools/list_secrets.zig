@@ -1,12 +1,10 @@
-//! Agent-callable tool: `list_secrets` — the NAMES of the secrets stored in
-//! the calling session's workspace, what each one is for, and nothing else.
+//! Agent-callable tool: `list_secrets` — the NAMES of the secrets stored in the calling session's workspace, what each one is for, and nothing else.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
 const AgentTool = schemas.AgentTool;
 
-/// Input for `list_secrets`. An empty struct — there is nothing to pass,
-/// and every field here would be a chance to pass the wrong thing.
+/// Input for `list_secrets`.
 pub const ListSecretsInput = struct {};
 
 pub const list_secrets_tool_system_prompt =
@@ -52,17 +50,13 @@ test "list_secrets_tool JSON schema: no properties, no required, and no workspac
     try testing.expectEqual(@as(usize, 0), tool.function.parameters.required.len);
     try testing.expectEqual(@as(usize, 0), tool.function.parameters.properties.len);
 
-    // Asserted on the SERIALIZED schema, not on the struct: a future edit
-    // that adds a property is exactly the regression this has to catch, and
-    // counting fields cannot see it.
+    // Asserted on the SERIALIZED schema, not on the struct: a future edit that adds a property is exactly the regression this has to catch, and counting fields …
     const json = try std.json.Stringify.valueAlloc(testing.allocator, tool, .{});
     defer testing.allocator.free(json);
 
     try testing.expect(std.mem.indexOf(u8, json, "\"workspace_id\"") == null);
     try testing.expect(std.mem.indexOf(u8, json, "\"value\"") == null);
-    // No declared property of any kind — the strongest statement available
-    // is the empty one, and it is what a future `workspace_id` addition
-    // would break.
+    // No declared property of any kind — the strongest statement available is the empty one, and it is what a future `workspace_id` addition would break.
     try testing.expect(std.mem.indexOf(u8, json, "\"properties\":[]") != null);
 }
 
@@ -70,8 +64,7 @@ test "list_secrets_tool: the description teaches the placeholder and promises na
     const description = list_secrets_tool.function.description;
     try testing.expect(std.mem.indexOf(u8, description, "{{SECRETS:NAME}}") != null);
     try testing.expect(std.mem.indexOf(u8, description, "Names only") != null);
-    // A model that thinks this tool hands back credentials will use it as a
-    // way to read one out loud.
+    // A model that thinks this tool hands back credentials will use it as a way to read one out loud.
     try testing.expect(std.mem.indexOf(u8, description, "never returned") != null);
 
     const system_prompt = list_secrets_tool.function.system_prompt;
@@ -80,7 +73,6 @@ test "list_secrets_tool: the description teaches the placeholder and promises na
 }
 
 // Exec adapter — merged from `list_secrets.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
@@ -91,8 +83,7 @@ const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
-/// One disclosed secret. `description` is the human prose that says what the
-/// credential is for; it is empty when nobody wrote one.
+/// One disclosed secret.
 const SecretEntry = struct {
     name: []const u8,
     description: []const u8,
@@ -136,8 +127,7 @@ pub fn execListSecrets(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-/// The names of `workspace_id`'s secrets, each paired with the timestamp of
-/// its last rotation.
+/// The names of `workspace_id`'s secrets, each paired with the timestamp of its last rotation.
 fn collectEntries(
     allocator: std.mem.Allocator,
     db: *@import("pabrikcore").database.Db,
@@ -183,9 +173,7 @@ fn freeSecretEntries(allocator: std.mem.Allocator, entries: []SecretEntry) void 
     allocator.free(entries);
 }
 
-// ============================================================================
-// Tests In-memory SQLite carrying both fixtures the adapter touches:
-// `workspace_scope`'s three tables (so a session can resolve to a workspace)
+// Tests In-memory SQLite carrying both fixtures the adapter touches
 
 const exec_testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -253,9 +241,7 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-/// Two workspaces, each with a kanban item; `s_a` is task-linked into
-/// `ws_a`, `s_loose` is task-linked into `ws_b`, and `s_none` has a cwd
-/// that matches no item at all.
+/// Two workspaces, each with a kanban item; `s_a` is task-linked into `ws_a`, `s_loose` is task-linked into `ws_b`, and `s_none` has a cwd that matches no item at …
 fn seedWorkspaces(alloc: std.mem.Allocator, ctx: *TestCtx) !void {
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
@@ -360,8 +346,7 @@ test "execListSecrets: a session's own workspace only — another workspace's na
     try exec_testing.expectEqualStrings("GH_TOKEN", names[0]);
     try exec_testing.expectEqualStrings("STRIPE_KEY", names[1]);
 
-    // The other workspace is invisible — not merely absent from the parsed
-    // array, but absent from the whole serialized envelope.
+    // The other workspace is invisible — not merely absent from the parsed array, but absent from the whole serialized envelope.
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "B_ONLY_TOKEN") == null);
 }
 
@@ -371,8 +356,7 @@ test "execListSecrets: the payload carries a rotation timestamp and never a stor
     defer teardown(&ctx);
     try seedWorkspaces(alloc, &ctx);
 
-    // A value distinctive enough that any leak of it — whole, masked, or
-    // truncated to last-4 — shows up in the substring assertions below.
+    // A value distinctive enough that any leak of it — whole, masked, or truncated to last-4 — shows up in the substring assertions below.
     try seedSecret(alloc, &ctx, "ws_a", "GH_TOKEN", "ghp_Zqx7LEAKCANARY99");
 
     const result = try call(alloc, &ctx.db, "s_a", "{}");
@@ -385,11 +369,9 @@ test "execListSecrets: the payload carries a rotation timestamp and never a stor
 
     const entry = data.get("secrets").?.array.items[0].object;
     try exec_testing.expectEqualStrings("GH_TOKEN", entry.get("name").?.string);
-    // `updated_at` is what the brief asks for: enough to tell a stale
-    // credential from a fresh one without disclosing anything.
+    // `updated_at` is what the brief asks for: enough to tell a stale credential from a fresh one without disclosing anything.
     try exec_testing.expectEqualStrings("2026-02-02 00:00:00", entry.get("updated_at").?.string);
-    // Exactly three keys per entry — a `value` or a row `id` appearing here
-    // would be a leak even if it were masked.
+    // Exactly three keys per entry — a `value` or a row `id` appearing here would be a leak even if it were masked.
     try exec_testing.expectEqual(@as(usize, 3), entry.count());
 
     // The canary, and its distinctive tail, must appear nowhere.
@@ -421,8 +403,7 @@ test "execListSecrets: every name carries the description a human wrote for it" 
         "Read-only token for the PR bot",
         items[0].object.get("description").?.string,
     );
-    // An undescribed secret still answers with a string, so the model never
-    // has to branch on a missing key.
+    // An undescribed secret still answers with a string, so the model never has to branch on a missing key.
     try exec_testing.expectEqualStrings("", items[1].object.get("description").?.string);
 
     // Descriptions are workspace-scoped like the names they belong to.
@@ -437,9 +418,7 @@ test "execListSecrets: a session with no workspace returns an empty list, never 
     try seedSecret(alloc, &ctx, "ws_a", "GH_TOKEN", "ghp_value_a");
     try seedSecret(alloc, &ctx, "ws_b", "GH_TOKEN", "ghp_value_b");
 
-    // s_none's cwd matches no workspace item, so `resolveWorkspaceId` returns
-    // null. The tempting fallback — "no scope means no filter" — would hand
-    // back every workspace's secrets.
+    // s_none's cwd matches no workspace item, so `resolveWorkspaceId` returns null.
     const result = try call(alloc, &ctx.db, "s_none", "{}");
     defer if (result.output_allocated) alloc.free(result.output);
 
@@ -451,8 +430,7 @@ test "execListSecrets: a session with no workspace returns an empty list, never 
     try exec_testing.expectEqual(@as(usize, 0), data.get("secrets").?.array.items.len);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "GH_TOKEN") == null);
 
-    // An empty session id short-circuits before any query, and fails the
-    // same way.
+    // An empty session id short-circuits before any query, and fails the same way.
     const unknown = try call(alloc, &ctx.db, "no_such_session", "");
     defer if (unknown.output_allocated) alloc.free(unknown.output);
     try exec_testing.expect(std.mem.indexOf(u8, unknown.output, "\"count\":0") != null);
@@ -467,9 +445,7 @@ test "execListSecrets: a workspace_id in the arguments is ignored, not obeyed" {
     try seedSecret(alloc, &ctx, "ws_a", "A_TOKEN", "a_value");
     try seedSecret(alloc, &ctx, "ws_b", "B_TOKEN", "b_value");
 
-    // The schema declares no properties, but the dispatcher parses tool-call
-    // arguments with `ignore_unknown_fields` and a model can still write
-    // one. It must change nothing: the scope is the SESSION's, always.
+    // The schema declares no properties, but the dispatcher parses tool-call arguments with `ignore_unknown_fields` and a model can still write one.
     const result = try call(
         alloc,
         &ctx.db,
@@ -481,8 +457,7 @@ test "execListSecrets: a workspace_id in the arguments is ignored, not obeyed" {
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "A_TOKEN") != null);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "B_TOKEN") == null);
 
-    // The envelope echoes what was passed, so a reader of the transcript can
-    // see the attempt was discarded rather than silently honoured.
+    // The envelope echoes what was passed, so a reader of the transcript can see the attempt was discarded rather than silently honoured.
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"workspace_id\":\"ws_b\"") != null);
 }
 
@@ -494,8 +469,7 @@ test "execListSecrets: a disclosed name is one the names-only projection also re
     try seedSecret(alloc, &ctx, "ws_a", "ROTATED_TOKEN", "fresh_value");
     try seedSecret(alloc, &ctx, "ws_b", "ROTATED_TOKEN", "other_value");
 
-    // Disclosing a name requires it to be present in BOTH projections — the
-    // names projection is the authority on what may leave the store.
+    // Disclosing a name requires it to be present in BOTH projections — the names projection is the authority on what may leave the store.
     const names_only = try secrets_store.listSecretNames(alloc, &ctx.db, "ws_a");
     defer secrets_store.freeSecretNames(alloc, names_only);
     try exec_testing.expectEqual(@as(usize, 1), names_only.len);

@@ -31,8 +31,7 @@ export interface ParsedReadFile {
   totalLines: number | null
   startLine: number | null
   endLine: number | null
-  /** The image mime the backend sniffed from the bytes, or null for a text read. An image
-   * read carries no `content` at all — the picture rides on the message's `image_urls`. */
+  /** The image mime the backend sniffed from the bytes, or null for a text read. */
   mime: string | null
   /** Byte size of the file on disk, for an image read. */
   bytes: number | null

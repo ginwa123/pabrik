@@ -1,5 +1,4 @@
-/** Tests for KanbanSortMenu — the menu used inside the kanban's per-column "⋮" menu (Sort tasks…)
- * and (in future) the kanban header. */
+/** Tests for KanbanSortMenu — the menu used inside the kanban's per-column "⋮" menu (Sort tasks…) and (in future) the kanban header. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

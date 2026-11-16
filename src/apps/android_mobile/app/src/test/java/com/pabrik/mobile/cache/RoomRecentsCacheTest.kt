@@ -18,23 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The sidebar cache against a **real** SQLite database.
- *
- * Two things are being pinned here, and both are things a row store can get
- * wrong that a JSON array could not:
- *
- * - **Order.** A JSON array carried its order for free. Rows do not: a table
- *   with no `ORDER BY` returns rows in whatever order SQLite finds cheapest,
- *   which is insertion order today and *nothing you promised* tomorrow. So the
- *   server's order is a `position` column, and it needs a test or it will drift
- *   the day someone adds an index.
- * - **Replace-not-merge.** A chat deleted upstream must stay deleted. An
- *   upsert without the delete resurrects it from the previous page forever.
- *
- * Plus the sealing: the title column is the most identifying string in the app,
- * and these tests check that it is not sitting in the file in the clear.
- */
+/** The sidebar cache against a **real** SQLite database. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class RoomRecentsCacheTest {
@@ -66,9 +50,6 @@ class RoomRecentsCacheTest {
     @Test
     fun theServerOrderIsKeptNotAnAlphabeticalOne() {
         // The endpoint returns recents in the order it wants them drawn.
-        // Re-sorting by name or id would reorder the drawer under a user who
-        // never asked for it, and a stale-looking bug that no test can see
-        // because the sample data happens to be alphabetical.
         cache.writeWorkspaces(
             USER,
             listOf(workspace("ws_c", "Charlie"), workspace("ws_a", "Alpha"), workspace("ws_b", "Bravo")),
@@ -92,8 +73,7 @@ class RoomRecentsCacheTest {
             ),
         )
 
-        // The newest row is first, and it is *not* the alphabetically first
-        // one. Sorting by anything other than the server's order is the bug.
+        // The newest row is first, and it is *not* the alphabetically first one.
         assertEquals(
             listOf("task_c", "task_a", "task_b"),
             cache.readChats(USER, WORKSPACE)?.map { it.id },
@@ -102,11 +82,7 @@ class RoomRecentsCacheTest {
 
     @Test
     fun bothTimestampsSurviveTheRoundTrip() {
-        // A recents row carries two clocks — the order key (`updated_at`) and
-        // the label key (`last_human_touched_at`) — and for a session the agent
-        // is working on they are different values. Persisting only one would
-        // make every cold-boot row claim the agent's last activity was the
-        // human's, so the second column is pinned here.
+        // A recents row carries two clocks — the order key (`updated_at`) and the label key (`last_human_touched_at`) — and for a session the agent is working on they …
         cache.writeChats(
             USER,
             WORKSPACE,
@@ -149,8 +125,7 @@ class RoomRecentsCacheTest {
             listOf(chat("stale", WORKSPACE, "Stale"), chat("kept", WORKSPACE, "Kept")),
         )
 
-        // The user deleted `stale` elsewhere. A merge would resurrect it on
-        // every single refresh, forever, and it would be tappable.
+        // The user deleted `stale` elsewhere.
         cache.writeChats(USER, WORKSPACE, listOf(chat("kept", WORKSPACE, "Kept")))
 
         assertEquals(listOf("kept"), cache.readChats(USER, WORKSPACE)?.map { it.id })
@@ -166,15 +141,11 @@ class RoomRecentsCacheTest {
 
     @Test
     fun anEmptyListIsARealAnswerNotAMiss() {
-        // A genuinely empty account has to be distinguishable from one that
-        // has never been fetched, because the sidebar paints one and the
-        // spinner the other.
+        // A genuinely empty account has to be distinguishable from one that has never been fetched, because the sidebar paints one and the spinner the other.
         cache.writeWorkspaces(USER, emptyList())
         cache.writeChats(USER, WORKSPACE, emptyList())
 
-        // Both read as a miss here, and both are answered identically by
-        // `HomeViewModel` — which goes and fetches. The test is here to say
-        // that was a decision, not an accident of the row store.
+        // Both read as a miss here, and both are answered identically by `HomeViewModel` — which goes and fetches.
         assertNull(cache.readWorkspaces(USER))
         assertNull(cache.readChats(USER, WORKSPACE))
     }
@@ -211,9 +182,7 @@ class RoomRecentsCacheTest {
 
     @Test
     fun aUserIdThatLooksLikeSomebodyElsesKeyCannotEscapeItsPartition() {
-        // The old store built `chats::u:<userId>::w:<workspaceId>` by hand, so
-        // a user id containing the separator could address another partition.
-        // A column has no separators to contain.
+        // The old store built `chats::u:<userId>::w:<workspaceId>` by hand, so a user id containing the separator could address another partition.
         val hostile = "user_a::u:user_b"
         cache.writeChats(hostile, WORKSPACE, listOf(chat("task_evil", WORKSPACE, "Evil")))
         cache.writeChats("user_a", WORKSPACE, listOf(chat("task_real", WORKSPACE, "Real")))
@@ -245,9 +214,7 @@ class RoomRecentsCacheTest {
             cursor.getString(0)
         }
 
-        // The Keystore cipher in production produces something no reader can
-        // guess; this asserts the weaker but load-bearing property — the value
-        // went through the cipher at all, rather than being passed through.
+        // The Keystore cipher in production produces something no reader can guess; this asserts the weaker but load-bearing property — the value went through the cipher …
         assertFalse(column, column.contains("Q3 board restructuring"))
         assertEquals("Q3 board restructuring", Base64CacheCipher.open(column))
     }
@@ -286,9 +253,7 @@ class RoomRecentsCacheTest {
             listOf(chat("task_2", WORKSPACE, "Unsealable"), chat("task_3", WORKSPACE, "Fine")),
         )
 
-        // Half a list is worse than none: a drawer showing two of the three
-        // chats would be painting a partial truth that nothing corrects until
-        // the user notices.
+        // Half a list is worse than none: a drawer showing two of the three chats would be painting a partial truth that nothing corrects until the user notices.
         assertEquals(listOf("task_1"), cache.readChats(USER, WORKSPACE)?.map { it.id })
     }
 
@@ -296,10 +261,7 @@ class RoomRecentsCacheTest {
     fun anUnopenableRowMakesTheWholeReadAMissAndDropsThePartition() {
         cache.writeChats(USER, WORKSPACE, listOf(chat("task_1", WORKSPACE, "Readable")))
 
-        // Simulates a row written under a retired Keystore alias: the row is
-        // there, and it cannot be read. Mirroring `EncryptedPrefs`, the entry
-        // is dropped so the same failing decryption is not re-attempted on
-        // every launch, and the read reports a miss so the network refills it.
+        // Simulates a row written under a retired Keystore alias: the row is there, and it cannot be read.
         database.openHelper.writableDatabase.execSQL(
             "UPDATE cached_chat_summaries SET title_sealed = ? WHERE chat_id = ?",
             arrayOf<Any>("corrupt:not-a-sealed-value", "task_1"),
@@ -320,8 +282,7 @@ class RoomRecentsCacheTest {
 
         cache.clear()
 
-        // Sign-out only clears the cookie, so a row left behind here would be
-        // painted for whoever signs in next on a shared device.
+        // Sign-out only clears the cookie, so a row left behind here would be painted for whoever signs in next on a shared device.
         assertNull(cache.readWorkspaces(USER))
         assertNull(cache.readWorkspaces("user_b"))
         assertNull(cache.readChats(USER, "ws_1"))

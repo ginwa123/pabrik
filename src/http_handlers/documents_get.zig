@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/documents/:document_id`. Returns
-//! `{document}` for one document.
+//! `GET /api/workspaces/:workspace_id/documents/:document_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -24,9 +23,7 @@ pub const DocumentsGetOutput = struct {
     document: documents_store.DocumentRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -43,9 +40,7 @@ fn useCase(
     ) };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn documentsGetHandler(
     ctx: gserverz.HttpContext,
@@ -68,8 +63,7 @@ pub fn documentsGetHandler(
         };
         const message: []const u8 = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
-            // One message for "no such id" and "belongs to another
-            // workspace" on purpose — see the file header.
+            // One message for "no such id" and "belongs to another workspace" on purpose — see the file header.
             error.NotFound => "document not found",
             error.QueryFailed => "DB error",
             error.OutOfMemory => "Out of memory",

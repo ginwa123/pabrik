@@ -1,5 +1,4 @@
-//! `POST /api/invitations/:invitation_id/decline` — the invitee says no. The
-//! ask is deleted and nothing else changes.
+//! `POST /api/invitations/:invitation_id/decline` — the invitee says no. The ask is deleted and nothing else changes.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

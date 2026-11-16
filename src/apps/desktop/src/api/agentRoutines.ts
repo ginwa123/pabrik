@@ -1,7 +1,6 @@
 import { ApiError, apiFetch } from './client'
 
-// ─── Agent-Routines Mirror (Migration 088) ───────────────────────────── Mirrors the Agent-Kanbans
-// block above onto routine items.
+// ─── Agent-Routines Mirror (Migration 088) ─────────────────────────────
 export interface AgentRoutine {
   id: string
   workspace_item_id: string
@@ -40,9 +39,7 @@ export interface AgentRoutineToolRow {
   created_at: string
 }
 
-/**  * Get the agent-routines config + children for a routine workspace_item. Returns null (silent) on
- * 404 "not configured" — an unconfigured routine is an expected state, not an error worth
- * surfacing. GET /api/workspaces/:workspaceId/items/:itemId/agent_routine */
+/** Get the agent-routines config + children for a routine workspace_item. */
 export async function getAgentRoutine(
   workspaceId: string,
   itemId: string,
@@ -65,8 +62,7 @@ export async function getAgentRoutine(
   }
 }
 
-/** Update the agent-routines config's description.
- * PATCH /api/workspaces/:workspaceId/items/:itemId/agent_routine */
+/** Update the agent-routines config's description. */
 export async function updateAgentRoutine(
   workspaceId: string,
   itemId: string,
@@ -78,8 +74,7 @@ export async function updateAgentRoutine(
   )
 }
 
-/** Add a knowledge entry to a routine's config — file path XOR inline text.
- * POST /api/agent-routines/:routineId/knowledge */
+/** Add a knowledge entry to a routine's config — file path XOR inline text. */
 export async function addAgentRoutineKnowledge(
   routineId: string,
   filePath: string,
@@ -122,8 +117,7 @@ export async function reorderAgentRoutineKnowledge(
   })
 }
 
-/**  * Add a named system-prompt block to a routine's config. `content` required; `title` optional. POST
- * /api/agent-routines/:routineId/system_prompt */
+/** Add a named system-prompt block to a routine's config. */
 export async function addAgentRoutineSystemPrompt(
   routineId: string,
   title: string,
@@ -165,14 +159,12 @@ export async function reorderAgentRoutineSystemPrompts(
   })
 }
 
-/**  * Get the enabled tool names for a routine's config. Empty array = no tools configured for this
- * routine. GET /api/agent-routines/:routineId/tools */
+/** Get the enabled tool names for a routine's config. */
 export async function getAgentRoutineTools(routineId: string): Promise<{ tools: string[] }> {
   return await apiFetch<{ tools: string[] }>(`/agent-routines/${routineId}/tools`)
 }
 
-/**  * Enable a tool for the routine. Backend validates against the registry (400 if unknown) and
- * returns 409 on duplicate. POST /api/agent-routines/:routineId/tools */
+/** Enable a tool for the routine. */
 export async function enableAgentRoutineTool(
   routineId: string,
   toolName: string,
@@ -183,8 +175,7 @@ export async function enableAgentRoutineTool(
   })
 }
 
-/** Disable a tool for the routine (deletes the row).
- * DELETE /api/agent-routines/:routineId/tools/:toolName */
+/** Disable a tool for the routine (deletes the row). */
 export async function disableAgentRoutineTool(
   routineId: string,
   toolName: string,

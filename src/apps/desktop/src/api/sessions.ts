@@ -1,8 +1,6 @@
 import { apiFetch } from './client'
 
-// Update an existing session (selectedAgent, name, isAutoRetryUntilStop). Migration 063 — extends
-// the update shape to carry the unattended- mode flag. Pass `isAutoRetryUntilStop: '0'` to disable,
-// '1' to enable, or omit to leave unchanged (matches the backend's `len > 0` guard).
+// Update an existing session (selectedAgent, name, isAutoRetryUntilStop).
 export async function updateSession(
   sessionId: string,
   updates: {
@@ -33,8 +31,7 @@ export async function updateSession(
   })
 }
 
-// POST /api/llm/session/:session_id/touched — stamp the human-touch column when the user opens a
-// chat (clears the amber stale-dot). Contract: body {}, response { success, session_id }.
+// POST /api/llm/session/:session_id/touched — stamp the human-touch column when the user opens a chat (clears the amber stale-dot).
 export async function markSessionTouched(
   sessionId: string,
 ): Promise<{ success: boolean; session_id: string }> {
@@ -48,9 +45,7 @@ export async function markSessionTouched(
   )
 }
 
-// Migration 104 — pin/unpin a session for the PINNED section above RECENT. Mirrors `pinTask`
-// (kanban). The backend bumps `pinned_position` to MAX+1 on pin (lands at bottom) and syncs the
-// linked task row when task.id == session_id, so kanban pin buttons stay in sync.
+// Migration 104 — pin/unpin a session for the PINNED section above RECENT.
 export async function pinSession(
   sessionId: string,
   isPinned: boolean,
@@ -66,8 +61,7 @@ export async function pinSession(
   })
 }
 
-// Migration 104 — reorder the PINNED section (drag-drop). `orderedIds`
-// is the full top-to-bottom display order of pinned session ids.
+// Migration 104 — reorder the PINNED section (drag-drop).
 export async function reorderPinnedSessions(
   orderedIds: string[],
 ): Promise<{ success: boolean; count: number }> {
@@ -77,9 +71,7 @@ export async function reorderPinnedSessions(
   })
 }
 
-// Session API - Fetch session info including cwd. Lightweight detail read: GET /api/llm/session/:id
-// returns the sessions row (cwd, profile, worktree binding, PR binding, ...) with NO message
-// payload.
+// Session API - Fetch session info including cwd.
 export interface Session {
   sessionId: string
   cwd: string
@@ -90,16 +82,14 @@ export interface Session {
   // Migration 091 — resolved sub-agent name (e.g. "implementator").
   subAgentName?: string
   parentSessionId?: string
-  // Bound git worktree path (empty string when no worktree is bound;
-  // optional because older sessions predate the set_git_worktree tool).
+  // Bound git worktree path (empty string when no worktree is bound; optional because older sessions predate the set_git_worktree tool).
   git_worktree_cwd?: string
   prUrl?: string
   prProvider?: string
   workspaceId?: string | null
 }
 
-// In-flight dedupe: AppLayout + ChatView mount concurrently for the same
-// session, so two getSession() calls for one id share a single fetch.
+// In-flight dedupe: AppLayout + ChatView mount concurrently for the same session, so two getSession() calls for one id share a single fetch.
 const sessionInflight = new Map<string, Promise<Session | null>>()
 
 export async function getSession(sessionId: string): Promise<Session | null> {
@@ -116,8 +106,7 @@ export async function getSession(sessionId: string): Promise<Session | null> {
 
 async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
   try {
-    // silent: true — AppLayout.fetchChatSessionCwd falls back to a cached
-    // cwd on null, so a toast on 404/5xx would be noise.
+    // silent: true — AppLayout.fetchChatSessionCwd falls back to a cached cwd on null, so a toast on 404/5xx would be noise.
     const data = await apiFetch<{
       session_id?: string
       name?: string
@@ -138,9 +127,7 @@ async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
       createdAt: data.created_at || '',
       agent: '',
       sessionName: data.name || '',
-      // 2026-08-07-profile-persist-read — pass through the persisted profile name. Empty string (=
-      // "no profile set" from the backend's COALESCE-on-NULL) is preserved here; ChatView coerces
-      // empty → null.
+      // 2026-08-07-profile-persist-read — pass through the persisted profile name.
       selectedAgent: data.selected_profile_model,
       subAgentName: data.sub_agent_name,
       parentSessionId: data.parent_session_id,
@@ -155,9 +142,7 @@ async function fetchSessionDetail(sessionId: string): Promise<Session | null> {
   }
 }
 
-// Owning workspace of a session (plan: 2026-09-22-revamp-ui-chats). `GET
-// /api/llm/session/:session_id` resolves via the task link first, then the cwd heuristic, and
-// returns `workspace_id` (string) or null when the session belongs to no workspace.
+// Owning workspace of a session (plan: 2026-09-22-revamp-ui-chats).
 export async function getSessionWorkspaceId(sessionId: string): Promise<string | null> {
   if (!sessionId) return null
   try {
@@ -172,8 +157,7 @@ export async function getSessionWorkspaceId(sessionId: string): Promise<string |
   }
 }
 
-/** `compacted` is false when the request succeeded but there was nothing to
- * hand off yet — the server only writes when the loop would have written. */
+/** `compacted` is false when the request succeeded but there was nothing to hand off yet — the server only writes when the loop would have written. */
 export type CompactResult = { success: boolean; compacted?: boolean; message?: string }
 
 // Compact chat session history
@@ -188,9 +172,7 @@ export async function compactSession(sessionId: string): Promise<CompactResult> 
   }
 }
 
-/** Stop/cancel a running LLM session by flipping the worker's `cancelled` flag in the DB. The
- * backend handler (`sessionStopHandler` in `src/ai_workflow/tui/ http_handlers/session_stop.zig`)
- * runs `llm_history.cancelSession` which sets `UPDATE worker SET cancelled = 1 WHERE id = ?`. */
+/** Stop/cancel a running LLM session by flipping the worker's `cancelled` flag in the DB. */
 export async function answerAskUser(
   sessionId: string,
   body: {
@@ -206,9 +188,7 @@ export async function answerAskUser(
       { method: 'POST', body },
     )
   } catch (error) {
-    // The card renders a Retry affordance; the question row stays `pending`
-    // server-side (the endpoint never resumes a run whose answer did not
-    // land first), so a retry is safe.
+    // The card renders a Retry affordance; the question row stays `pending` server-side (the endpoint never resumes a run whose answer did not land first), so a …
     console.error('Failed to answer the pending question:', error)
     return { success: false }
   }
@@ -233,9 +213,7 @@ export interface Worker {
   id: string
   session_id: string
   working_directory: string | null
-  /** Unix SECONDS of the last heartbeat, as a numeric string. The backend selects
-   * `w.last_activity_nano AS last_activity` and every `Row.values` entry is a `[]u8`, so the column
-   * is serialised as a JSON string even though the underlying column is INTEGER. */
+  /** Unix SECONDS of the last heartbeat, as a numeric string. */
   last_activity: string | null
   last_activity_description: string | null
   created_at: string | null
@@ -286,8 +264,7 @@ export interface SubAgentProgressSnapshotRow {
   status: 'launched' | 'completed' | 'failed'
   agent_index: number
   total_agents: number
-  /** "" when the sub-agent session is not yet known (frontend
-   * normalizes to undefined, same as the omitted live-SSE field). */
+  /** "" when the sub-agent session is not yet known (frontend normalizes to undefined, same as the omitted live-SSE field). */
   subagent_session_id: string
   elapsed_ms: number
 }

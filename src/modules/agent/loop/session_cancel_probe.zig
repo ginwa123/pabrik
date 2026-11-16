@@ -1,6 +1,4 @@
-//! "Has this session been cancelled?" for a tool that blocks its thread: one
-//! throttled, LATCHING read of `worker.cancelled` — `workflow` resets that
-//! column each turn, so re-reading it would un-cancel a Stop already seen.
+//! "Has this session been cancelled?" for a tool that blocks its thread: one throttled, LATCHING read of `worker.cancelled` — `workflow` resets that column each …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -13,9 +11,7 @@ pub const Probe = struct {
     db: *database.Db,
     session_id: []const u8,
     io: std.Io,
-    /// 50 ms: two orders of magnitude below the shortest `command` timeout, so
-    /// Stop feels immediate, and low enough that a long build does not hammer
-    /// the database with reads.
+    /// 50 ms: two orders of magnitude below the shortest `command` timeout, so Stop feels immediate, and low enough that a long build does not hammer the database …
     poll_interval_ns: i96 = 50 * std.time.ns_per_ms,
     last_poll_ns: i96 = 0,
     latched: bool = false,
@@ -35,9 +31,7 @@ pub const Probe = struct {
         }
         self.last_poll_ns = now_ns;
 
-        // `page_allocator`, like the MCP lease probe: this runs on a waiting
-        // path that has no arena of its own, and the allocation is one short
-        // row per poll.
+        // `page_allocator`, like the MCP lease probe: this runs on a waiting path that has no arena of its own, and the allocation is one short row per poll.
         const was_cancelled = is_worker_cancelled_mod.isWorkerCancelled(.{
             .allocator = std.heap.page_allocator,
             .db = self.db,
@@ -47,15 +41,13 @@ pub const Probe = struct {
         return was_cancelled;
     }
 
-    /// Erase the probe into the `fn (ctx) bool` shape the shell polls. The
-    /// returned hook borrows `self`, so it must not outlive the dispatch.
+    /// Erase the probe into the `fn (ctx) bool` shape the shell polls.
     pub fn hook(self: *Probe) shell.CancelHook {
         return .{ .ctx = @ptrCast(self), .is_cancelled = probe };
     }
 
     fn probe(context: *const anyopaque) bool {
-        // `ctx` is const only because the hook's signature says so; the
-        // probe's own throttle/latch state is genuinely mutated.
+        // `ctx` is const only because the hook's signature says so; the probe's own throttle/latch state is genuinely mutated.
         const self: *Probe = @ptrCast(@alignCast(@constCast(context)));
         return self.cancelled();
     }
@@ -115,8 +107,7 @@ test "Probe: latches, so the row being reset by the next iteration does not un-c
     p.poll_interval_ns = 0;
     try testing.expect(p.cancelled());
 
-    // `session_lock.beginIteration`/`updateWorker` reset the column for the
-    // next turn. The probe already answered — it must keep answering true.
+    // `session_lock.beginIteration`/`updateWorker` reset the column for the next turn.
     try s.db.exec(testing.allocator, "UPDATE worker SET cancelled = 0 WHERE id = 's2'", &.{});
     try testing.expect(p.cancelled());
 }

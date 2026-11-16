@@ -18,11 +18,9 @@ import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
-/** Test-only stub SseClient. Mirrors the helper in `sseBus.spec.ts` (kept inline rather than shared
- * to avoid coupling between the two spec files). */
+/** Test-only stub SseClient. */
 function makeStubClient(initial: SseState): SseClient {
    
-  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stub: any = {
     close: vi.fn(),
@@ -43,7 +41,6 @@ function makeStubClient(initial: SseState): SseClient {
 
  
 function emitStubState(c: SseClient, s: SseState): void {
-  //
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = (c as any).__stateListeners as
     | Array<(s: SseState, info: SseStateInfo) => void>
@@ -60,30 +57,20 @@ describe('App', () => {
   beforeEach(() => {
     __resetSseBus()
     // App.vue's onMounted calls `useNavigationStore()` (to wire the frontend-log-client context).
-    // Without an active Pinia the call throws (`getActivePinia()` was called but there was no
-    // active Pinia).
     setActivePinia(createPinia())
-    // jsdom 29 dropped localStorage from its default globals; the navigation store reads from
-    // localStorage during setup (`loadSidebarCollapsed()`). Install a Map-backed stub for the
-    // duration of each test. Same pattern as AppLayout.chatview.spec .ts:114.
+    // jsdom 29 dropped localStorage from its default globals; the navigation store reads from localStorage during setup (`loadSidebarCollapsed()`).
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
       configurable: true,
     })
     app = createApp({})
-    // Install the bus BEFORE mounting App.vue so the singleton exists
-    // when App.vue's `useSseBus().close()` runs in onUnmounted. Plan's
-    // gotcha #6: `useSseBus` throws if not installed.
+    // Install the bus BEFORE mounting App.vue so the singleton exists when App.vue's `useSseBus().close()` runs in onUnmounted.
     installSseBus(app)
-    // Replace the underlying global SseClient (otherwise it would call `new EventSource(...)` and
-    // silently idle in jsdom) with a deterministic fake we drive through 'open' in the
-    // reconnect-resync test.
+    // Replace the underlying global SseClient (otherwise it would call `new EventSource(...)` and silently idle in jsdom) with a deterministic fake we drive through …
     stub = makeStubClient('connecting')
     __setSseBusGlobalClient(stub)
-    // fetchInitialWorkers hits the network — stub it so the tests
-    // don't try to fetch. Tests that need to assert call counts use
-    // `vi.mocked(api.getWorkers).mockClear()` after mount.
+    // fetchInitialWorkers hits the network — stub it so the tests don't try to fetch.
     vi.spyOn(api, 'getWorkers').mockResolvedValue({
       workers: [],
       count: 0,
@@ -91,17 +78,13 @@ describe('App', () => {
   })
 
   it('mounts without throwing', () => {
-    // Smoke test: App.vue should mount cleanly. EventSource is polyfilled in src/__tests__/setup.ts
-    // so the SSE connection opened in onMounted does not crash. The template is a <router-view />,
-    // so we only assert that the component instance exists — no router is provided here.
+    // Smoke test: App.vue should mount cleanly.
     const wrapper = mount(App)
     expect(wrapper.exists()).toBe(true)
   })
 
   it("App.vue wires the tab title feed: a session rename lands on the tab", async () => {
-    // Regression: the feed used to be subscribed from AppLayout's onMounted, which runs BEFORE
-    // App.vue's (children mount first) — so `useSseBus()` threw and the subscription silently never
-    // happened, leaving chat tabs labelled with the generic "Chat" after every auto-rename.
+    // Regression: the feed used to be subscribed from AppLayout's onMounted, which runs BEFORE App.vue's (children mount first) — so `useSseBus()` threw and the …
     const tabs = useTabsStore()
     const tab = tabs.open({ query: { view: 'chat', session: 'sess_w1' } })
     expect(tab.title).toBe('Chat')
@@ -135,8 +118,6 @@ describe('App', () => {
 
   it("App.vue subscribes to bus.on('worker'); handleWorkerEvent fires when the bus dispatches", async () => {
     const wrapper = mount(App)
-    // Read the provided `processingState` ref.
-    //
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provides = (wrapper.vm as any).$.provides as Record<string, unknown>
     const processingState = provides['processingState'] as {
@@ -173,14 +154,11 @@ describe('App', () => {
 
   it("App.vue calls fetchInitialWorkers when bus.state transitions to 'open' (reconnect-resync)", async () => {
     mount(App)
-    // Clear any calls that may have happened during mount. The { immediate: true } watcher fires
-    // synchronously during setup but the stub was 'connecting' at that point, so getWorkers should
-    // not have been called yet — mockClear() is defensive.
+    // Clear any calls that may have happened during mount.
     const getWorkersSpy = vi.mocked(api.getWorkers).mockClear()
     expect(getWorkersSpy).not.toHaveBeenCalled()
 
-    // Flip the stub to 'open' — the watcher must call
-    // fetchInitialWorkers in response.
+    // Flip the stub to 'open' — the watcher must call fetchInitialWorkers in response.
     emitStubState(stub, 'open')
     // The watcher is async by default; drain a microtask.
     await nextTick()
@@ -189,8 +167,7 @@ describe('App', () => {
 
   it('unmounting App.vue calls bus.close() on the bus singleton', () => {
     const wrapper = mount(App)
-    // `bus.close()` should clear the singleton — verify by checking that a subsequent `useSseBus()`
-    // throws.
+    // `bus.close()` should clear the singleton — verify by checking that a subsequent `useSseBus()` throws.
     expect(() => useSseBus()).not.toThrow()
 
     wrapper.unmount()
@@ -203,8 +180,6 @@ describe('App', () => {
 
   describe('no app-level zoom suppression (desktop-app only)', () => {
     // The desktop app uses the host webview's native page-zoom (Ctrl+wheel / multi-finger pinch).
-    // The previous global wheel-zoom suppressor in App.vue was removed — letting the native
-    // behaviour run.
     let wrapper: ReturnType<typeof mount> | null = null
 
     afterEach(() => {
@@ -213,9 +188,7 @@ describe('App', () => {
     })
 
     function dispatchWheel(init: WheelEventInit): WheelEvent {
-      // jsdom honours `cancelable: true` and reflects `defaultPrevented`
-      // after `preventDefault()` is called. Dispatch on `window` so it
-      // matches the target App.vue would have used.
+      // jsdom honours `cancelable: true` and reflects `defaultPrevented` after `preventDefault()` is called.
       const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })
       window.dispatchEvent(event)
       return event
@@ -240,17 +213,14 @@ describe('App', () => {
     })
 
     it('Ctrl+wheel with shiftKey is NOT preventDefaulted by App.vue', () => {
-      // DesignView treats shiftKey as a 4× speed multiplier for its
-      // own zoom. Outside the canvas, the host webview's native
-      // page-zoom should run freely.
+      // DesignView treats shiftKey as a 4× speed multiplier for its own zoom.
       wrapper = mount(App)
       const event = dispatchWheel({ ctrlKey: true, shiftKey: true, deltaY: -100 })
       expect(event.defaultPrevented).toBe(false)
     })
 
     it('App.vue does NOT register a capture-phase wheel listener on mount', () => {
-      // Spy on addEventListener BEFORE mounting so the spy captures
-      // the registration (or in this case, the ABSENCE of it).
+      // Spy on addEventListener BEFORE mounting so the spy captures the registration (or in this case, the ABSENCE of it).
       const addSpy = vi.spyOn(window, 'addEventListener')
 
       wrapper = mount(App)
@@ -264,9 +234,7 @@ describe('App', () => {
           (opts as AddEventListenerOptions).capture === true
         )
       })
-      // App.vue's onMounted must NOT have installed a capture-phase wheel listener. (Other
-      // listeners in the same test e.g. the SSE bus may register unrelated events — we only assert
-      // on the capture-phase wheel case.)
+      // App.vue's onMounted must NOT have installed a capture-phase wheel listener.
       expect(captureWheelAdditions.length).toBe(0)
 
       addSpy.mockRestore()
@@ -274,17 +242,13 @@ describe('App', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // workerActivity — the additive second provide key
-// ────────────────────────────────────────────────────────────────────────
 describe('App workerActivity', () => {
   let app: VueApp
   let stub: SseClient
 
   /** Read a provided ref off a root-mounted App instance. */
   const readProvide = (wrapper: ReturnType<typeof mount>, key: string) => {
-    // With `mount(App)` (root mount, no outer app) provides land on `vm.$.provides`, NOT
-    // `vm.$.appContext.provides` — that is only for nested-app ancestors.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only reach into Vue internals.
     const provides = (wrapper.vm as any).$.provides as Record<string, unknown>
     return provides[key] as { value: unknown } | undefined
@@ -303,8 +267,7 @@ describe('App workerActivity', () => {
     stub = makeStubClient('connecting')
     __setSseBusGlobalClient(stub)
     vi.spyOn(api, 'getWorkers').mockResolvedValue({ workers: [], count: 0 })
-    // The worker ticker is a real interval; fake timers let the lifecycle
-    // tests count it and advance it deterministically.
+    // The worker ticker is a real interval; fake timers let the lifecycle tests count it and advance it deterministically.
     vi.useFakeTimers()
   })
 
@@ -465,9 +428,7 @@ describe('App workerActivity', () => {
   })
 
   it('the bootstrap refetch normalises the REST string shape of last_activity', async () => {
-    // The REST wire types `last_activity` as a numeric STRING (every Zig
-    // `Row.values` entry is a `[]u8`), while the SSE event sends a bare
-    // number. Both must land as milliseconds.
+    // The REST wire types `last_activity` as a numeric STRING (every Zig `Row.values` entry is a `[]u8`), while the SSE event sends a bare number.
     vi.mocked(api.getWorkers).mockResolvedValue({
       workers: [
         {

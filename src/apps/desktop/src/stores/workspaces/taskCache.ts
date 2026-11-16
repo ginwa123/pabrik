@@ -53,9 +53,7 @@ export function createTaskCache() {
     )
   }
 
-  // Evict one task from every cache context it could live in (the
-  // task's column context plus the board-wide context). Every cache
-  // write goes through taskCacheContexts, so these two cover it.
+  // Evict one task from every cache context it could live in (the task's column context plus the board-wide context).
   async function removeTaskFromCache(
     workspaceId: string,
     itemId: string,

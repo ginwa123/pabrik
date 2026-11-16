@@ -1,6 +1,4 @@
-//! A detached command that belongs to a workspace VM: its pid and its log are
-//! the GUEST's, so everything about it is asked of the manager that owns that
-//! VM. Nothing here runs a host process or opens a host file.
+//! A detached command that belongs to a workspace VM: its pid and its log are the GUEST's, so everything about it is asked of the manager that owns that VM.
 
 const std = @import("std");
 const runtime_mode = @import("../../../runtime_mode.zig");
@@ -14,9 +12,7 @@ pub const Error = error{
     GuestLogUnreadable,
 };
 
-/// A detached job as the accounting row records it: the workspace whose VM ran
-/// it (the VM is per-workspace, so the workspace id IS the VM id) and the pid
-/// inside that VM.
+/// A detached job as the accounting row records it: the workspace whose VM ran it (the VM is per-workspace, so the workspace id IS the VM id) and the pid inside …
 pub const GuestJob = struct {
     vm_id: []const u8,
     guest_pid: u32,
@@ -29,14 +25,11 @@ pub const Verdict = enum {
     exited,
     /// The manager says the VM is not running. Its jobs ended with it.
     vm_stopped,
-    /// Nobody can say: the manager is unreachable, or the VM is still coming
-    /// up. NOT a death — a job nobody can observe is not a job that ended, and
-    /// a manager that restarts adopts the VM it was asked about.
+    /// Nobody can say: the manager is unreachable, or the VM is still coming up.
     unknown,
 };
 
-/// The manager's answer to a `probe`, as plain data so the decision below is a
-/// pure function of it.
+/// The manager's answer to a `probe`, as plain data so the decision below is a pure function of it.
 pub const Answer = struct {
     alive: bool,
     state: []const u8,
@@ -45,25 +38,19 @@ pub const Answer = struct {
 
 pub const Reading = struct {
     verdict: Verdict,
-    /// The boot that answered. A caller watching one job remembers the first
-    /// and passes it back, so a RESTARTED VM cannot report a recycled pid as
-    /// the same job.
+    /// The boot that answered.
     boot_pid: i64,
 };
 
-/// `VM stopped — job ended` is the visible sentence §10.5 promises, so it is
-/// one constant, not three spellings.
+/// `VM stopped — job ended` is the visible sentence §10.5 promises, so it is one constant, not three spellings.
 pub const vm_stopped_note = "VM stopped - job ended";
 
-/// The states in which the manager is saying, authoritatively, that the VM a
-/// job belonged to is gone.
+/// The states in which the manager is saying, authoritatively, that the VM a job belonged to is gone.
 fn vmIsGone(state: []const u8) bool {
     return std.mem.eql(u8, state, "absent") or std.mem.eql(u8, state, "failed");
 }
 
 /// The whole liveness decision, as a pure function of the manager's answer.
-/// Only a state that means "the VM is gone" may end a job; everything else that
-/// is not `ready` is `unknown`.
 pub fn classify(answer: Answer, known_boot: ?i64) Verdict {
     if (vmIsGone(answer.state)) return .vm_stopped;
     if (!std.mem.eql(u8, answer.state, "ready")) return .unknown;
@@ -74,8 +61,7 @@ pub fn classify(answer: Answer, known_boot: ?i64) Verdict {
     return if (answer.alive) .alive else .exited;
 }
 
-/// The sentence a completion message carries, or null when there is nothing to
-/// explain beyond "the command finished".
+/// The sentence a completion message carries, or null when there is nothing to explain beyond "the command finished".
 pub fn noteFor(verdict: Verdict) ?[]const u8 {
     return switch (verdict) {
         .alive, .exited, .unknown => null,
@@ -83,15 +69,12 @@ pub fn noteFor(verdict: Verdict) ?[]const u8 {
     };
 }
 
-/// True when the job is over, however it ended. `unknown` is deliberately NOT
-/// an ending: the row stays, and the caller keeps watching.
+/// True when the job is over, however it ended.
 pub fn isFinished(verdict: Verdict) bool {
     return verdict == .exited or verdict == .vm_stopped;
 }
 
-/// Ask the manager about one job. A manager that cannot be reached is reported
-/// as `vm_stopped`, never as "still running": a job nobody can observe must not
-/// be presented as alive.
+/// Ask the manager about one job.
 pub fn probe(allocator: std.mem.Allocator, job: GuestJob, known_boot: ?i64) Reading {
     const socket = runtime_mode.socketPath() orelse return .{ .verdict = .unknown, .boot_pid = 0 };
     var client = vmd.Client.init(allocator, socket);
@@ -102,9 +85,7 @@ pub fn probe(allocator: std.mem.Allocator, job: GuestJob, known_boot: ?i64) Read
     return .{ .verdict = classify(plain, known_boot), .boot_pid = answer.boot_pid };
 }
 
-/// Stop the job and everything it forked. The guest's own tree kill does the
-/// work; `false` means the signal reached nothing, which is what an already
-/// exited job reports.
+/// Stop the job and everything it forked.
 pub fn stop(allocator: std.mem.Allocator, job: GuestJob) bool {
     const socket = runtime_mode.socketPath() orelse return false;
     var client = vmd.Client.init(allocator, socket);
@@ -114,8 +95,7 @@ pub fn stop(allocator: std.mem.Allocator, job: GuestJob) bool {
 
 pub const kill_signal: i64 = 9;
 
-/// What one `process read` of a guest log returns — the guest-side counterpart
-/// of `background_process.DeltaRead`, with the same answers.
+/// What one `process read` of a guest log returns — the guest-side counterpart of `background_process.DeltaRead`, with the same answers.
 pub const Delta = struct {
     bytes: []u8,
     next_offset: i64,
@@ -140,8 +120,7 @@ fn emptyDelta(allocator: std.mem.Allocator, offset: i64, missing: bool) !Delta {
     };
 }
 
-/// The part of a job's log the caller has not been shown yet, read THROUGH the
-/// guest: the host has no path to a tenant file.
+/// The part of a job's log the caller has not been shown yet, read THROUGH the guest: the host has no path to a tenant file.
 pub fn readDelta(
     allocator: std.mem.Allocator,
     job: GuestJob,
@@ -159,8 +138,7 @@ pub fn readDelta(
         chunk.deinit(allocator);
         return emptyDelta(allocator, from, true);
     }
-    // A cursor past EOF means the log was recreated under it; restart from the
-    // beginning rather than reporting silence for ever.
+    // A cursor past EOF means the log was recreated under it; restart from the beginning rather than reporting silence for ever.
     if (chunk.bytes.len == 0 and from > 0 and chunk.size < from) {
         chunk.deinit(allocator);
         from = 0;
@@ -212,8 +190,7 @@ test "classify: a VM still coming up, or a wedged guest, is unknown — never a 
 }
 
 test "classify: a job from an earlier boot is stopped, even when the pid is reused" {
-    // The guest recycles pids quickly (it is PID 1 plus a handful of jobs), so
-    // a restarted VM WILL hand out a pid an old row already holds.
+    // The guest recycles pids quickly (it is PID 1 plus a handful of jobs), so a restarted VM WILL hand out a pid an old row already holds.
     const answer = Answer{ .alive = true, .state = "ready", .boot_pid = 909074 };
     try testing.expectEqual(Verdict.vm_stopped, classify(answer, 908967));
 }

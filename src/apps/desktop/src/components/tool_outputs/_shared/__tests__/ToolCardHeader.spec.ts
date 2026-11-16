@@ -22,8 +22,7 @@ beforeAll(() => {
   })
 })
 
-// Minimal prop shape — just what each test sets. Use a Partial type
-// via the casting below for ergonomic call-sites.
+// Minimal prop shape — just what each test sets.
 type HeaderProps = {
   toolName: string
   primary: string | null
@@ -48,9 +47,7 @@ const makeWrapper = (props: HeaderProps, provideOpenInEditor?: OpenInCodeEditorF
       defineComponent({
         setup() {
           provide(OPEN_IN_CODE_EDITOR_KEY, provideOpenInEditor)
-          // Cast to any: ToolCardHeader's prop types are exhaustive; tests pass
-          // a subset. vue-tsc can't unify Record<string, unknown> with h()'s
-          // second arg without an explicit cast.
+          // Cast to any: ToolCardHeader's prop types are exhaustive; tests pass a subset. vue-tsc can't unify Record<string, unknown> with h()'s second arg without an …
           return () => h(ToolCardHeader, { ...props } as never)
         },
       }),

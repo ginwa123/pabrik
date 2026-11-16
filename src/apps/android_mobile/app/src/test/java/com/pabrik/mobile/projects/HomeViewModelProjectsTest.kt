@@ -23,17 +23,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Two schedulers, not one.
- *
- * A single `TestCoroutineScheduler` makes the cached-paint frame unobservable,
- * because the cache read and the fetch land in the same instant. These are the
- * same two the recents ViewModel tests use, for the same reason.
- *
- * Main is installed for the duration because `viewModelScope` is
- * `Dispatchers.Main`-scoped, so a ViewModel that launches work without one
- * fails before it launches anything.
- */
+/** Two schedulers, not one. */
 @OptIn(ExperimentalCoroutinesApi::class)
 private class Schedulers {
     val main = TestCoroutineScheduler()
@@ -102,11 +92,7 @@ private class ScriptedTransport(
         }
     }
 
-    /**
-     * Built with escaped quotes rather than a raw string: a `"""` literal that
-     * itself contains `"` has to end, and ending it mid-JSON reads as a syntax
-     * error rather than as a quoting accident.
-     */
+    /** Built with escaped quotes rather than a raw string: a `"""` literal that itself contains `"` has to end, and ending it mid-JSON reads as a syntax error rather … */
     private fun projectChatsJson(itemId: String): String {
         val ids = chatsByProject[itemId].orEmpty()
         val tasks = ids.joinToString(",") { id ->
@@ -139,13 +125,7 @@ private fun item(id: String, workspace: String = "ws_1") = ProjectSummary(
     name = "project $id",
 )
 
-/**
- * The projects section's state machine.
- *
- * The interesting assertions here are the *negative* ones — what must NOT
- * happen — because every bug in this area is a fetch that should not have been
- * made, or a page that should not have been merged.
- */
+/** The projects section's state machine. */
 class HomeViewModelProjectsTest {
 
     @Test
@@ -181,9 +161,7 @@ class HomeViewModelProjectsTest {
 
         val state = model.uiState.value
         assertEquals(listOf("item_9"), state.projects.map { it.id })
-        // Which projects were unfolded, and which chats were paged, belonged to
-        // the workspace just left. Carrying them over would paint another
-        // workspace's rows under this one's name.
+        // Which projects were unfolded, and which chats were paged, belonged to the workspace just left.
         assertTrue(state.expandedProjectIds.isEmpty())
         assertTrue(state.projectChats.isEmpty())
     }
@@ -228,8 +206,7 @@ class HomeViewModelProjectsTest {
 
     @Test
     fun collapsingAndReopeningAProjectDoesNotRefetch() = projectsTest { s ->
-        // The drawer's whole point is to be instantaneous to open. A second
-        // open that refetched would make the row feel like a network action.
+        // The drawer's whole point is to be instantaneous to open.
         val transport = ScriptedTransport(chatsByProject = mapOf("item_1" to listOf("t1")))
         val model = buildModel(s.ioDispatcher, transport)
         model.onUserChanged("user_a")
@@ -249,8 +226,7 @@ class HomeViewModelProjectsTest {
 
     @Test
     fun theProjectScreenReusesThePageTheDrawerAlreadyFetched() = projectsTest { s ->
-        // This is the whole reason the screen shares the ViewModel: expanding a
-        // project and then tapping "See all" costs one request, not two.
+        // This is the whole reason the screen shares the ViewModel: expanding a project and then tapping "See all" costs one request, not two.
         val transport = ScriptedTransport(chatsByProject = mapOf("item_1" to listOf("t1", "t2")))
         val model = buildModel(s.ioDispatcher, transport)
         model.onUserChanged("user_a")
@@ -267,8 +243,7 @@ class HomeViewModelProjectsTest {
 
     @Test
     fun theProjectScreenFetchesWhenItArrivesWithNothingCached() = projectsTest { s ->
-        // A deep link into `pabrik://project/…` on a cold process is the case
-        // that actually needs the fetch.
+        // A deep link into `pabrik://project/…` on a cold process is the case that actually needs the fetch.
         val transport = ScriptedTransport(chatsByProject = mapOf("item_1" to listOf("t9")))
         val model = buildModel(s.ioDispatcher, transport)
         model.onUserChanged("user_a")
@@ -311,9 +286,7 @@ class HomeViewModelProjectsTest {
         s.drain()
 
         val state = model.uiState.value
-        // The projects list is unaffected, and the failure did not end up
-        // recorded as the recents error — a projects failure reported against
-        // the chat list would be a lie about which list is broken.
+        // The projects list is unaffected, and the failure did not end up recorded as the recents error — a projects failure reported against the chat list would be a …
         assertEquals(listOf("item_1"), state.projects.map { it.id })
         assertNull("a projects failure must not land in the recents error", state.errorMessage)
     }
@@ -337,8 +310,7 @@ class HomeViewModelProjectsTest {
         assertTrue(state.projects.isEmpty())
         assertTrue(state.projectChats.isEmpty())
         assertTrue(state.expandedProjectIds.isEmpty())
-        // The rows belonged to the account that just ended. Leaving them on a
-        // shared device is the leak this is here to prevent.
+        // The rows belonged to the account that just ended.
         assertTrue("the projects cache must be purged on sign-out", cache.cleared)
     }
 
@@ -377,8 +349,7 @@ class HomeViewModelProjectsTest {
 
     @Test
     fun retryProjectsRefetchesTheSectionWithoutTouchingRecents() = projectsTest { s ->
-        // A projects failure while the recents are fine must not be reported
-        // against a list the reader never had a problem with.
+        // A projects failure while the recents are fine must not be reported against a list the reader never had a problem with.
         val transport = ScriptedTransport()
         val model = buildModel(s.ioDispatcher, transport)
         model.onUserChanged("user_a")
@@ -403,9 +374,7 @@ class HomeViewModelProjectsTest {
         model.onUserChanged("user_a")
         s.drain()
 
-        // The first workspace is the default, so switching is what proves the
-        // scope actually follows the selection rather than merely happening to
-        // be right on the first load.
+        // The first workspace is the default, so switching is what proves the scope actually follows the selection rather than merely happening to be right on the first …
         model.selectWorkspace("ws_2")
         s.drain()
 
@@ -417,12 +386,7 @@ class HomeViewModelProjectsTest {
 
     @Test
     fun theWorkspacesCallAsksForNoItemsAndTheItemsCallAsksForNoTasks() = projectsTest { s ->
-        // `is_include_items` defaults to true on the server, and true drags
-        // along every workspace's items *and* tasks — the whole feature in one
-        // response. It is a metered-connection decision not to ask for it, and
-        // both halves of that are worth pinning: the workspaces call must say
-        // `false` explicitly, and the items call must not ask for the flag at
-        // all (it has no such parameter).
+        // `is_include_items` defaults to true on the server, and true drags along every workspace's items *and* tasks — the whole feature in one response.
         val transport = ScriptedTransport()
         val model = buildModel(s.ioDispatcher, transport)
 
@@ -449,8 +413,7 @@ class HomeViewModelProjectsTest {
         model.toggleProjectExpanded("item_1")
         s.drain()
 
-        // The backend joins tasks to sessions on this id. If it ever stopped
-        // being true, tapping a nested row would navigate to nothing.
+        // The backend joins tasks to sessions on this id.
         assertEquals("task_42", model.uiState.value.projectChatsFor("item_1")?.chats?.first()?.id)
     }
 }

@@ -6,8 +6,7 @@ import PresentFiles from '../PresentFiles.vue'
 import { FRAME_CANVAS_FALLBACK } from '@/helpers'
 import { _resetMermaidLoader } from '@/helpers/mermaid'
 
-// A presented mermaid file renders through <MermaidDiagram>; mermaid itself
-// is mocked because jsdom has no layout.
+// A presented mermaid file renders through <MermaidDiagram>; mermaid itself is mocked because jsdom has no layout.
 const { initializeMock, renderMock } = vi.hoisted(() => ({
   initializeMock: vi.fn(),
   renderMock: vi.fn(),
@@ -17,9 +16,7 @@ vi.mock('mermaid', () => ({ default: { initialize: initializeMock, render: rende
 
 const MERMAID_SOURCE = 'flowchart TD\n  A[Prompt] --> B[Diagram]'
 
-// The html/pdf/text branches fetch source over same-origin `fetch` —
-// stub it so no test performs a real network call and previews resolve
-// deterministically.
+// The html/pdf/text branches fetch source over same-origin `fetch` — stub it so no test performs a real network call and previews resolve deterministically.
 const fetchMock = vi.fn()
 const origCreateObjectURL = URL.createObjectURL
 const origRevokeObjectURL = URL.revokeObjectURL
@@ -173,8 +170,7 @@ describe('PresentFiles', () => {
     const frame = wrapper.find('[data-testid="present-files-inline-html-0"] iframe')
     expect(frame.exists()).toBe(true)
     const srcdoc = frame.attributes('srcdoc') ?? ''
-    // The injected shell also styles `html`: a hardcoded #fff canvas shows through as a white slab
-    // wherever the presented document's own `body` box does not cover it.
+    // The injected shell also styles `html`: a hardcoded #fff canvas shows through as a white slab wherever the presented document's own `body` box does not cover it.
     expect(srcdoc).not.toMatch(/background:\s*#fff/i)
     expect(srcdoc.toLowerCase()).toContain(`background:${FRAME_CANVAS_FALLBACK}`)
   })
@@ -204,9 +200,7 @@ describe('PresentFiles', () => {
     await flushPromises()
     const frame = wrapper.find('[data-testid="present-files-inline-html-0"] iframe')
     expect(frame.exists()).toBe(true)
-    // Direct src navigation is refused by the server's framing headers
-    // (X-Frame-Options: DENY + frame-ancestors 'none'), so the iframe
-    // must use srcdoc with the fetched bytes — never a download URL.
+    // Direct src navigation is refused by the server's framing headers (X-Frame-Options: DENY + frame-ancestors 'none'), so the iframe must use srcdoc with the …
     expect(frame.attributes('src') ?? '').toBe('')
     const srcdoc = frame.attributes('srcdoc') ?? ''
     expect(srcdoc).toContain('<h1>Hello</h1>')
@@ -269,8 +263,7 @@ describe('PresentFiles', () => {
     await flushPromises()
     const pdf = wrapper.find('[data-testid="present-files-inline-pdf-0"] iframe')
     expect(pdf.exists()).toBe(true)
-    // Same framing-header reason as html: the blob URL carries no
-    // server framing headers, so it embeds where src navigation can't.
+    // Same framing-header reason as html: the blob URL carries no server framing headers, so it embeds where src navigation can't.
     expect(pdf.attributes('src') ?? '').toBe('blob:mock-preview')
     expect(URL.createObjectURL).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="present-files-open-tab-0"]').exists()).toBe(true)
@@ -315,8 +308,7 @@ describe('PresentFiles', () => {
   })
 
   it('mermaid files (.mmd) render as a diagram, not as their own source text', async () => {
-    // `application/octet-stream` is what a server guesses for `.mmd`: the
-    // extension, not the mime, is what identifies a mermaid file.
+    // `application/octet-stream` is what a server guesses for `.mmd`: the extension, not the mime, is what identifies a mermaid file.
     fetchMock.mockImplementationOnce(
       async () => ({ ok: true, status: 200, text: async () => MERMAID_SOURCE }) as Response,
     )
@@ -377,9 +369,7 @@ describe('PresentFiles', () => {
   })
 })
 
-/** Loading-space reserves (scroll pop-in fix). Text/html/pdf/image previews resolve asynchronously
- * AFTER the card mounts. Without reserved space the card mounts small and pops taller when the
- * fetch/decode lands — mid-scroll, that reads as "content suddenly shows up". */
+/** Loading-space reserves (scroll pop-in fix). */
 describe('PresentFiles loading reserves', () => {
   const pendingFetch = () => new Promise<Response>(() => {})
 

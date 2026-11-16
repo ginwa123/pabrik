@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/invitations` — the pending asks for one
-//! workspace. Owner/admin only: the list carries invitee email addresses.
+//! `GET /api/workspaces/:workspace_id/invitations` — the pending asks for one workspace.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

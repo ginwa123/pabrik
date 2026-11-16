@@ -1,6 +1,4 @@
-//! `PATCH …/document-folders/:folder_id`. `parent_id` presence separates the two
-//! operations: absent renames, `null` moves to the root, a string nests. A cycle
-//! or a sixth level is a 409 and writes nothing.
+//! `PATCH …/document-folders/:folder_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -56,8 +54,7 @@ fn useCase(
     });
     if (!input.body.set_icon) return .{ .folder = updated };
 
-    // The icon is its own column, so it is its own statement. Applied after
-    // the rename/move so one request can carry both.
+    // The icon is its own column, so it is its own statement.
     defer folders_store.freeFolderRow(allocator, updated);
     return .{ .folder = try folders_store.updateFolderIcon(
         allocator,
@@ -160,8 +157,7 @@ pub fn documentFoldersUpdateHandler(
     };
     defer folders_store.freeFolderRow(allocator, output.folder);
 
-    // Every window showing this workspace refetches; the payload only names
-    // what moved, because the list read is the source of truth.
+    // Every window showing this workspace refetches; the payload only names what moved, because the list read is the source of truth.
     document_events.emitDocumentsChanged(
         allocator,
         di.event_bus,

@@ -1,14 +1,11 @@
-// Pinia store for workspace-scoped secrets (Migration 101). Two things this store deliberately does
-// NOT do: 1. No client-side workspace filter.
+// Pinia store for workspace-scoped secrets (Migration 101).
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { Cause, Data, Effect, Exit } from 'effect'
 import * as api from '../api'
 import type { Secret } from '../api'
 
-/** This store's error channel. Every network call below returns `Effect<A, SecretsRequestError>`
- * rather than a promise that may reject, so the failure is in the TYPE and each call site has to
- * decide what to do with it. */
+/** This store's error channel. */
 export class SecretsRequestError extends Data.TaggedError('SecretsRequestError')<{
   /** Store action that triggered the request, e.g. `list`, `create`. */
   readonly op: string
@@ -21,9 +18,7 @@ export function describeSecretsError(error: SecretsRequestError): string {
   return `secrets ${error.op} failed: ${error.reason}`
 }
 
-/**  * Lift a rejecting promise into an Effect that fails in its error channel. This is the same
- * `Effect.tryPromise` wrapper `sync/DocumentEngineDb.ts` uses for its remote fetch; the difference
- * is only the error type, which here describes a network call rather than a cache. */
+/** Lift a rejecting promise into an Effect that fails in its error channel. */
 function request<A>(op: string, run: () => Promise<A>): Effect.Effect<A, SecretsRequestError> {
   return Effect.tryPromise({
     try: run,
@@ -35,9 +30,7 @@ function request<A>(op: string, run: () => Promise<A>): Effect.Effect<A, Secrets
   })
 }
 
-/** Run an Effect and keep BOTH outcomes distinguishable. Deliberately NOT `runSyncEffectOr(effect,
- * [], op)`: that helper degrades to an empty row list, which is precisely the "a failed fetch
- * renders as 'no rows'" collapse this store exists to avoid. */
+/** Run an Effect and keep BOTH outcomes distinguishable. */
 async function runRequest<A>(
   effect: Effect.Effect<A, SecretsRequestError>,
   op: string,
@@ -53,9 +46,7 @@ async function runRequest<A>(
 
 export const useSecretsStore = defineStore('secrets', () => {
   const secrets = ref<Secret[]>([])
-  /** Plaintexts the user asked to see, keyed by secret id. NEVER filled by a list: only by
-   * `revealSecret`, one explicit action at a time, and dropped by `hideSecret`, `reset` and
-   * `deleteSecret`. */
+  /** Plaintexts the user asked to see, keyed by secret id. */
   const revealed = ref<Record<string, string>>({})
   /** Id of the secret whose reveal is in flight, or null. */
   const revealing = ref<string | null>(null)
@@ -68,8 +59,7 @@ export const useSecretsStore = defineStore('secrets', () => {
 
   const count = computed(() => secrets.value.length)
 
-  /** Fetch the list for a workspace. A failure leaves whatever was last painted on screen and
-   * records `error`; it never blanks the list. */
+  /** Fetch the list for a workspace. */
   async function fetchSecrets(workspaceId: string): Promise<void> {
     if (!workspaceId) return
     loading.value = true
@@ -87,9 +77,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     loading.value = false
   }
 
-  /** Create a secret. `value` is consumed here and nowhere else: it goes into the request body and
-   * is not copied into any state. The returned `Secret` — the only thing this store keeps — has no
-   * value field, so there is nothing downstream that could render one. */
+  /** Create a secret. */
   async function createSecret(
     workspaceId: string,
     name: string,
@@ -108,15 +96,13 @@ export const useSecretsStore = defineStore('secrets', () => {
       error.value = result.reason
       return null
     }
-    // Prepend rather than refetch: a brand-new secret is the most recent,
-    // which saves a round-trip on the click that created it.
+    // Prepend rather than refetch: a brand-new secret is the most recent, which saves a round-trip on the click that created it.
     secrets.value = [result.value.secret, ...secrets.value]
     loaded.value = true
     return result.value.secret
   }
 
-  /** Rename a secret. Sends only the name, so the stored credential is
-   * untouched and never has to be re-supplied. */
+  /** Rename a secret. */
   async function renameSecret(
     workspaceId: string,
     secretId: string,
@@ -140,9 +126,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     return result.value.secret
   }
 
-  /**    * Replace a secret's credential in place ("rotate"). Same discipline as `createSecret`: the new
-   * value goes into the PATCH body and is dropped. The response replaces the row, so the UI shows
-   * the new `updated_at` and never the new value. */
+  /** Replace a secret's credential in place ("rotate"). */
   async function rotateSecret(
     workspaceId: string,
     secretId: string,
@@ -166,8 +150,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     return result.value.secret
   }
 
-  /** Write or clear a secret's description. Only the prose is sent: describing a secret never
-   * re-supplies the credential and never rotates it. */
+  /** Write or clear a secret's description. */
   async function describeSecret(
     workspaceId: string,
     secretId: string,
@@ -210,9 +193,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     return true
   }
 
-  /** Ask the server to unseal ONE value. Returns the plaintext on success and null on failure, so a
-   * caller can copy it without the store keeping a second copy. The map is replaced, never mutated,
-   * so a component bound to the old object re-renders. */
+  /** Ask the server to unseal ONE value. */
   async function revealSecret(workspaceId: string, secretId: string): Promise<string | null> {
     if (!workspaceId || !secretId) return null
     revealing.value = secretId
@@ -223,8 +204,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     )
     revealing.value = null
     if (!result.ok) {
-      // A value that could not be unsealed must not look like one that is
-      // already on screen, so nothing is added to the map.
+      // A value that could not be unsealed must not look like one that is already on screen, so nothing is added to the map.
       error.value = result.reason
       return null
     }
@@ -240,8 +220,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     revealed.value = next
   }
 
-  /**    * Called on workspace switch so one workspace's secrets are never shown under another workspace's
-   * header — and so a stale failure banner does not survive the switch. */
+  /** Called on workspace switch so one workspace's secrets are never shown under another workspace's header — and so a stale failure banner does not survive the … */
   function reset(): void {
     secrets.value = []
     error.value = null

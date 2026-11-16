@@ -1,5 +1,4 @@
-//! Pending-question state + the answer round-trip. Asking never blocks the
-//! agentic loop: the turn ends and the answer resumes a run.
+//! Pending-question state + the answer round-trip.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -26,8 +25,7 @@ pub const PendingQuestion = struct {
     question: []const u8,
     multi_select: bool,
     status: []const u8,
-    /// COALESCEd to "" on read — an empty answer is never stored (validation
-    /// rejects it), so "" here means "not answered yet".
+    /// COALESCEd to "" on read — an empty answer is never stored (validation rejects it), so "" here means "not answered yet".
     answer: []const u8,
 
     pub fn deinit(self: *const PendingQuestion, allocator: std.mem.Allocator) void {
@@ -41,15 +39,12 @@ pub const PendingQuestion = struct {
     }
 };
 
-/// `q_<nanoseconds>` — same shape as the other row ids in this codebase
-/// (`at_<nanos>`, `sess_<nanos>`).
+/// `q_<nanoseconds>` — same shape as the other row ids in this codebase (`at_<nanos>`, `sess_<nanos>`).
 pub fn newQuestionId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     return std.fmt.allocPrint(allocator, "q_{d}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
 }
 
-/// `Backend.exec` binds every argument as a string; SQLite's column
-/// affinity converts it for INTEGER columns. Keeping this in one place means
-/// no call site has to remember the cast.
+/// `Backend.exec` binds every argument as a string; SQLite's column affinity converts it for INTEGER columns.
 fn intArg(allocator: std.mem.Allocator, v: i64) ![]u8 {
     return std.fmt.allocPrint(allocator, "{d}", .{v});
 }
@@ -62,9 +57,7 @@ pub const InsertQuestionInput = struct {
     tool_call_id: []const u8,
     llm_history_id: []const u8,
     question: []const u8,
-    /// Whether the human may pick several options (Migration 088's
-    /// `multi_select` column) — the answer endpoint validates the wire shape
-    /// against it.
+    /// Whether the human may pick several options (Migration 088's `multi_select` column) — the answer endpoint validates the wire shape against it.
     multi_select: bool = false,
     /// Optional pre-generated id (tests pass a fixed one). Generated when null.
     id: ?[]const u8 = null,
@@ -99,8 +92,7 @@ pub fn insertPendingQuestion(input: InsertQuestionInput) ![]u8 {
         },
     );
 
-    // Whether we inserted or the OR IGNORE skipped an existing row, the
-    // authoritative id is whatever the tool_call_id now resolves to.
+    // Whether we inserted or the OR IGNORE skipped an existing row, the authoritative id is whatever the tool_call_id now resolves to.
     if (try getPendingQuestionByToolCall(allocator, input.db, input.session_id, input.tool_call_id)) |existing| {
         defer existing.deinit(allocator);
         return allocator.dupe(u8, existing.id);
@@ -142,8 +134,7 @@ pub fn getPendingQuestion(
     return null;
 }
 
-/// Look up by (session, tool call). The fallback key for a client that only
-/// has the tool row in hand (the card's `tool_call_id`).
+/// Look up by (session, tool call).
 pub fn getPendingQuestionByToolCall(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -160,8 +151,7 @@ pub fn getPendingQuestionByToolCall(
     return null;
 }
 
-/// Move a question to a terminal (or back to pending) status. `answer` is
-/// stored only when non-null and non-empty.
+/// Move a question to a terminal (or back to pending) status.
 pub fn markQuestionStatus(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -207,8 +197,7 @@ pub fn markAbandonedForSession(
     const resolved_at = try intArg(allocator, @intCast(std.Io.Timestamp.now(io, .real).nanoseconds));
     defer allocator.free(resolved_at);
 
-    // Count first — after the UPDATE the rows are indistinguishable from
-    // questions abandoned earlier in the session's life.
+    // Count first — after the UPDATE the rows are indistinguishable from questions abandoned earlier in the session's life.
     var changed: usize = 0;
     {
         var rows = try db.query(
@@ -237,9 +226,7 @@ pub fn markAbandonedForSession(
     return changed;
 }
 
-/// The hot-path predicate: is this session waiting on the human? Called at
-/// the top of every agentic-loop iteration and before every user-initiated
-/// run.
+/// The hot-path predicate: is this session waiting on the human?
 pub fn hasPendingQuestion(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -255,17 +242,14 @@ pub fn hasPendingQuestion(
     return false;
 }
 
-/// Settle every pending question for a session as `abandoned`, rewriting each
-/// question's tool-result row so the model reads "the human moved on" instead
-/// of `<status>pending</status>`.
+/// Settle every pending question for a session as `abandoned`, rewriting each question's tool-result row so the model reads "the human moved on" instead of …
 pub fn abandonPendingQuestions(
     allocator: std.mem.Allocator,
     io: std.Io,
     db: *database.Db,
     session_id: []const u8,
 ) !usize {
-    // `listRecentQuestions` returns pending rows (always) plus rows resolved
-    // in the last minute; we only settle the pending ones.
+    // `listRecentQuestions` returns pending rows (always) plus rows resolved in the last minute; we only settle the pending ones.
     const all = try listRecentQuestions(allocator, io, db, session_id);
     defer {
         for (all) |q| q.deinit(allocator);
@@ -298,9 +282,7 @@ pub fn abandonPendingQuestions(
     return settled;
 }
 
-/// All questions the frontend still needs for a session: everything pending
-/// (answered whenever), plus rows resolved in the last minute so a card that
-/// was just answered rehydrates in its resolved state after a reload.
+/// All questions the frontend still needs for a session: everything pending (answered whenever), plus rows resolved in the last minute so a card that was just …
 pub fn listRecentQuestions(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -309,9 +291,7 @@ pub fn listRecentQuestions(
 ) ![]PendingQuestion {
     const cutoff = try intArg(allocator, @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - std.time.ns_per_min));
     defer allocator.free(cutoff);
-    // `Backend` binds every argument as TEXT, so a bare `?` next to an
-    // INTEGER expression has no column affinity on either side — and SQLite
-    // orders INTEGER before TEXT, making `resolved_at >= '1789…'` always
+    // `Backend` binds every argument as TEXT, so a bare `?` next to an INTEGER expression has no column affinity on either side — and SQLite orders INTEGER before …
     const sql = SELECT_COLUMNS ++
         " WHERE session_id = ? AND (status = 'pending' OR COALESCE(resolved_at, 0) >= CAST(? AS " ++ pabrikcore.dialect.epoch_type ++ ")) ORDER BY created_at ASC";
     var rows = try db.query(allocator, sql, &.{ session_id, cutoff });
@@ -329,9 +309,7 @@ pub fn listRecentQuestions(
     return out.toOwnedSlice(allocator);
 }
 
-// ============================================================================
 // The answer round-trip
-// ============================================================================
 
 pub const RewriteAnchorInput = struct {
     allocator: std.mem.Allocator,
@@ -361,9 +339,7 @@ fn readRowContent(
     return null;
 }
 
-/// Lift the `parameters` object out of an existing JSON tool envelope and
-/// return it as a JSON string so a rewrite can re-emit it. Missing, null,
-/// or non-JSON input means empty args (`{}`).
+/// Lift the `parameters` object out of an existing JSON tool envelope and return it as a JSON string so a rewrite can re-emit it.
 fn extractParametersJson(allocator: std.mem.Allocator, content: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, content, " \t\r\n");
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch {
@@ -376,9 +352,7 @@ fn extractParametersJson(allocator: std.mem.Allocator, content: []const u8) ![]u
     return std.json.Stringify.valueAlloc(allocator, params, .{});
 }
 
-/// The resolved block replaces the one the model wrote, in the row it wrote
-/// it in. A row that predates the block protocol still carries a tool
-/// envelope, so it keeps the envelope rewrite.
+/// The resolved block replaces the one the model wrote, in the row it wrote it in.
 fn rewriteInsideChatEnvelope(
     allocator: std.mem.Allocator,
     previous: []const u8,
@@ -386,9 +360,7 @@ fn rewriteInsideChatEnvelope(
 ) !?[]u8 {
     const trimmed = std.mem.trim(u8, previous, &std.ascii.whitespace);
     if (trimmed.len == 0 or trimmed[0] != '{') return null;
-    // One definition of "is a chat envelope": a hand-rolled key list here
-    // missed `agent`, so the assistant envelope fell to the raw-splice path,
-    // which pasted the block's quotes into the JSON string.
+    // One definition of "is a chat envelope": a hand-rolled key list here missed `agent`, so the assistant envelope fell to the raw-splice path, which pasted the …
     if (!parsing.isChatEnvelope(allocator, trimmed)) return null;
 
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch return null;
@@ -542,9 +514,7 @@ pub const SessionRunFields = struct {
     }
 };
 
-/// Read the `sessions` columns `emit_run_agent` needs. Missing row → safe
-/// empty defaults (`insert_worker` upserts the session anyway), matching
-/// `start_agent.zig` step 3 / `wakeSessionForCompletion`.
+/// Read the `sessions` columns `emit_run_agent` needs.
 pub fn loadSessionRunFields(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -597,16 +567,13 @@ pub fn resumeSession(
         .selected_profile_model = fields.selected_profile_model,
         .is_auto_retry_until_stop = fields.is_auto_retry_until_stop,
         .skip_initial_queue_message = true,
-        // Preserve the session's owner so the worker's upsert keeps the
-        // row owned under `--auth` (plan 2026-09-25).
+        // Preserve the session's owner so the worker's upsert keeps the row owned under `--auth` (plan 2026-09-25).
         .user_id = fields.user_id,
     });
     return true;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
@@ -744,8 +711,7 @@ test "ask_user_pending: UNIQUE(tool_call_id) makes a re-exec idempotent" {
 
     const first = try insertOne(&s, "q_1", "s1", "call_1");
     defer a.free(first);
-    // A retry of the same tool call, even with a different proposed id,
-    // must resolve to the row that already exists.
+    // A retry of the same tool call, even with a different proposed id, must resolve to the row that already exists.
     const second = try insertOne(&s, "q_2", "s1", "call_1");
     defer a.free(second);
     try testing.expectEqualStrings("q_1", second);
@@ -876,8 +842,7 @@ test "ask_user_pending: extractParametersJson returns a JSON string" {
         try testing.expectEqualStrings("{}", body);
     }
 
-    // A legacy pre-migration row degrades to empty args (old rows render
-    // as raw text downstream anyway).
+    // A legacy pre-migration row degrades to empty args (old rows render as raw text downstream anyway).
     {
         const body = try extractParametersJson(a, "<tool><name>x</name><data>y</data></tool>");
         defer a.free(body);
@@ -1047,8 +1012,7 @@ test "ask_user_pending: rewriting inside a chat envelope keeps the envelope vali
     const after = (try readRowContent(a, &s.db, "row_env")).?;
     defer a.free(after);
 
-    // The row is read back with `unwrapChatContent` on the history path, so an
-    // envelope that no longer parses renders as raw text in the transcript.
+    // The row is read back with `unwrapChatContent` on the history path, so an envelope that no longer parses renders as raw text in the transcript.
     const parsed = try std.json.parseFromSlice(std.json.Value, a, after, .{});
     defer parsed.deinit();
     const msg = parsed.value.object.get("msg").?.string;

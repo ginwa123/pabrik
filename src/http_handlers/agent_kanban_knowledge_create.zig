@@ -1,5 +1,4 @@
-//! `POST /api/agent-kanbans/:kanban_id/knowledge`. Adds a knowledge entry to
-//! an agent-kanbans config.
+//! `POST /api/agent-kanbans/:kanban_id/knowledge`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,8 +19,7 @@ const CreateKnowledgeBody = struct {
 /// Subset of the knowledge row returned by the use-case.
 pub const Knowledge = agent_kanban_db.KnowledgeRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const KnowledgeCreateError = error{
     /// `kanban_id` path param was missing or empty.
     KanbanIdRequired,
@@ -33,8 +31,7 @@ pub const KnowledgeCreateError = error{
     BothSourcesSet,
     /// `db.query` failed while looking up the kanban.
     LookupFailed,
-    /// The workspace_item doesn't exist / isn't a kanban, OR the kanban
-    /// has no `agent_kanbans` row yet.
+    /// The workspace_item doesn't exist / isn't a kanban, OR the kanban has no `agent_kanbans` row yet.
     KanbanNotFound,
     /// `db.exec` failed on the INSERT.
     InsertFailed,
@@ -59,9 +56,7 @@ pub const KnowledgeCreateOutput = struct {
     knowledge: Knowledge,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a knowledge row for the given agent-kanbans config.
 fn useCase(
@@ -80,8 +75,6 @@ fn useCase(
     const handle: agent_kanban_db.DbOrTx = .{ .db = db };
 
     // Validate kanban exists + is a kanban + has an agent_kanbans row.
-    // (spec D3: agent_kanbans.id == workspace_item_id, so kanban_id IS
-    // the workspace_item_id.)
     var q = db.query(allocator,
         \\SELECT 1 FROM workspace_items WHERE id = ? AND item_type = 'kanban'
         \\AND EXISTS (SELECT 1 FROM agent_configs WHERE id = ? AND item_type = 'kanban')
@@ -98,9 +91,7 @@ fn useCase(
     return .{ .knowledge = knowledge };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanKnowledgeCreateHandler(
@@ -170,7 +161,6 @@ pub fn agentKanbanKnowledgeCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

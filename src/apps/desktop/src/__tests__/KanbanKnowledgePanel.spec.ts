@@ -1,5 +1,4 @@
-// Behavioural tests for KanbanKnowledgePanel — the per-board persona content panel (Knowledge rows
-// + System Prompt blocks).
+// Behavioural tests for KanbanKnowledgePanel — the per-board persona content panel (Knowledge rows + System Prompt blocks).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { flushPromises } from '@vue/test-utils'

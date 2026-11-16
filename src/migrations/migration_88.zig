@@ -32,15 +32,13 @@ pub const Migration088AddSessionPendingQuestion = struct {
             \\)
         , &[_][]const u8{});
 
-        // One question per anchor row — makes a re-exec (retry after a
-        // transient failure) idempotent instead of inserting a second row.
+        // One question per anchor row — makes a re-exec (retry after a transient failure) idempotent instead of inserting a second row.
         try db.exec(allocator,
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_spq_tool_call ON session_pending_question(tool_call_id)",
             &[_][]const u8{},
         );
 
-        // The hot path: hasPendingQuestion() on every loop iteration and on
-        // every user-sent message.
+        // The hot path: hasPendingQuestion() on every loop iteration and on every user-sent message.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_spq_session_status ON session_pending_question(session_id, status)",
             &[_][]const u8{},

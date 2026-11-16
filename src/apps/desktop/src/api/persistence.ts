@@ -1,10 +1,7 @@
-// Persistence API - API calls for desktop state persistence
-// Replaces localStorage calls with server-side persistence
+// Persistence API - API calls for desktop state persistence Replaces localStorage calls with server-side persistence
 const API_BASE = '/api'
 
-// ============================================
 // Type Definitions
-// ============================================
 export interface Workspace {
   id: string
   name: string
@@ -55,9 +52,7 @@ export interface FolderEntry {
   is_symlink: boolean
 }
 
-// ============================================ Workspace API Functions
-// ============================================
-/** Fetch all workspaces */
+// ============================================ Workspace API Functions Fetch all workspaces
 export async function getWorkspaces(): Promise<Workspace[]> {
   const response = await fetch(`${API_BASE}/persistence/workspaces`)
   if (!response.ok) {
@@ -67,9 +62,7 @@ export async function getWorkspaces(): Promise<Workspace[]> {
   return data.workspaces ?? data
 }
 
-/**
- * Fetch a single workspace by ID
- */
+/** Fetch a single workspace by ID */
 export async function getWorkspace(id: string): Promise<Workspace> {
   const response = await fetch(`${API_BASE}/persistence/workspaces/${encodeURIComponent(id)}`)
   if (!response.ok) {
@@ -78,9 +71,7 @@ export async function getWorkspace(id: string): Promise<Workspace> {
   return response.json()
 }
 
-/**
- * Create a new workspace
- */
+/** Create a new workspace */
 export async function createWorkspace(name: string, icon: string = '📁'): Promise<Workspace> {
   const response = await fetch(`${API_BASE}/persistence/workspaces`, {
     method: 'POST',
@@ -93,9 +84,7 @@ export async function createWorkspace(name: string, icon: string = '📁'): Prom
   return response.json()
 }
 
-/**
- * Update an existing workspace
- */
+/** Update an existing workspace */
 export async function updateWorkspace(id: string, data: Partial<Workspace>): Promise<Workspace> {
   const response = await fetch(`${API_BASE}/persistence/workspaces/${encodeURIComponent(id)}`, {
     method: 'PUT',
@@ -108,9 +97,7 @@ export async function updateWorkspace(id: string, data: Partial<Workspace>): Pro
   return response.json()
 }
 
-/**
- * Delete a workspace
- */
+/** Delete a workspace */
 export async function deleteWorkspace(id: string): Promise<void> {
   const response = await fetch(`${API_BASE}/persistence/workspaces/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -120,9 +107,7 @@ export async function deleteWorkspace(id: string): Promise<void> {
   }
 }
 
-// ============================================ Workspace Item API Functions
-// ============================================
-/** Create a new workspace item */
+// ============================================ Workspace Item API Functions Create a new workspace item
 export async function createWorkspaceItem(
   workspaceId: string,
   name: string,
@@ -143,9 +128,7 @@ export async function createWorkspaceItem(
   return response.json()
 }
 
-/**
- * Update a workspace item
- */
+/** Update a workspace item */
 export async function updateWorkspaceItem(
   workspaceId: string,
   itemId: string,
@@ -165,9 +148,7 @@ export async function updateWorkspaceItem(
   return response.json()
 }
 
-/**
- * Delete a workspace item
- */
+/** Delete a workspace item */
 export async function deleteWorkspaceItem(workspaceId: string, itemId: string): Promise<void> {
   const response = await fetch(
     `${API_BASE}/persistence/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemId)}`,
@@ -178,9 +159,7 @@ export async function deleteWorkspaceItem(workspaceId: string, itemId: string): 
   }
 }
 
-// ============================================ Task API Functions
-// ============================================
-/** Create a new task */
+// ============================================ Task API Functions Create a new task
 export async function createTask(
   itemId: string,
   name: string,
@@ -197,9 +176,7 @@ export async function createTask(
   return response.json()
 }
 
-/**
- * Update a task
- */
+/** Update a task */
 export async function updateTask(
   itemId: string,
   taskId: string,
@@ -219,9 +196,7 @@ export async function updateTask(
   return response.json()
 }
 
-/**
- * Delete a task
- */
+/** Delete a task */
 export async function deleteTask(itemId: string, taskId: string): Promise<void> {
   const response = await fetch(
     `${API_BASE}/persistence/items/${encodeURIComponent(itemId)}/tasks/${encodeURIComponent(taskId)}`,
@@ -232,9 +207,7 @@ export async function deleteTask(itemId: string, taskId: string): Promise<void> 
   }
 }
 
-// ============================================ Chat API Functions
-// ============================================
-/** Fetch all chats */
+// ============================================ Chat API Functions Fetch all chats
 export async function getChats(): Promise<ChatNavItem[]> {
   const response = await fetch(`${API_BASE}/persistence/chats`)
   if (!response.ok) {
@@ -244,9 +217,7 @@ export async function getChats(): Promise<ChatNavItem[]> {
   return data.chats ?? data
 }
 
-/**
- * Create a new chat
- */
+/** Create a new chat */
 export async function createChat(label: string, icon: string = '💬'): Promise<ChatNavItem> {
   const response = await fetch(`${API_BASE}/persistence/chats`, {
     method: 'POST',
@@ -259,9 +230,7 @@ export async function createChat(label: string, icon: string = '💬'): Promise<
   return response.json()
 }
 
-/**
- * Update a chat
- */
+/** Update a chat */
 export async function updateChat(id: string, data: Partial<ChatNavItem>): Promise<ChatNavItem> {
   const response = await fetch(`${API_BASE}/persistence/chats/${encodeURIComponent(id)}`, {
     method: 'PUT',
@@ -274,9 +243,7 @@ export async function updateChat(id: string, data: Partial<ChatNavItem>): Promis
   return response.json()
 }
 
-/**
- * Delete a chat
- */
+/** Delete a chat */
 export async function deleteChat(id: string): Promise<void> {
   const response = await fetch(`${API_BASE}/persistence/chats/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -286,9 +253,7 @@ export async function deleteChat(id: string): Promise<void> {
   }
 }
 
-// ============================================ App State API Functions
-// ============================================
-/** Fetch the current app state */
+// ============================================ App State API Functions Fetch the current app state
 export async function getAppState(): Promise<AppState> {
   const response = await fetch(`${API_BASE}/persistence/app-state`)
   if (!response.ok) {
@@ -298,9 +263,7 @@ export async function getAppState(): Promise<AppState> {
   return data
 }
 
-/**
- * Update the app state
- */
+/** Update the app state */
 export async function updateAppState(state: Partial<AppState>): Promise<AppState> {
   const response = await fetch(`${API_BASE}/persistence/app-state`, {
     method: 'PUT',

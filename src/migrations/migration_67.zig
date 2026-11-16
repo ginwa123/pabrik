@@ -7,9 +7,7 @@ const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
-/// Migration 067 — Add `workspace_item_tasks.tags` column to support the
-/// kanban task tags feature (free-form string list). ## Why this migration
-/// exists The kanban task tags feature adds user-defined labels per task
+/// Migration 067 — Add `workspace_item_tasks.tags` column to support the kanban task tags feature (free-form string list).
 pub const Migration067AddTaskTags = struct {
     pub const version: u32 = 67;
     pub const name = "add_task_tags";
@@ -20,9 +18,7 @@ pub const Migration067AddTaskTags = struct {
             allocator,
             "workspace_item_tasks",
             "tags",
-            // `addColumnIfMissing` builds `ALTER TABLE {table} ADD COLUMN
-            // {definition}`, so the definition must include BOTH the column
-            // name AND the type.
+            // `addColumnIfMissing` builds `ALTER TABLE {table} ADD COLUMN {definition}`, so the definition must include BOTH the column name AND the type.
             "tags TEXT NOT NULL DEFAULT ''",
         );
     }

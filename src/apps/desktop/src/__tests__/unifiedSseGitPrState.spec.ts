@@ -1,5 +1,4 @@
-/** The `git_pr_state` channel — both halves of its registration. The bug this exists for: merging
- * from the PR tab (MergeBox) recoloured the PR tab's own badge and nothing else. */
+/** The `git_pr_state` channel — both halves of its registration. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 
@@ -63,9 +62,7 @@ describe('createUnifiedSseConnection: git_pr_state channel', () => {
   it('pre-registers both granular wire names so the browser dispatches them', () => {
     createUnifiedSseConnection({ channels: { gitPrState: vi.fn() } })
 
-    // A name missing here is dropped by EventSource before onEvent — which is
-    // indistinguishable from a dead stream, and is exactly how the stale-colour
-    // bug would come back for a merge in another tab.
+    // A name missing here is dropped by EventSource before onEvent — which is indistinguishable from a dead stream, and is exactly how the stale-colour bug would …
     expect(capturedOpts?.additionalEventTypes).toContain('git_pr_state_merged')
     expect(capturedOpts?.additionalEventTypes).toContain('git_pr_state_closed')
   })
@@ -92,8 +89,7 @@ describe('createUnifiedSseConnection: git_pr_state channel', () => {
   })
 
   it('ignores the event when the channel is not subscribed', () => {
-    // No `gitPrState` channel → return early rather than fall through to the
-    // default-message buffer (which would corrupt the next unnamed event).
+    // No `gitPrState` channel → return early rather than fall through to the default-message buffer (which would corrupt the next unnamed event).
     const workersCb = vi.fn()
     createUnifiedSseConnection({ channels: { workers: workersCb } })
 
@@ -161,8 +157,7 @@ describe('git_pr_state → prStatusCache bridge', () => {
 
     // Both halves of the fix, on one event: the badge is told to re-read…
     expect(badge).toHaveBeenCalledWith({ cwd: MERGED.cwd, branch: MERGED.branch })
-    // …and the cache entry it would have re-read is gone, so the re-read sees
-    // the merge instead of the 60s-stale `open`.
+    // …and the cache entry it would have re-read is gone, so the re-read sees the merge instead of the 60s-stale `open`.
     getPrStatusMock.mockResolvedValue({ status: 'merged', state: 'MERGED' })
     await expect(fetchPrStatusCached(MERGED.cwd, MERGED.branch)).resolves.toBe('merged')
     expect(getPrStatusMock).toHaveBeenCalledTimes(2)

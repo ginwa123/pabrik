@@ -3,9 +3,7 @@ import { encodeFileAttachmentsWire, type FileAttachment } from '../helpers/fileA
 import { ApiError, apiFetch } from './client'
 import { splitMediaUrls } from './tasks'
 
-// Send a message to LLM Migration 063 — adds the optional `isAutoRetryUntilStop` flag. "1" opts
-// into unattended mode (the workflow re-reads this column on entry and soft-bails past retry_count
-// > 10). Default undefined = today's behavior.
+// Send a message to LLM Migration 063 — adds the optional `isAutoRetryUntilStop` flag.
 export const DEFAULT_CHAT_TOOLS = [
   'search_tool',
   'view_tool',
@@ -16,13 +14,9 @@ export const DEFAULT_CHAT_TOOLS = [
   'save_memory',
   'search_skills',
   'use_skill',
-  // Introspection: list the tools equipped for this session ("what tools do I have"). Read-only,
-  // sub-agent-safe. Seeded here so plain chat, design mode, and routine sessions (which all use
-  // this request body) get it; agent/kanban modes seed it via backend DEFAULT_AGENT_TOOLS.
+  // Introspection: list the tools equipped for this session ("what tools do I have").
   'used_tools',
-  // Workspace-scoped documents (Migration 095): `document` reads and searches, `document_markdown`
-  // writes. Both resolve their own workspace from the calling session and refuse outside one, so a
-  // plain chat is as safe as a project task.
+  // Workspace-scoped documents (Migration 095): `document` reads and searches, `document_markdown` writes.
   'document',
   'document_markdown',
 ].join(',')
@@ -38,19 +32,15 @@ export async function sendChatMessage(
   workspaceId?: string,
   fileAttachments?: FileAttachment[],
 ): Promise<{ status: string }> {
-  // Migration 090 — split data:video/... out to video_urls so a pasted
-  // clip never hits the image-only validator (400).
+  // Migration 090 — split data:video/... out to video_urls so a pasted clip never hits the image-only validator (400).
   const { images, videos } = splitMediaUrls(imageUrls, videoUrls)
   const imageUrlsStr = joinMediaUrlsWire(images)
   const videoUrlsStr = joinMediaUrlsWire(videos)
-  // The attached documents ride in ONE field, as a JSON array string — the
-  // same shape the backend's `file_attachments` column holds.
+  // The attached documents ride in ONE field, as a JSON array string — the same shape the backend's `file_attachments` column holds.
   const fileAttachmentsStr = encodeFileAttachmentsWire(fileAttachments ?? [])
 
   try {
-    // silent: true — ChatView already surfaces these failures inline
-    // (e.g. the LLM-not-configured banner) and the new global
-    // notification system would duplicate the message.
+    // silent: true — ChatView already surfaces these failures inline (e.g. the LLM-not-configured banner) and the new global notification system would duplicate the …
     return await apiFetch<{ status: string }>('/llm/session', {
       method: 'POST',
       body: {
@@ -65,16 +55,13 @@ export async function sendChatMessage(
           ? { file_attachments: fileAttachmentsStr }
           : {}),
         selected_profile_model: selectedAgent || '',
-        // Migration 063 — pass through to POST /api/session. Empty
-        // / undefined => the backend's default ("0" = off).
+        // Migration 063 — pass through to POST /api/session.
         is_auto_retry_until_stop: isAutoRetryUntilStop ?? '',
       },
       silent: true,
     })
   } catch (err) {
-    // Preserve the original return-shape semantics so ChatView can branch on `status` for
-    // user-facing messages: 'bad_request'         — backend 400 'unprocessable_entity'— backend 422
-    // 'http_error'          — backend 4xx/5xx other than the above 'offline'.
+    // Preserve the original return-shape semantics so ChatView can branch on `status` for user-facing messages: 'bad_request' — backend 400 'unprocessable_entity'— …
     if (err instanceof ApiError) {
       if (err.status === 400) return { status: 'bad_request' }
       if (err.status === 422) return { status: 'unprocessable_entity' }
@@ -84,8 +71,7 @@ export async function sendChatMessage(
   }
 }
 
-/** One `llm_history` row with every column as text — the shape the delete returns and the restore
- * takes back. A narrower type would drop `usage_json`, `temperature` and the token counters. */
+/** One `llm_history` row with every column as text — the shape the delete returns and the restore takes back. */
 export interface MessageRow {
   id: string
   session_id: string

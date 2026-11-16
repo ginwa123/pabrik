@@ -1,5 +1,4 @@
-// Branch-name round-trip for GET /api/git/pr/status. Zig port of
-// `tests/functional/git_pr_status_branch_test.py` (same test name).
+// Branch-name round-trip for GET /api/git/pr/status.
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,15 +10,12 @@ const io = testing.io;
 
 // THE QUERY STRING RIDES IN `path`, NOT IN `HttpOptions.params`.
 
-/// What the fake `gh` prints on stdout: a realistic `gh pr view --json`
-/// payload for a MERGED pull request, authored by a human, on a
-/// worktree branch. Every field the handler reads back is present.
+/// What the fake `gh` prints on stdout: a realistic `gh pr view --json` payload for a MERGED pull request, authored by a human, on a worktree branch.
 const GH_PAYLOAD =
     \\{"number":577,"title":"Color git icon","url":"https://github.com/acme/app/pull/577","state":"MERGED","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefName":"worktree/feature-x-123","baseRefName":"main","createdAt":"2026-09-01T00:00:00Z","updatedAt":"2026-09-02T00:00:00Z","mergedAt":"2026-09-03T00:00:00Z","closedAt":"","author":{"login":"alice"},"additions":1,"deletions":0,"changedFiles":1}
 ;
 
-/// The fake `gh`: record every argv entry, one per line, then print the
-/// payload. `{0}` is the absolute path of the args file, `{1}` the payload.
+/// The fake `gh`: record every argv entry, one per line, then print the payload.
 const FAKE_GH_SCRIPT =
     \\#!/bin/sh
     \\for a in "$@"; do printf '%s\n' "$a"; done > '{s}'
@@ -29,14 +25,11 @@ const FAKE_GH_SCRIPT =
     \\
 ;
 
-/// The branch the test sends, in the two spellings that matter: the
-/// DECODED value `gh` must receive, and the PERCENT-ENCODED value that
-/// is what the frontend actually puts on the query string.
+/// The branch the test sends, in the two spellings that matter: the DECODED value `gh` must receive, and the PERCENT-ENCODED value that is what the frontend …
 const BRANCH = "worktree/feature-x-123";
 const BRANCH_ENCODED = "worktree%2Ffeature-x-123";
 
-/// A scratch directory to hold the fixture repo + fake bin, mirroring
-/// pytest's `tmp_path`. Removed on the way out.
+/// A scratch directory to hold the fixture repo + fake bin, mirroring pytest's `tmp_path`.
 const Scratch = struct {
     tmp: std.testing.TmpDir,
     root: []u8,
@@ -64,9 +57,7 @@ const Scratch = struct {
     }
 };
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env — so the booted `pabrik` resolves
-/// `gh` to the fixture script.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env — so the booted `pabrik` resolves `gh` to the …
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -198,16 +189,12 @@ test "branch_with_slashes_reaches_gh_intact" {
     const repo = try buildRepo(&s);
     defer gpa.free(repo);
 
-    // The fake `gh` lives in its own bindir so prepending that
-    // directory to PATH cannot shadow any other command the server
-    // needs (`git` in particular — the repo gate runs it).
+    // The fake `gh` lives in its own bindir so prepending that directory to PATH cannot shadow any other command the server needs (`git` in particular — the repo …
     const bindir = try s.path(&.{"fakebin"});
     defer gpa.free(bindir);
     try std.Io.Dir.cwd().createDirPath(io, bindir);
 
-    // The args file is BAKED into the script rather than passed via
-    // `GH_ARGS_FILE`: a second env var the server would have to inherit is a
-    // second thing that can go wrong, and the script already has to be
+    // The args file is BAKED into the script rather than passed via `GH_ARGS_FILE`: a second env var the server would have to inherit is a second thing that can go …
     const args_file = try s.path(&.{"gh-args.txt"});
     defer gpa.free(args_file);
 
@@ -227,9 +214,7 @@ test "branch_with_slashes_reaches_gh_intact" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // `BRANCH_ENCODED` is written literally rather than left to a URL
-    // builder: this IS the bytes the frontend's `URLSearchParams` put
-    // on the wire, and decoding them is the behaviour under test.
+    // `BRANCH_ENCODED` is written literally rather than left to a URL builder: this IS the bytes the frontend's `URLSearchParams` put on the wire, and decoding them …
     const url = try std.fmt.allocPrint(gpa, "/api/git/pr/status?path={s}&pr={s}", .{ repo, BRANCH_ENCODED });
     defer gpa.free(url);
 
@@ -243,8 +228,6 @@ test "branch_with_slashes_reaches_gh_intact" {
     defer doc.deinit();
 
     // 200 alone is not enough: a fixture that never ran would 404/502.
-    // `status`/`head_ref` come from the fake `gh`'s stdout, so both
-    // prove the payload round-tripped.
     try testing.expectEqualStrings("merged", doc.str("status").?);
     try testing.expectEqualStrings(BRANCH, doc.str("head_ref").?);
 

@@ -12,9 +12,7 @@ import {
   type ModelResolve,
 } from '../../api'
 
-/** The agent form. THE SHAPE OF THIS FORM IS THE FEATURE. It shows THREE things — the model, one
- * line of facts, the API key — and every other knob lives behind `Advanced` with a placeholder that
- * states its own default (`inherit — openai`). */
+/** The agent form. */
 export interface LlmConfig {
   model: string
   base_url: string
@@ -22,34 +20,23 @@ export interface LlmConfig {
   temperature: string
   url_style: string
   api_key: string
-  /** Which TRANSPORT runs this agent's calls: `"http"` (default), `"claude-code"` (the local
-   * `claude` CLI, subscription auth via `claude login`), or `"opencode"` (the local `opencode` CLI,
-   * auth via `opencode login`). */
+  /** Which TRANSPORT runs this agent's calls: `"http"` (default), `"claude-code"` (the local `claude` CLI, subscription auth via `claude login`), or `"opencode"` … */
   backend?: string
-  /**    * Claude Code only: `CLAUDE_CONFIG_DIR`. Two agents pointing at two directories are two
-   * different `claude login` sessions — the way per-agent identity works when there is no API
-   * key. `null` = the CLI default (`~/.claude`). */
+  /** Claude Code only: `CLAUDE_CONFIG_DIR`. */
   config_dir?: string | null
-  /** Claude Code only: agentic turn ceiling (`--max-turns`).
-   * `null` = the CLI's own default. */
+  /** Claude Code only: agentic turn ceiling (`--max-turns`). */
   max_turns?: number | null
-  /** OpenCode only: which of the CLI's agents runs the turn (`--agent`).
-   * `null` = the CLI's default agent. */
+  /** OpenCode only: which of the CLI's agents runs the turn (`--agent`). */
   opencode_agent?: string | null
-  /** OpenCode only: whether to pass `--auto`. `null`/absent = on (the
-   * headless default); `false` = off. */
+  /** OpenCode only: whether to pass `--auto`. */
   opencode_auto?: boolean | null
-  /** Optional per-agent override for the context window (in tokens).
-   * `null` = resolve from the catalog, then fall through to the built-in. */
+  /** Optional per-agent override for the context window (in tokens). */
   max_capacity_tokens: number | null
-  /** Optional per-agent compaction threshold as a percentage (0-100).
-   * `null` = the global default (built-in 80). */
+  /** Optional per-agent compaction threshold as a percentage (0-100). */
   compaction_threshold_percent: number | null
-  /**    * Anthropic-only override for `thinking.budget_tokens`. Range (0, 2_000_000]. `null` = the
-   * 50%-of-max heuristic, or Anthropic's `type: "adaptive"` when `thinking === "auto"`. */
+  /** Anthropic-only override for `thinking.budget_tokens`. */
   thinking_budget_tokens: number | null
-  /** OpenAI-style reasoning effort. `null` = omit from the request body
-   * (model-default reasoning). Anthropic-style URLs ignore it. */
+  /** OpenAI-style reasoning effort. */
   reasoning_effort: 'low' | 'medium' | 'high' | 'auto' | null
 }
 
@@ -83,8 +70,6 @@ const helperStyle = { color: 'var(--semantic-text-dim)' }
 const errorStyle = { color: 'var(--color-red)' }
 
 // === The one call this dialog makes =====================================
-// Resolve (model, provider) into facts. Runs on mount, on a debounced input,
-// and immediately when a picker row is chosen.
 const resolved = ref<ModelResolve | null>(null)
 const resolveError = ref<string | null>(null)
 const resolving = ref(false)
@@ -104,8 +89,7 @@ async function runResolve(): Promise<void> {
     resolved.value = outcome.value
     resolveError.value = null
   } else {
-    // The reason is KEPT and rendered. A fact line that silently showed nothing
-    // would leave the user unable to tell "unknown model" from "backend down".
+    // The reason is KEPT and rendered.
     resolved.value = null
     resolveError.value = outcome.message
   }
@@ -128,12 +112,10 @@ const pickerCliError = ref<string | null>(null)
 const pickerError = ref<string | null>(null)
 let pickerTimer: ReturnType<typeof setTimeout> | null = null
 
-/** The picker's page — the backend's own default (`DEFAULT_LIMIT` in `models_catalog.zig`). The
- * page is what you BROWSE; typing is what narrows. */
+/** The picker's page — the backend's own default (`DEFAULT_LIMIT` in `models_catalog.zig`). */
 const PICKER_LIMIT = 50
 
-/** What the header says. The match count and the page size are different numbers, so a header
- * printing only the count promised rows the list could never show. */
+/** What the header says. */
 const pickerSummary = computed<string>(() => {
   const total = pickerTotal.value
   const shown = pickerResults.value.length
@@ -159,9 +141,7 @@ async function runPickerSearch(): Promise<void> {
     pickerCliError.value = res.cli_error ?? null
     pickerError.value = null
   } catch (err) {
-    // A picker that cannot reach the catalog must not break typing — the field stays free text. But
-    // the reason is KEPT and rendered below, because "this model has no matches" and "we could not
-    // search" are different answers and must not look the same.
+    // A picker that cannot reach the catalog must not break typing — the field stays free text.
     pickerError.value = err instanceof Error ? err.message : String(err)
     pickerResults.value = []
     pickerTotal.value = 0
@@ -177,14 +157,11 @@ function onModelInput(raw: string): void {
 }
 
 function chooseModel(entry: ModelCatalogEntry): void {
-  // The model id is what goes on the wire; the provider is remembered so the
-  // resolve answers for THAT provider's endpoint.
+  // The model id is what goes on the wire; the provider is remembered so the resolve answers for THAT provider's endpoint.
   emit('update:modelValue', {
     ...props.modelValue,
     model: entry.model_id,
     // An empty base_url means "use the catalog's" — the field stays overrideable.
-    // NOT for a CLI backend: those have no endpoint at all, and setting one
-    // would trip the agent validator (base_url is rejected for the CLI).
     base_url: isCliBackend.value
       ? props.modelValue.base_url
       : props.modelValue.base_url || entry.provider_name,
@@ -230,9 +207,7 @@ const factWarning = computed<string | null>(() => {
     return 'checking…'
   }
   if (r.source === 'builtin') {
-    // An absent catalog has TWO causes, and they are not the same news: nothing
-    // has synced yet (wait), versus every sync FAILING (something is broken and
-    // waiting will not help). The backend names the failure; the line shows it.
+    // An absent catalog has TWO causes, and they are not the same news: nothing has synced yet (wait), versus every sync FAILING (something is broken and waiting …
     if (r.catalog === 'absent') {
       return r.last_sync_error
         ? `catalog sync failed — ${r.last_sync_error} (the built-in 200k window applies)`
@@ -243,9 +218,7 @@ const factWarning = computed<string | null>(() => {
   return null
 })
 
-// === Transport gating (`backend`, orthogonal to `url_style`) ============= A CLI agent
-// (claude-code, opencode) runs a local binary: no base URL, no API key, no HTTP body shape, and no
-// request-body knobs.
+// === Transport gating (`backend`, orthogonal to `url_style`) =============
 const isClaudeCodeBackend = computed<boolean>(() => props.modelValue.backend === 'claude-code')
 const isOpencodeBackend = computed<boolean>(() => props.modelValue.backend === 'opencode')
 /** True for any local-CLI backend — the set that hides every HTTP control. */
@@ -282,27 +255,20 @@ function onTemperatureInput(raw: string): void {
 }
 
 // === Capability gating comes from the MODEL, not the wire shape =========
-// The old form showed a Reasoning-effort dropdown for every OpenAI-shaped
-// agent, including models that ignore the field entirely.
 const hasFacts = computed<boolean>(() => resolved.value?.source === 'catalog')
 
-/** Does the model support extended reasoning at all? With facts: its own `reasoning_options`.
- * WITHOUT facts — catalog unreachable, unknown model, first run — it degrades to the OLD
- * `url_style`-based gate rather than hiding a control because a request failed. */
+/** Does the model support extended reasoning at all? */
 const modelSupportsReasoning = computed<boolean>(() => {
   if (!hasFacts.value) return true
   return resolved.value?.reasoning !== 'none'
 })
-/** One set feeds the label AND the dropdown, so the label cannot name a level the dropdown does
- * not offer. The catalog already filtered the model's own list down to what pabrik can send
- * (`model_catalog.zig`); with no facts at all the generic three are offered. */
+/** One set feeds the label AND the dropdown, so the label cannot name a level the dropdown does not offer. */
 const effortOptions = computed<string[]>(() => {
   const sendable = resolved.value?.effort_values_sendable ?? []
   return sendable.length > 0 ? sendable : ['low', 'medium', 'high']
 })
 
-/** The model's advertised levels pabrik cannot send. Said out loud, because a list shorter than
- * the model's own is otherwise a mystery. */
+/** The model's advertised levels pabrik cannot send. */
 const effortDropped = computed<string[]>(() => {
   const sendable = resolved.value?.effort_values_sendable ?? []
   const advertised = resolved.value?.effort_values ?? []
@@ -311,8 +277,7 @@ const effortDropped = computed<string[]>(() => {
 const isAnthropicShape = computed<boolean>(
   () => (resolved.value?.url_style ?? props.modelValue.url_style) === 'anthropic',
 )
-// Extended reasoning switched off means BOTH controls are meaningless, whatever
-// the model supports — the old form's gate, kept.
+// Extended reasoning switched off means BOTH controls are meaningless, whatever the model supports — the old form's gate, kept.
 const reasoningGate = computed<boolean>(() => props.modelValue.thinking !== 'off')
 const showsBudget = computed<boolean>(
   () => reasoningGate.value && isAnthropicShape.value && modelSupportsReasoning.value,
@@ -321,8 +286,7 @@ const showsEffort = computed<boolean>(
   () => reasoningGate.value && !isAnthropicShape.value && modelSupportsReasoning.value,
 )
 
-// === Overrides ========================================================== Every numeric override
-// is `null` until the user types.
+// === Overrides ==========================================================
 const advancedOpen = ref(false)
 const showKey = ref(false)
 
@@ -373,8 +337,6 @@ const overrideCount = computed<number>(() => {
 })
 
 // === API key: a workspace secret can be inserted here =====================
-// The field holds the placeholder, never the credential, so saving an agent
-// does not put a plaintext key in the config row.
 const apiKeyField = ref<HTMLInputElement | null>(null)
 const {
   open: apiKeyMenuOpen,

@@ -34,8 +34,6 @@ export function useAgentPrompts(deps: AgentPromptsDeps): UseAgentPromptsReturn {
   const { activeWorkspaceItem, agentTools, agentSystemPrompts } = deps
 
 // ─── Agent System Prompt dialog (Migration 080, plan 2026-08-21-agent-system-prompt) ──
-// Same open/busy/error pattern as the knowledge dialogs above. One
-// dialog serves add (row=null) and edit (row set).
 const agentSystemPromptDialogOpen = ref(false)
 const agentSystemPromptRow = ref<api.AgentSystemPromptRow | null>(null)
 const agentSystemPromptBusy = ref(false)
@@ -156,8 +154,7 @@ async function handleAgentToggleTool(toolName: string, enabled: boolean) {
   agentTools.value = out.canonical
 }
 
-/** Bulk-toggle multiple tools at once (fired by AgentView's "Select all" / "Clear" buttons in the
- * Tools panel). */
+/** Bulk-toggle multiple tools at once (fired by AgentView's "Select all" / "Clear" buttons in the Tools panel). */
 async function handleAgentToggleToolsBulk(toolNames: string[], enabled: boolean) {
   if (!activeWorkspaceItem.value) return
   const agentId = activeWorkspaceItem.value.id
@@ -186,8 +183,7 @@ async function handleAgentToggleToolsBulk(toolNames: string[], enabled: boolean)
     if (failures.length > 0) {
       console.error('[AppLayout] bulk toggle: some tools failed:', failures)
     }
-    // Re-fetch the canonical list so partial successes + races collapse
-    // into one coherent view. Cheap (one GET).
+    // Re-fetch the canonical list so partial successes + races collapse into one coherent view.
     const data = await api.getAgentTools(agentId)
     agentTools.value = data.tools
   } catch (e) {

@@ -6,9 +6,7 @@ import * as api from '../api'
 export interface AgentRegistryEntry {
   name: string
   description: string
-  /** The tool's full parameter list. The panel does not render it yet; it is
-   * declared so the wire shape lives in one place, and so a future path/file
-   * affordance (or a `cwd`-required badge) has the data it needs. */
+  /** The tool's full parameter list. */
   parameters?: Array<{ name: string; type: string; required: boolean }>
   /** `mcp` when a configured MCP server advertised the tool. */
   kind?: 'builtin' | 'mcp'

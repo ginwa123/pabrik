@@ -50,8 +50,7 @@ export function createInitActions(p: InitActionsParams) {
   const { workspaceItemsLoaded, workspaceItemsInFlight } = itemLoader
   const { ensureWorkspaceItemsLoaded, setCurrentInit } = itemLoader
 
-  // Initialize the store: fetch the workspace list, seed every row with empty items, then load
-  // items for the ACTIVE workspace only.
+  // Initialize the store: fetch the workspace list, seed every row with empty items, then load items for the ACTIVE workspace only.
   function init(): Promise<void> {
     const run = runInit()
     setCurrentInit(run)
@@ -62,20 +61,15 @@ export function createInitActions(p: InitActionsParams) {
     isLoading.value = true
     loadingError.value = null
 
-    // Wipe the design-pages cache so re-inits don't show stale pages from the previous session (the
-    // chevron-click lazy fetch remains the fallback for anything not eagerly reloaded).
+    // Wipe the design-pages cache so re-inits don't show stale pages from the previous session (the chevron-click lazy fetch remains the fallback for anything not …
     resetDesignPagesCache()
     workspaceItemsLoaded.clear()
     workspaceItemsInFlight.clear()
 
-    // Install the bus-backed session-event listeners (idempotent — safe to call on every init,
-    // including HMR re-mounts). The bus is opened once by App.vue, so we don't own the SSE
-    // connection here anymore (Chunk 6 of unify-frontend-sse).
+    // Install the bus-backed session-event listeners (idempotent — safe to call on every init, including HMR re-mounts).
     installSessionEventHandlers()
 
-    // Seed helper: every row starts with EMPTY items — the list
-    // (dropdown, sidebar, items_count badges) is complete right away;
-    // the items tree fills in per visit.
+    // Seed helper: every row starts with EMPTY items — the list (dropdown, sidebar, items_count badges) is complete right away; the items tree fills in per visit.
     const seedList = (wsList: Workspace[]) => {
       const expandedWorkspaces = loadExpandedWorkspaces()
       const expandedIds = loadExpandedItemIds()
@@ -89,8 +83,7 @@ export function createInitActions(p: InitActionsParams) {
       }))
     }
 
-    // Merge helper for the background revalidate: refresh rows in place without clobbering items
-    // already loaded for the active workspace (or expanded UI state) while the fetch was in flight.
+    // Merge helper for the background revalidate: refresh rows in place without clobbering items already loaded for the active workspace (or expanded UI state) while …
     const mergeList = (wsList: Workspace[]) => {
       const expandedWorkspaces = loadExpandedWorkspaces()
       const prevById = new Map(workspaces.value.map((w) => [w.id, w]))
@@ -111,15 +104,12 @@ export function createInitActions(p: InitActionsParams) {
       })
     }
 
-    // Stale-while-revalidate: paint the last-known list synchronously so the dropdown/sidebar shows
-    // rows instantly on boot, then the live fetch below refreshes it in the same init.
-    // api.getWorkspaces persists every success to the cache (fail-silent).
+    // Stale-while-revalidate: paint the last-known list synchronously so the dropdown/sidebar shows rows instantly on boot, then the live fetch below refreshes it in …
     const cached = isIdentityResolved() ? readWorkspacesCache() : null
     const hasCache = !!cached && cached.length > 0
     if (hasCache) {
       seedList(cached as Workspace[])
-      // Drop the list spinner now — rows are already visible. The
-      // active workspace items still load below.
+      // Drop the list spinner now — rows are already visible.
       isLoading.value = false
     }
 
@@ -140,8 +130,7 @@ export function createInitActions(p: InitActionsParams) {
         await ensureWorkspaceItemsLoaded(activeId)
       }
     } catch (err) {
-      // With a cached paint on screen, a failed revalidate keeps the
-      // stale rows (and surfaces the error) instead of wiping to [].
+      // With a cached paint on screen, a failed revalidate keeps the stale rows (and surfaces the error) instead of wiping to [].
       if (!hasCache) {
         loadingError.value = err instanceof Error ? err.message : 'Failed to load workspaces'
         console.error('Failed to load workspaces:', err)
@@ -156,9 +145,7 @@ export function createInitActions(p: InitActionsParams) {
     }
   }
 
-  // Initialize workspace items from system folder. A deep link can pass
-  // its workspace id so boot hydration does not prefer the persisted
-  // selection and leave the URL-restored item inactive.
+  // Initialize workspace items from system folder.
   async function initializeFromSystemFolder(preferredWorkspaceId?: string) {
     // First, load workspaces from API
     await init()
@@ -166,13 +153,10 @@ export function createInitActions(p: InitActionsParams) {
       await setActiveWorkspace(preferredWorkspaceId)
     }
 
-    // Also fetch system folder info for navigation. Best-effort on purpose: `fetchSystemFolder`
-    // records the failure in `systemFolderError` for the UI, and the boot path that calls this is
-    // fire-and-forget — a rethrow here surfaced as an unhandled rejection and nothing else.
+    // Also fetch system folder info for navigation.
     await fetchSystemFolder().catch(() => undefined)
 
-    // Restore active task if it was set before workspaces were loaded
-    // This handles the case where setActiveTask was called before init() completed
+    // Restore active task if it was set before workspaces were loaded This handles the case where setActiveTask was called before init() completed
     if (activeTaskId.value) {
       // Find and set the parent workspace item for the active task
       for (const workspace of workspaces.value) {

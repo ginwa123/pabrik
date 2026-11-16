@@ -44,17 +44,13 @@ import { useDesignContextMenu } from '../../composables/useDesignContextMenu'
 import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../../composables/useLayerDragDrop'
 import { useWorkspacesStore } from '../../stores/workspaces'
 
-// Read the active workspace + item + page at call time. Mirrors the pattern in
-// `useDesignHandlers.updateElement` — no need to plumb ids through props when the store already
-// knows them. Undo/redo plan Chunk 1 (wire-up of silent-drop emits).
+// Read the active workspace + item + page at call time.
 const workspacesStore = useWorkspacesStore()
 const activeWorkspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 const activeWorkspaceItemId = computed(() => workspacesStore.activeWorkspaceItemId)
 const activeDesignPageId = computed(() => workspacesStore.activeDesignPageId)
 
-// True while the active page's element fetch is in flight. Without it
-// the panel renders "No elements on this page yet" during the fetch —
-// a false statement about the page's data.
+// True while the active page's element fetch is in flight.
 const isElementsLoading = computed(() => {
   const itemId = activeWorkspaceItemId.value
   const pageId = activeDesignPageId.value
@@ -75,31 +71,21 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  // Structured payload so the parent can distinguish Shift+click
-  // (additive = true) from a plain click (additive = false). The
-  // parent handles the actual Set vs replace logic.
+  // Structured payload so the parent can distinguish Shift+click (additive = true) from a plain click (additive = false).
   select: [payload: { elementId: string; additive: boolean }]
   reorder: [orderedElementIds: string[]]
   delete: [elementId: string]
-  // NEW: right-click on a layer row → context menu. Parent wires
-  // the Group / Select all / Bring / Send / Delete actions to the
-  // appropriate handlers (useDesignHandlers, store actions).
+  // NEW: right-click on a layer row → context menu.
   group: [targetIds: string[]]
   ungroup: [elementId: string]
-  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current
-  // parent group/frame to top-level. Wired through DesignView → useDesignHandlers →
-  // workspacesStore.reparentDesignElementsBatch.
+  // NEW (2026-08-06, design-leave-group plan): pull the SINGLE selected element out of its current parent group/frame to top-level.
   leaveGroup: [elementId: string]
-  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up
-  // to the host so it can open the MoveToPageDialog with the right element id. The dialog handles
-  // the actual API call after the user picks a target page.
+  // NEW (Chunk 7, design-move-to-page plan, 2026-08-06): bubble the "Move to page..." selection up to the host so it can open the MoveToPageDialog with the right …
   moveToPage: [elementId: string]
   selectAll: []
   bringToFront: [targetIds: string[]]
   bringForward: [targetIds: string[]]
-  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a drop event. `elementIds` is the
-  // FULL selection when the dragged row is in the selection (multi-drag). `newParentId` is the
-  // group/frame id to reparent under, or null for "leave group".
+  // NEW (Chunk 4 Task 4.2 of drag-to-reparent plan): payload from a drop event.
   reparent: [payload: { elementIds: string[]; newParentId: string | null }]
   sendBackward: [targetIds: string[]]
   sendToBack: [targetIds: string[]]
@@ -114,18 +100,14 @@ function handleLayerContextMenu(payload: { event: MouseEvent; targetIds: string[
   contextMenu.open(payload.event, payload.targetIds)
 }
 
-/** Build a tree of nested `LayerTreeNode`s from a flat `DesignElement[]`. Algorithm: 1. Walk all
- * elements; create a `LayerTreeNode` for each. 2. Bucket them by `parent_id` (or `null` for
- * top-level). 3. For each node, look up its children by its own id and assign. 4. */
+/** Build a tree of nested `LayerTreeNode`s from a flat `DesignElement[]`. */
 const layerTree = computed<LayerTreeNode[]>(() => {
   const byParent = new Map<string | null, LayerTreeNode[]>()
   const nodes = new Map<string, LayerTreeNode>()
   for (const e of props.elements) {
     const node: LayerTreeNode = { element: e, children: [] }
     nodes.set(e.id, node)
-    // The backend's `listElements` returns `COALESCE(de.parent_id, '')` — so a top-level element
-    // (parent_id IS NULL) arrives as `parent_id === ""` (empty string), NOT null/undefined. See the
-    // regression test in LayersPanel.spec.ts for the wire shape.
+    // The backend's `listElements` returns `COALESCE(de.parent_id, '')` — so a top-level element (parent_id IS NULL) arrives as `parent_id === ""` (empty string) …
     const pid = e.parent_id || null
     if (!byParent.has(pid)) byParent.set(pid, [])
     byParent.get(pid)!.push(node)
@@ -144,24 +126,18 @@ const layerTree = computed<LayerTreeNode[]>(() => {
   return byParent.get(null) ?? []
 })
 
-/**  * Per-element collapse state. A `Set` because collapse is binary per-id. Held as `ref(new Set)` so
- * a replacement (not a mutation) triggers Vue 3 reactivity. The Set is passed DOWN to `<LayerRow>`
- * by reference (read-only in the child). */
+/** Per-element collapse state. */
 const collapsedIds = ref<Set<string>>(new Set())
 
 const toggleCollapse = (elementId: string): void => {
-  // Replace the Set so downstream consumers see the change. Mutating
-  // in place would NOT trigger the row's `isCollapsed` computed to
-  // re-evaluate because Vue 3 doesn't observe Set mutations.
+  // Replace the Set so downstream consumers see the change.
   const next = new Set(collapsedIds.value)
   if (next.has(elementId)) next.delete(elementId)
   else next.add(elementId)
   collapsedIds.value = next
 }
 
-/** Walk the tree to find a node by id. Returns the node + its sibling array (the parent's children)
- * + the node's index within that array. Used by `handleMoveUp` / `handleMoveDown` to swap with the
- * previous / next sibling. */
+/** Walk the tree to find a node by id. */
 function findNode(
   nodes: LayerTreeNode[],
   elementId: string,
@@ -176,17 +152,13 @@ function findNode(
   return null
 }
 
-/** Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is
- * owned by Vue's reactivity and should be treated as immutable). The clone preserves `element`
- * references (no need to copy those — only the tree structure mutates). */
+/** Deep-clone the tree so we can swap siblings without mutating the `layerTree` computed (which is owned by Vue's reactivity and should be treated as immutable). */
 const dragDrop = useLayerDragDrop({
   elements: () => props.elements,
   selectedIds: () => new Set(props.selectedIds),
 })
 
-// Forward a drop event from any LayerRow / drop-zone to the
-// composable. The composable resolves the cycle check + elementIds
-// resolution; we just relay the payload to DesignView via emit.
+// Forward a drop event from any LayerRow / drop-zone to the composable.
 function handleReparentDrop(targetId: string, _event: DragEvent | Event): void {
   const result = dragDrop.handlers.onDrop(targetId, _event)
   if (result) {
@@ -201,9 +173,7 @@ function cloneTree(nodes: LayerTreeNode[]): LayerTreeNode[] {
   }))
 }
 
-/** Move the element at `elementId` up by one (toward the top of the panel). In a tree, "up" means
- * swapping with the previous SIBLING within the same parent's children array. For top-level
- * elements, the parent is the panel itself (the top-level `layerTree`). */
+/** Move the element at `elementId` up by one (toward the top of the panel). */
 const handleMoveUp = (elementId: string): void => {
   if (props.readonly) return
   const found = findNode(layerTree.value, elementId)
@@ -218,9 +188,7 @@ const handleMoveUp = (elementId: string): void => {
   const current = siblings[idx]!
   siblings[idx - 1] = current
   siblings[idx] = above
-  // Wire-up (undo/redo plan Chunk 1): was `emit('reorder', flattenTopDown(cloned))` which went up
-  // to DesignView → re-emitted upward → AppLayout had no listener → silent drop. Now we call the
-  // store action directly with `mode: 'bring_forward'`.
+  // Wire-up (undo/redo plan Chunk 1): was `emit('reorder', flattenTopDown(cloned))` which went up to DesignView → re-emitted upward → AppLayout had no listener → …
   void workspacesStore.reorderDesignElements(
     activeWorkspaceId.value!,
     activeWorkspaceItemId.value!,

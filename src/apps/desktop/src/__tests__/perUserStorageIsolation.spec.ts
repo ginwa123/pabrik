@@ -1,5 +1,4 @@
-/** Per-user browser-storage isolation, end to end (plan 2026-09-25, W5). The bug: every
- * localStorage key is origin-global, so two users on the same browser profile share one key space. */
+/** Per-user browser-storage isolation, end to end (plan 2026-09-25, W5). */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { makeLocalStorageStub } from './helpers'
 import {
@@ -53,9 +52,7 @@ describe('per-user storage isolation', () => {
     purgeForeignScopedKeys()
     expect(readWorkspacesCache()).toBeNull()
 
-    // A signs back in: the scoped key was purged on logout, so the cache is gone — a fresh fetch
-    // repopulates it. (Asserting the purge, not a resurrection: keeping A's cache across a logout
-    // would leave it on disk for the next user on a shared profile.)
+    // A signs back in: the scoped key was purged on logout, so the cache is gone — a fresh fetch repopulates it.
     setCurrentUserId('user_a')
     expect(readWorkspacesCache()).toBeNull()
     writeWorkspacesCache([ws('ws_a', 'A private again')])
@@ -63,19 +60,15 @@ describe('per-user storage isolation', () => {
   })
 
   it('the first-paint gate refuses to read the cache before identity resolves', () => {
-    // Simulate a cold boot where a previous user left data behind: the key is
-    // written unscoped (as it would be with no identity), then the identity
-    // resolves to B.
+    // Simulate a cold boot where a previous user left data behind: the key is written unscoped (as it would be with no identity), then the identity resolves to B.
     localStorage.setItem('pabrik-workspaces:v1', JSON.stringify([{ id: 'ws_stale', name: 'Stale' }]))
     expect(isIdentityResolved()).toBe(false)
 
-    // The store's gate is `isIdentityResolved() ? readWorkspacesCache() : null`
-    // — before resolution it must not paint.
+    // The store's gate is `isIdentityResolved() ? readWorkspacesCache() : null` — before resolution it must not paint.
     const painted = isIdentityResolved() ? readWorkspacesCache() : null
     expect(painted).toBeNull()
 
-    // Once B's identity resolves, the read is scoped to B and the stale
-    // unscoped entry is invisible.
+    // Once B's identity resolves, the read is scoped to B and the stale unscoped entry is invisible.
     setCurrentUserId('user_b')
     expect(isIdentityResolved()).toBe(true)
     expect(readWorkspacesCache()).toBeNull()
@@ -95,8 +88,7 @@ describe('per-user storage isolation', () => {
   })
 
   it('auth-off (no identity) keeps the legacy unscoped key', () => {
-    // No identity: the key is the legacy one, so an auth-off install needs no
-    // migration and sees exactly what it saw before.
+    // No identity: the key is the legacy one, so an auth-off install needs no migration and sees exactly what it saw before.
     writeWorkspacesCache([ws('ws_legacy', 'Legacy')])
     expect(localStorage.getItem('pabrik-workspaces:v1')).not.toBeNull()
     expect(readWorkspacesCache()?.map((w) => w.id)).toEqual(['ws_legacy'])

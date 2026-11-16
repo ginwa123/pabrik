@@ -7,19 +7,14 @@ export interface CachedTaskMedia {
 import { userScopedKey } from './userScope'
 
 const TASK_MEDIA_CACHE_KEY = 'pabrik-task-media:v1'
-// Largest single-task payload we'll persist (~1.5MB serialized — a
-// phone-photo base64 can exceed this; skipping it only loses the
-// instant paint, never correctness).
+// Largest single-task payload we'll persist (~1.5MB serialized — a phone-photo base64 can exceed this; skipping it only loses the instant paint, never …
 const MAX_ENTRY_CHARS = 1_500_000
-// Oldest-evicted bound so one media-heavy board can't grow the blob
-// without limit (insertion-ordered Map = oldest first).
+// Oldest-evicted bound so one media-heavy board can't grow the blob without limit (insertion-ordered Map = oldest first).
 const MAX_ENTRIES = 100
 
 let memCache: Map<string, CachedTaskMedia> | null = null
 
-/**  * Normalizes one stored entry into paintable media. Requires arrays of non-empty strings; filters
- * out anything else. Returns null when nothing paintable remains, so corrupt entries can never
- * produce a broken `<img>` where the badge should be. */
+/** Normalizes one stored entry into paintable media. */
 function normalizeEntry(raw: unknown): CachedTaskMedia | null {
   if (!raw || typeof raw !== 'object') return null
   const e = raw as Record<string, unknown>
@@ -60,9 +55,7 @@ function persist(): void {
     localStorage.setItem(userScopedKey(TASK_MEDIA_CACHE_KEY), JSON.stringify(Object.fromEntries(memCache)))
   } catch {
     try {
-      // Quota hit: drop the whole media namespace and retry once with just the current memo (which
-      // the cap below already trimmed). If that still fails (private mode), the session memo still
-      // serves instant paints until reload.
+      // Quota hit: drop the whole media namespace and retry once with just the current memo (which the cap below already trimmed).
       localStorage.removeItem(userScopedKey(TASK_MEDIA_CACHE_KEY))
       localStorage.setItem(userScopedKey(TASK_MEDIA_CACHE_KEY), JSON.stringify(Object.fromEntries(memCache)))
     } catch {
@@ -80,8 +73,7 @@ export function readTaskMediaCache(taskId: string): CachedTaskMedia | null {
   }
 }
 
-/** Persists a successful media fetch (write-through: memo + storage).
- * Oversized payloads are skipped silently. Never throws. */
+/** Persists a successful media fetch (write-through: memo + storage). */
 export function writeTaskMediaCache(taskId: string, media: CachedTaskMedia): void {
   try {
     const clean = normalizeEntry(media)
@@ -112,9 +104,7 @@ export function clearTaskMediaCache(): void {
   }
 }
 
-/**  * Test-only escape hatch — drops the in-memory memo WITHOUT touching storage, so tests can stage
- * raw blobs and exercise the parse path step by step (the memo would otherwise pin the first
- * parse). */
+/** Test-only escape hatch — drops the in-memory memo WITHOUT touching storage, so tests can stage raw blobs and exercise the parse path step by step (the memo … */
 export function resetTaskMediaCacheMemo(): void {
   memCache = null
 }

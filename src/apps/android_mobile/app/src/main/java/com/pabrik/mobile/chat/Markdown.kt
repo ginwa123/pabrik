@@ -1,39 +1,9 @@
 package com.pabrik.mobile.chat
 
-/**
- * Markdown → blocks, for the chat transcript.
- *
- * The web runs `marked.parse` on every assistant turn and hands the HTML to
- * `v-html` (`helpers/renderResponse.ts`). A phone has no `v-html` and no
- * WebView in this path — a WebView per streaming message would re-layout on
- * every delta — so the parse ends in a [MdBlock] list that Compose draws with
- * `Text`. Same source, same constructs, no dependency.
- *
- * **Why hand-rolled rather than a library.** Every markdown library for Compose
- * either drags in a WebView (so the same per-delta re-layout, plus a JS engine
- * on a mid-range phone) or ships its own opinionated theme that fights
- * `ui/Color.kt`. It also moves the one thing that actually broke — the
- * envelope stripping in [stripContentEnvelope] — out of reach, because that is
- * the web's `stripThinkingTags` and no library calls it. Hand-rolling also means
- * the whole parser is a pure function, so it is unit-testable on the JVM with no
- * device; that is the difference between a test that runs in CI in seconds and
- * an instrumented test nobody runs.
- *
- * The scope is deliberately the subset an assistant actually emits: headings,
- * paragraphs, bullet/ordered lists, fenced and indented code, blockquotes,
- * horizontal rules, pipe tables, and the inline set (bold, italic, bold-italic,
- * strikethrough, code spans, links). Anything not recognised is emitted as
- * literal text, which is what a browser does with it too.
- */
+/** Markdown → blocks, for the chat transcript. */
 internal object Markdown {
 
-    /**
-     * Parse a whole message body into blocks.
-     *
-     * Never throws and never returns null: a malformed document degrades to
-     * paragraphs of literal text rather than blanking the bubble, which is the
-     * same contract the web's `try { marked.parse } catch { escape }` gives.
-     */
+    /** Parse a whole message body into blocks. */
     fun parse(source: String): List<MdBlock> {
         if (source.isBlank()) return emptyList()
         return try {
@@ -44,15 +14,7 @@ internal object Markdown {
         }
     }
 
-    /**
-     * True when the source has something to draw once the envelope is off.
-     *
-     * The bubble-visibility gate needs this rather than `content.isNotBlank()`:
-     * a turn whose whole content is `<markdown>  </markdown>` is non-blank as a
-     * string and renders as nothing, so keying the gate on the raw column is how
-     * a visible-but-empty bubble gets into the transcript. The web pins the
-     * same thing in `ChatView.vue`'s `hasVisibleContent`.
-     */
+    /** True when the source has something to draw once the envelope is off. */
     fun hasContent(source: String): Boolean = stripContentEnvelope(source).isNotBlank()
 
     // ── Block level ─────────────────────────────────────────────────────────
@@ -74,8 +36,7 @@ internal object Markdown {
                         body.add(lines[index])
                         index++
                     }
-                    // Skip the closing fence when there is one; an unterminated
-                    // block still renders, because half a code block beats none.
+                    // Skip the closing fence when there is one; an unterminated block still renders, because half a code block beats none.
                     if (index < lines.size) index++
                     blocks += MdBlock.Code(
                         language = info.substringBefore(' ').takeIf { it.isNotBlank() },
@@ -136,14 +97,7 @@ internal object Markdown {
         return blocks
     }
 
-    /**
-     * Read a whole bullet or ordered list, including one nesting level.
-     *
-     * Nesting is flattened with a leading indent marker rather than a tree: a
-     * transcript row is a phone-wide column, and a recursive list inside a
-     * `Column` inside a `LazyColumn` item is exactly the nesting that makes a
-     * "virtualized" list measure everything.
-     */
+    /** Read a whole bullet or ordered list, including one nesting level. */
     private fun readList(lines: List<String>, start: Int, blocks: MutableList<MdBlock>): Int {
         val first = listMarker(lines[start])!!
         val ordered = first.ordered
@@ -156,8 +110,7 @@ internal object Markdown {
             val indent = (lines[index].length - lines[index].trimStart().length).coerceAtLeast(0)
             val body = mutableListOf(marker.rest)
             index++
-            // Lazy continuation: a following non-blank, non-marker line belongs
-            // to the item above, so a wrapped bullet is not split in two.
+            // Lazy continuation: a following non-blank, non-marker line belongs to the item above, so a wrapped bullet is not split in two.
             while (index < lines.size) {
                 val next = lines[index]
                 if (next.isBlank() || listMarker(next) != null || isFence(next) != null) break
@@ -187,8 +140,7 @@ internal object Markdown {
         val trimmed = line.trimStart()
         if (!trimmed.startsWith('#')) return null
         val hashes = trimmed.takeWhile { it == '#' }
-        // Seven or more `#` is a paragraph, not a heading, and a heading needs
-        // a space after the run — `#tag` is not a heading.
+        // Seven or more `#` is a paragraph, not a heading, and a heading needs a space after the run — `#tag` is not a heading.
         if (hashes.length !in 1..6) return null
         if (trimmed.length == hashes.length || !trimmed[hashes.length].isWhitespace()) return null
         return hashes.length
@@ -229,12 +181,7 @@ internal object Markdown {
         return trimmed.startsWith(marker) && trimmed.all { it == fence }
     }
 
-    /**
-     * A table needs a header row AND a delimiter row under it, which is the
-     * only reliable signal — a paragraph mentioning pipes is not a table.
-     *
-     * Returns the parsed header and body rows, or null when this is not one.
-     */
+    /** A table needs a header row AND a delimiter row under it, which is the only reliable signal — a paragraph mentioning pipes is not a table. */
     private fun tableAt(lines: List<String>, index: Int): Pair<List<List<MdSpan>>, List<List<List<MdSpan>>>>? {
         val header = lines.getOrNull(index) ?: return null
         val delimiter = lines.getOrNull(index + 1) ?: return null
@@ -259,11 +206,7 @@ internal object Markdown {
         }
     }
 
-    /**
-     * Split one `| a | b |` row, dropping the empty cells the leading and
-     * trailing pipes create. Row 2 of a table can have fewer cells than the
-     * header, so the renderer pads rather than this.
-     */
+    /** Split one `| a | b |` row, dropping the empty cells the leading and trailing pipes create. */
     private fun splitRow(line: String): List<String> {
         val trimmed = line.trim().removePrefix("|").removeSuffix("|")
         if (trimmed.isBlank()) return emptyList()
@@ -272,15 +215,7 @@ internal object Markdown {
 
     // ── Inline level ────────────────────────────────────────────────────────
 
-    /**
-     * Parse one line's inline markup into styled spans.
-     *
-     * A left-to-right scan rather than a delimiter stack, because the constructs
-     * that actually appear in an assistant answer do not nest deeply and a stack
-     * gets the `**bold with *em* inside**` case wrong more often than a
-     * recursive scan gets it right. An unclosed marker is literal text, which
-     * is what a browser does with `a * b`.
-     */
+    /** Parse one line's inline markup into styled spans. */
     fun parseInline(text: String): List<MdSpan> {
         if (text.isEmpty()) return emptyList()
         val spans = mutableListOf<MdSpan>()
@@ -297,8 +232,7 @@ internal object Markdown {
         while (index < text.length) {
             val c = text[index]
 
-            // A backslash escapes the next character, which is how a model
-            // writes a literal `\*` without meaning to emphasise anything.
+            // A backslash escapes the next character, which is how a model writes a literal `\*` without meaning to emphasise anything.
             if (c == '\\' && index + 1 < text.length) {
                 buffer.append(text[index + 1])
                 index += 2
@@ -353,13 +287,7 @@ internal object Markdown {
 
     private val EMPHASIS_MARKERS = listOf("***", "___", "**", "__", "~~", "*", "_")
 
-    /**
-     * A matched `[label](url)` at [start], or null.
-     *
-     * Returns the label, the URL and the index just past the closing paren. A
-     * bare autolink (`<https://…>`) is left to the caller: the text renders and
-     * the link is lost, which is a far smaller sin than a wrong parse.
-     */
+    /** A matched `[label](url)` at [start], or null. */
     private fun readLink(text: String, start: Int): Triple<String, String, Int>? {
         val labelEnd = text.indexOf(']', start + 1)
         if (labelEnd < 0) return null
@@ -373,20 +301,13 @@ internal object Markdown {
         return Triple(label, url, urlEnd + 1)
     }
 
-    /**
-     * A matched emphasis marker at [start], or null when there is no closer.
-     *
-     * `_` is only a delimiter at a word boundary, so `some_file_name` stays one
-     * word instead of turning into `some<em>file</em>name` — which is the
-     * difference between a path and a typo.
-     */
+    /** A matched emphasis marker at [start], or null when there is no closer. */
     private fun readEmphasis(text: String, start: Int, marker: String): Pair<String, Int>? {
         if (marker[0] == '_') {
             val before = text.getOrNull(start - 1)
             if (before != null && (before.isLetterOrDigit() || before == '_')) return null
         }
-        // A marker glued to the preceding character is punctuation, not
-        // emphasis: `(**bold**)` opens on `(`, and `2**3` is arithmetic.
+        // A marker glued to the preceding character is punctuation, not emphasis: `(**bold**)` opens on `(`, and `2**3` is arithmetic.
         val bodyStart = start + marker.length
         if (bodyStart >= text.length) return null
         var cursor = bodyStart
@@ -395,8 +316,7 @@ internal object Markdown {
         val closer = text.indexOf(marker, cursor)
         if (closer <= cursor) return null
         if (marker.length == 1 && text.substring(cursor, closer).isBlank()) return null
-        // Whitespace cannot sit at an emphasis boundary, so `a * b * c` is not
-        // emphasised — same rule the CommonMark spec applies.
+        // Whitespace cannot sit at an emphasis boundary, so `a * b * c` is not emphasised — same rule the CommonMark spec applies.
         if (text[cursor].isWhitespace()) return null
         val inner = text.substring(cursor, closer)
         if (inner.isBlank()) return null
@@ -410,13 +330,7 @@ internal object Markdown {
     }
 }
 
-/**
- * One styled run of text within a line.
- *
- * Flatter than a nested style tree on purpose: Compose's `Text` takes exactly
- * this — a list of (text, style) pairs — so the parse output is already the
- * render input and nothing is rebuilt per recomposition.
- */
+/** One styled run of text within a line. */
 internal data class MdSpan(
     val text: String,
     val bold: Boolean = false,
@@ -435,10 +349,7 @@ internal sealed interface MdBlock {
 
     data class Paragraph(val spans: List<MdSpan>) : MdBlock
 
-    /**
-     * A bullet or ordered list. [start] is the first number of an ordered list,
-     * so `3. / 4. / 5.` does not renumber itself from one.
-     */
+    /** A bullet or ordered list. */
     data class ListBlock(
         val ordered: Boolean,
         val start: Int,

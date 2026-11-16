@@ -1,8 +1,6 @@
 import { apiFetch } from './client'
 
-// ─── Session background processes (bg-completion) ──────────────────────────── Backend:
-// background_processes_list.zig + background_process_log_get.zig (commit b69111f7). `running` is
-// live per row (OS truth, not the status column).
+// ─── Session background processes (bg-completion) ────────────────────────────
 export interface BackgroundProcess {
   pid: number
   command: string
@@ -25,8 +23,7 @@ export interface BackgroundProcessLogResponse {
   content: string
 }
 
-/**  * List all background processes (`command background=true` rows) for a session, ordered by
- * started_at ASC. GET /api/llm/session/:sid/background_processes */
+/** List all background processes (`command background=true` rows) for a session, ordered by started_at ASC. */
 export async function getBackgroundProcesses(
   sessionId: string,
 ): Promise<BackgroundProcessListResponse> {
@@ -36,9 +33,7 @@ export async function getBackgroundProcesses(
   )
 }
 
-/**  * Read the TAIL of one background process's log file. GET
- * /api/llm/session/:sid/background_processes/:pid/log?max_bytes=20480 `maxBytes` defaults to 20480,
- * clamped server-side to [1, 1048576]. */
+/** Read the TAIL of one background process's log file. */
 export async function getBackgroundProcessLog(
   sessionId: string,
   pid: number,

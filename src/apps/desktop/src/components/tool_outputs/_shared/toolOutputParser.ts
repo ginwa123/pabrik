@@ -37,9 +37,7 @@ export function asRecord(data: unknown): Record<string, unknown> {
   return {}
 }
 
-/** Normalized view of whatever a tool card's `content` prop carries: either the bare `data` object
- * (ChatView's success path) or a full envelope JSON string/object (ChatView's error fallback,
- * `m.content`). Empty or unparseable input yields null data with no error (running state). */
+/** Normalized view of whatever a tool card's `content` prop carries: either the bare `data` object (ChatView's success path) or a full envelope JSON string/object … */
 export interface NormalizedToolContent {
   data: unknown
   error: string | null
@@ -74,9 +72,7 @@ export function normalizeToolContent(content: unknown): NormalizedToolContent {
   return empty
 }
 
-// ─── mcp_* (universal MCP tool) ───────────────────────────────────────────── Any tool whose name
-// starts with `mcp_` (e.g. `mcp_graphify_graph_stats`, `mcp_db_query`) renders through the
-// universal `<McpTool>` card.
+// ─── mcp_*
 export interface ParsedMcp {
   /** Full registry name (e.g. `mcp_graphify_graph_stats`). */
   toolName: string
@@ -118,9 +114,7 @@ export function splitMcpToolName(toolName: string): {
 export function parseMcp(toolName: string, data: unknown): ParsedMcp {
   const { server, subTool } = splitMcpToolName(toolName)
 
-  // The MCP `data` payload is the raw server text on success (a string),
-  // or an object carrying `error` on failure. A full envelope object is
-  // unwrapped one level so error fallbacks keep working.
+  // The MCP `data` payload is the raw server text on success (a string), or an object carrying `error` on failure.
   let output: string
   let success: boolean
   let error: string | null

@@ -1,6 +1,4 @@
-//! `DELETE /api/workspaces/:workspace_id/members/:user_id` — remove one
-//! member. The last owner cannot be removed, for the same reason it cannot
-//! be demoted.
+//! `DELETE /api/workspaces/:workspace_id/members/:user_id` — remove one member.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -41,8 +39,7 @@ fn useCase(
         error.DeleteFailed => return error.DeleteFailed,
         error.QueryFailed => return error.QueryFailed,
         error.OutOfMemory => return error.OutOfMemory,
-        // `removeMember` validates both ids itself, and an INSERT cannot come
-        // out of a DELETE.
+        // `removeMember` validates both ids itself, and an INSERT cannot come out of a DELETE.
         else => unreachable,
     };
     return .{ .user_id = user_id };

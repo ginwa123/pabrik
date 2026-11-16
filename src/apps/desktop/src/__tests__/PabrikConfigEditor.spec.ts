@@ -7,22 +7,18 @@ import * as api from '../api'
 import PabrikConfigEditor from '../components/pabrik/PabrikConfigEditor.vue'
 import { makeLocalStorageStub } from './helpers'
 
-// The autosave window is a wall-clock wait in the app; mount it at 0 so a spec settles the PUT
-// with a microtask drain instead of sleeping.
+// The autosave window is a wall-clock wait in the app; mount it at 0 so a spec settles the PUT with a microtask drain instead of sleeping.
 vi.mock('../composables/autosaveDelay', () => ({ AUTOSAVE_DELAY_MS: 0 }))
 
 vi.mock('../api', () => ({
   getPabrikConfig: vi.fn(),
   savePabrikConfig: vi.fn(),
   deleteAgent: vi.fn(),
-  // Plan 2026-09-10-web-launch-toggle: browser-mode status for the
-  // General tab URL pill. Resolves null by default (pill waiting hint).
+  // Plan 2026-09-10-web-launch-toggle: browser-mode status for the General tab URL pill.
   getWebStatus: vi.fn(),
-  // Tools tab catalog — consumed by the agentTools store inside
-  // ToolsSection; only fetched when the Tools tab mounts.
+  // Tools tab catalog — consumed by the agentTools store inside ToolsSection; only fetched when the Tools tab mounts.
   getAgentToolsRegistry: vi.fn(),
-  // The agent modal mounts LlmConfigForm, which resolves the typed model on
-  // mount and on every debounced edit. Without these the form throws.
+  // The agent modal mounts LlmConfigForm, which resolves the typed model on mount and on every debounced edit.
   resolveModelOutcome: vi.fn(),
   getModelCatalog: vi.fn(),
   // The rename guard: how many running sessions are pinned to the profile.
@@ -38,16 +34,14 @@ const mockProfileInUse = api.getAgentProfileInUse as unknown as ReturnType<typeo
 const mockResolveModel = api.resolveModelOutcome as unknown as ReturnType<typeof vi.fn>
 const mockModelCatalog = api.getModelCatalog as unknown as ReturnType<typeof vi.fn>
 
-/** With a 0 ms autosave window the PUT starts inside the edit handler, so a few microtask turns
- * settle it: the save, the re-snapshot, and the follow-up agent-key cleanup. */
+/** With a 0 ms autosave window the PUT starts inside the edit handler, so a few microtask turns settle it: the save, the re-snapshot, and the follow-up agent-key … */
 async function settleAutosave() {
   await flushPromises()
   await flushPromises()
   await flushPromises()
 }
 
-// Catalog fixture for the Tools tab. `set_git_worktree` is NOT part
-// of the built-in defaults, so checking it is a visible edit.
+// Catalog fixture for the Tools tab.
 const TOOLS_REGISTRY = [
   { name: 'command', description: 'Run a shell command' },
   { name: 'glob', description: 'Find files by glob pattern' },
@@ -56,8 +50,7 @@ const TOOLS_REGISTRY = [
 
 describe('PabrikConfigEditor (orchestrator)', () => {
   beforeEach(() => {
-    // PabrikSettings reads the tabs store for the "Browser-style tabs"
-    // preference (Settings → General), so it needs an active pinia.
+    // PabrikSettings reads the tabs store for the "Browser-style tabs" preference (Settings → General), so it needs an active pinia.
     setActivePinia(createPinia())
     mockGet.mockReset()
     mockSave.mockReset()
@@ -81,9 +74,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('deep-links ?section=evals to the Skill Evals toggle', async () => {
-    // The Evals sidebar panel links here when it has nothing to show, so
-    // the destination must be reachable by URL alone (a refresh or a
-    // shared link has to land on the toggle, not the first tab).
+    // The Evals sidebar panel links here when it has nothing to show, so the destination must be reachable by URL alone (a refresh or a shared link has to land on …
     const router = await makeSettingsRouter({ section: 'evals' })
     mockGet.mockResolvedValueOnce({})
     const wrapper = mount(PabrikConfigEditor, {
@@ -94,9 +85,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('never mounts a separate sub-agents section (the agent list is the only editor)', async () => {
-    // Plan 2026-09-04-subagents-per-profile regression: the global
-    // `subAgentsList` + the sub-agents section mount are gone. Even with a
-    // legacy top-level `sub_agents` payload, no global list renders.
+    // Plan 2026-09-04-subagents-per-profile regression: the global `subAgentsList` + the sub-agents section mount are gone.
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'm' } },
       sub_agents: [{ name: 'legacy', model: 'm' }],
@@ -109,9 +98,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('lands on the General tab by default', async () => {
-    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the
-    // first-load tab is General — operational settings are the most
-    // likely entry point for new users.
+    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the first-load tab is General — operational settings are the most likely entry point for new users.
     mockGet.mockResolvedValueOnce({})
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
@@ -124,9 +111,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     })
     const wrapper = await mountAt('agents')
     expect(mockGet).toHaveBeenCalled()
-    // The agent name is visible. (This used to assert `toContain('work')`
-    // while landing on GENERAL, so it passed on the word "worktree" in an
-    // unrelated registry blurb - a green test that proved nothing.)
+    // The agent name is visible.
     expect(wrapper.find('[data-testid="agent-list"]').text()).toContain('work')
   })
 
@@ -138,8 +123,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
-    // Make a real edit so the config is written back. Switching tabs used to be enough BY ACCIDENT
-    // - the Profiles section emitted an update while hydrating, which happened to mark it dirty.
+    // Make a real edit so the config is written back.
     await wrapper.find('[data-testid="toggle-notify-on-complete"]').setValue(true)
     // The change reaches the server on its own — there is no Save button left to press.
     await settleAutosave()
@@ -206,9 +190,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(agents.home!.system_prompt ?? '').toBe('')
   })
 
-  // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ── Plan: Settings → Profiles →
-  // Reset button next to the active pill emits `clearActive` → orchestrator calls savePabrikConfig
-  // with `active_profile: ""` (empty string) → the backend handler at.
+  // ─── Clear active profile (plan 2026-08-06-reset-active-profile) ──
   it('saves active_profile: "" when the Reset button is clicked', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'm' }, home: { model: 'm2' } },
@@ -217,14 +199,12 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     mockSave.mockResolvedValueOnce({ success: true })
     const wrapper = await mountAt('agents')
 
-    // Switch to Profiles tab. Plan 2026-08-25-notify-on-error moved General to index 0; Profiles is
-    // now at index 1. The active pill should show 'work' and the Reset button should be visible.
+    // Switch to Profiles tab.
     expect(wrapper.text()).toContain('work')
     const resetBtn = wrapper.find('[data-testid="reset-active-btn"]')
     expect(resetBtn.exists()).toBe(true)
 
     // Click Reset → savePabrikConfig receives { ..., active_profile: '' }.
-    // The backend interprets empty-string as "clear".
     await resetBtn.trigger('click')
     await flushPromises()
     expect(mockSave).toHaveBeenCalledTimes(1)
@@ -256,8 +236,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await wrapper.find('[data-testid="reset-active-btn"]').trigger('click')
     await settleAutosave()
 
-    // After the failed save, the local activeProfile should still
-    // reflect the original value (rolled back from the optimistic null).
+    // After the failed save, the local activeProfile should still reflect the original value (rolled back from the optimistic null).
     expect(wrapper.text()).toContain('work')
     // And an error notification should fire.
     expect(wrapper.emitted('notification')?.some((e) => e[1] === 'error')).toBe(true)
@@ -291,8 +270,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     ).toBe(true)
     // The retry delay is not a General-tab field: it is workspace-scoped.
     expect(wrapper.find('[data-testid="input-retry-delay-seconds"]').exists()).toBe(false)
-    // Plan 2026-09-10-web-launch-toggle: the web-launch toggle reflects
-    // the loaded flag and the pill shows the live status URL.
+    // Plan 2026-09-10-web-launch-toggle: the web-launch toggle reflects the loaded flag and the pill shows the live status URL.
     expect(
       (wrapper.find('[data-testid="toggle-web-launch"]').element as HTMLInputElement).checked,
     ).toBe(true)
@@ -325,8 +303,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(mockSave).toHaveBeenCalledTimes(1)
     const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(savedConfig.notify_on_error).toBe(true)
-    // The other operational settings should also be in the body
-    // (syncToConfig writes them through unconditionally — now four).
+    // The other operational settings should also be in the body (syncToConfig writes them through unconditionally — now four).
     expect(savedConfig.notify_on_complete).toBe(false)
     expect(savedConfig.retry_delay_ms).toBe(0)
     expect(savedConfig.web_launch_enabled).toBe(false)
@@ -373,9 +350,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('the PUT body always includes every operational setting, even when the user only edits one', async () => {
-    // syncToConfig writes the operational settings through unconditionally. This is a regression
-    // guard so a future refactor doesn't accidentally drop one of them and silently re-introduce the
-    // hidden-field bug — including `retry_delay_ms`, which now rides the Runtime tab.
+    // syncToConfig writes the operational settings through unconditionally.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,
       notify_on_error: false,
@@ -408,8 +383,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       web_launch_enabled: false,
     })
     mockSave.mockResolvedValueOnce({ success: true })
-    // Two status fetches happen: one on mount (pill), one after save
-    // (auto-open). Queue the URL for both.
+    // Two status fetches happen: one on mount (pill), one after save (auto-open).
     mockWebStatus.mockResolvedValueOnce({
       enabled: false,
       running: true,
@@ -436,8 +410,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
       expect(mockSave).toHaveBeenCalledTimes(1)
       const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
       expect(savedConfig.web_launch_enabled).toBe(true)
-      // OFF→ON transition + known URL → one auto-open from the Save
-      // gesture (popup-blocker safe).
+      // OFF→ON transition + known URL → one auto-open from the Save gesture (popup-blocker safe).
       expect(openSpy).toHaveBeenCalledTimes(1)
       expect(openSpy).toHaveBeenCalledWith('http://127.0.0.1:51234/', '_blank', 'noopener')
     } finally {
@@ -492,9 +465,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(servers.hello).not.toHaveProperty('enabled')
   })
 
-  // ─── Tools tab (plan 2026-09-22-tools-menu-config-default-tools) ────── Memory-history router
-  // scoped to the settings path — same real- vue-router pattern as SidebarDiffPanel.tabs.spec (no
-  // guards, no window.location, query stays observable via currentRoute).
+  // ─── Tools tab (plan 2026-09-22-tools-menu-config-default-tools) ──────
   async function makeSettingsRouter(query: Record<string, string> = {}) {
     const router = createRouter({
       history: createMemoryHistory(),
@@ -505,9 +476,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     return router
   }
 
-  /**    * Mount the editor with a section already open. The editor no longer owns a tab strip - the
-   * settings shell navigates and the section lives in `?section=` - so a spec opens a section the
-   * way the app does: through the URL. */
+  /** Mount the editor with a section already open. */
   async function mountAt(section: string, query: Record<string, string> = {}) {
     const router = await makeSettingsRouter(section === 'general' ? query : { ...query, section })
     const wrapper = mount(PabrikConfigEditor, {
@@ -555,9 +524,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('mount with clean URL + stored tools → URL gains ?section=tools (mount normalization)', async () => {
-    // The reported bug: Tools active at /app/settings with no ?section=tools. The getter falls back
-    // to localStorage without touching the URL, and TabStrip skips its emit when saved==prop — so
-    // no router.replace ever runs. Mount must normalize the URL to the tab actually shown.
+    // The reported bug: Tools active at /app/settings with no ?section=tools.
     localStorage.setItem('pabrik-settings-active-tab', 'tools')
     const router = await makeSettingsRouter()
     mockGet.mockResolvedValueOnce({})
@@ -616,8 +583,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     // Untouched checklist (null) → nothing to write, nothing to report.
     expect(wrapper.find('[data-testid="save-status"]').exists()).toBe(false)
 
-    // set_git_worktree is not in the built-in defaults — checking it
-    // writes the full explicit list (defaults ∩ registry + it).
+    // set_git_worktree is not in the built-in defaults — checking it writes the full explicit list (defaults ∩ registry + it).
     await wrapper.find('[data-testid="row-set_git_worktree"] input').setValue(true)
     await flushPromises()
     expect(wrapper.find('[data-testid="save-status"]').exists()).toBe(true)
@@ -629,9 +595,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
   })
 
   it('pins the autosave status ABOVE the scrollable content, not below it', async () => {
-    // The strip used to be the last child of the editor, so what it reported sat below a section the
-    // user has to scroll through. It is now the first thing after the Form/JSON toggle, which is what
-    // keeps it in sight from any scroll position.
+    // The strip used to be the last child of the editor, so what it reported sat below a section the user has to scroll through.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: false,
       notify_on_error: false,
@@ -651,13 +615,11 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     const content = wrapper.find('.overflow-y-auto')
     expect(content.exists()).toBe(true)
 
-    // DOCUMENT_POSITION_FOLLOWING (4) on `content` relative to `bar` means
-    // the scrolling region comes AFTER the bar in the document.
+    // DOCUMENT_POSITION_FOLLOWING (4) on `content` relative to `bar` means the scrolling region comes AFTER the bar in the document.
     const contentVsBar = bar.element.compareDocumentPosition(content.element)
     expect(contentVsBar & 4).toBe(4)
 
-    // And the bar is NOT inside the scrolling region — that is what makes it
-    // stay put while the section scrolls under it.
+    // And the bar is NOT inside the scrolling region — that is what makes it stay put while the section scrolls under it.
     expect(bar.element.closest('.overflow-y-auto')).toBeNull()
   })
 
@@ -672,8 +634,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
     await flushPromises()
 
-    // Dirty the form via an unrelated field, then save: the body must
-    // not carry a `tools` key at all (backend: null/absent = no change).
+    // Dirty the form via an unrelated field, then save: the body must not carry a `tools` key at all (backend: null/absent = no change).
     await wrapper.find('[data-testid="toggle-notify-on-error"]').setValue(true)
     await flushPromises()
     await settleAutosave()

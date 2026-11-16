@@ -1,5 +1,4 @@
-//! The admin console's HTTP surface: `/api/admin/*`. Every endpoint answers
-//! 401 without a usable session and 403 for a session that is not the owner.
+//! The admin console's HTTP surface: `/api/admin/*`.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -84,9 +83,7 @@ pub fn errorResponse(allocator: std.mem.Allocator, res: gserverz.HttpResponse, s
     });
 }
 
-/// The owner gate every admin endpoint opens with. A refusal is a real
-/// answer, so the error path may not be swallowed: an allocation failure
-/// must not turn into "allowed".
+/// The owner gate every admin endpoint opens with.
 pub fn ownerOnly(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -142,9 +139,7 @@ pub fn adminUsersListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-/// `POST /api/admin/users` — create an account. Without a password the
-/// console mints a temporary one and hands it back once, so the owner can
-/// pass it on.
+/// `POST /api/admin/users` — create an account.
 pub fn adminUserCreateHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -234,9 +229,7 @@ pub fn adminUserUpdateHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-/// `POST /api/admin/users/:id/password` — reset a password. The "forgot
-/// password" case: the owner sets a new one and the sessions opened with the
-/// old one stop working.
+/// `POST /api/admin/users/:id/password` — reset a password.
 pub fn adminUserPasswordHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,

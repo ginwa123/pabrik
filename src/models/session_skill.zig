@@ -1,5 +1,4 @@
-//! Data model for the `session_skills` entity table. Tracks which skills each
-//! session has loaded.
+//! Data model for the `session_skills` entity table.
 
 const std = @import("std");
 
@@ -10,9 +9,7 @@ pub const EntityId = struct {
 
 session_id: []u8,
 skill_name: []u8,
-/// The verbatim SKILL.MD content as loaded at `loaded_at`. Used by
-/// the compact-and-rehydrate flow to detect drift between the
-/// on-disk skill file and what the agent has in context.
+/// The verbatim SKILL.MD content as loaded at `loaded_at`.
 content: []u8,
 /// Unix-seconds timestamp of the load event.
 loaded_at: i64 = 0,

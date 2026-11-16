@@ -1,5 +1,4 @@
-/** Generic local-first sync engine. Storage-agnostic orchestration: cache-then-delta reads, cursor
- * tracking, write-through, and older-page loads from cache. */
+/** Generic local-first sync engine. */
 import { Effect, Either } from 'effect'
 import type { SyncError } from './SyncError'
 import { SyncRemoteError } from './SyncError'
@@ -16,16 +15,12 @@ export interface SyncMountResult<T> {
   fromCache: boolean
   /** The revalidated delta, or `null` when the revalidation failed. */
   delta: SyncDelta<T> | null
-  /**    * Why the revalidation failed, when it did. `null` means the delta fetch succeeded — including
-   * the "it succeeded and returned no rows" case that the previous `catch { return { items: cached,
-   * fromCache, delta } }` made indistinguishable from failure. */
+  /** Why the revalidation failed, when it did. */
   error: SyncError | null
 }
 
 export abstract class BaseSyncEngine<T extends Syncable, C = string> {
-  /**    * @param storeName Object-store name this engine reads and writes. @param store Local-cache
-   * implementation; specs substitute a fake. Defaults to a fresh IndexedDB-backed store per engine,
-   * matching the isolation the pre-port constructors had. */
+  /** @param storeName Object-store name this engine reads and writes. @param store Local-cache implementation; specs substitute a fake. */
   constructor(
     protected readonly storeName: string,
     protected readonly store: SyncStoreShape = makeIndexedDbSyncStore(),
@@ -74,11 +69,8 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.map((rows) => rows.slice().sort(this.compareFn.bind(this)) as T[]))
   }
 
-  /** Cache-then-delta: return cached rows immediately when present, then fetch the network delta,
-   * merge (dedupe by id), persist, and advance the cursor. */
+  /** Cache-then-delta: return cached rows immediately when present, then fetch the network delta, merge (dedupe by id), persist, and advance the cursor. */
   syncOnMount(ctx: C, limit: number): Effect.Effect<SyncMountResult<T>> {
-    // `Effect.gen` takes a generator function whose `this` is its own, so `this` is captured outside.
-    // It cannot be destructured: the engine API lives on the prototype.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see above
     const engine = this
     return Effect.gen(function* () {
@@ -114,8 +106,7 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
     })
   }
 
-  /** Best-effort write-through (e.g. SSE `full` handler). Never fails: a cache
-   * write must not break the live update path that triggered it. */
+  /** Best-effort write-through (e.g. */
   putLocal(ctx: C, items: T[]): Effect.Effect<void> {
     if (items.length === 0) return Effect.void
     return this.store
@@ -130,9 +121,7 @@ export abstract class BaseSyncEngine<T extends Syncable, C = string> {
       .pipe(Effect.catchAll((e) => this.note(`removeLocal(${this.storeName})`, e)))
   }
 
-  /**    * Older-page read for scroll-back: cache first. An empty result means the caller should fetch
-   * from the network — an *error* now says the cache itself is unavailable, which the previous
-   * `catch { return [] }` could not. */
+  /** Older-page read for scroll-back: cache first. */
   loadOlderFromCache(
     ctx: C,
     beforeSortKey: string | number,

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** `+N / -N` for one file row — the GitHub/GitLab line-count chip. Shared by the sidebar's PR list
- * and its worktree lists so the two can never drift apart in colour, size, or spacing. */
+/** `+N / -N` for one file row — the GitHub/GitLab line-count chip. */
 defineProps<{
   added: number | null
   removed: number | null

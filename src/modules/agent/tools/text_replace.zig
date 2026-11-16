@@ -11,8 +11,7 @@ pub const TextReplaceInput = struct {
     path: []const u8,
     old_str: []const u8,
     new_str: []const u8,
-    /// REQUIRED on the wire. Absolute directory this call works in; a
-    /// relative `path` resolves against it.
+    /// REQUIRED on the wire.
     cwd: []const u8 = "",
 };
 
@@ -34,9 +33,7 @@ pub const TextReplaceDiagnostic = struct {
     had_crlf: bool = false,
 };
 
-// =============================================================================
 // Batch Text Replace Types
-// =============================================================================
 
 /// Result of text replace operation with diff view
 pub const TextReplaceResult = struct {
@@ -173,9 +170,7 @@ pub fn lfToCrlf(allocator: std.mem.Allocator, content: []const u8) ![]u8 {
     return try result.toOwnedSlice(allocator);
 }
 
-/// Generate unified diff format showing the change with git merge conflict
-/// style Output includes both traditional unified diff AND split view with
-/// conflict markers: ```diff --- a/(file) +++ b/(file) @@ -start,count
+/// Generate unified diff format showing the change with git merge conflict style Output includes both traditional unified diff AND split view with conflict …
 pub fn generateUnifiedDiff(
     allocator: std.mem.Allocator,
     raw: []const u8,
@@ -330,9 +325,7 @@ pub fn executeTextReplace(
     if (std.mem.eql(u8, path, "")) {
         return TextReplaceError.PathNotFound;
     }
-    // The LLM chooses this path. On Windows a malformed NT name makes std's
-    // Io backend `ntstatusBug()` — a panic that kills the process, not just
-    // this call. See helpers/path_validate.zig.
+    // The LLM chooses this path.
     if (invalidPathReason(path)) |reason| {
         std.log.debug("text_replace rejected path: {s}", .{reason});
         return TextReplaceError.InvalidPath;
@@ -357,9 +350,7 @@ pub fn executeTextReplace(
     return TextReplaceResult{ .ok = {}, .diff_view = applied.diff_view };
 }
 
-/// What a replace does to BYTES: the file after the change, and the diff that
-/// describes it. Pure — which substrate read those bytes, and which will write
-/// them back, is not this function's business.
+/// What a replace does to BYTES: the file after the change, and the diff that describes it.
 pub const Applied = struct {
     content: []u8,
     diff_view: DiffView,
@@ -404,9 +395,7 @@ pub fn applyTextReplace(
     const diff_result = try generateUnifiedDiff(allocator, raw, first, old_str, new_str);
     errdefer allocator.free(diff_result.unified);
 
-    // Create diff view with before/after content showing ONLY the changed
-    // region (like git merge conflict: <<<<<<< BEFORE / ======= / >>>>>>>
-    // AFTER) before = just old_str (what was removed) after = just new_str
+    // Create diff view with before/after content showing ONLY the changed region (like git merge conflict: <<<<<<< BEFORE / ======= / >>>>>>> AFTER) before = just …
     const before_content = try allocator.dupe(u8, old_str);
     errdefer allocator.free(before_content);
 
@@ -428,9 +417,7 @@ pub fn applyTextReplace(
 
     try content.appendSlice(allocator, raw[0..first]);
 
-    // If file had CRLF, decide whether to convert new_str: - If old_str ends
-    // with \n: old_str provides boundary \n, don't convert new_str - If
-    // old_str doesn't end with \n and new_str ends with \n: new_str provides
+    // If file had CRLF, decide whether to convert new_str: - If old_str ends with \n: old_str provides boundary \n, don't convert new_str - If old_str doesn't end …
     const old_str_ends_with_newline = old_str.len > 0 and old_str[old_str.len - 1] == '\n';
     const new_str_ends_with_newline = new_str.len > 0 and new_str[new_str.len - 1] == '\n';
 
@@ -447,8 +434,7 @@ pub fn applyTextReplace(
         const suffix = raw[first + old_str.len ..];
         if (suffix.len > 0 and suffix[suffix.len - 1] == '\n') {
             if (!old_str_ends_with_newline) {
-                // old_str doesn't end with \n, so suffix's leading \n is the boundary
-                // Don't add extra \r here - the conversion below handles it
+                // old_str doesn't end with \n, so suffix's leading \n is the boundary Don't add extra \r here - the conversion below handles it
                 for (suffix) |byte| {
                     if (byte == '\n') {
                         try content.append(allocator, '\r');
@@ -473,9 +459,7 @@ pub fn applyTextReplace(
     return .{ .content = try content.toOwnedSlice(allocator), .diff_view = diff_view };
 }
 
-/// JSON payloads mirror the old XML tags 1:1: `path` plus the `diff_view`
-/// children (`unified`, `before`, `after`, `lines_changed`). Tags omitted
-/// when empty become explicit nulls.
+/// JSON payloads mirror the old XML tags 1:1: `path` plus the `diff_view` children (`unified`, `before`, `after`, `lines_changed`).
 pub const TextReplaceSuccessJSON = struct {
     path: []const u8,
     unified: ?[]const u8 = null,
@@ -492,8 +476,7 @@ pub const TextReplaceErrorJSON = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// The actionable message for an execution failure (not an arguments failure
-/// — the exec wrapper builds that one itself).
+/// The actionable message for an execution failure (not an arguments failure — the exec wrapper builds that one itself).
 pub fn errorMessageFor(allocator: std.mem.Allocator, err: anyerror, path: []const u8) ![]u8 {
     return switch (err) {
         error.OldStrNotFound => try allocator.dupe(u8, "Make sure the text exists exactly once in the file."),
@@ -858,9 +841,7 @@ test "text_replace - lines_changed reflects actual change count" {
     deleteTestFile(test_path);
 }
 
-// ============================================================================
 // generateUnifiedDiff Tests - git merge conflict style
-// ============================================================================
 
 test "generateUnifiedDiff output contains git merge conflict markers" {
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1212,17 +1193,14 @@ test "lfToCrlf - consecutive newlines" {
 }
 
 test "lfToCrlf - bare CR (not followed by LF) preserved" {
-    // Old-Mac line ending: a single \r. The function converts LF to CRLF and
-    // does NOT touch bare \r.
+    // Old-Mac line ending: a single \r.
     const out = try lfToCrlf(std.testing.allocator, "a\rb");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\rb"));
 }
 
 test "lfToCrlf - existing CRLF gets EXTRA CR prepended (known quirk)" {
-    // Documenting the existing behavior: lfToCrlf converts ALL \n → \r\n,
-    // even if the \n is already preceded by \r. The caller is responsible
-    // for only feeding LF-only content. The output is \r\r\n.
+    // Documenting the existing behavior: lfToCrlf converts ALL \n → \r\n, even if the \n is already preceded by \r.
     const out = try lfToCrlf(std.testing.allocator, "a\r\nb");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.eql(u8, out, "a\r\r\nb"));
@@ -1242,8 +1220,7 @@ test "lfToCrlf - content with special chars and LF" {
 }
 
 test "lfToCrlf - single newline byte in long content" {
-    // Verify the duped branch (no \n) returns the original content
-    // character-for-character, not a re-encoded copy.
+    // Verify the duped branch (no \n) returns the original content character-for-character, not a re-encoded copy.
     const input = "x" ** 100;
     const out = try lfToCrlf(std.testing.allocator, input);
     defer std.testing.allocator.free(out);
@@ -1251,9 +1228,7 @@ test "lfToCrlf - single newline byte in long content" {
     try std.testing.expect(std.mem.eql(u8, out, input));
 }
 
-// ============================================================================
 // normalizeLineEndings — edge cases
-// ============================================================================
 
 test "normalizeLineEndings - empty content returns duped empty" {
     const out = try normalizeLineEndings(std.testing.allocator, "");
@@ -1283,9 +1258,7 @@ test "normalizeLineEndings - mixed LF and CRLF all become LF" {
 }
 
 test "normalizeLineEndings - bare CR (not paired with LF) preserved" {
-    // The function walks byte-by-byte and only matches the \r\n PAIR, so a
-    // bare \r (Old-Mac line ending, or a literal carriage return in data)
-    // is left untouched.
+    // The function walks byte-by-byte and only matches the \r\n PAIR, so a bare \r (Old-Mac line ending, or a literal carriage return in data) is left untouched.
     const input = "a\rb\rc\r\nd";
     const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
@@ -1350,19 +1323,15 @@ test "normalizeLineEndings - returns new allocation when no CRLF (duped)" {
     const input = "no crlf here";
     const out = try normalizeLineEndings(std.testing.allocator, @constCast(input));
     defer std.testing.allocator.free(out);
-    // The duped buffer is a separate allocation — even though content is identical,
-    // freeing it must not corrupt the input.
+    // The duped buffer is a separate allocation — even though content is identical, freeing it must not corrupt the input.
     try std.testing.expect(std.mem.eql(u8, input, "no crlf here"));
     try std.testing.expect(std.mem.eql(u8, out, input));
 }
 
-// ============================================================================
 // generateUnifiedDiff — edge cases
-// ============================================================================
 
 test "generateUnifiedDiff - empty file content with single replacement" {
-    // raw = "" means 1 "empty line" (the split loop appends one entry for the
-    // is_end branch).
+    // raw = "" means 1 "empty line" (the split loop appends one entry for the is_end branch).
     const result = try generateUnifiedDiff(
         std.testing.allocator,
         "",
@@ -1406,9 +1375,7 @@ test "generateUnifiedDiff - single line file (no trailing newline)" {
 }
 
 test "generateUnifiedDiff - replacement at first line (1:1 line replacement)" {
-    // When old_str and new_str have the same number of lines, the diff
-    // body shows context lines (no -/+ markers) — the SPLIT VIEW
-    // (<<<<<<< / ======= / >>>>>>>) is where the change is visible.
+    // When old_str and new_str have the same number of lines, the diff body shows context lines (no -/+ markers) — the SPLIT VIEW (<<<<<<< / ======= / >>>>>>>) is …
     const raw = "first\nsecond\nthird\n";
     const result = try generateUnifiedDiff(
         std.testing.allocator,
@@ -1421,8 +1388,7 @@ test "generateUnifiedDiff - replacement at first line (1:1 line replacement)" {
 
     // Hunk header should start at line 1
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "@@ -1,") != null);
-    // No -first or +FIRST markers in the unified hunk (1:1 line replacement
-    // is shown as context). The change IS visible in the split view.
+    // No -first or +FIRST markers in the unified hunk (1:1 line replacement is shown as context).
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "-first\n") == null);
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "+FIRST\n") == null);
     // But the split view DOES contain both
@@ -1456,9 +1422,7 @@ test "generateUnifiedDiff - replacement at last line (1:1 line replacement)" {
 }
 
 test "generateUnifiedDiff - replacement removes lines (2 old → 1 new)" {
-    // Documenting the actual (suboptimal) behavior of the diff visualization
-    // when replacing 2 lines with 1 line: - old_str_line_list = ["delete1",
-    // "delete2", ""] (3 entries: 2 lines + trailing empty) -
+    // Documenting the actual (suboptimal) behavior of the diff visualization when replacing 2 lines with 1 line: - old_str_line_list = ["delete1", "delete2", ""] (3 …
     const raw = "keep1\ndelete1\ndelete2\nkeep2\n";
     const first = std.mem.indexOf(u8, raw, "delete1").?;
     const result = try generateUnifiedDiff(
@@ -1489,9 +1453,7 @@ test "generateUnifiedDiff - replacement removes lines (2 old → 1 new)" {
 }
 
 test "generateUnifiedDiff - replacement adds many lines (1 old → 6 new)" {
-    // Documenting actual behavior: when new_str has more lines than old_str,
-    // the diff shows the extra lines (those beyond old_str's range) with `+`
-    // prefix.
+    // Documenting actual behavior: when new_str has more lines than old_str, the diff shows the extra lines (those beyond old_str's range) with `+` prefix.
     const raw = "before\nTARGET\nafter\n";
     const first = std.mem.indexOf(u8, raw, "TARGET").?;
     const new_str = "TARGET\nextra1\nextra2\nextra3\nextra4\nextra5\n";
@@ -1504,8 +1466,7 @@ test "generateUnifiedDiff - replacement adds many lines (1 old → 6 new)" {
     );
     defer std.testing.allocator.free(result.unified);
 
-    // Only "+extra2" appears in the hunk body (within context_end); the rest
-    // are clipped by the context_end = old_lines.items.len = 4 cap.
+    // Only "+extra2" appears in the hunk body (within context_end); the rest are clipped by the context_end = old_lines.items.len = 4 cap.
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "+extra2") != null);
     // Split view contains the full new_str lines (no context_end clipping)
     const sep = std.mem.indexOf(u8, result.unified, "=======").?;
@@ -1532,19 +1493,15 @@ test "generateUnifiedDiff - new_str is single line with no trailing newline" {
     defer std.testing.allocator.free(result.unified);
 
     // 1:1 line replacement — change visible only in split view.
-    // The hunk will show context lines.
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "@@") != null);
     const sep = std.mem.indexOf(u8, result.unified, "=======").?;
     const after = std.mem.indexOf(u8, result.unified, ">>>>>>> AFTER").?;
-    // new_str = "B" with no trailing newline → in the split view,
-    // it appears as a single line "B\n" (each entry in new_str_line_list
-    // is followed by \n in the rendered output)
+    // new_str = "B" with no trailing newline → in the split view, it appears as a single line "B\n" (each entry in new_str_line_list is followed by \n in the …
     try std.testing.expect(std.mem.indexOf(u8, result.unified[sep..after], "B\n") != null);
 }
 
 test "generateUnifiedDiff - old_str has no trailing newline (mid-line offset)" {
-    // When old_str doesn't end with \n, the byte offset `first` may point to
-    // the middle of a line.
+    // When old_str doesn't end with \n, the byte offset `first` may point to the middle of a line.
     const raw = "alpha\nbeta\ngamma\n";
     const first = std.mem.indexOf(u8, raw, "beta").?; // points to 'b' (middle of beta)
     const result = try generateUnifiedDiff(
@@ -1564,8 +1521,7 @@ test "generateUnifiedDiff - old_str has no trailing newline (mid-line offset)" {
 }
 
 test "generateUnifiedDiff - very long file (>10 lines) — context window is 3" {
-    // Build a 20-line file with "TARGET" at line 10 (0-indexed). The context
-    // window is 3 lines before/after, so the hunk should start at line 8.
+    // Build a 20-line file with "TARGET" at line 10 (0-indexed).
     var raw_buf: [1000]u8 = undefined;
     var pos: usize = 0;
     for (0..20) |i| {
@@ -1589,9 +1545,7 @@ test "generateUnifiedDiff - very long file (>10 lines) — context window is 3" 
     );
     defer std.testing.allocator.free(result.unified);
 
-    // Context window is 3 lines before/after. The hunk header should start
-    // at line 8 (1-indexed) because TARGET is at line 11 (1-indexed) and
-    // context_start = max(11-1-3, 0) = 7 (0-indexed) = 8 (1-indexed).
+    // Context window is 3 lines before/after.
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "@@ -8,") != null);
     // The very early lines (1..7) should NOT appear in the hunk
     try std.testing.expect(std.mem.indexOf(u8, result.unified, " line_00") == null);
@@ -1623,9 +1577,7 @@ test "generateUnifiedDiff - unicode content in old/new_str" {
 }
 
 test "generateUnifiedDiff - new_str shorter than old_str (3 old → 1 new)" {
-    // Documenting actual behavior with raw =
-    // "before\nold1\nold2\nold3\nafter\n": old_lines = ["before", "old1",
-    // "old2", "old3", "after", ""] (6 entries) line_idx = 1 (old1)
+    // Documenting actual behavior with raw = "before\nold1\nold2\nold3\nafter\n": old_lines = ["before", "old1", "old2", "old3", "after", ""] (6 entries) line_idx = …
     const raw = "before\nold1\nold2\nold3\nafter\n";
     const first = std.mem.indexOf(u8, raw, "old1").?;
     const result = try generateUnifiedDiff(
@@ -1660,8 +1612,7 @@ test "generateUnifiedDiff - hunk header has correct start line (1-indexed)" {
     );
     defer std.testing.allocator.free(result.unified);
 
-    // TARGET is at line 6 (1-indexed, 5 0-indexed). With 3-line context
-    // before, hunk starts at line 6-3 = 3 (1-indexed).
+    // TARGET is at line 6 (1-indexed, 5 0-indexed).
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "@@ -3,") != null);
 }
 
@@ -1726,9 +1677,7 @@ test "generateUnifiedDiff - output always ends with AFTER marker" {
 }
 
 test "generateUnifiedDiff - first parameter is the offset, not byte content" {
-    // Verify the line-finder uses the offset to determine line_idx.
-    // raw = "aaa\nTARGET\nbbb\n" — TARGET at offset 4. The line-finding
-    // loop picks line_idx=1 (the TARGET line). We pass first=4.
+    // Verify the line-finder uses the offset to determine line_idx. raw = "aaa\nTARGET\nbbb\n" — TARGET at offset 4.
     const raw = "aaa\nTARGET\nbbb\n";
     const result = try generateUnifiedDiff(
         std.testing.allocator,
@@ -1745,8 +1694,7 @@ test "generateUnifiedDiff - first parameter is the offset, not byte content" {
 }
 
 test "generateUnifiedDiff - line_idx calc when offset points to trailing empty line" {
-    // raw = "abc\n" — only 1 line "abc", plus a trailing empty line.
-    // first=4 (just after the \n) → line_idx = 1 (the trailing empty line)
+    // raw = "abc\n" — only 1 line "abc", plus a trailing empty line. first=4 (just after the \n) → line_idx = 1 (the trailing empty line)
     const result = try generateUnifiedDiff(
         std.testing.allocator,
         "abc\n",
@@ -1761,9 +1709,7 @@ test "generateUnifiedDiff - line_idx calc when offset points to trailing empty l
     try std.testing.expect(std.mem.indexOf(u8, result.unified, "<<<<<<< BEFORE") != null);
 }
 
-// ============================================================================
 // executeTextReplace — error path edge cases
-// ============================================================================
 
 test "executeTextReplace - empty path returns PathNotFound" {
     const result = executeTextReplace(
@@ -1872,16 +1818,13 @@ test "executeTextReplace - file with no trailing newline" {
 }
 
 test "executeTextReplace - empty file (zero-byte file)" {
-    // Note: cannot use empty old_str with empty file — empty matches every
-    // byte position so the "uniqueness" check returns OldStrNotUnique.
+    // Note: cannot use empty old_str with empty file — empty matches every byte position so the "uniqueness" check returns OldStrNotUnique.
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_empty_file.txt");
     try createTestFile(test_path, "");
     defer deleteTestFile(test_path);
 
-    // The empty file has no content to replace, so use a replacement that
-    // targets an empty region (position 0) with non-empty content. Actually:
-    // indexOf for "X" in "" returns null → OldStrNotFound.
+    // The empty file has no content to replace, so use a replacement that targets an empty region (position 0) with non-empty content.
     const result = executeTextReplace(
         std.testing.allocator,
         std.testing.io,
@@ -1893,8 +1836,7 @@ test "executeTextReplace - empty file (zero-byte file)" {
 }
 
 test "executeTextReplace - file with only a single newline" {
-    // File = "\n" (single empty line plus trailing). Test that the tool can
-    // handle a minimal non-empty file.
+    // File = "\n" (single empty line plus trailing).
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_single_newline.txt");
     try createTestFile(test_path, "\n");
@@ -1931,8 +1873,7 @@ test "executeTextReplace - file with CRLF line endings" {
     );
     defer result.deinit(std.testing.allocator);
 
-    // The replacement should still work despite CRLF (the file is normalized
-    // before search, then re-emitted as CRLF on write).
+    // The replacement should still work despite CRLF (the file is normalized before search, then re-emitted as CRLF on write).
     try std.testing.expect(result.diff_view != null);
     if (result.diff_view) |dv| {
         try std.testing.expect(std.mem.indexOf(u8, dv.before, "TARGET") != null);
@@ -2058,8 +1999,7 @@ test "executeTextReplace - large file (50 lines) succeeds" {
         // 1:1 line replacement — change visible in split view only
         try std.testing.expect(std.mem.indexOf(u8, dv.before, "line_25\n") != null);
         try std.testing.expect(std.mem.indexOf(u8, dv.after, "MODIFIED_LINE\n") != null);
-        // Hunk header should start at line 23 (1-indexed), since line_25 is
-        // at line 26 (1-indexed) and context_start = 26-3 = 23.
+        // Hunk header should start at line 23 (1-indexed), since line_25 is at line 26 (1-indexed) and context_start = 26-3 = 23.
         try std.testing.expect(std.mem.indexOf(u8, dv.unified, "@@ -23,") != null);
         // The very early lines should NOT appear (1..22)
         try std.testing.expect(std.mem.indexOf(u8, dv.unified, " line_00") == null);
@@ -2070,9 +2010,7 @@ test "executeTextReplace - large file (50 lines) succeeds" {
 }
 
 test "executeTextReplace - special XML chars in old_str (search works on raw bytes)" {
-    // JSON string escaping is applied to OUTPUT fields (in toJSONSuccess)
-    // only; the diff_view's `before`/`after` fields hold the RAW bytes from
-    // old_str / new_str.
+    // JSON string escaping is applied to OUTPUT fields (in toJSONSuccess) only; the diff_view's `before`/`after` fields hold the RAW bytes from old_str / new_str.
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_xml_chars_in_search.txt");
     try createTestFile(test_path, "before\nif (a < b && c > d)\nafter\n");
@@ -2097,8 +2035,7 @@ test "executeTextReplace - special XML chars in old_str (search works on raw byt
 }
 
 test "executeTextReplace - JSON output preserves raw bytes, diff_view unescaped" {
-    // Verify the boundary: diff_view holds raw bytes; toJSONSuccess carries
-    // them through as JSON strings. A user-facing test that verifies both shapes.
+    // Verify the boundary: diff_view holds raw bytes; toJSONSuccess carries them through as JSON strings.
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_xml_escape_boundary.txt");
     try createTestFile(test_path, "before\n<tag>\nafter\n");
@@ -2131,8 +2068,7 @@ test "executeTextReplace - JSON output preserves raw bytes, diff_view unescaped"
 }
 
 test "executeTextReplace - replacement succeeds when old_str is at byte 0" {
-    // 1:1 line replacement — change is visible only in the split view
-    // (<<<<<<< / ======= / >>>>>>>) since the unified hunk shows context.
+    // 1:1 line replacement — change is visible only in the split view (<<<<<<< / ======= / >>>>>>>) since the unified hunk shows context.
     var test_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const test_path = try absPath(&test_path_buf, "test_byte_zero.txt");
     try createTestFile(test_path, "FIRST\nrest of file\n");
@@ -2158,7 +2094,6 @@ test "executeTextReplace - replacement succeeds when old_str is at byte 0" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -2173,9 +2108,7 @@ const exec_path_validate = @import("helpers").path_validate;
 const testing = std.testing;
 const workspace_fs = @import("../loop/workspace_fs.zig");
 
-/// The read, the change and the write happen in one place: under `--saas`
-/// both ends are the guest, so the host never opens the file and never writes
-/// it. Every other mode keeps today's host read and host write.
+/// The read, the change and the write happen in one place: under `--saas` both ends are the guest, so the host never opens the file and never writes it.
 fn replaceThrough(
     ctx: ToolExecContext,
     path_abs: []const u8,
@@ -2211,8 +2144,7 @@ fn replaceThrough(
     return text_replace_mod.executeTextReplace(ctx.allocator, ctx.io, path_abs, old_str, new_str);
 }
 
-// The seam does not change the contract: a local-mode call still reads the
-// host file, changes it and writes it back.
+// The seam does not change the contract: a local-mode call still reads the host file, changes it and writes it back.
 test "replaceThrough: local mode replaces the file the host way" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2233,8 +2165,7 @@ test "replaceThrough: local mode replaces the file the host way" {
     try testing.expectEqualStrings("BEFORE\nafter\n", read);
 }
 const required_field_help = "text_replace takes exactly four fields: `path`, `old_str`, `new_str`, `cwd`.";
-/// Build the tool-facing message for arguments that did not decode into
-/// `TextReplaceInput`.
+/// Build the tool-facing message for arguments that did not decode into `TextReplaceInput`.
 fn describeArgsFailure(allocator: std.mem.Allocator, args: []const u8, err: anyerror) ![]u8 {
     if (err != error.MissingField) {
         return std.fmt.allocPrint(
@@ -2294,8 +2225,7 @@ fn describeArgsFailure(allocator: std.mem.Allocator, args: []const u8, err: anye
 }
 
 pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // A Windows path is the one argument string a tool call cannot avoid, and
-    // it is full of backslashes.
+    // A Windows path is the one argument string a tool call cannot avoid, and it is full of backslashes.
     const repaired_args = (try args_repair.repairToolCallArguments(ctx.allocator, tc.function.arguments));
     defer if (repaired_args) |r| r.deinit(ctx.allocator);
     const args = if (repaired_args) |r| r.slice() else tc.function.arguments;
@@ -2312,8 +2242,7 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     };
     defer parsed.deinit();
 
-    // The repair cannot leave a legal escape alone, so `…\.config\pabrik`
-    // decodes to a real newline in the middle of the path.
+    // The repair cannot leave a legal escape alone, so `…\.config\pabrik` decodes to a real newline in the middle of the path.
     var owned_path: ?[]u8 = null;
     defer if (owned_path) |p| ctx.allocator.free(p);
     const path = if (try args_repair.reexpandPathControlChars(ctx.allocator, parsed.value.path)) |fixed| blk: {
@@ -2321,8 +2250,7 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
         break :blk fixed;
     } else parsed.value.path;
 
-    // `cwd` is a path as well, so it needs the SAME re-expansion the block
-    // above gives `path`.
+    // `cwd` is a path as well, so it needs the SAME re-expansion the block above gives `path`.
     var owned_cwd: ?[]u8 = null;
     defer if (owned_cwd) |c| ctx.allocator.free(c);
     const cwd = if (try args_repair.reexpandPathControlChars(ctx.allocator, parsed.value.cwd)) |fixed| blk: {
@@ -2330,9 +2258,7 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
         break :blk fixed;
     } else parsed.value.cwd;
 
-    // Same rule as every other path-taking tool: `cwd` is REQUIRED (the
-    // directory this call works in — see helpers/exec_path_validate.zig) and a
-    // relative `path` is resolved against it BEFORE any file is touched (an
+    // Same rule as every other path-taking tool: `cwd` is REQUIRED (the directory this call works in — see helpers/exec_path_validate.zig) and a relative `path` is …
     exec_path_validate.validateCwd(cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -2367,8 +2293,7 @@ pub fn execTextReplace(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
 }
 
 test "execTextReplace: a missing cwd is refused with an actionable message" {
-    // `cwd` is required, and the refusal is the only thing that teaches the
-    // model the field exists — so the message must NAME it.
+    // `cwd` is required, and the refusal is the only thing that teaches the model the field exists — so the message must NAME it.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -2382,9 +2307,7 @@ test "execTextReplace: a missing cwd is refused with an actionable message" {
     try testing.expect(std.mem.indexOf(u8, msg, "MandatoryCwdMissing") == null);
 }
 
-// ---------------------------------------------------------------------------
-// Overwrite-contract regression tests (added 2026-08-15) text_replace
-// internally writes the modified content back to disk via
+// Overwrite-contract regression tests (added 2026-08-15) text_replace internally writes the modified content back to disk via
 
 fn minimalCtxTr(allocator: std.mem.Allocator) ToolExecContext {
     var dummy_f32: f32 = 0.0;
@@ -2406,8 +2329,7 @@ fn minimalCtxTr(allocator: std.mem.Allocator) ToolExecContext {
     };
 }
 
-/// Helper: assert the exec output is a success JSON envelope whose
-/// `data.path` equals the expected path.
+/// Helper: assert the exec output is a success JSON envelope whose `data.path` equals the expected path.
 fn expectTextReplaceSuccess(output: []const u8, expected_path: []const u8) !void {
     const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, output, .{});
     defer parsed.deinit();
@@ -2430,8 +2352,7 @@ fn readAllTr(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.Io.Dir.cwd().readFileAlloc(testing.io, path, allocator, .limited(4 << 20));
 }
 
-// CONTRACT: execTextReplace must overwrite the target file (truncate + write
-// new content), not append.
+// CONTRACT: execTextReplace must overwrite the target file (truncate + write new content), not append.
 test "execTextReplace: writes back the full modified file (truncates + overwrites, no append)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2454,9 +2375,7 @@ test "execTextReplace: writes back the full modified file (truncates + overwrite
         try std.Io.File.writeStreamingAll(f, testing.io, original);
     }
 
-    // Build args: replace the marker with a SHORTER string. If createFile
-    // appended instead of truncating, the trailing junk would still be
-    // visible AFTER the new short content.
+    // Build args: replace the marker with a SHORTER string.
     {
         const args = try trArgs(a, target_path, "<<<REPLACE_ME>>>", "[OK]");
         const tc = agent.ToolCall{
@@ -2470,20 +2389,17 @@ test "execTextReplace: writes back the full modified file (truncates + overwrite
 
         try expectTextReplaceSuccess(result.output, target_path);
 
-        // Read back — file must be EXACTLY "[OK] then keep this trailing junk
-        // after the marker to detect any append-mode corruption"
+        // Read back — file must be EXACTLY "[OK] then keep this trailing junk after the marker to detect any append-mode corruption"
         const expected = "[OK] then keep this trailing junk after the marker to detect any append-mode corruption";
         const read = try readAllTr(a, target_path);
         try testing.expectEqualStrings(expected, read);
-        // File size must match the new length (not original.len) — proves
-        // truncation happened, not append.
+        // File size must match the new length (not original.len) — proves truncation happened, not append.
         try testing.expectEqual(@as(usize, expected.len), read.len);
         try testing.expect(read.len != original.len); // sanity: the two really differ
     }
 }
 
-// CONTRACT: execTextReplace must OVERWRITE, not fail or skip, when called
-// on an existing file with content that exactly matches old_str.
+// CONTRACT: execTextReplace must OVERWRITE, not fail or skip, when called on an existing file with content that exactly matches old_str.
 test "execTextReplace: existing file with matching content is modified in place" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2521,9 +2437,7 @@ test "execTextReplace: existing file with matching content is modified in place"
     }
 }
 
-// ---------------------------------------------------------------------------
-// Windows: absolute paths are the one string a tool call cannot avoid, and on
-// Windows they are full of `\` separators.
+// Windows: absolute paths are the one string a tool call cannot avoid, and on Windows they are full of `\` separators.
 
 /// Runs `execTextReplace` and returns the parsed envelope.
 fn runTr(a: std.mem.Allocator, args: []const u8) !std.json.Value {
@@ -2542,9 +2456,7 @@ fn errorTextOf(env: std.json.Value) []const u8 {
     return env.object.get("error").?.string;
 }
 
-// A Windows path arriving with RAW backslashes must still replace text. This
-// has to be provable on Linux too, or the bug stays invisible until a Windows
-// user hits it.
+// A Windows path arriving with RAW backslashes must still replace text.
 test "execTextReplace: Windows path with raw backslashes is repaired, not rejected" {
     const builtin = @import("builtin");
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -2563,9 +2475,7 @@ test "execTextReplace: Windows path with raw backslashes is repaired, not reject
         defer f.close(testing.io);
         try std.Io.File.writeStreamingAll(f, testing.io, "Hello World\n");
     }
-    // `/` on both hosts: on Windows the tmpdir path already carries the
-    // backslashes that matter, and `std.fs` accepts `/` there too, so the
-    // file is still found.
+    // `/` on both hosts: on Windows the tmpdir path already carries the backslashes that matter, and `std.fs` accepts `/` there too, so the file is still found.
     const target_path = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, file_name });
 
     // `cwd` must be exercised on BOTH hosts, not just Windows.
@@ -2576,8 +2486,7 @@ test "execTextReplace: Windows path with raw backslashes is repaired, not reject
     else
         try std.fmt.allocPrint(a, "{s}/{s}", .{ root, cwd_rel });
 
-    // The arguments a model writes when it pastes the path verbatim: every
-    // separator is a single `\`, which is what RFC 8259 §7 rejects.
+    // The arguments a model writes when it pastes the path verbatim: every separator is a single `\`, which is what RFC 8259 §7 rejects.
     const args = try std.fmt.allocPrint(
         a,
         "{{\"path\":\"{s}\",\"cwd\":\"{s}\",\"old_str\":\"Hello\",\"new_str\":\"Goodbye\"}}",
@@ -2596,15 +2505,13 @@ test "execTextReplace: Windows path with raw backslashes is repaired, not reject
     try testing.expectEqualStrings("Goodbye World\n", read);
 }
 
-// The reported failure mode: the arguments are the ones a model emitted on
-// Windows, and the model also mis-keyed the replacement field.
+// The reported failure mode: the arguments are the ones a model emitted on Windows, and the model also mis-keyed the replacement field.
 test "execTextReplace: wrong field name is reported as a named, actionable error" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
 
-    // Shape lifted from the reported call: `new_string` instead of
-    // `new_str`, and no `old_str` at all.
+    // Shape lifted from the reported call: `new_string` instead of `new_str`, and no `old_str` at all.
     const args =
         \\{"path":"C:\\Users\\gilang.trisetya\\.config\\pabrik\\.worktrees\\sb02\\internal\\domain\\sales_invoice\\test.go","new_string":"x"}
     ;

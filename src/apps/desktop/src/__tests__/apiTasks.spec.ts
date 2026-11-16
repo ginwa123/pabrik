@@ -1,5 +1,4 @@
-/** Unit tests for the task-list API client (getTasks). 4 behavioural tests covering the `q` query
- * parameter (kanban task search feature). */
+/** Unit tests for the task-list API client (getTasks). 4 behavioural tests covering the `q` query parameter (kanban task search feature). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 

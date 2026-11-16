@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** SubAgentPeekHost — lifecycle owner for a sub-agent peek. 2026-09-04 subagent-peek P1 fix:
- * `useSubAgentPeek()` registers `onMounted`/`onUnmounted`, so it MUST be called in setup scope —
- * never inside a `computed` (ChatView.vue did that. */
+/** SubAgentPeekHost — lifecycle owner for a sub-agent peek. 2026-09-04 subagent-peek P1 fix */
 import SubAgentPeekPanel from './SubAgentPeekPanel.vue'
 import { useSubAgentPeek } from '../../composables/useSubAgentPeek'
 

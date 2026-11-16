@@ -1,6 +1,4 @@
-/** Behavioural tests for the workspaces store's per-column pagination (plan
- * 2026-08-06-kanban-per-column-pagination.md, Task 8). Replaces the old board-wide `loadMoreTasks`
- * tests with the new per-column `loadMoreTasksForColumn` action. */
+/** Behavioural tests for the workspaces store's per-column pagination (plan 2026-08-06-kanban-per-column-pagination.md, Task 8). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -84,9 +82,7 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
     getWorkspacesItemsMock.mockClear()
     getTasksMock.mockClear()
 
-    // Mock the column fetch so the kanban_columns are populated —
-    // they're not strictly required for these tests but the store
-    // may fetch them as part of init().
+    // Mock the column fetch so the kanban_columns are populated — they're not strictly required for these tests but the store may fetch them as part of init().
     vi.spyOn(api, 'getWorkspaces').mockImplementation(getWorkspacesMock)
     vi.spyOn(api, 'getWorkspacesItems').mockImplementation(getWorkspacesItemsMock)
     vi.spyOn(api, 'getTasks').mockImplementation(getTasksMock)
@@ -97,9 +93,7 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
     vi.restoreAllMocks()
   })
 
-  // Helper: run init() + a per-column fetch (Option B) with the
-  // given first-page result so the store is in a "first page loaded"
-  // state. Returns the store.
+  // Helper: run init() + a per-column fetch (Option B) with the given first-page result so the store is in a "first page loaded" state.
   async function initWithFirstPage(firstPage: {
     tasks: ReturnType<typeof seedTasks>
     has_more: boolean
@@ -107,13 +101,10 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
   }) {
     getWorkspacesMock.mockResolvedValueOnce({ workspaces: [baseWorkspace] })
     getWorkspacesItemsMock.mockResolvedValueOnce({ items: [baseItem], count: 1 })
-    // init() now skips kanban items (Option B — per-column init via KanbanView onMount). We fire
-    // the per-column fetch directly to seed the store state. The `firstPage.tasks` MUST have a
-    // consistent `kanban_column_id` (all of one column) since the backend filters per column.
+    // init() now skips kanban items (Option B — per-column init via KanbanView onMount).
     const store = useWorkspacesStore()
     await store.init()
-    // Detect the column from the first task's kanban_column_id, fall
-    // back to col_a for backwards compatibility.
+    // Detect the column from the first task's kanban_column_id, fall back to col_a for backwards compatibility.
     const colId = firstPage.tasks[0]?.kanban_column_id ?? 'col_a'
     getTasksMock.mockResolvedValueOnce(firstPage)
     await store.fetchKanbanTasks(
@@ -135,9 +126,7 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
         items: [baseItem as any],
       },
     ]
-    // Option B: fetch returns ONLY the column's tasks (backend filters by column_id server-side).
-    // col_b is NOT in the response — its columnPagination entry stays undefined until a separate
-    // fetch for col_b fires.
+    // Option B: fetch returns ONLY the column's tasks (backend filters by column_id server-side). col_b is NOT in the response — its columnPagination entry stays …
     getTasksMock.mockResolvedValueOnce({
       tasks: seedTasks(2, 'a', 'col_a'),
       has_more: true,
@@ -349,8 +338,7 @@ describe('useWorkspacesStore.loadMoreTasksForColumn() — per-column pagination'
       next_cursor: 'cursor_1',
     })
 
-    // User picks 'name' / 'desc' on the kanban view. fetchKanbanTasks
-    // records the active sort.
+    // User picks 'name' / 'desc' on the kanban view. fetchKanbanTasks records the active sort.
     getTasksMock.mockResolvedValueOnce({
       tasks: seedTasks(2, 'a', 'col_a'),
       has_more: true,

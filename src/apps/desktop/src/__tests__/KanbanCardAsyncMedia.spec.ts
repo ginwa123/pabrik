@@ -1,5 +1,4 @@
-/** Card-first async media: cards render from the flag-only list payload first, then thumbnails load
- * behind via GET .../tasks/:id/media. */
+/** Card-first async media: cards render from the flag-only list payload first, then thumbnails load behind via GET .../tasks/:id/media. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { flushPromises } from '@vue/test-utils'
@@ -53,8 +52,7 @@ describe('Kanban card async media — list first, thumbnails after', () => {
       writable: true,
       configurable: true,
     })
-    // The media cache memo outlives pinia — reset per test so cached
-    // thumbs from one test never leak into the next.
+    // The media cache memo outlives pinia — reset per test so cached thumbs from one test never leak into the next.
     clearTaskMediaCache()
   })
 

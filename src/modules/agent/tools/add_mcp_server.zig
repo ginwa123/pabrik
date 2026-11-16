@@ -1,6 +1,4 @@
-//! Agent-callable MCP-server tools: `add_mcp_server`, `edit_mcp_server`,
-//! `delete_mcp_server`. All three mutate the live `LlmConfig` (typed map +
-//! JSON mirror) so subsequent agent iterations pick up the change via
+//! Agent-callable MCP-server tools: `add_mcp_server`, `edit_mcp_server`, `delete_mcp_server`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -12,24 +10,17 @@ const LlmConfig = config_mod.LlmConfig;
 const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
 
-/// One MCP header entry (HTTP transport). The LLM sends an array of these;
-/// `Config.zig` converts it to the on-disk `{key: value}` object shape.
+/// One MCP header entry (HTTP transport).
 pub const Header = struct {
     name: []const u8,
     value: []const u8,
 };
 
-// ───────────────────────────────────────────────────────────────────────
 // add_mcp_server
-// ───────────────────────────────────────────────────────────────────────
 
-/// Input for `add_mcp_server`. The LLM fills in `name` + `transport`; the
-/// transport-specific fields (`command` for stdio, `url` for HTTP) are
-/// required when the matching transport is selected.
+/// Input for `add_mcp_server`.
 pub const AddMcpServerInput = struct {
-    /// Server name (key in `mcp_servers`). Must be non-empty and must not
-    /// collide with an existing server. Trailing whitespace is NOT
-    /// trimmed — the caller passes the exact key.
+    /// Server name (key in `mcp_servers`).
     name: []const u8 = "",
 
     /// Transport discriminator: `"stdio"` or `"http"`.
@@ -44,16 +35,14 @@ pub const AddMcpServerInput = struct {
     /// HTTP URL. Required when `transport == "http"`. Empty for stdio.
     url: []const u8 = "",
 
-    /// HTTP headers. Optional. Each entry is `{name, value}`; the array
-    /// shape mirrors the frontend `McpServerModal`.
+    /// HTTP headers.
     headers: ?[]const Header = null,
 
     /// Whether the agent may use this server. Omit for enabled.
     enabled: ?bool = null,
 };
 
-/// Tool definition for the LLM. The description is the agent's primary
-/// "when to call this" signal — it lists BOTH transports' fields.
+/// Tool definition for the LLM.
 pub const add_mcp_server_tool_system_prompt =
     \\\\## Add MCP Server Tool — Behavior
     \\\\Use `add_mcp_server` to register a new MCP server at runtime.
@@ -121,30 +110,23 @@ pub const add_mcp_server_tool = AgentTool{
     },
 };
 
-// ───────────────────────────────────────────────────────────────────────
 // edit_mcp_server
-// ───────────────────────────────────────────────────────────────────────
 
-/// Input for `edit_mcp_server`. Only `name` is required; every other field
-/// is a patch. A null field means "leave the stored value alone".
+/// Input for `edit_mcp_server`.
 pub const EditMcpServerInput = struct {
     /// The server to edit. Must already exist — this tool never creates.
     name: []const u8 = "",
 
-    /// Transport switch. Omit to keep the current transport. When present
-    /// it must be accompanied by the new transport's required field
-    /// (`command` for stdio, `url` for http) — the old transport's fields
+    /// Transport switch.
     transport: []const u8 = "",
 
-    /// stdio command. Required when the target transport is stdio and no
-    /// command is stored yet.
+    /// stdio command.
     command: []const u8 = "",
 
     /// stdio argv. `null` keeps the stored argv; an empty slice clears it.
     args: ?[]const []const u8 = null,
 
-    /// HTTP URL. Required when the target transport is http and no url is
-    /// stored yet.
+    /// HTTP URL.
     url: []const u8 = "",
 
     /// HTTP headers. `null` keeps the stored map; an empty slice clears it.
@@ -154,9 +136,7 @@ pub const EditMcpServerInput = struct {
     enabled: ?bool = null,
 };
 
-/// Tool definition for the LLM. The description names the patch semantics
-/// and the transport switch, because those are the two things a model gets
-/// wrong.
+/// Tool definition for the LLM.
 pub const edit_mcp_server_tool_system_prompt =
     \\\\## Edit MCP Server Tool — Behavior
     \\\\Use `edit_mcp_server` to change an MCP server that is already registered.
@@ -227,9 +207,7 @@ pub const edit_mcp_server_tool = AgentTool{
     },
 };
 
-// ───────────────────────────────────────────────────────────────────────
 // delete_mcp_server
-// ───────────────────────────────────────────────────────────────────────
 
 /// Input for `delete_mcp_server`. One required field — the server name.
 pub const DeleteMcpServerInput = struct {
@@ -237,9 +215,7 @@ pub const DeleteMcpServerInput = struct {
     name: []const u8 = "",
 };
 
-/// Tool definition for the LLM. The description names the consequence
-/// (the server's tools stop being callable) because that is the part a
-/// model tends to under-weight.
+/// Tool definition for the LLM.
 pub const delete_mcp_server_tool_system_prompt =
     \\\\## Delete MCP Server Tool — Behavior
     \\\\Use `delete_mcp_server` to remove an MCP server that is already registered.
@@ -280,13 +256,9 @@ pub const delete_mcp_server_tool = AgentTool{
     },
 };
 
-// ───────────────────────────────────────────────────────────────────────
 // Pure fns — mutate the live config, return a JSON payload for the LLM
-// ───────────────────────────────────────────────────────────────────────
 
-/// Execute `add_mcp_server`. Mutates `config.mcp_servers` in place; the
-/// disk persistence + live-reload path lives in the exec fn below.
-///
+/// Execute `add_mcp_server`.
 pub fn executeAddMcpServerToJSON(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -306,9 +278,7 @@ pub fn executeAddMcpServerToJSON(
 
     // ── 2. Call the storage primitive for the selected transport ───────
     if (is_http) {
-        // `headerInputs` converts the LLM's {name,value}[] into the
-        // Config.zig-shaped slice. The primitive deep-copies every entry,
-        // so this temporary is freed as soon as the call returns.
+        // `headerInputs` converts the LLM's {name,value}[] into the Config.zig-shaped slice.
         const hdr_inputs = try headerInputs(allocator, input.headers);
         defer if (hdr_inputs) |h| allocator.free(h);
 
@@ -335,18 +305,13 @@ pub fn executeAddMcpServerToJSON(
         };
     }
 
-    // No best-effort tools listing here — it would pollute the global
-    // StdioRegistry (whose arena is only cleaned up in `deinitGlobal`,
-    // which tests don't call) and the test allocator would flag it as a
+    // No best-effort tools listing here — it would pollute the global StdioRegistry (whose arena is only cleaned up in `deinitGlobal`, which tests don't call) and …
 
-    // ── 3. Build the success payload (`tools` stays null here; the exec
-    // fn fills it in after a successful listing). ─────────────────────
+    // ── 3.
     return successJSON(allocator, input);
 }
 
-/// Execute `edit_mcp_server`. Mutates `config.mcp_servers` in place.
-///
-/// The success payload echoes the RESULTING entry (rather than what was
+/// Execute `edit_mcp_server`.
 pub fn executeEditMcpServerToJSON(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -356,15 +321,11 @@ pub fn executeEditMcpServerToJSON(
     _ = io; // reserved for a future HTTP-probe branch
 
     // ── 1. Resolve the optional strings into the primitive's optionals ──
-    // An empty string from the LLM means "not supplied" — the schema has
-    // no way to express JSON null for a string field, and a model that
     const transport_opt: ?[]const u8 = if (input.transport.len == 0) null else input.transport;
     const command_opt: ?[]const u8 = if (input.command.len == 0) null else input.command;
     const url_opt: ?[]const u8 = if (input.url.len == 0) null else input.url;
 
     // ── 2. Convert the header array (null = keep, [] = clear) ──────────
-    // The primitive deep-copies every entry, so the temporary slice is
-    // freed as soon as the call returns.
     var header_buf: std.ArrayList(LlmConfig.McpHeaderInput) = .empty;
     defer header_buf.deinit(allocator);
     const headers_opt: ?[]const LlmConfig.McpHeaderInput = if (input.headers) |hdrs| blk: {
@@ -398,9 +359,7 @@ pub fn executeEditMcpServerToJSON(
     return editSuccessJSON(allocator, input.name, server);
 }
 
-/// Execute `delete_mcp_server`. Mutates `config.mcp_servers` in place.
-///
-/// Success payload: `name`, `removed` (always true on this path — the
+/// Execute `delete_mcp_server`.
 pub fn executeDeleteMcpServerToJSON(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -418,13 +377,9 @@ pub fn executeDeleteMcpServerToJSON(
     return deleteSuccessJSON(allocator, input.name);
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Shared pure-fn helpers
-// ───────────────────────────────────────────────────────────────────────
 
-/// Convert the LLM's `{name,value}[]` header array into the
-/// `Config.zig`-shaped slice. Returns null on OOM — the caller then
-/// treats the server as header-less rather than failing the whole add.
+/// Convert the LLM's `{name,value}[]` header array into the `Config.zig`-shaped slice.
 fn headerInputs(
     allocator: std.mem.Allocator,
     headers: ?[]const Header,
@@ -441,9 +396,7 @@ fn headerInputs(
     return try out.toOwnedSlice(allocator);
 }
 
-/// The per-error message for a failed add. Returns an OWNED slice when
-/// the message interpolates the server name, else null (the caller then
-/// uses the static fallback). `jsonError` copies through the sanitizer.
+/// The per-error message for a failed add.
 fn addErrMessage(
     allocator: std.mem.Allocator,
     err: anyerror,
@@ -459,8 +412,7 @@ fn addErrMessage(
     };
 }
 
-/// Static fallback message per error, for the cases that need no
-/// interpolation.
+/// Static fallback message per error, for the cases that need no interpolation.
 fn addErrFallback(err: anyerror) []const u8 {
     return switch (err) {
         error.InvalidName => "name is required (must be non-empty)",
@@ -471,8 +423,7 @@ fn addErrFallback(err: anyerror) []const u8 {
     };
 }
 
-/// The per-error message for a failed edit. Returns an OWNED slice when
-/// the message interpolates the server name, else null.
+/// The per-error message for a failed edit.
 fn editErrMessage(
     allocator: std.mem.Allocator,
     err: anyerror,
@@ -488,8 +439,7 @@ fn editErrMessage(
     };
 }
 
-/// Static fallback message per error, for the cases that need no
-/// interpolation.
+/// Static fallback message per error, for the cases that need no interpolation.
 fn editErrFallback(err: anyerror) []const u8 {
     return switch (err) {
         error.InvalidName => "name is required (must be non-empty)",
@@ -501,8 +451,7 @@ fn editErrFallback(err: anyerror) []const u8 {
     };
 }
 
-/// The per-error message for a failed delete. Returns an OWNED slice when
-/// the message interpolates the server name, else null.
+/// The per-error message for a failed delete.
 fn deleteErrMessage(
     allocator: std.mem.Allocator,
     err: anyerror,
@@ -518,8 +467,7 @@ fn deleteErrMessage(
     };
 }
 
-/// Static fallback message per error, for the cases that need no
-/// interpolation.
+/// Static fallback message per error, for the cases that need no interpolation.
 fn deleteErrFallback(err: anyerror) []const u8 {
     return switch (err) {
         error.InvalidName => "name is required (must be non-empty)",
@@ -528,9 +476,7 @@ fn deleteErrFallback(err: anyerror) []const u8 {
     };
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // JSON payloads
-// ───────────────────────────────────────────────────────────────────────
 
 fn successJSON(
     allocator: std.mem.Allocator,
@@ -554,8 +500,7 @@ fn successJSON(
         for (a) |arg| try clean_args.append(allocator, try sanitize(allocator, arg));
     }
 
-    // Both transport fields are always emitted so the payload shape is
-    // stable across transports — the unused one is an empty string.
+    // Both transport fields are always emitted so the payload shape is stable across transports — the unused one is an empty string.
     return std.json.Stringify.valueAlloc(allocator, .{
         .name = clean_name,
         .transport = clean_transport,
@@ -601,8 +546,7 @@ fn editSuccessJSON(
         errdefer allocator.free(k);
         const v = try sanitize(allocator, h.value_ptr.*);
         errdefer allocator.free(v);
-        // Rendered as "Name: value" so the LLM sees which header is which
-        // without the payload needing a nested object per header.
+        // Rendered as "Name: value" so the LLM sees which header is which without the payload needing a nested object per header.
         const line = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ k, v });
         allocator.free(k);
         allocator.free(v);
@@ -649,9 +593,7 @@ fn jsonError(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, .{ .@"error" = clean }, .{});
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Exec adapters — parse LLM args, call the pure fn, persist, wrap
-// ───────────────────────────────────────────────────────────────────────
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
@@ -760,9 +702,7 @@ pub fn execDeleteMcpServer(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-/// Shared tail for all three exec fns: surface a pure-fn error as
-/// `success=false`, otherwise persist + hot-reload, substitute the
-/// `persisted` placeholder, best-effort list the server's tools, and wrap
+/// Shared tail for all three exec fns: surface a pure-fn error as `success=false`, otherwise persist + hot-reload, substitute the `persisted` placeholder …
 fn finishMcpServerExec(
     ctx: ToolExecContext,
     tc: agent.ToolCall,
@@ -801,9 +741,7 @@ fn finishMcpServerExec(
     );
     defer ctx.allocator.free(inner_with_status);
 
-    // ── 4. Best-effort tools listing (process-level registry is OK here)
-    // SKIP when the exec context has no environment — that's our signal
-    // that we're in a unit test, where calling `StdioRegistry.global`
+    // ── 4.
     const inner_final = if (is_delete or server_name.len == 0 or ctx.environment == null)
         inner_with_status
     else
@@ -813,8 +751,7 @@ fn finishMcpServerExec(
     return wrapToolOutput(ctx.allocator, tool_name, tc.function.arguments, true, null, inner_final);
 }
 
-/// Substitute the `"persisted":"false"` placeholder in the pure-fn payload
-/// with the actual disk-write + live-reload status.
+/// Substitute the `"persisted":"false"` placeholder in the pure-fn payload with the actual disk-write + live-reload status.
 fn substitutePersistedStatus(
     allocator: std.mem.Allocator,
     inner_json: []const u8,
@@ -823,9 +760,7 @@ fn substitutePersistedStatus(
     const placeholder = "\"persisted\":\"false\"";
 
     const idx = std.mem.indexOf(u8, inner_json, placeholder) orelse {
-        // Defensive: if the pure-fn payload shape ever drifts and the
-        // placeholder is missing, surface a clear error rather than
-        // return the unmodified JSON (which would lie to the LLM).
+        // Defensive: if the pure-fn payload shape ever drifts and the placeholder is missing, surface a clear error rather than return the unmodified JSON (which would …
         return error.MissingPersistedPlaceholder;
     };
 
@@ -845,9 +780,7 @@ fn substitutePersistedStatus(
     return result;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Disk persistence + live-reload
-// ───────────────────────────────────────────────────────────────────────
 
 fn persistAndReloadStatus(ctx: ToolExecContext, server_name: []const u8, is_delete: bool) ![]u8 {
     const di = exec_pabrikcore.getSingleton() catch return ctx.allocator.dupe(u8, "false: getSingleton failed") catch return ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server failure status");
@@ -874,9 +807,7 @@ fn persistAndReloadStatus(ctx: ToolExecContext, server_name: []const u8, is_dele
     };
     defer ctx.allocator.free(config_path);
 
-    // `getDefaultConfigDir` validates its environment bases, but the calls
-    // below are the ones that ASSERT: `openFileAbsolute` /
-    // `createFileAbsolute` abort the whole process for a relative path.
+    // `getDefaultConfigDir` validates its environment bases, but the calls below are the ones that ASSERT: `openFileAbsolute` /`createFileAbsolute` abort the whole …
     if (!std.fs.path.isAbsolute(config_path)) {
         return failStatus(ctx.allocator, "config_path", "not an absolute path");
     }
@@ -933,8 +864,7 @@ fn persistAndReloadStatus(ctx: ToolExecContext, server_name: []const u8, is_dele
     new_ptr.* = new_cfg;
     exec_pabrikcore.setLlmConfig(di, new_ptr);
 
-    // Fetch-once cache (plan: mcp-fetch-once-cache): lazy-invalidate so
-    // the next workflow run refetches once and picks up the change.
+    // Fetch-once cache (plan: mcp-fetch-once-cache): lazy-invalidate so the next workflow run refetches once and picks up the change.
     di.clearMcpToolsCache();
     invalidateRegistries(ctx);
 
@@ -1054,8 +984,6 @@ fn overlayWithServer(
 }
 
 /// Force the stdio + HTTP registries to drop their cached clients.
-///
-/// Without this an edited URL / command under the SAME server name keeps
 fn invalidateRegistries(ctx: ToolExecContext) void {
     const di = exec_pabrikcore.getSingleton() catch return;
     const servers = ctx.config.mcpServers() orelse return;
@@ -1067,8 +995,7 @@ fn invalidateRegistries(ctx: ToolExecContext) void {
     }
 }
 
-/// Build a `<persisted>false: <op> <reason></persisted>`-shaped failure
-/// status. The result is owned by `allocator` — caller frees.
+/// Build a `<persisted>false: <op> <reason></persisted>`-shaped failure status.
 fn failStatus(allocator: std.mem.Allocator, op: []const u8, reason: []const u8) []u8 {
     return std.fmt.allocPrint(
         allocator,
@@ -1077,9 +1004,7 @@ fn failStatus(allocator: std.mem.Allocator, op: []const u8, reason: []const u8) 
     ) catch allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server failure status");
 }
 
-/// Build the on-disk JSON body for the new config. Strategy:
-///   - If `existing` is non-null, parse it as a generic `std.json.Value`,
-///     copy each (key, value) pair into a fresh ObjectMap (skipping the
+/// Build the on-disk JSON body for the new config. Strategy
 fn buildUpdatedConfigJson(ctx: ToolExecContext, existing: ?[]const u8) ![]u8 {
     const allocator = ctx.allocator;
     const live_mcp_servers = ctx.config.mcpServers() orelse .null;
@@ -1136,13 +1061,9 @@ fn buildUpdatedConfigJson(ctx: ToolExecContext, existing: ?[]const u8) ![]u8 {
     }, .{ .whitespace = .indent_tab });
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Best-effort tools listing (post-mutation)
-// ───────────────────────────────────────────────────────────────────────
 
-/// Spawn/connect the just-mutated server and run a `tools/list` roundtrip,
-/// filling the `tools` array of the success payload. On any failure
-/// (spawn / send / recv / parse), the original inner JSON is returned
+/// Spawn/connect the just-mutated server and run a `tools/list` roundtrip, filling the `tools` array of the success payload.
 fn listAndAppendTools(ctx: ToolExecContext, inner_json: []const u8, server_name: []const u8) ![]const u8 {
     const server = ctx.config.mcpServerConfig(server_name) orelse return inner_json;
 
@@ -1200,9 +1121,7 @@ fn listAndAppendToolsHttp(
     const url = server.url orelse return inner_json;
     if (url.len == 0) return inner_json;
 
-    // Build the custom-header slice from the typed map. MCP headers are
-    // a small bounded set; a stack buffer (max 16) avoids a heap
-    // allocation on this cold path.
+    // Build the custom-header slice from the typed map.
     const kabelweb = @import("kabelweb");
     var std_header_buf: [16]kabelweb.client.Header = undefined;
     var header_count: usize = 0;
@@ -1227,9 +1146,7 @@ fn listAndAppendToolsHttp(
     const mcp_tools = exec_pabrikcore.mcp_http.listTools(ctx.allocator, http_client) catch return inner_json;
     defer freeMcpTools(ctx.allocator, mcp_tools);
 
-    // Re-serialize the tool names into the same `result.tools[]` JSON
-    // shape the stdio branch produces, so one substitution routine
-    // serves both transports.
+    // Re-serialize the tool names into the same `result.tools[]` JSON shape the stdio branch produces, so one substitution routine serves both transports.
     var arena = std.heap.ArenaAllocator.init(ctx.allocator);
     defer arena.deinit();
     var names: std.ArrayList([]const u8) = .empty;
@@ -1244,8 +1161,6 @@ fn listAndAppendToolsHttp(
 }
 
 /// Free a `[]mcp_types.McpTool` returned by `mcp_http.listTools`.
-///
-/// Only `name` and `description` are freed: those are the two fields
 fn freeMcpTools(allocator: std.mem.Allocator, mcp_tools: []const exec_pabrikcore.mcp_types.McpTool) void {
     for (mcp_tools) |t| {
         allocator.free(t.name);
@@ -1254,8 +1169,7 @@ fn freeMcpTools(allocator: std.mem.Allocator, mcp_tools: []const exec_pabrikcore
     allocator.free(mcp_tools);
 }
 
-/// Parse a `tools/list` JSON-RPC response body and splice the resulting
-/// `mcp_<server>_<tool>` names into the payload's `"tools":null` slot.
+/// Parse a `tools/list` JSON-RPC response body and splice the resulting `mcp_<server>_<tool>` names into the payload's `"tools":null` slot.
 fn appendToolNames(
     ctx: ToolExecContext,
     inner_json: []const u8,
@@ -1296,8 +1210,6 @@ fn appendToolNames(
 }
 
 /// Replace the payload's `"tools":null` with `"tools":<names_json>`.
-/// Returns a freshly-allocated slice on `ctx.allocator`; caller frees.
-/// On any failure the original `inner_json` is returned unchanged.
 fn substituteToolsArray(
     ctx: ToolExecContext,
     inner_json: []const u8,
@@ -1316,9 +1228,7 @@ fn substituteToolsArray(
     return result.toOwnedSlice(ctx.allocator) catch inner_json;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Inline tests
-// ───────────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
 
@@ -1905,8 +1815,7 @@ test "add_mcp_server_tool JSON schema: name=add_mcp_server, required is name+tra
     try testing.expect(std.mem.indexOf(u8, description, "stdio") != null);
     try testing.expect(std.mem.indexOf(u8, description, "http") != null);
 
-    // Required: name + transport only. `command` / `url` are per-transport
-    // and therefore cannot both be required — the transport decides which.
+    // Required: name + transport only.
     try testing.expectEqual(@as(usize, 2), tool.function.parameters.required.len);
     try testing.expectEqualStrings("name", tool.function.parameters.required[0]);
     try testing.expectEqualStrings("transport", tool.function.parameters.required[1]);
@@ -1914,8 +1823,7 @@ test "add_mcp_server_tool JSON schema: name=add_mcp_server, required is name+tra
     // 6 properties: name, transport, command, args, url, headers.
     try testing.expectEqual(@as(usize, 7), tool.function.parameters.properties.len);
 
-    // `headers` is an ARRAY of {name,value} objects (the frontend
-    // McpServerModal shape), not the on-disk {key:value} object.
+    // `headers` is an ARRAY of {name,value} objects (the frontend McpServerModal shape), not the on-disk {key:value} object.
     for (tool.function.parameters.properties) |p| {
         if (std.mem.eql(u8, p.name, "headers")) {
             try testing.expectEqualStrings("array", p.type);

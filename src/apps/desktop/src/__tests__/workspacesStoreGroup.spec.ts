@@ -1,13 +1,11 @@
-/** Unit tests for `workspacesStore.groupDesignElements` (the store action backing Cmd+G). 5 tests:
- * 1. */
+/** Unit tests for `workspacesStore.groupDesignElements` (the store action backing Cmd+G). 5 tests */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useWorkspacesStore, type Workspace, type WorkspaceItem } from '../stores/workspaces'
 import type { DesignElement } from '../api'
 
-// Helper to build a DesignElement. Page + z_index + position are
-// required for tree ordering (test asserts these).
+// Helper to build a DesignElement.
 function elem(overrides: Partial<DesignElement>): DesignElement {
   return {
     id: 'elem_default',
@@ -157,8 +155,7 @@ describe('workspacesStore.groupDesignElements (Chunk 5)', () => {
 
     const item = store.workspaces[0]!.items[0]!
     expect(item.design_elements?.length).toBe(3)
-    // The parent is appended LAST (preserves backend ordering:
-    // append-not-unshift matches addDesignElement's convention).
+    // The parent is appended LAST (preserves backend ordering
     expect(item.design_elements?.[2]?.id).toBe('elem_parent')
     expect(item.design_elements?.[2]?.type).toBe('group')
   })
@@ -184,8 +181,7 @@ describe('workspacesStore.groupDesignElements (Chunk 5)', () => {
     const childB = item.design_elements?.find((e) => e.id === 'elem_b')
     expect(childA?.parent_id).toBe('elem_parent')
     expect(childB?.parent_id).toBe('elem_parent')
-    // z_index / position are preserved by the backend's response
-    // (the SELECT in groupElements returns the existing values).
+    // z_index / position are preserved by the backend's response (the SELECT in groupElements returns the existing values).
     expect(childA?.z_index).toBe(0)
     expect(childB?.z_index).toBe(1)
   })

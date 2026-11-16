@@ -1,5 +1,4 @@
-/** The chat view as ONE haystack: the SFC plus every file it was split into, so a guard written
- * against `ChatView.vue` keeps holding after a slice moves out to its own file. */
+/** The chat view as ONE haystack: the SFC plus every file it was split into, so a guard written against `ChatView.vue` keeps holding after a slice moves out to … */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

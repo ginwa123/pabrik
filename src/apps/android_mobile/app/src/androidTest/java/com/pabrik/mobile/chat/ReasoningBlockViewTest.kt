@@ -11,16 +11,7 @@ import com.pabrik.mobile.ui.PabrikTheme
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * The reasoning fold, as drawn.
- *
- * The unit tests pin which turns draw it; only a composed tree can show the
- * three things that actually broke before. That it starts **closed** — the
- * stated default, and the reason reasoning was unreadable on a phone: rendered
- * flat, a chain of thought is a wall of monospace between the reader and the
- * answer. That tapping the header opens and closes it. And that the fold sits
- * *above* the answer rather than after it, the order the web reads in.
- */
+/** The reasoning fold, as drawn. */
 class ReasoningBlockViewTest {
 
     @get:Rule
@@ -58,9 +49,7 @@ class ReasoningBlockViewTest {
         render(listOf(assistantTurn()))
 
         compose.onNodeWithTag("chat_reasoning_header_m1").assertIsDisplayed()
-        // The default. The reasoning text is not on the tree at all when the
-        // fold is closed — not merely clipped — so a collapsed turn costs
-        // nothing to lay out.
+        // The default.
         compose.onAllNodesWithTag("chat_reasoning_body_m1").assertCountEquals(0)
     }
 
@@ -84,11 +73,7 @@ class ReasoningBlockViewTest {
         compose.onAllNodesWithTag("chat_reasoning_body_m1").assertCountEquals(0)
     }
 
-    /**
-     * The header is the only affordance, so it has to survive collapsed — an
-     * answer sitting under an unexplained gap is how this shipped the first
-     * time, when the reasoning was drawn flat with nothing to tap.
-     */
+    /** The header is the only affordance, so it has to survive collapsed — an answer sitting under an unexplained gap is how this shipped the first time, when the … */
     @Test
     fun theAnswerIsStillVisibleWhileTheFoldIsClosed() {
         render(listOf(assistantTurn()))
@@ -123,8 +108,7 @@ class ReasoningBlockViewTest {
 
     @Test
     fun aReasoningOnlyTurnStillRenders() {
-        // A thinking model can emit reasoning and no final text. The turn has
-        // to stay on screen — a collapsed fold is still something to open.
+        // A thinking model can emit reasoning and no final text.
         render(listOf(assistantTurn(content = "", reasoning = "Still thinking.")))
 
         compose.onNodeWithTag("chat_reasoning_header_m1").assertIsDisplayed()

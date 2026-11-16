@@ -1,5 +1,4 @@
-/** Sidebar local-first + delete-X removal pins. - No per-row `×` delete button is rendered (the X
- * is gone; deletion no longer has a sidebar entry point). */
+/** Sidebar local-first + delete-X removal pins. - No per-row `×` delete button is rendered (the X is gone; deletion no longer has a sidebar entry point). */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp, nextTick, ref } from 'vue'

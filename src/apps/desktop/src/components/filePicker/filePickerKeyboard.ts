@@ -41,8 +41,7 @@ export function useFilePickerKeyboard<T>(deps: FilePickerKeyboardDeps<T>) {
     }
 
     if (event.key === 'Escape') {
-      // Address-input takes precedence over search: if the user is editing
-      // the path, Esc cancels the edit (does NOT close the dialog).
+      // Address-input takes precedence over search: if the user is editing the path, Esc cancels the edit (does NOT close the dialog).
       if (deps.isPathEditing.value) {
         deps.cancelPathEdit()
         event.stopPropagation()
@@ -59,17 +58,14 @@ export function useFilePickerKeyboard<T>(deps: FilePickerKeyboardDeps<T>) {
       return
     }
 
-    // Address input (path editor): Enter commits, other keys are eaten by
-    // the input itself but we still need to stop the dialog-wide keydown
-    // handler from interpreting them as arrow-up / arrow-down / backspace.
+    // Address input (path editor): Enter commits, other keys are eaten by the input itself but we still need to stop the dialog-wide keydown handler from …
     if (deps.isPathEditing.value) {
       if (event.key === 'Enter') {
         deps.commitPathEdit()
         event.preventDefault()
         event.stopPropagation()
       }
-      // For every other key we drop the bubble so the global Up / Backspace
-      // / ArrowDown handlers below don't fire while the user is typing.
+      // For every other key we drop the bubble so the global Up / Backspace / ArrowDown handlers below don't fire while the user is typing.
       event.stopPropagation()
       return
     }

@@ -3,9 +3,7 @@
 const std = @import("std");
 const cli = @import("cli");
 
-/// Top-level entry. Receives `Init` so we can use stdlib's
-/// pre-allocated arena (lives for the whole process) and the Io
-/// runner.
+/// Top-level entry.
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const io = init.io;
@@ -20,8 +18,7 @@ pub fn main(init: std.process.Init) !void {
     var flag_session: ?[]const u8 = null;
     var flag_profile: ?[]const u8 = null;
 
-    // We allocate a fresh argv for the post-strip view. Worst-case
-    // length equals the input length (every arg is preserved).
+    // We allocate a fresh argv for the post-strip view.
     var stripped = try std.ArrayList([]const u8).initCapacity(allocator, argv.len);
     var i: usize = 0;
     while (i < argv.len) : (i += 1) {
@@ -68,15 +65,12 @@ pub fn main(init: std.process.Init) !void {
     stdout_file_writer.interface.flush() catch {};
 
     if (result == .err) {
-        // Failures inside a subcommand logged the error via std.log; emit a
-        // single trailing log line so wrappers can detect a non-zero exit.
+        // Failures inside a subcommand logged the error via std.log; emit a single trailing log line so wrappers can detect a non-zero exit.
         std.log.err("pabrikcli failed", .{});
     }
 }
 
 test "main: placeholder smoke test" {
-    // Real CLI behaviour is exercised by the subcommand tests (the inline
-    // tests in `commands/sessions.zig`, `commands/messages.zig`,
-    // `commands/send.zig`, `commands/events.zig`); the `main` symbol itself
+    // Real CLI behaviour is exercised by the subcommand tests (the inline tests in `commands/sessions.zig`, `commands/messages.zig`, `commands/send.zig` …
     try std.testing.expect(true);
 }

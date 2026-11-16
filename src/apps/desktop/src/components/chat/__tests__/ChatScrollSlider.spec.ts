@@ -3,8 +3,7 @@ import { mount } from '@vue/test-utils'
 import ChatScrollSlider from '../ChatScrollSlider.vue'
 import { computeThumbGeometry } from '../chatScrollSlider'
 
-/** Dispatch a pointer-type event with coordinates (test-utils `trigger`
- *  cannot set clientX/clientY — it assigns onto a getter-only MouseEvent). */
+/** Dispatch a pointer-type event with coordinates (test-utils `trigger` cannot set clientX/clientY — it assigns onto a getter-only MouseEvent). */
 function firePointer(
   el: HTMLElement,
   type: string,

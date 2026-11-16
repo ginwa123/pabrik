@@ -1,5 +1,4 @@
-//! `POST
-//! /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/ungroup`.
+//! `POST /api/workspaces/:workspace_id/items/:item_id/design/pages/:page_id/elements/ungroup`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -95,9 +94,7 @@ pub fn designElementsUngroupHandler(
     });
 }
 
-// ===== Tests merged from design_elements_ungroup_test.zig (2026-09-11
-// flatten) ===== Behavioural tests for `design_model.ungroupElements` and the
-// `POST /ungroup` HTTP handler contract.
+// ===== Tests merged from design_elements_ungroup_test.zig (2026-09-11 flatten) ===== Behavioural tests for `design_model.ungroupElements` and the `POST …
 
 const testing = std.testing;
 const sqlite = pabrikcore.sqlite;
@@ -262,8 +259,7 @@ test "ungroupElements reparents to the group's parent when nested" {
     try insertGroup(s.alloc, &s.db, "page_t1", "inner");
     try insertChild(s.alloc, &s.db, "page_t1", "a", "inner", 10, 10);
 
-    // Set outer's parent_id via direct UPDATE (cheaper than re-running
-    // the test schema with nested-group support).
+    // Set outer's parent_id via direct UPDATE (cheaper than re-running the test schema with nested-group support).
     try s.db.exec(s.alloc,
         "UPDATE design_page_elements SET parent_id = 'outer' WHERE id = 'inner'",
         &.{});
@@ -279,9 +275,7 @@ test "ungroupElements reparents to the group's parent when nested" {
 
     // inner is deleted.
     try testing.expectEqual(false, try rowExists(s.alloc, &s.db, "inner"));
-    // 'a' is now under 'outer' (the outer's children count went from 1
-    // — the inner group — to 1 — element 'a' — i.e. net children of
-    // outer stays 1).
+    // 'a' is now under 'outer' (the outer's children count went from 1 — the inner group — to 1 — element 'a' — i.e. net children of outer stays 1).
     try testing.expectEqual(@as(usize, 1), try countChildrenOf(s.alloc, &s.db, "outer"));
     const ap = try readParentId(s.alloc, &s.db, "a");
     defer if (ap) |p| s.alloc.free(p);

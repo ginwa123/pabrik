@@ -31,8 +31,7 @@ describe('GitFileViewer', () => {
   })
 
   it('reads the shared snapshot when the diff panel already fetched the repo', async () => {
-    // This is the real flow: the panel primes the whole repo, then the
-    // standalone viewer opens a file that is already in that payload.
+    // This is the real flow: the panel primes the whole repo, then the standalone viewer opens a file that is already in that payload.
     primeFolderDiffs('/repo', [{ path: 'dirty.txt', diff_content: DIFF, staged: false }])
     const wrapper = mount(GitFileViewer, {
       props: { cwd: '/repo', filePath: 'dirty.txt', fileName: 'dirty.txt' },

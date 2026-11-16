@@ -1,6 +1,4 @@
-/** Repro for "url browser not match with selected workspace" (task_1791556124905_10). Screenshots:
- * the browser URL is `/app/ws_1785055733544_…/chat/task_…` (workspace "agentic coding") while the
- * sidebar header shows a DIFFERENT workspace ("testttt", ws_1790703859430_…). */
+/** Repro for "url browser not match with selected workspace" (task_1791556124905_10). Screenshots */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, reactive } from 'vue'
@@ -138,9 +136,7 @@ describe('AppLayout — a chat path adopts the workspace encoded in that path', 
   })
 
   it('boot on /app/{ws}/chat/{sid} selects THAT workspace, not the persisted one', async () => {
-    // The persisted selection is a DIFFERENT workspace — the state a
-    // user is in after switching workspaces in another tab, or after
-    // the last session ended on another workspace.
+    // The persisted selection is a DIFFERENT workspace — the state a user is in after switching workspaces in another tab, or after the last session ended on another …
     localStorage.setItem('pabrik-active-workspace', WS_PERSISTED)
 
     const { wrapper } = mountWithRoute(`/app/${WS_URL}/chat/${SESSION}`)

@@ -22,8 +22,7 @@ describe('useWorkspacesStore.updateTaskDetails', () => {
     })
 
     vi.spyOn(api, 'updateTaskSimple').mockImplementation(updateTaskSimpleMock)
-    // init() also calls these; we never trigger init() in these tests
-    // but stub them defensively in case a future test does.
+    // init() also calls these; we never trigger init() in these tests but stub them defensively in case a future test does.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({ tasks: [], has_more: false, next_cursor: null })
@@ -34,9 +33,7 @@ describe('useWorkspacesStore.updateTaskDetails', () => {
     updateTaskSimpleMock.mockReset()
   })
 
-  // Seed the store with a single workspace / item / task that already
-  // has a description. Skipping init() keeps the tests focused on the
-  // patch application + rollback logic.
+  // Seed the store with a single workspace / item / task that already has a description.
   function seedStore(taskName: string, taskDescription: string) {
     const ws = useWorkspacesStore()
     ws.workspaces = [
@@ -100,9 +97,7 @@ describe('useWorkspacesStore.updateTaskDetails', () => {
     const ws = seedStore('Original', 'old desc')
     updateTaskSimpleMock.mockRejectedValueOnce(new Error('network down'))
 
-    // The plan says updateTaskDetails throws on failure so the dialog
-    // can show a retry option. Catch it locally so the assertion
-    // below runs.
+    // The plan says updateTaskDetails throws on failure so the dialog can show a retry option.
     await expect(
       ws.updateTaskDetails('ws_1', 'item_a', 'task_1', {
         name: 'Attempted',
@@ -125,8 +120,7 @@ describe('useWorkspacesStore.updateTaskDetails', () => {
 
     // Description cleared locally (empty string, not undefined).
     expect(ws.workspaces[0]!.items[0]!.tasks![0]!.description).toBe('')
-    // API payload should include the empty string — this is the
-    // user's explicit "clear the description" intent.
+    // API payload should include the empty string — this is the user's explicit "clear the description" intent.
     expect(updateTaskSimpleMock).toHaveBeenCalledTimes(1)
     expect(updateTaskSimpleMock).toHaveBeenCalledWith('task_1', {
       description: '',

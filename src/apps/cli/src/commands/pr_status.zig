@@ -1,6 +1,4 @@
 //! `pr-status` command — GET /api/git/pr/status?path=<repo>[&pr=<n|url>].
-//! Shows a pull request's open/merged/closed status via the backend's `gh pr
-//! view` wrapper.
 
 const std = @import("std");
 const config = @import("../config.zig");
@@ -125,8 +123,7 @@ pub fn run(args: Args, cfg: config.Config, io: std.Io) @import("root.zig").Dispa
     return .ok;
 }
 
-// ===== Tests merged from pr_status_test.zig (2026-09-29 flatten) ===== Tests
-// for src/commands/pr_status.zig (GET /api/git/pr/status).
+// ===== Tests merged from pr_status_test.zig (2026-09-29 flatten) =====
 
 const testing = std.testing;
 

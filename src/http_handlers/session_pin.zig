@@ -1,5 +1,4 @@
-//! `POST /api/llm/session/:session_id/pin`. Body: `{ "is_pinned": true |
-//! false }`. Flips the `is_pinned` flag on the session row (Migration 104).
+//! `POST /api/llm/session/:session_id/pin`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -127,9 +126,7 @@ pub fn sessionPinHandler(
     });
 }
 
-// =====================================================================
 // Tests - pin/unpin round-trip through setSessionPinned + JSON shape
-// =====================================================================
 
 const testing = std.testing;
 

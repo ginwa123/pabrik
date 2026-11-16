@@ -1,21 +1,17 @@
-//! Adapts the workspace secret store to `secrets_substitution.Resolver`, with
-//! one query per distinct placeholder name.
+//! Adapts the workspace secret store to `secrets_substitution.Resolver`, with one query per distinct placeholder name.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const secrets_store = @import("secrets_store.zig");
 
-/// Maps a placeholder name onto this workspace's stored credential. Owns every
-/// value it looked up, because the substitution reads them after `resolve`
-/// returns.
+/// Maps a placeholder name onto this workspace's stored credential.
 pub const StoreResolver = struct {
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
     /// Empty means no workspace is in scope, which fails every name closed.
     workspace_id: []const u8,
     values: std.StringHashMapUnmanaged([]const u8) = .empty,
-    /// The most recent name this resolver refused, so the caller can name the
-    /// placeholder it could not resolve instead of reporting a bare error.
+    /// The most recent name this resolver refused, so the caller can name the placeholder it could not resolve instead of reporting a bare error.
     missing_name: ?[]const u8 = null,
 
     pub fn init(
@@ -126,8 +122,7 @@ test "credential resolver: a stored name resolves, and a repeated name costs one
     defer resolver.deinit();
 
     try testing.expectEqualStrings("sk-live-value", resolver.resolve("API_KEY").?);
-    // Deleting between two calls proves the second answer came from the cache
-    // rather than from a fresh row.
+    // Deleting between two calls proves the second answer came from the cache rather than from a fresh row.
     try ctx.db.exec(
         alloc,
         "DELETE FROM workspace_secrets WHERE workspace_id = 'ws_a'",
@@ -145,8 +140,7 @@ test "credential resolver: a name this workspace does not store is recorded, not
     try seedWorkspace(&ctx.db, "ws_a");
     try seedWorkspace(&ctx.db, "ws_other");
 
-    // The same NAME in another workspace must not answer: resolution is
-    // scoped to the workspace the caller asked for.
+    // The same NAME in another workspace must not answer: resolution is scoped to the workspace the caller asked for.
     const other = try secrets_store.createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_other",
         .name = "API_KEY",
@@ -203,7 +197,6 @@ test "credential resolver: the placeholder round trip through lookup uses the sa
     try testing.expect(StoreResolver.lookup(&resolver, "NOT_STORED") == null);
     try testing.expectEqualStrings("NOT_STORED", resolver.missing_name.?);
 
-    // `lookup` with no context is a miss rather than a crash: an unset resolver
-    // cannot be allowed to resolve anything.
+    // `lookup` with no context is a miss rather than a crash: an unset resolver cannot be allowed to resolve anything.
     try testing.expect(StoreResolver.lookup(null, "API_KEY") == null);
 }

@@ -30,8 +30,6 @@ pub const Migration058AddLlmHistoryFts = struct {
         , &[_][]const u8{});
 
         // Sync triggers: keep `messages_fts` in sync with `llm_history` rows.
-        // The rowid linkage allows searchMessagesFts to JOIN back to
-        // llm_history for id/session_id/role/timestamps.
         try db.exec(allocator,
             \\CREATE TRIGGER IF NOT EXISTS llm_history_ai AFTER INSERT ON llm_history BEGIN
             \\  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, COALESCE(new.response_content, ''));
@@ -51,9 +49,7 @@ pub const Migration058AddLlmHistoryFts = struct {
             \\END
         , &[_][]const u8{});
 
-        // Backfill: walk existing llm_history rows and INSERT into the
-        // FTS table. For zero rows this is a no-op; for ~10K rows it's
-        // ~10ms.
+        // Backfill: walk existing llm_history rows and INSERT into the FTS table.
         try db.exec(allocator,
             \\INSERT INTO messages_fts(rowid, content)
             \\SELECT rowid, COALESCE(response_content, '')

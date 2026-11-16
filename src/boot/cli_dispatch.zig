@@ -1,6 +1,4 @@
 //! `pabrik service ...` and `pabrik create-admin ...` subcommand dispatch.
-//! Both peek at argv[1] and return false when it does not match, so `main`
-//! falls through to the regular server boot.
 
 const std = @import("std");
 const helpers = @import("helpers");
@@ -16,8 +14,7 @@ const state_file = service_mod.state_file;
 const main_service = service_mod.main_service;
 const ai_mod = @import("../modules/agent/loop/mod.zig");
 
-/// `pabrik service {start,stop,status,restart}`. For `service start` we only
-/// daemonize + write the state file; the full server handoff is a follow-up.
+/// `pabrik service {start,stop,status,restart}`.
 pub fn dispatchServiceSubcommand(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -26,8 +23,7 @@ pub fn dispatchServiceSubcommand(
 ) !bool {
     _ = environment;
     const args = init.minimal.args;
-    // `initAllocator` works on every host (`Args.Iterator.init` is
-    // compileError-blocked on Windows). Caller must `deinit()` for Windows.
+    // `initAllocator` works on every host (`Args.Iterator.init` is compileError-blocked on Windows).
     var it = try std.process.Args.Iterator.initAllocator(args, allocator);
     defer it.deinit();
     _ = it.next(); // skip argv[0]
@@ -130,8 +126,7 @@ pub fn dispatchServiceSubcommand(
     return true;
 }
 
-/// The fields `create-admin` reads. The flag names, their values and the help
-/// line come from `cli/flags.zig`.
+/// The fields `create-admin` reads.
 const CreateAdminFlags = struct {
     email: ?[]const u8 = null,
     password: ?[]const u8 = null,
@@ -247,9 +242,7 @@ pub fn dispatchCreateAdmin(
     };
     std.debug.print("create-admin: admin '{s}' created\n", .{email_v});
 
-    // New admins get their "Default" workspace now; the first login retries
-    // via the same idempotent ensure. The CLI cannot know the deployment's
-    // mode, so the workspace is stamped VM-backed (read only in saas mode).
+    // New admins get their "Default" workspace now; the first login retries via the same idempotent ensure.
     const provisioned = ai_mod.http_handlers.workspace_provisioning.ensureDefaultWorkspace(
         allocator,
         &db,

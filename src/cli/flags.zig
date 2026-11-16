@@ -1,23 +1,17 @@
 //! Every command-line flag `pabrik` understands, in one table.
-//! `parse.zig` reads flags from it, and `--help` is rendered from it, so a
-//! flag cannot exist in one and be missing from the other.
 
 const std = @import("std");
 
-/// Which command owns a flag. `db` is the `--db-*=` family `boot/db_config.zig`
-/// applies to the SQLite policy; `db_target` is the `--database*=` family
-/// `boot/db_target.zig` pulls out of argv before a scope parser sees it.
+/// Which command owns a flag.
 pub const Scope = enum { global, db, db_target, service, create_admin, headless };
 
-/// The value type a `.store` flag parses its text into. `mode` is a named
-/// on/off pair (`--http2 h2c|off`), so its target field is a bool.
+/// The value type a `.store` flag parses its text into.
 pub const Kind = enum { boolean, u16_num, u32_num, u64_num, text, mode };
 
 /// What seeing the flag does.
 pub const Action = enum { set_true, set_false, store, help };
 
-/// How a `.store` flag takes its value: the next word, the next word when
-/// there is one, or `=value` in the same word.
+/// How a `.store` flag takes its value: the next word, the next word when there is one, or `=value` in the same word.
 pub const Syntax = enum { separate, optional_value, equals };
 
 pub const Mode = struct { text: []const u8, on: bool };
@@ -29,8 +23,7 @@ pub const Flag = struct {
     /// Single-dash spellings, without the dash: `h` for `-h`.
     aliases: []const []const u8 = &.{},
     scopes: []const Scope = &.{.global},
-    /// Which subcommand verbs accept it. Empty = every verb of its scope;
-    /// a scope parsed without a verb (`global`) ignores this field.
+    /// Which subcommand verbs accept it.
     verbs: []const []const u8 = &.{},
     action: Action = .set_true,
     kind: Kind = .boolean,
@@ -44,8 +37,7 @@ pub const Flag = struct {
     default_text: []const u8 = "",
 };
 
-/// The one place. Adding a flag here is the whole change; the help text, the
-/// parser and the `--db-*` names all come from this array.
+/// The one place.
 pub const flags = [_]Flag{
     .{
         .long = "help",
@@ -402,8 +394,7 @@ pub fn hasScope(comptime f: Flag, comptime scope: Scope) bool {
     return false;
 }
 
-/// True when `f` is accepted by `verb`. An empty verb means "any subcommand",
-/// and a row without verbs is accepted everywhere in its scope.
+/// True when `f` is accepted by `verb`.
 pub fn hasVerb(comptime f: Flag, comptime verb: []const u8) bool {
     if (verb.len == 0 or f.verbs.len == 0) return true;
     for (f.verbs) |v| {
@@ -412,8 +403,7 @@ pub fn hasVerb(comptime f: Flag, comptime verb: []const u8) bool {
     return false;
 }
 
-/// One `--help` line for a row: name, aliases, value, then the help text and
-/// the default. Columns are padded so the descriptions line up.
+/// One `--help` line for a row: name, aliases, value, then the help text and the default.
 pub fn usageLine(comptime f: Flag) []const u8 {
     comptime var left: []const u8 = "  ";
     inline for (f.aliases, 0..) |alias, i| {
@@ -433,17 +423,14 @@ pub fn usageLine(comptime f: Flag) []const u8 {
     return left ++ pad ++ right ++ "\n";
 }
 
-/// Whether a row belongs in the `--help` block of `verb`. An empty verb means
-/// "the whole scope" (the master list); a verb-less row is a global flag and
-/// is printed by `globalUsageBlock` instead of once per verb.
+/// Whether a row belongs in the `--help` block of `verb`.
 fn usageApplies(comptime f: Flag, comptime verb: []const u8) bool {
     if (verb.len == 0) return true;
     if (f.verbs.len == 0) return false;
     return hasVerb(f, verb);
 }
 
-/// The `--help` lines for every flag of `scope` that `verb` accepts, as one
-/// string. Callers print it; nothing here formats at runtime.
+/// The `--help` lines for every flag of `scope` that `verb` accepts, as one string.
 pub fn usageBlock(comptime scope: Scope, comptime verb: []const u8) []const u8 {
     return comptime blk: {
         var out: []const u8 = "";
@@ -468,8 +455,7 @@ pub fn globalUsageBlock(comptime scope: Scope) []const u8 {
     };
 }
 
-/// The word a user types for `long`, dashes included. Compile error when no
-/// row declares it, so no caller can depend on a flag that does not exist.
+/// The word a user types for `long`, dashes included.
 pub fn word(comptime long: []const u8) []const u8 {
     return comptime blk: {
         for (flags) |f| {
@@ -479,9 +465,7 @@ pub fn word(comptime long: []const u8) []const u8 {
     };
 }
 
-/// The canonical name (dashes, no `--`) of the `db` knob whose target field
-/// is `knob_name`. Compile error when no row claims it, so a new knob cannot
-/// be added to the SQLite policy without its flag.
+/// The canonical name (dashes, no `--`) of the `db` knob whose target field is `knob_name`.
 pub fn dbFlagName(comptime knob_name: []const u8) []const u8 {
     return comptime blk: {
         for (flags) |f| {
@@ -492,8 +476,7 @@ pub fn dbFlagName(comptime knob_name: []const u8) []const u8 {
     };
 }
 
-/// The `db` knob a user-typed name selects, as its target field name. Accepts
-/// the dashed and underscored spellings of the same knob.
+/// The `db` knob a user-typed name selects, as its target field name.
 pub fn dbKnobTag(typed: []const u8) ?[]const u8 {
     const bare = stripDashes(typed);
     if (!std.mem.startsWith(u8, bare, "db-") and !std.mem.startsWith(u8, bare, "db_")) return null;

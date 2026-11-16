@@ -21,13 +21,10 @@ export function useKanbanTagSuggestions(
 
   async function fetchPage(targetOffset: number): Promise<void> {
     if (inFlight) return
-    // Resolve the live values on every fetch — not cached, so the composable picks up changes when
-    // the parent re-renders with new args (e.g. dialog opens before column is resolved, then later
-    // column becomes available).
+    // Resolve the live values on every fetch — not cached, so the composable picks up changes when the parent re-renders with new args (e.g. dialog opens before …
     const wsId = toValue(workspaceId)
     const realItemId = toValue(itemId)
-    // Graceful degradation: empty args = no-op (no network request). Avoids 400s when the caller
-    // passes placeholder values during the render tick.
+    // Graceful degradation: empty args = no-op (no network request).
     if (!wsId || !realItemId) {
       hasMore.value = false
       return

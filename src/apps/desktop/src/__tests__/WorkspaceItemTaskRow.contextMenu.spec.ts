@@ -54,9 +54,7 @@ describe('WorkspaceItemTaskRow — right-click context menu', () => {
     wrapper.unmount()
   })
 
-  // "Run agent" on the sidebar row calls the store directly rather than emitting — the sidebar
-  // chain is four components deep and three of them add no context. These tests pin that the call
-  // happens with the row's own ids and that the row is hidden while a worker runs.
+  // "Run agent" on the sidebar row calls the store directly rather than emitting — the sidebar chain is four components deep and three of them add no context.
   it('Run agent calls startAgentOnTask with the row ids', async () => {
     const { useWorkspacesStore } = await import('../stores/workspaces')
     const store = useWorkspacesStore()
@@ -95,8 +93,7 @@ describe('WorkspaceItemTaskRow — right-click context menu', () => {
         workspaceId: 'ws_1',
         itemId: 'item_7',
       },
-      // The backend answers 409 to a second start, so the row must not
-      // offer the action while a worker is in flight.
+      // The backend answers 409 to a second start, so the row must not offer the action while a worker is in flight.
       global: { provide: { processingState: ref<Record<string, boolean>>({ task_9: true }) } },
     })
     await nextTick()

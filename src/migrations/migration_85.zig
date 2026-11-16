@@ -8,8 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Per-session record of tools the agent enabled for itself through
-/// `use_tool`.
+/// Per-session record of tools the agent enabled for itself through `use_tool`.
 pub const Migration085AddSessionProgressiveTool = struct {
     pub const version: u32 = 85;
     pub const name = "add_session_progressive_tool";

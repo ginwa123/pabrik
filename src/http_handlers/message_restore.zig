@@ -1,6 +1,4 @@
-//! `POST /api/llm/message/restore`. Body: `{ "row": { ...the object the
-//! delete returned... } }`. Re-inserts the row with the same id, so an undo
-//! puts back exactly what left.
+//! `POST /api/llm/message/restore`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -20,8 +18,7 @@ pub const MessageRestoreInput = struct {
     row: llm_history.MessageRow,
 };
 
-/// Transport-agnostic: the HTTP handler and `pabrik headless message-restore`
-/// both call this.
+/// Transport-agnostic: the HTTP handler and `pabrik headless message-restore` both call this.
 pub fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,

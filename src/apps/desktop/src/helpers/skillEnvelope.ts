@@ -1,6 +1,4 @@
-/** One `<skill name="…">` entry of the `<slash_skills>` envelope that
- * `expandSlashSkills` appends to a `/skill-` message: the body the model
- * received, plus its size. This module is pure — no DOM, no state, no throw. */
+/** One `<skill name="…">` entry of the `<slash_skills>` envelope that `expandSlashSkills` appends to a `/skill-` message: the body the model received, plus its … */
 export interface InvokedSkill {
   name: string
   body: string
@@ -42,9 +40,7 @@ export function hasSkillEnvelope(content: string | null | undefined): boolean {
   return typeof content === 'string' && content.includes(ENVELOPE_TAG)
 }
 
-/** Split one message into the human's text and the skills the server loaded.
- * Anything surprising (a tag that is not a trailing envelope, junk between the
- * entries) falls back to the verbatim text, so the bubble never loses a word. */
+/** Split one message into the human's text and the skills the server loaded. */
 export function splitSkillEnvelope(content: string): SkillEnvelopeSplit {
   if (!hasSkillEnvelope(content)) return plain(content)
   const match = ENVELOPE_RE.exec(content)
@@ -61,8 +57,7 @@ export function splitSkillEnvelope(content: string): SkillEnvelopeSplit {
   }
 }
 
-/** The entries of one envelope body, or null when the block holds anything
- * that is not an entry — a truncated write or a body carrying a closing tag. */
+/** The entries of one envelope body, or null when the block holds anything that is not an entry — a truncated write or a body carrying a closing tag. */
 function parseEntries(inner: string): InvokedSkill[] | null {
   const out: InvokedSkill[] = []
   let consumed = 0

@@ -1,6 +1,4 @@
-//! Skill BODY helpers: bundle materialisation. Frontmatter is not parsed
-//! here: `pabrikcore.skill_frontmatter` is the single parser, so the two
-//! halves of the write path cannot disagree.
+//! Skill BODY helpers: bundle materialisation.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -9,21 +7,15 @@ const skills_store = pabrikcore.skills_store;
 /// Root for materialised asset directories.
 const TMP_ROOT = "/tmp";
 
-// ============================================================================
 // Asset materialisation
-// ============================================================================
 
 /// Why a bundle could not be written out.
 pub const MaterializeError = error{
-    /// The skill has no companion files. A skill with no assets must
-    /// return `asset_dir: null`, not an empty directory.
+    /// The skill has no companion files.
     NoAssets,
-    /// `skill_name` is not a legal single-token name. It becomes a path
-    /// segment of the materialisation directory, so `..` here would place
-    /// the bundle somewhere else entirely.
+    /// `skill_name` is not a legal single-token name.
     InvalidSkillName,
-    /// A `rel_path` escapes the materialisation directory, or is absolute,
-    /// or uses a backslash. See `isSafeRelPath`.
+    /// A `rel_path` escapes the materialisation directory, or is absolute, or uses a backslash.
     UnsafeAssetPath,
     /// No free directory could be created under the temp root.
     CannotCreateTempDir,
@@ -40,8 +32,7 @@ pub fn isSafeRelPath(rel_path: []const u8) bool {
     return true;
 }
 
-/// Create a fresh, uniquely-named directory under `TMP_ROOT`. Returns an
-/// owned path the caller frees with `allocator.free`.
+/// Create a fresh, uniquely-named directory under `TMP_ROOT`.
 fn createUniqueAssetDir(
     io: std.Io,
     alloc: std.mem.Allocator,
@@ -59,9 +50,7 @@ fn createUniqueAssetDir(
         const dir = try std.fs.path.join(alloc, &.{ TMP_ROOT, leaf });
         std.Io.Dir.cwd().createDirPath(io, dir) catch |err| {
             alloc.free(dir);
-            // A name collision is the only expected failure: everything
-            // else (permissions, ENOSPC, a missing temp root) is a real
-            // filesystem problem the caller has to hear about.
+            // A name collision is the only expected failure: everything else (permissions, ENOSPC, a missing temp root) is a real filesystem problem the caller has to hear …
             if (err == error.PathAlreadyExists) continue;
             return err;
         };
@@ -70,8 +59,7 @@ fn createUniqueAssetDir(
     return error.CannotCreateTempDir;
 }
 
-/// Write every companion file of one skill into a fresh directory and return
-/// it.
+/// Write every companion file of one skill into a fresh directory and return it.
 pub fn materializeAssetDir(
     io: std.Io,
     alloc: std.mem.Allocator,
@@ -85,17 +73,14 @@ pub fn materializeAssetDir(
     }
 
     const dir = try createUniqueAssetDir(io, alloc, skill_name);
-    // Everything below is a partial-materialisation failure from here on,
-    // so unwind the tree rather than leaving an orphan directory holding
-    // half a bundle.
+    // Everything below is a partial-materialisation failure from here on, so unwind the tree rather than leaving an orphan directory holding half a bundle.
     errdefer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
 
     for (assets) |a| {
         const full = try std.fs.path.join(alloc, &.{ dir, a.rel_path });
         defer alloc.free(full);
 
-        // `dirname` yields `dir` itself for a top-level file, and
-        // `createDirPath` on an existing directory is a no-op.
+        // `dirname` yields `dir` itself for a top-level file, and `createDirPath` on an existing directory is a no-op.
         const parent = std.fs.path.dirname(full) orelse dir;
         std.Io.Dir.cwd().createDirPath(io, parent) catch |err| return err;
 
@@ -107,15 +92,11 @@ pub fn materializeAssetDir(
     return .{ .dir = dir, .file_count = assets.len };
 }
 
-// ============================================================================
 // skills.zig — inline tests
-// ============================================================================
 
 const testing = std.testing;
 
-/// A `SkillAssetRow` without a database behind it. Every field is a plain
-/// slice, so the materialiser's only real input is `(rel_path, content)`
-/// and no store fixture is needed to exercise the traversal guard.
+/// A `SkillAssetRow` without a database behind it.
 fn fakeAsset(rel_path: []const u8, content: []const u8) skills_store.SkillAssetRow {
     return .{
         .id = "sa_1",
@@ -143,8 +124,7 @@ test "materializeAssetDir writes each asset at its rel_path, creating parents" {
     try testing.expect(std.fs.path.isAbsolute(out.dir));
     try testing.expect(std.mem.indexOf(u8, out.dir, "pabrik-skill-assets-pdf-") != null);
 
-    // Two levels of nesting created, relative paths preserved verbatim —
-    // the body refers to these strings and nothing renames them.
+    // Two levels of nesting created, relative paths preserved verbatim — the body refers to these strings and nothing renames them.
     const nested = try std.fs.path.join(alloc, &.{ out.dir, "scripts", "convert.py" });
     defer alloc.free(nested);
     const script_body = try std.Io.Dir.cwd().readFileAlloc(io, nested, alloc, std.Io.Limit.limited(1024));
@@ -169,8 +149,6 @@ test "materializeAssetDir refuses a traversing / absolute / backslash rel_path" 
     const io = testing.io;
 
     // Each of these would land outside the directory we just created.
-    // Silently skipping one would hand the model a body that points at a
-    // file that does not exist, so every arm must be an error.
     try testing.expectError(error.UnsafeAssetPath, materializeAssetDir(io, alloc, "pdf", &.{
         fakeAsset("../../etc/passwd", "pwned"),
     }));
@@ -180,8 +158,7 @@ test "materializeAssetDir refuses a traversing / absolute / backslash rel_path" 
     try testing.expectError(error.UnsafeAssetPath, materializeAssetDir(io, alloc, "pdf", &.{
         fakeAsset("/etc/passwd", "pwned"),
     }));
-    // Backslash is a separator on Windows, so a path that is inert on
-    // Linux is a traversal there.
+    // Backslash is a separator on Windows, so a path that is inert on Linux is a traversal there.
     try testing.expectError(error.UnsafeAssetPath, materializeAssetDir(io, alloc, "pdf", &.{
         fakeAsset("scripts\\..\\..\\escape.py", "pwned"),
     }));
@@ -194,8 +171,7 @@ test "materializeAssetDir refuses a traversing / absolute / backslash rel_path" 
         fakeAsset("", "pwned"),
     }));
 
-    // A legal name is not caught by the same substring rule: the guard is
-    // about escaping, not about punctuation.
+    // A legal name is not caught by the same substring rule: the guard is about escaping, not about punctuation.
     try testing.expect(isSafeRelPath("scripts/run_eval.py"));
     try testing.expect(isSafeRelPath("agents/grader.md"));
     try testing.expect(!isSafeRelPath("a..b"));
@@ -205,9 +181,7 @@ test "materializeAssetDir refuses a name that is not a single path-safe token" {
     const alloc = testing.allocator;
     const io = testing.io;
 
-    // `skill_name` is a path SEGMENT of the materialisation directory, so the
-    // same guard the store's `isValidSkillName` applies to the row key has to
-    // apply here.
+    // `skill_name` is a path SEGMENT of the materialisation directory, so the same guard the store's `isValidSkillName` applies to the row key has to apply here.
     try testing.expectError(error.InvalidSkillName, materializeAssetDir(io, alloc, "..", &.{
         fakeAsset("a.py", "x"),
     }));
@@ -220,8 +194,6 @@ test "materializeAssetDir refuses an empty bundle instead of making an empty dir
     const alloc = testing.allocator;
     const io = testing.io;
 
-    // `use_skill` returns `asset_dir: null` for a skill with no
-    // companions; there is no directory at all in that case, so this must
-    // not quietly create one.
+    // `use_skill` returns `asset_dir: null` for a skill with no companions; there is no directory at all in that case, so this must not quietly create one.
     try testing.expectError(error.NoAssets, materializeAssetDir(io, alloc, "single-file", &.{}));
 }

@@ -1,6 +1,4 @@
-/** Unit tests for workspacesStore.deleteDesignPage. 4 tests: 1. Calls api.deleteDesignPage with the
- * same workspaceId/itemId/pageId. 2. Clears activeDesignPageId when the deleted page was the active
- * one. 3. */
+/** Unit tests for workspacesStore.deleteDesignPage. 4 tests: 1. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -11,9 +9,7 @@ describe('workspacesStore.deleteDesignPage', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch calls useNotificationStore() on every non-2xx response to
-    // fire an error toast. Without an active Pinia the call throws.
-    // (See project memory apiFetch-mock-must-include-text-and-pinia.)
+    // apiFetch calls useNotificationStore() on every non-2xx response to fire an error toast.
     setActivePinia(createPinia())
   })
 

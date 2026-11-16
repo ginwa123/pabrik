@@ -1,5 +1,4 @@
-/** Unit tests for the <html> wrapper-tag helpers in stripTags.ts.The <html> tag lets the LLM emit
- * raw HTML that the chat UI renders as a live sandboxed-iframe block. */
+/** Unit tests for the <html> wrapper-tag helpers in stripTags.ts.The <html> tag lets the LLM emit raw HTML that the chat UI renders as a live sandboxed-iframe … */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   _resetStripThinkingTagsCache,
@@ -63,8 +62,7 @@ describe('stripThinkingTags — <html> interplay', () => {
   })
 
   it('keeps html-only messages VISIBLE (non-empty result)', () => {
-    // Visibility filtering (ChatView filteredMessages / hasVisibleContent)
-    // relies on stripThinkingTags(...).trim().length > 0.
+    // Visibility filtering (ChatView filteredMessages / hasVisibleContent) relies on stripThinkingTags(...).trim().length > 0.
     const stripped = stripThinkingTags('<html><h1>Title</h1></html>')
     expect(stripped.length).toBeGreaterThan(0)
     expect(stripped).toContain('<h1>')
@@ -81,8 +79,7 @@ describe('stripThinkingTags — <html> interplay', () => {
   })
 
   it('preserves lone-think passthrough behavior (regression guard)', () => {
-    // Existing contract: lone <think> is returned unchanged by design
-    // (rendered as a thinking bubble, not markdown).
+    // Existing contract: lone <think> is returned unchanged by design (rendered as a thinking bubble, not markdown).
     expect(stripThinkingTags('<think>reasoning only</think>')).toBe(
       '<think>reasoning only</think>',
     )
@@ -92,8 +89,7 @@ describe('stripThinkingTags — <html> interplay', () => {
 // 2026-08-24.
 describe('stripThinkingTags — fenced markdown wrappers', () => {
   it('strips ```html fence around <markdown> (real DB row shape)', () => {
-    // Bytes-verbatim copy of row 1787545407823788849 from
-    // task_1787540075329_3 in ~/.config/pabrik/agent.db (truncated).
+    // Bytes-verbatim copy of row 1787545407823788849 from task_1787540075329_3 in ~/.config/pabrik/agent.db (truncated).
     const fenced =
       '```html\n<markdown>\n## Done — tests now inline\n\n**What changed:**\n- item one\n</markdown>\n```'
     const stripped = stripThinkingTags(fenced)
@@ -130,24 +126,20 @@ describe('stripThinkingTags — fenced markdown wrappers', () => {
     // Mid-line ``` is not a fence.
     const midLine = 'a ``` b ``` c\n<markdown>\nx\n</markdown>'
     const stripped = stripThinkingTags(midLine)
-    // The ```-surrounded <markdown> still unwraps; the mid-line triple
-    // backticks are preserved verbatim because they are inside prose.
+    // The ```-surrounded <markdown> still unwraps; the mid-line triple backticks are preserved verbatim because they are inside prose.
     expect(stripped).not.toContain('<markdown>')
     expect(stripped).toContain('x')
   })
 
   it('preserves lone-think passthrough when fences wrap a <think> block', () => {
-    // Defensive: the fence stripper must not regress the lone-think
-    // contract. Existing passthrough behavior is the source of truth.
+    // Defensive: the fence stripper must not regress the lone-think contract.
     expect(stripThinkingTags('<think>reasoning only</think>')).toBe(
       '<think>reasoning only</think>',
     )
   })
 })
 
-// 2026-09-11 — chatview open/stream freeze. ChatView re-scans the WHOLE loaded transcript with
-// stripThinkingTags on every `messages` mutation (filteredMessages + hasBubbleContent +
-// renderResponse), and one SSE chunk = one mutation.
+// 2026-09-11 — chatview open/stream freeze.
 describe('stripThinkingTags — memoization (per-chunk render cost)', () => {
   beforeEach(() => {
     _resetStripThinkingTagsCache()
@@ -159,8 +151,7 @@ describe('stripThinkingTags — memoization (per-chunk render cost)', () => {
     expect(stripThinkingTags(content)).toBe(body)
     const afterFirst = _stripThinkingTagsCacheStats()
     expect(afterFirst.entries).toBe(1)
-    // Same string again — a recompute would be a no-op for the cache, but the
-    // 2nd call must not grow it (i.e. it was served from the memo).
+    // Same string again — a recompute would be a no-op for the cache, but the 2nd call must not grow it (i.e. it was served from the memo).
     expect(stripThinkingTags(content)).toBe(body)
     expect(_stripThinkingTagsCacheStats()).toEqual(afterFirst)
     // A DIFFERENT content does add an entry (the cache is keyed by content).
@@ -196,8 +187,7 @@ describe('stripThinkingTags — memoization (per-chunk render cost)', () => {
   })
 
   it('stays bounded: the cache is dropped once it exceeds its byte budget', () => {
-    // 24 distinct ~700 KB strings ≈ 33 MB of key+value chars, well past the
-    // 16 MB budget — the cache must clear instead of growing without limit.
+    // 24 distinct ~700 KB strings ≈ 33 MB of key+value chars, well past the 16 MB budget — the cache must clear instead of growing without limit.
     const firstContent = 'c'.repeat(700_000)
     expect(stripThinkingTags(firstContent)).toBe(firstContent)
     expect(_stripThinkingTagsCacheStats().entries).toBe(1)

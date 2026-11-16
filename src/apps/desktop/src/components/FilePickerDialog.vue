@@ -72,8 +72,7 @@ const props = defineProps<{
   labelFor?: (item: T) => string
   /** Secondary text (e.g. size, modified date). Falls back to ''. */
   subtitleFor?: (item: T) => string
-  /** A key of the `UiIcon` registry. Falls back to `folder` / `file`
-   *  based on isExpandable. */
+  /** A key of the `UiIcon` registry. */
   iconFor?: (item: T) => UiIconName
 
   showHidden?: boolean
@@ -81,24 +80,19 @@ const props = defineProps<{
   selectButtonText?: string
   /** Pre-select this path on open. */
   selectedPath?: string
-  /** NEW: show the Recent tab + tabstrip. Pass `true` to enable (the default), omit to keep the
-   * default, pass `false` to opt out for the single-pane tree. */
+  /** NEW: show the Recent tab + tabstrip. */
   enableRecentHistory?: boolean
 }>()
 
 // Defaults applied at use sites (avoid withDefaults quirks with function-typed optional props)
 const mode = computed<Mode>(() => props.mode ?? 'folder')
-// Windows-safe default: '' routes to getSystemFolder (home / %USERPROFILE%),
-// '/' routes to listFolder('/'). No caller passes initialPath today, so the
-// default IS the open path. POSIX keeps '/' (byte-identical), Windows gets ''.
+// Windows-safe default: '' routes to getSystemFolder (home / %USERPROFILE%), '/' routes to listFolder('/').
 const isWindowsPlatform =
   typeof navigator !== 'undefined' && /Win/i.test(navigator.platform || (navigator as unknown as { userAgent?: string }).userAgent || '')
 const initialPath = computed(() => props.initialPath ?? (isWindowsPlatform ? '' : '/'))
 const showHiddenDefault = computed(() => props.showHidden ?? false)
 const selectLabel = computed(() => props.selectButtonText ?? 'Select')
-// Default enableRecentHistory to true (Recent tab is the user's primary flow). Vue 3.5's runtime
-// default for `boolean?` is `false`, so we treat `false` AND `undefined` as "use default" and
-// `true` as "on".
+// Default enableRecentHistory to true (Recent tab is the user's primary flow).
 const enableRecent = computed<boolean>(() =>
   props.enableRecentHistory === undefined ? true : !!props.enableRecentHistory,
 )
@@ -126,8 +120,7 @@ const selectedPath = ref<string>(props.selectedPath || '')
 const highlightedIndex = ref<number>(-1)
 const searchQuery = ref('')
 const filterMode = ref<FilterMode>('all')
-// Local toggle with prop default. The override captures user toggles;
-// opening the dialog clears it so each open starts from the prop.
+// Local toggle with prop default.
 const showHiddenOverride = ref<boolean | null>(null)
 const showHiddenLocal = computed<boolean>({
   get: () => showHiddenOverride.value ?? showHiddenDefault.value,
@@ -135,9 +128,7 @@ const showHiddenLocal = computed<boolean>({
     showHiddenOverride.value = v
   },
 })
-// ── Address-bar editing state ────────────────────────────────────────── When isPathEditing is
-// true the clickable breadcrumb is replaced with a single text input pre-filled with currentPath.
-// See beginPathEdit / commitPathEdit / cancelPathEdit below.
+// ── Address-bar editing state ──────────────────────────────────────────
 const isPathEditing = ref(false)
 const pathDraft = ref('')
 
@@ -195,9 +186,7 @@ const {
   emitCancel: () => emit('cancel'),
 })
 
-// ─── Tab state (Recent / Browse) ───────────────────────────────────────────── Default: Recent.
-// The Recent tab is the user's primary path — most-of-the-time they pick a folder they've picked
-// before. The Browse tab is the power-user / unfamiliar-folder flow.
+// ─── Tab state (Recent / Browse) ─────────────────────────────────────────────
 const activeTab = ref<'recent' | 'browse'>('recent')
 const recentStore = useRecentFoldersStore()
 const recentList = computed(() => recentStore.list())
@@ -253,9 +242,7 @@ const { handleKeydown } = useFilePickerKeyboard({
   scrollHighlightedIntoView,
 })
 
-// ─── Address-bar enter / exit / commit ───────────────────────────────────── beginPathEdit swaps
-// the breadcrumb <span> tree for a single <input> pre-filled with currentPath, then auto-focuses +
-// selects so the user can start typing (or paste) immediately. commitPathEdit normalizes the typed.
+// ─── Address-bar enter / exit / commit ─────────────────────────────────────
 function beginPathEdit() {
   pathDraft.value = currentPath.value
   isPathEditing.value = true

@@ -44,8 +44,7 @@ export interface UseAppLayoutOverlaysReturn {
 export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysReturn {
   const { router, route, workspacesStore, codeEditorSession } = deps
 
-  // Standalone-chat URL target (plan: 2026-09-22-revamp-ui-chats). Chats live under their workspace
-  // path.
+  // Standalone-chat URL target (plan: 2026-09-22-revamp-ui-chats).
   function chatTarget(sessionId: string): AppUrlLocation {
     const wsForChat =
       (deps.currentMainView.value.kind === 'chat' && deps.currentMainView.value.workspaceId) ||
@@ -56,13 +55,10 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
     return { path: '/app', query: { view: 'chat', session: sessionId } }
   }
 
-  // Shared "return to the underlying view" navigation for overlay closes (git viewer, skill viewer,
-  // code editor).
+  // Shared "return to the underlying view" navigation for overlay closes (git viewer, skill viewer, code editor).
   function replaceWithCurrentContext(): void {
     if (workspacesStore.activeWorkspaceItemId) {
-      // Returning to the board wins over any open task chat — clear the task so the
-      // kanban/design/folder renders instead of the chat. Without this, the URL is bare (no /chat/
-      // suffix) while the chat is still active: board URL + chat content.
+      // Returning to the board wins over any open task chat — clear the task so the kanban/design/folder renders instead of the chat.
       workspacesStore.setActiveTask(null)
       const sub: Record<string, string> = {}
       if (workspacesStore.activeDesignPageId) {
@@ -79,9 +75,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
         }),
       )
     } else if (deps.activeTask.value) {
-      // NEW (add-workspace-id-params, 2026-08-06): include workspaceId + itemId + pageId when the
-      // task is attached to a workspace item. Pre-fix this branch wrote only `?view=task&task=X`,
-      // dropping the kanban / design breadcrumb — the user reported this (task_1785774094183).
+      // NEW (add-workspace-id-params, 2026-08-06): include workspaceId + itemId + pageId when the task is attached to a workspace item.
       router.replace(
         buildTaskAppUrl({
           taskId: deps.activeTask.value.id,
@@ -112,9 +106,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
 
   const closeSkillViewer = () => {
     skillViewerSkill.value = null
-    // Navigate back to previous view based on state. Preserve the workspace item (folder / kanban /
-    // design) IDs when the user opened the skill view while on a workspace item — see closeGitViewer
-    // for the same pattern.
+    // Navigate back to previous view based on state.
     replaceWithCurrentContext()
   }
 
@@ -128,9 +120,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
 
   const closeCodeEditor = () => {
     codeEditorSession.clear()
-    // Strip only the editor keys so the underlying board/chat URL (path plus pageId/sorts/tab/…)
-    // survives the close. A bare /app editor link (legacy bookmark, fresh reload with no path
-    // context) has nothing to keep — rebuild from the store there.
+    // Strip only the editor keys so the underlying board/chat URL (path plus pageId/sorts/tab/…) survives the close.
     if (parseAppPath(route.path).kind !== 'landing') {
       const next: Record<string, string> = {}
       for (const [k, v] of Object.entries(route.query)) {
@@ -142,9 +132,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
       router.replace({ path: route.path, query: next })
       return
     }
-    // Navigate back to previous view. Preserve the workspace item (folder / kanban / design) IDs when
-    // the user opened the code editor while on a workspace item — see closeGitViewer for the same
-    // pattern. For design items, also preserve pageId so the active design page survives a reload.
+    // Navigate back to previous view.
     replaceWithCurrentContext()
   }
 
@@ -173,9 +161,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
   const gitViewerFile = ref<api.GitFileChange | null>(null)
   const gitViewerStaged = ref(false)
 
-  // The editor session is global to AppLayout, not per-chat: switching the main context (chat
-  // session, task, workspace item, document) must drop any open overlay, otherwise the old file keeps
-  // rendering inside the new chat's center column (ChatView reads the same injected refs).
+  // The editor session is global to AppLayout, not per-chat: switching the main context (chat session, task, workspace item, document) must drop any open overlay …
   const clearAllOverlays = () => {
     gitViewerFile.value = null
     gitViewerStaged.value = false

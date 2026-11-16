@@ -1,5 +1,4 @@
-//! `POST /test/shutdown` — gracefully shut the server down. Triggers
-//! `di.server.shutdown()` and returns 200 with a status message.
+//! `POST /test/shutdown` — gracefully shut the server down.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -14,9 +13,7 @@ pub const ShutdownResponse = struct {
     message: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase() ShutdownError!ShutdownResponse {
     _ = pabrikcore.getSingleton() catch return error.GlobalContextNotInitialized;
@@ -42,9 +39,7 @@ fn useCase() ShutdownError!ShutdownResponse {
     return .{ .message = "Server shutdown initiated" };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn shutdownHandler(
     ctx: gserverz.HttpContext,

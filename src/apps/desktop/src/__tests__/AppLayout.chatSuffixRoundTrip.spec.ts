@@ -1,6 +1,4 @@
-// AppLayout — chat-open URL round-trip under the simplify-url-browser wire shape. Drives the URL
-// through the full open-chat → close-chat → back-button cycle and asserts the URL transitions are
-// correct.
+// AppLayout — chat-open URL round-trip under the simplify-url-browser wire shape.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -170,13 +168,10 @@ describe('AppLayout — chat suffix round-trip', () => {
     replaceMock.mockClear()
     pushMock.mockClear()
 
-    // The watcher should NOT have written anything during mount —
-    // the URL already matches the active state.
+    // The watcher should NOT have written anything during mount — the URL already matches the active state.
     expect(replaceMock).not.toHaveBeenCalled()
 
-    // Open a chat dialog (simulates Sidebar.handleSelectTask's
-    // router.push). The new URL must use the wire shape with the
-    // /chat/<taskId> suffix.
+    // Open a chat dialog (simulates Sidebar.handleSelectTask's router.push).
     ws.setActiveTask(TASK_ID)
     pushMock({
       path: '/app',
@@ -190,9 +185,7 @@ describe('AppLayout — chat suffix round-trip', () => {
     await nextTick()
     expect(ws.activeTaskId).toBe(TASK_ID)
 
-    // Close the dialog. AppLayout.handleCloseTaskView calls
-    // setActiveTask(null) + router.replace. The replace URL must
-    // NOT carry the chat suffix.
+    // Close the dialog.
     replaceMock.mockClear()
     ws.setActiveTask(null)
     replaceMock({
@@ -212,9 +205,7 @@ describe('AppLayout — chat suffix round-trip', () => {
 
    
   it('URL sync watcher preserves /chat/<taskId> suffix when setActiveTask fires', async () => {
-    // Set-up: mount on bare URL, then push the chat URL, then
-    // setActiveTask fires (causes parent-discovery mutation).
-    // The watcher must NOT clobber the suffix.
+    // Set-up: mount on bare URL, then push the chat URL, then setActiveTask fires (causes parent-discovery mutation).
     const replaceMock = vi.fn()
     const pushMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -242,23 +233,17 @@ describe('AppLayout — chat suffix round-trip', () => {
     await nextTick()
     await nextTick()
 
-    // Re-set workspaces post-mount (initializeFromSystemFolder clears
-    // them via the empty API mock).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ws.workspaces = [{ id: WS_ID, name: 'WS', items: [makeItem()] }] as any
     await nextTick()
     replaceMock.mockClear()
 
-    // Trigger setActiveTask with the same taskId — this fires the
-    // watcher (because parent-discovery sets activeWorkspaceItemId).
-    // The watcher must preserve the suffix.
+    // Trigger setActiveTask with the same taskId — this fires the watcher (because parent-discovery sets activeWorkspaceItemId).
     ws.setActiveTask(TASK_ID)
     await nextTick()
     await nextTick()
 
-    // The watcher MAY fire (because parent-discovery mutates
-    // activeWorkspaceItemId), but every write MUST carry the
-    // /chat/<taskId> suffix.
+    // The watcher MAY fire (because parent-discovery mutates activeWorkspaceItemId), but every write MUST carry the /chat/<taskId> suffix.
     for (const call of replaceMock.mock.calls) {
       const q = call[0]?.query as Record<string, string> | undefined
       if (!q) continue

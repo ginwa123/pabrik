@@ -1,5 +1,4 @@
-/** FileInput autofocus — clicking a chat session should land the cursor in the message box with no
- * second mouse click. */
+/** FileInput autofocus — clicking a chat session should land the cursor in the message box with no second mouse click. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'

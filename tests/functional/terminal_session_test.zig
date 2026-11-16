@@ -1,5 +1,4 @@
-// Functional e2e for the right-sidebar terminal HTTP endpoints. Zig port of
-// `tests/functional/terminal_session_test.py` (same test names, same order).
+// Functional e2e for the right-sidebar terminal HTTP endpoints.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -9,38 +8,28 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The shell every terminal in this suite runs. Windows has no `/bin/sh`;
-/// `cmd.exe` is its interactive equivalent, and the assertions below hold
-/// for it unchanged — a marker line goes in and the marker comes out. The
+/// The shell every terminal in this suite runs.
 const SHELL = if (builtin.os.tag == .windows)
     "C:\\Windows\\System32\\cmd.exe"
 else
     "/bin/sh";
 
-/// How a line ends on this host's shell. `cmd.exe` reads in cooked mode and
-/// commits on CR, so its lines end CRLF; a POSIX shell is happy with LF.
-/// Not cosmetic: a bare LF works on most `cmd.exe` builds but is not the
+/// How a line ends on this host's shell.
 const LINE_END = if (builtin.os.tag == .windows) "\r\n" else "\n";
 
-/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step
-/// must not extend a poll deadline).
+/// Monotonic milliseconds (`.awake`, not the wall clock — an NTP step must not extend a poll deadline).
 fn nowMs() i64 {
     return std.Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
 /// `"echo <marker>"` + this platform's line end, as an OWNED buffer.
-/// Written with `allocPrint` rather than `"echo " ++ marker ++ "\n"`, which
-/// only compiles for comptime-known operands — and a marker is exactly the
 fn echoLine(marker: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "echo {s}{s}", .{ marker, LINE_END });
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// One `GET /api/terminal/sessions/<id>/output` answer, with every string
-/// COPIED so it can outlive the `Response` it came from.
+/// One `GET /api/terminal/sessions/<id>/output` answer, with every string COPIED so it can outlive the `Response` it came from.
 const OutputPage = struct {
     data: []u8,
     cursor: i64,
@@ -53,9 +42,7 @@ const OutputPage = struct {
     }
 };
 
-/// `POST /api/terminal/sessions` with the Python `_create` body: `{"shell":
-/// ...}` plus `"cwd"` only when `cwd` is non-null (so the no-cwd call really
-/// sends no `cwd` key at all, like Python's `if cwd is not None`).
+/// `POST /api/terminal/sessions` with the Python `_create` body: `{"shell"
 fn createRaw(
     h: *Harness,
     cwd: ?[]const u8,
@@ -100,8 +87,7 @@ fn inputRaw(
     return h.http(io, .POST, path, .{ .json_body = body, .expect = expect });
 }
 
-/// `GET /api/terminal/sessions/<id>/output?cursor=N`. The cursor goes through
-/// `.params`, which the harness PERCENT-ENCODES — never pre-encode it here.
+/// `GET /api/terminal/sessions/<id>/output?cursor=N`.
 fn outputRaw(
     h: *Harness,
     sid: []const u8,
@@ -134,8 +120,7 @@ fn outputPage(h: *Harness, sid: []const u8, cursor: i64) !OutputPage {
     };
 }
 
-/// Poll output until `marker` appears (the frontend poll replay). Returns the
-/// page that satisfied the marker (owned).
+/// Poll output until `marker` appears (the frontend poll replay).
 fn pollFor(
     h: *Harness,
     sid: []const u8,
@@ -179,8 +164,6 @@ fn pollFor(
 }
 
 /// Poll forward until the session stops producing output; return the cursor.
-/// A PTY never really stops: after the marker round-trips, the shell redraws
-/// its prompt and re-emits the command echo.
 fn settleCursor(
     h: *Harness,
     sid: []const u8,
@@ -212,9 +195,7 @@ fn deleteSession(h: *Harness, sid: []const u8) void {
     defer r.deinit();
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Create -> echo a marker -> poll until it comes back -> cursor advances.
 test "create_input_output_round_trip" {
@@ -224,8 +205,7 @@ test "create_input_output_round_trip" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // `cwd` is derived from the harness tempdir: absolute on every
-    // platform, and a directory that certainly exists.
+    // `cwd` is derived from the harness tempdir: absolute on every platform, and a directory that certainly exists.
     const cwd = try harness.harnessPath(gpa, h.temp_dir, &.{});
     defer gpa.free(cwd);
 
@@ -279,8 +259,7 @@ test "create_input_output_round_trip" {
         defer page.deinit();
     }
 
-    // Let the prompt redraw drain, then hold the cursor fixed: a repeat read
-    // at a cursor the server has already served must come back empty.
+    // Let the prompt redraw drain, then hold the cursor fixed: a repeat read at a cursor the server has already served must come back empty.
     const settled = try settleCursor(&h, sid, 2, 10_000);
     if (settled <= 0) {
         std.debug.print("session produced no output at all\n", .{});
@@ -367,8 +346,7 @@ test "resize_and_delete" {
     }
 }
 
-// Relative cwd is 400; cwd-that-is-a-file is 404; empty cwd falls back to
-// the server cwd (201, not 400) so cwd-less chats work.
+// Relative cwd is 400; cwd-that-is-a-file is 404; empty cwd falls back to the server cwd (201, not 400) so cwd-less chats work.
 test "create_validation" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -376,8 +354,7 @@ test "create_validation" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Relative cwd: the literal is the point of the assertion, and it is
-    // relative on every platform.
+    // Relative cwd: the literal is the point of the assertion, and it is relative on every platform.
     {
         var r = try createRaw(&h, "relative/path", SHELL, &.{400});
         defer r.deinit();
@@ -402,8 +379,7 @@ test "create_validation" {
         defer deleteSession(&h, sid);
     }
 
-    // A cwd that does not exist is 404, not 201. Derived from the
-    // tempdir so it is absolute on every platform.
+    // A cwd that does not exist is 404, not 201.
     {
         const missing = try harness.harnessPath(gpa, h.temp_dir, &.{"pabrik-terminal-never-exists-9d2c41"});
         defer gpa.free(missing);
@@ -411,8 +387,7 @@ test "create_validation" {
         defer r.deinit();
     }
 
-    // No body at all is a validation error, and the error body carries
-    // an `error` key.
+    // No body at all is a validation error, and the error body carries an `error` key.
     {
         var r = try h.http(io, .POST, "/api/terminal/sessions", .{ .expect = &.{400} });
         defer r.deinit();
@@ -425,8 +400,7 @@ test "create_validation" {
     }
 }
 
-// All per-session endpoints 404 an unknown id (no traversal: the id is
-// an opaque registry key, never a path).
+// All per-session endpoints 404 an unknown id (no traversal: the id is an opaque registry key, never a path).
 test "unknown_session_is_404" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -460,8 +434,7 @@ test "unknown_session_is_404" {
     }
 }
 
-// A shell that exits cleanly reports exited + code 0, and further input is
-// 410 (not 500).
+// A shell that exits cleanly reports exited + code 0, and further input is 410 (not 500).
 test "input_after_exit_is_410" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -518,8 +491,7 @@ test "input_after_exit_is_410" {
     }
 }
 
-// Two sessions on the same server never see each other's bytes: a marker
-// sent to A appears only in A's output and vice versa.
+// Two sessions on the same server never see each other's bytes: a marker sent to A appears only in A's output and vice versa.
 test "two_sessions_are_isolated" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -590,8 +562,7 @@ test "two_sessions_are_isolated" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = nowMs;
     _ = echoLine;

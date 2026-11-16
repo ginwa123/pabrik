@@ -1,6 +1,4 @@
-/** Tests for AgentErrorCard.vue — the dedicated renderer for agentic-loop error/retry diagnostics
- * (e.g. `[Retry 1/10] StreamInterrupted … Server said: …`). The component is purely presentational
- * (parses a string, no API calls), so no mocks are needed. */
+/** Tests for AgentErrorCard.vue — the dedicated renderer for agentic-loop error/retry diagnostics (e.g. */
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -69,9 +67,7 @@ describe('AgentErrorCard', () => {
     })
     const detailEl = wrapper.find('[data-testid="agent-error-detail"]')
       .element as HTMLElement
-    // 2026-08-25 task_1787668954023_2: detail rendered unhidden by
-    // default — no toggle, no collapse interaction. The header is
-    // informational; the user gets the raw server detail at a glance.
+    // 2026-08-25 task_1787668954023_2: detail rendered unhidden by default — no toggle, no collapse interaction.
     expect(detailEl.style.display).not.toBe('none')
   })
 

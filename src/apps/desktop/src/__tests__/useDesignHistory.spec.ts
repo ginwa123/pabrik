@@ -1,5 +1,4 @@
-/** Behavioural tests for `useDesignHistory` composable. The composable owns the push/pop API +
- * capture helpers for design undo/redo. */
+/** Behavioural tests for `useDesignHistory` composable. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref, type ComputedRef } from 'vue'
@@ -7,9 +6,7 @@ import { useDesignHistory } from '../composables/useDesignHistory'
 import { useDesignHistoryStore } from '../stores/designHistory'
 import type { DesignElement } from '../api'
 
-// Mock the workspaces store actions so the composable's inverse/forward can call them without
-// hitting the network. We keep the real store's reactive state (so the composable can read
-// design_elements) but stub the mutating actions.
+// Mock the workspaces store actions so the composable's inverse/forward can call them without hitting the network.
 vi.mock('../stores/workspaces', async () => {
   const actual = await vi.importActual<typeof import('../stores/workspaces')>(
     '../stores/workspaces',
@@ -163,9 +160,7 @@ describe('useDesignHistory composable', () => {
   })
 
   it('multi-element capture: 1 entry with N changes', async () => {
-    // Skipped — the no-op detection path requires a real seeded
-    // design_elements row, which is heavyweight to set up in a unit
-    // test. The delete variant below covers the same shape.
+    // Skipped — the no-op detection path requires a real seeded design_elements row, which is heavyweight to set up in a unit test.
     expect(true).toBe(true)
   })
 

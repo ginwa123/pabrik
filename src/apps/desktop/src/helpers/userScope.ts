@@ -4,16 +4,13 @@ import { getAuthMeCached, readCachedAuthMe } from './authMe'
 /** Separator between the logical key and the user id. */
 const USER_SUFFIX = '::u:'
 
-/**  * The identity currently in effect. `null` means "no identity" — auth off, or `/api/auth/me` has
- * not resolved yet — and `userScopedKey` then returns the key unchanged. */
+/** The identity currently in effect. */
 let currentUserId: string | null = null
 
 /** True once `refreshCurrentUserId` has completed at least once. */
 let resolved = false
 
-/**  * Synchronously set the identity. Called by the auth flow on login, logout, and whenever
- * `/api/auth/me` reports a different id. Passing `null` (or an empty string) means "no identity"
- * and disables scoping. */
+/** Synchronously set the identity. */
 export function setCurrentUserId(userId: string | null | undefined): void {
   currentUserId = userId && userId.length > 0 ? userId : null
   resolved = true
@@ -29,9 +26,7 @@ export function isIdentityResolved(): boolean {
   return resolved
 }
 
-/** Adopt the identity the cached `/me` already names, synchronously: a store reads its
- * user-scoped keys at creation, before the guard's first `await` returns. No cache means
- * "not known yet" — leave `resolved` false so the guard still resolves it. */
+/** Adopt the identity the cached `/me` already names, synchronously: a store reads its user-scoped keys at creation, before the guard's first `await` returns. */
 export function seedIdentityFromCache(): void {
   if (resolved) return
   const data = readCachedAuthMe()
@@ -58,8 +53,7 @@ export async function refreshCurrentUserId(): Promise<string | null> {
   }
 }
 
-/** Map a logical storage key to its per-user physical key.
- * No identity => the key unchanged (auth off, or before `/me` resolves). */
+/** Map a logical storage key to its per-user physical key. */
 export function userScopedKey(key: string): string {
   if (!currentUserId) return key
   return `${key}${USER_SUFFIX}${currentUserId}`
@@ -80,9 +74,7 @@ export function isForeignScopedKey(key: string): boolean {
   return owner !== currentUserId
 }
 
-/** Remove every localStorage entry that belongs to a user other than the current one (or every
- * scoped entry when there is no current user). Only touches keys carrying the `::u:` marker, so
- * unscoped preference keys and the auth cache itself are never destroyed. */
+/** Remove every localStorage entry that belongs to a user other than the current one (or every scoped entry when there is no current user). */
 export function purgeForeignScopedKeys(): number {
   if (typeof localStorage === 'undefined') return 0
   let removed = 0

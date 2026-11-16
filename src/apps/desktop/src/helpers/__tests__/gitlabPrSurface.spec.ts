@@ -30,8 +30,7 @@ describe('repoBaseFromPrUrl', () => {
   })
 
   it('returns the repo for a GitLab MR, subgroups included', () => {
-    // THE regression: this returned '' before, because only '/pull/' was
-    // recognised. That silently disabled GitBranchMenu's branch link.
+    // THE regression: this returned '' before, because only '/pull/' was recognised.
     expect(repoBaseFromPrUrl(MR_URL)).toBe('https://gitlab.com/group/sub/repo')
   })
 
@@ -69,8 +68,7 @@ describe('branchUrlFromPrUrl', () => {
 
 describe('forgeWording', () => {
   it('uses GitHub vocabulary by default and for github', () => {
-    // '' is what every session stored before GitLab support existed, and
-    // all of those are GitHub — defaulting keeps them correct.
+    // '' is what every session stored before GitLab support existed, and all of those are GitHub — defaulting keeps them correct.
     for (const p of [undefined, null, '', 'github', 'nonsense']) {
       const w = forgeWording(p)
       expect(w.short).toBe('PR')
@@ -88,9 +86,7 @@ describe('forgeWording', () => {
   })
 
   it('carries the CLI program so error text names the tool that ran', () => {
-    // CreatePrDialog interpolates `forge.program` into its failure
-    // message. The field was missing once and only `vue-tsc --build`
-    // (the CI command) caught it — pin it here so the table stays whole.
+    // CreatePrDialog interpolates `forge.program` into its failure message.
     expect(forgeWording('github').program).toBe('gh')
     expect(forgeWording('gitlab').program).toBe('glab')
     expect(forgeWording('').program).toBe('gh')
@@ -162,8 +158,7 @@ describe('prStatusCache provider plumbing', () => {
 
     await fetchPrInfoCached('/repo', 'feature-x')
 
-    // `undefined`, not '': the backend treats an empty provider as
-    // "detect from origin remote", which is the accurate answer here.
+    // `undefined`, not '': the backend treats an empty provider as "detect from origin remote", which is the accurate answer here.
     expect(spy).toHaveBeenCalledWith('/repo', 'feature-x', { provider: undefined })
   })
 

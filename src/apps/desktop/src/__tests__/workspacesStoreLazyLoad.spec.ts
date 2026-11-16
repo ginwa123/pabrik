@@ -1,5 +1,4 @@
-/** Lazy per-workspace item loading. init() fetches the workspace list but
- * loads items (tasks, design pages, kanban prefetch) for the ACTIVE workspace. */
+/** Lazy per-workspace item loading. init() fetches the workspace list but loads items (tasks, design pages, kanban prefetch) for the ACTIVE workspace. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
@@ -62,20 +61,17 @@ describe('workspaces store lazy per-workspace item loading', () => {
       configurable: true,
     })
 
-    // Declare the identity as resolved with no user (the auth-off case): `userScopedKey` then
-    // returns the legacy unscoped key, which is what these specs write via `workspacesCacheKey()`.
+    // Declare the identity as resolved with no user (the auth-off case): `userScopedKey` then returns the legacy unscoped key, which is what these specs write via …
     resetUserScopeForTest()
     setCurrentUserId(null)
 
-    // init() installs the bus-backed session handlers — install the
-    // stub bus first so useSseBus() doesn't throw.
+    // init() installs the bus-backed session handlers — install the stub bus first so useSseBus() doesn't throw.
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
     __setSseBusGlobalClient(makeStubClient('connecting'))
 
-    // Clear histories AND (re)apply default impls — vi.fn histories
-    // survive vi.restoreAllMocks(), so both must happen per test.
+    // Clear histories AND (re)apply default impls — vi.fn histories survive vi.restoreAllMocks(), so both must happen per test.
     for (const fn of [
       getWorkspacesMock,
       getWorkspacesItemsMock,
@@ -160,8 +156,7 @@ describe('workspaces store lazy per-workspace item loading', () => {
     const selectionPromise = store.setActiveWorkspace('ws_1')
     expect(getWorkspacesItemsMock).toHaveBeenCalledWith('ws_1')
 
-    // Revalidation finishes first and refreshes the cached workspace row
-    // while its item request is still in flight.
+    // Revalidation finishes first and refreshes the cached workspace row while its item request is still in flight.
     resolveWorkspaces({ workspaces: WS_LIST })
     await Promise.resolve()
     resolveItems({ items: ITEMS_BY_WS.ws_1!, count: 1 })
@@ -209,8 +204,7 @@ describe('workspaces store lazy per-workspace item loading', () => {
 
     await Promise.all([store.setActiveWorkspace('ws_2'), store.setActiveWorkspace('ws_2')])
 
-    // ws_1 (init) + exactly one ws_2 — the second call awaited the
-    // in-flight promise instead of starting a second fetch.
+    // ws_1 (init) + exactly one ws_2 — the second call awaited the in-flight promise instead of starting a second fetch.
     expect(getWorkspacesItemsMock).toHaveBeenCalledTimes(2)
     expect(getWorkspacesItemsMock).toHaveBeenLastCalledWith('ws_2')
   })

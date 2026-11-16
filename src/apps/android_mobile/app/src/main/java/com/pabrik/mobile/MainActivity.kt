@@ -46,10 +46,7 @@ class MainActivity : ComponentActivity() {
                 val authViewModel: AuthViewModel = viewModel()
                 val authState by authViewModel.uiState.collectAsState()
 
-                // One store for the process. The ViewModel writes the position
-                // the user just moved to; the nav graph reads it back to decide
-                // what a relaunch should reopen. Two instances would be two views
-                // of the same two preference keys.
+                // One store for the process.
                 val positionStore = remember { PrefsLastPositionStore(application) }
 
                 val homeViewModel: HomeViewModel = viewModel(
@@ -60,58 +57,27 @@ class MainActivity : ComponentActivity() {
                 val chatViewModel: ChatViewModel = viewModel(
                     factory = ChatViewModel.factory(application),
                 )
-                // Handed over as the flow, not sampled into a value or a
-                // `() -> ChatUiState` provider. A provider looked equivalent and
-                // subscribed nothing — `StateFlow.value` is not a snapshot read —
-                // so the chat route only ever repainted when some *other*
-                // collected state changed, and typing was the one interaction
-                // with nothing else changing behind it. The graph's chat
-                // destination collects this, so a draft keystroke recomposes the
-                // transcript and leaves the drawer and the `NavHost` alone.
+                // Handed over as the flow, not sampled into a value or a `() -> ChatUiState` provider.
                 val chatState: StateFlow<ChatUiState> = chatViewModel.uiState
 
-                // Which sessions have a live worker. Its own ViewModel, and its
-                // own `workers` subscription, because the chat stream only exists
-                // while a chat is open — and the sidebar is on screen precisely
-                // when one is not.
+                // Which sessions have a live worker.
                 val workerViewModel: WorkerActivityViewModel = viewModel(
                     factory = WorkerActivityViewModel.factory(application),
                 )
                 val runningSessionIds by workerViewModel.runningSessionIds.collectAsState()
 
                 // The app's ONE event connection, opened here and nowhere else.
-                //
-                // The root owns it for the same reason the web app's root does:
-                // a socket opened per screen is a socket torn down per
-                // navigation, and two ViewModels with two sockets of opposite
-                // lifetimes can never agree about what is running. Both
-                // subscribers below are handed this one.
                 val sseBus: SseBus = remember(application) {
                     SseBusHolder.get(SessionCookieStore(application))
                 }
 
-                // Sampled here so the server row redraws the moment the holder
-                // changes. Collected above the graph, which is right here
-                // precisely because the change *is* an app-wide event: every
-                // auth-scoped screen below is re-placed by it.
+                // Sampled here so the server row redraws the moment the holder changes.
                 val serverBaseUrl by ServerUrl.current.collectAsState()
 
                 // The one place a server change becomes an app-wide reset.
-                //
-                // Not `signOut`, and the difference is the point. A sign-out
-                // posts `/api/auth/logout` so the old server can end its own
-                // side; a *server change* must not, because by the time this
-                // runs the app is already pointed somewhere else and that POST
-                // would be one deployment's cookie sent to another deployment,
-                // to a host the person just typed. So the cookie, the `/me`
-                // cache, the account-scoped rows and the open socket are dropped
-                // locally, and the next sign-in establishes a new session.
                 val onChangeServer: (String) -> ServerChange = { raw ->
                     val change = ServerUrl.update(raw)
-                    // Re-saving the address already in use changes nothing, and
-                    // must cost nothing: signing the person out to re-point the
-                    // app at the same server would be a surprising price for
-                    // pressing Save.
+                    // Re-saving the address already in use changes nothing, and must cost nothing: signing the person out to re-point the app at the same server would be a …
                     if (change is ServerChange.Applied && change.baseUrl != serverBaseUrl) {
                         homeViewModel.onSignedOut()
                         chatViewModel.onSignedOut()
@@ -124,9 +90,7 @@ class MainActivity : ComponentActivity() {
 
                 val onUseDefaultServer: () -> ServerChange = {
                     val change = ServerUrl.resetToBuildDefault()
-                    // Same shape as the branch above, reached from a button
-                    // rather than a field, so it shares its "changed or not"
-                    // question instead of assuming the answer.
+                    // Same shape as the branch above, reached from a button rather than a field, so it shares its "changed or not" question instead of assuming the answer.
                     if (change is ServerChange.Applied && change.baseUrl != serverBaseUrl) {
                         homeViewModel.onSignedOut()
                         chatViewModel.onSignedOut()
@@ -137,11 +101,7 @@ class MainActivity : ComponentActivity() {
                     change
                 }
 
-                // One sign-out, three entry points: the sidebar's "Log out", the
-                // retry screen's "Sign in", and a 401 from either cache. They are
-                // the same action, so they must purge the account-scoped caches
-                // the same way — before the cookie goes, or a cached row from the
-                // outgoing account can still be painted afterwards.
+                // One sign-out, three entry points: the sidebar's "Log out", the retry screen's "Sign in", and a 401 from either cache.
                 val signOut: () -> Unit = {
                     homeViewModel.onSignedOut()
                     chatViewModel.onSignedOut()
@@ -150,17 +110,7 @@ class MainActivity : ComponentActivity() {
                     authViewModel.logout()
                 }
 
-                // The signed-in account namespaces both caches AND owns the
-                // socket, whose handshake is a cookie the server answers once and
-                // never retries. Reacting to it here (rather than inside a
-                // ViewModel's init) means the first paint is already scoped to
-                // the right account.
-                //
-                // Gating `open()` on a non-null user is load-bearing: the pump
-                // treats a non-2xx handshake as terminal and returns instead of
-                // retrying, so a socket opened before the cookie exists burns
-                // its one handshake and then reports nothing for the life of the
-                // process — which reads as "no worker has ever run".
+                // The signed-in account namespaces both caches AND owns the socket, whose handshake is a cookie the server answers once and never retries.
                 LaunchedEffect(authState.userId) {
                     homeViewModel.onUserChanged(authState.userId)
                     chatViewModel.onUserChanged(authState.userId)
@@ -168,14 +118,7 @@ class MainActivity : ComponentActivity() {
                     if (authState.userId.isNullOrBlank()) sseBus.close() else sseBus.open()
                 }
 
-                // The workers socket is open for the whole process, so a run
-                // that ended while the app was backgrounded produced a
-                // `worker_deleted` this process never dispatched — and because
-                // the socket never dropped, no reconnect is coming to correct
-                // it. Coming back to the app is exactly when that stale set is
-                // most visible, so re-read the list on the way in. The periodic
-                // beat inside the ViewModel covers the same gap while the app is
-                // in use; this covers the moment the user looks at it.
+                // The workers socket is open for the whole process, so a run that ended while the app was backgrounded produced a `worker_deleted` this process never dispatched …
                 val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner, authState.userId) {
                     val observer = LifecycleEventObserver { _, event ->
@@ -187,8 +130,7 @@ class MainActivity : ComponentActivity() {
                     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
                 }
 
-                // A 401 on any call means the saved cookie is dead; signing out
-                // is the only outcome a retry cannot fix.
+                // A 401 on any call means the saved cookie is dead; signing out is the only outcome a retry cannot fix.
                 LaunchedEffect(homeViewModel, chatViewModel) {
                     launch {
                         homeViewModel.sessionExpired.collect { signOut() }
@@ -201,8 +143,7 @@ class MainActivity : ComponentActivity() {
                 PabrikNavGraph(
                     authState = authState,
                     onSignIn = authViewModel::login,
-                    // The retry screen's whole purpose is to re-check the
-                    // session, so it must bypass the /me cache.
+                    // The retry screen's whole purpose is to re-check the session, so it must bypass the /me cache.
                     onRetrySession = { authViewModel.restoreSession(forceRefresh = true) },
                     onUseAnotherAccount = signOut,
                     onLogout = signOut,
@@ -215,33 +156,19 @@ class MainActivity : ComponentActivity() {
                     onToggleProjectExpanded = homeViewModel::toggleProjectExpanded,
                     onEnsureProjectChatsLoaded = homeViewModel::ensureProjectChatsLoaded,
                     onLoadMoreProjectChats = homeViewModel::loadMoreProjectChats,
-                    // The full-screen recents list's next page. The drawer's
-                    // five rows never page — the destination button is what
-                    // gets the reader to this.
+                    // The full-screen recents list's next page.
                     onLoadMoreChats = homeViewModel::loadMoreChats,
                     onRetryProjects = homeViewModel::retryProjects,
-                    // The create's only ViewModel-facing half. The graph owns
-                    // the sheet and the navigation; the ViewModel owns the POST
-                    // and the row it paints.
+                    // The create's only ViewModel-facing half.
                     onCreateTask = { workspaceId, itemId, request ->
-                        // The workspace the row carries is the one the drawer's
-                        // copy may be blank on (a project read from cache), and
-                        // the endpoint is nested under it, so a blank here is a
-                        // 404 rather than a defaulted success.
+                        // The workspace the row carries is the one the drawer's copy may be blank on (a project read from cache), and the endpoint is nested under it, so a blank here is …
                         if (workspaceId.isNotBlank()) {
                             homeViewModel.createTask(itemId, request)
                         }
                     },
-                    // A board's "New task" form opens the moment `+` is pressed
-                    // on a kanban project, so its columns, the profile list and
-                    // the server's home start loading here rather than after the
-                    // reader fills the form in.
+                    // A board's "New task" form opens the moment `+` is pressed on a kanban project, so its columns, the profile list and the server's home start loading here rather …
                     onLoadKanbanFormData = homeViewModel::loadKanbanFormData,
-                    // The drawer's top-level "New Chat". No project id and no
-                    // request: HomeViewModel resolves the workspace's default
-                    // project itself (Migration 094) and builds the Standard
-                    // Chat, so the graph and this activity neither have to know
-                    // which project that is.
+                    // The drawer's top-level "New Chat".
                     onNewChat = homeViewModel::newChat,
                     createdChats = homeViewModel.createdChat,
                     onDismissTaskCreateError = homeViewModel::dismissTaskCreateError,

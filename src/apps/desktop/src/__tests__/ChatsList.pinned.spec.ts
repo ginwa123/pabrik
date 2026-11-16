@@ -92,8 +92,7 @@ describe('ChatsList — PINNED section (Migration 104)', () => {
 
     const pinned = document.body.querySelector('[data-testid="pinned-section"]')
     expect(pinned).toBeTruthy()
-    // Layout contract: Pinned, Recent, Projects — the PINNED section must
-    // precede the RECENT header in DOM order.
+    // Layout contract: Pinned, Recent, Projects — the PINNED section must precede the RECENT header in DOM order.
     const recentTitle = document.body.querySelector('[data-testid="recent-section-title"]')
     expect(recentTitle).toBeTruthy()
     expect(
@@ -218,8 +217,7 @@ describe('ChatsList — PINNED section (Migration 104)', () => {
     sidebarStore.togglePinnedExpanded()
     await nextTick()
     expect(sidebarStore.pinnedExpanded).toBe(false)
-    // Section shell stays (header + count) so the user can re-expand,
-    // but the pinned rows unmount.
+    // Section shell stays (header + count) so the user can re-expand, but the pinned rows unmount.
     expect(document.body.querySelector('[data-testid="pinned-section"]')).toBeTruthy()
     expect(document.body.querySelector('[data-testid="chat-row-pinned_1"]')).toBeNull()
     // RECENT is untouched.

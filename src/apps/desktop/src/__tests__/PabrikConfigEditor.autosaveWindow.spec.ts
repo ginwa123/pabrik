@@ -1,6 +1,4 @@
-/** The autosave WINDOW itself: a burst of edits collapses into one PUT, and leaving the page with
- * an edit still inside that window still writes it. The rest of the editor specs mount the window at
- * 0 ms; this one keeps the real 600 ms and drives it with fake timers. */
+/** The autosave WINDOW itself: a burst of edits collapses into one PUT, and leaving the page with an edit still inside that window still writes it. */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

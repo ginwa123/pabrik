@@ -1,45 +1,33 @@
-/** virtualScrollerScrollAnchor.ts Pure math for VirtualScroller's measurement-shift compensation.
- * Why this exists: `measureItems()` rewrites REAL heights over ESTIMATES for every rendered child —
- * including up to `buffer` items ABOVE the viewport. */
+/** virtualScrollerScrollAnchor.ts Pure math for VirtualScroller's measurement-shift compensation. */
 type geometry_px = number
 
-/**  * One pending height write from a measure pass. Carried on the debug log only — compensation itself
- * no longer consumes per-item entries (see the v2 note above). */
+/** One pending height write from a measure pass. */
 export interface AnchorMeasurement {
   /** Item index in the full items array. */
   index: number
   /** Newly measured height in px (>0). */
   newHeight: number
-  /**
-   * Previously stored height in px, or undefined when this item has never been measured before. /
-   */
+  /** Previously stored height in px, or undefined when this item has never been measured before. */
   oldHeight: number | undefined
 }
 
 export interface AnchorCompensationInput {
-  /** Index of the first item at/under the viewport top edge BEFORE the
-   * height model changed (the anchor). Negative = empty list → no-op. */
+  /** Index of the first item at/under the viewport top edge BEFORE the height model changed (the anchor). */
   anchorIndex: number
   /** scrollTop captured before the height model changed. */
   prevScrollTop: geometry_px
-  /** `accumulatedHeights[anchorIndex]` captured BEFORE the pass
-   * mutates the model — the model-space top edge of the anchor item. */
+  /** `accumulatedHeights[anchorIndex]` captured BEFORE the pass mutates the model — the model-space top edge of the anchor item. */
   oldAnchorTop: geometry_px
-  /**    * `accumulatedHeights[anchorIndex]` after the pass rebuilt the model (measured heights written,
-   * estimator re-seeded, estimates refreshed). */
+  /** `accumulatedHeights[anchorIndex]` after the pass rebuilt the model (measured heights written, estimator re-seeded, estimates refreshed). */
   newAnchorTop: geometry_px
-  /** The bottom edge AFTER the pass (`bottomScrollTop()`), passed only when the reader was AT THE
-   * BOTTOM before the pass mutated the model. Omit it and the anchor math runs. The anchor exists
-   * to hold still whatever the reader is looking at. */
+  /** The bottom edge AFTER the pass (`bottomScrollTop()`), passed only when the reader was AT THE BOTTOM before the pass mutated the model. */
   atBottomTarget?: geometry_px
-  /** The highest `scrollTop` the container can reach RIGHT NOW (`scrollHeight - clientHeight`).
-   * Omit it and the target is unbounded. */
+  /** The highest `scrollTop` the container can reach RIGHT NOW (`scrollHeight - clientHeight`). */
   maxScrollTop?: geometry_px
 }
 
 export interface AnchorCompensationResult {
-  /** Signed delta of the anchor's prefix sum. Positive = content above
-   * grew in the model → scrollTop must increase to stay stationary. */
+  /** Signed delta of the anchor's prefix sum. */
   shiftPx: geometry_px
   /** scrollTop after compensation, clamped at ≥ 0. */
   newScrollTop: geometry_px
@@ -47,15 +35,11 @@ export interface AnchorCompensationResult {
   clamped: boolean
   /** True when `maxScrollTop` cut the target down. */
   clampedToMax: boolean
-  /**    * Which rule produced `newScrollTop`. `'bottom'` means the reader was at the bottom and the pass
-   * targeted the bottom edge instead of the anchor; the `shiftPx` reported alongside it is the
-   * model delta that was absorbed, not a move the reader can observe. */
+  /** Which rule produced `newScrollTop`. */
   target: 'anchor' | 'bottom'
 }
 
-/** Compute the scrollTop adjustment that keeps rendered content stationary when the height model's
- * prefix sum at the anchor changes. Rules: - `prefix(anchor)` covers items STRICTLY ABOVE the
- * anchor only. */
+/** Compute the scrollTop adjustment that keeps rendered content stationary when the height model's prefix sum at the anchor changes. */
 export function computeAnchorCompensation(
   input: AnchorCompensationInput,
 ): AnchorCompensationResult {
@@ -78,9 +62,7 @@ export function computeAnchorCompensation(
 
   const shiftPx = newAnchorTop - oldAnchorTop
 
-  // Bound a target to the range the container can actually reach (see
-  // `maxScrollTop`). A non-finite or negative bound is treated as 0, and an
-  // absent one as "unbounded" — the pre-2026-10-12 behaviour.
+  // Bound a target to the range the container can actually reach (see `maxScrollTop`).
   const cap =
     typeof input.maxScrollTop === 'number' && Number.isFinite(input.maxScrollTop)
       ? Math.max(0, input.maxScrollTop)
@@ -88,9 +70,7 @@ export function computeAnchorCompensation(
   const bound = (target: geometry_px): { target: geometry_px; clampedToMax: boolean } =>
     cap !== null && target > cap ? { target: cap, clampedToMax: true } : { target, clampedToMax: false }
 
-  // A reader at the bottom is re-targeted to the bottom edge rather than compensated around the
-  // anchor — see `atBottomTarget` on the input type for the failure this prevents. Ordered BEFORE
-  // the `shiftPx === 0` early return, and that ordering is the fix (2026-10-10).
+  // A reader at the bottom is re-targeted to the bottom edge rather than compensated around the anchor — see `atBottomTarget` on the input type for the failure …
   if (
     typeof atBottomTarget === 'number' &&
     Number.isFinite(atBottomTarget) &&

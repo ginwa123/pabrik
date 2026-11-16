@@ -1,5 +1,4 @@
-/** parseAgentErrorHeadline — single source of truth for parsing agentic-loop error/retry diagnostic
- * content into a headline + retry label. */
+/** parseAgentErrorHeadline — single source of truth for parsing agentic-loop error/retry diagnostic content into a headline + retry label. */
 export interface ParsedAgentError {
   /** retry label like "3/10" — null when the content is a bail diagnostic (no [Retry N/M] prefix) */
   retryLabel: string | null

@@ -24,8 +24,7 @@ interface TaskCrudParams {
 export function createTaskCrud(p: TaskCrudParams) {
   const { workspaces, activeTaskId, cacheTaskMutation, removeTaskFromCache } = p
 
-  // Add a task to a workspace item. The third arg is a single params object. For a standard task
-  // (the default), pass `{ name, description? }`.
+  // Add a task to a workspace item.
   async function addTask(
     workspaceId: string,
     itemId: string,
@@ -37,19 +36,13 @@ export function createTaskCrud(p: TaskCrudParams) {
         name: string
         content: string
       }
-      // Auto-retry-until-stop (Migration 063, Option A fix): when `'1'`, the backend ALSO inserts a
-      // `sessions` row keyed by the new task.id so the unattended-mode flag persists from creation.
-      // Forwarded only for standard tasks (memory has its own session lifecycle).
+      // Auto-retry-until-stop (Migration 063, Option A fix): when `'1'`, the backend ALSO inserts a `sessions` row keyed by the new task.id so the unattended-mode flag …
       isAutoRetryUntilStop?: string
-      // NEW (Migration 067 — kanban task tags): array of free-form
-      // tag strings. Forwarded to api.createTask which JSON-encodes
-      // for the wire. Empty array / undefined = no tags.
+      // NEW (Migration 067 — kanban task tags): array of free-form tag strings.
       tags?: string[]
-      // NEW (Migration 069 — kanban image urls column): array of base64 data URLs. Forwarded to
-      // api.createTask which `||`-joins for the wire (matching `llm_history.image_url` convention).
+      // NEW (Migration 069 — kanban image urls column): array of base64 data URLs.
       imageUrls?: string[]
-      // NEW (Migration 070 — kanban-cwd-session-optional plan). Per-task cwd override. Forwarded to
-      // api.createTask as `cwd` on the wire. Absolute path on disk or '' for cwd-less.
+      // NEW (Migration 070 — kanban-cwd-session-optional plan).
       cwd?: string
     },
   ): Promise<string | undefined> {
@@ -74,12 +67,9 @@ export function createTaskCrud(p: TaskCrudParams) {
         isAutoRetryUntilStop: params.isAutoRetryUntilStop,
         // Migration 067 — pass tags through.
         tags: params.tags,
-        // Migration 069 — pass image_urls through (the api helper
-        // `||`-joins the array for the wire).
+        // Migration 069 — pass image_urls through (the api helper `||`-joins the array for the wire).
         imageUrls: params.imageUrls,
         // Migration 070 — pass the per-task cwd through (absolute path on disk or '' for cwd-less).
-        // The api helper forwards verbatim; the backend's validated_cwd block re-validates
-        // (absolute, ≤ 4 KiB, no control chars) before INSERT.
         cwd: params.cwd,
       })
       item.tasks.unshift(newTask)
@@ -87,9 +77,7 @@ export function createTaskCrud(p: TaskCrudParams) {
       return newTask.id
     } catch (err) {
       console.error('Failed to create task:', err)
-      // Fallback to local creation if API fails. Match the pre-existing fallback contract (returns
-      // a taskId, populates the item's tasks list) and now also carry task_type + memory so the
-      // offline UI still branches correctly.
+      // Fallback to local creation if API fails.
       const taskId = `task-${Date.now()}`
       item.tasks.unshift({
         id: taskId,
@@ -153,8 +141,7 @@ export function createTaskCrud(p: TaskCrudParams) {
               videoUrls: params.videoUrls,
               cwd: params.cwd,
               isAutoRetryUntilStop: params.isAutoRetryUntilStop,
-              // Persists on the new sessions row (see Task 2's
-              // KanbanCreateSessionOnlyPayload comment in api/index.ts).
+              // Persists on the new sessions row (see Task 2's KanbanCreateSessionOnlyPayload comment in api/index.ts).
               selected_profile_model: params.selected_profile_model,
               skill_names: params.skillNames,
             }
@@ -172,24 +159,19 @@ export function createTaskCrud(p: TaskCrudParams) {
 
     try {
       const res = await api.createKanbanTask(workspaceId, itemId, wirePayload)
-      // Media-flags change — the create response carries only `is_have_image` / `is_have_video`
-      // flags (no base64 payload). Normalize in place for tags/dates; the detail dialog lazy-loads
-      // media via fetchTaskMedia when a flag is true.
+      // Media-flags change — the create response carries only `is_have_image` / `is_have_video` flags (no base64 payload).
       if (res.task) normalizeTaskTags(res.task)
       return res
     } catch (err) {
       if (mode === 'create_and_run') {
-        // Partial-success path: the backend's task INSERT may have succeeded even when the run step
-        // failed (the session INSERT might have failed but the task row is still there). Surface
-        // the error as a toast so the user can click the card to retry.
+        // Partial-success path: the backend's task INSERT may have succeeded even when the run step failed (the session INSERT might have failed but the task row is …
         const msg = err instanceof Error ? err.message : String(err)
         useNotificationStore().notifyError(msg, 'Task created — agent did not start')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.
         return { task: null as any, session: null }
       }
       if (mode === 'create_session') {
-        // Partial-success path: create_session can fail AFTER the task INSERT succeeded (rare — the
-        // sessions INSERT or session_created SSE emit failed).
+        // Partial-success path: create_session can fail AFTER the task INSERT succeeded (rare — the sessions INSERT or session_created SSE emit failed).
         const msg = err instanceof Error ? err.message : String(err)
         useNotificationStore().notifyError(msg, 'Task created — session init failed')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch; the surrounding type is intentionally opaque.

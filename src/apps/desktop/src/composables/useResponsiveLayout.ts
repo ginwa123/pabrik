@@ -11,8 +11,7 @@ export type ResponsiveLayoutOptions = {
   onChange?: (isMobile: boolean) => void
 }
 
-/** jsdom has no layout engine and a headless run has no viewport, so a source that cannot answer
- * reports the wide layout: every existing desktop surface keeps rendering exactly as before. */
+/** jsdom has no layout engine and a headless run has no viewport, so a source that cannot answer reports the wide layout: every existing desktop surface keeps … */
 const canQueryViewport = () =>
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
 

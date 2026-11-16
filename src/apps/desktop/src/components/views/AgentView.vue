@@ -20,9 +20,7 @@ import { useAgentToolsStore } from '../../stores/agentTools'
 import type { WorkspaceItem } from '../../stores/workspaces'
 import UiIcon from '../ui/UiIcon.vue'
 
-/**  * Agnostic row types — AgentView is reused for `item_type='agent'`, kanban boards and routines.
- * `routine_id`; all other fields are identical. `id`, `title`, `content` (system prompts), so a
- * union is safe. */
+/** Agnostic row types — AgentView is reused for `item_type='agent'`, kanban boards and routines. */
 export type AgnosticKnowledgeRow = api.AgentKnowledgeRow | api.AgentKanbanKnowledgeRow | api.AgentRoutineKnowledgeRow
 export type AgnosticSystemPromptRow = api.AgentSystemPromptRow | api.AgentKanbanSystemPromptRow | api.AgentRoutineSystemPromptRow
 
@@ -57,8 +55,7 @@ const emit = defineEmits<{
 const agentToolsStore = useAgentToolsStore()
 const loading = ref(true)
 
-// ─── Tools panel UI state ─────────────────────────────────────────────── `searchQuery` filters
-// the registry by name OR description (case- insensitive).
+// ─── Tools panel UI state ───────────────────────────────────────────────
 const searchQuery = ref('')
 const toolsFilter = ref<'all' | 'enabled' | 'disabled'>('all')
 const expandedTools = ref(new Set<string>())
@@ -86,8 +83,6 @@ function toggleToolExpanded(name: string) {
 }
 
 // ─── System Prompt panel UI state (plan 2026-08-21-agent-system-prompt) ──
-// `expandedPrompts` tracks which prompt rows show their full content —
-// same expand-chevron pattern as the Knowledge panel.
 const expandedPrompts = ref(new Set<string>())
 
 function togglePromptExpanded(id: string) {
@@ -102,9 +97,7 @@ function promptPreview(content: string): string {
   return oneLine.length > 60 ? oneLine.slice(0, 60) + '…' : oneLine
 }
 
-// ─── Knowledge panel UI state ─────────────────────────────────────────── `expandedKnowledge`
-// tracks which knowledge rows are expanded. Expanded inline rows reveal their full content in a
-// scrollable block; expanded file-backed rows show the absolute path + a hint line.
+// ─── Knowledge panel UI state ───────────────────────────────────────────
 const expandedKnowledge = ref(new Set<string>())
 
 function toggleKnowledgeExpanded(id: string) {
@@ -167,7 +160,6 @@ async function handleToggleTool(name: string, event: Event) {
 
 function handleSelectAllVisible() {
   // Emit one bulk event with the names currently NOT enabled.
-  // Bulk handlers in the parent can dedupe + run them in parallel.
   const toEnable = filteredTools.value
     .filter((t) => !enabledToolSet.value.has(t.name))
     .map((t) => t.name)

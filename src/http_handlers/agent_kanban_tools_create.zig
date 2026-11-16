@@ -1,5 +1,4 @@
-//! `POST /api/agent-kanbans/:kanban_id/tools`. Enables a tool for an
-//! agent-kanbans config. Body: `{tool_name}`.
+//! `POST /api/agent-kanbans/:kanban_id/tools`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,8 +17,7 @@ const CreateToolBody = struct {
 /// Subset of the agent_kanban_tools row returned by the use-case.
 pub const ToolRow = agent_kanban_db.ToolRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const ToolCreateError = error{
     /// `kanban_id` path param was missing or empty.
     KanbanIdRequired,
@@ -52,9 +50,7 @@ pub const ToolCreateOutput = struct {
     tool: ToolRow,
 };
 
-/// Validate tool_name exists in UNIFIED_TOOL_REGISTRY. Testable in
-/// isolation (no DB needed) — pulled out as a helper so the use-case
-/// stays focused on DB work.
+/// Validate tool_name exists in UNIFIED_TOOL_REGISTRY.
 fn isKnownTool(tool_name: []const u8) bool {
     const registry = tools_equipped.UNIFIED_TOOL_REGISTRY();
     for (registry) |entry| {
@@ -63,12 +59,9 @@ fn isKnownTool(tool_name: []const u8) bool {
     return false;
 }
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Enable a tool for the given agent-kanbans config. Validates the tool_name
-/// is in the canonical registry, then INSERTs with `enabled = 1`.
+/// Enable a tool for the given agent-kanbans config.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -91,22 +84,17 @@ fn useCase(
         if (row == null) return error.KanbanNotFound;
     }
 
-    // Auto-seed the agent_kanbans row. INSERT OR IGNORE so re-enabling
-    // the same tool doesn't trip the UNIQUE(workspace_item_id) constraint.
+    // Auto-seed the agent_kanbans row.
     agent_kanban_db.insertIgnoreDuplicate(allocator, handle, input.kanban_id, input.kanban_id) catch {};
 
-    // INSERT. A null return means the UNIQUE(kanban_id, tool_name)
-    // constraint fired — the kanban already has this tool, so the
-    // caller answers 409 rather than 500.
+    // INSERT.
     const tool = (agent_kanban_db.insertTool(allocator, handle, input.kanban_id, input.tool_name) catch
         return error.InsertFailed) orelse return error.DuplicateTool;
 
     return .{ .tool = tool };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanToolsCreateHandler(
@@ -165,7 +153,6 @@ pub fn agentKanbanToolsCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

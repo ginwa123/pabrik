@@ -1,6 +1,5 @@
 <script setup lang="ts">
-/** CompactTextRow — one line of something the agent wrote between two calls: the thought it
- * thought, or the sentence it said before it reached for a tool. */
+/** CompactTextRow — one line of something the agent wrote between two calls: the thought it thought, or the sentence it said before it reached for a tool. */
 import { computed, ref } from 'vue'
 
 const props = defineProps<{

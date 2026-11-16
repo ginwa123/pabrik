@@ -12,8 +12,7 @@ export type MermaidRole =
   | 'red'
   | 'aqua'
 
-/** The colours and type a diagram is drawn in. Every field is a CSS custom property of the app
- * theme, so the diagram cannot drift from the transcript it sits in. */
+/** The colours and type a diagram is drawn in. */
 export interface MermaidPalette {
   /** Diagram surface — the frame every shape sits on. */
   canvas: string
@@ -33,8 +32,7 @@ export interface MermaidPalette {
   slices: string[]
 }
 
-/** Kanagawa Dragon literals, used when the CSS variables are unreachable (no DOM) or unset. Mirrors
- * `style.css` `:root` and ChatView's `HTML_FRAME_PALETTE_FALLBACK`. */
+/** Kanagawa Dragon literals, used when the CSS variables are unreachable (no DOM) or unset. */
 export const MERMAID_PALETTE_FALLBACK: MermaidPalette = {
   canvas: '#1D1C19',
   node: '#282727',
@@ -89,8 +87,7 @@ const readVar = (name: string, fallback: string): string => {
 let palette: MermaidPalette | null = null
 let paletteTheme: string | null = null
 
-/** Memoized PER THEME: a diagram is rendered for every mermaid block of every turn, but a flip to
- * another theme must re-read the tokens rather than hand out the previous theme's palette. */
+/** Memoized PER THEME: a diagram is rendered for every mermaid block of every turn, but a flip to another theme must re-read the tokens rather than hand out the … */
 export const resolveMermaidPalette = (): MermaidPalette => {
   const theme = activeTheme()
   if (palette && paletteTheme === theme) return palette
@@ -121,21 +118,15 @@ export const resolveMermaidPalette = (): MermaidPalette => {
   return palette
 }
 
-/**  * Initialized per theme: the diagram is authored by the model without colour knowledge
- * (`core.zig` forbids `%%{init}%%`), so the renderer owns every visual decision, and a theme flip
- * re-initializes rather than keeping the colours of the first diagram of the session. */
+/** Initialized per theme: the diagram is authored by the model without colour knowledge (`core.zig` forbids `%%{init}%%`), so the renderer owns every visual … */
 const buildConfig = (p: MermaidPalette): MermaidConfig => ({
   startOnLoad: false,
   securityLevel: 'strict',
-  // Without this, a diagram mermaid cannot parse is DRAWN as its "Syntax error in text" graphic and
-  // appended to <body> instead of failing: the transcript got a stray bomb at the bottom of the page.
-  // We render our own fallback (source + reason), so mermaid must reject instead.
+  // Without this, a diagram mermaid cannot parse is DRAWN as its "Syntax error in text" graphic and appended to <body> instead of failing: the transcript got a …
   suppressErrorRendering: true,
   theme: 'base',
   fontFamily: p.font,
-  // Root-level, NOT `flowchart.htmlLabels` — mermaid 12 deprecated the per-diagram key and the
-  // root one wins. SVG `<text>` labels stay immune to the app's Tailwind preflight; a
-  // `<foreignObject>` label is real HTML in the transcript's own document and inherits it.
+  // Root-level, NOT `flowchart.htmlLabels` — mermaid 12 deprecated the per-diagram key and the root one wins.
   htmlLabels: false,
   themeVariables: {
     darkMode: activeScheme() === 'dark',
@@ -186,8 +177,7 @@ const buildConfig = (p: MermaidPalette): MermaidConfig => ({
     pie7: p.slices[6],
     pie8: p.slices[7],
   },
-  // Root-level `htmlLabels: false` (above) already forces SVG `<text>` labels; the per-diagram key
-  // is DEPRECATED in mermaid 12 and ignored, so it is not repeated here.
+  // Root-level `htmlLabels: false` (above) already forces SVG `<text>` labels; the per-diagram key is DEPRECATED in mermaid 12 and ignored, so it is not repeated …
   flowchart: { useMaxWidth: true, padding: 8 },
   sequence: { useMaxWidth: true },
   gantt: { useMaxWidth: true },
@@ -198,15 +188,12 @@ type MermaidApi = (typeof import('mermaid'))['default']
 let api: Promise<MermaidApi> | null = null
 let initializedTheme: string | null = null
 
-/** Lazily pull in Mermaid (a large dependency) and initialize it for the ACTIVE theme, on the first
- * diagram of a session and again after a theme change — a transcript with no diagrams never pays
- * for the first load. */
+/** Lazily pull in Mermaid (a large dependency) and initialize it for the ACTIVE theme, on the first diagram of a session and again after a theme change — a … */
 export const loadMermaid = (): Promise<MermaidApi> => {
   if (api === null) {
     api = import('mermaid')
       .then((module) => module.default)
-      // A failed chunk load (offline, a stale deploy) must not poison every later diagram: drop the
-      // cached promise so the next mount retries, and let the caller surface the reason.
+      // A failed chunk load (offline, a stale deploy) must not poison every later diagram: drop the cached promise so the next mount retries, and let the caller …
       .catch((cause: unknown) => {
         api = null
         throw cause
@@ -232,9 +219,7 @@ export const _resetMermaidLoader = (): void => {
 
 let renderSeq = 0
 
-/** Render Mermaid source to SVG. The id is unique per call: mermaid scopes the generated stylesheet to
- * `#<id>`. It is NOT given a container on purpose — a container that is not laid out when mermaid
- * measures (`getBBox` on a `display:none` subtree) yields a 16x16 diagram. */
+/** Render Mermaid source to SVG. */
 export const renderMermaid = async (source: string): Promise<string> => {
   const mermaid = await loadMermaid()
   renderSeq += 1
@@ -242,8 +227,7 @@ export const renderMermaid = async (source: string): Promise<string> => {
   return mermaid.render(id, paintAuthoredColours(source, resolveMermaidPalette())).then(
     (result) => result.svg,
     (cause: unknown) => {
-      // mermaid's temp nodes are `d<id>`, `<id>` and `i<id>` (see `removeExistingElements` in
-      // mermaid.core.mjs); its own cleanup only ever looks up the id it is about to REUSE, so ours.
+      // mermaid's temp nodes are `d<id>`, `<id>` and `i<id>` (see `removeExistingElements` in mermaid.core.mjs); its own cleanup only ever looks up the id it is about …
       for (const leftover of [id, `d${id}`, `i${id}`]) document.getElementById(leftover)?.remove()
       throw cause
     },

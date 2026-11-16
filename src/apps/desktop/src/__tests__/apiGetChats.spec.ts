@@ -1,6 +1,4 @@
-/** Migration 082 - wire-format + mapper tests for `getChats`. The backend
- * (llm_history.zig::buildSessionListJson + session_list.zig) now emits `last_human_touched_at` on
- * every session in the GET /api/sessions response. These tests lock in: 1. */
+/** Migration 082 - wire-format + mapper tests for `getChats`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -12,8 +10,7 @@ describe('getChats - Migration 082 last_human_touched_at wire shape', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    // apiFetch fires an error toast via useNotificationStore() on
-    // non-2xx. A fresh Pinia keeps that path from crashing in tests.
+    // apiFetch fires an error toast via useNotificationStore() on non-2xx.
     setActivePinia(createPinia())
     global.fetch = fetchMock as unknown as typeof fetch
   })
@@ -62,9 +59,7 @@ describe('getChats - Migration 082 last_human_touched_at wire shape', () => {
   })
 
   it('defaults last_human_touched_at to empty string when the backend omits it (legacy rows)', async () => {
-    // Pre-Migration-082 sessions in the DB don't have the column at all - the backend COALESCE
-    // renders them as '' in the SELECT, but this test guards the mapper fallback too in case the
-    // field is missing from the JSON entirely.
+    // Pre-Migration-082 sessions in the DB don't have the column at all - the backend COALESCE renders them as '' in the SELECT, but this test guards the mapper …
     mockFetchOnce(200, {
       sessions: [
         {
@@ -111,8 +106,7 @@ describe('getChats - Migration 082 last_human_touched_at wire shape', () => {
   })
 
   it('Chat interface accepts last_human_touched_at as an optional string', () => {
-    // Type-level test: if the field becomes required or the type
-    // changes (e.g. number), this assignment fails to compile.
+    // Type-level test: if the field becomes required or the type changes (e.g. number), this assignment fails to compile.
     const withField: Chat = {
       session_id: 'sess_1',
       last_human_touched_at: '1786500000000',

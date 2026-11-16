@@ -1,6 +1,4 @@
-//! CLI command dispatch. Each command lives in its own submodule and is
-//! re-exported here so the CLI's `main.zig` can call `commands.run(...)`
-//! without reaching into the subdirectory.
+//! CLI command dispatch.
 
 const std = @import("std");
 const config = @import("../config.zig");
@@ -26,9 +24,7 @@ pub const DispatchResult = enum {
     err,
 };
 
-/// Parsed CLI command. `args` is a borrowed slice into the
-/// `argv` scratch buffer; the caller is responsible for keeping
-/// it alive.
+/// Parsed CLI command.
 pub const Command = struct {
     kind: CommandKind,
     args: []const []const u8,
@@ -57,8 +53,7 @@ pub const help_text =
     \\
 ;
 
-/// Dispatch a parsed command to its subcommand. Returns `.ok` on success,
-/// `.err` on a fatal failure (network down, parse error, non-2xx, etc.).
+/// Dispatch a parsed command to its subcommand.
 pub fn dispatch(cmd: Command, cfg: config.Config, io: std.Io) DispatchResult {
     switch (cmd.kind) {
         .help => {
@@ -119,8 +114,7 @@ fn parseSendArgs(args: []const []const u8) !send.Args {
         } else if (out.message.len == 0) {
             out.message = a;
         } else {
-            // Treat additional positional args as appended message text
-            // (space-separated). The simplest correct behaviour.
+            // Treat additional positional args as appended message text (space-separated).
             const old_len = out.message.len;
             const new_buf = std.heap.page_allocator.alloc(u8, old_len + 1 + a.len) catch return error.OutOfMemory;
             @memcpy(new_buf[0..old_len], out.message);
@@ -218,9 +212,7 @@ fn parsePrStatusArgs(args: []const []const u8) !pr_status.Args {
     return out;
 }
 
-/// Parse the command from argv (excluding the program name). The
-/// `scratch` buffer is used for in-place lower-casing the verb so
-/// we don't need to allocate.
+/// Parse the command from argv (excluding the program name).
 pub fn parseCommand(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
@@ -292,9 +284,7 @@ test "parseCommand: case-insensitive" {
     try testing.expectEqual(CommandKind.send, cmd.kind);
 }
 
-// ============================================================================
 // parseXxxArgs tests — behavioural coverage of each subcommand's flag parser.
-// ============================================================================
 
 test "parseSendArgs: minimal message" {
     const args = [_][]const u8{ "hello" };

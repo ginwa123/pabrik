@@ -61,9 +61,7 @@ const toggleFolder = (id: string) => {
   collapsed.value = next
 }
 
-/** Only a key pressed ON the row toggles it. Without this guard a keydown from
- * the rename field (or the delete button) bubbles here and is swallowed —
- * which is why a space typed into the field never appeared. */
+/** Only a key pressed ON the row toggles it. */
 const onFolderKeydown = (event: KeyboardEvent, id: string) => {
   if (event.target !== event.currentTarget) return
   if (event.key !== 'Enter' && event.key !== ' ') return
@@ -78,8 +76,7 @@ const expand = (id: string) => {
   collapsed.value = next
 }
 
-/** Flattened visible tree, depth-first. Folders come before documents at every
- * level (the store owns that rule) and a collapsed folder contributes one row. */
+/** Flattened visible tree, depth-first. */
 const rows = computed<DocumentRow[]>(() => {
   const out: DocumentRow[] = []
   const walk = (parentId: string | null, depth: number) => {
@@ -96,8 +93,7 @@ const rows = computed<DocumentRow[]>(() => {
   return out
 })
 
-/** The visible distance from the rail's left edge. `--sb-mark` is 16px, the
- * same step the shipped list already spends on its one mark column. */
+/** The visible distance from the rail's left edge. */
 const indent = (depth: number) => `calc(var(--sb-gutter) + ${depth * 16}px)`
 
 const directChildCount = (folderId: string): number => documentsStore.level(folderId).length
@@ -105,8 +101,7 @@ const directChildCount = (folderId: string): number => documentsStore.level(fold
 const toggleDocumentsSection = () => {
   const wasExpanded = sidebarStore.documentsExpanded
   sidebarStore.toggleDocumentsExpanded()
-  // Lazy first fetch: the section is collapsed on a returning user more
-  // often than not, and the list read is the sidebar's hottest query.
+  // Lazy first fetch: the section is collapsed on a returning user more often than not, and the list read is the sidebar's hottest query.
   if (!wasExpanded && props.workspaceId && !documentsStore.loaded) {
     void documentsStore.fetchDocuments(props.workspaceId)
   }
@@ -117,14 +112,11 @@ const activeWorkspaceId = () => props.workspaceId ?? workspacesStore.activeWorks
 const selectDocument = (id: string) => {
   const wsId = activeWorkspaceId()
   if (!wsId) {
-    // No workspace means no document page to build a URL for. The rows
-    // only render with a workspace selected, so this is a guard against
-    // a stale list surviving a workspace switch, not a normal path.
+    // No workspace means no document page to build a URL for.
     return
   }
   const target = buildAppUrl({ workspaceId: wsId, documentId: id })
-  // The document is a PAGE, so it opens as its own tab in the window's row — the same strip a
-  // board or Settings lands in. The URL carries only the id, so the name is set here, at open time.
+  // The document is a PAGE, so it opens as its own tab in the window's row — the same strip a board or Settings lands in.
   const doc = documentsStore.documents.find((candidate) => candidate.id === id)
   const tab = tabsStore.enabled
     ? tabsStore.open({
@@ -134,8 +126,7 @@ const selectDocument = (id: string) => {
         kind: 'document',
       })
     : null
-  // `replace`, not `push`: clicking through five documents should not bury the previous four under
-  // Back. The document is a PAGE, so this replaces whatever main view was open.
+  // `replace`, not `push`: clicking through five documents should not bury the previous four under Back.
   router
     .replace({ path: target.path, query: tab ? { ...target.query, tab: tab.id } : target.query })
     .catch(() => {
@@ -211,8 +202,7 @@ const createDocument = (
   if (!wsId) return
   const isMarkdown = kind === 'markdown'
   const isHtml = kind === 'html'
-  // The envelope is written at create time, so the editor knows which Univer
-  // product to mount before the first Save.
+  // The envelope is written at create time, so the editor knows which Univer product to mount before the first Save.
   const content = isMarkdown ? '' : isHtml ? DEFAULT_HTML_BODY : serializeOfficeBody(kind, {})
   const format = isMarkdown ? MARKDOWN_FORMAT : isHtml ? HTML_FORMAT : OFFICE_FORMAT
   const title =
@@ -228,8 +218,7 @@ const createDocument = (
 
 const renamingId = ref<string | null>(null)
 const renameValue = ref('')
-/** A function ref, not `ref()`: a string ref inside `v-for` collects into an
- * array, and `.focus()` on that array throws. */
+/** A function ref, not `ref()`: a string ref inside `v-for` collects into an array, and `.focus()` on that array throws. */
 let renameInput: HTMLInputElement | null = null
 const setRenameInput = (el: unknown) => {
   renameInput = (el as HTMLInputElement | null) ?? null
@@ -238,8 +227,7 @@ const setRenameInput = (el: unknown) => {
 const startRename = (folder: DocumentFolder) => {
   renamingId.value = folder.id
   renameValue.value = folder.name
-  // The field is the next thing to type into: focus it and select the old
-  // name so the first keystroke replaces it.
+  // The field is the next thing to type into: focus it and select the old name so the first keystroke replaces it.
   void nextTick(() => {
     renameInput?.focus()
     renameInput?.select()
@@ -293,8 +281,7 @@ const {
   removeFolder,
 })
 
-/** The document menu's `Change icon…`: anchored past the menu's right edge,
- * measured rather than assumed because the menu's width is content-driven. */
+/** The document menu's `Change icon…`: anchored past the menu's right edge, measured rather than assumed because the menu's width is content-driven. */
 const documentMenuChangeIcon = () => {
   const id = singleSelectedId.value
   const pos = menuPos.value
@@ -303,9 +290,7 @@ const documentMenuChangeIcon = () => {
   openIconPickerAt(pos.x + 240, pos.y, 'document', id, doc.title, documentIcon(doc))
 }
 
-// Refetch on workspace switch so a stale list is never shown under a new header. `reset()` on the
-// way out is what makes the refetch necessary rather than a stale-merge hazard. Prev-value guard on
-// update — same reset+fetch the watcher did; mount runs the same initial fetch.
+// Refetch on workspace switch so a stale list is never shown under a new header.
 function syncWorkspaceDocuments(next: string | null, prev: string | null | undefined) {
   if (prev && prev !== next) documentsStore.reset()
   if (next && sidebarStore.documentsExpanded) {

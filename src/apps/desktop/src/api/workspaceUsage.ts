@@ -1,7 +1,6 @@
 import { apiFetch } from './client'
 
-/** The four ranges the endpoint accepts. Anything else is a 400, so the type is the
- * allow-list rather than a free string. */
+/** The four ranges the endpoint accepts. */
 export type WorkspaceUsageRange = '1d' | '7d' | '30d' | '90d'
 
 export interface WorkspaceUsageTotals {
@@ -14,12 +13,10 @@ export interface WorkspaceUsageTotals {
   cache_creation_tokens: number
   /** Calls that returned a cache counter (`cache_read` or `cache_creation` non-zero). */
   calls_with_cache: number
-  /** Calls whose `cache_read_input_tokens` exceeded their own `prompt_tokens`. Excluded from
-   * every rate above, so a broken provider mapping cannot print a rate over 100%. */
+  /** Calls whose `cache_read_input_tokens` exceeded their own `prompt_tokens`. */
   excluded_calls: number
   tool_calls: number
-  /** Percentage 0..100 over `reported_input_tokens`, or null when nothing divided into it:
-   * null means "no counter was reported", which is not the same answer as 0%. */
+  /** Percentage 0..100 over `reported_input_tokens`, or null when nothing divided into it */
   cache_hit_rate: number | null
 }
 
@@ -73,8 +70,7 @@ export interface WorkspaceUsage {
   models: WorkspaceUsageModelRow[]
   tools: WorkspaceUsageToolRow[]
   finish_reasons: WorkspaceUsageReasonRow[]
-  /** The most recent session in range that reported cache, capped at 120 calls, or null when
-   * no provider reported one. */
+  /** The most recent session in range that reported cache, capped at 120 calls, or null when no provider reported one. */
   cache_series: WorkspaceUsageCacheSeries | null
 }
 

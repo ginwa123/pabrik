@@ -1,6 +1,4 @@
-/** Regression: clicking a left-sidebar chat after opening a right-sidebar file did nothing (first
- * click dead, second click worked). Root cause: the dying ChatView's diff writers raced ChatsList's
- * navigation on path-based URLs. */
+/** Regression: clicking a left-sidebar chat after opening a right-sidebar file did nothing (first click dead, second click worked). */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
@@ -22,9 +20,7 @@ if (
   ).HTMLElement.prototype.scrollTo = function () {}
 }
 
-// Inert global SSE stub. This spec never drives a state transition, so
-// `getState()` reads the captured initial value directly — no mutable
-// `_state` field to cast through.
+// Inert global SSE stub.
 function makeStubClient(initial: SseState = 'open'): SseClient {
   return {
     close: vi.fn(),
@@ -100,14 +96,11 @@ describe('ChatView stale diff guard — dying view cannot corrupt new chat URL',
     expect(router.currentRoute.value.path).toBe(`/app/${WS}/chat/${SESSION_A}`)
     expect(router.currentRoute.value.query.diff).toBeUndefined()
 
-    // ChatsList.setActive(B): store first (omitted here — the guard reads
-    // the route, not the store), then replace to B with an empty query.
+    // ChatsList.setActive(B): store first (omitted here — the guard reads the route, not the store), then replace to B with an empty query.
     await router.replace({ path: `/app/${WS}/chat/${SESSION_B}`, query: {} })
     expect(router.currentRoute.value.path).toBe(`/app/${WS}/chat/${SESSION_B}`)
 
-    // The dying instance (still mounted in this test, sessionId=A) fires a
-    // late diff write — scroll-spy, collapse toggle, or mode switch via the
-    // proxied setup binding. The wire (router.currentRoute) is the assertion.
+    // The dying instance (still mounted in this test, sessionId=A) fires a late diff write — scroll-spy, collapse toggle, or mode switch via the proxied setup …
     const vm = wrapper.vm as unknown as Record<string, unknown>
     const setDiffMode = vm['setDiffMode'] as ((m: 'unified' | 'split') => void) | undefined
     expect(typeof setDiffMode).toBe('function')

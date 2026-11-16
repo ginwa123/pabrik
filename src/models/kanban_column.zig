@@ -1,6 +1,4 @@
-//! Data model for the `kanban_columns` entity table. One row per user-defined
-//! kanban column (todo / in progress / done / etc.) under a kanban workspace
-//! item. Schema: Migration 051 (`add_kanban` step that creates the table)
+//! Data model for the `kanban_columns` entity table.
 
 const std = @import("std");
 
@@ -12,7 +10,6 @@ name: []u8,
 position: i64,
 created_at: []u8,
 /// Migration 053 — free-text description of the column's meaning.
-/// Empty slice is the canonical "no description" sentinel.
 description: []u8 = &.{},
 
 const Self = @This();

@@ -68,8 +68,7 @@ pub fn listSessions(
             .created_at = s.created_at,
         };
     }
-    // The `SessionInfo` slices are owned by the caller (getSessionList
-    // dupes them), so they are handed to the rows rather than copied.
+    // The `SessionInfo` slices are owned by the caller (getSessionList dupes them), so they are handed to the rows rather than copied.
     allocator.free(res.sessions);
 
     return .{ .sessions = rows, .total = res.total };

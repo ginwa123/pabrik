@@ -1,6 +1,4 @@
-/** Behavioural tests for the diagram viewport maths — the part of "a diagram you can actually
- * read" that has an answer without a browser: how wide to lay it out in a column, and where the
- * pointer is while zooming and panning. */
+/** Behavioural tests for the diagram viewport maths — the part of "a diagram you can actually read" that has an answer without a browser: how wide to lay it out … */
 import { describe, expect, it } from 'vitest'
 import {
   MAX_OPEN_UPSCALE,

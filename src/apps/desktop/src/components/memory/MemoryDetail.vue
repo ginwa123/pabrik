@@ -35,18 +35,14 @@ const editContent = ref('')
 // Delete confirmation modal
 const showDeleteConfirm = ref(false)
 
-/**
- * Human-readable byte size (1 KB = 1024 bytes).
- */
+/** Human-readable byte size (1 KB = 1024 bytes). */
 const formatSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// Load the detail when the memory name changes. Prev-value guard on
-// update — same fetch the watcher did; the mount call covers the initial
-// load (the old `immediate: true`).
+// Load the detail when the memory name changes.
 async function syncMemoryDetail(newName: string | null) {
   if (!newName) {
     detail.value = null
@@ -152,8 +148,7 @@ const saveCreate = async () => {
   try {
     const result = await createMemory(trimmedName, editContent.value)
     mode.value = 'view'
-    // createMemory returns Memory (no content); synthesize the full detail
-    // from what we just wrote so the view-mode <pre> has content to show.
+    // createMemory returns Memory (no content); synthesize the full detail from what we just wrote so the view-mode <pre> has content to show.
     detail.value = {
       name: result.memory.name,
       title: result.memory.title,
@@ -162,8 +157,7 @@ const saveCreate = async () => {
       content: editContent.value,
     }
     editName.value = result.memory.name
-    // editContent.value is already correct (same string we just persisted);
-    // result.memory is Memory (no content field), so no re-assignment needed.
+    // editContent.value is already correct (same string we just persisted); result.memory is Memory (no content field), so no re-assignment needed.
     emit('memorySaved')
   } catch (err) {
     emit('error', err instanceof Error ? err.message : 'Failed to create memory')
@@ -199,8 +193,7 @@ const handleDelete = async () => {
   }
 }
 
-// Expose `startCreate` so the parent (MemoriesSettings) can trigger
-// create mode from the "+ New Memory" button in the list header.
+// Expose `startCreate` so the parent (MemoriesSettings) can trigger create mode from the "+ New Memory" button in the list header.
 defineExpose({ startCreate })
 </script>
 

@@ -43,17 +43,7 @@ fun AuthRestoringScreen(
     errorMessage: String? = null,
     onRetry: (() -> Unit)? = null,
     onUseAnotherAccount: (() -> Unit)? = null,
-    /**
-     * The server, and the way to change it — offered **only in the error
-     * state**, because this is where a wrong or unreachable address lands.
-     *
-     * The restore call goes to whatever host the app is pointed at, fails, and
-     * the screen says "Session check failed" with a Try again button. Try again
-     * against a typo'd domain fails identically, for ever, and the only way out
-     * is a control this screen has to offer itself: the login screen's server
-     * row is one "Sign in" tap away, and a person who cannot reach their server
-     * is exactly the person who most needs to change which server that is.
-     */
+    /** The server, and the way to change it — offered **only in the error state**, because this is where a wrong or unreachable address lands. */
     serverBaseUrl: String? = null,
     defaultServerBaseUrl: String = AuthConfig.BUILD_DEFAULT_BASE_URL,
     onChangeServer: ((String) -> ServerChange)? = null,
@@ -73,10 +63,7 @@ fun AuthRestoringScreen(
                 currentBaseUrl = serverBaseUrl,
                 defaultBaseUrl = defaultServerBaseUrl,
                 onSave = onChangeServer,
-                // The "Use the default server" escape hatch is a no-op here in
-                // the sense that it is a second, equally valid way to say the
-                // same thing; it is wired to the same callback so both end in
-                // one purge.
+                // The "Use the default server" escape hatch is a no-op here in the sense that it is a second, equally valid way to say the same thing; it is wired to the same …
                 onUseDefault = onUseDefaultServer ?: { ServerChange.Applied(defaultServerBaseUrl) },
                 onDismiss = { serverDialogOpen = false },
             )
@@ -147,9 +134,7 @@ fun AuthRestoringScreen(
                     textAlign = TextAlign.Center,
                 )
 
-                // Not a tab and not a separate route: a dialog over the screen
-                // the person is already on, so the way back is the way they
-                // arrived.
+                // Not a tab and not a separate route: a dialog over the screen the person is already on, so the way back is the way they arrived.
                 if (serverBaseUrl != null && onChangeServer != null) {
                     ServerAddressRow(
                         baseUrl = serverBaseUrl,

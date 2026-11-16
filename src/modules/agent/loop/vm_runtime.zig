@@ -1,6 +1,4 @@
-//! The `--saas` substrate for a shell command: resolve the session's workspace,
-//! map the host `cwd` onto the guest's `/workspace`, and run there through
-//! `pabrik-vmd`. Local mode installs nothing.
+//! The `--saas` substrate for a shell command: resolve the session's workspace, map the host `cwd` onto the guest's `/workspace`, and run there through …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -24,15 +22,11 @@ pub const Error = error{
     GuestManagerRefused,
 };
 
-/// What the executor needs to place a command: the session it belongs to. No
-/// database or no session means there is no workspace to place it in, and the
-/// executor refuses rather than guessing.
+/// What the executor needs to place a command: the session it belongs to.
 pub const GuestContext = struct {
     db: ?*database.Db,
     session_id: ?[]const u8,
-    /// The Stop button. It reaches the HOST's wait for the manager's reply —
-    /// it cannot kill the guest's process, which stays bounded by the
-    /// request's own `timeout_ms` that the daemon enforces.
+    /// The Stop button.
     cancel_hook: ?shell.CancelHook = null,
 };
 
@@ -41,8 +35,7 @@ pub fn guestModeActive() bool {
     return runtime_mode.vm_backend_available and runtime_mode.currentMode() == .saas;
 }
 
-/// The workspace a session's commands belong to, or null when it does not
-/// resolve to one. Under `--saas` this is also the VM they run in.
+/// The workspace a session's commands belong to, or null when it does not resolve to one.
 pub fn workspaceIdFor(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -51,8 +44,7 @@ pub fn workspaceIdFor(
     return workspace_scope.resolveWorkspaceId(allocator, db, session_id);
 }
 
-/// The name of a fresh job log. The manager owns the DIRECTORY and turns this
-/// into a path, so the only thing chosen here stays a name.
+/// The name of a fresh job log.
 pub fn jobLogName(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, 1_000_000));
     return std.fmt.allocPrint(allocator, "bg_{d}.log", .{ts});
@@ -75,14 +67,12 @@ fn runGuest(
     _ = argv_prefix;
     const ctx: *const GuestContext = @ptrCast(@alignCast(ctx_ptr));
 
-    // The host path's own guards, in the same order: a call with no deadline
-    // or no absolute cwd is the caller's mistake in either substrate.
+    // The host path's own guards, in the same order: a call with no deadline or no absolute cwd is the caller's mistake in either substrate.
     const cwd = input.cwd orelse return error.MandatoryCwdMissing;
     if (cwd.len == 0) return error.MandatoryCwdMissing;
     if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
     const mode = shell.resolvedMode(input);
-    // The host's deadline rule: required and bounded in the foreground, and
-    // never consulted by the detached modes.
+    // The host's deadline rule: required and bounded in the foreground, and never consulted by the detached modes.
     var timeout_sec: u32 = 0;
     if (!mode.isDetached()) {
         timeout_sec = input.timeout orelse return error.TimeoutMissing;
@@ -90,9 +80,7 @@ fn runGuest(
         if (timeout_sec > shell.MAX_TIMEOUT_SEC) return error.TimeoutTooLarge;
     }
 
-    // Fail closed: no session or no database means there is nowhere to place
-    // the command, and running it on the host is not an option. Where it
-    // belongs is asked BEFORE whether a manager is up.
+    // Fail closed: no session or no database means there is nowhere to place the command, and running it on the host is not an option.
     const db = ctx.db orelse return Error.GuestWorkspaceUnknown;
     const session_id = ctx.session_id orelse return Error.GuestWorkspaceUnknown;
 
@@ -113,8 +101,7 @@ fn runGuest(
 
     const max_output = input.max_output orelse 20 * 1024;
     const max_lines = input.max_lines orelse 1000;
-    // A base64 frame costs more than the bytes it carries, so the request
-    // cannot ask for a capture the reply could not hold.
+    // A base64 frame costs more than the bytes it carries, so the request cannot ask for a capture the reply could not hold.
     const budget = @min(max_output, rpc.max_output_bytes_limit);
 
     var client = vmd.Client.init(allocator, socket);
@@ -148,9 +135,7 @@ fn runGuest(
     };
 }
 
-/// Detach the command INSIDE the workspace's VM. The reply's shape is the host
-/// path's own — `PID: <guest pid>`, the guest's log path — so the tool records
-/// a job the same way in either substrate.
+/// Detach the command INSIDE the workspace's VM.
 fn spawnGuestJob(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -187,8 +172,7 @@ fn spawnGuestJob(
     };
 }
 
-/// The host path reports a detached command's text cut to 50 bytes, and the
-/// tool's payload shape must not depend on the substrate.
+/// The host path reports a detached command's text cut to 50 bytes, and the tool's payload shape must not depend on the substrate.
 fn copyCommandShaped(allocator: std.mem.Allocator, command: []const u8) ![]u8 {
     if (command.len <= 50) return allocator.dupe(u8, command);
     const cut = try allocator.alloc(u8, 53);
@@ -197,15 +181,13 @@ fn copyCommandShaped(allocator: std.mem.Allocator, command: []const u8) ![]u8 {
     return cut;
 }
 
-/// Adapt the tool-side hook to the transport's own probe type (the two are
-/// structurally identical; the dependency arrow only points one way).
+/// Adapt the tool-side hook to the transport's own probe type (the two are structurally identical; the dependency arrow only points one way).
 fn guestProbe(hook: ?shell.CancelHook) ?vmd.CancelProbe {
     const h = hook orelse return null;
     return .{ .ctx = h.ctx, .is_cancelled = h.is_cancelled };
 }
 
-/// A stopped guest run: `exit_code` -1, not -9 — nothing was signalled, the
-/// daemon still owns the command until its `timeout_ms`.
+/// A stopped guest run: `exit_code` -1, not -9 — nothing was signalled, the daemon still owns the command until its `timeout_ms`.
 fn cancelledByUser(allocator: std.mem.Allocator, command: []const u8) !shell.ShellOutput {
     const stderr = "Cancelled by the user while waiting for the workspace VM. " ++
         "The guest command keeps running until its own timeout; nothing on the host is waiting for it.";
@@ -240,8 +222,7 @@ const Captured = struct {
     truncated: bool,
 };
 
-/// The host reader's policy, applied to bytes that arrived in one piece: the
-/// byte ceiling, the line ceiling, and the empty-capture placeholder.
+/// The host reader's policy, applied to bytes that arrived in one piece: the byte ceiling, the line ceiling, and the empty-capture placeholder.
 fn shapeCapture(
     allocator: std.mem.Allocator,
     raw: []const u8,
@@ -265,9 +246,7 @@ fn shapeCapture(
     return .{ .bytes = bytes, .lines = lines, .truncated = truncated };
 }
 
-// ============================================================================
-// Behaviour tests — the pure half. A live VM is the smoke scripts' job.
-// ============================================================================
+// Behaviour tests — the pure half.
 
 const testing = std.testing;
 
@@ -281,8 +260,7 @@ const GuestTestCtx = struct {
     }
 };
 
-/// The smallest database whose session resolves to a workspace: one item with a
-/// path, one task linked to it, one session.
+/// The smallest database whose session resolves to a workspace: one item with a path, one task linked to it, one session.
 fn guestTestCtx() !GuestTestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
@@ -324,8 +302,7 @@ test "runGuest: a detached call goes to the manager, not to an unsupported wall"
     defer runtime_mode.setCurrent(.local);
     if (!runtime_mode.vm_backend_available) return;
 
-    // No database, so no workspace resolves — and the refusal must be THAT, not
-    // "detached commands are unsupported inside the VM".
+    // No database, so no workspace resolves — and the refusal must be THAT, not "detached commands are unsupported inside the VM".
     const ctx = GuestContext{ .db = null, .session_id = "s" };
     const executor = executorFor(&ctx).?;
     const result = executor.run(executor.ctx, testing.allocator, testing.io, &.{}, .{
@@ -348,8 +325,7 @@ test "runGuest: a detached call in a real workspace asks for a guest job" {
 
     const guest = GuestContext{ .db = &ctx.db, .session_id = "s1" };
     const executor = executorFor(&guest).?;
-    // `mode=background` is a legal call now: the workspace resolves, so the
-    // only thing missing is the manager itself.
+    // `mode=background` is a legal call now: the workspace resolves, so the only thing missing is the manager itself.
     const result = executor.run(executor.ctx, testing.allocator, testing.io, &.{}, .{
         .command = "make -j4",
         .cwd = "/proj/a",
@@ -418,7 +394,6 @@ test "managerError: a manager that is not there and one that refuses are told ap
     try testing.expectEqual(Error.GuestManagerUnavailable, managerError(error.ConnectFailed));
     try testing.expectEqual(Error.GuestManagerUnavailable, managerError(error.Timeout));
     try testing.expectEqual(Error.GuestManagerRefused, managerError(error.ServerFailure));
-    // Anything else keeps its own name, so a protocol bug is not disguised
-    // as a missing daemon.
+    // Anything else keeps its own name, so a protocol bug is not disguised as a missing daemon.
     try testing.expectEqual(error.ProtocolViolation, managerError(error.ProtocolViolation));
 }

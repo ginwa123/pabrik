@@ -8,9 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 060 — Re-run the `created_iso` backfill for rows that were NULL
-/// when Migration 059 first ran. ## Why this migration exists V1 of Migration
-/// 059 (now reverted) used SQLite INSERT/UPDATE triggers to populate
+/// Migration 060 — Re-run the `created_iso` backfill for rows that were NULL when Migration 059 first ran.
 pub const Migration060RebackfillCreatedIso = struct {
     pub const version: u32 = 60;
     pub const name = "rebackfill_llm_history_created_iso";

@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import ListAgents from '../ListAgents.vue'
 
-// ────────────────────────────────────────────────────────────────────────
 // Helpers
-// ────────────────────────────────────────────────────────────────────────
 const agent = (opts: {
   name: string
   model?: string
@@ -67,9 +65,7 @@ const makePopulated = (): string =>
 
 const makeEmpty = (): string => makeEnvelope({ count: 0, agents: [] })
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('ListAgents.vue — populated', () => {
   it('header chip shows the agent count', () => {
     const wrapper = mount(ListAgents, { props: { message: { content: makePopulated() } } })

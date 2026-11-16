@@ -1,5 +1,4 @@
-/** Unit tests for the kanban store actions (Chunk 5 of the workspace-item-kanban plan + the
- * follow-up fetchKanbanColumns action that fixes the "board renders empty after page reload" bug). */
+/** Unit tests for the kanban store actions (Chunk 5 of the workspace-item-kanban plan + the follow-up fetchKanbanColumns action that fixes the "board renders … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -70,8 +69,7 @@ describe('useWorkspacesStore — kanban actions', () => {
       configurable: true,
     })
 
-    // init()'s other API calls — defensive in case a future test
-    // triggers it. Same defensive pattern as workspacesStoreTaskTypes.
+    // init()'s other API calls — defensive in case a future test triggers it.
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: [] })
     vi.spyOn(api, 'getWorkspacesItems').mockResolvedValue({ items: [], count: 0 })
     vi.spyOn(api, 'getTasks').mockResolvedValue({
@@ -145,19 +143,14 @@ describe('useWorkspacesStore — kanban actions', () => {
       errorSpy.mockRestore()
     })
 
-    // ─── "Untitled project" regression ───────────────────────────────── The bug: the backend used
-    // to return a flat `CreateKanbanResponse` (no wrapper) so the frontend's `const { item, columns
-    // } = await api.createKanban(...)` got both as undefined, the local store pushed an item with.
+    // ─── "Untitled project" regression ─────────────────────────────────
     it('falls back to the form name when the API response omits it (regression for "Untitled project" bug)', async () => {
       const store = seedStore()
       // API returns an item with no `name` / `item_type` / `path`.
-      // This mirrors the shape the backend used to return before
-      // the wire envelope was introduced.
       vi.spyOn(api, 'createKanban').mockResolvedValue({
         item: {
           id: 'kanban_bare',
-          // name missing — old backend shape
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
          
         columns: [],
@@ -195,9 +188,7 @@ describe('useWorkspacesStore — kanban actions', () => {
 
       await store.addKanbanColumn('ws_1', 'item_1', 'in progress')
 
-      // The store defaults description to '' when not provided so
-      // existing callers (e.g. AppLayout's addColumn handler) keep
-      // working unchanged.
+      // The store defaults description to '' when not provided so existing callers (e.g.
       expect(addKanbanColumnMock).toHaveBeenCalledWith(
         'ws_1',
         'item_1',
@@ -270,9 +261,7 @@ describe('useWorkspacesStore — kanban actions', () => {
           }),
         ]),
       ])
-      // Backend returns the full board (same {columns, count}
-      // envelope as listKanbanColumns). Mirror that shape so the
-      // store code under test exercises the real wire format.
+      // Backend returns the full board (same {columns, count} envelope as listKanbanColumns).
       const updateKanbanColumnMock = vi
         .spyOn(api, 'updateKanbanColumn')
         .mockResolvedValue({
@@ -292,8 +281,7 @@ describe('useWorkspacesStore — kanban actions', () => {
       const updatedItem = wsRow.items.find((i) => i.id === 'item_1')!
       const c1 = updatedItem.kanban_columns?.find((c) => c.id === 'c1')
       expect(c1?.name).toBe('backlog')
-      // Description survives the PATCH — this is the regression
-      // assertion for the "No description shown after save" bug.
+      // Description survives the PATCH — this is the regression assertion for the "No description shown after save" bug.
       expect(c1?.description).toBe('Not started')
       // Sibling column is untouched.
       const c2 = updatedItem.kanban_columns?.find((c) => c.id === 'c2')
@@ -313,9 +301,7 @@ describe('useWorkspacesStore — kanban actions', () => {
           }),
         ]),
       ])
-      // Simulate the backend's dense renumber when c3 moves to
-      // position 0: c2 → 1, c1 → 2, c3 → 0 (the actual algorithm
-      // is irrelevant here — what matters is the response shape).
+      // Simulate the backend's dense renumber when c3 moves to position 0: c2 → 1, c1 → 2, c3 → 0 (the actual algorithm is irrelevant here — what matters is the …
       const updateKanbanColumnMock = vi
         .spyOn(api, 'updateKanbanColumn')
         .mockResolvedValue({
@@ -344,9 +330,7 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
 
     it('preserves the description of the patched column across the round-trip (regression for "empty after save" bug)', async () => {
-      // The original bug: the store assigned the PATCH response (which is the full board, NOT a
-      // single column) to the single-column slot, so col.description read as undefined and the
-      // settings dialog rendered "No description" until the user refreshed the page.
+      // The original bug: the store assigned the PATCH response (which is the full board, NOT a single column) to the single-column slot, so col.description read as …
       const store = seedStore([
         ws('ws_1', 'W1', [
           item('item_1', 'Sprint', 'kanban', {
@@ -377,8 +361,7 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── reorderKanbanColumn ──────────────────────────────────────────────── The column header
-  // drag-and-drop reorder action.
+  // ─── reorderKanbanColumn ────────────────────────────────────────────────
   describe('reorderKanbanColumn', () => {
     it('calls api.updateKanbanColumn with the target column\'s position and re-fetches via listKanbanColumns', async () => {
       const store = seedStore([
@@ -394,9 +377,7 @@ describe('useWorkspacesStore — kanban actions', () => {
       ])
       const updateMock = vi
         .spyOn(api, 'updateKanbanColumn')
-        // Backend returns the full board on PATCH; the store
-        // discards it and uses the follow-up listKanbanColumns
-        // response to mirror sibling renumbering.
+        // Backend returns the full board on PATCH; the store discards it and uses the follow-up listKanbanColumns response to mirror sibling renumbering.
         .mockResolvedValue({
           columns: [
             column('c3', 'done', 0, 'item_1'),
@@ -405,8 +386,7 @@ describe('useWorkspacesStore — kanban actions', () => {
           ],
           count: 3,
         })
-      // Re-fetch returns the post-renumber ordering (c3 is now at 0;
-      // c1 and c2 shifted to 1 and 2).
+      // Re-fetch returns the post-renumber ordering (c3 is now at 0; c1 and c2 shifted to 1 and 2).
       const listMock = vi.spyOn(api, 'listKanbanColumns').mockResolvedValue({
         columns: [
           column('c3', 'done', 0, 'item_1'),
@@ -423,12 +403,10 @@ describe('useWorkspacesStore — kanban actions', () => {
       expect(updateMock).toHaveBeenCalledWith('ws_1', 'item_1', 'c3', {
         position: 0,
       })
-      // The re-fetch must follow the PATCH (so the local state
-      // mirrors the backend's full renumber result).
+      // The re-fetch must follow the PATCH (so the local state mirrors the backend's full renumber result).
       expect(listMock).toHaveBeenCalledWith('ws_1', 'item_1')
 
-      // The two API calls must happen in the right order:
-      // PATCH first (so the backend can renumber), then list.
+      // The two API calls must happen in the right order
       const updateOrder = updateMock.mock.invocationCallOrder[0]!
       const listOrder = listMock.mock.invocationCallOrder[0]!
       expect(updateOrder).toBeLessThan(listOrder)
@@ -459,8 +437,7 @@ describe('useWorkspacesStore — kanban actions', () => {
 
       await store.reorderKanbanColumn('ws_1', 'item_1', 'c1', 'c_missing')
 
-      // Neither API call should happen — the action bails out before
-      // touching the network.
+      // Neither API call should happen — the action bails out before touching the network.
       expect(updateMock).not.toHaveBeenCalled()
       expect(listMock).not.toHaveBeenCalled()
     })
@@ -544,8 +521,7 @@ describe('useWorkspacesStore — kanban actions', () => {
 
       await store.moveTaskToColumn('ws_1', 'item_1', 't1', 'c2', 1)
 
-      // `force` defaults to false and is threaded through explicitly
-      // (api.moveTask keeps it out of the wire body when falsy).
+      // `force` defaults to false and is threaded through explicitly (api.moveTask keeps it out of the wire body when falsy).
       expect(moveTaskMock).toHaveBeenCalledWith('ws_1', 'item_1', 't1', 'c2', 1, false)
       const wsRow = store.workspaces.find((w) => w.id === 'ws_1')!
       const updatedItem = wsRow.items.find((i) => i.id === 'item_1')!
@@ -555,15 +531,12 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── fetchKanbanColumns ───────────────────────────────────────────────── The "board renders
-  // empty after page reload" fix.
+  // ─── fetchKanbanColumns ─────────────────────────────────────────────────
   describe('fetchKanbanColumns', () => {
     it('calls api.listKanbanColumns and populates item.kanban_columns', async () => {
       const store = seedStore([
         ws('ws_1', 'W1', [
-          // Start with NO columns (simulates the initial page-load
-          // state where the workspaces/items endpoint didn't embed
-          // columns).
+          // Start with NO columns (simulates the initial page-load state where the workspaces/items endpoint didn't embed columns).
           item('item_1', 'Sprint', 'kanban'),
         ]),
       ])
@@ -656,9 +629,7 @@ describe('useWorkspacesStore — kanban actions', () => {
     })
   })
 
-  // ─── updateKanbanItemName ─────────────────────────────────────────────── The kanban header
-  // rename (from KanbanSettingsDialog's inline pencil or KanbanView's header pencil) hits the store
-  // via this action.
+  // ─── updateKanbanItemName ───────────────────────────────────────────────
   describe('updateKanbanItemName', () => {
     it('calls api.updateWorkspaceItem with the new name and optimistic-updates the local store', async () => {
       const store = seedStore([

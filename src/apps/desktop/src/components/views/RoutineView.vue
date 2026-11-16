@@ -192,8 +192,6 @@ function openRunningSession(sessionId: string) {
 }
 
 // Compact 5-field cron check (empty = manual-only, always valid).
-// Mirrors the backend's POSIX parser loosely; the server re-validates
-// and returns 400 on anything we let through.
 function validateSchedule(expr: string): string | null {
   const trimmed = expr.trim()
   if (trimmed === '') return null
@@ -319,16 +317,12 @@ function startStatusPoll() {
   }, 5000)
 }
 
-// ─── Routine Agent (reuses AgentView, mirrors KanbanSettingsView) ────────── Same ownership split:
-// this view owns the data + API calls against the agent_routines mirror (Migration 087); AgentView
-// is presentational and emits intents.
+// ─── Routine Agent (reuses AgentView, mirrors KanbanSettingsView) ──────────
 const routineKnowledge = ref<api.AgentRoutineKnowledgeRow[]>([])
 const routineTools = ref<string[]>([])
 const routineSystemPrompts = ref<api.AgentRoutineSystemPromptRow[]>([])
 
-// True while `loadRoutineAgent` is in flight — AgentView's knowledge and system-prompt panels gate
-// their skeletons on this. Without it they render "No knowledge files yet." during the fetch, which
-// is a false statement about the routine's data.
+// True while `loadRoutineAgent` is in flight — AgentView's knowledge and system-prompt panels gate their skeletons on this.
 const routineAgentLoading = ref(false)
 
 async function loadRoutineAgent() {
@@ -606,8 +600,7 @@ onBeforeUnmount(() => {
   stopStatusPoll()
 })
 
-// Reload on item change (prev-value guard on update — same reset+loads
-// the watcher did; mount is covered above).
+// Reload on item change (prev-value guard on update — same reset+loads the watcher did; mount is covered above).
 let prevRoutineItemId = props.itemId
 onUpdated(() => {
   if (props.itemId === prevRoutineItemId) return

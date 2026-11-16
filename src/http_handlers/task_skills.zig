@@ -1,17 +1,13 @@
-//! The skill list a task asks its agent to use (Migration 112). One task may
-//! name several skills. They are validated, deduplicated, stored
-//! `||`-joined, and the create_and_run note gets one `#Skill` line each.
+//! The skill list a task asks its agent to use (Migration 112).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const skills_store = pabrikcore.skills_store;
 
-/// Hard cap on the skills one task may ask for: bounds both the row and the
-/// agent's first message without a silent truncation.
+/// Hard cap on the skills one task may ask for: bounds both the row and the agent's first message without a silent truncation.
 pub const MAX_SKILLS_PER_TASK: usize = 20;
 
-/// Separator between names inside the stored column. A legal skill name is
-/// `[A-Za-z0-9._-]`, so `|` can never occur inside one.
+/// Separator between names inside the stored column.
 pub const SEPARATOR = "||";
 
 pub const NormalizeError = error{
@@ -21,9 +17,7 @@ pub const NormalizeError = error{
     OutOfMemory,
 };
 
-/// Validate every name, drop blanks and duplicates and return the `||`-joined
-/// form the column holds. `legacy` is the pre-112 single-name field, read only
-/// when no array was sent. The caller owns the returned slice.
+/// Validate every name, drop blanks and duplicates and return the `||`-joined form the column holds.
 pub fn normalize(
     allocator: std.mem.Allocator,
     names: ?[]const []const u8,
@@ -58,9 +52,7 @@ pub fn normalize(
     return joined.toOwnedSlice(allocator);
 }
 
-/// The note block for the create_and_run message: one `#Skill <name>` line per
-/// skill, the whole block introduced by a blank line. Empty input yields "",
-/// so a task without skills leaves the message exactly as the caller wrote it.
+/// The note block for the create_and_run message: one `#Skill <name>` line per skill, the whole block introduced by a blank line.
 pub fn directives(allocator: std.mem.Allocator, joined: []const u8) ![]const u8 {
     if (joined.len == 0) return allocator.dupe(u8, "");
 
@@ -79,8 +71,7 @@ pub fn directives(allocator: std.mem.Allocator, joined: []const u8) ![]const u8 
     return block.toOwnedSlice(allocator);
 }
 
-/// True when `name` is already in `kept`. Linear on purpose: the list is
-/// capped at MAX_SKILLS_PER_TASK.
+/// True when `name` is already in `kept`.
 fn containsName(kept: []const []const u8, name: []const u8) bool {
     for (kept) |existing| {
         if (std.mem.eql(u8, existing, name)) return true;
@@ -88,8 +79,7 @@ fn containsName(kept: []const []const u8, name: []const u8) bool {
     return false;
 }
 
-/// The single-name rules Migration 110 introduced, unchanged: a length bound,
-/// no control characters, and the directory-safe token shape.
+/// The single-name rules Migration 110 introduced, unchanged: a length bound, no control characters, and the directory-safe token shape.
 fn validateName(name: []const u8) NormalizeError!void {
     if (name.len > skills_store.MAX_NAME_BYTES) return error.SkillNameTooLong;
     for (name) |c| {

@@ -1,6 +1,4 @@
 //! CLI configuration: server URL + optional session/profile defaults.
-//! Resolution order (highest priority first): 1. CLI flags (`--server`,
-//! `--session`, `--profile`) 2.
 
 const std = @import("std");
 
@@ -10,9 +8,7 @@ pub const default_server = "http://localhost:8081";
 /// Runtime configuration for one CLI invocation.
 pub const Config = struct {
     server: []const u8,
-    /// Borrowed slices: either the cli flag or the env map. Both
-    /// are required to outlive the Config (env: the `Init.environ_map`;
-    /// flags: the caller's flag storage).
+    /// Borrowed slices: either the cli flag or the env map.
     session_id: ?[]const u8 = null,
     profile: ?[]const u8 = null,
 };
@@ -28,9 +24,7 @@ fn getEnvOrNull(environment: *const std.process.Environ.Map, key: []const u8) ?[
     return v;
 }
 
-/// Load config from CLI flags + env. The returned `server` slice is
-/// heap-allocated (caller frees with `allocator.free`); the
-/// `session_id` and `profile` slices are borrowed (see Config docs).
+/// Load config from CLI flags + env.
 pub fn load(
     allocator: std.mem.Allocator,
     environment: *const std.process.Environ.Map,
@@ -47,15 +41,13 @@ pub fn load(
     return cfg;
 }
 
-/// Free the heap-allocated `server` slice. Safe to call on a config
-/// returned by `load` (the borrowed fields are not freed).
+/// Free the heap-allocated `server` slice.
 pub fn deinit(cfg: *Config, allocator: std.mem.Allocator) void {
     allocator.free(cfg.server);
     cfg.server = &[_]u8{};
 }
 
 // ===== Tests merged from config_test.zig (2026-09-29 flatten) =====
-// Tests for src/config.zig.
 
 const testing = std.testing;
 
@@ -175,10 +167,8 @@ test "deinit: frees server slice only" {
 
     deinit(&cfg, testing.allocator);
 
-    // The helper resets the slice pointer to a static empty string
-    // (safe to inspect after deinit; we just verify the value).
+    // The helper resets the slice pointer to a static empty string (safe to inspect after deinit; we just verify the value).
     try testing.expectEqualStrings("", cfg.server);
-    // The original slice is still the heap-allocated copy — we just
-    // can't safely access it after deinit without a use-after-free.
+    // The original slice is still the heap-allocated copy — we just can't safely access it after deinit without a use-after-free.
     _ = slice;
 }

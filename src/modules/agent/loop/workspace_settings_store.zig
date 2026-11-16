@@ -1,6 +1,4 @@
-//! Storage layer for the per-workspace config OVERLAY (`workspace_settings`,
-//! Migration 105). One row per `(owner, workspace_id)` holding a SPARSE JSON
-//! object.
+//! Storage layer for the per-workspace config OVERLAY (`workspace_settings`, Migration 105).
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -11,16 +9,12 @@ const secrets_at_rest = @import("secrets_at_rest.zig");
 /// The `owner` value used when `--auth` is OFF. Also the column DEFAULT.
 pub const FILE_MODE_OWNER = "";
 
-/// The AAD binding for one row's envelope: table name plus the row's primary
-/// key, `owner` length-prefixed so `("a","b:c")` and `("a:b","c")` cannot
-/// share one scope. A copied envelope fails to open instead of decrypting.
+/// The AAD binding for one row's envelope: table name plus the row's primary key, `owner` length-prefixed so `("a","b:c")` and `("a:b","c")` cannot share one …
 fn scopeId(allocator: std.mem.Allocator, owner: []const u8, workspace_id: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "workspace_settings:{d}:{s}{s}", .{ owner.len, owner, workspace_id });
 }
 
-/// The `owner` a `workspace_settings` row uses for a request. ONE definition
-/// for every reader and writer: `--auth` OFF is a single-user instance whose
-/// rows live under `FILE_MODE_OWNER`, whatever identity the request resolved.
+/// The `owner` a `workspace_settings` row uses for a request.
 pub fn ownerKey(auth_enabled: bool, resolved_user_id: []const u8) []const u8 {
     return if (auth_enabled) resolved_user_id else FILE_MODE_OWNER;
 }
@@ -31,8 +25,7 @@ pub fn isEmptyOverlay(json_text: []const u8) bool {
     return trimmed.len == 0 or std.mem.eql(u8, trimmed, "{}");
 }
 
-/// The raw overlay JSON for `(owner, workspace_id)`, or null when that
-/// workspace has no scoped settings of its own.
+/// The raw overlay JSON for `(owner, workspace_id)`, or null when that workspace has no scoped settings of its own.
 pub fn loadRaw(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -53,16 +46,12 @@ pub fn loadRaw(
     if (row.values[0].len == 0) return null;
 
     // A legacy plaintext row reads through unchanged; a sealed one is opened.
-    // `error.KeyUnavailable` is deliberately NOT "no overlay": a host that lost
-    // the key must not look like a workspace that never configured anything.
     const scope = try scopeId(allocator, owner, workspace_id);
     defer allocator.free(scope);
     return try secrets_at_rest.openValue(allocator, scope, row.values[0]);
 }
 
-/// Write the overlay for `(owner, workspace_id)`, sealed. An empty overlay
-/// writes the EMPTY-BODY marker instead (see `isEmptyOverlay`), and a host with
-/// no master key REFUSES the write rather than storing one more plaintext row.
+/// Write the overlay for `(owner, workspace_id)`, sealed.
 pub fn saveRaw(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -87,14 +76,11 @@ pub fn saveRaw(
     , &[_][]const u8{ owner, workspace_id, sealed });
 }
 
-/// Seal every row written before this feature existed; returns how many. Runs
-/// at boot, not in a migration, because the chain must run with no key. Sealed
-/// rows and unknown envelopes are left alone, so a second pass is a no-op.
+/// Seal every row written before this feature existed; returns how many.
 pub fn sealLegacySettingsRows(allocator: std.mem.Allocator, db: *database.Db) !usize {
     if (!secrets_at_rest.sealingAvailable()) return 0;
 
-    // Collect first, update second: rewriting rows while the SELECT's cursor is
-    // still open is how a "seal everything" loop seals a moving target.
+    // Collect first, update second: rewriting rows while the SELECT's cursor is still open is how a "seal everything" loop seals a moving target.
     const Row = struct { owner: []u8, workspace_id: []u8, body: []u8 };
     var rows: std.ArrayList(Row) = .empty;
     defer {
@@ -127,8 +113,7 @@ pub fn sealLegacySettingsRows(allocator: std.mem.Allocator, db: *database.Db) !u
     }
     if (rows.items.len == 0) return 0;
 
-    // One UPDATE per row, each atomic on its own; a crash midway is finished by
-    // the next boot. No wrapping transaction: `BEGIN IMMEDIATE` is sqlite-only.
+    // One UPDATE per row, each atomic on its own; a crash midway is finished by the next boot.
     var sealed_count: usize = 0;
     for (rows.items) |row| {
         const scope = scopeId(allocator, row.owner, row.workspace_id) catch continue;
@@ -151,8 +136,7 @@ pub fn sealLegacySettingsRows(allocator: std.mem.Allocator, db: *database.Db) !u
     return sealed_count;
 }
 
-/// Record "this workspace has NO scoped settings": the row is kept with a NULL
-/// body, which every reader treats as empty - and which no later pass refills.
+/// Record "this workspace has NO scoped settings": the row is kept with a NULL body, which every reader treats as empty - and which no later pass refills.
 pub fn clear(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -169,8 +153,7 @@ pub fn clear(
     , &[_][]const u8{ owner, workspace_id });
 }
 
-/// Has this `(owner, workspace_id)` been DECIDED yet - either overridden or
-/// explicitly left inherited?
+/// Has this `(owner, workspace_id)` been DECIDED yet - either overridden or explicitly left inherited?
 pub fn hasRow(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -217,9 +200,7 @@ pub fn hasOverlay(
     return false;
 }
 
-// ===================================================================== Tests
-// (in-memory SQLite, same pattern as secrets_store.zig)
-// ===================================================================== Five
+// ===================================================================== Tests (in-memory SQLite, same pattern as secrets_store.zig) …
 
 const testing = std.testing;
 
@@ -229,9 +210,7 @@ const test_key: [secrets_at_rest.KEY_LEN]u8 = blk: {
     break :blk k;
 };
 
-/// Install the suite's fixed key. Shared with the other suites that save
-/// through this store (`workspace_config`, `session_llm_config`, the HTTP
-/// config handler) so none of them reads the host's real key file.
+/// Install the suite's fixed key.
 pub fn installTestKey() void {
     secrets_at_rest.setKey(test_key);
 }
@@ -270,8 +249,7 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-/// Row count straight from SQL, so a "cleared" assertion cannot be satisfied
-/// by the same code path it is testing.
+/// Row count straight from SQL, so a "cleared" assertion cannot be satisfied by the same code path it is testing.
 fn rowCount(ctx: *TestCtx) !i64 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM workspace_settings", &.{});
@@ -302,8 +280,7 @@ test "an empty or `{}` overlay records an explicit inherit, not an empty object"
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Positive control: there IS an overlay to clear. Without this the
-    // "inherits" assertions below would pass on a store that never wrote.
+    // Positive control: there IS an overlay to clear.
     try saveRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a", "{\"retry_delay_ms\":500}");
     try testing.expect(try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
 
@@ -311,8 +288,7 @@ test "an empty or `{}` overlay records an explicit inherit, not an empty object"
     // Inherits: no body, so nothing to override and no "Overridden" pill.
     try testing.expect((try loadRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a")) == null);
     try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
-    // ...but DECIDED: the row is still there, which is what stops the boot
-    // backfill from re-copying the config the user just cleared.
+    // ...but DECIDED: the row is still there, which is what stops the boot backfill from re-copying the config the user just cleared.
     try testing.expect(try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
     try testing.expectEqual(@as(i64, 1), try rowCount(&ctx));
 
@@ -329,9 +305,7 @@ test "an untouched workspace and a cleared one both read as empty" {
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // `hasRow` still separates "nobody configured this" from "someone
-    // cleared it", but both answers to `loadRaw` are the same: no scoped
-    // settings at all.
+    // `hasRow` still separates "nobody configured this" from "someone cleared it", but both answers to `loadRaw` are the same: no scoped settings at all.
     try testing.expect(!try hasRow(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
     try testing.expect(!try hasOverlay(alloc, &ctx.db, FILE_MODE_OWNER, "ws_new"));
 
@@ -345,8 +319,7 @@ test "a NULL config_json column reads back as no overlay" {
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Written straight to SQL: a row can exist with a NULL body (a manual
-    // edit, or a future writer that clears the text but not the row).
+    // Written straight to SQL: a row can exist with a NULL body (a manual edit, or a future writer that clears the text but not the row).
     try ctx.db.exec(
         alloc,
         "INSERT INTO workspace_settings (owner, workspace_id, config_json) VALUES ('', ?, NULL)",
@@ -381,9 +354,7 @@ test "two owners in one workspace never share an overlay (the --auth leak)" {
 
     try saveRaw(alloc, &ctx.db, "user_1", "ws_shared", "{\"active_profile\":\"mine\"}");
 
-    // The whole point of keying on (owner, workspace_id): user_2 opening the
-    // SAME workspace must not see user_1's profile - and profiles carry API
-    // keys, so this is a credential leak, not a cosmetic one.
+    // The whole point of keying on (owner, workspace_id): user_2 opening the SAME workspace must not see user_1's profile - and profiles carry API keys, so this is a …
     try testing.expect((try loadRaw(alloc, &ctx.db, "user_2", "ws_shared")) == null);
     try testing.expect(!try hasOverlay(alloc, &ctx.db, "user_2", "ws_shared"));
 
@@ -430,8 +401,7 @@ test "a row written for a request identity is the row a reader finds in file mod
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // `user_system` is what request identity resolves to with `--auth` off;
-    // every reader asks this store with `FILE_MODE_OWNER`.
+    // `user_system` is what request identity resolves to with `--auth` off; every reader asks this store with `FILE_MODE_OWNER`.
     try saveRaw(alloc, &ctx.db, ownerKey(false, "user_system"), "ws_a", "{\"tools\":[\"read_file\"]}");
 
     const loaded = (try loadRaw(alloc, &ctx.db, ownerKey(false, ""), "ws_a")) orelse
@@ -455,14 +425,12 @@ test "auth mode keys a workspace's row by the user, not by the sentinel" {
     try testing.expectEqualStrings("{\"tools\":[\"read_file\"]}", loaded);
 }
 
-/// The column exactly as SQL returns it, so an assertion about "the file does
-/// not hold the config" cannot be satisfied by the reader under test.
+/// The column exactly as SQL returns it, so an assertion about "the file does not hold the config" cannot be satisfied by the reader under test.
 fn rawColumn(ctx: *TestCtx, owner: []const u8, workspace_id: []const u8) ![]u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
         alloc,
-        // `COALESCE(CAST(? AS TEXT), '')` for the same reason `loadRaw` uses it:
-        // a bare `?` bound to the empty owner never compares equal on postgres.
+        // `COALESCE(CAST(? AS TEXT), '')` for the same reason `loadRaw` uses it
         "SELECT COALESCE(CAST(config_json AS TEXT), '') FROM workspace_settings WHERE owner = COALESCE(CAST(? AS TEXT), '') AND workspace_id = ?",
         &[_][]const u8{ owner, workspace_id },
     );
@@ -482,8 +450,7 @@ test "a saved overlay is sealed in the column and still reads back as JSON" {
 
     const stored = try rawColumn(&ctx, FILE_MODE_OWNER, "ws_a");
     defer alloc.free(stored);
-    // THE point of the feature: what a database file (or a DB GUI) shows is an
-    // envelope, not the config.
+    // THE point of the feature: what a database file (or a DB GUI) shows is an envelope, not the config.
     try testing.expect(secrets_at_rest.isSealed(stored));
     try testing.expect(std.mem.indexOf(u8, stored, "claude") == null);
     try testing.expect(std.mem.indexOf(u8, stored, "read_file") == null);
@@ -521,8 +488,7 @@ test "an envelope moved to another workspace's row fails instead of decrypting" 
     const stolen = try rawColumn(&ctx, FILE_MODE_OWNER, "ws_a");
     defer alloc.free(stolen);
 
-    // A copy-paste by someone with write access to the file: the ciphertext is
-    // intact, the row it belongs to is not.
+    // A copy-paste by someone with write access to the file: the ciphertext is intact, the row it belongs to is not.
     try ctx.db.exec(
         alloc,
         "INSERT INTO workspace_settings (owner, workspace_id, config_json) VALUES ('', 'ws_b', ?)",
@@ -538,8 +504,7 @@ test "with no key set, a write is refused and the column gains no plaintext row"
     defer teardown(&ctx);
     defer installTestKey();
 
-    // FAIL CLOSED. Storing the config as-is is what makes "encrypted at rest" a
-    // claim nobody can check.
+    // FAIL CLOSED.
     secrets_at_rest.setKey(null);
     try testing.expectError(
         error.SealingUnavailable,
@@ -559,8 +524,7 @@ test "a sealed row on a host with no key is an error, not an empty overlay" {
     defer alloc.free(seeded);
 
     secrets_at_rest.setKey(null);
-    // A workspace whose config cannot be unsealed must not look like one that
-    // was never configured: the two states need different remedies.
+    // A workspace whose config cannot be unsealed must not look like one that was never configured: the two states need different remedies.
     try testing.expectError(error.KeyUnavailable, loadRaw(alloc, &ctx.db, FILE_MODE_OWNER, "ws_a"));
 
     installTestKey();
@@ -628,9 +592,7 @@ test "the envelope binds the (owner, workspace) pair, not a joined spelling of i
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Two DIFFERENT rows whose joined strings would be identical
-    // ("a" + ":" + "b:c" vs "a:b" + ":" + "c"). Without the length prefix in
-    // the AAD, one owner's ciphertext would open as the other's config.
+    // Two DIFFERENT rows whose joined strings would be identical ("a" + ":" + "b:c" vs "a:b" + ":" + "c").
     try saveRaw(alloc, &ctx.db, "a", "b:c", "{\"active_profile\":\"mine\"}");
     const stolen = try rawColumn(&ctx, "a", "b:c");
     defer alloc.free(stolen);

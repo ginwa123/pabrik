@@ -1,5 +1,4 @@
-/** AskUser.vue — the question card a message with an `ask_user` block draws. It renders the
- * parsed question and, while pending, POSTs the answer keyed by the message it came from. */
+/** AskUser.vue — the question card a message with an `ask_user` block draws. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'

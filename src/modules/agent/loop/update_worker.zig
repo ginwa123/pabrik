@@ -48,8 +48,7 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
     defer if (maybe_row) |r| r.deinit(allocator);
     const exists = maybe_row != null;
 
-    // Insert or update the worker. `cancelled` is named in BOTH halves
-    // deliberately.
+    // Insert or update the worker.
     const worker_sql =
         \\INSERT INTO worker (
         \\    id,
@@ -85,8 +84,7 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
         },
     );
 
-    // Ensure the session exists WITHOUT overwriting `name`. Pre-fix, this was
-    // `INSERT ...
+    // Ensure the session exists WITHOUT overwriting `name`.
     try db.exec(
         allocator,
         "INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES (?, '', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON CONFLICT DO NOTHING",
@@ -98,8 +96,7 @@ pub fn updateWorker(obj: UpsertWorkerInput) !void {
         &.{session_id},
     );
 
-    // Inherit the session's owner onto this worker row (plan 2026-09-25,
-    // W2.4).
+    // Inherit the session's owner onto this worker row (plan 2026-09-25, W2.4).
     try db.exec(
         allocator,
         "UPDATE worker SET user_id = (SELECT user_id FROM sessions WHERE id = ?) WHERE id = ? AND (user_id IS NULL OR user_id = '' OR user_id = 'user_system')",
@@ -263,8 +260,7 @@ test "updateWorker with is_emit_sse=true and event_bus=null is a safe no-op for 
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // The implementation must check `if (event_bus == null) return;` BEFORE
-    // any payload allocation. The DB writes must still complete.
+    // The implementation must check `if (event_bus == null) return;` BEFORE any payload allocation.
     try updateWorker(.{ .allocator = testing.allocator, .db = &s.db, .logger = null, .worker_id = "w_skip_sse", .session_id = "s_skip_sse", .working_directory = "/tmp", .event_bus = null, .is_emit_sse = true });
 
     // Confirm the DB write happened.
@@ -275,9 +271,7 @@ test "updateWorker with is_emit_sse=true and event_bus=null is a safe no-op for 
 }
 
 test "updateWorker with is_emit_sse=false short-circuits before any event_bus access" {
-    // Same as above but exercises the OTHER short-circuit branch — the
-    // implementation does `if (!is_emit_sse) return;` first, so even a
-    // null event_bus can't cause a problem.
+    // Same as above but exercises the OTHER short-circuit branch — the implementation does `if (!is_emit_sse) return;` first, so even a null event_bus can't cause a …
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
@@ -309,17 +303,14 @@ test "updateWorker clears a stop left by the previous run" {
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // The stop endpoint leaves exactly this state behind: the row survives with
-    // the flag set, because the loop reads it back to break out of itself.
+    // The stop endpoint leaves exactly this state behind: the row survives with the flag set, because the loop reads it back to break out of itself.
     try s.db.exec(
         testing.allocator,
         "INSERT INTO worker (id, session_id, working_directory, last_activity_nano, cancelled) VALUES ('w_rerun', 's_rerun', '/old', 1, 1)",
         &.{},
     );
 
-    // `isWorkerCancelled` is the gate `runAgenticMultiStepnew` checks at the top
-    // of every iteration, so a flag that survives the upsert ends the new run
-    // before it does anything at all.
+    // `isWorkerCancelled` is the gate `runAgenticMultiStepnew` checks at the top of every iteration, so a flag that survives the upsert ends the new run before it …
     try testing.expect(isCancelled(&s.db, "w_rerun"));
 
     try updateWorker(.{
@@ -392,9 +383,7 @@ test "updateWorker ON CONFLICT still refreshes last_activity_nano (the heart-bea
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // The reset must not cost the heart-beat: `cleanup_stale_worker` reaps any
-    // row whose `last_activity_nano` is more than 600 s old, and this upsert is
-    // the only thing keeping a long run alive against that cron.
+    // The reset must not cost the heart-beat: `cleanup_stale_worker` reaps any row whose `last_activity_nano` is more than 600 s old, and this upsert is the only …
     try s.db.exec(
         testing.allocator,
         "INSERT INTO worker (id, session_id, working_directory, last_activity_nano, cancelled) VALUES ('w_hb', 's_hb', '/x', 1, 0)",

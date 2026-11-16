@@ -7,31 +7,21 @@ const AgentTool = schemas.AgentTool;
 const pr_provider = @import("pr_provider.zig");
 const PrProvider = pr_provider.PrProvider;
 
-/// Input structure for set_pull_request tool (attach-only: binds an
-/// EXISTING pull/merge-request URL to the session; it never creates one).
+/// Input structure for set_pull_request tool (attach-only: binds an EXISTING pull/merge-request URL to the session; it never creates one).
 pub const SetPullRequestInput = struct {
-    /// Normalized PR/MR URL, e.g. `https://github.com/acme/app/pull/42` or
-    /// `https://gitlab.com/group/sub/repo/-/merge_requests/7`.
+    /// Normalized PR/MR URL, e.g. `https://github.com/acme/app/pull/42` or `https://gitlab.com/group/sub/repo/-/merge_requests/7`.
     pr_url: []const u8 = "",
-    /// Optional provider override: "github" | "gitlab" | "generic". Empty
-    /// (the default) = auto-detect from the URL.
+    /// Optional provider override: "github" | "gitlab" | "generic".
     provider: []const u8 = "",
-    /// Optional base ref for `generic`-provider diffs (e.g. "main").
-    /// Ignored for github/gitlab (base comes from the forge). Falls
-    /// back to auto-detect when empty.
+    /// Optional base ref for `generic`-provider diffs (e.g.
     base: []const u8 = "",
-    /// Optional head ref for `generic`-provider diffs (e.g. a branch
-    /// name). Ignored for github/gitlab. Defaults to the current
-    /// branch when empty.
+    /// Optional head ref for `generic`-provider diffs (e.g. a branch name).
     head: []const u8 = "",
     /// When true, unbind the session's PR (clears pr_url + pr_provider).
-    /// All other fields are ignored when true.
     clear: bool = false,
-    /// When true (default), confirm the PR exists via the provider CLI (`gh
-    /// pr view` / `glab mr view`) before persisting.
+    /// When true (default), confirm the PR exists via the provider CLI (`gh pr view` / `glab mr view`) before persisting.
     verify: bool = true,
-    /// The session_id this PR is bound to. The LLM does NOT supply
-    /// this — the exec wrapper injects `ctx.session_id` at call time.
+    /// The session_id this PR is bound to.
     session_id: []const u8 = "",
 };
 
@@ -106,9 +96,7 @@ pub const set_pull_request_tool = AgentTool{
 
 const sanitize = @import("helpers").sanitize_control_chars;
 
-/// Success payload for attach. `number` is null for generic.
-/// `warning` is null when verification was clean. `base`/`head` echo
-/// generic-mode refs for reference; null when empty.
+/// Success payload for attach.
 pub fn successSetToJSON(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -178,8 +166,7 @@ pub fn validateProviderOverride(provider: []const u8) ?[]const u8 {
 
 pub const VerifyOutcome = enum { verified, cli_missing, failed };
 
-/// Confirm the PR exists via the provider CLI. `generic` has no CLI — always
-/// `cli_missing` (persist with a "not verified" warning).
+/// Confirm the PR exists via the provider CLI.
 pub fn verifyPr(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -210,9 +197,7 @@ pub fn verifyPr(
 
 // ─── Execute ─────────────────────────────────────────────────────────────
 
-/// Attach (or clear) the session's PR binding. Returns the inner
-/// pull_request JSON string (owned). The exec wrapper persists
-/// `url` + `provider` to the session on success.
+/// Attach (or clear) the session's PR binding.
 pub fn executeSetPullRequestToJSON(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -348,7 +333,6 @@ test "execute generic url without verify returns attach payload with null number
 }
 
 // Exec adapter — merged from `set_pull_request.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -401,8 +385,7 @@ pub fn execSetPullRequest(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
         return ToolExecResult{ .output = output, .output_allocated = true };
     }
 
-    // SUCCESS: persist the attached PR binding so the session (and its right
-    // panel) remembers it across tool calls.
+    // SUCCESS: persist the attached PR binding so the session (and its right panel) remembers it across tool calls.
     if (parsed.value.clear) {
         llm_history.updateSessionPrUrl(ctx.allocator, ctx.db, ctx.session_id, null, null) catch |err| {
             ctx.logger.errFmt("set_pull_request: failed to clear pr_url: {s}", .{@errorName(err)});

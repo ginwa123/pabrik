@@ -8,9 +8,7 @@ export interface ToggleCallbacks {
 export interface ToggleResult {
   /** The new local list to show in the UI immediately (optimistic). */
   nextLocal: string[]
-  /** Resolves to the canonical server list (post-mutation). On
-   * failure, resolves to `{ error }` and the caller reverts `nextLocal`.
-   * Never throws. */
+  /** Resolves to the canonical server list (post-mutation). */
   serverPromise: Promise<{ canonical: string[] } | { error: unknown }>
 }
 

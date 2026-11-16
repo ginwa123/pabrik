@@ -1,6 +1,4 @@
-//! `PRAGMA foreign_key_check` over a freshly migrated database: the
-//! hand-written cascades are gone because the schema declares them, and that
-//! trade only holds while no child row outlives its parent.
+//! `PRAGMA foreign_key_check` over a freshly migrated database: the hand-written cascades are gone because the schema declares them, and that trade only holds …
 
 const std = @import("std");
 const common = @import("common.zig");
@@ -10,9 +8,7 @@ const dialect = common.dialect;
 const migration = @import("migration.zig");
 const test_db = @import("pabrikcore").test_db;
 
-/// One row per child row whose parent is missing (or whose key does not
-/// match). Postgres enforces at write time and has no such pragma, so it can
-/// hold no orphan and always reports zero.
+/// One row per child row whose parent is missing (or whose key does not match).
 pub fn violationCount(allocator: std.mem.Allocator, db: *Backend) !usize {
     if (dialect.is_postgres) return 0;
 
@@ -32,9 +28,7 @@ const SeedRow = struct {
     sql: []const u8,
 };
 
-/// One row per parent/child pair the retired cascade code used to delete by
-/// hand: workspace → secrets/settings/skills, skills → assets/metadata,
-/// item → design page → element, item → column → card.
+/// One row per parent/child pair the retired cascade code used to delete by hand: workspace → secrets/settings/skills, skills → assets/metadata, item → design …
 const seed_rows = [_]SeedRow{
     .{ .table = "workspaces", .sql = "INSERT INTO workspaces (id) VALUES ('ws_fk')" },
     .{ .table = "workspace_settings", .sql = "INSERT INTO workspace_settings (owner, workspace_id) VALUES ('', 'ws_fk')" },

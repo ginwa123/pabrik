@@ -7,8 +7,6 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 
 /// Migration 117 — drop the twelve `*_legacy_v116` agent-config tables.
-/// The drop is GUARDED: the legacy tables survive unless the unified set
-/// holds at least as many rows as the legacy copy did.
 pub const Migration117DropLegacyAgentConfigTables = struct {
     pub const version: u32 = 117;
     pub const name = "drop_legacy_agent_config_tables";
@@ -46,9 +44,7 @@ pub const Migration117DropLegacyAgentConfigTables = struct {
     }
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Guard: the unified set must hold at least as many rows as the
-        // legacy copy did. Otherwise the backfill was partial and the
-        // legacy tables are the only copy — keep them.
+        // Guard: the unified set must hold at least as many rows as the legacy copy did.
         for (legacy_tables) |pair| {
             const legacy = pair[0];
             const unified = pair[1];
@@ -110,8 +106,7 @@ test "Migration117 drops the twelve legacy tables once the unified set is comple
     defer ctx.threaded.deinit();
     const db = &ctx.db;
 
-    // The shape a boot leaves behind: the four unified tables plus the
-    // twelve parked legacy copies.
+    // The shape a boot leaves behind: the four unified tables plus the twelve parked legacy copies.
     try db.exec(alloc,
         \\CREATE TABLE agent_configs (id TEXT PRIMARY KEY, workspace_item_id TEXT NOT NULL UNIQUE, item_type TEXT NOT NULL, description TEXT NOT NULL DEFAULT '')
     , &[_][]const u8{});

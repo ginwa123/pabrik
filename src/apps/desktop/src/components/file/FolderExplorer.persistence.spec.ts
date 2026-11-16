@@ -68,8 +68,7 @@ function rowNames(wrapper: ReturnType<typeof mount>): string[] {
 }
 
 function isRowOpen(wrapper: ReturnType<typeof mount>, name: string): boolean {
-  // `chevron-down` points down already, so expanded is rotate(0deg) and
-  // collapsed is rotate(-90deg).
+  // `chevron-down` points down already, so expanded is rotate(0deg) and collapsed is rotate(-90deg).
   return rowFor(wrapper, name).html().includes('rotate(0deg)')
 }
 

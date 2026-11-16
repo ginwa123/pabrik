@@ -1,5 +1,4 @@
-// Functional wire tests for the crash-class regressions in GET
-// /api/git/pr/status.
+// Functional wire tests for the crash-class regressions in GET /api/git/pr/status.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// A scratch directory for the suite's OWN fixture (the git repo + the fake
-/// `gh`), outside the harness's tempdir namespace.
+/// A scratch directory for the suite's OWN fixture (the git repo + the fake `gh`), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -107,8 +103,7 @@ fn buildRepo(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// Python's `_install_fake_gh`: put an executable `gh` stub at the front of
-/// PATH.
+/// Python's `_install_fake_gh`: put an executable `gh` stub at the front of PATH.
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -121,9 +116,7 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env — so the booted `pabrik` resolves
-/// `gh` to the fixture script.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env — so the booted `pabrik` resolves `gh` to the …
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
@@ -170,12 +163,9 @@ const PathShadow = struct {
     }
 };
 
-// ============================================================================
 // The three fake `gh` bodies
-// ============================================================================
 
-/// 1 MiB of stderr, then a non-zero exit. `dd`/`tr` are coreutils, so
-/// this needs nothing on PATH but the bindir itself.
+/// 1 MiB of stderr, then a non-zero exit.
 const GH_BIG_STDERR_SCRIPT =
     \\#!/bin/sh
     \\i=0
@@ -194,8 +184,7 @@ const GH_HANG_SCRIPT =
     \\
 ;
 
-/// A healthy `gh pr view --json` payload plus a one-line stderr warning
-/// — the shape every real `gh` prints.
+/// A healthy `gh pr view --json` payload plus a one-line stderr warning — the shape every real `gh` prints.
 const GH_OK_SCRIPT =
     \\#!/bin/sh
     \\printf '{"number":7,"title":"t","url":"https://github.com/a/b/pull/7","state":"OPEN","author":{"login":"alice"}}'
@@ -203,9 +192,7 @@ const GH_OK_SCRIPT =
     \\
 ;
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // 1 MiB of `gh` stderr must still produce a prompt 502.
 test "huge_gh_stderr_does_not_hang_the_request" {
@@ -228,9 +215,7 @@ test "huge_gh_stderr_does_not_hang_the_request" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // 30s is well past the backend's 20s gh deadline, and well under
-    // "forever" — a regression fails the test instead of hanging the
-    // suite.
+    // 30s is well past the backend's 20s gh deadline, and well under "forever" — a regression fails the test instead of hanging the suite.
     const url = try std.fmt.allocPrint(gpa, "/api/git/pr/status?path={s}&pr=42", .{repo});
     defer gpa.free(url);
 
@@ -249,23 +234,19 @@ test "huge_gh_stderr_does_not_hang_the_request" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // `assert "error" in body` — an ABSENT key must fail, so `orelse`
-    // rather than a defaulted empty string.
+    // `assert "error" in body` — an ABSENT key must fail, so `orelse` rather than a defaulted empty string.
     const message = doc.str("error") orelse {
         std.debug.print("502 body should carry an `error` field, got: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
     };
-    // The captured stderr is trimmed to MAX_FETCH_DETAIL (500 bytes),
-    // all of it `E` bytes from the fake's `tr`.
+    // The captured stderr is trimmed to MAX_FETCH_DETAIL (500 bytes), all of it `E` bytes from the fake's `tr`.
     if (std.mem.indexOf(u8, message, "E") == null) {
         std.debug.print("502 error should carry the trimmed gh stderr, got: {s}\n", .{message});
         return error.TestUnexpectedResult;
     }
 }
 
-// A `gh` blocked forever must time out, not hold a worker thread. The handler
-// has a 20s deadline; the assertion budget is 45s so a loaded CI box does not
-// flake, but a pre-fix handler (no deadline) would never answer at all.
+// A `gh` blocked forever must time out, not hold a worker thread.
 test "gh_that_never_exits_is_killed_not_awaited_forever" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -303,15 +284,11 @@ test "gh_that_never_exits_is_killed_not_awaited_forever" {
     }
 }
 
-/// How many concurrent callers the burst fans out, and how many
-/// requests each issues. 24 total, split 8/3 — the Python original's
-/// `ThreadPoolExecutor(max_workers=8)` over `range(24)`.
+/// How many concurrent callers the burst fans out, and how many requests each issues. 24 total, split 8/3 — the Python original's …
 const burst_workers: usize = 8;
 const burst_requests: usize = 24;
 
-/// One thread's share of the burst. A thread cannot `try`, so every failure
-/// is recorded as a status the main thread will reject: `0` is not a real
-/// HTTP status, so a transport error cannot masquerade as a pass.
+/// One thread's share of the burst.
 const BurstWorker = struct {
     h: *Harness,
     repo: []const u8,
@@ -376,8 +353,7 @@ test "concurrent_pr_status_calls_keep_the_process_alive" {
     var workers: [burst_workers]BurstWorker = undefined;
     var threads: [burst_workers]std.Thread = undefined;
     var spawned: usize = 0;
-    // If a later spawn fails, the earlier ones still have to be joined
-    // or they outlive the harness (and the tempdir they write into).
+    // If a later spawn fails, the earlier ones still have to be joined or they outlive the harness (and the tempdir they write into).
     errdefer for (threads[0..spawned]) |t| t.join();
 
     for (&workers, 0..) |*w, idx| {

@@ -14,17 +14,14 @@ export interface SessionGroup {
   members: GroupMember[]
 }
 
-/** The roster of a multi-agent chat. `group` is false until an agent joins.
- * GET /api/llm/session/:sid/group */
+/** The roster of a multi-agent chat. */
 export async function getSessionGroup(sessionId: string): Promise<SessionGroup> {
   return await apiFetch<SessionGroup>(`/llm/session/${encodeURIComponent(sessionId)}/group`, {
     silent: true,
   })
 }
 
-/** Add an agent to the chat, or move one that is already there. The first
- * member to join leads the room.
- * POST /api/llm/session/:sid/group/members */
+/** Add an agent to the chat, or move one that is already there. */
 export async function addSessionGroupMember(
   sessionId: string,
   agent: string,
@@ -36,8 +33,7 @@ export async function addSessionGroupMember(
   )
 }
 
-/** Take an agent out. The last member leaving stops the chat being a group.
- * DELETE /api/llm/session/:sid/group/members/:agent */
+/** Take an agent out. */
 export async function removeSessionGroupMember(
   sessionId: string,
   agent: string,
@@ -48,8 +44,7 @@ export async function removeSessionGroupMember(
   )
 }
 
-/** Hand the room to a member. Only a member can lead it.
- * POST /api/llm/session/:sid/group/lead */
+/** Hand the room to a member. */
 export async function setSessionGroupLead(
   sessionId: string,
   agent: string,

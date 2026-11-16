@@ -1,5 +1,4 @@
-//! LLM tool: `move_design_element` — translates an existing design element by
-//! a `(dx, dy)` delta.
+//! LLM tool: `move_design_element` — translates an existing design element by a `(dx, dy)` delta.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -16,18 +15,15 @@ const sanitizeControlChars = helpers.sanitize_control_chars;
 pub const MoveDesignElementInput = struct {
     /// The element id to translate. Must exist on the active page.
     element_id: []const u8 = "",
-    /// X translation delta (design-px). Cascades to descendants when
-    /// `apply_to_children = true`.
+    /// X translation delta (design-px).
     dx: i64 = 0,
-    /// Y translation delta (design-px). Cascades to descendants when
-    /// `apply_to_children = true`.
+    /// Y translation delta (design-px).
     dy: i64 = 0,
     /// Optional. Applies ONLY to the root element (not descendants).
     width: ?i64 = null,
     height: ?i64 = null,
     rotation: ?f64 = null,
-    /// Default true. Pass false to move a single element only (skip
-    /// the backend's recursive CTE cascade).
+    /// Default true.
     apply_to_children: bool = true,
 };
 
@@ -95,9 +91,7 @@ pub const move_design_element_tool = AgentTool{
     },
 };
 
-/// Generate an error JSON object (replaces the old per-tool XML escape +
-/// error envelope helpers).
-/// Generate an error JSON object `{"error":...}` for the tool dispatcher.
+/// Generate an error JSON object (replaces the old per-tool XML escape + error envelope helpers).
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -111,7 +105,6 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
 }
 
 /// Validate `element_id` is non-empty and has the right `elem_` prefix.
-/// Returns null when shape is correct, or an error JSON object on mismatch.
 fn validateElementIdShape(allocator: std.mem.Allocator, element_id: []const u8) !?[]u8 {
     if (element_id.len == 0) {
         return try errorJSON(allocator, "element_id is required (find it in the `id` field of an element object in a previous set_design_page response)");
@@ -143,9 +136,7 @@ pub fn executeMoveDesignElementToString(
     // 0. Input validation (shape only — DB validation runs after).
     if (try validateElementIdShape(allocator, input.element_id)) |e| return e;
 
-    // 1. Read the element's current position (always required — even
-    //    when apply_to_children=false, the per-element path needs the
-    //    OLD x/y to compute the new x/y).
+    // 1.
     const current = design_model.getElement(allocator, db, input.element_id) catch |err| {
         return switch (err) {
             error.ElementNotFound => try errorJSON(allocator, "element_id does not reference any design element — call set_design_page first"),
@@ -154,8 +145,7 @@ pub fn executeMoveDesignElementToString(
     };
     defer design_model.freeElement(allocator, current);
 
-    // 2a. Cascade path (default). Build a single-item batch for the
-    //     recursive CTE.
+    // 2a.
     if (input.apply_to_children) {
         const item = design_model.MoveItem{
             .element_id = input.element_id,
@@ -167,8 +157,7 @@ pub fn executeMoveDesignElementToString(
         };
         const items = [_]design_model.MoveItem{item};
 
-        // We need the page_id for the cascade — fetch it from the row
-        // we already have in `current`.
+        // We need the page_id for the cascade — fetch it from the row we already have in `current`.
         const updated = design_model.moveElementsWithDescendantsBatch(allocator, db, .{
             .page_id = current.page_id,
             .items = &items,
@@ -186,9 +175,7 @@ pub fn executeMoveDesignElementToString(
         return try renderSuccessJSON(allocator, updated);
     }
 
-    // 2b. Single-element path (apply_to_children = false). Use the
-    //     existing per-element translation by computing the new x/y
-    //     from the current x/y + dx/dy.
+    // 2b.
     const new_x = current.x + input.dx;
     const new_y = current.y + input.dy;
 
@@ -212,8 +199,7 @@ pub fn executeMoveDesignElementToString(
     return try renderSuccessJSON(allocator, single);
 }
 
-/// Render the success JSON response. Lists every cascaded element id + their
-/// new x/y.
+/// Render the success JSON response.
 pub const UpdatedElementJSON = struct {
     id: []const u8,
     x: i64,
@@ -616,7 +602,6 @@ test "executeMoveDesignElementToString returns an error object for invalid eleme
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -639,8 +624,7 @@ pub fn execMoveDesignElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     };
     defer parsed.deinit();
 
-    // move_design_element doesn't need Io for the cascade path (no
-    // disk writes); the same DB-only signature as set_element_parent.
+    // move_design_element doesn't need Io for the cascade path (no disk writes); the same DB-only signature as set_element_parent.
     const inner = executeMoveDesignElementToString(
         ctx.allocator,
         ctx.db,
@@ -653,9 +637,7 @@ pub fn execMoveDesignElement(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExec
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

@@ -1,6 +1,4 @@
-//! The preview proxy: one host request for a workspace's dev server, with the
-//! app's credentials stripped on the way in and a tenant document rendered only
-//! on the workspace's own preview domain.
+//! The preview proxy: one host request for a workspace's dev server, with the app's credentials stripped on the way in and a tenant document rendered only on the …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,8 +16,7 @@ pub const default_guest_path = "/";
 /// Headers the proxy sets itself, so an incoming one is never relayed.
 const own_request_headers = [_][]const u8{ "host", "content-length", "connection", "proxy-connection" };
 
-/// The request the guest dev server sees: the caller's method and path, the
-/// caller's headers minus every credential, and one connection that closes.
+/// The request the guest dev server sees: the caller's method and path, the caller's headers minus every credential, and one connection that closes.
 pub fn guestRequestBytes(
     allocator: std.mem.Allocator,
     method: []const u8,
@@ -49,8 +46,7 @@ pub fn guestRequestBytes(
     return out.toOwnedSlice(allocator);
 }
 
-/// A guest path the proxy will send: absolute, and free of the bytes that
-/// would end the request line or inject a header of their own.
+/// A guest path the proxy will send: absolute, and free of the bytes that would end the request line or inject a header of their own.
 pub fn guestPathValid(path: []const u8) bool {
     if (path.len == 0 or path.len > 2048 or path[0] != '/') return false;
     for (path) |c| {
@@ -67,9 +63,7 @@ pub const GuestResponse = struct {
     body: []const u8,
 };
 
-/// The parts of a guest HTTP answer the proxy relays. Slices point into
-/// `bytes`, which the caller owns. Response headers are rebuilt rather than
-/// relayed: a tenant `Set-Cookie` must never cross back to the app origin.
+/// The parts of a guest HTTP answer the proxy relays.
 pub fn parseGuestResponse(bytes: []const u8) ?GuestResponse {
     const head_end = std.mem.indexOf(u8, bytes, "\r\n\r\n") orelse {
         if (std.mem.indexOf(u8, bytes, "\n\n")) |at| return parseGuestHead(bytes, at + 2, bytes[at + 2 ..]);
@@ -87,8 +81,7 @@ fn parseGuestHead(bytes: []const u8, body_at: usize, body: []const u8) ?GuestRes
     const status = std.fmt.parseInt(u16, rest[0..code_end], 10) catch return null;
     if (status < 100 or status > 599) return null;
     const text = if (code_end == rest.len) "OK" else std.mem.trim(u8, rest[code_end + 1 ..], " ");
-    // The status text lands in OUR status line, so a control byte in it is a
-    // response-header injection against whatever sits in front of this server.
+    // The status text lands in OUR status line, so a control byte in it is a response-header injection against whatever sits in front of this server.
     if (!headerSafe(text)) return null;
     var content_type: []const u8 = "";
     var content_encoding: []const u8 = "";
@@ -116,9 +109,7 @@ fn parseGuestHead(bytes: []const u8, body_at: usize, body: []const u8) ?GuestRes
     };
 }
 
-/// `attachment` when a document must not render where it arrived. A guest
-/// `.html` or `.svg` is an active document: on the app origin it downloads,
-/// and only on the workspace's own preview domain does it render at all.
+/// `attachment` when a document must not render where it arrived.
 pub fn previewDisposition(content_type: []const u8, on_preview_origin: bool) ?[]const u8 {
     if (on_preview_origin) return null;
     if (files_download.inlineAllowed(content_type)) return null;
@@ -137,9 +128,7 @@ pub fn previewHostFor(
     return preview_origin.previewHost(allocator, workspace_id, base) catch null;
 }
 
-/// The origins a mutation may carry, in the scheme-qualified form
-/// `originVerdict` compares: the engine's own list, so the handler can never
-/// be more permissive than the gate that runs before it.
+/// The origins a mutation may carry, in the scheme-qualified form `originVerdict` compares: the engine's own list, so the handler can never be more permissive …
 fn allowedOrigins(allocator: std.mem.Allocator, hosts: []const []const u8) ![]const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     for (hosts) |host| {
@@ -149,8 +138,7 @@ fn allowedOrigins(allocator: std.mem.Allocator, hosts: []const []const u8) ![]co
     return out.toOwnedSlice(allocator);
 }
 
-/// Whether a header name or value can be written into a request line-safely:
-/// no CR, LF, NUL or other control byte, and a tab is not a separator here.
+/// Whether a header name or value can be written into a request line-safely
 pub fn headerSafe(text: []const u8) bool {
     for (text) |c| {
         if (c < 0x20 or c == 0x7f) return false;
@@ -158,8 +146,7 @@ pub fn headerSafe(text: []const u8) bool {
     return true;
 }
 
-/// One formatted line into the request being built. A line that does not fit a
-/// 8 KiB stack buffer is refused rather than split.
+/// One formatted line into the request being built.
 fn appendFmt(list: *std.ArrayList(u8), allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
     var buf: [8192]u8 = undefined;
     try list.appendSlice(allocator, try std.fmt.bufPrint(&buf, fmt, args));
@@ -179,9 +166,7 @@ fn refuse(res: gserverz.HttpResponse, allocator: std.mem.Allocator, status: u16,
     });
 }
 
-/// `GET|POST /api/preview?workspace_id=..&port=..&path=..`: the one route that
-/// reaches a guest port. Anything the guest answers is rebuilt here, so the
-/// app's own origin only ever carries inert bytes.
+/// `GET|POST /api/preview?workspace_id=..&port=..&path=..`: the one route that reaches a guest port.
 pub fn previewProxyHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -247,8 +232,7 @@ pub fn previewProxyHandler(
     return out;
 }
 
-/// Whether the request arrived on a workspace's own preview domain, which is
-/// what decides if a tenant document may render.
+/// Whether the request arrived on a workspace's own preview domain, which is what decides if a tenant document may render.
 pub fn hostHeaderIs(headers: std.StringHashMap([]const u8), host: []const u8) bool {
     const value = headers.get("Host") orelse headers.get("host") orelse return false;
     const trimmed = std.mem.trim(u8, value, " ");

@@ -8,9 +8,7 @@ describe('isWorkspaceAgentSection', () => {
   })
 
   it('rejects the user-scope section and unknown ids', () => {
-    // `general` is the ONE section left at user scope (decision D4), so a
-    // user-scope value must not be shipped as `?section=` to the workspace
-    // page.
+    // `general` is the ONE section left at user scope (decision D4), so a user-scope value must not be shipped as `?section=` to the workspace page.
     expect(isWorkspaceAgentSection('general')).toBe(false)
     expect(isWorkspaceAgentSection('overview')).toBe(false)
     expect(isWorkspaceAgentSection('')).toBe(false)

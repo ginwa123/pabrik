@@ -1,6 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/secrets/:secret_id/reveal` — the only route that returns a
-//! credential: one plaintext, unsealed per request, to a MEMBER of that workspace; 404 for everyone
-//! else, including a signed-in user who may see other workspaces.
+//! `GET /api/workspaces/:workspace_id/secrets/:secret_id/reveal` — the only route that returns a credential: one plaintext, unsealed per request, to a MEMBER of …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -40,8 +38,7 @@ fn useCase(
 ) SecretRevealError!SecretRevealOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
 
-    // Membership, not mere visibility: a shared `user_system` workspace is
-    // visible to everybody, and its credentials are not.
+    // Membership, not mere visibility: a shared `user_system` workspace is visible to everybody, and its credentials are not.
     const caller = gate.callerFor(allocator, db, auth_enabled, headers) catch |err| return err;
     defer allocator.free(caller);
     gate.check(allocator, db, input.workspace_id, caller, .read) catch |err| return err;
@@ -131,8 +128,7 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// A cookie-carrying requester, parsed exactly like a real one: the handler
-/// only sees header names.
+/// A cookie-carrying requester, parsed exactly like a real one: the handler only sees header names.
 const Cookie = struct {
     token: []const u8,
 
@@ -142,16 +138,14 @@ const Cookie = struct {
     }
 };
 
-/// No Cookie header, so `resolveRequestUserId` answers the installation owner —
-/// the auth-off deployment this route must also serve.
+/// No Cookie header, so `resolveRequestUserId` answers the installation owner — the auth-off deployment this route must also serve.
 const NoCookie = struct {
     pub fn get(_: @This(), _: []const u8) ?[]const u8 {
         return null;
     }
 };
 
-/// Cookie headers carrying each user's session, built the way the login route
-/// builds them (SHA-256 of the raw token, stored in `auth_sessions`).
+/// Cookie headers carrying each user's session, built the way the login route builds them (SHA-256 of the raw token, stored in `auth_sessions`).
 fn cookieFor(allocator: std.mem.Allocator, raw_token: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "theme=dark; {s}={s}", .{ auth_core.cookie_name, raw_token });
 }
@@ -277,8 +271,7 @@ test "reveal: a signed-in non-member gets 404, and cannot tell the id exists" {
         error.WorkspaceNotFound,
         useCase(alloc, &ctx.db, .{ .workspace_id = "ws_one", .secret_id = "sec_1" }, true, Cookie{ .token = cookie }),
     );
-    // ...and asking for his OWN workspace with a foreign secret id is the same
-    // answer, so this route cannot be used to probe for secret ids.
+    // ...and asking for his OWN workspace with a foreign secret id is the same answer, so this route cannot be used to probe for secret ids.
     try testing.expectError(
         error.NotFound,
         useCase(alloc, &ctx.db, .{ .workspace_id = "ws_two", .secret_id = "sec_1" }, true, Cookie{ .token = cookie }),

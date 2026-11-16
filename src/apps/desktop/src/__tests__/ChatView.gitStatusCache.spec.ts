@@ -1,6 +1,4 @@
-/** ChatView git-status cache-first paint (stale-while-revalidate). Contract under test: 1. On
- * init/cwd-switch, `checkGitStatus` paints the persisted localStorage entry SYNCHRONOUSLY — the
- * bottom chip shows the last-known branch while `api.getGitStatus` is still in flight. 2. */
+/** ChatView git-status cache-first paint (stale-while-revalidate). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -13,9 +11,7 @@ import { writeGitStatusCache, clearGitStatusCache } from '../helpers/gitStatusCa
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// ChatView calls useRoute()/useRouter() on mount (URL param sync). In jsdom
-// there is no router — stub the pair (same pattern as
-// ChatView.streamingStick.spec.ts).
+// ChatView calls useRoute()/useRouter() on mount (URL param sync).
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
   return {
@@ -73,8 +69,7 @@ function installChatViewMocks(): void {
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the mount stalled on a 404 and never reached `startGitStatusPoll()`.
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the mount stalled on a 404 and never reached …
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
@@ -96,8 +91,6 @@ async function mountChatView(chatId = 'session_test'): Promise<VueWrapper> {
     attachTo: document.body,
   })
   // onMounted is async: loadChatHistory → connectSse → startGitStatusPoll.
-  // Wait until connectSse has flipped isStreaming (earliest synchronous
-  // signal that the init chain reached the git-status poll).
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
@@ -121,8 +114,7 @@ describe('ChatView git-status cache-first paint', () => {
   let app: VueApp | null = null
 
   beforeEach(() => {
-    // See chatViewWorktree.spec.ts: some jsdom setups ship without a
-    // usable localStorage — install an in-memory stand-in.
+    // See chatViewWorktree.spec.ts: some jsdom setups ship without a usable localStorage — install an in-memory stand-in.
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       const store: Record<string, string> = {}
       vi.stubGlobal('localStorage', {
@@ -164,8 +156,7 @@ describe('ChatView git-status cache-first paint', () => {
     writeGitStatusCache(CWD, CACHED)
     installChatViewMocks()
 
-    // Deferred fetch: stays pending until the test resolves it, so the
-    // chip can only be showing the CACHE during the first assertion.
+    // Deferred fetch: stays pending until the test resolves it, so the chip can only be showing the CACHE during the first assertion.
     let resolveFetch!: (s: api.GitStatus) => void
     const pending = new Promise<api.GitStatus>((resolve) => {
       resolveFetch = resolve
@@ -199,8 +190,7 @@ describe('ChatView git-status cache-first paint', () => {
 
     wrapper = await mountChatView('session_cold')
 
-    // Nothing cached → v-if gate (gitStatus === null) keeps the chip
-    // out; no stale/incorrect branch is ever flashed.
+    // Nothing cached → v-if gate (gitStatus === null) keeps the chip out; no stale/incorrect branch is ever flashed.
     expect(wrapper.find(CHIP).exists()).toBe(false)
 
     resolveFetch(FRESH)
@@ -212,9 +202,7 @@ describe('ChatView git-status cache-first paint', () => {
     writeGitStatusCache(CWD, CACHED)
     installChatViewMocks()
 
-    // First fetch answers with FRESH and (via getGitStatus's write-through)
-    // would normally refresh the cache too — here we rewrite the cache
-    // behind ChatView's back afterwards to simulate a stale entry.
+    // First fetch answers with FRESH and (via getGitStatus's write-through) would normally refresh the cache too — here we rewrite the cache behind ChatView's back …
     const spy = vi.spyOn(api, 'getGitStatus').mockResolvedValue(FRESH)
 
     wrapper = await mountChatView('session_no_regress')
@@ -223,9 +211,7 @@ describe('ChatView git-status cache-first paint', () => {
 
     writeGitStatusCache(CWD, CACHED)
 
-    // Real user path: chip → "Refresh status" → checkGitStatus(). Hold the fetch pending so only
-    // the synchronous paint can change the chip. The gitStatusCwd gate must skip the localStorage
-    // read — if it didn't, the chip would flip back to 'cached-branch' here.
+    // Real user path: chip → "Refresh status" → checkGitStatus().
     let resolveFetch!: (s: api.GitStatus) => void
     const pending = new Promise<api.GitStatus>((resolve) => {
       resolveFetch = resolve

@@ -1,5 +1,4 @@
-/** The items a compact chain draws, in transcript order: the calls of one agent turn, the thoughts
- * the agent had between them, and the narration it wrote on the way to a call. */
+/** The items a compact chain draws, in transcript order: the calls of one agent turn, the thoughts the agent had between them, and the narration it wrote on the … */
 import { stripThinkingTags } from '@/helpers/stripTags'
 import type { ToolCardData } from '../ToolCard.vue'
 
@@ -38,13 +37,10 @@ export type CompactChainItem = CompactToolItem | CompactThoughtItem | CompactNar
 /** The stable key of the thought a message carries. */
 export const thoughtKey = (messageId: string): string => `thought-${messageId}`
 
-/** The key of a message's narration row: the prefix keeps it from colliding with the same
- * message's thought row. */
+/** The key of a message's narration row: the prefix keeps it from colliding with the same message's thought row. */
 export const narrationKey = (messageId: string): string => `narration-${messageId}`
 
-/** The reasons that close a turn: the message carrying one is the agent's ANSWER, so it keeps its
- * own place in the transcript. `awaiting_user` is written by the loop when the message ends with
- * an `ask_user` block, not by the provider. */
+/** The reasons that close a turn: the message carrying one is the agent's ANSWER, so it keeps its own place in the transcript. */
 const TURN_ENDS: ReadonlySet<string> = new Set([
   'stop',
   'length',
@@ -55,8 +51,7 @@ const TURN_ENDS: ReadonlySet<string> = new Set([
 const endsTurn = (finishReason: string | undefined): boolean =>
   TURN_ENDS.has((finishReason ?? '').trim())
 
-/** A call that IS the answer, so the chain must not swallow it: a presented file is drawn by its
- * own card or not at all. */
+/** A call that IS the answer, so the chain must not swallow it: a presented file is drawn by its own card or not at all. */
 const STANDALONE_TOOLS: ReadonlySet<string> = new Set(['present_files'])
 
 export const foldsIntoChain = (card: ToolCardData): boolean =>
@@ -64,9 +59,7 @@ export const foldsIntoChain = (card: ToolCardData): boolean =>
 
 const isStreaming = (messageId: string): boolean => messageId.startsWith('streaming-')
 
-/** One item per call, per non-empty thought and per narrative line, keyed by the group that draws
- * the chain (its first tool group). A turn ends at the assistant message that stops or asks, so
- * what the agent said on the way there folds into the card instead of stacking above it. */
+/** One item per call, per non-empty thought and per narrative line, keyed by the group that draws the chain (its first tool group). */
 export function buildCompactChains<G extends ChainGroup>(
   groups: G[],
   cardsOf: (group: G, groupIndex: number) => ToolCardData[],

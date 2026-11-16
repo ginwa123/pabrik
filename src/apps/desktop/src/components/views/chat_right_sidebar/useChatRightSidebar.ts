@@ -33,9 +33,7 @@ function loadOpen(chatType: string): boolean {
   return false
 }
 
-// Per-chat right-sidebar state for ChatView. Single git-diff panel —
-// no tab state. Persists width globally (shared with the legacy
-// sidebar key) and open/closed per chat type (`chat` | `task`).
+// Per-chat right-sidebar state for ChatView.
 export function useChatRightSidebar(chatType: string) {
   const isOpen = ref(loadOpen(chatType))
   const width = ref(loadWidth())
@@ -104,9 +102,7 @@ export function useChatRightSidebar(chatType: string) {
     window.removeEventListener('keydown', onKeydown)
   })
 
-  // NOTE: `chatType` is a plain (non-reactive) parameter fixed per composable instance — observing
-  // it would never fire, since the source never changes. Each instance already hydrates via
-  // `ref(loadOpen(chatType))` above, so there is nothing to re-sync.
+  // NOTE: `chatType` is a plain (non-reactive) parameter fixed per composable instance — observing it would never fire, since the source never changes.
   return {
     isOpen,
     width,

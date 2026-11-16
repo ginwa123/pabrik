@@ -1,5 +1,4 @@
-/** The sidebar status badge on the RECENT and PINNED rows — the same
- * red / yellow / green trio the kanban card renders. */
+/** The sidebar status badge on the RECENT and PINNED rows — the same red / yellow / green trio the kanban card renders. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -43,7 +42,6 @@ const RETRY_CONTENT =
   '[Retry 3/10] StreamInterrupted (callDynamicAgentNew). Retrying in 5000ms.\n' +
   'Server said: {"error":{"message":"Provider returned error","code":429}}'
 
-/** A session row as `getChats` maps it off the wire. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function session(id: string, name: string, extra: Record<string, any> = {}): any {
   return {
@@ -56,7 +54,6 @@ function session(id: string, name: string, extra: Record<string, any> = {}): any
   }
 }
 
-/** Mount with a fixed session list and wait for the rows to paint. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function mountWith(sessions: any[]) {
   vi.spyOn(api, 'getChats').mockResolvedValue({

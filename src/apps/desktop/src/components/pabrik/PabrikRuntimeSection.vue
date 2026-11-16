@@ -1,26 +1,20 @@
 <script setup lang="ts">
-/** PabrikRuntimeSection — the Runtime tab in WORKSPACE settings. Retry backoff belongs to the run,
- * so each workspace owns its own value; the user-level General tab no longer offers it. */
+/** PabrikRuntimeSection — the Runtime tab in WORKSPACE settings. */
 import { computed } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 
 export interface PabrikRuntimeSettings {
-  /** Workflow retry backoff in milliseconds (0–60 000). Mirrors
-   * `PabrikConfig.retry_delay_ms`. Default 0 = no delay. */
+  /** Workflow retry backoff in milliseconds (0–60 000). */
   retry_delay_ms: number
-  /** Deadline in milliseconds for ONE streaming LLM call (1 000–1 800 000).
-   * Mirrors `PabrikConfig.llm_read_timeout_ms`. Default 900 000 = 15 minutes. */
+  /** Deadline in milliseconds for ONE streaming LLM call (1 000–1 800 000). */
   llm_read_timeout_ms: number
-  /** Whether the agent may compact its own context through the `compaction`
-   * tool. Mirrors `PabrikConfig.agent_auto_compaction`. Absent on disk reads as
-   * ON; OFF leaves the token-window threshold and the Compact button working. */
+  /** Whether the agent may compact its own context through the `compaction` tool. */
   agent_auto_compaction: boolean
 }
 
 const model = defineModel<PabrikRuntimeSettings>({ required: true })
 
-// Mirrors the backend clamp on the workspace write path
-// (`workspace_config.zig` ScopedKey.max).
+// Mirrors the backend clamp on the workspace write path (`workspace_config.zig` ScopedKey.max).
 const RETRY_DELAY_MIN = 0
 const RETRY_DELAY_MAX = 60_000
 const READ_TIMEOUT_MIN = 1_000
@@ -45,14 +39,11 @@ function onRetryDelayInput(event: Event) {
   }
   const seconds = Number.parseInt(raw, 10)
   if (!Number.isFinite(seconds)) return
-  // The input is in SECONDS and the stored field in MILLISECONDS, so the
-  // computed setter owns the conversion and the clamp.
+  // The input is in SECONDS and the stored field in MILLISECONDS, so the computed setter owns the conversion and the clamp.
   retryDelaySeconds.value = seconds
 }
 
-// `change` event fires when the user commits a value (blur / Enter), which is the natural commit
-// boundary for a number input. Listening for `change` (NOT `input`) means vitest's `setValue()`
-// (which fires `change` by default) and the user's manual entry both reach the handler.
+// `change` event fires when the user commits a value (blur / Enter), which is the natural commit boundary for a number input.
 function onRetryDelayChange(event: Event) {
   onRetryDelayInput(event)
 }

@@ -18,8 +18,7 @@ pub const Migration093AddOwnerColumns = struct {
             &[_][]const u8{},
         );
 
-        // Idempotent: only rows that still have no owner are touched, so a
-        // re-run is a no-op and post-isolation rows keep their real owner.
+        // Idempotent: only rows that still have no owner are touched, so a re-run is a no-op and post-isolation rows keep their real owner.
         try db.exec(allocator, "UPDATE workspaces SET user_id = 'user_system' WHERE user_id IS NULL", &[_][]const u8{});
         try db.exec(allocator, "UPDATE sessions SET user_id = 'user_system' WHERE user_id IS NULL", &[_][]const u8{});
         try db.exec(allocator, "UPDATE worker SET user_id = 'user_system' WHERE user_id IS NULL", &[_][]const u8{});

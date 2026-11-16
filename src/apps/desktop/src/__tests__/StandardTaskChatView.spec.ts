@@ -1,14 +1,11 @@
-// StandardTaskChatView — thin wrapper around <ChatView> for the standard (non-kanban / non-design)
-// task chat branch in AppLayout. These tests pin down the wrapper's contract: 1.
+// StandardTaskChatView — thin wrapper around <ChatView> for the standard (non-kanban / non-design) task chat branch in AppLayout.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import StandardTaskChatView from '../components/views/StandardTaskChatView.vue'
 import type { Task } from '../stores/workspaces'
 
-// Capture the :key ChatView is mounted with so we can assert the
-// wrapper really did pass `chat-${task.id}` (the migration-052
-// invariant — NOT the raw task.id). Each new mount registers here.
+// Capture the :key ChatView is mounted with so we can assert the wrapper really did pass `chat-${task.id}` (the migration-052 invariant — NOT the raw task.id).
 const mountedKeys: string[] = []
 
 function mountWrapper(props: { task: Task; cwd?: string }): {
@@ -20,8 +17,7 @@ function mountWrapper(props: { task: Task; cwd?: string }): {
     props,
     global: {
       stubs: {
-        // Custom ChatView stub: the default `true` stub renders no HTML and drops props. Bind the
-        // props to data attributes so the test can assert what StandardTaskChatView forwarded.
+        // Custom ChatView stub: the default `true` stub renders no HTML and drops props.
         ChatView: {
           name: 'ChatView',
           template:
@@ -78,9 +74,7 @@ describe('StandardTaskChatView', () => {
   })
 
   it('forwards the empty string when task.name is undefined', () => {
-    // Defensive against backend payloads that omit `name` — the inline AppLayout branch used
-    // `activeTask.name ?? ''`, this wrapper preserves that fallback so ChatView never receives
-    // `undefined` for a prop that the type system declares string.
+    // Defensive against backend payloads that omit `name` — the inline AppLayout branch used `activeTask.name ??
     const task: Task = { id: 'task_noname' } as Task
     const { wrapper: w } = mountWrapper({ task })
     expect(w.find('[data-testid="chatview-stub"]').attributes('data-chat-name')).toBe('')
@@ -97,8 +91,7 @@ describe('StandardTaskChatView', () => {
   })
 
   it('defaults cwd to the empty string when the prop is omitted', () => {
-    // matches ChatView's `:cwd?: string` optional prop — the wrapper
-    // should not leak undefined through.
+    // matches ChatView's `:cwd?: string` optional prop — the wrapper should not leak undefined through.
     const task: Task = { id: 'task_a', name: 'A' } as Task
     const { wrapper: w } = mountWrapper({ task })
     expect(w.find('[data-testid="chatview-stub"]').attributes('data-chat-cwd')).toBe('')
@@ -108,12 +101,10 @@ describe('StandardTaskChatView', () => {
   it('re-emits update-chat-id with the (oldId, newId) payload ChatView emits', async () => {
     const task: Task = { id: 'task_a', name: 'A' } as Task
     const { wrapper: w } = mountWrapper({ task })
-    // Find the stubbed ChatView's emit binding and trigger it the
-    // same way ChatView's @update-chat-id handler would.
+    // Find the stubbed ChatView's emit binding and trigger it the same way ChatView's @update-chat-id handler would.
     const onUpdateChatId = vi.fn()
     w.vm.$emit('update-chat-id', 'chat-task_a', 'chat-task_a_renamed')
     // Vue Wrapper $emit returns boolean — capture via listener.
-    // Use `emitted()` API instead for a typed check.
     expect(w.emitted('update-chat-id')).toBeTruthy()
     expect(w.emitted('update-chat-id')![0]).toEqual(['chat-task_a', 'chat-task_a_renamed'])
     expect(onUpdateChatId).not.toHaveBeenCalled() // sanity
@@ -121,15 +112,12 @@ describe('StandardTaskChatView', () => {
   })
 
   it('turns the shared chat app bar on and re-emits its ✕ as close', async () => {
-    // Pre-fix this mode rendered NO bar at all: the sidebar toggle floated over the transcript and
-    // there was no way to leave the chat from the surface. It must now match the kanban and agent
-    // modes — see ChatAppBarParity.spec.ts for the cross-mode proof.
+    // Pre-fix this mode rendered NO bar at all: the sidebar toggle floated over the transcript and there was no way to leave the chat from the surface.
     const task: Task = { id: 'task_a', name: 'A' } as Task
     const { wrapper: w } = mountWrapper({ task })
     expect(w.find('[data-testid="chatview-stub"]').attributes('data-show-header')).toBe('true')
 
-    // ChatView's `close` is re-emitted verbatim so AppLayout can route
-    // it through handleCloseTaskView, same as the other two branches.
+    // ChatView's `close` is re-emitted verbatim so AppLayout can route it through handleCloseTaskView, same as the other two branches.
     w.findComponent({ name: 'ChatView' }).vm.$emit('close')
     await nextTick()
     expect(w.emitted('close')).toBeTruthy()
@@ -137,9 +125,7 @@ describe('StandardTaskChatView', () => {
   })
 
   it('forces a fresh ChatView mount when the task prop changes (useChatScrollRestore key rule)', async () => {
-    // The wrapper pins `:key="chat-${task.id}"` on <ChatView>. When the user switches tasks (e.g.
-    // via Sidebar), a new key remounts ChatView fresh — preserving scroll-restore across switches
-    // and clearing the previous task's message cache.
+    // The wrapper pins `:key="chat-${task.id}"` on <ChatView>.
     const taskA: Task = { id: 'task_a', name: 'A' } as Task
     const taskB: Task = { id: 'task_b', name: 'B' } as Task
     const { wrapper: w } = mountWrapper({ task: taskA })

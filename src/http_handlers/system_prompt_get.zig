@@ -1,6 +1,4 @@
-//! GET /test/system-prompt/:session_id Returns ONLY the system prompt that
-//! would be sent to the LLM for the given session, rendered through the same
-//! `buildMessages` pipeline the production workflow uses
+//! GET /test/system-prompt/:session_id Returns ONLY the system prompt that would be sent to the LLM for the given session, rendered through the same …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -15,9 +13,7 @@ const buildMessages = @import("../modules/agent/loop/prompts_build_messages_for_
 const agentic_loop = @import("../modules/agent/loop/workflow.zig");
 const Backend = pabrikcore.database.Db;
 
-/// JSON response struct. `size_bytes` is the byte length of the rendered
-/// `system_prompt` so callers can sanity-check they got a non-empty prompt
-/// without re-counting bytes on the client.
+/// JSON response struct.
 const SystemPromptResponse = struct {
     session_id: []const u8,
     system_prompt: []const u8,
@@ -43,9 +39,7 @@ pub fn systemPromptGetHandler(
     const sqlite_db = di.db;
     const io = di.io;
 
-    // Recover the working directory from the session row. A missing row
-    // is a 404 — we cannot build a meaningful system prompt without a cwd
-    // (the memory loader + workspace context both depend on it).
+    // Recover the working directory from the session row.
     const cwd = blk: {
         const session_row_opt = llm_history.get_session(allocator, sqlite_db, session_id) catch null;
         if (session_row_opt) |session| {
@@ -63,8 +57,7 @@ pub fn systemPromptGetHandler(
     }
     const cwd_str: []const u8 = cwd.?;
 
-    // Load the DB-stored message history (same shape `workflow.zig` uses
-    // before calling buildMessages).
+    // Load the DB-stored message history (same shape `workflow.zig` uses before calling buildMessages).
     const db_messages = agentic_loop.getLLMHistories(*Backend, .{
         .allocator = allocator,
         .db = sqlite_db,
@@ -76,9 +69,7 @@ pub fn systemPromptGetHandler(
         });
     };
 
-    // Mirrors workflow.zig:509's call shape: empty parent_session_id, empty
-    // inherited_context, empty activeAgentContent (which falls back to
-    // BuildDynamicAgentContent — the main-agent flow's source of truth via
+    // Mirrors workflow.zig:509's call shape: empty parent_session_id, empty inherited_context, empty activeAgentContent (which falls back to BuildDynamicAgentContent …
     const merged_tools: []tool_models.AgentTool = &.{};
     const messages = buildMessages(
         allocator,
@@ -104,9 +95,7 @@ pub fn systemPromptGetHandler(
         allocator.free(messages);
     }
 
-    // buildMessages always emits messages[0] as the system message (see
-    // prompts_build_messages_for_agent_prompt.zig:131). Defensive: also check
-    // the role so we never silently leak a different role's content.
+    // buildMessages always emits messages[0] as the system message (see prompts_build_messages_for_agent_prompt.zig:131).
     if (messages.len == 0 or messages[0].role != .system) {
         return res.jsonResponse(.{
             .status_code = 500,

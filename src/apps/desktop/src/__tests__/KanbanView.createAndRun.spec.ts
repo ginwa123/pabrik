@@ -62,8 +62,6 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
       },
     })
     await flushPromises()
-    // The host guards handleCreateTaskSave on `activeCreateColumnId` (set when the user clicks + on a
-    // column). Set it directly via the vm so we don't have to drive the @add-task emit path.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(wrapper!.vm as any).activeCreateColumnId = 'col_todo'
     return wrapper!
@@ -99,8 +97,7 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     })
     await flushPromises()
 
-    // The new contract: SINGLE call to addKanbanTask with mode +
-    // queue_message. NO addTask + runAgentOnNewTask dance.
+    // The new contract: SINGLE call to addKanbanTask with mode + queue_message.
     expect(addKanbanSpy).toHaveBeenCalledTimes(1)
     expect(addKanbanSpy).toHaveBeenCalledWith(
       'ws_1',
@@ -116,14 +113,10 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     )
     expect(addTaskSpy).not.toHaveBeenCalled()
     expect(runAgentSpy).not.toHaveBeenCalled()
-    // The api helper was called indirectly via the store action (we
-    // don't assert the exact call here — that's covered by the
-    // workspacesStoreAddKanbanTask.spec.ts suite).
+    // The api helper was called indirectly via the store action (we don't assert the exact call here — that's covered by the workspacesStoreAddKanbanTask.spec.ts …
     expect(createKanbanSpy).toBeTruthy()
 
-    // CHANGED (2026-08-06, "no need go chatview"): on the SUCCESS path we deliberately do NOT emit
-    // `selectTask`. The user stays on the kanban view (no chat dialog opens); the agent runs in the
-    // background and the user can click the new task card to open the chat view any time they want.
+    // CHANGED (2026-08-06, "no need go chatview"): on the SUCCESS path we deliberately do NOT emit `selectTask`.
     expect(view.emitted('selectTask')).toBeUndefined()
   })
 
@@ -212,9 +205,7 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
 
      
     expect(view.emitted('selectTask')).toBeUndefined()
-    // Partial-success: the store action's catch block decides whether to surface a toast. In the
-    // new contract the store action's mocked-resolved path (not rejected) bypasses the catch — the
-    // store's notifyError lives in the catch path.
+    // Partial-success: the store action's catch block decides whether to surface a toast.
   })
 
   it('still creates the task in plain create mode (existing behavior unchanged)', async () => {
@@ -272,8 +263,7 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
     })
     await flushPromises()
 
-    // The flow: single addKanbanTask call (the new endpoint handles
-    // create + run agent server-side in one round-trip).
+    // The flow: single addKanbanTask call (the new endpoint handles create + run agent server-side in one round-trip).
     expect(store.addKanbanTask).toHaveBeenCalledOnce()
     // But the chat view does NOT open.
     expect(view.emitted('selectTask')).toBeUndefined()
@@ -312,9 +302,7 @@ describe('KanbanView.handleCreateTaskSave — create_and_run', () => {
   })
 })
 
-// ===================================================================== Plain "Create task" button
-// → mode='create_session' (plan: 2026-08-19-kanban-create-task-inits-session.md)
-// =====================================================================
+// ===================================================================== Plain "Create task" button → mode='create_session' (plan …
 describe('KanbanView.handleCreateTaskSave — create_session (plain Create task button)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -343,8 +331,6 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
   }
 
   it("plain Create task → mode='create_session' is dispatched to addKanbanTask (no queue_message)", async () => {
-    // The plain "Create task" button emits `create` and KanbanView's @create listener forwards it as
-    // `mode: 'create_session'` (see template line ~1250 of KanbanView.vue).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'idle' }
@@ -377,19 +363,14 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
         tags: [],
       }),
     )
-    // Critical: plain Create task must NOT forward queue_message —
-    // that's only the create_and_run button's job.
+    // Critical: plain Create task must NOT forward queue_message — that's only the create_and_run button's job.
     expect(addKanbanSpy.mock.calls[0]?.[3].queue_message).toBeUndefined()
 
-    // CHANGED (2026-08-19): plain Create task now lands on an existing session when the user clicks
-    // the card, but we still do NOT navigate to the chatview on success — the user stays on the
-    // kanban and clicks the card themselves.
+    // CHANGED (2026-08-19): plain Create task now lands on an existing session when the user clicks the card, but we still do NOT navigate to the chatview on success …
     expect(view.emitted('selectTask')).toBeUndefined()
   })
 
   it("@create-and-run path stays on mode='create_and_run' (regression)", async () => {
-    // Sanity check: the existing create_and_run path is unchanged. Same caveat as the test above —
-    // the @create-and-run listener forwards mode='create_and_run' (template line ~1251).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 't', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 't', status: 'send' }
@@ -419,9 +400,7 @@ describe('KanbanView.handleCreateTaskSave — create_session (plain Create task 
   })
 })
 
-// ===================================================================== Double-click re-entry guard
-// (plan: 2026-08-24-kanban-create-run-disable-double-click.md) createBusy is flipped synchronously
-// at the top of handleCreateTaskSave.
+// ===================================================================== Double-click re-entry guard (plan: 2026-08-24-kanban-create-run-disable-double-click.md) …
 describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () => {
   let wrapper: VueWrapper | null = null
 
@@ -454,9 +433,7 @@ describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () =
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     const fakeSession = { id: 'task_new', name: 'My task', status: 'send' }
     const store = useWorkspacesStore()
-    // Never-resolving promise = request stays in flight, exactly the window a double-click lands
-    // in. resolveCreate is typed to match the store action's resolved shape (KanbanCreateResponse)
-    // so the Promise executor's inferred `resolve` assigns cleanly.
+    // Never-resolving promise = request stays in flight, exactly the window a double-click lands in. resolveCreate is typed to match the store action's resolved …
     let resolveCreate!: (v: KanbanCreateResponse) => void
     const addKanbanSpy = vi
       .spyOn(store, 'addKanbanTask')
@@ -477,8 +454,7 @@ describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () =
       is_auto_retry_until_stop: '0' as const,
       tags: [] as string[],
     }
-    // Two invocations with NO await between them — the same-tick
-    // double-click race.
+    // Two invocations with NO await between them — the same-tick double-click race.
     const p1 = vm.handleCreateTaskSave(payload)
     const p2 = vm.handleCreateTaskSave({ ...payload })
     await flushPromises()
@@ -509,7 +485,6 @@ describe('KanbanView.handleCreateTaskSave — double-click re-entry guard', () =
     // Error surfaced to the dialog's errorMessage prop binding.
     expect(vm.createError).toBe('boom')
 
-    // Retry after failure goes through (guard cleared).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeTask = { id: 'task_new', name: 'My task', task_type: 'standard' } as any
     vi.spyOn(store, 'addKanbanTask').mockResolvedValue({

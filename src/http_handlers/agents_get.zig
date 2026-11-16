@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/agent`. Returns `{agent,
-//! knowledge, tools}` for the agent bound to this workspace_item.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/agent`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -27,9 +26,7 @@ pub const AgentGetError = error{
     ItemNotAgent,
     /// A `db.query` failed.
     DatabaseError,
-    /// `allocator.dupe` failed while copying slice fields. Unreachable
-    /// under arena allocator but the type system requires the
-    /// variant so `try` propagates.
+    /// `allocator.dupe` failed while copying slice fields.
     OutOfMemory,
 };
 
@@ -39,24 +36,18 @@ pub const AgentGetInput = struct {
     item_id: []const u8,
 };
 
-/// Output of the agent-get use-case. All slices are owned by the
-/// caller (lifetime = request arena in production).
+/// Output of the agent-get use-case.
 pub const AgentGetOutput = struct {
     agent: AgentRow,
     knowledge: []const AgentKnowledgeRow,
     tools: []const []const u8,
-    /// Per-agent named system-prompt blocks (Migration 080), ordered
-    /// position DESC — same ordering convention as knowledge.
+    /// Per-agent named system-prompt blocks (Migration 080), ordered position DESC — same ordering convention as knowledge.
     system_prompts: []const AgentSystemPromptRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Resolve the agent row + knowledge + tools for a workspace_item. Validates
-/// the workspace_item exists + is of type `'agent'`, then loads the 3
-/// sub-collections.
+/// Resolve the agent row + knowledge + tools for a workspace_item.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -99,13 +90,9 @@ fn useCase(
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Resolves the singleton DB
-/// handle, delegates to `useCase`, and maps the use-case outcome
-/// to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentsGetHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -153,8 +140,6 @@ pub fn agentsGetHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -174,15 +159,13 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
     );
     try Migration116.up(&db, testing.allocator);
     // mirror that, or the `content` column (Migration 079) is missing.
-    // Same for the agent_system_prompt table (Migration 080).
 
     // Seed: 1 agent + 2 knowledge rows + 2 enabled tools + 1 disabled tool.
     try db.exec(testing.allocator,

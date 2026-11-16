@@ -16,8 +16,7 @@ pub const McpTransport = struct {
         };
     }
 
-    /// Read a JSON-RPC request from stdin
-    /// Blocks until a complete message is received
+    /// Read a JSON-RPC request from stdin Blocks until a complete message is received
     pub fn read_message(self: *Self) ![]u8 {
         var reader = self.stdin.reader();
         var header_end_pos: usize = 0;
@@ -107,6 +106,5 @@ pub const McpTransport = struct {
 };
 
 test {
-    // Tests for mcp_transport would require mocking stdin/stdout
-    // Skipping for now - transport is tested via integration tests
+    // Tests for mcp_transport would require mocking stdin/stdout Skipping for now - transport is tested via integration tests
 }

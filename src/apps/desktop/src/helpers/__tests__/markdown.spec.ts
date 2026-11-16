@@ -1,6 +1,4 @@
-/** helpers/markdown.ts — markdown → HTML / markdown → plain text. The `ask_user` card is the caller
- * that motivated this: its `question` is model-authored markdown ("Markdown allowed" in
- * `ask_user.zig`'s schema) and used to reach the DOM as literal `**bold**` text. */
+/** helpers/markdown.ts — markdown → HTML / markdown → plain text. */
 import { describe, it, expect } from 'vitest'
 import { renderMarkdownHtml, renderInlineMarkdownHtml, stripMarkdownSyntax } from '../markdown'
 
@@ -45,8 +43,7 @@ describe('renderMarkdownHtml', () => {
   })
 
   it('renders <>& in a plain question verbatim once the browser decodes it', () => {
-    // Same assertion style as the AskUser card spec: the card's job is that
-    // `<staging>` reads as `<staging>`, not as `<staging>`.
+    // Same assertion style as the AskUser card spec: the card's job is that `<staging>` reads as `<staging>`, not as `<staging>`.
     const html = renderMarkdownHtml('Deploy <staging> & "prod"?')
     expect(html).toContain('&lt;staging&gt; &amp; &quot;prod&quot;?')
   })
@@ -129,9 +126,7 @@ describe('stripMarkdownSyntax', () => {
   })
 
   it('does not inject a space where an inline token ends', () => {
-    // Regression: joining a paragraph's inline children with ' ' turned `**staging**, but skip 087`
-    // into `staging , but skip 087`, which then rendered in the ask_user header pill and the answer
-    // chip. Blocks are space-joined; inline tokens concatenate.
+    // Regression: joining a paragraph's inline children with ' ' turned `**staging**, but skip 087` into `staging , but skip 087`, which then rendered in the …
     expect(stripMarkdownSyntax('**staging**, but skip `087`')).toBe('staging, but skip 087')
     expect(stripMarkdownSyntax('mirror `linux/window.zig` in `mac/render.zig`')).toBe(
       'mirror linux/window.zig in mac/render.zig',

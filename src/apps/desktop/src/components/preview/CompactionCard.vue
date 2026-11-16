@@ -175,9 +175,7 @@
 import { ref, computed } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 
-/** CompactionCard — the handoff envelope `compactMessageInMemoryNew` writes to the DB, drawn as a
- * one-line divider that opens: JSON envelopes carry the plan and the working directory, older XML
- * ones do not. Closed it costs 38px; the body stays in the DOM (`v-show`) so one click reveals it. */
+/** CompactionCard — the handoff envelope `compactMessageInMemoryNew` writes to the DB, drawn as a one-line divider that opens: JSON envelopes carry the plan and … */
 const props = defineProps<{
   content: string
 }>()
@@ -222,9 +220,7 @@ type EnvelopeParse =
   | { kind: 'malformed' }
   | { kind: 'ok'; payload: Record<string, unknown> }
 
-// Show more entries by default; .compaction-entries adds max-height + overflow-y so a 359-message
-// compaction renders as a scrollable list rather than a 359-row wall. The "Show all" toggle remains
-// for accessibility (keyboard-only users can expand without scrolling).
+// Show more entries by default; .compaction-entries adds max-height + overflow-y so a 359-message compaction renders as a scrollable list rather than a 359-row …
 const MAX_ENTRIES_VISIBLE = 50
 // A plan longer than this gets a "Show the whole plan" toggle; below it the clamp never bites.
 const PLAN_FOLD_LINES = 12
@@ -266,9 +262,7 @@ const roleCounts = computed((): { role: string; count: number }[] => {
     .sort((a, b) => b.count - a.count || a.role.localeCompare(b.role))
 })
 
-/** One row per path that is actually different. A session that never bound a worktree used to print
- * the same directory three times (session cwd, active, worktree); the reader needs the difference,
- * not the repetition. */
+/** One row per path that is actually different. */
 const workdirRows = computed((): WorkdirRow[] => {
   const dir = workDir.value
   if (!dir) return []
@@ -291,8 +285,7 @@ const dirtySummary = computed(() => {
   return total === 1 ? '1 uncommitted file' : `${total} uncommitted files`
 })
 
-/** `13:30` out of either stamp the backend writes (`2026-11-15T13:30:57.614Z` or
- * `2025-01-15 12:34:56`). The header has room for the clock, not the date. */
+/** `13:30` out of either stamp the backend writes (`2026-11-15T13:30:57.614Z` or `2025-01-15 12:34:56`). */
 const clock = computed((): string => {
   const stamp = metadata.value.compacted_at
   if (!stamp) return ''
@@ -318,8 +311,7 @@ const toggleSummary = () => {
   summaryExpanded.value = !summaryExpanded.value
 }
 
-/** Reads the JSON envelope the backend writes today. `not_envelope` sends the caller to the XML
- * reader, which is how envelopes written before the format change still render. */
+/** Reads the JSON envelope the backend writes today. */
 const parseJsonEnvelope = (raw: string): EnvelopeParse => {
   const trimmed = raw.trim()
   if (!trimmed.startsWith('{"compact_messages"')) return { kind: 'not_envelope' }
@@ -381,8 +373,7 @@ const applyPayload = (root: Record<string, unknown>): void => {
 
 /** XML envelopes from before the JSON format change. Kept so old transcript rows still render. */
 const parseXml = (raw: string): void => {
-  // DOMParser reports malformed markup as a <parsererror> element rather than throwing, so the
-  // check below is the whole guard — and a DB row truncated mid-write still renders the card.
+  // DOMParser reports malformed markup as a <parsererror> element rather than throwing, so the check below is the whole guard — and a DB row truncated mid-write …
   const doc = new DOMParser().parseFromString(raw, 'text/xml')
   if (doc.querySelector('parsererror')) {
     return
@@ -393,9 +384,7 @@ const parseXml = (raw: string): void => {
     return
   }
 
-  // Metadata — direct child only, so a <metadata> tag inside the compactor's <summary> text cannot
-  // match. `parent.children` + tag filter rather than `:scope > X`, which jsdom's XML parser does
-  // not reliably support.
+  // Metadata — direct child only, so a <metadata> tag inside the compactor's <summary> text cannot match.
   const metadataEl = directChild(root, 'metadata')
   if (metadataEl) {
     metadata.value = {
@@ -456,8 +445,7 @@ const textOf = (parent: Element, tag: string): string | undefined => {
   return t ? t : undefined
 }
 
-// Parse synchronously during setup rather than in onMounted, so the component is populated before
-// it renders and the test does not depend on a full DOM lifecycle mount.
+// Parse synchronously during setup rather than in onMounted, so the component is populated before it renders and the test does not depend on a full DOM lifecycle …
 const parsedEnvelope = parseJsonEnvelope(props.content)
 if (parsedEnvelope.kind === 'ok') {
   applyPayload(parsedEnvelope.payload)

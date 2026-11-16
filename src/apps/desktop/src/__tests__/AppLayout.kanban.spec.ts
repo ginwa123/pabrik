@@ -1,5 +1,4 @@
-/** Tests for AppLayout's main-content rendering when the active workspace item is a kanban
- * (post-2026-06-21 migration). */
+/** Tests for AppLayout's main-content rendering when the active workspace item is a kanban (post-2026-06-21 migration). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
@@ -17,8 +16,7 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// Test-only stub SseClient. Mirrors the helper in App.spec.ts / sseBus.spec.ts (kept inline rather
-// than shared to avoid coupling between spec files).
+// Test-only stub SseClient.
 function makeStubClient(initial: SseState = 'open'): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,9 +44,7 @@ function installBusForTests() {
   __setSseBusGlobalClient(makeStubClient('open'))
 }
 
-// AppLayout uses useRouter / useRoute. Stub the composables at module level (Options-API mocks only
-// patch this.$router, not the setup-time call). The reactive route is mutated per-test to drive the
-// URL-driven routes.
+// AppLayout uses useRouter / useRoute.
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
     query: {} as Record<string, string>,
@@ -110,14 +106,12 @@ const makeFolderItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem =
 
 function mountAppLayout(workspaces: Workspace[] = []) {
   const ws = useWorkspacesStore()
-  // Initialize the store's `workspaces` ref directly (skip init()).
-  // init() fetches from the API and is mocked below.
+  // Initialize the store's `workspaces` ref directly (skip init()). init() fetches from the API and is mocked below.
   ws.workspaces = workspaces
   return mount(AppLayout, {
     global: {
       stubs: {
-        // Stub the heavy / unrelated children to keep the test
-        // focused on main-content routing.
+        // Stub the heavy / unrelated children to keep the test focused on main-content routing.
         Sidebar: true,
         RightSidebar: true,
         GitFileViewer: true,
@@ -126,9 +120,7 @@ function mountAppLayout(workspaces: Workspace[] = []) {
         Chats: true,
         SettingsView: true,
         CodeEditor: true,
-        // Stub KanbanView with the chat-pane branch + resize handle so the AppLayout-level
-        // integration tests can still exercise "active task belongs to kanban → chat pane visible +
-        // resize handle draggable".
+        // Stub KanbanView with the chat-pane branch + resize handle so the AppLayout-level integration tests can still exercise "active task belongs to kanban → chat …
         KanbanView: {
           template: `
             <div data-kanban-view="stub" :data-item-id="item.id">
@@ -193,9 +185,7 @@ describe('AppLayout — kanban main-content rendering', () => {
     const ws = useWorkspacesStore()
     ws.setActiveWorkspaceItem(KANBAN_ID)
     await nextTick()
-    // The stub <KanbanView> has data-kanban-view="stub" + a
-    // data-item-id set from props.item.id. Assert the kanban
-    // received the right item.
+    // The stub <KanbanView> has data-kanban-view="stub" + a data-item-id set from props.item.id.
     const view = wrapper.find('[data-kanban-view="stub"]')
     expect(view.exists()).toBe(true)
     expect(view.attributes('data-item-id')).toBe(KANBAN_ID)
@@ -259,15 +249,11 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
   })
 
   it('the kanban task chat REPLACES the board — <KanbanView> is not rendered alongside it', async () => {
-    // The "click a kanban card" flow now opens the task's chat view alongside the kanban (not in
-    // place of it). The user's kanban context is preserved while they chat, and a ✕ button in the
-    // chat header collapses the chat column back to the kanban-only view.
+    // The "click a kanban card" flow now opens the task's chat view alongside the kanban (not in place of it).
     const kanban = makeKanbanItem({
       tasks: [makeTask({ kanban_column_id: 'col_todo' })],
     })
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now
-    // ?view=workspace&itemId=Y/chat/task_X (the legacy view=task
-    // shape has been collapsed into the workspace URL).
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now ?view=workspace&itemId=Y/chat/task_X (the legacy view=task shape has been collapsed into the workspace URL).
     const routeObj = reactive({
       query: {
         view: 'workspace',
@@ -287,23 +273,20 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
     ws.setActiveWorkspaceItem(KANBAN_ID)
     ws.setActiveTask(TASK_ID)
     await nextTick()
-    // The kanban chat branch is a v-else-if BEFORE the KanbanView branch, and the KanbanView branch
-    // only tests `item_type === 'kanban'`.
+    // The kanban chat branch is a v-else-if BEFORE the KanbanView branch, and the KanbanView branch only tests `item_type === 'kanban'`.
     const view = wrapper.find('[data-kanban-view="stub"]')
     expect(view.exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('does NOT render <KanbanView> when the active task\'s parent is a different workspace item (single-column ChatView)', async () => {
-    // When the user has a folder task selected AND a kanban is the active workspace item (an edge
-    // case.
+    // When the user has a folder task selected AND a kanban is the active workspace item (an edge case.
     const folder = makeFolderItem({
       id: FOLDER_ID,
       tasks: [makeTask({ id: 'task_in_folder', kanban_column_id: null })],
     })
     const kanban = makeKanbanItem({ id: KANBAN_ID }) // no tasks in this kanban
-    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now
-    // ?view=workspace&itemId=Y/chat/task_X.
+    // SIMPLIFY-URL-BROWSER (2026-08-15): the URL is now ?view=workspace&itemId=Y/chat/task_X.
     const routeObj = reactive({
       query: {
         view: 'workspace',
@@ -329,9 +312,7 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
     ws.setActiveWorkspaceItem(KANBAN_ID) // kanban is the active WS item
     ws.setActiveTask('task_in_folder') // ...but the active task lives in the folder
     await nextTick()
-    // activeTaskWorkspaceItemId === FOLDER_ID, not KANBAN_ID. The kanban chat branch's last
-    // condition (`activeTaskWorkspaceItemId === activeWorkspaceItem.id`) is false — the chat does
-    // NOT mount.
+    // activeTaskWorkspaceItemId === FOLDER_ID, not KANBAN_ID.
     const view = wrapper.find('[data-kanban-view="stub"]')
     expect(view.exists()).toBe(false)
     const threeCol = wrapper.find('[data-kanban-with-chat]')
@@ -339,14 +320,11 @@ describe('AppLayout — kanban task view (3-column layout)', () => {
     wrapper.unmount()
   })
 
-  // The 4 resize-handle / localStorage-persist tests that USED to live here were deleted as part of
-  // the kanban-embed-chatview refactor (plan Task 5): the resize state machine + handle moved from
-  // AppLayout into KanbanView.
+  // The 4 resize-handle / localStorage-persist tests that USED to live here were deleted as part of the kanban-embed-chatview refactor (plan Task 5): the resize …
 })
 
 describe('AppLayout — kanban survives route navigation (regression: activeWorkspaceItemId is NOT cleared by ?view=workspace)', () => {
-  // Pre-migration, the AppLayout's route.query watcher (line 727-732) cleared activeWorkspaceItemId
-  // whenever the URL query `view === 'workspace'`.
+  // Pre-migration, the AppLayout's route.query watcher (line 727-732) cleared activeWorkspaceItemId whenever the URL query `view === 'workspace'`.
   beforeEach(() => {
     setActivePinia(createPinia())
     installBusForTests()
@@ -380,30 +358,22 @@ describe('AppLayout — kanban survives route navigation (regression: activeWork
   })
 
   it('when URL is ?view=workspace and activeWorkspaceItem is a kanban, the kanban renders (not the empty state)', async () => {
-    // Regression guard: prior to the kanban→main-content migration, AppLayout's route.query watcher
-    // at the `!view || view === 'workspace'` branch called
-    // workspacesStore.setActiveWorkspaceItem(null).
+    // Regression guard: prior to the kanban→main-content migration, AppLayout's route.query watcher at the `!view || view === 'workspace'` branch called …
     const kanban = makeKanbanItem()
     const wrapper = mountAppLayout([
       { id: WS_ID, name: 'WS', icon: '📁', expanded: true, items: [kanban] } as Workspace,
     ])
-    // Set the active item AFTER mount so it doesn't race with AppLayout's onMounted →
-    // initializeFromSystemFolder → init() call (which would otherwise wipe the test-injected kanban
-    // from the store with the mocked-empty API response).
+    // Set the active item AFTER mount so it doesn't race with AppLayout's onMounted → initializeFromSystemFolder → init() call (which would otherwise wipe the …
     const ws = useWorkspacesStore()
     ws.setActiveWorkspaceItem(KANBAN_ID)
     await nextTick()
-    // currentView is 'workspace' (per the route mock) but the
-    // kanban branch is checked BEFORE the workspace empty-state
-    // branch in the v-else-if chain, so the kanban view wins.
+    // currentView is 'workspace' (per the route mock) but the kanban branch is checked BEFORE the workspace empty-state branch in the v-else-if chain, so the kanban …
     const view = wrapper.find('[data-kanban-view="stub"]')
     expect(view.exists()).toBe(true)
     wrapper.unmount()
   })
 
-  // Regression guard for commit d0a05eb0 ("feat(design): Figma- lite redesign — file-backed HTML +
-  // 3 LLM tools", PR #90). That commit added the design+chat 3-column branch at line ~1530 but
-  // accidentally typed `v-if` instead of `v-else-if`.
+  // Regression guard for commit d0a05eb0 ("feat(design): Figma- lite redesign — file-backed HTML + 3 LLM tools", PR #90).
   it('kanban renders alone — workspace folder preview is NOT in the DOM (?view=workspace + kanban active)', async () => {
     const kanban = makeKanbanItem()
     const wrapper = mountAppLayout([
@@ -414,9 +384,7 @@ describe('AppLayout — kanban survives route navigation (regression: activeWork
     await nextTick()
     // Kanban view is rendered (sanity — passes pre-fix too).
     expect(wrapper.find('[data-kanban-view="stub"]').exists()).toBe(true)
-    // THE actual regression assertion: workspace folder preview must NOT be in the DOM. Pre-fix
-    // this assertion failed because the typo'd `v-if` started a second chain that also evaluated
-    // `currentView === 'workspace'` to true.
+    // THE actual regression assertion: workspace folder preview must NOT be in the DOM.
     expect(wrapper.find('[data-testid="workspace-folder-preview"]').exists()).toBe(false)
     wrapper.unmount()
   })

@@ -1,5 +1,4 @@
-/** Code color in the diff review. `SidebarDiffView` used to render every code line through
- * `v-html="escapeDiffHtml(line.content)"` — escaped, but monochrome. */
+/** Code color in the diff review. */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SidebarDiffView from '../chat_right_sidebar/SidebarDiffView.vue'
@@ -55,9 +54,7 @@ describe('SidebarDiffView — code color (unified)', () => {
 
   it('keeps the +/− change sign glued to the code it marks', () => {
     const wrapper = mountView()
-    // The sign is its own span and the code is now one span per token, so this also pins the
-    // whitespace contract: a newline/indent between the two inline spans must NOT reach the
-    // rendered line (Vue's condensed whitespace drops it), or every diff row would gain a stray.
+    // The sign is its own span and the code is now one span per token, so this also pins the whitespace contract: a newline/indent between the two inline spans must …
     expect(wrapper.text()).toContain('+const added = 3')
     expect(wrapper.text()).toContain('−const gone = 2')
   })

@@ -1,5 +1,4 @@
-//! Agent-callable tool: `list_agents` — list the configured agents with
-//! their full specs.
+//! Agent-callable tool: `list_agents` — list the configured agents with their full specs.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -38,8 +37,7 @@ pub const list_agents_tool = AgentTool{
     },
 };
 
-/// Execute list_agents. Returns a JSON string for the LLM. Caller owns the
-/// returned slice and must free it with `allocator.free()`.
+/// Execute list_agents.
 pub fn executeListAgents(
     allocator: std.mem.Allocator,
     config: *const config_mod.LlmConfig,
@@ -89,8 +87,7 @@ pub fn executeListAgents(
     }, .{});
 }
 
-// Exec adapter — the tool definition above and its executor below live in
-// ONE file.
+// Exec adapter — the tool definition above and its executor below live in ONE file.
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
@@ -107,8 +104,6 @@ const error_explain = @import("tools_error_explain.zig");
 
 pub fn execListAgents(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // No input to parse — the schema declares zero required params.
-    // Use `tc.function.arguments` for the envelope's `parameters`
-    // field verbatim (the LLM is expected to send `{}`).
     const inner = executeListAgents(ctx.allocator, ctx.config) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -281,8 +276,7 @@ test "execListAgents returns a wrapped envelope naming the tool" {
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"name\":\"coder\"") != null);
 }
 
-/// A live `LlmConfig` whose agents are (name, enabled) pairs — the disabled
-/// half is what `list_agents` must never show.
+/// A live `LlmConfig` whose agents are (name, enabled) pairs — the disabled half is what `list_agents` must never show.
 fn configWithFlags(
     allocator: std.mem.Allocator,
     names: []const []const u8,

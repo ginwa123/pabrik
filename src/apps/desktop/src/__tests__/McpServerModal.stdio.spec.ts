@@ -4,8 +4,7 @@ import { ref } from 'vue'
 
 import McpServerModal, { type McpServerModalValue } from '../components/pabrik/McpServerModal.vue'
 
-// Mock the `testMcpServer` API client so the modal's "Test" button tests don't hit the network. The
-// mock is per-test (vi.resetMocks) so each test can shape its own response shape.
+// Mock the `testMcpServer` API client so the modal's "Test" button tests don't hit the network.
 const mockTestMcpServer = vi.fn(async () => ({
   ok: true as const,
   transport: 'stdio' as const,
@@ -17,9 +16,7 @@ const mockTestMcpServer = vi.fn(async () => ({
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  // Forward all arguments to the mock so we can still assert on the
-  // body via `mockTestMcpServer.mock.calls`. Cast through unknown
-  // because the production function signature uses a typed object.
+  // Forward all arguments to the mock so we can still assert on the body via `mockTestMcpServer.mock.calls`.
   return {
     ...actual,
     testMcpServer: (...args: unknown[]) =>
@@ -49,8 +46,7 @@ const baseHttpServer: McpServerModalValue = {
   cwd: '',
 }
 
-/** Both branches of McpServerModal use <Teleport to="body">: the HTTP branch delegates to
- * <LlmConfigModal>, the stdio branch has its own bespoke centered dialog with backdrop + close ✕. */
+/** Both branches of McpServerModal use <Teleport to="body">: the HTTP branch delegates to <LlmConfigModal>, the stdio branch has its own bespoke centered dialog … */
 function mountModal(
   value: McpServerModalValue,
   mode: 'add' | 'edit' = 'add',
@@ -65,8 +61,7 @@ describe('McpServerModal — stdio transport', () => {
   let wrapper: VueWrapper | null = null
 
   beforeEach(() => {
-    // Reset the mocked testMcpServer to its default success shape
-    // before every test so a previous test's override doesn't leak.
+    // Reset the mocked testMcpServer to its default success shape before every test so a previous test's override doesn't leak.
     mockTestMcpServer.mockClear()
     mockTestMcpServer.mockResolvedValue({
       ok: true,
@@ -81,9 +76,7 @@ describe('McpServerModal — stdio transport', () => {
   afterEach(() => {
     wrapper?.unmount()
     wrapper = null
-    // Defensive: the Teleport-target content can survive between tests
-    // if unmount() doesn't fully clean it. Force-remove both the
-    // stdio + http modal teleport-landmarks so each test starts fresh.
+    // Defensive: the Teleport-target content can survive between tests if unmount() doesn't fully clean it.
     document.querySelectorAll(
       '[data-testid="stdio-modal-backdrop"], [data-testid="stdio-modal-dialog"], [data-testid="http-modal-backdrop"], [data-testid="http-modal-dialog"], [role="dialog"]',
     ).forEach((el) => el.remove())
@@ -128,16 +121,14 @@ describe('McpServerModal — stdio transport', () => {
     expect(document.body.querySelector('[data-testid="args-textarea"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="env-textarea"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="cwd-input"]')).not.toBeNull()
-    // URL field (HTTP branch, url-input) MUST NOT be in the DOM when
-    // the stdio branch is mounted (branches are exclusive).
+    // URL field (HTTP branch, url-input) MUST NOT be in the DOM when the stdio branch is mounted (branches are exclusive).
     expect(document.body.querySelector('[data-testid="base-url-input"]')).toBeNull()
   })
 
   it('shows URL + headers fields when transport=http', async () => {
     wrapper = mountModal(baseHttpServer)
     await wrapper.vm.$nextTick()
-    // HTTP branch is a bespoke dialog (Name + URL + Headers only) —
-    // it must NOT render LlmConfigForm's LLM profile fields.
+    // HTTP branch is a bespoke dialog (Name + URL + Headers only) — it must NOT render LlmConfigForm's LLM profile fields.
     expect(document.body.querySelector('[data-testid="http-modal-backdrop"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="http-modal-dialog"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="url-input"]')).not.toBeNull()
@@ -266,9 +257,7 @@ describe('McpServerModal — stdio transport', () => {
     saveBtn.click()
     await wrapper.vm.$nextTick()
 
-    // Modal emits the parsed args array back via update:modelValue
-    // BEFORE the save event. The parent (PabrikConfigEditor.vue) sees
-    // the parsed array on the modelValue and can persist it.
+    // Modal emits the parsed args array back via update:modelValue BEFORE the save event.
     const updates = wrapper.emitted('update:modelValue') ?? []
     const last = updates[updates.length - 1]?.[0] as McpServerModalValue | undefined
     expect(last).toBeTruthy()
@@ -301,9 +290,7 @@ describe('McpServerModal — stdio transport', () => {
     expect(last!.env).toEqual(['NODE_ENV=production', 'DEBUG=1'])
   })
 
-  // ── "Test" button tests ────────────────────────────────────────────── The Test button fires
-  // `POST /api/mcp/test` against the current form contents (NOT the parent-managed modelValue — the
-  // user tests what they see in the textareas).
+  // ── "Test" button tests ──────────────────────────────────────────────
   it('renders a Test button in the footer', async () => {
     wrapper = mountModal(baseStdioServer)
     await wrapper.vm.$nextTick()
@@ -326,9 +313,7 @@ describe('McpServerModal — stdio transport', () => {
     wrapper = mountModal(baseStdioServer)
     await wrapper.vm.$nextTick()
 
-    // Type some args into the textarea BEFORE clicking Test — the
-    // modal must send the textarea state, not the stale modelValue
-    // (which the parent only refreshes on Save).
+    // Type some args into the textarea BEFORE clicking Test — the modal must send the textarea state, not the stale modelValue (which the parent only refreshes on …
     const textarea = document.body.querySelector<HTMLTextAreaElement>(
       '[data-testid="args-textarea"]',
     )!
@@ -405,9 +390,7 @@ describe('McpServerModal — stdio transport', () => {
   })
 
   it('clears the test result when the user edits any form field', async () => {
-    // The modal's watcher fires on `props.modelValue` changes. In the parent
-    // (`PabrikConfigEditor.vue`) this is wired via v-model; in this isolated test we have to
-    // manually re-feed the emitted `update:modelValue` payload back into the prop via setProps.
+    // The modal's watcher fires on `props.modelValue` changes.
     const testState = ref<McpServerModalValue>({ ...baseStdioServer })
     wrapper = mount(McpServerModal, {
       props: {
@@ -415,9 +398,7 @@ describe('McpServerModal — stdio transport', () => {
         mode: 'add',
         'onUpdate:modelValue': (next: McpServerModalValue) => {
           testState.value = next
-          // Re-feed via wrapper.setProps so the watcher observes
-          // the new prop reference (Vue Test Utils treats the
-          // emitted value as the source of truth, not the ref).
+          // Re-feed via wrapper.setProps so the watcher observes the new prop reference (Vue Test Utils treats the emitted value as the source of truth, not the ref).
           wrapper?.setProps({ modelValue: next })
         },
       },
@@ -433,9 +414,7 @@ describe('McpServerModal — stdio transport', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(document.body.querySelector('[data-testid="test-result"]')).not.toBeNull()
 
-    // Now edit the command — the input event triggers the modal's `updateCommand` →
-    // `update:modelValue` emit, the test bridge above re-feeds it into the prop, and the watcher
-    // clears `testResult` to null.
+    // Now edit the command — the input event triggers the modal's `updateCommand` → `update:modelValue` emit, the test bridge above re-feeds it into the prop, and …
     const commandInput = document.body.querySelector<HTMLInputElement>(
       '[data-testid="command-input"]',
     )!
@@ -449,8 +428,7 @@ describe('McpServerModal — stdio transport', () => {
   })
 
   it('shows "Testing…" + disables button while probe is in-flight', async () => {
-    // A promise we resolve manually so we can assert the in-flight
-    // UI state without racing.
+    // A promise we resolve manually so we can assert the in-flight UI state without racing.
     let resolveProbe!: (value: unknown) => void
     mockTestMcpServer.mockReturnValueOnce(
       new Promise<unknown>((r) => { resolveProbe = r }) as ReturnType<typeof mockTestMcpServer>,
@@ -465,8 +443,7 @@ describe('McpServerModal — stdio transport', () => {
     expect(testBtn.textContent?.trim()).toBe('Testing…')
     expect(testBtn.disabled).toBe(true)
 
-    // Resolve the probe so the test cleanup doesn't hang on an
-    // unresolved promise.
+    // Resolve the probe so the test cleanup doesn't hang on an unresolved promise.
     resolveProbe({
       ok: true,
       transport: 'stdio',
@@ -475,8 +452,7 @@ describe('McpServerModal — stdio transport', () => {
     await wrapper.vm.$nextTick()
   })
 
-  // ── Regression: duplicate footer (task_1788495808955_0) ───────────── PR #373 added a
-  // Test-button footer BEFORE the old Cancel+Save footer but forgot to delete the old one.
+  // ── Regression: duplicate footer (task_1788495808955_0) ─────────────
   it('stdio branch renders exactly one footer (1 Test + 1 Cancel + 1 Save)', async () => {
     wrapper = mountModal(baseStdioServer)
     await wrapper.vm.$nextTick()
@@ -485,9 +461,7 @@ describe('McpServerModal — stdio transport', () => {
     expect(document.body.querySelectorAll('[data-testid="save-btn"]').length).toBe(1)
   })
 
-  // ── HTTP branch: bespoke dialog (no LLM fields) ──────────────────── The HTTP branch previously
-  // delegated to LlmConfigModal, which renders the full LLM profile form (Model / Thinking /
-  // Temperature / URL style / API key / compaction overrides).
+  // ── HTTP branch: bespoke dialog (no LLM fields) ────────────────────
   it('http branch renders exactly one footer (1 Test + 1 Cancel + 1 Save)', async () => {
     wrapper = mountModal(baseHttpServer)
     await wrapper.vm.$nextTick()

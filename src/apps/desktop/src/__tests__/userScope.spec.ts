@@ -1,6 +1,4 @@
-/** Per-user browser-storage namespacing (plan 2026-09-25, W5). The bug these specs pin: every
- * localStorage key is origin-global, so two users on the same browser profile share one key space
- * and B inherits A's cached workspace list / active chat / open tabs. */
+/** Per-user browser-storage namespacing (plan 2026-09-25, W5). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeLocalStorageStub } from './helpers'
 import { getAuthMeCached } from '../helpers/authMe'
@@ -19,8 +17,7 @@ import {
 describe('userScopedKey', () => {
   beforeEach(() => {
     resetUserScopeForTest()
-    // jsdom 29 dropped localStorage from the default globals — install the
-    // repo's Map-backed stub (see __tests__/helpers.ts).
+    // jsdom 29 dropped localStorage from the default globals — install the repo's Map-backed stub (see __tests__/helpers.ts).
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
@@ -79,8 +76,7 @@ describe('userScopedKey', () => {
 describe('purgeForeignScopedKeys', () => {
   beforeEach(() => {
     resetUserScopeForTest()
-    // jsdom 29 dropped localStorage from the default globals — install the
-    // repo's Map-backed stub (see __tests__/helpers.ts).
+    // jsdom 29 dropped localStorage from the default globals — install the repo's Map-backed stub (see __tests__/helpers.ts).
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeLocalStorageStub(),
       writable: true,
@@ -140,9 +136,7 @@ describe('purgeForeignScopedKeys', () => {
   })
 })
 
-/** The boot race this pins: a store reads its user-scoped key at creation, which happens
- * before the router guard's async `/api/auth/me` returns. The identity therefore has to be
- * adopted from the CACHED response, synchronously, or the read and the write disagree. */
+/** The boot race this pins: a store reads its user-scoped key at creation, which happens before the router guard's async `/api/auth/me` returns. */
 describe('seedIdentityFromCache', () => {
   function okResponse(body: unknown): Response {
     return { ok: true, status: 200, json: async () => body } as Response

@@ -1,17 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock `marked` so the spec can count parse() invocations and avoid the real (slow) markdown parser
-// on the hot path. We keep the same return shape (`<p>${content}</p>`) so any test that asserts on
-// the HTML string doesn't have to special-case the mock.
+// Mock `marked` so the spec can count parse() invocations and avoid the real (slow) markdown parser on the hot path.
 vi.mock('marked', () => ({
   marked: {
     parse: vi.fn((content: string) => `<p>${content}</p>`),
   },
 }))
 
-// Mock the stripTags helpers so the assistant branch doesn't depend on the real implementation. We
-// only care that the memoization layer routes through them — the actual thinking-tag parsing is
-// covered by the existing stripTags tests.
+// Mock the stripTags helpers so the assistant branch doesn't depend on the real implementation.
 vi.mock('../stripTags', () => ({
   isThinkingTags: (content: string): boolean => content.trim().startsWith('<think>'),
   getThinkingTags: (content: string): string => `<details class="thinking">${content}</details>`,
@@ -23,8 +19,7 @@ vi.mock('../stripTags', () => ({
 import { marked } from 'marked'
 import { renderResponse, _resetRenderResponseCache } from '../renderResponse'
 
-// renderResponse is rendered into the chat for every visible message on every re-render of
-// ChatView.
+// renderResponse is rendered into the chat for every visible message on every re-render of ChatView.
 describe('renderResponse memoization', () => {
   beforeEach(() => {
     vi.mocked(marked.parse).mockClear()
@@ -40,9 +35,7 @@ describe('renderResponse memoization', () => {
   it('returns the same HTML reference for repeated identical content (cache hit)', () => {
     const a = renderResponse('hello', 'assistant')
     const b = renderResponse('hello', 'assistant')
-    // `toBe` checks reference equality. The cache returns the same string on every hit, so `a ===
-    // b` for primitives is the contract. (Strings are value-typed in JS but `===` still works
-    // because the cache returns the canonical entry.)
+    // `toBe` checks reference equality.
     expect(a).toBe(b)
     expect(marked.parse).toHaveBeenCalledTimes(1)
   })
@@ -63,9 +56,7 @@ describe('renderResponse memoization', () => {
   })
 
   it('treats leading/trailing whitespace as the same cache entry (after trim)', () => {
-    // The function trims `content` at the top; whitespace variants should share a cache entry,
-    // otherwise a streaming message would fill the cache with every chunk that happened to have a
-    // trailing newline.
+    // The function trims `content` at the top; whitespace variants should share a cache entry, otherwise a streaming message would fill the cache with every chunk …
     renderResponse('hello', 'assistant')
     renderResponse('  hello  ', 'assistant')
     renderResponse('\nhello\n', 'assistant')
@@ -85,14 +76,11 @@ describe('renderResponse memoization', () => {
   })
 
   it('uses a separate cache slot per role/tool_name (tool branch)', () => {
-    // Two tool messages with the same content but different tool_name
-    // must NOT share a cache entry — the tool branch produces
-    // different HTML for different tools.
+    // Two tool messages with the same content but different tool_name must NOT share a cache entry — the tool branch produces different HTML for different tools.
     renderResponse('<path>/a</path>', 'tool', 'read_file')
     renderResponse('<path>/a</path>', 'tool', 'glob')
     expect(marked.parse).not.toHaveBeenCalled() // tool branch doesn't use marked
-    // The two outputs should differ because read_file renders one
-    // summary and glob renders another.
+    // The two outputs should differ because read_file renders one summary and glob renders another.
     const a = renderResponse('<path>/a</path>', 'tool', 'read_file')
     const b = renderResponse('<path>/a</path>', 'tool', 'glob')
     expect(a).not.toBe(b)
@@ -116,8 +104,7 @@ describe('renderResponse mcp_* summary', () => {
   })
 
   it('surfaces the error envelope message', () => {
-    // The wire envelope is JSON; `unwrapToolOutput` rejects the legacy <tool> XML outright, so an XML
-    // fixture would exercise the raw-echo fallback instead of the error branch.
+    // The wire envelope is JSON; `unwrapToolOutput` rejects the legacy <tool> XML outright, so an XML fixture would exercise the raw-echo fallback instead of the …
     const envelope = JSON.stringify({
       tool: 'mcp_db_query',
       parameters: {},
@@ -151,8 +138,7 @@ describe('renderResponse unregistered-tool fallback', () => {
   })
 
   it('never prints the payload of a tool it has no card for', () => {
-    // Control: the payload really does contain these strings, so the absence
-    // assertions below cannot pass vacuously.
+    // Control: the payload really does contain these strings, so the absence assertions below cannot pass vacuously.
     expect(ENVELOPE).toContain('session_id')
     expect(ENVELOPE).toContain('attached')
 

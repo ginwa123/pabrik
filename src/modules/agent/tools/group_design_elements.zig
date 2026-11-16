@@ -1,5 +1,4 @@
-//! LLM tool: `group_elements` — wrap 2+ elements into a new `group` or
-//! `frame` parent at the union bounding box of the children.
+//! LLM tool: `group_elements` — wrap 2+ elements into a new `group` or `frame` parent at the union bounding box of the children.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -12,22 +11,15 @@ const design_model = pabrikcore.ai_mod.design_model;
 const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Input structure for `group_elements` tool. `page_id` and `child_ids` are
-/// required.
+/// Input structure for `group_elements` tool.
 pub const GroupElementsInput = struct {
-    /// The page id (NOT the item_id). The LLM discovers page_ids
-    /// via `set_design_page` (the response includes the page id).
+    /// The page id (NOT the item_id).
     page_id: []const u8 = "",
-    /// Child element ids. Must contain at least 2 ids; a single-element group
-    /// is not meaningful (and is rejected by the model layer).
+    /// Child element ids.
     child_ids: []const []const u8 = &.{},
-    /// Name for the new parent element (optional). Defaults to
-    /// `"Group"`. Must be unique within the page (the model's on-disk
-    /// HTML file is `<page_dir>/<sanitized_name>.html`).
+    /// Name for the new parent element (optional).
     name: ?[]const u8 = null,
-    /// Parent type (optional). One of `"group"` (non-clipping
-    /// container) or `"frame"` (clipping container). Defaults to
-    /// `"group"`.
+    /// Parent type (optional).
     type: ?[]const u8 = null,
 };
 
@@ -83,9 +75,7 @@ pub const group_design_element_tool = AgentTool{
     },
 };
 
-/// Generate an error JSON object (replaces the old per-tool XML escape +
-/// error envelope helpers).
-/// Generate an error JSON object `{"error":...}` for the tool dispatcher.
+/// Generate an error JSON object (replaces the old per-tool XML escape + error envelope helpers).
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -98,9 +88,7 @@ pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     return try errorJSON(allocator, error_msg);
 }
 
-/// Parse the optional `type` string into an `ElementType` enum. Returns null
-/// when the string is null (use the default); returns the parsed enum on
-/// success.
+/// Parse the optional `type` string into an `ElementType` enum.
 fn parseOptionalGroupType(type_str: ?[]const u8) !?design_model.ElementType {
     const t = type_str orelse return null;
     if (std.mem.eql(u8, t, "group")) return .group;
@@ -108,9 +96,7 @@ fn parseOptionalGroupType(type_str: ?[]const u8) !?design_model.ElementType {
     return error.InvalidGroupType;
 }
 
-/// Validate `page_id` is non-empty and has the right `page_`
-/// prefix. Returns null when shape is correct, or an error JSON object
-/// on mismatch.
+/// Validate `page_id` is non-empty and has the right `page_` prefix.
 fn validatePageIdShape(allocator: std.mem.Allocator, page_id: []const u8) !?[]u8 {
     if (page_id.len == 0) {
         return try errorJSON(allocator, "page_id is required (find it in the `id=\"...\"` attribute of a previous set_design_page response)");
@@ -133,9 +119,7 @@ fn validatePageIdShape(allocator: std.mem.Allocator, page_id: []const u8) !?[]u8
     return null;
 }
 
-/// Validate `child_ids` is non-empty, has at least 2 elements, and
-/// every entry has the right `elem_` prefix. Returns null when shape
-/// is correct, or an error JSON object on mismatch.
+/// Validate `child_ids` is non-empty, has at least 2 elements, and every entry has the right `elem_` prefix.
 fn validateChildIdsShape(allocator: std.mem.Allocator, child_ids: []const []const u8) !?[]u8 {
     if (child_ids.len == 0) {
         return try errorJSON(allocator, "child_ids is required and must contain at least 2 element ids (a single-element group is not meaningful)");
@@ -180,9 +164,7 @@ pub const ParentJSON = struct {
     parent_id: ?[]const u8,
 };
 
-/// JSON child object: minimal shape (id, name, parent_id) — the LLM
-/// doesn't need the child's geometry here because that information is
-/// unchanged by the grouping operation.
+/// JSON child object: minimal shape (id, name, parent_id) — the LLM doesn't need the child's geometry here because that information is unchanged by the grouping …
 pub const ChildJSON = struct {
     id: []const u8,
     name: []const u8,
@@ -198,8 +180,7 @@ fn parentToJSON(allocator: std.mem.Allocator, elem: design_model.DesignElement) 
         .y = elem.y,
         .width = elem.width,
         .height = elem.height,
-        // The new parent is a top-level element — parent_id is always
-        // null for the root.
+        // The new parent is a top-level element — parent_id is always null for the root.
         .parent_id = null,
     };
 }
@@ -212,8 +193,7 @@ fn childToJSON(allocator: std.mem.Allocator, elem: design_model.DesignElement) !
     };
 }
 
-/// Clean an optional free-text field: empty becomes null, otherwise the
-/// control-char-sanitized copy owned by the caller's arena.
+/// Clean an optional free-text field: empty becomes null, otherwise the control-char-sanitized copy owned by the caller's arena.
 fn optClean(allocator: std.mem.Allocator, s: []const u8) !?[]u8 {
     if (s.len == 0) return null;
     return try sanitizeControlChars(allocator, s);
@@ -241,8 +221,7 @@ pub fn executeGroupElementsToString(
     const parent_name: []const u8 = if (input.name) |n| (if (n.len == 0) "Group" else n) else "Group";
     const parent_type: design_model.ElementType = parsed_type orelse .group;
 
-    // 3. Call groupElements. Returns the new element_id on success;
-    //    errors are mapped to wire XML below.
+    // 3.
     const new_id = design_model.groupElements(allocator, db, .{
         .page_id = input.page_id,
         .child_ids = input.child_ids,
@@ -259,8 +238,7 @@ pub fn executeGroupElementsToString(
     };
     defer allocator.free(new_id);
 
-    // 4. Re-fetch the parent + each reparented child so the response
-    //    carries the canonical state (with timestamps + parent_id).
+    // 4.
     const parent = design_model.getElement(allocator, db, new_id) catch |err| {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: getElement(parent) failed: {s}", .{@errorName(err)}));
     };
@@ -321,16 +299,12 @@ test "errorJSONOwned takes ownership and frees the message" {
     const json = try errorJSONOwned(alloc, msg);
     defer alloc.free(json);
     try expectJSONError(alloc, json, "child_ids must be at least 2 elements");
-    // msg has been freed by errorJSONOwned — using `msg` here would
-    // be UAF. The test passes by virtue of the closure capturing the
-    // allocation lifecycle.
+    // msg has been freed by errorJSONOwned — using `msg` here would be UAF.
 }
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the v6 design schema + one page + three
-/// rectangle elements ("card-a", "card-b", "card-c") all on the same page.
-/// Returns the DB handle + page_id so tests can call group_elements on them.
+/// Set up an in-memory SQLite with the v6 design schema + one page + three rectangle elements ("card-a", "card-b", "card-c") all on the same page.
 fn setupDbWithThreeElements() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -502,8 +476,7 @@ test "executeGroupElementsToString honours custom name and type=frame" {
     const parent = parsed.value.object.get("parent").?.object;
     try testing.expectEqualStrings("Kanban-view", parent.get("name").?.string);
     try testing.expectEqualStrings("frame", parent.get("type").?.string);
-    // Union bbox of (200,300,500,650) and (400,600,500,650) →
-    // (200, 300, 300, 350).
+    // Union bbox of (200,300,500,650) and (400,600,500,650) → (200, 300, 300, 350).
     try testing.expectEqual(@as(i64, 200), parent.get("x").?.integer);
     try testing.expectEqual(@as(i64, 300), parent.get("y").?.integer);
     try testing.expectEqual(@as(i64, 300), parent.get("width").?.integer);
@@ -642,8 +615,7 @@ test "executeGroupElementsToString returns error JSON when a child is already pa
     defer alloc.free(s.element_b);
     defer alloc.free(s.element_c);
 
-    // Pre-parent element_b to a non-existent parent (still parented
-    // in the DB). The model rejects children whose parent_id is set.
+    // Pre-parent element_b to a non-existent parent (still parented in the DB).
     try s.db.exec(alloc, "UPDATE design_page_elements SET parent_id = 'elem_orphan' WHERE id = ?", &.{s.element_b});
 
     const input = GroupElementsInput{
@@ -656,7 +628,6 @@ test "executeGroupElementsToString returns error JSON when a child is already pa
 }
 
 // Exec adapter — merged from `group_design_elements.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -679,8 +650,7 @@ pub fn execGroupElements(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer parsed.deinit();
 
-    // group_elements doesn't need Io (groupElements handles its own
-    // mkdir-p via the Backend's io).
+    // group_elements doesn't need Io (groupElements handles its own mkdir-p via the Backend's io).
     const inner = executeGroupElementsToString(
         ctx.allocator,
         ctx.db,
@@ -693,9 +663,7 @@ pub fn execGroupElements(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer ctx.allocator.free(inner);
 
-    // Detect {{"error":...}} and surface it as a tool failure (so the
-    // LLM sees `success=false` rather than a successful wrapper around
-    // an error body).
+    // Detect {{"error":...}} and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     const json_err_msg: ?[]u8 = blk: {
         const inner_parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, inner, .{}) catch break :blk null;
         defer inner_parsed.deinit();

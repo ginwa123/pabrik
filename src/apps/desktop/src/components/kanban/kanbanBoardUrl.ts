@@ -1,5 +1,4 @@
-/** URL + `sorts` param helpers for the board. Pure functions only — every router call stays in the
- * component or in the composable that owns the state being persisted. */
+/** URL + `sorts` param helpers for the board. */
 import { buildAppUrl } from '../../helpers/appUrl'
 import type { SortEntry } from './kanbanViewTypes'
 
@@ -29,8 +28,7 @@ export const buildAddAppUrl = (wsId: string, itemId: string, query: Record<strin
   return buildAppUrl({ workspaceId: wsId, projectId: itemId, addTask: true, query })
 }
 
-// Parse the URL's `sorts` query param. Returns an empty array if
-// missing / malformed.
+// Parse the URL's `sorts` query param.
 export const parseSortsParam = (raw: string | string[] | undefined): SortEntry[] => {
   if (!raw) return []
   const s = Array.isArray(raw) ? raw.join(',') : raw
@@ -53,9 +51,7 @@ export const parseSortsParam = (raw: string | string[] | undefined): SortEntry[]
   return entries
 }
 
-// Encode the per-column sorts into a URL-safe `sorts` string. Default sorts (position + asc) are
-// OMITTED so the URL stays clean. Returns null when no non-default sorts exist (caller writes no
-// `sorts` param).
+// Encode the per-column sorts into a URL-safe `sorts` string.
 export const encodeSortsParam = (entries: SortEntry[]): string | null => {
   const filtered = entries.filter((e) => !(e.sortBy === 'position' && e.direction === 'asc'))
   if (filtered.length === 0) return null

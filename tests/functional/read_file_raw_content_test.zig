@@ -1,5 +1,4 @@
-// `read_file` returns raw content (no per-line number prefixes). Zig port of
-// `tests/functional/read_file_raw_content_test.py` (same test name).
+// `read_file` returns raw content (no per-line number prefixes).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// `GET /api/agent-tools/registry` → the `tools` array. Python asserted
-/// `isinstance(tools, list)` and returned the list; the same check plus the
-/// array itself, borrowed from `doc`.
+/// `GET /api/agent-tools/registry` → the `tools` array.
 fn registryTools(doc: *const harness.Json) !std.json.Array {
     const tools = doc.array("tools") orelse {
         std.debug.print("registry should be {{tools: list}}\n", .{});
@@ -20,8 +17,7 @@ fn registryTools(doc: *const harness.Json) !std.json.Array {
     return tools;
 }
 
-/// The `description` of the tool named `name`, or `""` when the entry
-/// has no description (Python's `t.get("description", "")`).
+/// The `description` of the tool named `name`, or `""` when the entry has no description (Python's `t.get("description", "")`).
 fn toolDescription(tools: std.json.Array, name: []const u8) ![]const u8 {
     for (tools.items) |item| {
         const obj = switch (item) {
@@ -59,8 +55,7 @@ test "registry_read_file_description_documents_raw_content" {
 
     const tools = try registryTools(&doc);
 
-    // Python's failure message listed every registered name, so a
-    // missing `read_file` says what IS there.
+    // Python's failure message listed every registered name, so a missing `read_file` says what IS there.
     if (!hasTool(tools, "read_file")) {
         std.debug.print("registry missing read_file; got [", .{});
         for (tools.items, 0..) |item, i| {

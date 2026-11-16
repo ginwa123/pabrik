@@ -38,8 +38,7 @@ describe('workspacesStore.setActiveTask — kanban notification icon stamp (Chun
       writable: true,
       configurable: true,
     })
-    // Spy on the new API function. We accept any resolved/rejected
-    // promise — the store fires-and-forgets.
+    // Spy on the new API function.
     markSpy = vi
       .spyOn(api, 'markTaskHumanTouched')
       .mockResolvedValue({ success: true })
@@ -62,9 +61,7 @@ describe('workspacesStore.setActiveTask — kanban notification icon stamp (Chun
   })
 
   it('does NOT call markTaskHumanTouched when setActiveTask(null) clears the active task', async () => {
-    // Clearing the active task (closing the chat, navigating away) is NOT a "human touch" — the
-    // user isn't engaging with the task anymore. We must not stamp in this branch, otherwise
-    // closing a chat would silently mark every task as "reviewed".
+    // Clearing the active task (closing the chat, navigating away) is NOT a "human touch" — the user isn't engaging with the task anymore.
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspaceWithTask()]
     store.setActiveTask('task_1') // first activate, fires mark
@@ -78,9 +75,7 @@ describe('workspacesStore.setActiveTask — kanban notification icon stamp (Chun
   })
 
   it('re-fires markTaskHumanTouched when setActiveTask is called with the SAME task twice', async () => {
-    // Re-activating the same task fires the mark again. The backend is idempotent (re-stamping is
-    // harmless — the column is just a monotonic timestamp) and the SSE event `human_touched` is
-    // also idempotent (the kanban view re- fetches the same state).
+    // Re-activating the same task fires the mark again.
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspaceWithTask()]
 
@@ -95,9 +90,7 @@ describe('workspacesStore.setActiveTask — kanban notification icon stamp (Chun
   })
 
   it('does NOT call markTaskHumanTouched for an unknown task_id', async () => {
-    // Defensive: if a deep-link or search-result passes an id that
-    // doesn't match any loaded task, we silently no-op without
-    // sending a malformed PUT (the backend would 404 on it).
+    // Defensive: if a deep-link or search-result passes an id that doesn't match any loaded task, we silently no-op without sending a malformed PUT (the backend …
     const store = useWorkspacesStore()
     store.workspaces = [makeWorkspaceWithTask()]
 

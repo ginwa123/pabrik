@@ -17,12 +17,9 @@ pub const WorkspaceWithItemsResponse = struct {
     icon: []const u8 = "📁",
     items: []const WorkspaceItemWithTasksResponse,
     expanded: bool = false,
-    /// Number of `workspace_items` rows for this workspace. Populated
-    /// regardless of `is_include_items` (one GROUP BY query, no N+1)
-    /// so a badge can render before/without the lazy items fetch.
+    /// Number of `workspace_items` rows for this workspace.
     items_count: usize = 0,
-    /// Whether this workspace runs in a microVM on THIS server (Migration
-    /// 115). False on a local server, which has no Firecracker at all.
+    /// Whether this workspace runs in a microVM on THIS server (Migration 115).
     is_vm: bool = false,
 };
 
@@ -44,9 +41,7 @@ pub const WorkspacesListError = error{
     DatabaseError,
 };
 
-/// GET /api/workspaces Query params: - is_include_items (default: "true") —
-/// when "false", skip the workspace_items and workspace_item_tasks queries
-/// and return `items: []` for each workspace.
+/// GET /api/workspaces Query params: - is_include_items (default: "true") — when "false", skip the workspace_items and workspace_item_tasks queries and return …
 pub fn workspacesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
@@ -57,9 +52,7 @@ pub fn workspacesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReques
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    // Scope the list to this request's owner (server-derived from the
-    // `pabrik_session` cookie). Auth off / no cookie -> the shared sentinel,
-    // which also matches every legacy row, so auth-off is unchanged.
+    // Scope the list to this request's owner (server-derived from the `pabrik_session` cookie).
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, di.auth_enabled, req.headers) catch {
         return res.jsonResponse(.{
             .status_code = 500,
@@ -121,8 +114,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
             .name = try alloc.dupe(u8, row.values[1]),
             .created_at = if (row.values[2].len > 0) try alloc.dupe(u8, row.values[2]) else null,
             .updated_at = if (row.values[3].len > 0) try alloc.dupe(u8, row.values[3]) else null,
-            // The stored flag says the workspace was created by a saas server;
-            // the mode says whether there is a Firecracker here to run it in.
+            // The stored flag says the workspace was created by a saas server; the mode says whether there is a Firecracker here to run it in.
             .is_vm = workspace_vm.runsInVm(mode, row.values[4].len > 0 and row.values[4][0] == '1'),
         });
         // Values are duped above; row memory is owned by the row.
@@ -135,8 +127,6 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
     }
 
     // Items count per workspace — ONE grouped query for all rows (no N+1).
-    // Keys are duped because row memory dies with row.deinit; freed with the
-    // map on function exit.
     var items_count_by_ws: std.StringHashMap(usize) = .init(alloc);
     defer {
         var key_it = items_count_by_ws.keyIterator();
@@ -168,9 +158,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
         }
         try in_clause.appendSlice(alloc, ")");
 
-        // Fetch all items for these workspaces. Uses the project's "always
-        // alias tables in SQL" convention — see the cross-ref comment in
-        // `llm_history.zig:listWorkspaceItems`.
+        // Fetch all items for these workspaces.
         const items_sql = try std.fmt.allocPrint(alloc, "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at FROM workspace_items wi WHERE wi.workspace_id IN {s} ORDER BY wi.position DESC, wi.id ASC", .{in_clause.items});
         var items_rows = try db.query(alloc, items_sql, workspace_ids.items);
         // Owns a pooled reader until `deinit`; draining `next()` does not return it.
@@ -220,9 +208,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
             }
             try task_in_clause.appendSlice(alloc, ")");
 
-            // Migration 062: added `description` to the SELECT column list
-            // (right after `workspace_item_id`). All subsequent indices shift
-            // by one.
+            // Migration 062: added `description` to the SELECT column list (right after `workspace_item_id`).
             const tasks_sql = try std.fmt.allocPrint(alloc, "SELECT t.id, t.name, t.workspace_item_id, t.description, t.created_at, t.updated_at, COALESCE(t.is_pinned, 0), COALESCE(t.pinned_position, 0), COALESCE(CAST(s.is_auto_retry_until_stop AS TEXT), '0'), t.tags FROM workspace_item_tasks t LEFT JOIN sessions s ON s.id = t.id WHERE t.workspace_item_id IN {s} ORDER BY t.is_pinned DESC, t.pinned_position DESC, t.created_at DESC", .{task_in_clause.items});
             var tasks_rows = try db.query(alloc, tasks_sql, item_ids.items);
             defer tasks_rows.deinit();
@@ -245,9 +231,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
                     .pinned_position = std.fmt.parseInt(i64, row.values[7], 10) catch 0,
                     // Auto-retry-until-stop: index 8 (joined from sessions).
                     .is_auto_retry_until_stop = try alloc.dupe(u8, row.values[8]),
-                    // Migration 067: tags at index 9 (JSON-encoded array
-                    // string). Empty string = no tags. Borrowed from the
-                    // per-request arena; arena reaps it on teardown.
+                    // Migration 067: tags at index 9 (JSON-encoded array string).
                     .tags = try alloc.dupe(u8, row.values[9]),
                 });
                 row.deinit(alloc);
@@ -313,9 +297,7 @@ fn fetchWorkspacesList(alloc: std.mem.Allocator, db: *database.Db, include_items
     };
 }
 
-// ===================================================================== Tests
-// — items_count (workspace-scoped sessions plan)
-// =====================================================================
+// ===================================================================== Tests — items_count (workspace-scoped sessions plan)
 
 const testing = std.testing;
 
@@ -344,9 +326,7 @@ fn setupDb() !TestCtx {
         \\  is_vm INTEGER NOT NULL DEFAULT 0
         \\)
     , &.{});
-    // Migration 100 moved visibility onto this join table, so the fixture
-    // needs it — the visibility clause's EXISTS subquery resolves against
-    // `workspace_members` and fails outright without the table.
+    // Migration 100 moved visibility onto this join table, so the fixture needs it — the visibility clause's EXISTS subquery resolves against `workspace_members` and …
     try db.exec(alloc,
         \\CREATE TABLE workspace_members (
         \\  workspace_id TEXT NOT NULL,
@@ -384,8 +364,7 @@ fn setupDb() !TestCtx {
         \\  ('i3', 'ws_2', 'kanban', 'K2', '/p/2', 0, datetime('now'), datetime('now'))
     , &.{});
 
-    // ws_1..ws_3 are inserted without `user_id`, so they carry the NULL
-    // legacy bucket.
+    // ws_1..ws_3 are inserted without `user_id`, so they carry the NULL legacy bucket.
     try db.exec(alloc,
         \\INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
         \\  ('ws_1', 'user_system', 'owner'),
@@ -401,9 +380,7 @@ fn teardown(ctx: *TestCtx) void {
     ctx.threaded.deinit();
 }
 
-/// Free every allocation fetchWorkspacesList hands back for the
-/// is_include_items=false shape (the items slice is a static empty
-/// literal — free() no-ops on zero-length slices).
+/// Free every allocation fetchWorkspacesList hands back for the is_include_items=false shape (the items slice is a static empty literal — free() no-ops on …
 fn freeResponse(response: WorkspacesListResponse) void {
     const alloc = testing.allocator;
     for (response.workspaces) |ws| {
@@ -449,16 +426,14 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    // The fixture rows carry `user_id = NULL` (legacy). Add one workspace
-    // owned by a real user and one owned by the sentinel.
+    // The fixture rows carry `user_id = NULL` (legacy).
     try ctx.db.exec(alloc,
         \\INSERT INTO workspaces (id, name, created_at, updated_at, position, user_id) VALUES
         \\  ('ws_b', 'B only', datetime('now'), datetime('now'), 3, 'user_b'),
         \\  ('ws_sys', 'Sentinel', datetime('now'), datetime('now'), 4, 'user_system')
     , &.{});
 
-    // Same backfill contract: a real owner becomes their own member, the
-    // sentinel row becomes the shared marker.
+    // Same backfill contract: a real owner becomes their own member, the sentinel row becomes the shared marker.
     try ctx.db.exec(alloc,
         \\INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
         \\  ('ws_b', 'user_b', 'owner'),
@@ -475,9 +450,7 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
         }
     }
 
-    // user_b sees their own row PLUS the shared bucket (legacy NULL rows and
-    // the sentinel) — that is the whole point of the shared-bucket rule, so
-    // the isolation claim is "A cannot see B's row", not "B sees only one".
+    // user_b sees their own row PLUS the shared bucket (legacy NULL rows and the sentinel) — that is the whole point of the shared-bucket rule, so the isolation …
     {
         const response = try fetchWorkspacesList(alloc, &ctx.db, false, "user_b", .local);
         defer freeResponse(response);
@@ -489,9 +462,7 @@ test "fetchWorkspacesList: another user's workspace is invisible; the shared leg
         try testing.expect(saw_own);
     }
 
-    // The SYSTEM USER sees EVERYTHING (user decision 2026-09-25): with auth
-    // off there is no identity and the system user IS the installation, so a
-    // real user's row is visible here. ws_b must appear.
+    // The SYSTEM USER sees EVERYTHING (user decision 2026-09-25): with auth off there is no identity and the system user IS the installation, so a real user's row is …
     {
         const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id, .local);
         defer freeResponse(response);
@@ -509,9 +480,7 @@ test "fetchWorkspacesList: a second member sees a shared workspace it was not cr
     defer teardown(&ctx);
     const alloc = testing.allocator;
 
-    // A genuinely PRIVATE workspace: owned by user_a and NOT carrying the
-    // `user_system` member — that member IS the shared marker, so a workspace
-    // that has it is already visible to everyone.
+    // A genuinely PRIVATE workspace: owned by user_a and NOT carrying the `user_system` member — that member IS the shared marker, so a workspace that has it is …
     try ctx.db.exec(alloc, "INSERT INTO workspaces (id, name, position, user_id) VALUES ('ws_p', 'Private', 20, 'user_a')", &.{});
     try ctx.db.exec(alloc, "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws_p', 'user_a', 'owner')", &.{});
 
@@ -529,13 +498,11 @@ test "fetchWorkspacesList: a second member sees a shared workspace it was not cr
     // Boundary: invisible before anyone is added.
     try testing.expect(!try seesPrivate(alloc, &ctx, "user_c"));
 
-    // Share it with user_c. That single INSERT is the whole feature — no
-    // column on `workspaces` to update, no flag to flip.
+    // Share it with user_c.
     try ctx.db.exec(alloc, "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws_p', 'user_c', 'editor')", &.{});
     try testing.expect(try seesPrivate(alloc, &ctx, "user_c"));
 
-    // Revoking takes it away again — sharing is not a one-way door, and
-    // nothing was left behind on the workspace row to keep granting it.
+    // Revoking takes it away again — sharing is not a one-way door, and nothing was left behind on the workspace row to keep granting it.
     try ctx.db.exec(alloc, "DELETE FROM workspace_members WHERE workspace_id = 'ws_p' AND user_id = 'user_c'", &.{});
     try testing.expect(!try seesPrivate(alloc, &ctx, "user_c"));
 
@@ -593,8 +560,7 @@ test "fetchWorkspacesList: only a saas server reports a VM-backed workspace as o
     }
 
     {
-        // A local server has no Firecracker, so no workspace runs in a VM on
-        // it — not even the one the row marks.
+        // A local server has no Firecracker, so no workspace runs in a VM on it — not even the one the row marks.
         const response = try fetchWorkspacesList(alloc, &ctx.db, false, auth_common.system_user_id, .local);
         defer freeResponse(response);
         for (response.workspaces) |ws| {

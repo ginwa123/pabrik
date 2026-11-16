@@ -1,5 +1,4 @@
-/** Tests for toolOutputParser.ts — typed JSON parsers used by tool-output components. Each parser
- * takes the envelope `data` payload as an object and handles missing fields gracefully. */
+/** Tests for toolOutputParser.ts — typed JSON parsers used by tool-output components. */
 import { describe, expect, it } from 'vitest'
 import {
   extractBool,
@@ -59,9 +58,7 @@ describe('extractTag', () => {
     expect(extractTag('<a>it&apos;s fine</a>', 'a')).toBe("it's fine")
   })
   it('decodes &amp; LAST to avoid double-decoding (e.g. &amp;quot; → &quot; not ")', () => {
-    // `&amp;quot;` is a 6-byte sequence meaning "the literal entity &quot;". If we decoded `&amp;`
-    // first, we'd incorrectly produce `"` (because `&amp;quot;` → `&quot;` → `"` after both
-    // passes).
+    // `&amp;quot;` is a 6-byte sequence meaning "the literal entity &quot;".
     expect(extractTag('<a>&amp;quot;</a>', 'a')).toBe('&quot;')
     expect(extractTag('<a>&amp;amp;</a>', 'a')).toBe('&amp;')
   })
@@ -231,8 +228,7 @@ describe('parseEditSkill', () => {
     expect(r.skillName).toBe('x')
   })
   it('falls back to `name` when skill_name is empty', () => {
-    // `''` is neither null nor undefined, so a `??` chain alone would let
-    // the blank name win and render an unlabelled card.
+    // `''` is neither null nor undefined, so a `??` chain alone would let the blank name win and render an unlabelled card.
     const r = parseEditSkill({ skill_name: '', name: 'x', edited: true })
     expect(r.skillName).toBe('x')
   })
@@ -409,8 +405,7 @@ describe('parseSearchSkills', () => {
     expect('path' in (r.skills[0] as object)).toBe(false)
   })
   it('reads rows that still carry the old scope / path keys', () => {
-    // A transcript recorded before the table refactor must not render as
-    // blank rows, so the extra keys are ignored rather than demanded.
+    // A transcript recorded before the table refactor must not render as blank rows, so the extra keys are ignored rather than demanded.
     const r = parseSearchSkills({
       skills: [{ name: 'auth', description: 'd', scope: 'global', path: '/g/SKILL.MD' }],
     })
@@ -685,8 +680,7 @@ describe('parseListDirectory', () => {
   })
 
   it('returns success=false + error message on error envelope', () => {
-    // normalizeToolContent unwraps the full envelope; the parser sees the
-    // inner data object carrying the error.
+    // normalizeToolContent unwraps the full envelope; the parser sees the inner data object carrying the error.
     const r = parseListDirectory({ error: 'list_directory failed: PathNotFound' })
     expect(r.success).toBe(false)
     expect(r.error).toBe('list_directory failed: PathNotFound')
@@ -703,8 +697,7 @@ describe('parseListDirectory', () => {
   })
 })
 
-// 2026-08-14 pwsh-tool: parsePwsh mirrors parseBash (same JSON payload per
-// D2 + D10). Wire-contract parity test.
+// 2026-08-14 pwsh-tool: parsePwsh mirrors parseBash (same JSON payload per D2 + D10).
 describe('parsePwsh', () => {
   const payload = {
     command: 'Get-ChildItem',
@@ -729,15 +722,12 @@ describe('parsePwsh', () => {
   })
 
   it('returns the same ParsedBash shape as parseBash for the same input', () => {
-    // Lock-down test: pwsh + bash share the wire payload. If a future
-    // refactor diverges them, this assertion fails closed.
+    // Lock-down test: pwsh + bash share the wire payload.
     expect(parsePwsh(payload)).toEqual(parseBash(payload))
   })
 })
 
-// unify-command Phase C: `command` (unified shell) reuses the identical
-// 8-field payload. `parseBash` / `parsePwsh` specs above are untouched;
-// these cases only lock the new alias + dispatcher branch.
+// unify-command Phase C: `command` (unified shell) reuses the identical 8-field payload.
 describe('parseCommand', () => {
   const payload = {
     command: 'ls -la',
@@ -896,9 +886,7 @@ describe('present files helpers', () => {
   })
 })
 
-/**  * `set_pull_request` — the payload has exactly two success shapes plus the error shape. These cases
- * are copied from real rows in the live DB (`llm_history.response_content`) so the parser is pinned
- * to the wire, not to a guess about it. */
+/** `set_pull_request` — the payload has exactly two success shapes plus the error shape. */
 describe('parseSetPullRequest', () => {
   const ATTACH_GITHUB = {
     session_id: 'task_1791883461055_3',

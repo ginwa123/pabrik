@@ -1,5 +1,4 @@
-/** "resume scroll why not match with user expectation? — it's always a bit on top" The reader
- * closes a chat mid-transcript, reopens the same task, and lands ABOVE where they were reading. */
+/** "resume scroll why not match with user expectation? — it's always a bit on top" The reader closes a chat mid-transcript, reopens the same task, and lands ABOVE … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -9,9 +8,7 @@ import { Effect } from 'effect'
 import * as api from '../../api'
 import ChatView from '../../components/views/ChatView.vue'
 
-// ── The hoisted api mock ──────────────────────────────────────────────────── Two seams, both
-// required, both hoisted (same reason as ChatView.streamingStick.spec.ts): `chatEngineDb` binds
-// `fetchFn = getChatHistory` as a constructor default evaluated at module load, and ChatView's.
+// ── The hoisted api mock ────────────────────────────────────────────────────
 const historyRows: unknown[] = []
 const historyResponse = () => ({
   messages: historyRows,
@@ -46,7 +43,6 @@ vi.mock('vue-router', async () => {
 })
 
 // Faithful `scrollTo`: assign the position AND fire the event a browser fires.
-// See the ⛔ note in the header for why the guard cannot be used here.
 Element.prototype.scrollTo = function scrollToPolyfill(
   this: Element,
   x?: number | ScrollToOptions,
@@ -67,9 +63,7 @@ Element.prototype.scrollTo = function scrollToPolyfill(
   el.dispatchEvent(new Event('scroll'))
 }
 
-// ── The geometry under test ───────────────────────────────────────────────── The whole bug is the
-// gap between the ESTIMATE and the MEASURED height, so the two must be different numbers and both
-// must be knowable: VIEWPORT 800px ROW 200px real (mocked offsetHeight) ROWS 100 → real total.
+// ── The geometry under test ─────────────────────────────────────────────────
 const VIEWPORT = 800
 const ROW_HEIGHT = 200
 const ROW_COUNT = 100
@@ -82,9 +76,7 @@ const ESTIMATED_BOTTOM = ESTIMATED_TOTAL - VIEWPORT
 /** Where the reader closed the chat: mid-transcript, well clear of the tail. */
 const SAVED_POSITION = 9000
 
-/** jsdom has no layout, so `scrollHeight` is whatever we say. The scroller's sizer is a real DOM
- * element with a real inline `height`, and a browser derives the container's scrollHeight from it —
- * so mirror that: the container reports the sizer's current height. */
+/** jsdom has no layout, so `scrollHeight` is whatever we say. */
 Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
   configurable: true,
   get(): number {
@@ -134,8 +126,7 @@ function installApiMocks(): void {
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({ profiles: {} } as any)
 }
 
-/**  * Give every rendered row a real, uniform height. `measureItems` reads `offsetHeight` per child, so
- * this is what turns the estimate into a measurement — the exact step the restore used to race. */
+/** Give every rendered row a real, uniform height. */
 function mockRowHeights(container: HTMLElement): void {
   const content = container.querySelector('.virtual-scroller-content')
   if (!content) return
@@ -152,9 +143,7 @@ async function mountChatView(chatId: string): Promise<VueWrapper> {
     props: { chatId, chatName: 'Resume scroll' },
     attachTo: document.body,
   })
-  // The scroller's mount gate is `!isInitializing && (isLoading ||
-  // messageGroups.length > 0)`, and `isInitializing` only clears once the
-  // history load settles — so its presence IS the load-completed signal.
+  // The scroller's mount gate is `!isInitializing && (isLoading || messageGroups.length > 0)`, and `isInitializing` only clears once the history load settles — so …
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()
@@ -174,9 +163,7 @@ function findScrollerContainer(wrapper: VueWrapper): HTMLElement {
   return el.element as HTMLElement
 }
 
-/**  * Let the mount chain settle: the initial-load rAFs, the scroller's 100 ms measure pass, and the
- * trailing pre-paint sweep. Row heights are re-mocked between waits because the rendered window
- * changes as the model converges. */
+/** Let the mount chain settle: the initial-load rAFs, the scroller's 100 ms measure pass, and the trailing pre-paint sweep. */
 async function settleScroller(container: HTMLElement): Promise<void> {
   for (let i = 0; i < 6; i++) {
     mockRowHeights(container)
@@ -225,23 +212,19 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
     wrapper = await mountChatView('task_resume')
     const container = findScrollerContainer(wrapper)
 
-    // Before any measurement the model is pure estimate — this is the state the
-    // restore used to run against, and the reason it landed wrong.
+    // Before any measurement the model is pure estimate — this is the state the restore used to run against, and the reason it landed wrong.
     expect(container.scrollHeight).toBe(ESTIMATED_TOTAL)
     expect(ESTIMATED_BOTTOM).toBeLessThan(SAVED_POSITION)
 
     await settleScroller(container)
 
-    // The reader must be where they left off. The measured transcript is
-    // 19200px tall, so 9000 is reachable and unambiguous.
+    // The reader must be where they left off.
     expect(container.scrollHeight).toBe(REAL_TOTAL)
     expect(container.scrollTop).toBe(SAVED_POSITION)
   })
 
   it('the measured transcript really is taller than the estimate (the precondition)', async () => {
-    // Without this the test above could pass vacuously — if the estimate and
-    // the measurement agreed there would be no gap for the restore to fall
-    // into. This is the positive control.
+    // Without this the test above could pass vacuously — if the estimate and the measurement agreed there would be no gap for the restore to fall into.
     installApiMocks()
     wrapper = await mountChatView('task_precondition')
     const container = findScrollerContainer(wrapper)
@@ -257,8 +240,7 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
   })
 
   it('a reader who closed on the last message still lands on the last message', async () => {
-    // The other half of the contract: the "near bottom" branch must keep working, and it must now
-    // be judged against the MEASURED bottom.
+    // The other half of the contract: the "near bottom" branch must keep working, and it must now be judged against the MEASURED bottom.
     localStorage.setItem('chat-scroll-task_tail', String(REAL_BOTTOM))
     installApiMocks()
 
@@ -270,8 +252,7 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
   })
 
   it('restores the saved position for a host that prefixes the chat id with `chat-`', async () => {
-    // StandardTaskChatView and AppLayout's standalone branch both pass `chat-<sessionId>`; the
-    // kanban branch passes the bare id. The storage key must not depend on which one it is.
+    // StandardTaskChatView and AppLayout's standalone branch both pass `chat-<sessionId>`; the kanban branch passes the bare id.
     localStorage.setItem('chat-scroll-task_prefixed', String(SAVED_POSITION))
     installApiMocks()
 
@@ -283,17 +264,14 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
   })
 
   it('a first-time visitor with nothing saved still lands at the bottom', async () => {
-    // The wait must be gated on there being something to restore. A reader with
-    // no saved position should not sit through it — and must not be parked at
-    // the top of an unmeasured scroller while it runs.
+    // The wait must be gated on there being something to restore.
     installApiMocks()
 
     wrapper = await mountChatView('task_fresh')
     const container = findScrollerContainer(wrapper)
     await settleScroller(container)
 
-    // Nothing was stored before this mount, so the restore path was skipped
-    // entirely and the initial-load branch went straight to the bottom.
+    // Nothing was stored before this mount, so the restore path was skipped entirely and the initial-load branch went straight to the bottom.
     expect(container.scrollTop).toBe(REAL_BOTTOM)
   })
 })

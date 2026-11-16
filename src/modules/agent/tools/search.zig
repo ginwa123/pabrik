@@ -9,60 +9,38 @@ const rg_binary_mod = @import("rg_binary.zig");
 const shell_tool = @import("shell.zig");
 
 pub const SearchError = error{
-    /// Pattern was an empty string — almost certainly a caller bug, not a
-    /// "no match" condition. ripgrep accepts empty patterns but the tool
-    /// should reject them so the LLM/operator sees a clear error.
+    /// Pattern was an empty string — almost certainly a caller bug, not a "no match" condition. ripgrep accepts empty patterns but the tool should reject them so the …
     EmptyPattern,
-    /// Pattern contained a NUL byte. ripgrep silently truncates at NUL,
-    /// which would mean the LLM's intended search runs against a shorter
-    /// (and likely wrong) pattern. Reject up-front instead.
+    /// Pattern contained a NUL byte. ripgrep silently truncates at NUL, which would mean the LLM's intended search runs against a shorter (and likely wrong) pattern.
     PatternContainsNulByte,
-    /// max_output was 0. Passing stdout_limit = .limited(0) to ripgrep
-    /// produces zero output and a confusing failure mode.
+    /// max_output was 0.
     InvalidMaxOutput,
-    /// max_output exceeded the hard ceiling (100 MB). Prevents a single
-    /// search from OOM-ing the process.
+    /// max_output exceeded the hard ceiling (100 MB).
     MaxOutputTooLarge,
-    /// max_results was 0. Returns empty matches + "<warning>pattern not
-    /// found" which looks identical to a real no-match and confuses the
-    /// LLM. Treat as a caller bug.
+    /// max_results was 0.
     InvalidMaxResults,
-    /// head or tail was 0. `head=0` / `tail=0` also look identical to a
-    /// real no-match, so they are rejected the same way as max_results=0.
+    /// head or tail was 0.
     InvalidHeadTail,
-    /// The `glob` filter contained a NUL byte — rg copies the value into a
-    /// C string, so everything after the NUL would be silently dropped.
+    /// The `glob` filter contained a NUL byte — rg copies the value into a C string, so everything after the NUL would be silently dropped.
     GlobContainsNulByte,
-    /// ripgrep could not parse the pattern as a valid regex (exit 2
-    /// with a "regex parse error" / "regex error" signature in stderr).
+    /// ripgrep could not parse the pattern as a valid regex (exit 2 with a "regex parse error" / "regex error" signature in stderr).
     RegexParseError,
-    /// ripgrep could not access the path (path doesn't exist, permission
-    /// denied, etc). Wraps the ripgrep stderr text in the error name.
+    /// ripgrep could not access the path (path doesn't exist, permission denied, etc).
     PathError,
-    /// ripgrep did not finish before timeout_ms elapsed. The child was
-    /// killed and reaped — the worker never blocks forever. Returned for
-    /// timeout_ms == 0 as well (fail-fast path used by tests).
+    /// ripgrep did not finish before timeout_ms elapsed.
     Timeout,
-    /// The ripgrep binary itself is missing (spawn FileNotFound while the
-    /// cwd probes fine). Distinct from PathError so the LLM installs rg
-    /// instead of retrying with a different path.
+    /// The ripgrep binary itself is missing (spawn FileNotFound while the cwd probes fine).
     RgNotFound,
-    /// The pipe reader could not read or retain the result stream. This is
-    /// distinct from an ordinary stdout byte cap, which is recoverable.
+    /// The pipe reader could not read or retain the result stream.
     OutputReadFailed,
-    /// stderr exceeded the diagnostic byte cap and can no longer be trusted
-    /// to explain a genuine ripgrep failure.
+    /// stderr exceeded the diagnostic byte cap and can no longer be trusted to explain a genuine ripgrep failure.
     StderrTooLong,
 };
 
-/// Default deadline for one ripgrep invocation (30s). Windows Defender +
-/// NTFS make broad scans 10-50x slower than POSIX; without a bound a
-/// single slow scan blocked the agent worker forever (2026-09-05 freeze).
+/// Default deadline for one ripgrep invocation (30s).
 pub const default_search_timeout_ms: u64 = 30_000;
 
-/// Upper clamp for timeout_ms (1h). A caller-supplied astronomic value
-/// would overflow the ns conversion below; clamp instead of erroring so
-/// normal calls never fail validation on this field.
+/// Upper clamp for timeout_ms (1h).
 pub const max_search_timeout_ms: u64 = 3_600_000;
 
 pub const rg_missing_marker = "ripgrep (rg) is missing";
@@ -74,13 +52,10 @@ const SearchNanoSleepTimespec = extern struct {
     sec: c_long,
     nsec: c_long,
 };
-// Raw nanosleep (NOT std.Io.sleep): the workflow runs tools inside an
-// Io.Group worker and parking that worker deadlocks the group. Same
-// rationale as shell.zig's NanoSleepTimespec.
+// Raw nanosleep (NOT std.Io.sleep): the workflow runs tools inside an Io.Group worker and parking that worker deadlocks the group.
 extern "c" fn nanosleep(req: *const SearchNanoSleepTimespec, rem: ?*SearchNanoSleepTimespec) c_int;
 
-/// Sleep ~10ms between deadline polls. Windows: Win32 Sleep via
-/// helpers.sleepMillis.
+/// Sleep ~10ms between deadline polls.
 fn pollSleep10ms() void {
     if (builtin.os.tag == .windows) {
         @import("helpers").sleepMillis(10);
@@ -90,9 +65,7 @@ fn pollSleep10ms() void {
     }
 }
 
-/// Probe whether rg_binary resolves: spawn `<rg> --version` with an
-/// inherited cwd. True = binary exists (cwd was the problem), false =
-/// binary missing. Only called on the rare spawn-FileNotFound path.
+/// Probe whether rg_binary resolves: spawn `<rg> --version` with an inherited cwd.
 fn probeRg(io: std.Io, rg_binary: []const u8) bool {
     var probe = std.process.spawn(io, .{
         .argv = &.{ rg_binary, "--version" },
@@ -107,9 +80,7 @@ fn probeRg(io: std.Io, rg_binary: []const u8) bool {
 
 const search_match_event_marker = "\"type\":\"match\"";
 
-/// Count complete ripgrep JSON match events without retaining the discarded
-/// suffix of a capped stream. The carry is bounded to marker.len - 1 bytes,
-/// so a marker split across two pipe reads is still detected.
+/// Count complete ripgrep JSON match events without retaining the discarded suffix of a capped stream.
 const SearchMatchCounter = struct {
     carry: [search_match_event_marker.len - 1]u8 = undefined,
     carry_len: usize = 0,
@@ -157,8 +128,7 @@ const SearchPipeReadState = enum {
     allocation_failed,
 };
 
-/// Per-pipe reader context (one per stdout/stderr thread). File scope —
-/// std.Thread.spawn takes a plain function, not a struct namespace.
+/// Per-pipe reader context (one per stdout/stderr thread).
 const SearchPipeReadContext = struct {
     stream: std.Io.File,
     io: std.Io,
@@ -187,9 +157,7 @@ fn readSearchPipe(ctx: SearchPipeReadContext) void {
         ctx.bytes_seen.* += @intCast(n);
         if (ctx.match_counter) |counter| counter.consume(ctx.buf[0..n]);
 
-        // Keep draining after the cap (and after an allocation failure) so
-        // the child never blocks on a full pipe. The caller inspects the
-        // state only after both reader threads have joined.
+        // Keep draining after the cap (and after an allocation failure) so the child never blocks on a full pipe.
         if (ctx.state.* == .read_failed) return;
         if (ctx.state.* == .allocation_failed or ctx.state.* == .output_truncated) continue;
 
@@ -214,19 +182,14 @@ pub const SearchMatch = struct {
     line_number: usize,
     file_total_lines: usize,
     snippet: []const u8,
-    /// True when the row is a `-A`/`-B`/`-C` context line rather than a
-    /// match. Context rows never count toward `total_matches` and never
-    /// consume the row cap.
+    /// True when the row is a `-A`/`-B`/`-C` context line rather than a match.
     is_context: bool = false,
 };
 
-/// How the tool renders its result. `text` is the compact `path:line:text`
-/// form — one line per match, byte-for-byte what rg prints, ~1/4 of the JSON
-/// envelope. `json` is the nested envelope older callers parse; it is opt-in.
+/// How the tool renders its result.
 pub const SearchOutputFormat = enum { text, json };
 
-/// Default byte length of a rendered snippet. See
-/// SearchInput.snippet_max_chars.
+/// Default byte length of a rendered snippet.
 pub const default_snippet_max_chars: usize = 240;
 
 /// Internal struct for grouped file matches
@@ -244,22 +207,15 @@ pub const SearchInput = struct {
     max_output: ?usize = 1024 * 1024, // default 1MB
     group_by_file: bool = true, // when true, results are grouped by file
     cwd: ?[]const u8 = null,
-    /// When true (default), ripgrep respects .gitignore / .ignore /
-    /// .rgignore.
+    /// When true (default), ripgrep respects .gitignore / .ignore /.rgignore.
     respect_ignore_files: bool = true,
-    /// When true, appends `-w` to rg's argv: matches must be at a word
-    /// boundary (start/end of file, or between word and non-word chars).
-    /// ripgrep's default Unicode word rule treats underscore as a word char,
+    /// When true, appends `-w` to rg's argv: matches must be at a word boundary (start/end of file, or between word and non-word chars). ripgrep's default Unicode …
     word_boundary: bool = false,
-    /// When true, the pattern is treated as a literal string (no regex
-    /// metacharacters are interpreted). Maps to rg's `-F` /
-    /// `--fixed-strings`.
+    /// When true, the pattern is treated as a literal string (no regex metacharacters are interpreted).
     literal: bool = false,
-    /// When true, only the matched substring is shown per line (instead of
-    /// the full line content). Maps to rg's `-o` / `--only-matching`.
+    /// When true, only the matched substring is shown per line (instead of the full line content).
     only_matching: bool = false,
-    /// Symmetric context window: N lines before AND after every match. Maps
-    /// to rg's `-C N`. `before_context` / `after_context` override one side.
+    /// Symmetric context window: N lines before AND after every match.
     context: ?usize = null,
     /// Lines of context BEFORE each match (rg `-B N`). Overrides `context`.
     before_context: ?usize = null,
@@ -269,55 +225,35 @@ pub const SearchInput = struct {
     ignore_case: bool = false,
     /// Report the lines that do NOT match. Maps to rg's `-v` / `--invert-match`.
     invert: bool = false,
-    /// Count-only: render rg's `-c` output (per-file match counts) and no
-    /// matching lines. Forces the text renderer — `-c` cannot share the
-    /// `--json` event stream.
+    /// Count-only: render rg's `-c` output (per-file match counts) and no matching lines.
     count_only: bool = false,
-    /// Renderer choice. Defaults to the compact `text` form; see
-    /// SearchOutputFormat.
+    /// Renderer choice.
     output_format: SearchOutputFormat = .text,
-    /// Long-line window, in bytes. rg's `lines.text` is the ENTIRE line — not
-    /// a preview — so one minified bundle / single-line JSON blob match can
-    /// be megabytes and swallow the whole tool-output budget (the agent loop
+    /// Long-line window, in bytes. rg's `lines.text` is the ENTIRE line — not a preview — so one minified bundle / single-line JSON blob match can be megabytes and …
     snippet_max_chars: ?usize = null,
-    /// When true, appends `--hidden` to rg's argv: dotfiles and dotdirs
-    /// (.github/workflows/, .env) become searchable. rg skips hidden entries
-    /// by default, and `--no-ignore` does NOT change that — it only disables
+    /// When true, appends `--hidden` to rg's argv: dotfiles and dotdirs (.github/workflows/, .env) become searchable. rg skips hidden entries by default, and …
     hidden: bool = false,
-    /// ripgrep `--glob` filter, e.g. "*.zig", "*.vue", "!test_*.zig". Passed
-    /// as ONE argv element (`--glob=<pattern>`) so a value starting with `-`
-    /// can never be read as a flag.
+    /// ripgrep `--glob` filter, e.g. "*.zig", "*.vue", "!test_*.zig".
     glob: ?[]const u8 = null,
-    /// Deadline for one rg invocation in milliseconds (null → 30s default,
-    /// clamped to 1h). 0 fails fast with error.Timeout.
+    /// Deadline for one rg invocation in milliseconds (null → 30s default, clamped to 1h). 0 fails fast with error.Timeout.
     timeout_ms: ?u64 = null,
-    /// ripgrep binary override. Null resolves it the way the runtime does:
-    /// `PABRIK_RG_BIN`, the bundled `rg-pabrik` beside the executable, the
-    /// data dir, then bare `rg` on PATH.
+    /// ripgrep binary override. Null resolves it the way the runtime does
     rg_binary: ?[]const u8 = null,
 };
 
 pub const SearchResult = struct {
     matches: std.ArrayList(SearchMatch),
-    /// No-match warning body (`<warning>…</warning>`); empty whenever at
-    /// least one row was collected.
+    /// No-match warning body (`<warning>…</warning>`); empty whenever at least one row was collected.
     warning: []const u8 = "",
-    /// Number of match EVENTS rg produced (one per matched line). Compared
-    /// against `matches.items.len` this exposes silent truncation: the
-    /// caller can tell "50 matches" from "50 of 9,000".
+    /// Number of match EVENTS rg produced (one per matched line).
     total_matches: usize = 0,
-    /// True when the visible result is incomplete because any output/row cap
-    /// was reached (max_output, max_results, head, or tail).
+    /// True when the visible result is incomplete because any output/row cap was reached (max_output, max_results, head, or tail).
     truncated: bool = false,
-    /// True when the raw ripgrep stdout stream exceeded max_output. The
-    /// retained prefix can still contain complete match records.
+    /// True when the raw ripgrep stdout stream exceeded max_output.
     output_truncated: bool = false,
-    /// Number of raw stdout bytes observed, including bytes drained after
-    /// max_output was reached.
+    /// Number of raw stdout bytes observed, including bytes drained after max_output was reached.
     output_bytes: u64 = 0,
-    /// Verbatim rg stdout for the `count_only` shape. `-c` prints
-    /// `path:count` lines and cannot share the `--json` event stream, so that
-    /// shape bypasses the match list entirely. Null everywhere else.
+    /// Verbatim rg stdout for the `count_only` shape.
     raw_text: ?[]const u8 = null,
 
     pub fn deinit(self: *SearchResult, allocator: std.mem.Allocator) void {
@@ -362,21 +298,15 @@ fn getMatchedLines(obj: *const std.json.ObjectMap) ?usize {
     return null;
 }
 
-/// Hard ceiling on max_output to prevent a single search from OOM-ing the
-/// process. 100 MB is large enough for any practical search (genuinely huge
-/// codebases will still fit) but small enough to bound the worst case.
+/// Hard ceiling on max_output to prevent a single search from OOM-ing the process. 100 MB is large enough for any practical search (genuinely huge codebases will …
 pub const max_output_hard_limit: usize = 100 * 1024 * 1024;
 
-/// True for rg's per-match JSON lines. rg emits one COMPACT object per line
-/// (`{"type":"match","data":{…}}` — no spaces), so a substring test is
-/// enough.
+/// True for rg's per-match JSON lines. rg emits one COMPACT object per line (`{"type":"match","data":{…}}` — no spaces), so a substring test is enough.
 fn lineIsMatchEvent(line: []const u8) bool {
     return std.mem.indexOf(u8, line, "\"type\":\"match\"") != null;
 }
 
-/// Window `text` to at most `cap` bytes, biased left of `offset` (the byte
-/// offset of the first match inside `text`), with `...` markers where content
-/// was dropped, then trim surrounding whitespace.
+/// Window `text` to at most `cap` bytes, biased left of `offset` (the byte offset of the first match inside `text`), with `...` markers where content was dropped …
 fn windowSnippet(allocator: std.mem.Allocator, text: []const u8, offset: usize, cap: usize) ![]u8 {
     if (cap == 0 or text.len <= cap) {
         return try allocator.dupe(u8, std.mem.trim(u8, text, &std.ascii.whitespace));
@@ -390,8 +320,7 @@ fn windowSnippet(allocator: std.mem.Allocator, text: []const u8, offset: usize, 
         end = text.len;
         start = if (end > cap) end - cap else 0;
     }
-    // Never split a UTF-8 sequence: skip forward off a continuation byte for
-    // the start, back off to one for the end.
+    // Never split a UTF-8 sequence: skip forward off a continuation byte for the start, back off to one for the end.
     while (start < text.len and (text[start] & 0xC0) == 0x80) start += 1;
     while (end < text.len and end > start and (text[end] & 0xC0) == 0x80) end -= 1;
 
@@ -407,8 +336,7 @@ fn windowSnippet(allocator: std.mem.Allocator, text: []const u8, offset: usize, 
     return try out.toOwnedSlice(allocator);
 }
 
-/// Where ripgrep ran, and what came back. Under `--saas` the GUEST runs it —
-/// the scan happens where the files are, and the host opens none of them.
+/// Where ripgrep ran, and what came back.
 pub const Runner = struct {
     ctx: *const anyopaque,
     runFn: *const fn (
@@ -450,8 +378,7 @@ const Captured = struct {
     }
 };
 
-/// The match events in a stream that arrived in one piece — the same count the
-/// host's reader thread makes while the bytes arrive.
+/// The match events in a stream that arrived in one piece — the same count the host's reader thread makes while the bytes arrive.
 fn countMatchEvents(stdout: []const u8) usize {
     var count: usize = 0;
     var at: usize = 0;
@@ -463,8 +390,7 @@ fn countMatchEvents(stdout: []const u8) usize {
     return count;
 }
 
-/// Spawn ripgrep HERE and collect its streams. Everything the search does to
-/// its own host process lives in this function and nowhere else.
+/// Spawn ripgrep HERE and collect its streams.
 fn spawnAndCollect(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -483,21 +409,17 @@ fn spawnAndCollect(
         .cwd = .{ .path = arg_cwd },
     }) catch |err| {
         // FileNotFound is ambiguous: missing rg binary vs missing cwd.
-        // Probe the binary from an inherited cwd to disambiguate.
         if (err == error.FileNotFound) {
             if (probeRg(io, rg_binary)) return error.PathError;
             return error.RgNotFound;
         }
         return err;
     };
-    // Cleanup for every error return below: pipes are nulled after close
-    // so this never double-closes; child_waited skips the second wait
-    // (double-wait on a reaped child aborts). kill on a dead child is safe.
+    // Cleanup for every error return below: pipes are nulled after close so this never double-closes; child_waited skips the second wait (double-wait on a reaped …
     var child_waited = false;
     errdefer {
         if (!child_waited) {
-            // Child.kill both terminates and reaps in Zig 0.16; never call
-            // wait after it because kill clears Child.id.
+            // Child.kill both terminates and reaps in Zig 0.16; never call wait after it because kill clears Child.id.
             child.kill(io);
             child_waited = true;
         }
@@ -551,8 +473,7 @@ fn spawnAndCollect(
         .bytes_seen = &stderr_bytes,
         .match_counter = null,
     }}) catch |err| {
-        // stderr spawn failed AFTER the stdout reader is already running with
-        // a stack-borrowed buf.
+        // stderr spawn failed AFTER the stdout reader is already running with a stack-borrowed buf.
         if (child.stdout) |p| {
             p.close(io);
             child.stdout = null;
@@ -560,9 +481,7 @@ fn spawnAndCollect(
         stdout_thread.join();
         return err;
     };
-    // Join-gate: the explicit joins below run on the happy path; any later
-    // `return error.X` (Timeout, PathError, RegexParseError, …) fires this
-    // errdefer.
+    // Join-gate: the explicit joins below run on the happy path; any later `return error.X` (Timeout, PathError, RegexParseError, …) fires this errdefer.
     var threads_joined = false;
     errdefer {
         if (!threads_joined) {
@@ -571,9 +490,7 @@ fn spawnAndCollect(
         }
     }
 
-    // Deadline poll (10ms cadence, same as shell.zig). No std.Io.sleep
-    // — it would park the Io.Group worker. Timestamp is i96 in Zig
-    // 0.16: keep the inferred width, don't narrow to i64.
+    // Deadline poll (10ms cadence, same as shell.zig).
     const deadline_ns = std.Io.Timestamp.now(io, .real).nanoseconds + @as(i64, @intCast(timeout_ns));
     var timeout_hit = false;
     var cancel_hit = false;
@@ -583,8 +500,7 @@ fn spawnAndCollect(
             reader_failed = true;
             break;
         }
-        // The Stop button: a search over a large tree is a child process like
-        // any other, and the hook throttles its own database read.
+        // The Stop button: a search over a large tree is a child process like any other, and the hook throttles its own database read.
         if (cancel_hook) |hook| {
             if (hook.requested()) {
                 cancel_hit = true;
@@ -646,8 +562,6 @@ fn spawnAndCollect(
     // A capped stdout stream is a successful, bounded partial result.
 
     // === Map ripgrep exit code to a domain error or accept stdout ===
-    // ripgrep exit codes (from rg --help): 0 — match found 1 — no match
-    // (empty stdout, stderr empty) 2 — error (regex parse error, file/dir not
     switch (term) {
         .exited => |code| switch (code) {
             0 => {}, // success — fall through
@@ -665,9 +579,7 @@ fn spawnAndCollect(
             },
         },
         .signal, .stopped, .unknown => {
-            // rg was killed by signal (e.g. ulimit, OOM) or terminated
-            // abnormally. Surface as a path/I/O error so the LLM retries
-            // with a different path or smaller pattern.
+            // rg was killed by signal (e.g. ulimit, OOM) or terminated abnormally.
             return error.PathError;
         },
     }
@@ -687,8 +599,7 @@ pub fn executeSearch(allocator: std.mem.Allocator, io: std.Io, cwd: []const u8, 
     return executeSearchWith(allocator, io, cwd, input, null);
 }
 
-/// The same search, with the place ripgrep runs chosen by the caller: null
-/// spawns it here, and a runner is the guest's own scan.
+/// The same search, with the place ripgrep runs chosen by the caller: null spawns it here, and a runner is the guest's own scan.
 pub fn executeSearchWith(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -699,9 +610,7 @@ pub fn executeSearchWith(
     return executeSearchWithCancel(allocator, io, cwd, input, runner, null);
 }
 
-/// `executeSearchWith` plus the Stop button: the host spawn's wait loop polls
-/// `cancel_hook` and kills ripgrep on a true answer (error.Cancelled). A guest
-/// runner keeps its own deadline — the hook does not cross that boundary.
+/// `executeSearchWith` plus the Stop button: the host spawn's wait loop polls `cancel_hook` and kills ripgrep on a true answer (error.Cancelled).
 pub fn executeSearchWithCancel(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -717,9 +626,7 @@ pub fn executeSearchWithCancel(
         return error.HeadAndTailMutuallyExclusive;
     }
 
-    // head=0 / tail=0 select zero rows while still reporting success —
-    // indistinguishable from a real "no match", so reject them the same way
-    // max_results=0 is rejected.
+    // head=0 / tail=0 select zero rows while still reporting success — indistinguishable from a real "no match", so reject them the same way max_results=0 is …
     if (input.head) |head_n| {
         if (head_n == 0) return error.InvalidHeadTail;
     }
@@ -727,33 +634,27 @@ pub fn executeSearchWithCancel(
         if (tail_n == 0) return error.InvalidHeadTail;
     }
 
-    // Pattern must be non-empty. ripgrep accepts empty patterns but the
-    // result is meaningless — reject so the caller sees a clear error.
+    // Pattern must be non-empty. ripgrep accepts empty patterns but the result is meaningless — reject so the caller sees a clear error.
     if (input.pattern.len == 0) return error.EmptyPattern;
 
-    // Reject patterns containing NUL bytes. ripgrep's C-string handling
-    // truncates at NUL, which would mean the LLM's intended pattern is
-    // silently mutated. Refuse the call entirely.
+    // Reject patterns containing NUL bytes. ripgrep's C-string handling truncates at NUL, which would mean the LLM's intended pattern is silently mutated.
     if (std.mem.indexOfScalar(u8, input.pattern, 0) != null) {
         return error.PatternContainsNulByte;
     }
 
-    // Same NUL hazard for the glob filter: rg copies argv into C strings,
-    // so anything after a NUL would be silently dropped from the filter.
+    // Same NUL hazard for the glob filter: rg copies argv into C strings, so anything after a NUL would be silently dropped from the filter.
     if (input.glob) |glob_pattern| {
         if (std.mem.indexOfScalar(u8, glob_pattern, 0) != null) {
             return error.GlobContainsNulByte;
         }
     }
 
-    // Validate max_output bounds up-front. Zero is meaningless; over the
-    // hard ceiling risks OOM.
+    // Validate max_output bounds up-front.
     const max_output = input.max_output orelse 1024 * 1024;
     if (max_output == 0) return error.InvalidMaxOutput;
     if (max_output > max_output_hard_limit) return error.MaxOutputTooLarge;
 
-    // Validate max_results. Zero is indistinguishable from "no match" and
-    // is almost certainly a caller bug.
+    // Validate max_results.
     const max_results = input.max_results orelse 50;
     if (max_results == 0) return error.InvalidMaxResults;
 
@@ -768,26 +669,20 @@ pub fn executeSearchWithCancel(
     const timeout_ms = input.timeout_ms orelse default_search_timeout_ms;
     // Fail fast BEFORE spawning (also the deterministic hook for tests).
     if (timeout_ms == 0) return error.Timeout;
-    // Clamp WITHOUT @min: `@min(u64, u64) * std.time.ns_per_ms` miscompiles
-    // on Zig 0.16.0 (compile error in isolation, phantom overflow at
-    // runtime). Plain u64 × u64 with an explicitly-typed constant is safe.
+    // Clamp WITHOUT @min: `@min(u64, u64) * std.time.ns_per_ms` miscompiles on Zig 0.16.0 (compile error in isolation, phantom overflow at runtime).
     const clamped_ms: u64 = if (timeout_ms > max_search_timeout_ms) max_search_timeout_ms else timeout_ms;
     const ns_per_ms_u64: u64 = std.time.ns_per_ms;
     const timeout_ns: u64 = clamped_ms * ns_per_ms_u64;
 
-    // === Build ripgrep argv with flag-injection defense === We use `-e
-    // <pattern>` to tell ripgrep "next arg is the pattern", which means a
-    // pattern starting with `-` (e.g.
+    // === Build ripgrep argv with flag-injection defense ===
     var args: std.ArrayList([]const u8) = .empty;
     defer args.deinit(allocator);
-    // `--glob=<pattern>` is one argv element, so a value that starts with
-    // `-` cannot be reinterpreted as another flag.
+    // `--glob=<pattern>` is one argv element, so a value that starts with `-` cannot be reinterpreted as another flag.
     var glob_arg: ?[]u8 = null;
     defer if (glob_arg) |owned| allocator.free(owned);
 
     try args.append(allocator, rg_binary);
-    // `-c` prints `path:count` lines and cannot coexist with the `--json`
-    // event stream, so the count shape picks its own output mode.
+    // `-c` prints `path:count` lines and cannot coexist with the `--json` event stream, so the count shape picks its own output mode.
     if (input.count_only) {
         try args.append(allocator, "-c");
     } else {
@@ -800,9 +695,7 @@ pub fn executeSearchWithCancel(
         try args.append(allocator, "--no-ignore");
     }
     if (input.hidden) {
-        // rg skips dotfiles/dotdirs unless --hidden is passed. --no-ignore
-        // only disables ignore-FILE filtering, so without this flag
-        // `.github/workflows/…` stays invisible even with
+        // rg skips dotfiles/dotdirs unless --hidden is passed. --no-ignore only disables ignore-FILE filtering, so without this flag `.github/workflows/…` stays …
         try args.append(allocator, "--hidden");
     }
     if (input.glob) |glob_pattern| {
@@ -812,19 +705,15 @@ pub fn executeSearchWithCancel(
         }
     }
     if (input.word_boundary) {
-        // -w: only match whole words (word-boundary semantics). rg's default
-        // Unicode word rule treats underscore as a word char, so this matches
-        // what `-w` says, not what an English speaker might expect for
+        // -w: only match whole words (word-boundary semantics). rg's default Unicode word rule treats underscore as a word char, so this matches what `-w` says, not what …
         try args.append(allocator, "-w");
     }
-    // Chunk 2: literal / -F flag. Treat the pattern as opaque bytes instead
-    // of a regex.
+    // Chunk 2: literal / -F flag.
     if (input.literal) {
         try args.append(allocator, "-F");
     }
     if (input.only_matching) {
-        // -o / --only-matching: rg emits ONLY the matched substring per line
-        // (via data.submatches[]), NOT the full surrounding line.
+        // -o / --only-matching: rg emits ONLY the matched substring per line (via data.submatches[]), NOT the full surrounding line.
         try args.append(allocator, "-o");
     }
     if (input.ignore_case) {
@@ -835,8 +724,7 @@ pub fn executeSearchWithCancel(
         // -v: report the lines that do NOT match.
         try args.append(allocator, "-v");
     }
-    // Context window. rg takes the count as a separate argv element (`-A 3`),
-    // so each number is heap-formatted and freed after the spawn.
+    // Context window. rg takes the count as a separate argv element (`-A 3`), so each number is heap-formatted and freed after the spawn.
     const ctx_before = input.before_context orelse input.context;
     const ctx_after = input.after_context orelse input.context;
     var owned_ctx: [2]?[]u8 = .{ null, null };
@@ -877,9 +765,7 @@ pub fn executeSearchWithCancel(
         defer ran.deinit(allocator);
         if (ran.timed_out) return error.Timeout;
         if (ran.code != 0 and ran.code != 1) {
-            // The guest's own `exec failed` is what an image without ripgrep
-            // says, and it is the same answer the host gives when rg is not
-            // installed: nothing to scan with.
+            // The guest's own `exec failed` is what an image without ripgrep says, and it is the same answer the host gives when rg is not installed: nothing to scan with.
             if (ran.code == 127 and std.mem.indexOf(u8, ran.stderr, "exec failed") != null) {
                 return error.RgNotFound;
             }
@@ -901,8 +787,7 @@ pub fn executeSearchWithCancel(
     } else try spawnAndCollect(allocator, io, args.items, input.cwd orelse cwd, rg_binary, max_output, timeout_ns, cancel_hook);
     defer captured.deinit(allocator);
 
-    // Count-only shape: `-c` already wrote the answer as `path:count` text, so
-    // there is no event stream to parse — hand the bytes back verbatim.
+    // Count-only shape: `-c` already wrote the answer as `path:count` text, so there is no event stream to parse — hand the bytes back verbatim.
     if (input.count_only) {
         return SearchResult{
             .matches = std.ArrayList(SearchMatch).empty,
@@ -933,18 +818,13 @@ pub fn executeSearchWithCancel(
     const mode_requested: usize = if (input.head) |head_n| head_n else if (input.tail) |tail_n| tail_n else max_results;
     const row_cap: usize = if (mode_requested < max_results) mode_requested else max_results;
     const tail_mode = input.tail != null;
-    // Match EVENTS seen (not rows kept) — the honest denominator for
-    // `total=`/`truncated=` in the rendered envelope.
+    // Match EVENTS seen (not rows kept) — the honest denominator for `total=`/`truncated=` in the rendered envelope.
     var seen_total: usize = 0;
-    // Non-context rows kept. Context rows ride along without consuming the
-    // caller's row budget, so `max_results: 5` with `after_context: 3` still
-    // means five MATCHES.
+    // Non-context rows kept.
     var shown_rows: usize = 0;
-    // True when a context window was requested; rg only emits `context`
-    // records in that case, so the branch stays inert otherwise.
+    // True when a context window was requested; rg only emits `context` records in that case, so the branch stays inert otherwise.
     const wants_context = input.context != null or input.before_context != null or input.after_context != null;
-    // Cleared once row_cap rows are collected; from then on the loop only
-    // counts match events instead of JSON-parsing every remaining line.
+    // Cleared once row_cap rows are collected; from then on the loop only counts match events instead of JSON-parsing every remaining line.
     var collecting = true;
 
     const stdout_slice: []const u8 = captured.stdout;
@@ -957,9 +837,7 @@ pub fn executeSearchWithCancel(
 
         if (line.len > 0) {
             if (!collecting) {
-                // A capped final segment may be partial. Do not count its
-                // marker unless it is newline-terminated; the full-stream
-                // counter already accounts for complete match events.
+                // A capped final segment may be partial.
                 if (captured.capped and
                     line_end == stdout_slice.len and
                     line_end > line_start and
@@ -968,8 +846,7 @@ pub fn executeSearchWithCancel(
                     line_start = line_end;
                     continue;
                 }
-                // Row cap reached — only the total count matters now, and
-                // rg's raw line tells us a match event cheaply.
+                // Row cap reached — only the total count matters now, and rg's raw line tells us a match event cheaply.
                 if (lineIsMatchEvent(line)) seen_total += 1;
                 line_start = line_end + 1;
                 continue;
@@ -990,21 +867,15 @@ pub fn executeSearchWithCancel(
                         }
                     }
                 } else if (type_val == .string and std.mem.eql(u8, type_val.string, "match")) {
-                    // Counted as soon as the event is recognised (not at
-                    // append time) so `total=` matches what the cheap
-                    // substring scan counts once collection stops.
+                    // Counted as soon as the event is recognised (not at append time) so `total=` matches what the cheap substring scan counts once collection stops.
                     seen_total += 1;
                     if (parsed.value.object.get("data")) |data| {
                         if (data == .object) {
                             var match_file: []const u8 = "";
                             var match_snippet: []const u8 = "";
-                            // Byte offset of the first submatch inside
-                            // `match_snippet` — drives the long-line window.
-                            // 0 is correct for the --only-matching paths (the
+                            // Byte offset of the first submatch inside `match_snippet` — drives the long-line window. 0 is correct for the --only-matching paths (the
                             var snippet_offset: usize = 0;
-                            // Tracks whether match_snippet is a heap-owned
-                            // allocation we must free (true only when built
-                            // from the comma-joined multi-submatch path).
+                            // Tracks whether match_snippet is a heap-owned allocation we must free (true only when built from the comma-joined multi-submatch path).
                             var match_snippet_owned = false;
                             var line_num: usize = 0;
                             var line_num_valid = false;
@@ -1018,8 +889,7 @@ pub fn executeSearchWithCancel(
                             }
 
                             if (input.only_matching) {
-                                // --only-matching: snippet = matched
-                                // substring(s) from submatches[].
+                                // --only-matching: snippet = matched substring(s) from submatches[].
                                 if (data.object.get("submatches")) |submatches_val| {
                                     if (submatches_val == .array) {
                                         const submatch_list = submatches_val.array;
@@ -1029,9 +899,7 @@ pub fn executeSearchWithCancel(
                                                 match_snippet = match_text;
                                             }
                                         } else if (submatch_list.items.len > 1) {
-                                            // Multiple submatches on same
-                                            // line: comma-join into one
-                                            // snippet string.
+                                            // Multiple submatches on same line: comma-join into one snippet string.
                                             var combined: std.ArrayList(u8) = .empty;
                                             defer combined.deinit(allocator);
                                             for (submatch_list.items, 0..) |sub, i| {
@@ -1040,9 +908,7 @@ pub fn executeSearchWithCancel(
                                                     try combined.appendSlice(allocator, m);
                                                 }
                                             }
-                                            // Heap-owned dupe
-                                            // (allocator.dupe) so the slice
-                                            // outlives the ArrayList's defer.
+                                            // Heap-owned dupe (allocator.dupe) so the slice outlives the ArrayList's defer.
                                             const owned = allocator.dupe(u8, combined.items) catch {
                                                 // OOM: skip this match
                                                 continue;
@@ -1050,9 +916,7 @@ pub fn executeSearchWithCancel(
                                             match_snippet = owned;
                                             match_snippet_owned = true;
                                         }
-                                        // If submatch_list.items.len == 0
-                                        // (shouldn't happen for a real match
-                                        // event), match_snippet stays "".
+                                        // If submatch_list.items.len == 0 (shouldn't happen for a real match event), match_snippet stays "".
                                     }
                                 }
                             } else {
@@ -1060,9 +924,7 @@ pub fn executeSearchWithCancel(
                                 if (getTextFromJson(&data.object, "lines")) |lines_text| {
                                     match_snippet = lines_text;
                                 }
-                                // First submatch offset (relative to
-                                // lines.text) — rg's JSON gives us the match
-                                // position for free; without it a windowed
+                                // First submatch offset (relative to lines.text) — rg's JSON gives us the match position for free; without it a windowed
                                 if (data.object.get("submatches")) |submatches_val| {
                                     if (submatches_val == .array and submatches_val.array.items.len > 0) {
                                         if (submatches_val.array.items[0].object.get("start")) |start_val| {
@@ -1076,9 +938,7 @@ pub fn executeSearchWithCancel(
 
                             if (data.object.get("line_number")) |ln| {
                                 if (ln == .integer) {
-                                    // Validate before casting: rg emits
-                                    // positive line numbers, so 0 or negative
-                                    // is corrupt.
+                                    // Validate before casting: rg emits positive line numbers, so 0 or negative is corrupt.
                                     if (ln.integer >= 1 and ln.integer <= std.math.maxInt(usize)) {
                                         line_num = @intCast(ln.integer);
                                         line_num_valid = true;
@@ -1087,23 +947,17 @@ pub fn executeSearchWithCancel(
                             }
 
                             if (line_num_valid and file_ok) {
-                                // The multi-submatch path heap-allocates
-                                // match_snippet via allocator.dupe; the
-                                // default-line and single-submatch paths
+                                // The multi-submatch path heap-allocates match_snippet via allocator.dupe; the default-line and single-submatch paths
                                 defer if (match_snippet_owned) allocator.free(match_snippet);
 
-                                // Sanitize the snippet to ensure valid UTF-8.
-                                // rg emits snippets in the file's encoding;
-                                // binary files can contain invalid UTF-8
+                                // Sanitize the snippet to ensure valid UTF-8. rg emits snippets in the file's encoding; binary files can contain invalid UTF-8
                                 const sanitized_snippet = sanitize.sanitizeUtf8(allocator, match_snippet) catch continue;
                                 defer allocator.free(sanitized_snippet);
 
                                 const owned_file = try allocator.dupe(u8, match_file);
                                 errdefer allocator.free(owned_file);
 
-                                // Window the (now valid-UTF-8) snippet so a
-                                // single long line can never swallow the
-                                // result budget.
+                                // Window the (now valid-UTF-8) snippet so a single long line can never swallow the result budget.
                                 const windowed_snippet = windowSnippet(allocator, sanitized_snippet, snippet_offset, snippet_max_chars) catch {
                                     allocator.free(owned_file);
                                     continue;
@@ -1118,9 +972,7 @@ pub fn executeSearchWithCancel(
                                 };
 
                                 if (tail_mode) {
-                                    // Last-N semantics: keep the NEWEST
-                                    // row_cap rows and evict the oldest, so
-                                    // `tail` means "last N of the whole
+                                    // Last-N semantics: keep the NEWEST row_cap rows and evict the oldest, so `tail` means "last N of the whole
                                     if (shown_rows >= row_cap and matches.items.len > 0) {
                                         allocator.free(matches.items[0].file);
                                         allocator.free(matches.items[0].snippet);
@@ -1133,9 +985,7 @@ pub fn executeSearchWithCancel(
                                     try matches.append(allocator, match);
                                     shown_rows += 1;
                                     if (shown_rows >= row_cap) {
-                                        // Row cap reached: stop JSON-parsing
-                                        // the rest of rg's (already buffered)
-                                        // output.
+                                        // Row cap reached: stop JSON-parsing the rest of rg's (already buffered) output.
                                         collecting = false;
                                     }
                                 }
@@ -1143,9 +993,7 @@ pub fn executeSearchWithCancel(
                         }
                     }
                 } else if (type_val == .string and std.mem.eql(u8, type_val.string, "context")) {
-                    // A `-A`/`-B`/`-C` window line. Kept as its own row so
-                    // both renderers can print it in rg's own convention
-                    // (`path-line-text`), without pretending it is a match.
+                    // A `-A`/`-B`/`-C` window line.
                     if (wants_context and collecting) {
                         if (parsed.value.object.get("data")) |data| {
                             if (data == .object) {
@@ -1199,15 +1047,12 @@ pub fn executeSearchWithCancel(
     const total_matches = @max(seen_total, captured.match_events);
     const truncated = output_truncated or total_matches > matches.items.len;
 
-    // No-match warning body. Built ONLY when nothing was collected and the
-    // raw stream was not capped.
+    // No-match warning body.
     var warning: []const u8 = "";
     errdefer if (warning.len > 0) allocator.free(warning);
     if (matches.items.len == 0 and !output_truncated) {
         if (captured.stderr.len > 0) {
-            // ripgrep surfaced an error (regex parse error, permission
-            // denied, etc). Surface stderr verbatim — it already names the
-            // root cause.
+            // ripgrep surfaced an error (regex parse error, permission denied, etc).
             warning = try std.fmt.allocPrint(allocator, "<warning>{s}</warning>", .{captured.stderr});
         } else {
             // Clean no-match (rg exit code 1, empty stderr).
@@ -1229,9 +1074,7 @@ pub fn executeSearchWithCancel(
     };
 }
 
-/// Multiple matches in the same file are grouped together under one entry of
-/// the `files` array, inside a JSON object carrying the pattern/path plus the
-/// collection summary (`returned` / `total` / `truncated`).
+/// Multiple matches in the same file are grouped together under one entry of the `files` array, inside a JSON object carrying the pattern/path plus the collection …
 pub fn search_result_to_json_grouped(allocator: std.mem.Allocator, result: SearchResult, pattern: []const u8, search_path: []const u8) ![]const u8 {
     const clean_pattern = try sanitizeControlChars(allocator, pattern);
     defer allocator.free(clean_pattern);
@@ -1270,8 +1113,7 @@ pub fn search_result_to_json_grouped(allocator: std.mem.Allocator, result: Searc
         });
     }
 
-    // Per-file matched-line count (rg's `stats.matched_lines` for THIS
-    // search — not the file's line count, see the tool description).
+    // Per-file matched-line count (rg's `stats.matched_lines` for THIS search — not the file's line count, see the tool description).
     var file_totals = std.StringHashMap(usize).init(allocator);
     defer file_totals.deinit();
 
@@ -1319,9 +1161,7 @@ pub fn search_result_to_json_grouped(allocator: std.mem.Allocator, result: Searc
     }
 
     for (groups.items) |group| {
-        // An output cap can cut before rg's per-file `end` event. In that
-        // case use the retained row count as an honest lower bound instead
-        // of serializing a misleading zero total.
+        // An output cap can cut before rg's per-file `end` event.
         const total = file_totals.get(group.path) orelse
             (if (result.output_truncated) group.matches.items.len else 0);
         const clean_file = try sanitizeControlChars(allocator, std.mem.trim(u8, group.path, &std.ascii.whitespace));
@@ -1358,9 +1198,7 @@ pub fn search_result_to_json_grouped(allocator: std.mem.Allocator, result: Searc
     return try std.json.Stringify.valueAlloc(allocator, payload, .{});
 }
 
-/// Flat (non-grouped) output: one entry per match in a top-level `matches`
-/// array. Same match fields as the grouped entries, plus the file each
-/// match came from. Used when SearchInput.group_by_file == false.
+/// Flat (non-grouped) output: one entry per match in a top-level `matches` array.
 pub fn search_result_to_json_flat(allocator: std.mem.Allocator, result: SearchResult, pattern: []const u8, search_path: []const u8) ![]const u8 {
     const clean_pattern = try sanitizeControlChars(allocator, pattern);
     defer allocator.free(clean_pattern);
@@ -1424,9 +1262,7 @@ pub fn search_result_to_json_flat(allocator: std.mem.Allocator, result: SearchRe
     return try std.json.Stringify.valueAlloc(allocator, payload, .{});
 }
 
-/// Compact text render: `path:line:text` per match, `path-line-text` per
-/// context line — rg's own convention, no per-match keys. Default because the
-/// JSON envelope costs ~3.8x the bytes (2,279 B vs 595 B for five rows).
+/// Compact text render: `path:line:text` per match, `path-line-text` per context line — rg's own convention, no per-match keys.
 pub fn search_result_to_text(
     allocator: std.mem.Allocator,
     result: SearchResult,
@@ -1436,8 +1272,7 @@ pub fn search_result_to_text(
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
-    // count_only: rg already printed the answer (`path:count` or a bare
-    // count) and there is no event stream behind it.
+    // count_only: rg already printed the answer (`path:count` or a bare count) and there is no event stream behind it.
     if (result.raw_text) |raw| {
         const clean_raw = try sanitizeControlChars(allocator, raw);
         defer allocator.free(clean_raw);
@@ -1487,8 +1322,7 @@ pub fn search_result_to_text(
         try out.appendSlice(allocator, rendered);
     }
 
-    // The truncation note is the whole honesty budget of this format: without
-    // it a capped result reads as a complete one.
+    // The truncation note is the whole honesty budget of this format: without it a capped result reads as a complete one.
     if (result.truncated) {
         const note = try std.fmt.allocPrint(
             allocator,
@@ -1502,8 +1336,7 @@ pub fn search_result_to_text(
     return try out.toOwnedSlice(allocator);
 }
 
-/// Replace JSON-hostile control bytes (NUL/C0 except tab/LF/CR, plus DEL)
-/// with U+FFFD. File-local: shared helpers are frozen for this migration.
+/// Replace JSON-hostile control bytes (NUL/C0 except tab/LF/CR, plus DEL) with U+FFFD.
 fn sanitizeControlChars(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -1518,9 +1351,7 @@ fn sanitizeControlChars(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return try out.toOwnedSlice(allocator);
 }
 
-/// Strip the `<warning>…</warning>` envelope executeSearch builds around
-/// the no-match/stderr body and sanitize the inner text. Returns null when
-/// there is no warning so the JSON field serializes as null.
+/// Strip the `<warning>…</warning>` envelope executeSearch builds around the no-match/stderr body and sanitize the inner text.
 fn cleanWarningText(allocator: std.mem.Allocator, warning: []const u8) !?[]u8 {
     if (warning.len == 0) return null;
     var inner: []const u8 = warning;
@@ -1740,9 +1571,7 @@ pub const search_tool = AgentTool{
 const builtin = @import("builtin");
 const testing = std.testing;
 
-// =============================================================================
 // Validation tests (no ripgrep invocation; run on all platforms)
-// =============================================================================
 
 test "search: empty pattern returns EmptyPattern error" {
     const allocator = testing.allocator;
@@ -1832,14 +1661,11 @@ test "search: respect_ignore_files = false does NOT return a validation error" {
         .path = ".",
         .respect_ignore_files = false,
     })) |r| {
-        // Success — release the SearchResult's heap allocations
-        // (matches.items[].file + .snippet, and content).
+        // Success — release the SearchResult's heap allocations (matches.items[].file + .snippet, and content).
         var owned = r;
         defer owned.deinit(allocator);
     } else |err| switch (err) {
-        // Either success (Ok with possibly 0 matches in /tmp) or a rg-spawn
-        // error is acceptable. What matters is NO SearchError domain variant
-        // fires (those would mean validation rejected the field).
+        // Either success (Ok with possibly 0 matches in /tmp) or a rg-spawn error is acceptable.
         error.FileNotFound, error.PathError, error.AccessDenied, error.OutputReadFailed, error.StderrTooLong => {},
         else => return err,
     }
@@ -1849,8 +1675,7 @@ test "search: word_boundary = true does NOT return a validation error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    // The word_boundary field is a flag, not a numeric limit — there's no
-    // value that could fail up-front validation.
+    // The word_boundary field is a flag, not a numeric limit — there's no value that could fail up-front validation.
     if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
@@ -1868,8 +1693,7 @@ test "search: literal = true does NOT return a validation error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    // The literal field is a flag, not a numeric limit — there's no value
-    // that could fail up-front validation.
+    // The literal field is a flag, not a numeric limit — there's no value that could fail up-front validation.
     if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
@@ -1887,8 +1711,7 @@ test "search: only_matching = true does NOT return a validation error" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    // The only_matching field is a flag, not a numeric limit — there's no
-    // value that could fail up-front validation.
+    // The only_matching field is a flag, not a numeric limit — there's no value that could fail up-front validation.
     if (executeSearch(allocator, io, "/tmp", .{
         .pattern = "anything",
         .path = ".",
@@ -1902,9 +1725,7 @@ test "search: only_matching = true does NOT return a validation error" {
     }
 }
 
-// =============================================================================
 // Behavioral tests (with ripgrep invocation)
-// =============================================================================
 
 fn requiresRg() bool {
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return false;
@@ -1912,9 +1733,7 @@ fn requiresRg() bool {
     return true;
 }
 
-/// Strip the `./` prefix that rg adds to relative paths when invoked with
-/// `path = "."`. Used by the respect_ignore_files tests to compare match
-/// files against expected basenames regardless of rg's prefix convention.
+/// Strip the `./` prefix that rg adds to relative paths when invoked with `path = "."`.
 fn stripDotSlash(s: []const u8) []const u8 {
     if (s.len >= 2 and s[0] == '.' and s[1] == '/') return s[2..];
     return s;
@@ -1926,9 +1745,7 @@ test "search: pattern starting with -- is NOT interpreted as rg flag" {
     const allocator = testing.allocator;
     const io = testing.io;
 
-    // Create a temp file with the literal text "--help" in it. Before the
-    // flag-injection fix, rg --json --line-number "--help" . would print
-    // ripgrep's help page (treating --help as a flag).
+    // Create a temp file with the literal text "--help" in it.
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
     try tmpdir.dir.writeFile(io, .{
@@ -1936,8 +1753,7 @@ test "search: pattern starting with -- is NOT interpreted as rg flag" {
         .data = "this --help marker is here\nplain line\n",
     });
 
-    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just
-    // the random basename (e.g. "AbCdEfGh1234"), NOT the full path.
+    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just the random basename (e.g.
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
@@ -1973,8 +1789,7 @@ test "search: pattern 'foo' in a dir with literal 'foo' finds it" {
         .data = "the foo is here\nboring\n",
     });
 
-    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just
-    // the random basename (e.g. "AbCdEfGh1234"), NOT the full path.
+    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just the random basename (e.g.
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
@@ -2037,8 +1852,7 @@ test "search: cwd that doesn't exist returns an error" {
         .cwd = "/nonexistent/cwd/that/does/not/exist/12345",
     });
 
-    // Either PathError (from our mapping) or some spawn-level error bubbles
-    // up.
+    // Either PathError (from our mapping) or some spawn-level error bubbles up.
     if (result) |r| {
         var owned = r;
         defer owned.deinit(allocator);
@@ -2056,9 +1870,7 @@ test "search: binary snippet is sanitized to valid UTF-8" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // Write bytes that look like a PNG header. rg will detect this as a
-    // binary file and skip it. To force rg to "match" anyway, we put
-    // the literal ASCII text "match_here" inside the binary content.
+    // Write bytes that look like a PNG header. rg will detect this as a binary file and skip it.
     const binary_content: []const u8 = &[_]u8{
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
         0xFF, 0xFE, 0x00, 0x00, // invalid UTF-8 byte sequence
@@ -2072,8 +1884,7 @@ test "search: binary snippet is sanitized to valid UTF-8" {
         .data = binary_content,
     });
 
-    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just
-    // the random basename (e.g. "AbCdEfGh1234"), NOT the full path.
+    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just the random basename (e.g.
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
@@ -2085,8 +1896,7 @@ test "search: binary snippet is sanitized to valid UTF-8" {
     });
     defer result.deinit(allocator);
 
-    // rg may either find the match (and snippets contain invalid UTF-8 bytes
-    // that get sanitized) or skip the file entirely (no match).
+    // rg may either find the match (and snippets contain invalid UTF-8 bytes that get sanitized) or skip the file entirely (no match).
     for (result.matches.items) |m| {
         const utf8_valid = std.unicode.utf8ValidateSlice(m.snippet);
         try testing.expect(utf8_valid);
@@ -2113,16 +1923,14 @@ test "search: max_results cap honored" {
         }
         break :blk try buf.toOwnedSlice(allocator);
     };
-    // content is heap-owned from toOwnedSlice; writeFile reads but does not
-    // take ownership. Free it once writeFile returns.
+    // content is heap-owned from toOwnedSlice; writeFile reads but does not take ownership.
     defer allocator.free(content);
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "many.txt",
         .data = content,
     });
 
-    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just
-    // the random basename (e.g. "AbCdEfGh1234"), NOT the full path.
+    // Zig 0.16's testing.TmpDir.sub_path is a fixed-size array holding just the random basename (e.g.
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
@@ -2175,8 +1983,7 @@ test "search: respect_ignore_files = true (default) skips .gitignored dirs" {
 
     // Exactly 1 match — only app.js. node_modules/secret.js was skipped.
     try testing.expectEqual(@as(usize, 1), result.matches.items.len);
-    // rg with path="." returns paths prefixed with "./"; strip it for the
-    // filename comparison.
+    // rg with path="." returns paths prefixed with "./"; strip it for the filename comparison.
     const match_file = stripDotSlash(result.matches.items[0].file);
     try testing.expectEqualStrings("app.js", match_file);
 }
@@ -2219,9 +2026,7 @@ test "search: respect_ignore_files = false searches .gitignored dirs" {
     // Both files matched — .gitignore was un-respected via --no-ignore
     try testing.expectEqual(@as(usize, 2), result.matches.items.len);
 
-    // Collect filenames (order from rg is not guaranteed) and assert each
-    // expected file is present. rg with path="." prefixes matches with
-    // "./" — use stripDotSlash to normalize.
+    // Collect filenames (order from rg is not guaranteed) and assert each expected file is present. rg with path="." prefixes matches with "./" — use stripDotSlash …
     var saw_app = false;
     var saw_node_modules = false;
     for (result.matches.items) |m| {
@@ -2271,8 +2076,7 @@ test "search: respect_ignore_files = false also un-respects .ignore / .rgignore"
     // Both files matched — .ignore was un-respected via --no-ignore
     try testing.expectEqual(@as(usize, 2), result.matches.items.len);
 
-    // Per-filename check (rg match order is not guaranteed). rg with
-    // path="." prefixes matches with "./" — use stripDotSlash to normalize.
+    // Per-filename check (rg match order is not guaranteed). rg with path="." prefixes matches with "./" — use stripDotSlash to normalize.
     var saw_main = false;
     var saw_cached = false;
     for (result.matches.items) |m| {
@@ -2294,9 +2098,7 @@ test "search: word_boundary = true matches whole words only" {
     defer tmpdir.cleanup();
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
-        // "foo" appears as part of "foobar" — should NOT match with -w
-        // "foo" appears as a whole word — SHOULD match
-        // "foo" appears at end of line, preceded by space — SHOULD match
+        // "foo" appears as part of "foobar" — should NOT match with -w "foo" appears as a whole word — SHOULD match "foo" appears at end of line, preceded by space — …
         .data = "foobar whole foo\nline foo trailing\n",
     });
 
@@ -2312,8 +2114,6 @@ test "search: word_boundary = true matches whole words only" {
     defer result.deinit(allocator);
 
     // 2 matches: line 1 (the "whole foo" segment) and line 2 (trailing foo).
-    // "foobar" on line 1 must NOT match because there's no boundary between
-    // "foo" and "bar".
     try testing.expectEqual(@as(usize, 2), result.matches.items.len);
     try testing.expectEqual(@as(usize, 1), result.matches.items[0].line_number);
     try testing.expectEqual(@as(usize, 2), result.matches.items[1].line_number);
@@ -2327,12 +2127,10 @@ test "search: word_boundary = false (default) matches substrings" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // rg returns ONE match event per matched line (not per occurrence). So
-    // even though "foobar" contains "foo" twice, that's still 1 match event.
+    // rg returns ONE match event per matched line (not per occurrence).
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         // Line 1 has two substring occurrences of "foo" — rg reports 1 event.
-        // Line 2 has one occurrence — rg reports 1 event.
         .data = "foobar whole foo\nline foo here\n",
     });
 
@@ -2361,9 +2159,7 @@ test "search: word_boundary works at start of file (offset 0)" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // The pattern is the very first thing in the file — there's no
-    // preceding character. With -w, rg must still identify the boundary
-    // (the implicit "start of file" is a word boundary in ripgrep's view).
+    // The pattern is the very first thing in the file — there's no preceding character.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "foo bar",
@@ -2392,8 +2188,7 @@ test "search: word_boundary works at end of file (no trailing newline)" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // File ends mid-line — pattern is the last token with no trailing
-    // newline. rg must treat EOF as a word boundary for -w.
+    // File ends mid-line — pattern is the last token with no trailing newline. rg must treat EOF as a word boundary for -w.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "hello world",
@@ -2422,8 +2217,7 @@ test "search: word_boundary treats underscore as a WORD char (no match inside fo
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // ripgrep's default Unicode word rule treats underscore as a word
-    // character.
+    // ripgrep's default Unicode word rule treats underscore as a word character.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "foo_bar baz_foo qux_foo",
@@ -2452,9 +2246,7 @@ test "search: word_boundary treats hyphen as a boundary (matches foo-bar and foo
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // Hyphen and plus are non-word chars — they DO create boundaries,
-    // so "foo" with -w matches both "foo-bar" and "foo+bar". Two lines
-    // so rg reports 2 match events (one per line).
+    // Hyphen and plus are non-word chars — they DO create boundaries, so "foo" with -w matches both "foo-bar" and "foo+bar".
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "foo-bar\nfoo+bar\n",
@@ -2484,9 +2276,7 @@ test "search: word_boundary with punctuation boundaries matches each occurrence"
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // ( ) [ ] { } , . — each of these is a non-word char and creates
-    // a word boundary. So "foo" with -w matches every occurrence here.
-    // Spread across 4 lines so rg reports 4 match events (one per line).
+    // ( ) [ ] { } , . — each of these is a non-word char and creates a word boundary.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "(foo)\n[foo]\n{foo}\nfoo.\n",
@@ -2515,8 +2305,6 @@ test "search: word_boundary with multi-line file matches only the line containin
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
     // Three lines; only line 2 contains the pattern as a whole word.
-    // Lines 1 and 3 contain "target" only as part of "targeted" /
-    // "untargeted" — which -w rejects.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "first line targeted here\nsecond line has target word\nthird line untargeted here\n",
@@ -2538,9 +2326,7 @@ test "search: word_boundary with multi-line file matches only the line containin
     try testing.expectEqual(@as(usize, 2), result.matches.items[0].line_number);
 }
 
-// =============================================================================
 // Chunk 2 behavioral tests — literal / -F flag
-// =============================================================================
 
 test "search: literal = true matches metacharacters literally" {
     if (!requiresRg()) return;
@@ -2550,9 +2336,7 @@ test "search: literal = true matches metacharacters literally" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // Two lines: line 1 has the LITERAL substring "foo.bar" (with real dot),
-    // line 2 has "fooXbar" (X is not a dot, so the LITERAL pattern "foo.bar"
-    // does not match it).
+    // Two lines: line 1 has the LITERAL substring "foo.bar" (with real dot), line 2 has "fooXbar" (X is not a dot, so the LITERAL pattern "foo.bar" does not match …
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "foo.bar\nfooXbar\n",
@@ -2570,8 +2354,6 @@ test "search: literal = true matches metacharacters literally" {
     defer result.deinit(allocator);
 
     // With literal = true: only line 1 matches (literal dot).
-    // Without literal (regex): both lines match (dot is wildcard).
-    // If this test sees 2 matches, the -F flag is NOT being passed to rg.
     try testing.expectEqual(@as(usize, 1), result.matches.items.len);
     try testing.expectEqual(@as(usize, 1), result.matches.items[0].line_number);
 }
@@ -2584,8 +2366,7 @@ test "search: literal = true does NOT fire RegexParseError for invalid regex pat
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // "*invalid" is INVALID as a regex (unanchored `*` quantifier has no
-    // preceding atom).
+    // "*invalid" is INVALID as a regex (unanchored `*` quantifier has no preceding atom).
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "literal content\n",
@@ -2601,9 +2382,7 @@ test "search: literal = true does NOT fire RegexParseError for invalid regex pat
         .literal = true,
     });
 
-    // Acceptable outcomes: - Ok with 0 matches (rg found no file containing
-    // literal "*invalid") - PathError (rg spawn failed for some
-    // platform-specific reason) NOT acceptable: error.RegexParseError —
+    // Acceptable outcomes: - Ok with 0 matches (rg found no file containing literal "*invalid") - PathError (rg spawn failed for some platform-specific reason) NOT …
     if (result_or_err) |ok| {
         var owned = ok;
         defer owned.deinit(allocator);
@@ -2623,9 +2402,7 @@ test "search: literal = false (default) treats metacharacters as regex" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // Same file as the literal-true test: line 1 has literal "foo.bar",
-    // line 2 has "fooXbar". With regex default (no literal), "." matches
-    // any char — so BOTH lines match.
+    // Same file as the literal-true test: line 1 has literal "foo.bar", line 2 has "fooXbar".
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "foo.bar\nfooXbar\n",
@@ -2656,8 +2433,7 @@ test "search: literal = true matches backslashes literally" {
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // File contains the literal 3-char substring "\bx" (backslash + b + x) at
-    // positions 7..9 of line 1. Line 2 has no such substring.
+    // File contains the literal 3-char substring "\bx" (backslash + b + x) at positions 7..9 of line 1.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "prefix \\bx here\nno match on this line\n",
@@ -2689,9 +2465,7 @@ test "search: literal = true matches combined regex special chars as opaque byte
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // File contains the literal 8-char substring "(?:foo)+" on line 1. rg's
-    // regex engine DOES support non-capturing groups (?:...), so even in
-    // regex mode, the pattern "(?:foo)+" is valid and matches the inner "foo"
+    // File contains the literal 8-char substring "(?:foo)+" on line 1. rg's regex engine DOES support non-capturing groups (?:...), so even in regex mode, the …
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "(?:foo)+ and (a|b)\njust literal text\n",
@@ -2720,8 +2494,7 @@ test "search: literal = true with unmatched bracket does NOT fire RegexParseErro
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // Pattern "[unclosed" has an unmatched `[`. With regex, rg would emit a
-    // regex parse error. With literal = true, the `[` is just a char.
+    // Pattern "[unclosed" has an unmatched `[`.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "completely unrelated content\n",
@@ -2739,7 +2512,6 @@ test "search: literal = true with unmatched bracket does NOT fire RegexParseErro
     defer result.deinit(allocator);
 
     // 0 matches (no file content matches the literal "[unclosed").
-    // CRITICALLY: no RegexParseError — rg doesn't parse literal patterns.
     try testing.expectEqual(@as(usize, 0), result.matches.items.len);
 }
 
@@ -2752,8 +2524,6 @@ test "search: literal = true with multi-byte UTF-8 pattern matches byte-for-byte
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
     // File contains "café résumé" with é as the 2-byte UTF-8 sequence C3 A9.
-    // The literal pattern "café" is 5 bytes (c, a, f, C3, A9). With literal =
-    // true, rg matches the exact 5-byte sequence.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "café résumé\nplain text\n",
@@ -2763,8 +2533,7 @@ test "search: literal = true with multi-byte UTF-8 pattern matches byte-for-byte
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    // Construct "café" (5 bytes) from a u8 array to make the byte
-    // sequence explicit (c=0x63, a=0x61, f=0x66, é=0xC3 0xA9).
+    // Construct "café" (5 bytes) from a u8 array to make the byte sequence explicit (c=0x63, a=0x61, f=0x66, é=0xC3 0xA9).
     const pattern_utf8: []const u8 = &[_]u8{ 'c', 'a', 'f', 0xC3, 0xA9 };
 
     var result = try executeSearch(allocator, io, tmpdir_path, .{
@@ -2786,9 +2555,7 @@ test "search: literal = true combined with word_boundary = true matches bounded 
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // Three lines: Line 1: "foo.bar baz" — contains the literal substring
-    // "foo.bar" Line 2: "fooXbar qux" — contains "fooXbar" but NOT "foo.bar"
-    // (X != .) Line 3: "prefix foo.bar.suffix" — contains "foo.bar" at
+    // Three lines: Line 1: "foo.bar baz" — contains the literal substring "foo.bar" Line 2: "fooXbar qux" — contains "fooXbar" but NOT "foo.bar" (X != .) Line 3 …
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "t.txt",
         .data = "foo.bar baz\nfooXbar qux\nprefix foo.bar.suffix\n",
@@ -2811,9 +2578,7 @@ test "search: literal = true combined with word_boundary = true matches bounded 
     try testing.expectEqual(@as(usize, 3), result.matches.items[1].line_number);
 }
 
-// =============================================================================
 // only_matching (-o) tests — Chunk 3 of the rg-flags plan
-// =============================================================================
 
 test "search: only_matching = true strips surrounding context from snippet" {
     if (!requiresRg()) return;
@@ -2844,9 +2609,7 @@ test "search: only_matching = true strips surrounding context from snippet" {
     try testing.expectEqual(@as(usize, 1), result.matches.items[0].line_number);
     // Snippet should contain the matched substring.
     try testing.expect(std.mem.indexOf(u8, result.matches.items[0].snippet, "needle") != null);
-    // Snippet should NOT contain the surrounding context that would be
-    // present in default mode. The leading "lots of noise" is the
-    // clearest discriminator.
+    // Snippet should NOT contain the surrounding context that would be present in default mode.
     try testing.expect(std.mem.indexOf(u8, result.matches.items[0].snippet, "lots of noise") == null);
 }
 
@@ -2858,8 +2621,7 @@ test "search: only_matching = true with multiple submatches on same line joins t
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // "alpha and beta together" — the regex "alpha|beta" matches TWICE on
-    // this single line.
+    // "alpha and beta together" — the regex "alpha|beta" matches TWICE on this single line.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "b.txt",
         .data = "alpha and beta together\n",
@@ -2957,9 +2719,7 @@ test "search: only_matching = true combined with literal = true matches literal 
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // "a.b" appears literally in line 1. Without literal, "." would match
-    // any char so "aXb" would also match. With literal + only_matching,
-    // only "a.b" matches and snippet is just "a.b".
+    // "a.b" appears literally in line 1.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "lit.txt",
         .data = "a.b and aXb\n",
@@ -2990,9 +2750,7 @@ test "search: only_matching = true combined with word_boundary = true matches wh
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // "needle" on line 1 is a whole word. "needlex" on line 2 is a single
-    // word (not "needle" followed by "x" — "x" is a word char), so no
-    // boundary at the end. With word_boundary, only line 1 matches.
+    // "needle" on line 1 is a whole word.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "wb.txt",
         .data = "needle case needlex case\n",
@@ -3023,8 +2781,7 @@ test "search: only_matching = true with literal + word_boundary matches bounded 
 
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
-    // "foo.bar" appears on line 1 and line 3 as a literal substring. Line 2
-    // has "fooXbar" (not literal match for "foo.bar").
+    // "foo.bar" appears on line 1 and line 3 as a literal substring.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "all3.txt",
         .data = "foo.bar baz\nfooXbar qux\nprefix foo.bar.suffix\n",
@@ -3177,9 +2934,7 @@ test "search: only_matching = true with group_by_file = false renders text=needl
     );
     defer allocator.free(out);
 
-    // The flat JSON holds one entry per match, each `text` JUST the matched
-    // substring (no surrounding text), confirming only_matching is rendered
-    // into the flat payload.
+    // The flat JSON holds one entry per match, each `text` JUST the matched substring (no surrounding text), confirming only_matching is rendered into the flat …
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     defer parsed.deinit();
     const root = parsed.value.object;
@@ -3193,9 +2948,7 @@ test "search: only_matching = true with group_by_file = false renders text=needl
     try testing.expect(std.mem.indexOf(u8, out, "line1:") == null);
 }
 
-// =============================================================================
 // Output format tests (no ripgrep needed — pure formatting)
-// =============================================================================
 
 test "search: search_result_to_json_flat with no matches emits JSON header" {
     const allocator = testing.allocator;
@@ -3223,9 +2976,7 @@ test "search: search_result_to_json_flat with no matches emits JSON header" {
     try testing.expect(std.mem.indexOf(u8, root.get("warning").?.string, "pattern not found") != null);
 }
 
-// =============================================================================
-// No-match output: include the actual pattern + path in the warning text so
-// the operator (and the frontend's header) can see what was searched.
+// No-match output: include the actual pattern + path in the warning text so the operator (and the frontend's header) can see what was searched.
 
 test "search: executeSearch no-match warning includes the actual pattern and path" {
     if (!requiresRg()) return;
@@ -3253,9 +3004,7 @@ test "search: executeSearch no-match warning includes the actual pattern and pat
     // No matches.
     try testing.expectEqual(@as(usize, 0), result.matches.items.len);
 
-    // The warning body MUST contain the literal pattern + path the LLM
-    // passed so the operator can see what was searched (fix for the
-    // "unknown" / "unknown pattern not found" rendering bug).
+    // The warning body MUST contain the literal pattern + path the LLM passed so the operator can see what was searched (fix for the "unknown" / "unknown pattern not …
     try testing.expect(std.mem.indexOf(u8, result.warning, "needle_NOT_FOUND") != null);
     try testing.expect(std.mem.indexOf(u8, result.warning, "empty.txt") != null);
     try testing.expect(std.mem.indexOf(u8, result.warning, "<warning>") != null);
@@ -3265,9 +3014,7 @@ test "search: executeSearch no-match warning includes the actual pattern and pat
 test "search: search_result_to_json_grouped no-match carries pattern/path/warning fields" {
     const allocator = testing.allocator;
 
-    // Warning body now includes the pattern + path so the operator sees
-    // what was searched even when narrow UIs truncate the header fields.
-    // Body text is the durable source of truth.
+    // Warning body now includes the pattern + path so the operator sees what was searched even when narrow UIs truncate the header fields.
     const result = SearchResult{
         .matches = std.ArrayList(SearchMatch).empty,
         .warning = "<warning>no matches for pattern \"needle_NOT_FOUND\" in path \"/tmp/x\"</warning>",
@@ -3284,8 +3031,7 @@ test "search: search_result_to_json_grouped no-match carries pattern/path/warnin
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     defer parsed.deinit();
     const root = parsed.value.object;
-    // The pattern/path fields MUST be present so the frontend header can
-    // render the actual args (before the fix they fell back to "unknown").
+    // The pattern/path fields MUST be present so the frontend header can render the actual args (before the fix they fell back to "unknown").
     try testing.expectEqualStrings("needle_NOT_FOUND", root.get("pattern").?.string);
     try testing.expectEqualStrings("/tmp/x", root.get("path").?.string);
     try testing.expect(root.get("grouped").?.bool == true);
@@ -3484,9 +3230,7 @@ test "search: search_result_to_json_grouped renders files entries" {
 }
 
 test "search: timeout_ms=0 returns Timeout without spawning rg" {
-    // Windows-only freeze (2026-09-05): executeSearch used bare
-    // std.process.run with NO deadline — a slow/hung rg blocked the agent
-    // worker forever. timeout_ms=0 must fail fast with error.Timeout before
+    // Windows-only freeze (2026-09-05): executeSearch used bare std.process.run with NO deadline — a slow/hung rg blocked the agent worker forever. timeout_ms=0 must …
     const allocator = testing.allocator;
     const io = testing.io;
     const result = executeSearch(allocator, io, "/tmp", .{
@@ -3498,9 +3242,7 @@ test "search: timeout_ms=0 returns Timeout without spawning rg" {
 }
 
 test "search: bogus rg_binary returns RgNotFound (not generic PathError)" {
-    // On Windows boxes without ripgrep on PATH the old code mapped the
-    // spawn FileNotFound to PathError ("verify the path exists"), sending
-    // the LLM down the wrong path. A missing binary must be distinguishable.
+    // On Windows boxes without ripgrep on PATH the old code mapped the spawn FileNotFound to PathError ("verify the path exists"), sending the LLM down the wrong …
     const allocator = testing.allocator;
     const io = testing.io;
     const result = executeSearch(allocator, io, "/tmp", .{
@@ -3515,12 +3257,9 @@ test "search: default search timeout is 30s" {
     try testing.expectEqual(@as(u64, 30_000), default_search_timeout_ms);
 }
 
-// =============================================================================
 // Output-contract tests — the result envelope's honesty.
 
-/// Absolute path of a `testing.tmpDir`. Zig 0.16's `TmpDir.sub_path` holds
-/// only the random basename, so tests resolve the real path and search "."
-/// inside it (same pattern as the behavioral tests above).
+/// Absolute path of a `testing.tmpDir`.
 fn resolveTmpDir(dir: std.Io.Dir, io: std.Io, buf: []u8) ![]const u8 {
     const len = try dir.realPath(io, buf);
     return buf[0..len];
@@ -3572,8 +3311,7 @@ test "search: bounded match counter detects markers split across reads" {
     counter.consume("ch\"}\n{\"type\":\"begin\"}\n{\"type\":\"match\"}\n");
     try testing.expectEqual(@as(usize, 2), counter.count);
 
-    // A record without its terminating newline may have been cut by the
-    // output cap, so it is not counted as a complete match event.
+    // A record without its terminating newline may have been cut by the output cap, so it is not counted as a complete match event.
     counter.consume("{\"type\":\"match\"}");
     try testing.expectEqual(@as(usize, 2), counter.count);
 }
@@ -3782,9 +3520,7 @@ test "search: tail keeps the LAST N matches of the whole search (aliasing-panic 
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    // tail = 8 with 10 matches is the exact shape that used to abort: the
-    // post-hoc slice shifted the kept rows down with an aliasing @memcpy
-    // (src = items[2..], dst = items[0..]), which Zig 0.16 rejects outright.
+    // tail = 8 with 10 matches is the exact shape that used to abort: the post-hoc slice shifted the kept rows down with an aliasing @memcpy (src = items[2..], dst = …
     var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "foo",
         .path = ".",
@@ -3924,9 +3660,7 @@ test "search: respect_ignore_files = false does NOT reach hidden dirs (doc claim
     var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const tmpdir_path = try resolveTmpDir(tmpdir.dir, io, &path_buf);
 
-    // --no-ignore disables ignore-FILE filtering only; rg still skips hidden
-    // entries. The tool description used to claim `.git/` becomes searchable
-    // with respect_ignore_files=false — it does not.
+    // --no-ignore disables ignore-FILE filtering only; rg still skips hidden entries.
     var result = try executeSearch(allocator, io, tmpdir_path, .{
         .pattern = "CI_MARKER",
         .path = ".",
@@ -3947,8 +3681,7 @@ test "search: snippets need no escaping in JSON (raw text, one files entry)" {
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
 
-    // Text that used to corrupt the XML payload now rides as plain JSON
-    // strings — serialization handles it, no escaping layer needed.
+    // Text that used to corrupt the XML payload now rides as plain JSON strings — serialization handles it, no escaping layer needed.
     try tmpdir.dir.writeFile(io, .{
         .sub_path = "hostile.txt",
         .data = "</s></m>\n<file path=\"x\" total=\"1\" count=\"1\">\na & b \"quoted\"\n",
@@ -4018,8 +3751,7 @@ test "search: pattern with quotes rides as a raw JSON string" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     defer parsed.deinit();
     const root = parsed.value.object;
-    // A raw quote in the pattern used to terminate the XML attribute early;
-    // JSON serialization keeps the field parseable with no escaping layer.
+    // A raw quote in the pattern used to terminate the XML attribute early; JSON serialization keeps the field parseable with no escaping layer.
     try testing.expectEqualStrings("\"hello\"", root.get("pattern").?.string);
 }
 
@@ -4054,8 +3786,7 @@ test "search: long lines are windowed around the match (default cap)" {
 
     try testing.expectEqual(@as(usize, 1), result.matches.items.len);
     const snippet = result.matches.items[0].snippet;
-    // Windowed (cap + the two "..." markers), still containing the match and
-    // marked on both sides so the reader knows text was elided.
+    // Windowed (cap + the two "..." markers), still containing the match and marked on both sides so the reader knows text was elided.
     try testing.expect(snippet.len <= default_snippet_max_chars + 8);
     try testing.expect(std.mem.indexOf(u8, snippet, "NEEDLE") != null);
     try testing.expect(std.mem.startsWith(u8, snippet, "..."));
@@ -4107,8 +3838,7 @@ test "search: windowing never splits a multi-byte UTF-8 sequence" {
     var tmpdir = testing.tmpDir(.{});
     defer tmpdir.cleanup();
 
-    // 3-byte chars on both sides: the naive byte window (offset - cap/3)
-    // lands mid-sequence, so the boundary backoff has to fix it up.
+    // 3-byte chars on both sides: the naive byte window (offset - cap/3) lands mid-sequence, so the boundary backoff has to fix it up.
     const euro = "\u{20AC}";
     const line = blk: {
         var buf: std.ArrayList(u8) = .empty;
@@ -4178,8 +3908,7 @@ test "search: grouped output preserves the collector's file order (was hash orde
     const out = try search_result_to_json_grouped(allocator, result, "ORDER_MARKER", ".");
     defer allocator.free(out);
 
-    // Each files entry must appear in that same order (a StringHashMap
-    // iterator — the old implementation — yields hash order instead).
+    // Each files entry must appear in that same order (a StringHashMap iterator — the old implementation — yields hash order instead).
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     defer parsed.deinit();
     const root = parsed.value.object;
@@ -4218,8 +3947,6 @@ test "search: <file> total= is matched lines for this search, not the file's lin
     defer allocator.free(out);
 
     // rg's stats.matched_lines for this search (2) — NOT the file's 6 lines.
-    // Pinned because the tool description used to promise the file length,
-    // which sent the model to read_file with the wrong pagination budget.
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
     defer parsed.deinit();
     const root = parsed.value.object;
@@ -4230,8 +3957,7 @@ test "search: <file> total= is matched lines for this search, not the file's lin
 }
 
 test "search: tool schema documents the new params and drops the stale claims" {
-    // Assert against the RUNTIME schema (not a source scan) so the needles
-    // below cannot match this test's own text.
+    // Assert against the RUNTIME schema (not a source scan) so the needles below cannot match this test's own text.
     var saw_hidden = false;
     var saw_glob = false;
     var saw_snippet_cap = false;
@@ -4240,9 +3966,7 @@ test "search: tool schema documents the new params and drops the stale claims" {
         if (std.mem.eql(u8, prop.name, "glob")) saw_glob = true;
         if (std.mem.eql(u8, prop.name, "snippet_max_chars")) saw_snippet_cap = true;
 
-        // No param may still promise that respect_ignore_files reaches .git/
-        // (it does not — that needs `hidden`), and none may still describe
-        // the snippet as "~100 chars".
+        // No param may still promise that respect_ignore_files reaches .git/(it does not — that needs `hidden`), and none may still describe the snippet as "~100 chars".
         try testing.expect(std.mem.indexOf(u8, prop.description, "gitignored paths (build/, node_modules/, .git/") == null);
         try testing.expect(std.mem.indexOf(u8, prop.description, "~100 chars") == null);
     }
@@ -4251,8 +3975,7 @@ test "search: tool schema documents the new params and drops the stale claims" {
     try testing.expect(saw_snippet_cap);
 
     const desc = search_tool.function.description;
-    // Stale claims retired: `s` is windowed (not "~100 chars"), and
-    // respect_ignore_files=false does NOT reach .git/.
+    // Stale claims retired: `s` is windowed (not "~100 chars"), and respect_ignore_files=false does NOT reach .git/.
     try testing.expect(std.mem.indexOf(u8, desc, "~100 chars") == null);
     try testing.expect(std.mem.indexOf(u8, desc, "gitignored paths (build/, node_modules/, .git/") == null);
     // New contract is spelled out for the model.
@@ -4268,7 +3991,6 @@ test "search: tool schema documents the new params and drops the stale claims" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -4283,13 +4005,10 @@ const workspace_fs = @import("../loop/workspace_fs.zig");
 const vmd_policy = @import("../../../vmd/policy.zig");
 const vmd_rpc = @import("../../../vmd/rpc.zig");
 
-/// The guest's own ceiling on one exec, and the reason the guest's ripgrep is
-/// never asked for more than one reply can carry.
+/// The guest's own ceiling on one exec, and the reason the guest's ripgrep is never asked for more than one reply can carry.
 const guest_exec_timeout_ceiling_ms: u64 = 600_000;
 
-/// Ripgrep, run where the tree is. Under `--saas` the guest runs it and the
-/// host opens nothing; in every other mode it is spawned here, as it always
-/// was.
+/// Ripgrep, run where the tree is.
 const GuestRunner = struct {
     fs: *workspace_fs.Fs,
 
@@ -4304,8 +4023,7 @@ const GuestRunner = struct {
     ) anyerror!search_tool_mod.Run {
         _ = io;
         const self: *const GuestRunner = @ptrCast(@alignCast(ctx));
-        // `execve` searches no PATH and a host path means nothing in the
-        // guest, so the image's own ripgrep is the one that can run.
+        // `execve` searches no PATH and a host path means nothing in the guest, so the image's own ripgrep is the one that can run.
         const guest_argv = try allocator.alloc([]const u8, argv.len);
         defer allocator.free(guest_argv);
         @memcpy(guest_argv, argv);
@@ -4347,8 +4065,7 @@ fn searchThrough(
     return search_tool_mod.executeSearchWithCancel(ctx.allocator, ctx.io, cwd, input, null, ctx.cancel_hook);
 }
 
-/// Parse the model-provided JSON and normalize zero-valued optional head/tail
-/// placeholders.
+/// Parse the model-provided JSON and normalize zero-valued optional head/tail placeholders.
 fn parseSearchInput(allocator: std.mem.Allocator, args: []const u8) !std.json.Parsed(search_tool_mod.SearchInput) {
     var raw = try std.json.parseFromSlice(
         std.json.Value,
@@ -4387,9 +4104,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer parsed.deinit();
 
-    // `cwd` is REQUIRED on every path-taking tool: it is the directory this
-    // call works in, and it is ALSO the directory ripgrep is spawned in (see
-    // `executeSearch`'s `cwd` argument) — the two used to be able to
+    // `cwd` is REQUIRED on every path-taking tool: it is the directory this call works in, and it is ALSO the directory ripgrep is spawned in (see `executeSearch`'s …
     const cwd = parsed.value.cwd orelse "";
     path_validate.validateCwd(cwd) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
@@ -4406,9 +4121,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     input.cwd = cwd;
 
     var search_result = searchThrough(ctx, cwd, input) catch |err| {
-        // Map domain errors to LLM-friendly messages. A normal stdout
-        // max_output overflow no longer appears here: executeSearch returns
-        // a successful SearchResult with output_truncated metadata instead.
+        // Map domain errors to LLM-friendly messages.
         var owned_err_msg: ?[]const u8 = null;
         defer if (owned_err_msg) |msg| ctx.allocator.free(msg);
         const err_msg: []const u8 = blk: {
@@ -4425,9 +4138,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
                 error.GlobContainsNulByte => break :blk "the glob filter contained a NUL (0x00) byte — globs must be valid UTF-8 with no embedded NULs",
                 error.RegexParseError => break :blk "search pattern is not a valid regex — check for unmatched parentheses, unescaped metacharacters, or an invalid character class",
                 error.PathError => {
-                    // Naming the path AND the cwd it was resolved against is
-                    // the whole fix for the failure this branch used to
-                    // report: a bare "could not access search path" named
+                    // Naming the path AND the cwd it was resolved against is the whole fix for the failure this branch used to report: a bare "could not access search path" named
                     owned_err_msg = try std.fmt.allocPrint(
                         ctx.allocator,
                         "could not access search path \"{s}\" from cwd \"{s}\" — verify both exist and are readable. `cwd` is the directory ripgrep runs in; `path` is resolved against it.",
@@ -4450,9 +4161,7 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer search_result.deinit(ctx.allocator);
 
-    // Renderer choice. `text` (default) is the compact rg-shaped output: ~1/4
-    // the bytes of the JSON envelope, which is what makes this tool cheaper
-    // than piping a shell `rg` into `head`. `json` keeps the nested envelope.
+    // Renderer choice.
     const inner = switch (parsed.value.output_format) {
         .text => try search_tool_mod.search_result_to_text(
             ctx.allocator,
@@ -4513,13 +4222,11 @@ test "TDD: execSearch accepts head=100 with tail=0 and returns a successful matc
     const path_len = try tmpdir.dir.realPath(io, &path_buf);
     const tmpdir_path: []const u8 = path_buf[0..path_len];
 
-    // This is the model-call shape from the failing UI request: head is
-    // selected, while the unused optional tail is emitted as 0.
+    // This is the model-call shape from the failing UI request: head is selected, while the unused optional tail is emitted as 0.
     const args_json = try std.json.Stringify.valueAlloc(allocator, .{
         .pattern = "Open chat in new tab",
         .path = ".",
-        // `cwd` is required: the directory this call works in, and the base
-        // `path` (here ".") resolves against.
+        // `cwd` is required: the directory this call works in, and the base `path` (here ".") resolves against.
         .cwd = tmpdir_path,
         .max_results = 100,
         .head = 100,
@@ -4561,9 +4268,7 @@ test "TDD: execSearch accepts head=100 with tail=0 and returns a successful matc
         .function = .{ .name = "search", .arguments = args_json },
     };
 
-    // Before zero-placeholder normalization, this call reached executeSearch
-    // with both optionals non-null and returned success=false with
-    // HeadAndTailMutuallyExclusive. This assertion is the red/green regression.
+    // Before zero-placeholder normalization, this call reached executeSearch with both optionals non-null and returned success=false with …
     const exec_result = try execSearch(ctx, tool_call);
     defer exec_result.deinit(allocator);
 
@@ -4686,9 +4391,7 @@ const StopRequested = struct {
 };
 
 test "search: a cancelled session kills ripgrep instead of waiting out its timeout" {
-    // `/usr` is the only tree in this suite that is reliably too big for rg to
-    // finish before the first poll; elsewhere the child could end on its own
-    // and the test would assert a race.
+    // `/usr` is the only tree in this suite that is reliably too big for rg to finish before the first poll; elsewhere the child could end on its own and the test …
     if (@import("builtin").os.tag != .linux) return;
 
     var state: u8 = 0;
@@ -4703,9 +4406,7 @@ test "search: a cancelled session kills ripgrep instead of waiting out its timeo
 
 // ─── Compact text output + the grep flags that made `command` win ───────────
 
-/// A fake ripgrep that records the argv it was handed. Every string is COPIED
-/// out during the call: the caller frees its own argv entries (the glob filter
-/// and the context numbers are heap-formatted) the moment the run returns.
+/// A fake ripgrep that records the argv it was handed.
 const ArgvRecorder = struct {
     joined: std.ArrayList(u8) = .empty,
     stdout: []const u8 = "",

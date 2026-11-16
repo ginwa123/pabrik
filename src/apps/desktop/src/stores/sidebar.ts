@@ -3,21 +3,15 @@ import { ref } from 'vue'
 
 const STORAGE_KEY_CHATS_HEIGHT = 'pabrik-sidebar-chats-height'
 const STORAGE_KEY_NAV_EXPANDED = 'pabrik-sidebar-nav-expanded'
-// Legacy key kept ONLY to seed the renamed projects key once, so
-// existing users don't get a silently re-collapsed section.
+// Legacy key kept ONLY to seed the renamed projects key once, so existing users don't get a silently re-collapsed section.
 const STORAGE_KEY_LEGACY_WORKSPACES_EXPANDED = 'pabrik-sidebar-workspaces-expanded'
 const STORAGE_KEY_PROJECTS_EXPANDED = 'pabrik-sidebar-projects-expanded'
-// Documents section (Migration 095). Separate key from the projects one
-// so collapsing Projects does not collapse Documents — they are
-// independent lists and the user collapses them independently.
+// Documents section (Migration 095).
 const STORAGE_KEY_DOCUMENTS_EXPANDED = 'pabrik-sidebar-documents-expanded'
-// Pinned section (fix: PINNED gone when RECENT collapsed). Separate key
-// from the recents one so collapsing RECENT does not collapse PINNED —
-// they are independent lists and the user collapses them independently.
+// Pinned section (fix: PINNED gone when RECENT collapsed).
 const STORAGE_KEY_PINNED_EXPANDED = 'pabrik-sidebar-pinned-expanded'
 const STORAGE_KEY_RIGHT_SIDEBAR_WIDTH = 'pabrik-right-sidebar-width'
-// One key, because there is one list: the global/local split was the
-// two-tier filesystem, and the list is now one workspace's rows.
+// One key, because there is one list: the global/local split was the two-tier filesystem, and the list is now one workspace's rows.
 const STORAGE_KEY_SKILLS_EXPANDED = 'pabrik-sidebar-skills-expanded'
 const DEFAULT_CHATS_HEIGHT = 40
 const MIN_CHATS_HEIGHT = 10
@@ -112,8 +106,7 @@ export const useSidebarStore = defineStore('sidebar', () => {
     return true // Default to expanded
   }
 
-  // Load projects section expanded state — the renamed key first,
-  // then the legacy workspaces key as a one-time seed source.
+  // Load projects section expanded state — the renamed key first, then the legacy workspaces key as a one-time seed source.
   const loadProjectsExpanded = (): boolean => {
     const saved = localStorage.getItem(STORAGE_KEY_PROJECTS_EXPANDED)
     if (saved !== null) {
@@ -129,9 +122,7 @@ export const useSidebarStore = defineStore('sidebar', () => {
   const navExpanded = ref(loadNavExpanded())
   const projectsExpanded = ref(loadProjectsExpanded())
 
-  // Load documents section expanded state. Default expanded so a fresh
-  // install shows the new section's contents, matching the projects and
-  // recent sections.
+  // Load documents section expanded state.
   const loadDocumentsExpanded = (): boolean => {
     const saved = localStorage.getItem(STORAGE_KEY_DOCUMENTS_EXPANDED)
     if (saved !== null) {
@@ -151,9 +142,7 @@ export const useSidebarStore = defineStore('sidebar', () => {
     saveDocumentsExpanded()
   }
 
-  // Pinned section expanded state. Default expanded so existing pins stay
-  // visible, matching the recents section. Independent from navExpanded
-  // so collapsing RECENT keeps PINNED on screen.
+  // Pinned section expanded state.
   const loadPinnedExpanded = (): boolean => {
     const saved = localStorage.getItem(STORAGE_KEY_PINNED_EXPANDED)
     if (saved !== null) {

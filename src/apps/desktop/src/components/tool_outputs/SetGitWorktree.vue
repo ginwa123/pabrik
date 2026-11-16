@@ -7,18 +7,14 @@ import ToolParameters from './_shared/ToolParameters.vue'
 const props = defineProps<{
   content: unknown
   expanded?: boolean
-  /** Tool-call args (XML from jsonArgsToXml, or JSON). Accepted so the
-   *  dispatcher can thread call args uniformly; the worktree result
-   *  carries no "unknown" fallback that needs it today. */
+  /** Tool-call args (XML from jsonArgsToXml, or JSON). */
   parameters?: string
 }>()
 
 const isExpanded = ref(props.expanded ?? false)
 
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
@@ -30,8 +26,7 @@ const parsed = computed(() => {
   return p
 })
 
-// Running: result envelope is still empty (neither created nor cleared,
-// no error yet).
+// Running: result envelope is still empty (neither created nor cleared, no error yet).
 const isRunning = computed(() => isEmptyContent(props.content))
 
 const pathBasename = (p: string): string => {

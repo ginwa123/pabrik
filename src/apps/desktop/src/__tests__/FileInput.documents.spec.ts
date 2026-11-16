@@ -1,5 +1,4 @@
-/** The paperclip flow takes documents as well as images and video: a PDF rides along as a file
- * attachment, a text document as text. */
+/** The paperclip flow takes documents as well as images and video: a PDF rides along as a file attachment, a text document as text. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -23,8 +22,7 @@ async function mountInput() {
   return wrapper
 }
 
-/** Drive the hidden native file input the paperclip button opens. jsdom's `files` setter
- * demands a real FileList, so the property is defined instead of assigned. */
+/** Drive the hidden native file input the paperclip button opens. jsdom's `files` setter demands a real FileList, so the property is defined instead of assigned. */
 function selectFiles(wrapper: ReturnType<typeof mount>, files: File[]) {
   const input = wrapper.find('input[type="file"]')
   Object.defineProperty(input.element, 'files', { value: files, configurable: true })

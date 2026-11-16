@@ -1,6 +1,4 @@
-//! End-to-end functional test for the MCP stdio timeout / cancel-callback /
-//! markStale self-healing fix (plan 2026-08-28-fix-mcp-stdio-blocking). The
-//! fix's three layers: 1.
+//! End-to-end functional test for the MCP stdio timeout / cancel-callback /markStale self-healing fix (plan 2026-08-28-fix-mcp-stdio-blocking).
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,12 +9,10 @@ const io = testing.io;
 
 const builtin = @import("builtin");
 
-/// The hung-server fixture, relative to the REPO ROOT. Python derived this
-/// from `Path(__file__).resolve().parent`, which is absolute by construction.
+/// The hung-server fixture, relative to the REPO ROOT.
 const HUNG_SERVER = "tests/functional/fixtures/hung-server.sh";
 
-/// The canonical MCP stdio `tools/list` frame, plus the extra newline the
-/// Python wrote so the fixture's `read -r _discarded` returns.
+/// The canonical MCP stdio `tools/list` frame, plus the extra newline the Python wrote so the fixture's `read -r _discarded` returns.
 const TOOLS_LIST_FRAME =
     "Content-Length: 78\r\n\r\n" ++
     "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tools/list\",\"params\":{}}";
@@ -39,9 +35,7 @@ const Hung = struct {
         gpa.free(self.stdout_path);
     }
 
-    /// The bytes the child has written to stdout so far. Owned. A hung
-    /// fixture writes none, so this is normally empty; a non-empty result is
-    /// the failure signal.
+    /// The bytes the child has written to stdout so far.
     fn readStdout(self: *Hung) ![]u8 {
         return std.Io.Dir.cwd().readFileAlloc(io, self.stdout_path, gpa, .limited(1 << 20)) catch
             try gpa.dupe(u8, "");
@@ -77,9 +71,7 @@ fn spawnHung(scratch: []const u8, stdin_text: []const u8) !Hung {
     const stdout_path = try std.fs.path.join(gpa, &.{ scratch, "hung-stdout" });
     errdefer gpa.free(stdout_path);
 
-    // Both handles stay open until the spawn returns: `SpawnOptions
-    // .stdin/.stdout = .{ .file = h }` hands the CHILD its own dup of the
-    // descriptor, so closing early would leave the fixture reading and
+    // Both handles stay open until the spawn returns: `SpawnOptions .stdin/.stdout = .{ .file = h }` hands the CHILD its own dup of the descriptor, so closing early …
     var in_file = try std.Io.Dir.cwd().createFile(io, stdin_path, .{});
     defer in_file.close(io);
     try in_file.writeStreamingAll(io, stdin_text);
@@ -91,30 +83,23 @@ fn spawnHung(scratch: []const u8, stdin_text: []const u8) !Hung {
         .argv = &.{argv},
         .stdin = .{ .file = in_file },
         .stdout = .{ .file = out_file },
-        // Python: `stderr=subprocess.DEVNULL`. The fixture writes
-        // nothing there, and inheriting the test runner's stderr would
-        // interleave bash noise into the suite's output.
+        // Python: `stderr=subprocess.DEVNULL`.
         .stderr = .ignore,
     });
     return .{ .child = child, .pid = @intCast(child.id.?), .stdout_path = stdout_path };
 }
 
-// A hung stdio child does not write a tools/list response within `deadline_s
-// + slack`.
+// A hung stdio child does not write a tools/list response within `deadline_s + slack`.
 test "hung_child_does_not_send_response_within_1s" {
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch); // LAST
     defer harness.cleanupExtraDir(io, gpa, scratch); // before the free
 
-    // Python writes the frame, then an extra newline so the child's
-    // `read` returns. Kept as one buffer: the fixture consumes one
-    // line either way, and the byte count is not the subject.
+    // Python writes the frame, then an extra newline so the child's `read` returns.
     var hung = try spawnHung(scratch, TOOLS_LIST_FRAME ++ "\n");
     defer hung.deinit(); // FIRST — the `sleep 3600` must not outlive us
 
-    // We're proving the NEGATIVE: the hung child does NOT send a tools/list
-    // response. The Python helper polled in 0.5s slices and raised
-    // TimeoutError when the deadline passed with nothing to read.
+    // We're proving the NEGATIVE: the hung child does NOT send a tools/list response.
     const start = std.Io.Timestamp.now(io, .awake).toMilliseconds();
     const deadline = start + DEADLINE_MS;
     var arrived: ?[]u8 = null;
@@ -144,9 +129,7 @@ test "hung_child_does_not_send_response_within_1s" {
         return error.TestUnexpectedResult;
     }
 
-    // Python: `assert elapsed >= 1.0` — the timeout fired for the
-    // right reason (we waited the whole window) rather than because
-    // the poll gave up on the first empty read.
+    // Python: `assert elapsed >= 1.0` — the timeout fired for the right reason (we waited the whole window) rather than because the poll gave up on the first empty …
     const elapsed = std.Io.Timestamp.now(io, .awake).toMilliseconds() - start;
     if (elapsed < DEADLINE_MS) {
         std.debug.print(
@@ -158,8 +141,7 @@ test "hung_child_does_not_send_response_within_1s" {
     }
 }
 
-// After killing the hung child, a fresh spawn with the same argv produces a
-// NEW PID.
+// After killing the hung child, a fresh spawn with the same argv produces a NEW PID.
 test "hung_child_can_be_replaced_by_fresh_process" {
     const scratch = try harness.makeScratchDir(gpa);
     defer gpa.free(scratch); // LAST
@@ -167,9 +149,7 @@ test "hung_child_can_be_replaced_by_fresh_process" {
 
     var proc1 = try spawnHung(scratch, "");
     const pid1 = proc1.pid;
-    // Scoped block: Python's `try/finally` around the FIRST child. `deinit`
-    // kills AND reaps, which is what makes the second spawn's pid comparison
-    // meaningful — an unreaped zombie would still be holding its pid.
+    // Scoped block: Python's `try/finally` around the FIRST child.
     {
         defer proc1.deinit();
 
@@ -205,9 +185,7 @@ test "hung_child_can_be_replaced_by_fresh_process" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never
-    // type-checked, so a stdlib rename inside one would stay invisible
-    // until some caller appeared.
+    // Body-analysis barrier: an unreferenced function is never type-checked, so a stdlib rename inside one would stay invisible until some caller appeared.
     _ = Hung;
     _ = Hung.deinit;
     _ = Hung.readStdout;

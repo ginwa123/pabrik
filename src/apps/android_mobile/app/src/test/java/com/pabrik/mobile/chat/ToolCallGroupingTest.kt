@@ -4,15 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * A tool call and the output that answers it are one thing to look at.
- *
- * The backend sends them as two rows, so a plain role-run grouping draws the
- * run as a stripe of interleaved cards and "1 TOOL command" lines — the
- * screenshot this replaces. These pin the fold, and just as importantly the
- * cases where it must NOT fold, because each of those loses information if it
- * does.
- */
+/** A tool call and the output that answers it are one thing to look at. */
 class ToolCallGroupingTest {
 
     private fun declaration(id: String, vararg calls: Pair<String, String>) = ChatMessage(
@@ -63,8 +55,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `an answered call gets no summary line`() {
-        // The card already shows the tool's name and arguments. A second line
-        // saying "1 TOOL" above it is the duplicate this removes.
+        // The card already shows the tool's name and arguments.
         val groups = groupMessages(
             listOf(
                 declaration("a1", "c1" to "read_file"),
@@ -77,9 +68,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `a whole run of calls and outputs draws no summary line at all`() {
-        // The exact shape in the report: a dozen alternating pairs. Every
-        // declaration is answered, so the transcript is a clean run of cards
-        // with nothing interleaved between them.
+        // The exact shape in the report: a dozen alternating pairs.
         val messages = buildList {
             repeat(12) { index ->
                 add(declaration("a$index", "c$index" to "command"))
@@ -89,9 +78,7 @@ class ToolCallGroupingTest {
 
         val groups = groupMessages(messages)
 
-        // One item per tool result, and not one per declaration as well: the
-        // answered declarations have nothing left to draw and are dropped by
-        // the empty-group filter rather than left as blank bands.
+        // One item per tool result, and not one per declaration as well: the answered declarations have nothing left to draw and are dropped by the empty-group filter …
         assertEquals(12, groups.size)
         assertTrue(groups.all { it.role == ChatMessage.ROLE_TOOL })
         assertTrue(groups.all { it.unpairedToolCalls.isEmpty() })
@@ -103,8 +90,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `consecutive outputs of one call collapse into a single item`() {
-        // One declaration, several results: the fan-out shape. The declaration
-        // folds away and the results are one item, so the pair reads as one row.
+        // One declaration, several results: the fan-out shape.
         val groups = groupMessages(
             listOf(
                 declaration("a1", "c1" to "search"),
@@ -121,9 +107,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `a call with no result yet keeps its summary`() {
-        // The live window between the declaration landing and the result
-        // arriving. Nothing else is drawing this, so hiding it would make a
-        // running tool call invisible.
+        // The live window between the declaration landing and the result arriving.
         val groups = groupMessages(listOf(declaration("a1", "c1" to "read_file")))
 
         assertEquals(1, groups.size)
@@ -157,9 +141,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `folding never re-keys the run it folded into`() {
-        // The run was on screen with its cards open before the declaration's
-        // results landed. Absorbing the declaration must not re-key the group,
-        // because a re-key discards that state.
+        // The run was on screen with its cards open before the declaration's results landed.
         val before = groupMessages(listOf(result("t1", "c1", "read_file")))
         val after = groupMessages(
             listOf(
@@ -174,9 +156,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `a declaration in a turn that also talks keeps its summary`() {
-        // Both rows are `assistant`, so they share one group. The prose is the
-        // sentence worth reading, and the declaration beside it is the call
-        // that has not come back yet — neither may swallow the other.
+        // Both rows are `assistant`, so they share one group.
         val groups = groupMessages(
             listOf(
                 declaration("a1", "c1" to "read_file"),
@@ -191,8 +171,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `a declaration that also carries prose stays its own turn`() {
-        // "Let me check that" is the model talking. Folding it away would throw
-        // the sentence out of the transcript.
+        // "Let me check that" is the model talking.
         val talking = declaration("a1", "c1" to "read_file").copy(
             content = "Let me check that file.",
         )
@@ -206,8 +185,7 @@ class ToolCallGroupingTest {
 
     @Test
     fun `a declaration with unparseable tool_calls_json is dropped, not drawn blank`() {
-        // The empty-group filter is what keeps a row that renders nothing from
-        // reserving a band of viewport and landing the auto-scroll short.
+        // The empty-group filter is what keeps a row that renders nothing from reserving a band of viewport and landing the auto-scroll short.
         val broken = declaration("a1").copy(toolCallsJson = "not json at all")
 
         assertTrue(groupMessages(listOf(broken)).isEmpty())

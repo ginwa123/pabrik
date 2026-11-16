@@ -1,6 +1,4 @@
-//! `POST /api/llm/session/:session_id/answer` — resolve a pending question and
-//! resume the conversation. The answer rewrites the block the model wrote, and
-//! its `llm_full` frame flips the card without a reload.
+//! `POST /api/llm/session/:session_id/answer` — resolve a pending question and resume the conversation.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -24,13 +22,11 @@ pub const AnswerError = error{
     LookupFailed,
     ResumeFailed,
     GlobalContextNotInitialized,
-    /// `resolveQuestion` dupes the outcome's strings; unreachable on the
-    /// per-request arena, but the type system requires the variant.
+    /// `resolveQuestion` dupes the outcome's strings; unreachable on the per-request arena, but the type system requires the variant.
     OutOfMemory,
 };
 
-/// Request body. `question_id` is preferred; `message_id` names the assistant
-/// row the card is drawn under.
+/// Request body.
 pub const AnswerBody = struct {
     question_id: []const u8 = "",
     message_id: []const u8 = "",
@@ -45,8 +41,7 @@ pub const AnswerOutcome = struct {
     status: []u8,
     /// The stored answer ("" when skipped / already skipped).
     answer: []u8,
-    /// False when the question was already resolved — the response is still
-    /// 200; `resumed` is false because no new run was started.
+    /// False when the question was already resolved — the response is still 200; `resumed` is false because no new run was started.
     resumed: bool,
 
     pub fn deinit(self: *const AnswerOutcome, allocator: std.mem.Allocator) void {
@@ -55,8 +50,7 @@ pub const AnswerOutcome = struct {
     }
 };
 
-/// Validate the wire shape of `answer` against the question's own
-/// `multi_select` flag.
+/// Validate the wire shape of `answer` against the question's own `multi_select` flag.
 pub fn validateAnswerShape(answer: []const u8, multi_select: bool, skip: bool) AnswerError!void {
     if (skip) return;
 
@@ -84,13 +78,11 @@ pub const ResolveInput = struct {
     question_id: []const u8,
     answer: []const u8,
     skip: bool,
-    /// How many values the answer carries (for the payload's
-    /// `"answers_count"`). 1 unless the caller parsed a multi-select array.
+    /// How many values the answer carries (for the payload's `"answers_count"`). 1 unless the caller parsed a multi-select array.
     answers_count: usize = 1,
 };
 
-/// Steps 1–3 for the DB side: find the row, validate, mark it resolved and
-/// rewrite the tool-result row. Returns the outcome; the caller then resumes.
+/// Steps 1–3 for the DB side: find the row, validate, mark it resolved and rewrite the tool-result row.
 pub fn resolveQuestion(input: ResolveInput) AnswerError!AnswerOutcome {
     const allocator = input.allocator;
 
@@ -122,8 +114,7 @@ pub fn resolveQuestion(input: ResolveInput) AnswerError!AnswerOutcome {
         return error.RewriteFailed;
     };
 
-    // Rebuild the tool result the model will read on resume. The question
-    // text travels with it so the transcript stays self-describing.
+    // Rebuild the tool result the model will read on resume.
     const inner = ask_user_mod.buildAskUserJson(allocator, .{
         .status = target,
         .question_id = question.id,
@@ -149,9 +140,7 @@ pub fn resolveQuestion(input: ResolveInput) AnswerError!AnswerOutcome {
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn askUserAnswerHandler(
     ctx: gserverz.HttpContext,
@@ -291,9 +280,7 @@ pub fn askUserAnswerHandler(
     });
 }
 
-/// How many questions for this session are still `pending`. Zero is the
-/// signal to resume: this answer was the last one the human owed, so the
-/// model can be given the whole turn at once.
+/// How many questions for this session are still `pending`.
 fn remainingQuestions(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -311,7 +298,6 @@ fn remainingQuestions(
 }
 
 /// How many values the answer holds, for the payload's `"answers_count"`.
-/// A JSON array → its length; anything else → 1.
 fn countAnswers(allocator: std.mem.Allocator, answer: []const u8) usize {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, answer, .{}) catch return 1;
     defer parsed.deinit();
@@ -319,9 +305,7 @@ fn countAnswers(allocator: std.mem.Allocator, answer: []const u8) usize {
     return 1;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
@@ -370,8 +354,7 @@ test "remainingQuestions: counts only THIS session's still-pending questions" {
 
     try insertQuestionRow(allocator, &db, "q1", "s1", "pending");
     try insertQuestionRow(allocator, &db, "q2", "s1", "pending");
-    // Another session's open question must not hold THIS one back, or two
-    // unrelated chats would deadlock each other.
+    // Another session's open question must not hold THIS one back, or two unrelated chats would deadlock each other.
     try insertQuestionRow(allocator, &db, "q3", "s2", "pending");
     try testing.expectEqual(@as(usize, 2), remainingQuestions(allocator, &db, "s1"));
 
@@ -381,8 +364,7 @@ test "remainingQuestions: counts only THIS session's still-pending questions" {
     try insertQuestionRow(allocator, &db, "q6", "s1", "abandoned");
     try testing.expectEqual(@as(usize, 2), remainingQuestions(allocator, &db, "s1"));
 
-    // Resolving one drops the count by exactly one — this is the transition
-    // that turns a deferred answer into the resuming one.
+    // Resolving one drops the count by exactly one — this is the transition that turns a deferred answer into the resuming one.
     try db.exec(allocator, "UPDATE session_pending_question SET status = 'answered' WHERE id = 'q1'", &.{});
     try testing.expectEqual(@as(usize, 1), remainingQuestions(allocator, &db, "s1"));
 
@@ -399,8 +381,7 @@ test "remainingQuestions: an unreadable table reports 0 so a resume still happen
     var db: pabrikcore.database.Db = .{};
     defer db.deinit();
     try test_db.openMemory(&db, threaded.io());
-    // No session_pending_question table at all. Reporting 0 keeps the
-    // pre-existing "just resume" behaviour instead of stalling the session.
+    // No session_pending_question table at all.
     try testing.expectEqual(@as(usize, 0), remainingQuestions(allocator, &db, "s1"));
 }
 
@@ -474,8 +455,6 @@ test "ask_user_answer: parameters is mandatory in the envelope" {
     const envelope = try wrapToolOutput(a, ask_user_mod.NAME, "{}", true, null, inner);
     defer a.free(envelope);
 
-    // The frontend's `unwrapToolOutput` throws unless tool AND parameters AND
-    // success are all present — a rewrite without parameters made the card
-    // fall back to an empty pending render, so every resolved question looked
+    // The frontend's `unwrapToolOutput` throws unless tool AND parameters AND success are all present — a rewrite without parameters made the card fall back to an …
     try testing.expect(std.mem.indexOf(u8, envelope, "\"parameters\":{}") != null);
 }

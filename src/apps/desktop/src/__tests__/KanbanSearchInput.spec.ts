@@ -1,5 +1,4 @@
-/** Behavioural tests for <KanbanSearchInput>.The component is a compact input
- * + clear button + Esc-to-clear. */
+/** Behavioural tests for <KanbanSearchInput>.The component is a compact input + clear button + Esc-to-clear. */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 

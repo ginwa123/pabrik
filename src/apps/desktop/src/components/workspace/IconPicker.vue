@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** The `Change icon…` flyout: a searchable grid of every glyph `UiIcon` can
- * draw, plus `Reset to default`. The parent mounts it with `v-if`, so opening
- * it is a fresh mount — no stale search text, no stale `current`. */
+/** The `Change icon…` flyout: a searchable grid of every glyph `UiIcon` can draw, plus `Reset to default`. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'

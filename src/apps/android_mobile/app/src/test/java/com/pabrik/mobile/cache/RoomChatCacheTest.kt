@@ -17,19 +17,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The transcript cache against a **real** SQLite database.
- *
- * Every assertion here is about something the move to Room made structural, and
- * which therefore has to be tested against the SQL rather than against a
- * re-implementation of it: a composite primary key that *cannot* be escaped,
- * `ORDER BY … LIMIT` that does not parse every row to answer "give me the
- * newest five", and `INSERT … ON CONFLICT REPLACE` as the write-through merge.
- *
- * A JVM test against an in-memory `ChatCache` would prove none of that, which
- * is why this runs on Robolectric — it opens the same `android.database.sqlite`
- * the device does.
- */
+/** The transcript cache against a **real** SQLite database. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class RoomChatCacheTest {
@@ -79,10 +67,7 @@ class RoomChatCacheTest {
     fun anUnresolvedIdentityIsAMissRatherThanAnUnscopedRead() {
         cache.writeMessages(USER, SESSION, listOf(message("m1", 100)))
 
-        // Stricter than the web's `userScopedKey`, which falls back to an
-        // UNSCOPED key when identity is unresolved. On a phone that fallback is
-        // exactly the case where one account's chat shows up for the next, so
-        // the fallback has to be inexpressible rather than merely discouraged.
+        // Stricter than the web's `userScopedKey`, which falls back to an UNSCOPED key when identity is unresolved.
         assertNull(cache.readMessages(null, SESSION, 10))
         assertNull(cache.readMessages("   ", SESSION, 10))
         assertNull(cache.readMessages(USER, "   ", 10))
@@ -126,18 +111,14 @@ class RoomChatCacheTest {
             (1L..5L).map { message("m$it", it * 100) },
         )
 
-        // Newest first, and the cap takes the newest — the two halves of the
-        // IndexedDB `getAll` contract the paint-from-cache path depends on.
+        // Newest first, and the cap takes the newest — the two halves of the IndexedDB `getAll` contract the paint-from-cache path depends on.
         assertEquals(listOf("m5", "m4", "m3"), ids(cache.readMessages(USER, SESSION, 3)))
         assertEquals(listOf("m5", "m4", "m3", "m2", "m1"), ids(cache.readMessages(USER, SESSION, 50)))
     }
 
     @Test
     fun rowsSharingATimestampBreakTiesByIdSoThePaintIsDeterministic() {
-        // The backend stamps by whole seconds often enough that ties are the
-        // normal case, not the exotic one. Without a total order two launches
-        // of the same transcript would paint the same turns in a different
-        // order, which reads as the list shuffling itself.
+        // The backend stamps by whole seconds often enough that ties are the normal case, not the exotic one.
         cache.writeMessages(USER, SESSION, listOf(message("b", 100), message("a", 100)))
 
         assertEquals(listOf("b", "a"), ids(cache.readMessages(USER, SESSION, 10)))
@@ -145,9 +126,7 @@ class RoomChatCacheTest {
 
     @Test
     fun aLimitOfZeroStillReturnsSomethingUsable() {
-        // The old cache did `.take(limit.coerceAtLeast(1))`. A negative limit
-        // reaching SQLite would make `LIMIT -1` mean "no limit", which is the
-        // exact opposite of what a caller passing 0 was asking for.
+        // The old cache did `.take(limit.coerceAtLeast(1))`.
         cache.writeMessages(USER, SESSION, listOf(message("m1", 100), message("m2", 200)))
 
         assertEquals(listOf("m2"), ids(cache.readMessages(USER, SESSION, 0)))
@@ -175,9 +154,7 @@ class RoomChatCacheTest {
     fun writingNothingLeavesTheCacheAlone() {
         cache.writeMessages(USER, SESSION, listOf(message("m1", 100)))
 
-        // "The page came back empty" is a normal tail-fetch answer. Treating it
-        // as "this session has no messages" would blank the transcript the
-        // moment the reader reached the top of it.
+        // "The page came back empty" is a normal tail-fetch answer.
         cache.writeMessages(USER, SESSION, emptyList())
 
         assertEquals(listOf("m1"), ids(cache.readMessages(USER, SESSION, 10)))
@@ -185,8 +162,7 @@ class RoomChatCacheTest {
 
     @Test
     fun aRowKeepsTheWholeServerObjectNotAProjection() {
-        // A field this client has never heard of must survive the round trip,
-        // or the cached paint and the live paint disagree about a transcript.
+        // A field this client has never heard of must survive the round trip, or the cached paint and the live paint disagree about a transcript.
         val wire = JSONObject()
             .put("id", "m1")
             .put("content", "hi")
@@ -214,10 +190,7 @@ class RoomChatCacheTest {
 
     @Test
     fun aRowIsStoredInThePartitionItWasWrittenIntoNotTheOneItClaims() {
-        // `CachedChatMessage` carries its own `sessionId`, and the two agree in
-        // every current call site. If they ever disagreed the row would be
-        // written where the caller never looks, and would silently consume the
-        // retention budget of a session nobody is reading.
+        // `CachedChatMessage` carries its own `sessionId`, and the two agree in every current call site.
         val mislabelled = message("m1", 100).copy(sessionId = "some_other_session")
 
         cache.writeMessages(USER, SESSION, listOf(mislabelled))
@@ -237,11 +210,7 @@ class RoomChatCacheTest {
             (1L..5L).map { message("m$it", it * 100) },
         )
 
-        // A row store is append-only by nature, and the file cache it replaced
-        // was rewritten whole on every write. Without a ceiling, opening a long
-        // session and scrolling through it would leave a row per turn on the
-        // device forever. The newest are the ones kept, because those are the
-        // ones a cold boot paints.
+        // A row store is append-only by nature, and the file cache it replaced was rewritten whole on every write.
         assertEquals(listOf("m5", "m4", "m3"), ids(small.readMessages(USER, SESSION, 50)))
     }
 
@@ -272,9 +241,7 @@ class RoomChatCacheTest {
     fun aBlankCursorClearsTheStoredOne() {
         cache.writeCursor(USER, SESSION, "500")
 
-        // "There is no cursor any more" is a real state — it is what makes the
-        // next open a full descending load instead of a tail fetch — so it has
-        // to be expressible as a delete and not just as an absent write.
+        // "There is no cursor any more" is a real state — it is what makes the next open a full descending load instead of a tail fetch — so it has to be expressible as …
         cache.writeCursor(USER, SESSION, null)
         assertNull(cache.readCursor(USER, SESSION))
 
@@ -294,9 +261,7 @@ class RoomChatCacheTest {
 
     @Test
     fun theOlderPageKeepsBothTheCursorAndTheVerdict() {
-        // Half of it is not enough. A cursor with no verdict re-arms
-        // scroll-back against a transcript that is already complete; a verdict
-        // with no cursor arms a request the app cannot make.
+        // Half of it is not enough.
         cache.writeOlderPage(USER, SESSION, ChatOlderPage(cursor = "500", hasMore = true))
         assertEquals(
             ChatOlderPage(cursor = "500", hasMore = true),
@@ -325,8 +290,7 @@ class RoomChatCacheTest {
     fun aNullOlderPageDropsTheStoredOne() {
         cache.writeOlderPage(USER, SESSION, ChatOlderPage(cursor = "500", hasMore = true))
 
-        // Reaching the start of a transcript is a fact worth keeping, and the
-        // only way to keep it is to overwrite rather than leave stale.
+        // Reaching the start of a transcript is a fact worth keeping, and the only way to keep it is to overwrite rather than leave stale.
         cache.writeOlderPage(USER, SESSION, null)
 
         assertNull(cache.readOlderPage(USER, SESSION))
@@ -361,8 +325,7 @@ class RoomChatCacheTest {
 
         cache.clear()
 
-        // Sign-out only clears the cookie, so anything left behind here would be
-        // painted for whoever signs in next on a shared device.
+        // Sign-out only clears the cookie, so anything left behind here would be painted for whoever signs in next on a shared device.
         assertNull(cache.readMessages(USER, SESSION, 10))
         assertNull(cache.readMessages("user_b", "sess_2", 10))
         assertNull(cache.readCursor(USER, SESSION))

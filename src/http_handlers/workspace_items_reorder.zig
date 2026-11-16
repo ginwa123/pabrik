@@ -6,11 +6,8 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
 // ─── Pattern: thin handler + use case in one file ─────────────────────────
-// Mirrors `workspaces_reorder.zig` exactly, scoped to a single workspace's
-// items.
 
-/// HTTP handler: POST /api/workspaces/:workspace_id/items/reorder URL param:
-/// `workspace_id` (the workspace whose items are being reordered).
+/// HTTP handler: POST /api/workspaces/:workspace_id/items/reorder URL param
 pub fn workspaceItemsReorderHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -18,15 +15,13 @@ pub fn workspaceItemsReorderHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Step 1: extract the workspace_id URL param. The use case
-    // trusts its inputs, so we validate up front.
+    // Step 1: extract the workspace_id URL param.
     const workspace_id = req.params.get("workspace_id") orelse "";
     if (workspace_id.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "workspace_id required" }) });
     }
 
-    // Step 2: parse the body. Handler is responsible for ALL HTTP
-    // parsing.
+    // Step 2: parse the body.
     const body = req.body;
     if (body.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "body required" }) });
@@ -44,9 +39,7 @@ pub fn workspaceItemsReorderHandler(
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "ordered_ids must be an array" }) });
     }
 
-    // Step 3: extract string IDs from the JSON array. The use case
-    // trusts its input, so any non-string entries are silently
-    // dropped here.
+    // Step 3: extract string IDs from the JSON array.
     var ids = std.ArrayList([]const u8).empty;
     defer ids.deinit(allocator);
     for (ordered_ids_val.array.items) |item| {
@@ -66,8 +59,6 @@ pub fn workspaceItemsReorderHandler(
 }
 
 // ─── Use case ──────────────────────────────────────────────────────────────
-// Pure business logic: validate, compute positions, write to DB. Returns a
-// typed `ReorderResult`.
 const MAX_REORDER_IDS: usize = 100;
 
 const ReorderResult = struct {
@@ -80,8 +71,7 @@ const ReorderError = error{
     IntegerTooLarge,
 };
 
-// Position formula: the i-th id in the array gets `position = (count - 1 -
-// i)`.
+// Position formula: the i-th id in the array gets `position = (count - 1 -i)`.
 fn reorderWorkspaceItems(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -93,21 +83,16 @@ fn reorderWorkspaceItems(
     const count: i64 = @intCast(ordered_ids.len);
     var updated_count: usize = 0;
 
-    // Stack-allocated int→string buffer. Reused across iterations. 32 bytes
-    // is enough for any i64 (max 20 chars including sign).
+    // Stack-allocated int→string buffer.
     var buf: [32]u8 = undefined;
 
     for (ordered_ids, 0..) |id_str, i| {
         const new_pos: i64 = count - 1 - @as(i64, @intCast(i));
-        // `bufPrint` into a fixed buffer — no heap allocation. Only fails on
-        // actual buffer overflow, which a 32-byte buffer for an i64 cannot
-        // hit. Treat as a programmer error.
+        // `bufPrint` into a fixed buffer — no heap allocation.
         const pos_str = std.fmt.bufPrint(&buf, "{d}", .{new_pos}) catch {
             return error.IntegerTooLarge;
         };
-        // Scope the UPDATE by workspace_id so a payload containing an item
-        // from a different workspace silently no-ops (defense-in-depth: the
-        // URL param is the source of truth for which workspace's items are
+        // Scope the UPDATE by workspace_id so a payload containing an item from a different workspace silently no-ops (defense-in-depth: the URL param is the source of …
         db.exec(allocator, "UPDATE workspace_items SET position = ?, updated_at = datetime('now') WHERE id = ? AND workspace_id = ?", &.{ pos_str, id_str, workspace_id }) catch {
             return error.DatabaseUpdateFailed;
         };

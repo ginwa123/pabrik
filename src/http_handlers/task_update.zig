@@ -9,77 +9,57 @@ const image_urls_validation = @import("image_urls_validation.zig");
 const video_urls_validation = @import("video_urls_validation.zig");
 const kanban_deps = pabrikcore.ai_mod.kanban_deps;
 
-/// PUT /api/workspaces/tasks/:task_id - Update task by ID only (no
-/// workspace/item needed). Body: { name?, session_id?, description?, tags?,
-/// image_urls?, cwd? }.
+/// PUT /api/workspaces/tasks/:task_id - Update task by ID only (no workspace/item needed).
 pub fn tasksUpdateByIdHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     return updateTaskHandler(ctx, req, res);
 }
 
-/// PUT /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id
-/// (Same body and behavior as tasksUpdateByIdHandler.)
+/// PUT /api/workspaces/:workspace_id/items/:item_id/tasks/:task_id (Same body and behavior as tasksUpdateByIdHandler.)
 pub fn tasksUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     return updateTaskHandler(ctx, req, res);
 }
 
-// =====================================================================
 // Error set + input/output types for the useCase
-// =====================================================================
 
 pub const TaskUpdateError = error{
     OutOfMemory,
     InvalidJson,
     MissingBody,
     FailedToUpdateTask,
-    /// Kanban task tags validation (Migration 067). Empty,
-    /// too long, or contains forbidden characters (only
-    /// [a-zA-Z0-9_-] allowed). See tags_validation.zig.
+    /// Kanban task tags validation (Migration 067).
     InvalidTags,
-    /// Per-task cwd validation (Migration 070 — kanban-cwd-session- optional
-    /// plan).
+    /// Per-task cwd validation (Migration 070 — kanban-cwd-session- optional plan).
     CwdTooLong,
     CwdNotAbsolute,
     CwdContainsControlChar,
     /// Image urls validation (Migration 069 — kanban image urls column).
-    /// Mirrors the create handler's errors — malformed data URL prefix (400)
-    /// or the 10 MB total cap (413).
     InvalidImageUrls,
     ImageUrlsTooLarge,
-    /// Video urls validation (Migration 090). Same contract with
-    /// a 25 MB cap.
+    /// Video urls validation (Migration 090).
     InvalidVideoUrls,
     VideoUrlsTooLarge,
-    /// Migration 111 — `depends_on` rejects a task that names itself, a task
-    /// from a DIFFERENT kanban, a set that would close a dependency cycle, and
-    /// a set over the 32-dependency cap.
+    /// Migration 111 — `depends_on` rejects a task that names itself, a task from a DIFFERENT kanban, a set that would close a dependency cycle, and a set over the …
     DependencySelfReference,
     DependencyNotInItem,
     DependencyCycle,
     DependencyCountExceeded,
 };
 
-/// Slice of optional fields the client may send. Mirrors
-/// `http_response.TaskUpdateRequest` but expressed as a struct-local type
-/// to avoid a forced include in this file.
+/// Slice of optional fields the client may send.
 const TaskUpdateInput = struct {
     task_id: []const u8,
     body: http_response.TaskUpdateRequest,
     db: *pabrikcore.database.Db,
 };
 
-/// Result of a successful task update. The handler serializes the
-/// `id` field into a small `{"success":true,"id":"..."}` JSON response.
+/// Result of a successful task update.
 const TaskUpdateResult = struct {
     task_id: []const u8,
 };
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Shared implementation for both task-update routes. The two
-/// registrations differ only in URL shape; the body parsing, cascade
-/// logic, and routine-fields branch are identical.
+/// Shared implementation for both task-update routes.
 fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const di = try pabrikcore.getSingleton();
@@ -143,9 +123,7 @@ fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: 
         });
     };
 
-    // Chunk 5 of kanban-task-notification-icon: every rename/edit/pin counts
-    // as a human touch — stamp last_human_touched_at so the kanban card flips
-    // from the orange "awaiting review" dot to the green "reviewed"
+    // Chunk 5 of kanban-task-notification-icon: every rename/edit/pin counts as a human touch — stamp last_human_touched_at so the kanban card flips from the orange …
     ai_mod.llm_history.updateTaskLastHumanTouchedAt(
         allocator,
         sqlite_db,
@@ -160,15 +138,12 @@ fn updateTaskHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: 
     return res.jsonResponse(.{ .status_code = 200, .data = try std.fmt.allocPrint(allocator, "{{\"success\":true,\"id\":\"{s}\"}}", .{result.task_id}) });
 }
 
-// =====================================================================
 // useCase
-// =====================================================================
 
 fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError!TaskUpdateResult {
     const task_id = input.task_id;
 
-    // Description branch. When `body.description` is present (non-null),
-    // overwrite the column with the new value.
+    // Description branch.
     if (input.body.description) |desc| {
         var sql_buf: std.ArrayList(u8) = .empty;
         defer sql_buf.deinit(allocator);
@@ -191,9 +166,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
 
     // Tags branch (Migration 067 — kanban task tags feature).
     if (input.body.tags) |raw_tags| {
-        // Validate + normalize. Returns a JSON-encoded array
-        // string ('' when no tags). Borrowed from the per-request
-        // arena; arena reaps it on request teardown.
+        // Validate + normalize.
         const validated_tags = tags_validation.validateAndNormalizeTags(
             allocator,
             raw_tags,
@@ -220,9 +193,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
 
     // Image urls branch (Migration 069 — kanban image urls column).
     if (input.body.image_urls) |raw_urls| {
-        // Validate. Returns the already-joined `||`-delimited string
-        // (borrowed from the per-request arena; arena reaps it on request
-        // teardown).
+        // Validate.
         const validated_urls = image_urls_validation.validateImageUrls(raw_urls) catch |err| return switch (err) {
             error.ImageUrlsTooLarge => error.ImageUrlsTooLarge,
             error.InvalidImageUrl => error.InvalidImageUrls,
@@ -248,8 +219,6 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     }
 
     // Video urls branch (Migration 090 — kanban video urls column).
-    // Same shape as image_urls above: present means overwrite, ""
-    // clears, null leaves unchanged. Validated prefix + 25 MB cap.
     if (input.body.video_urls) |raw_urls| {
         const validated_urls = video_urls_validation.validateVideoUrls(raw_urls) catch |err| return switch (err) {
             error.VideoUrlsTooLarge => error.VideoUrlsTooLarge,
@@ -275,12 +244,9 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
         input.db.exec(allocator, sql_buf.items, bind_values.items) catch return error.FailedToUpdateTask;
     }
 
-    // Per-task cwd branch (Migration 070 — kanban-cwd-session- optional
-    // plan).
+    // Per-task cwd branch (Migration 070 — kanban-cwd-session- optional plan).
     if (input.body.cwd) |raw_cwd| {
-        // Reuse the create-handler validation. Mirrors the create
-        // path exactly so a value that's accepted at create time
-        // is also accepted at update time (and vice versa).
+        // Reuse the create-handler validation.
         if (raw_cwd.len > 4096) return error.CwdTooLong;
         if (raw_cwd.len > 0 and !std.fs.path.isAbsolute(raw_cwd)) return error.CwdNotAbsolute;
         for (raw_cwd) |c| {
@@ -307,14 +273,11 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     }
 
     // Dependencies branch (Migration 111 — kanban task dependencies).
-    // REPLACE-ALL semantics: a present array (including `[]`) replaces the
-    // whole set; an absent field leaves it untouched.
     if (input.body.depends_on) |raw_ids| {
         const item_id = fetchTaskItemId(allocator, input.db, task_id) catch
             return error.FailedToUpdateTask;
         defer allocator.free(item_id);
-        // Empty-slice-as-NULL binding rule: a missing parent would silently
-        // match nothing (`WHERE id = NULL`), so refuse it instead.
+        // Empty-slice-as-NULL binding rule: a missing parent would silently match nothing (`WHERE id = NULL`), so refuse it instead.
         if (item_id.len == 0) return error.FailedToUpdateTask;
 
         kanban_deps.validateAndReplace(allocator, input.db, item_id, task_id, raw_ids) catch |err| return switch (err) {
@@ -327,8 +290,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
         };
     }
 
-    // Conditional split: route name updates through the cascade
-    // (updateTaskName → updateSessionName → SSE broadcast).
+    // Conditional split: route name updates through the cascade (updateTaskName → updateSessionName → SSE broadcast).
     if (input.body.name) |n| {
         llm_history.updateTaskName(allocator, input.db, task_id, n) catch {
             return error.FailedToUpdateTask;
@@ -338,8 +300,7 @@ fn useCase(allocator: std.mem.Allocator, input: TaskUpdateInput) TaskUpdateError
     return .{ .task_id = task_id };
 }
 
-/// The kanban (or other workspace item) that owns this task — '' when the task
-/// row is gone.
+/// The kanban (or other workspace item) that owns this task — '' when the task row is gone.
 fn fetchTaskItemId(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -355,6 +316,4 @@ fn fetchTaskItemId(
     return allocator.dupe(u8, row.values[0]);
 }
 
-// ===== Tests merged from task_update_test.zig (2026-09-11 flatten) ===== The
-// contracts this file used to assert were all text-shaped: "does the source
-// contain `llm_history.updateTaskName`", "is the `tasks` segment a literal",
+// ===== Tests merged from task_update_test.zig (2026-09-11 flatten) =====

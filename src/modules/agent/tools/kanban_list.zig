@@ -13,15 +13,11 @@ pub const ColumnSummary = struct {
     id: []const u8,
     name: []const u8,
     position: i64,
-    /// Number of tasks currently in this column. Computed from the
-    /// task list (1 query each, joined client-side) so the LLM can
-    /// answer "is anything in 'done'?" without a follow-up tool call.
+    /// Number of tasks currently in this column.
     task_count: u32,
 };
 
-/// One task summary row in the kanban tool output. `column_id` and
-/// `column_name` are null when the task is unassigned (its column was deleted
-/// — see `kanban_model.deleteColumn` which sets `kanban_column_id = NULL`).
+/// One task summary row in the kanban tool output.
 pub const TaskSummary = struct {
     id: []const u8,
     name: []const u8,
@@ -30,15 +26,12 @@ pub const TaskSummary = struct {
     position: i64,
     /// Migration 111 — ids of the tasks this task waits for.
     depends_on: []const []const u8 = &.{},
-    /// Migration 111 — NAMES of the still-unfinished dependencies. Non-empty
-    /// means `kanban_move_task` will refuse a column change (unless forced).
+    /// Migration 111 — NAMES of the still-unfinished dependencies.
     blocked_by: []const []const u8 = &.{},
     is_blocked: bool = false,
 };
 
-/// One task row read directly from the DB. `kanban_column_id` may be
-/// an empty string when the task is unassigned (the DB column is
-/// nullable). Internal — freed with `freeKanbanTaskRows`.
+/// One task row read directly from the DB.
 pub const KanbanTaskRow = struct {
     id: []u8,
     name: []u8,
@@ -57,15 +50,11 @@ pub fn freeKanbanTaskRows(allocator: std.mem.Allocator, rows: []KanbanTaskRow) v
 
 /// Input structure for kanban_list tool.
 pub const KanbanListInput = struct {
-    /// The workspace that owns the kanban item. Injected from chat
-    /// context (the "active workspace_id" in the system prompt's
-    /// `## Workspace Context` section).
+    /// The workspace that owns the kanban item.
     workspace_id: []const u8 = "",
-    /// The kanban workspace item id. Injected from chat context when
-    /// the user is viewing a kanban.
+    /// The kanban workspace item id.
     item_id: []const u8 = "",
     /// Optional: when set, only return tasks assigned to this column.
-    /// Useful for "list tasks in 'done' column" queries.
     column_id: ?[]const u8 = null,
     /// Optional: max tasks to return. Default 20, max 100. Use with offset for pagination.
     limit: ?u32 = null,
@@ -73,9 +62,7 @@ pub const KanbanListInput = struct {
     offset: ?u32 = null,
 };
 
-/// Top-level tool definition for the LLM. The description is the agent's
-/// primary signal for WHEN to use this tool — it explicitly says the
-/// workspace_id + item_id come from the active chat's workspace context.
+/// Top-level tool definition for the LLM.
 pub const kanban_list_tool_system_prompt =
     \\## Kanban List Tool — Behavior
     \\Use `kanban_list` to list kanban board structure: columns and tasks.
@@ -249,8 +236,6 @@ pub fn listKanbanTasks(
 }
 
 /// Resolve a column name to its id via a case-insensitive trimmed match.
-/// Returns the first match or null. Used by `executeKanbanListToJSON` to
-/// populate `column_name` in the task summary output.
 fn resolveColumnIdToName(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -276,8 +261,7 @@ pub fn executeKanbanListToJSON(
     db: *database.Db,
     input: KanbanListInput,
 ) ![]u8 {
-    // 1. Validate shape (catches task_id/col_id/ws_id passed as item_id).
-    //    Returns either null (shape OK) or an owned error JSON slice.
+    // 1.
     if (try validateItemIdShape(allocator, input.item_id, input.workspace_id)) |err_xml| {
         return err_xml;
     }
@@ -340,16 +324,13 @@ pub fn executeKanbanListToJSON(
     // 8. Build task summary array (already filtered + paginated at DB level)
     const filtered: []const KanbanTaskRow = task_rows;
 
-    // Migration 111 — ONE query serves the whole page. The per-task slices
-    // below borrow from `dep_edges`, which stays alive until the payload is
-    // rendered.
+    // Migration 111 — ONE query serves the whole page.
     const dep_edges = pabrikcore.ai_mod.kanban_deps.listEdgesForItem(allocator, db, input.item_id) catch |err| {
         return errorJSONOwned(allocator, try std.fmt.allocPrint(allocator, "DB: listEdgesForItem failed: {s}", .{@errorName(err)}));
     };
     defer pabrikcore.ai_mod.kanban_deps.freeEdges(allocator, dep_edges);
 
-    // Per-task dependency slices handed to `task_summaries`, released after
-    // `toJSON` has copied their bytes.
+    // Per-task dependency slices handed to `task_summaries`, released after `toJSON` has copied their bytes.
     var dep_ids_owned = std.ArrayList([]const []const u8).empty;
     defer {
         for (dep_ids_owned.items) |s| allocator.free(s);
@@ -363,8 +344,7 @@ pub fn executeKanbanListToJSON(
 
     var task_summaries = std.ArrayList(TaskSummary).empty;
     defer task_summaries.deinit(allocator);
-    // Track every allocated col_name so we can free them all AFTER toJSON()
-    // reads the task_summaries.
+    // Track every allocated col_name so we can free them all AFTER toJSON() reads the task_summaries.
     var col_names_owned = std.ArrayList([]u8).empty;
     defer {
         for (col_names_owned.items) |n| allocator.free(n);
@@ -383,9 +363,7 @@ pub fn executeKanbanListToJSON(
             break :blk if (name) |n| n else null;
         } else null;
 
-        // Migration 111 — this task's dependency edges, split into ids and
-        // the still-unfinished names. Borrowed from `dep_edges`; the two
-        // scratch lists own only the array headers.
+        // Migration 111 — this task's dependency edges, split into ids and the still-unfinished names.
         var dep_ids = std.ArrayList([]const u8).empty;
         defer dep_ids.deinit(allocator);
         var blocked_names = std.ArrayList([]const u8).empty;
@@ -412,15 +390,12 @@ pub fn executeKanbanListToJSON(
         });
     }
 
-    // 9. Render the JSON payload with pagination metadata. The
-    // empty-board hint rides along as the "hint" key (null otherwise).
+    // 9.
     const has_more = (effective_offset + @as(u32, @intCast(task_summaries.items.len)) < total_count);
     return toJSON(allocator, input.workspace_id, input.item_id, column_summaries.items, task_summaries.items, total_count, effective_limit, effective_offset, has_more, empty_board_hint);
 }
 
-/// One task in the kanban tool output. Keys mirror the old `<task>`
-/// child tags 1:1; `column_id`/`column_name` are explicit nulls when the
-/// task is unassigned (instead of empty tags).
+/// One task in the kanban tool output.
 pub const TaskJSON = struct {
     id: []const u8,
     name: []const u8,
@@ -434,9 +409,7 @@ pub const TaskJSON = struct {
     is_blocked: bool = false,
 };
 
-/// Success payload for `kanban_list`. Tag names from the old `<kanban>`
-/// envelope become keys 1:1; repeated elements are arrays; the
-/// empty-board hint is an explicit null when absent.
+/// Success payload for `kanban_list`.
 pub const KanbanListJSON = struct {
     workspace_id: []const u8,
     item_id: []const u8,
@@ -455,7 +428,6 @@ pub const KanbanListError = struct {
 };
 
 /// Serialize the kanban structure to a JSON string for the LLM.
-/// Caller owns the returned slice.
 pub fn toJSON(
     allocator: std.mem.Allocator,
     workspace_id: []const u8,
@@ -504,8 +476,7 @@ pub fn toJSON(
             .column_id = t.column_id,
             .column_name = clean_col_name,
             .position = t.position,
-            // Migration 111 — borrowed passthrough (ids, and the names of the
-            // dependencies the caller already owns).
+            // Migration 111 — borrowed passthrough (ids, and the names of the dependencies the caller already owns).
             .depends_on = t.depends_on,
             .blocked_by = t.blocked_by,
             .is_blocked = t.is_blocked,
@@ -532,9 +503,7 @@ pub fn toJSON(
     }, .{});
 }
 
-/// Generate an error JSON payload. Used when input validation or
-/// the DB read fails. Mirrors the `xmlError` pattern in
-/// `set_git_worktree.zig` / `add_skill.zig`.
+/// Generate an error JSON payload.
 pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, error_msg);
     defer allocator.free(clean);
@@ -543,9 +512,7 @@ pub fn errorJSON(allocator: std.mem.Allocator, error_msg: []const u8) ![]u8 {
     }, .{});
 }
 
-/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees
-/// it on any path. Used to avoid leaks when the caller's message
-/// is an `allocPrint` result (can't `defer` across a `return`).
+/// Same as `errorJSON` but TAKES OWNERSHIP of `error_msg` and frees it on any path.
 pub fn errorJSONOwned(allocator: std.mem.Allocator, error_msg: []u8) ![]u8 {
     defer allocator.free(error_msg);
     return errorJSON(allocator, error_msg);
@@ -565,8 +532,7 @@ pub const KanbanListOutput = struct {
     @"error": ?[]const u8 = null,
 };
 
-/// Detect the three known LLM id-confusion mistakes (task_id, column_id,
-/// workspace_id passed where item_id was expected).
+/// Detect the three known LLM id-confusion mistakes (task_id, column_id, workspace_id passed where item_id was expected).
 pub fn validateItemIdShape(
     allocator: std.mem.Allocator,
     item_id: []const u8,
@@ -575,9 +541,7 @@ pub fn validateItemIdShape(
     if (item_id.len == 0 or workspace_id.len == 0) {
         return try errorJSON(allocator, "workspace_id and item_id are required");
     }
-    // The DB-generated ids use these prefixes (see workspace_items_create.zig's
-    // generateItemId, workspace_item_tasks_create.zig, kanban_model.generateColumnId,
-    // workspaces_create.zig). Anything with the wrong prefix is a shape mistake.
+    // The DB-generated ids use these prefixes (see workspace_items_create.zig's generateItemId, workspace_item_tasks_create.zig, kanban_model.generateColumnId …
     if (std.mem.startsWith(u8, item_id, "task_")) {
         return try errorJSONOwned(allocator, try std.fmt.allocPrint(allocator,
             \\item_id '{s}' looks like a TASK id (starts with 'task_'). Pass the KANBAN's item_id instead — find it next to the literal text `item_id: ` (note: NOT `id:`) in the Workspace Context listing. The item_id always starts with 'item_'.
@@ -601,8 +565,7 @@ pub fn validateItemIdShape(
     return null;
 }
 
-/// Verify the item_id corresponds to a real `workspace_items` row of type
-/// 'kanban'.
+/// Verify the item_id corresponds to a real `workspace_items` row of type 'kanban'.
 fn itemExists(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -710,8 +673,7 @@ test "errorJSON on missing field returns parsed error payload" {
 
 // ─── DB integration behavioral tests (in-memory SQLite) ────────────────
 
-/// Set up an in-memory SQLite with the kanban tables + a kanban workspace
-/// item + 3 default columns (todo/in progress/done).
+/// Set up an in-memory SQLite with the kanban tables + a kanban workspace item + 3 default columns (todo/in progress/done).
 fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -755,8 +717,7 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\  created_at TEXT NOT NULL DEFAULT ''
         \\)
     , &.{});
-    // workspace_item_tasks (post-Migration-072: no kanban_column_id or
-    // kanban_position columns — those live in the `kanban` join table)
+    // workspace_item_tasks (post-Migration-072: no kanban_column_id or kanban_position columns — those live in the `kanban` join table)
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\  id TEXT PRIMARY KEY,
@@ -808,15 +769,13 @@ test "listKanbanTasks returns all tasks with column + position" {
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t1', 'col_todo', 0)", &.{});
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t2', 'col_todo', 1)", &.{});
     try s.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('t3', 'col_done', 0)", &.{});
-    // t4 has no kanban row — unassigned (the LEFT JOIN surfaces this as
-    // empty kanban_column_id in the JSON output)
+    // t4 has no kanban row — unassigned (the LEFT JOIN surfaces this as empty kanban_column_id in the JSON output)
 
     const rows = try listKanbanTasks(alloc, &s.db, "item_1", null, null, null);
     defer freeKanbanTaskRows(alloc, rows);
 
     try testing.expectEqual(@as(usize, 4), rows.len);
-    // Unassigned task has empty kanban_column_id (the COALESCE
-    // maps NULL → '').
+    // Unassigned task has empty kanban_column_id (the COALESCE maps NULL → '').
     var unassigned_found = false;
     for (rows) |r| {
         if (std.mem.eql(u8, r.id, "t4")) {
@@ -915,7 +874,6 @@ test "executeKanbanListToJSON column_name is real bytes (use-after-free regressi
     defer s.db.deinit();
 
     // setupDb() inserts 3 default columns (todo/in progress/done).
-    // Add one task assigned to the "in progress" column.
     try s.db.exec(alloc,
         \\INSERT INTO workspace_item_tasks (id, workspace_item_id, name, task_type)
         \\VALUES ('t_uaf', 'item_1', 'Task Under Test', 'standard')
@@ -932,18 +890,14 @@ test "executeKanbanListToJSON column_name is real bytes (use-after-free regressi
     const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
 
-    // The task's column_name must be the literal string "in progress",
-    // not freed/garbled memory. If the use-after-free bug recurs, the
-    // slice would point at Zig's 0xAA free-fill pattern.
+    // The task's column_name must be the literal string "in progress", not freed/garbled memory.
     const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 1), parsed.value.tasks.len);
     try std.testing.expectEqualStrings("in progress", parsed.value.tasks[0].column_name orelse "");
     try std.testing.expectEqualStrings("col_ip", parsed.value.tasks[0].column_id orelse "");
 
-    // Defensive: assert the rendered JSON does NOT contain the 0xAA
-    // free-fill byte (octal 252 = 0xAA). If it does, the slice
-    // header is pointing at freed memory.
+    // Defensive: assert the rendered JSON does NOT contain the 0xAA free-fill byte (octal 252 = 0xAA).
     try testing.expect(std.mem.indexOfScalar(u8, json, 0xAA) == null);
 }
 
@@ -955,9 +909,7 @@ test "executeKanbanListToJSON returns error JSON when item_id looks like a task_
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    // AI confused task_id (from kanban_move_task input) with item_id.
-    // listColumns will silently return 0 rows; we want validation to
-    // catch this BEFORE the query runs.
+    // AI confused task_id (from kanban_move_task input) with item_id. listColumns will silently return 0 rows; we want validation to catch this BEFORE the query runs.
     const input = KanbanListInput{
         .workspace_id = "ws_1",
         .item_id = "task_1782442569739",
@@ -1025,8 +977,7 @@ test "executeKanbanListToJSON returns empty-board hint (not error) when item_id 
     defer s.threaded.deinit();
     defer s.db.deinit();
 
-    // Insert a kanban item with NO columns (degenerate case — user
-    // deleted all of them).
+    // Insert a kanban item with NO columns (degenerate case — user deleted all of them).
     try s.db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('item_empty', 'ws_1', 'kanban', 'Empty board')", &.{});
 
     const input = KanbanListInput{
@@ -1035,8 +986,7 @@ test "executeKanbanListToJSON returns empty-board hint (not error) when item_id 
     };
     const json = try executeKanbanListToJSON(alloc, &s.db, input);
     defer alloc.free(json);
-    // NOT an error — the kanban genuinely has no columns. Just an
-    // empty "columns" array + a friendly hint.
+    // NOT an error — the kanban genuinely has no columns.
     const parsed = try std.json.parseFromSlice(KanbanListOutput, alloc, json, .{ .allocate = .alloc_always, .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expect(parsed.value.@"error" == null);
@@ -1193,7 +1143,6 @@ test "executeKanbanListToJSON offset beyond total returns empty tasks" {
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1216,9 +1165,7 @@ pub fn execKanbanList(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer parsed.deinit();
 
-    // executeKanbanListToJSON returns a JSON string. Errors (missing
-    // input, DB failure) are encoded as {"error":...}
-    // so the LLM sees a structured failure rather than a tool crash.
+    // executeKanbanListToJSON returns a JSON string.
     const inner = executeKanbanListToJSON(
         ctx.allocator,
         ctx.db,
@@ -1231,9 +1178,7 @@ pub fn execKanbanList(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult 
     };
     defer ctx.allocator.free(inner);
 
-    // Detect the {"error":...} shape and surface it as a tool failure
-    // (so the LLM sees `success=false` rather than a successful wrapper
-    // around an error body).
+    // Detect the {"error":...} shape and surface it as a tool failure (so the LLM sees `success=false` rather than a successful wrapper around an error body).
     if (std.json.parseFromSlice(struct { @"error": ?[]const u8 = null }, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {

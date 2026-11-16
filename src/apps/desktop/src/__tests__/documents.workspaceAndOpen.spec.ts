@@ -1,6 +1,4 @@
-/** Regression specs for the two Documents-feature failures a user reported against Migration 095
- * ("Documents" sidebar section + viewer). BUG 1 — "No workspace selected" with a workspace plainly
- * selected. */
+/** Regression specs for the two Documents-feature failures a user reported against Migration 095 ("Documents" sidebar section + viewer). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, reactive, ref } from 'vue'
@@ -90,14 +88,12 @@ function makeWorkspace() {
   }
 }
 
-/** The pre-bug state: workspaces loaded, a project selected, but the
- *  explicit workspace ref never set (nobody used the header dropdown). */
+/** The pre-bug state: workspaces loaded, a project selected, but the explicit workspace ref never set (nobody used the header dropdown). */
 function seedProjectClickNavigation() {
   const ws = useWorkspacesStore()
   ws.workspaces = [makeWorkspace()]
   ws.setActiveWorkspaceItem(ITEM_ID)
-  // Asserted, not assumed: the whole point is that this stays null while
-  // the app still knows a workspace is selected.
+  // Asserted, not assumed: the whole point is that this stays null while the app still knows a workspace is selected.
   expect(ws.activeWorkspaceId).toBe(null)
   return ws
 }
@@ -116,9 +112,7 @@ function navigate(path: string, query: Record<string, string> = {}) {
   route.fullPath = path + (qs ? `?${qs}` : '')
 }
 
-/**  * The documents list is cache-first now, and `documentEngineDb` is a module singleton whose
- * IndexedDB fallback is a module-level Map — so rows cached by one test are still primed by the
- * next one. Every test here asserts a COLD start, so each one begins from an empty cache. */
+/** The documents list is cache-first now, and `documentEngineDb` is a module singleton whose IndexedDB fallback is a module-level Map — so rows cached by one test … */
 async function clearDocumentsCache(workspaceId: string): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')
@@ -171,8 +165,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-/**  * The list load is cache-first now (IndexedDB read, then revalidate), so the painted rows land on a
- * promise boundary rather than a microtask. Four `nextTick()`s no longer reach them — this does. */
+/** The list load is cache-first now (IndexedDB read, then revalidate), so the painted rows land on a promise boundary rather than a microtask. */
 const flush = async () => {
   await flushPromises()
   for (let i = 0; i < 2; i++) await nextTick()
@@ -191,9 +184,7 @@ describe('Documents — a project click still counts as "a workspace is selected
     })
     await flush()
 
-    // The regression: the Documents section said "No workspace selected" while PROJECTS showed a
-    // plainly-selected project. Mounting the real Sidebar is the only way to see this — the
-    // component-level spec passes a `workspaceId` prop and so never sees the binding.
+    // The regression: the Documents section said "No workspace selected" while PROJECTS showed a plainly-selected project.
     expect(wrapper.find('[data-testid="documents-section-body"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="documents-no-workspace"]').exists()).toBe(false)
     // And it actually scoped the fetch to the right workspace.
@@ -203,8 +194,7 @@ describe('Documents — a project click still counts as "a workspace is selected
   })
 
   it('the viewer resolves the workspace and fetches, instead of hanging on "Loading document…"', async () => {
-    // DocumentsView receives only `documentId` — it has to learn the workspace from the store
-    // itself. Pre-fix its `watch` bailed on a null workspace, so no fetch ever happened.
+    // DocumentsView receives only `documentId` — it has to learn the workspace from the store itself.
     seedProjectClickNavigation()
     const wrapper = mount(DocumentsView, { props: { documentId: DOC_ID } })
     await flush()
@@ -214,8 +204,7 @@ describe('Documents — a project click still counts as "a workspace is selected
   })
 
   it('with the document already listed, the editor and its controls render', async () => {
-    // Rendering contract, reached the way a real click reaches it: the
-    // sidebar has listed the workspace, so `findById` serves the body.
+    // Rendering contract, reached the way a real click reaches it: the sidebar has listed the workspace, so `findById` serves the body.
     seedProjectClickNavigation()
     useDocumentsStore().documents = [DOC]
     useDocumentsStore().loaded = true
@@ -250,9 +239,7 @@ const STUB_CONFIG = {
   },
 }
 
-/** A replace that LOSES the open document: it carries a query but neither `?doc=` nor the document's
- * own path. A replace that lands on the doc path keeps it — that is the tab funnel naming the tab
- * (`?tab=`), not the store→URL mirror dropping the page. */
+/** A replace that LOSES the open document: it carries a query but neither `?doc=` nor the document's own path. */
 function replacesDroppingDoc() {
   const docPath = `/app/${WS_ID}/doc/${DOC_ID}`
   return replaceMock.mock.calls.filter((call) => {
@@ -266,9 +253,7 @@ const DOC_PATH = `/app/${WS_ID}/doc/${DOC_ID}`
 
 describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   it('a document click is not undone a microtask later by the store->URL mirror', async () => {
-    // The user's exact state: sitting on a PROJECT path, because that is
-    // where the Documents section lives. The click navigates to the doc
-    // PATH now, so there is no `doc` query for the mirror to strip.
+    // The user's exact state: sitting on a PROJECT path, because that is where the Documents section lives.
     navigate(PROJECT_PATH)
     const wrapper = mount(AppLayout, { global: { stubs: STUB_CONFIG } })
     await flush()
@@ -279,31 +264,23 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
     await flush()
     replaceMock.mockClear()
 
-    // DocumentsList.selectDocument's exact order: the router.replace is
-    // async, so the synchronous store writes below happen FIRST and the
-    // navigation lands a microtask later.
+    // DocumentsList.selectDocument's exact order: the router.replace is async, so the synchronous store writes below happen FIRST and the navigation lands a …
     ws.setActiveWorkspaceItem(null)
     ws.setActiveTask(null)
     await flush()
     navigate(DOC_PATH)
     await flush()
 
-    // The regression this file was written for: the mirror re-adopted the project from the path and
-    // then router.replace'd a URL that lost the document, so the click appeared to do nothing. With
-    // the document on its own path the mirror has no `doc` to drop.
+    // The regression this file was written for: the mirror re-adopted the project from the path and then router.replace'd a URL that lost the document, so the click …
     expect(replacesDroppingDoc()).toHaveLength(0)
 
-    // And the URL->store watcher must not re-adopt the project either: the
-    // document is the main content, so re-highlighting the project row
-    // behind it is the "two active rows" bug sidebarSingleActive guards.
+    // And the URL->store watcher must not re-adopt the project either: the document is the main content, so re-highlighting the project row behind it is the "two …
     expect(ws.activeWorkspaceItemId).toBe(null)
     wrapper.unmount()
   })
 
   it('a cold boot on a document path keeps the document and drops the project', async () => {
-    // The refresh / shared-link case. Before the path shape this was a second, click-free way to
-    // lose the open document: the URL restore adopted the item from the path and the mirror fired
-    // with no prior state to bail on.
+    // The refresh / shared-link case.
     navigate(DOC_PATH)
     useDocumentsStore().documents = [DOC]
     useDocumentsStore().loaded = true
@@ -320,9 +297,7 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('the document REPLACES the main view instead of stacking over it', async () => {
-    // The heart of the change. As an overlay this rendered alongside the chat/kanban underneath,
-    // and the chat's floating chrome out-painted the overlay's z-index (PR #749). A page unmounts
-    // what it replaces, so the overlap cannot happen at all.
+    // The heart of the change.
     navigate(PROJECT_PATH)
     const wrapper = mount(AppLayout, { global: { stubs: STUB_CONFIG } })
     await flush()
@@ -337,8 +312,7 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
     navigate(DOC_PATH)
     await flush()
 
-    // DocumentsView is deliberately NOT stubbed — the assertion is about
-    // which branch of the main-view chain wins.
+    // DocumentsView is deliberately NOT stubbed — the assertion is about which branch of the main-view chain wins.
     expect(wrapper.find('main [data-testid="documents-view"]').exists()).toBe(true)
     // ...and the view it replaced is gone, not merely covered.
     expect(wrapper.find('[data-kanban-view="stub"]').exists()).toBe(false)
@@ -346,9 +320,7 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('a document path CLEARS the active chat, so no ChatView mounts under it', async () => {
-    // The bug this pins is subtle and survived two earlier specs. <main> does NOT have one v-if
-    // chain: the standalone `v-if` on <DesignChatDialog> splits it in two, so <DocumentsView>
-    // (early, first chain) and the standalone `<ChatView v-else-if="activeChatId…">` (late, second.
+    // The bug this pins is subtle and survived two earlier specs. <main> does NOT have one v-if chain: the standalone `v-if` on <DesignChatDialog> splits it in two …
     const { useNavigationStore } = await import('../stores/navigation')
     navigate(DOC_PATH)
     useDocumentsStore().documents = [DOC]
@@ -363,9 +335,7 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
     await flush()
     expect(nav.activeChatId).toBe('chat-sess_live')
 
-    // Leave the doc path and come back (what a click / Back-Forward does). The URL has to actually
-    // CHANGE: the reconcile runs from the layout's `onUpdated` pump, which fires on the re-render a
-    // real navigation causes — re-assigning the same path reconciles nothing.
+    // Leave the doc path and come back (what a click / Back-Forward does).
     navigate(PROJECT_PATH)
     await flush()
     navigate(DOC_PATH)
@@ -373,8 +343,7 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
 
     // The chat selection must be dropped by the URL->store watcher.
     expect(nav.activeChatId).toBe('')
-    // ...and with it gone the second chain cannot mount a ChatView, so the
-    // document is the ONLY thing under <main>.
+    // ...and with it gone the second chain cannot mount a ChatView, so the document is the ONLY thing under <main>.
     expect(wrapper.find('main [data-testid="documents-view"]').exists()).toBe(true)
     expect(wrapper.find('main .chat-column').exists()).toBe(false)
     expect(wrapper.find('main .composer-dock').exists()).toBe(false)
@@ -382,8 +351,7 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
   })
 
   it('a stale ?doc= URL is NOT rewritten to the document path', async () => {
-    // No fallback by design: Migration 095 shipped the overlay shape and was replaced by the
-    // `/doc/` path before it was in wide use, so there are no links in the wild to keep working.
+    // No fallback by design: Migration 095 shipped the overlay shape and was replaced by the `/doc/` path before it was in wide use, so there are no links in the …
     navigate(PROJECT_PATH, { doc: DOC_ID })
     useDocumentsStore().documents = [DOC]
     useDocumentsStore().loaded = true

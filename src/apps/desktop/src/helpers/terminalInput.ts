@@ -3,9 +3,7 @@ const BEL = 0x07
 const CSI_FINAL_LOW = 0x40
 const CSI_FINAL_HIGH = 0x7e
 
-/** Index just past the terminal REPORT starting at `i` (`i` for typing): `ESC [`
- * to its final byte — DA1, CPR, a mode report, mouse — `ESC ]` to BEL or ST, or
- * any other `ESC x` pair. */
+/** Index just past the terminal REPORT starting at `i` (`i` for typing): `ESC [` to its final byte — DA1, CPR, a mode report, mouse — `ESC ]` to BEL or ST, or any … */
 function reportEnd(data: string, i: number): number {
   if (data.charCodeAt(i) !== ESC) return i
   if (i + 1 >= data.length) return data.length
@@ -27,9 +25,7 @@ function reportEnd(data: string, i: number): number {
   return i + 2
 }
 
-/** Keystrokes for one session's console. A `pipe`-backed Windows session has no
- * VT input, so a report can only come back as its visible payload — the literal
- * `[?2004;2$y` on screen. Every pty backend keeps all of its bytes. */
+/** Keystrokes for one session's console. */
 export function inputForBackend(backend: string, data: string): string {
   if (backend !== 'pipe') return data
   let kept = ''

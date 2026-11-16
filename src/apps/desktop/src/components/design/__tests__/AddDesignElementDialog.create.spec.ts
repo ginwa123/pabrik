@@ -1,6 +1,4 @@
-/** Regression test for the bug "design mode, add element manual not working". Bug: clicking "+
- * Element" → filling the dialog → clicking "Add" had no effect because <DesignView> in
- * AppLayout.vue did not subscribe to `@create-element`. */
+/** Regression test for the bug "design mode, add element manual not working". */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -98,8 +96,7 @@ describe('AddDesignElementDialog: `create` emit shape (link 1)', () => {
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
 
-    // Click Add. The dialog only auto-fills the HTML textarea when the type field CHANGES (the
-    // watch in AddDesignElementDialog.vue fires on `elementType` change, not on initial show).
+    // Click Add.
     findInDom<HTMLButtonElement>(
       '[data-testid="add-design-element-submit"]',
     )?.click()
@@ -168,9 +165,7 @@ describe('DesignView: `@create` → `createElement` re-emit (link 2)', () => {
     )?.click()
     await flushPromises()
 
-    // The pre-fix bug was that this emit went nowhere on AppLayout. We prove here that DesignView
-    // itself DOES re-emit upward with the right shape; the AppLayout binding is verified by grep in
-    // the verifier step of the bug-fix plan.
+    // The pre-fix bug was that this emit went nowhere on AppLayout.
     const creates = wrapper.emitted('createElement') ?? []
     expect(creates.length).toBe(1)
     expect(creates[0]).toEqual([

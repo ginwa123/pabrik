@@ -1,5 +1,4 @@
-//! The `run_skill_eval` agent tool: the one thing the agent has to do for
-//! Skill Evals to happen. The prompt rule tells the agent to call this.
+//! The `run_skill_eval` agent tool: the one thing the agent has to do for Skill Evals to happen.
 
 const std = @import("std");
 const testing = std.testing;
@@ -20,8 +19,7 @@ const skill_eval_judge = @import("skill_eval_judge.zig");
 const batch = @import("sub_agent_batch.zig");
 const migration = @import("../../../migrations/migration.zig");
 
-// A skill is a row in one workspace-scoped table (Migration 101), not a file
-// in one of two directories.
+// A skill is a row in one workspace-scoped table (Migration 101), not a file in one of two directories.
 const skills_store = @import("skills_store.zig");
 const workspace_scope = @import("workspace_scope.zig");
 
@@ -57,11 +55,9 @@ pub const RunOutcome = struct {
     disabled: bool = false,
     /// No skill was loaded or offered this session, so there is nothing to do.
     nothing_loaded: bool = false,
-    /// The run could not even be claimed (a database error). Distinct from
-    /// `nothing_loaded`, which would be a false statement about the ledger.
+    /// The run could not even be claimed (a database error).
     failed: bool = false,
-    /// A run already existed for this session. `run_id` names it; nothing was
-    /// recomputed. This is the idempotency path, not an error.
+    /// A run already existed for this session.
     reused: bool = false,
     run_id: []u8 = &.{},
     evaluated: u32 = 0,
@@ -87,34 +83,25 @@ pub const RunArgs = struct {
     max_skills: u32 = 8,
     /// `skill_evals.include_listed_without_loading`.
     include_listed_only: bool = true,
-    /// `skill_evals.fact_lease_seconds` — how long a `computing` lease may sit
-    /// before another session may take it over.
+    /// `skill_evals.fact_lease_seconds` — how long a `computing` lease may sit before another session may take it over.
     fact_lease_seconds: u32 = 300,
-    /// The SSE bus, when the caller has one. Null in unit tests and in any
-    /// caller with no bus; the emit is then a no-op.
+    /// The SSE bus, when the caller has one.
     event_bus: ?*pabrikcore.event_bus.EventBus = null,
-    /// Tier 1: fan out one judge sub-agent per skill. Off by default because
-    /// it spends tokens — up to `max_skills` sub-agent runs per eval.
+    /// Tier 1: fan out one judge sub-agent per skill.
     judge_enabled: bool = false,
-    /// The judge reads code to check claims; it never writes. Kept to the
-    /// read-only set so a judge cannot edit the very skill it is judging, and
-    /// so `validateJobs`' main-agent-only rule has nothing to catch.
+    /// The judge reads code to check claims; it never writes.
     judge_tools: []const []const u8 = &.{ "read_file", "search", "glob" },
 };
 
-/// One skill waiting to be judged. Collected during the Tier-0 loop, which is
-/// where the body and the intrinsic verdict are already in hand.
+/// One skill waiting to be judged.
 const JudgeCandidate = struct {
     result_id: []u8,
     skill_name: []u8,
-    /// The instruction to send, already built: the body has to be in scope
-    /// here anyway, and building it now keeps the fan-out loop free of
-    /// allocation that can fail halfway through a batch.
+    /// The instruction to send, already built: the body has to be in scope here anyway, and building it now keeps the fan-out loop free of allocation that can fail …
     prompt: []u8,
     /// The deterministic verdict this judge may only ESCALATE from.
     intrinsic: Verdict,
-    /// The row's rationale so far, so a failed judge can append to it instead
-    /// of overwriting what Tier 0 established.
+    /// The row's rationale so far, so a failed judge can append to it instead of overwriting what Tier 0 established.
     rationale: []u8,
 
     fn deinit(self: JudgeCandidate, allocator: std.mem.Allocator) void {
@@ -130,9 +117,7 @@ fn freeJudgeCandidates(allocator: std.mem.Allocator, items: []JudgeCandidate) vo
     allocator.free(items);
 }
 
-/// Run the LLM judge tier over `candidates` and write the session-relative
-/// half back onto each result row. Returns the number of rows a validated
-/// report reached.
+/// Run the LLM judge tier over `candidates` and write the session-relative half back onto each result row.
 fn runJudgeTier(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -143,16 +128,13 @@ fn runJudgeTier(
     candidates: []const JudgeCandidate,
 ) !u32 {
     const di = pabrikcore.getSingleton() catch {
-        // No live context means no workflow, so no sub-agent can run. The
-        // deterministic results stay as they are; this is not a failure of
-        // the eval, only of the opt-in tier.
+        // No live context means no workflow, so no sub-agent can run.
         if (logger) |l| l.warnFmt("skill eval: judge tier skipped, no live agent context", .{});
         return 0;
     };
     if (candidates.len == 0) return 0;
 
-    // Emitted once, before the fan-out, so a listener can show that the
-    // session-relative half is being computed rather than sitting at 0.
+    // Emitted once, before the fan-out, so a listener can show that the session-relative half is being computed rather than sitting at 0.
     skill_eval_events.emitSkillEvalEvent(allocator, args.event_bus, .{
         .action = "run_started",
         .run_id = run_id,
@@ -167,9 +149,7 @@ fn runJudgeTier(
     defer allocator.free(jobs);
     for (candidates, 0..) |c, i| {
         jobs[i] = .{
-            // A label, not a config lookup: with `overrides` null the batch
-            // runner uses the orchestrator defaults and the parent's profile,
-            // so an unconfigured name cannot drag in a random agent.
+            // A label, not a config lookup: with `overrides` null the batch runner uses the orchestrator defaults and the parent's profile, so an unconfigured name cannot …
             .name = "skill-eval-judge",
             .instruction = c.prompt,
             .tools = args.judge_tools,
@@ -186,8 +166,7 @@ fn runJudgeTier(
         .cwd = args.cwd,
         .environment = args.environment,
         .selected_profile_model = args.profile,
-        // The eval has no tool_call of its own, so progress events are keyed
-        // to the run rather than to a chat card.
+        // The eval has no tool_call of its own, so progress events are keyed to the run rather than to a chat card.
         .tool_call_id = "",
     }, jobs) catch |err| {
         if (logger) |l| l.warnFmt("skill eval: judge batch failed: {s}", .{@errorName(err)});
@@ -209,15 +188,13 @@ fn runJudgeTier(
                 break :blk "the judge sub-agent did not complete";
             }
             const text = result.response orelse break :blk "the judge returned no text";
-            // `var` because `deinit` takes a mutable pointer to release the
-            // report's arena.
+            // `var` because `deinit` takes a mutable pointer to release the report's arena.
             var parsed = skill_eval_judge.parseReport(allocator, text) catch {
                 break :blk "the judge's reply could not be read";
             } orelse break :blk "the judge's reply was not a JSON report";
             defer parsed.deinit();
 
-            // THE trust boundary. Everything below runs only because this
-            // returned; a downgraded report reaches none of the writes.
+            // THE trust boundary.
             const validation = skill_evals_db.validateReport(parsed.report);
             if (validation.downgraded) {
                 if (logger) |l| l.warnFmt("skill eval: judge report for '{s}' refused: {s}", .{ c.skill_name, validation.reason });
@@ -251,18 +228,14 @@ fn runJudgeTier(
                 .sub_session_id = result.session_id,
                 .status = "done",
                 .rationale = why,
-                // The report survived `validateReport`, which has already
-                // refused every update/rewrite that arrives without this. It
-                // was being dropped here, one line after being made mandatory.
+                // The report survived `validateReport`, which has already refused every update/rewrite that arrives without this.
                 .proposed_diff = parsed.report.proposed_content,
             }) catch false;
             judged += 1;
             continue;
         };
 
-        // Unreachable in practice — the block above either continues or sets
-        // a reason — but Zig needs the `catch` on the JSON parse to have a
-        // value, and a fall-through here would be an unrecorded judgement.
+        // Unreachable in practice — the block above either continues or sets a reason — but Zig needs the `catch` on the JSON parse to have a value, and a fall-through …
         const why = try std.fmt.allocPrint(allocator, "{s}; {s}", .{ c.rationale, unreadable });
         defer allocator.free(why);
         _ = skill_evals_db.updateJudgeResult(allocator, db, c.result_id, .{
@@ -275,8 +248,7 @@ fn runJudgeTier(
     return judged;
 }
 
-/// Insert one result row. Private because it is the only writer of this table
-/// today and it is not a primitive anyone else should reach for.
+/// Insert one result row.
 fn insertResult(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -289,17 +261,13 @@ fn insertResult(
     verdict: Verdict,
     intrinsic_fact_id: []const u8,
     base_content_hash: []const u8,
-    /// The exact body `base_content_hash` is the SHA-256 of. Empty when the
-    /// body could not be read, in which case there is no "before" to record.
+    /// The exact body `base_content_hash` is the SHA-256 of.
     content_at_use: []const u8,
     rationale: []const u8,
 ) !void {
-    // Every free-text column is COALESCE-wrapped: `exec` binds an empty slice
-    // as SQL NULL, and these columns are NOT NULL (Migration 079's class).
+    // Every free-text column is COALESCE-wrapped: `exec` binds an empty slice as SQL NULL, and these columns are NOT NULL (Migration 079's class).
     try db.exec(allocator,
-        // Column order MUST match the bind order below -- SQLite binds
-        // positionally, so a mismatch here writes each value into its
-        // neighbour instead of failing.
+        // Column order MUST match the bind order below -- SQLite binds positionally, so a mismatch here writes each value into its neighbour instead of failing.
         \\INSERT INTO skill_eval_results
         \\    (id, run_id, skill_key, skill_name, session_id, status, verdict,
         \\     intrinsic_fact_id, base_content_hash, rationale, content_at_use,
@@ -323,14 +291,12 @@ fn insertResult(
         base_content_hash,
         rationale,
         content_at_use,
-        // `sub_session_id` belongs to the LLM judge tier (it will name the
-        // sub-agent that produced the session-relative half).
+        // `sub_session_id` belongs to the LLM judge tier (it will name the sub-agent that produced the session-relative half).
         "",
     });
 }
 
-/// Run the eval for one session. Pure with respect to the tool layer: it takes
-/// a db and a session id, so it is testable without a live tool turn.
+/// Run the eval for one session.
 pub fn runEval(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -338,9 +304,7 @@ pub fn runEval(
     logger: ?*logger_mod.Logger,
     args: RunArgs,
 ) !RunOutcome {
-    // Defence in depth. The tool is only injected into the tool list when the
-    // switch is on, so reaching here disabled means something re-enabled it
-    // behind our back — refuse rather than spend anything.
+    // Defence in depth.
     if (!args.enabled) return .{ .disabled = true };
     if (args.session_id.len == 0) return .{ .nothing_loaded = true };
 
@@ -348,8 +312,7 @@ pub fn runEval(
     defer skill_evals_db.freeSessionSkillSet(allocator, set);
     if (set.len == 0) return .{ .nothing_loaded = true };
 
-    // Which workspace this SESSION belongs to, resolved once for the whole
-    // run.
+    // Which workspace this SESSION belongs to, resolved once for the whole run.
     const workspace_id = workspace_scope.resolveWorkspaceId(allocator, db, args.session_id) catch |err| blk: {
         if (logger) |l| l.warnFmt("skill eval: could not resolve a workspace for session '{s}': {s}", .{ args.session_id, @errorName(err) });
         break :blk null;
@@ -364,9 +327,7 @@ pub fn runEval(
 
     const run_id = try std.fmt.allocPrint(allocator, "skilleval_{d}", .{std.Io.Timestamp.now(io, .real).nanoseconds});
     errdefer allocator.free(run_id);
-    // NOTE: ownership of `run_id` moves to `outcome` below. The `errdefer`
-    // above covers an early return; once the outcome exists it is the owner
-    // and the caller frees it via `deinit`.
+    // NOTE: ownership of `run_id` moves to `outcome` below.
 
     const claimed = skill_evals_db.claimRun(
         allocator,
@@ -382,15 +343,12 @@ pub fn runEval(
         args.model,
     ) catch |err| {
         if (logger) |l| l.warnFmt("skill eval: could not claim a run: {s}", .{@errorName(err)});
-        // `errdefer` does not fire on a normal return, so the id must be freed
-        // here. Reporting this as `nothing_loaded` would also be a lie — the
-        // ledger was already read and it was not empty.
+        // `errdefer` does not fire on a normal return, so the id must be freed here.
         allocator.free(run_id);
         return .{ .failed = true };
     };
     if (!claimed) {
-        // The agent emitted two calls in one turn, or already evaluated this
-        // session. Return the existing run rather than doing the work twice.
+        // The agent emitted two calls in one turn, or already evaluated this session.
         allocator.free(run_id);
         return .{ .reused = true };
     }
@@ -400,15 +358,13 @@ pub fn runEval(
 
     var outcome = RunOutcome{ .run_id = run_id };
     var ordinal: u32 = 0;
-    // Only populated when the judge tier is on, so the default path allocates
-    // nothing beyond the results it already writes.
+    // Only populated when the judge tier is on, so the default path allocates nothing beyond the results it already writes.
     var candidates: std.ArrayList(JudgeCandidate) = .empty;
     defer {
         for (candidates.items) |c| c.deinit(allocator);
         candidates.deinit(allocator);
     }
-    // Read once for the whole run: every judge asks the same "what was this
-    // session for", and re-querying it per skill would be N identical reads.
+    // Read once for the whole run: every judge asks the same "what was this session for", and re-querying it per skill would be N identical reads.
     var task_context: []u8 = &.{};
     defer if (task_context.len > 0) allocator.free(task_context);
 
@@ -417,9 +373,7 @@ pub fn runEval(
             outcome.skipped += 1;
             continue;
         }
-        // A skill that was only OFFERED is still worth judging: "the agent was
-        // handed the right skill and ignored it" is a real finding. It is
-        // configurable because it is also the noisier half.
+        // A skill that was only OFFERED is still worth judging: "the agent was handed the right skill and ignored it" is a real finding.
         if (!use.loaded and !args.include_listed_only) {
             outcome.skipped += 1;
             continue;
@@ -429,33 +383,26 @@ pub fn runEval(
         const result_id = try std.fmt.allocPrint(allocator, "{s}_r{d}", .{ run_id, ordinal });
         defer allocator.free(result_id);
 
-        // The identity of the question, in one string: the workspace that
-        // OWNS the skill, then its name. The workspace is load-bearing.
+        // The identity of the question, in one string: the workspace that OWNS the skill, then its name.
         const skill_key = if (workspace_id) |w|
             try std.fmt.allocPrint(allocator, "{s}:{s}", .{ w, use.skill_name })
         else
-            // No workspace means no row can be found for anything, so this
-            // run's results are all needs_human regardless.
+            // No workspace means no row can be found for anything, so this run's results are all needs_human regardless.
             try std.fmt.allocPrint(allocator, "<no-workspace>:{s}", .{use.skill_name});
         defer allocator.free(skill_key);
 
-        // The current body is the row `use_skill` materialised for the agent,
-        // read through the same store and the same workspace guard — so there
-        // is no local-then-global walk left to disagree with, and no way to
+        // The current body is the row `use_skill` materialised for the agent, read through the same store and the same workspace guard — so there is no local-then-global …
         var owned_row: ?skills_store.SkillRow = null;
         defer if (owned_row) |r| skills_store.freeSkillRow(allocator, r);
         var missing_reason: []const u8 = "";
         if (workspace_id) |w| {
             owned_row = skills_store.getSkillByName(allocator, db, w, use.skill_name) catch |err| switch (err) {
-                // An absent row and an unreadable query are the same thing to
-                // this loop — there is no body to hash. Only an allocation
-                // failure is a real error.
+                // An absent row and an unreadable query are the same thing to this loop — there is no body to hash.
                 error.OutOfMemory => return error.OutOfMemory,
                 error.NotFound, error.QueryFailed, error.WorkspaceIdNameRequired => @as(?skills_store.SkillRow, null),
             };
             if (owned_row) |r| {
-                // An empty body is not a body. Hashing "" would publish a fact
-                // about nothing and report the skill as merely unremarkable.
+                // An empty body is not a body.
                 if (r.content.len == 0) {
                     skills_store.freeSkillRow(allocator, r);
                     owned_row = null;
@@ -469,25 +416,20 @@ pub fn runEval(
         }
 
         if (owned_row == null) {
-            // No body. That is a finding in itself, and the rationale names
-            // WHICH of the reasons applies rather than inventing a body or
-            // blaming a file that does not exist in any workspace.
+            // No body.
             try insertResult(allocator, db, result_id, run_id, skill_key, use.skill_name, args.session_id, "needs_human", .needs_human, "", "", "", missing_reason);
             outcome.needs_human += 1;
             outcome.evaluated += 1;
             continue;
         }
-        // Byte-exact, and deliberately so: this slice is hashed into the
-        // identity of the question AND stored as the `content_at_use` a human
-        // reads to judge the verdict.
+        // Byte-exact, and deliberately so: this slice is hashed into the identity of the question AND stored as the `content_at_use` a human reads to judge the verdict.
         const body = owned_row.?.content;
 
         var hash_buf: [64]u8 = undefined;
         skill_evals_db.sha256Hex(body, &hash_buf);
         const body_hash = hash_buf[0..];
 
-        // The identity of the question: this body, in this repo. Reusing it is
-        // what makes two sessions evaluating one skill cost one computation.
+        // The identity of the question: this body, in this repo.
         const fact_key_hash = try allocator.dupe(u8, body_hash);
         defer allocator.free(fact_key_hash);
 
@@ -496,15 +438,12 @@ pub fn runEval(
             break :blk skill_evals_db.FactClaim.held;
         };
 
-        // `args.cwd` still belongs here, and it is no longer about where the
-        // body LIVES — the body is a row and has no location.
+        // `args.cwd` still belongs here, and it is no longer about where the body LIVES — the body is a row and has no location.
         var analysis = try drift.analyse(allocator, io, args.cwd, body);
         defer analysis.deinit(allocator);
 
         var intrinsic_fact_id: []const u8 = "";
-        // Set only on the reuse path, where the id is a fresh dupe that this
-        // iteration owns. The `.won` path points at `result_id`, which is
-        // already deferred by the loop body.
+        // Set only on the reuse path, where the id is a fresh dupe that this iteration owns.
         var owned_fact_id: ?[]u8 = null;
         defer if (owned_fact_id) |id| allocator.free(id);
         var verdict = skill_evals_db.decideVerdict(analysis.verdict, analysis.has_high);
@@ -531,8 +470,7 @@ pub fn runEval(
                 }
             },
             .held => {
-                // Someone else is computing the same question right now — or
-                // a crashed owner left a lease behind.
+                // Someone else is computing the same question right now — or a crashed owner left a lease behind.
                 const stolen = skill_evals_db.stealFact(
                     allocator,
                     db,
@@ -551,8 +489,7 @@ pub fn runEval(
                     }) catch false;
                     intrinsic_fact_id = result_id;
                 } else {
-                    // A live owner exists. Record what Tier 0 already knows and
-                    // let the owner's intrinsic verdict take over when it lands.
+                    // A live owner exists.
                     outcome.reused_facts += 1;
                 }
             },
@@ -569,8 +506,7 @@ pub fn runEval(
 
         try insertResult(allocator, db, result_id, run_id, skill_key, use.skill_name, args.session_id, "done", verdict, intrinsic_fact_id, body_hash, body, rationale);
 
-        // Everything the judge needs is in scope right here, so the candidate
-        // is captured now rather than re-derived later.
+        // Everything the judge needs is in scope right here, so the candidate is captured now rather than re-derived later.
         if (args.judge_enabled) {
             if (task_context.len == 0) {
                 task_context = skill_evals_db.sessionTaskContext(allocator, db, args.session_id, 4_000) catch
@@ -610,8 +546,7 @@ pub fn runEval(
             else => outcome.needs_human += 1,
         }
 
-        // Distinguish "offered and ignored" explicitly in the log, because it is
-        // the one finding that is about the AGENT rather than about the skill.
+        // Distinguish "offered and ignored" explicitly in the log, because it is the one finding that is about the AGENT rather than about the skill.
         if (logger) |l| {
             if (!use.loaded and use.listed) {
                 l.debugFmt("skill eval: '{s}' was offered and never loaded", .{use.skill_name});
@@ -619,27 +554,21 @@ pub fn runEval(
         }
     }
 
-    // Tier 1, after the deterministic half is on disk and before the run is
-    // closed: the judge UPDATEs rows that already exist, so it has to run
-    // while the run is still open.
+    // Tier 1, after the deterministic half is on disk and before the run is closed: the judge UPDATEs rows that already exist, so it has to run while the run is …
     if (args.judge_enabled and candidates.items.len > 0) {
-        // An out-of-memory part-way through is NOT a reason to fail the eval:
-        // the deterministic half is already stored and correct.
+        // An out-of-memory part-way through is NOT a reason to fail the eval
         const judged = runJudgeTier(allocator, io, db, logger, args, run_id, candidates.items) catch |err| blk: {
             if (logger) |l| l.warnFmt("skill eval: judge tier did not finish: {s}", .{@errorName(err)});
             break :blk 0;
         };
         if (logger) |l| l.debugFmt("skill eval: {d} of {d} judge report(s) validated for run {s}", .{ judged, candidates.items.len, run_id });
-        // The counts describe the deterministic pass, which is what the
-        // summary reports.
+        // The counts describe the deterministic pass, which is what the summary reports.
     }
 
     skill_evals_db.finishRun(allocator, db, run_id, "done", 0, "") catch |err| {
         if (logger) |l| l.warnFmt("skill eval: could not finalize run {s}: {s}", .{ run_id, @errorName(err) });
     };
     // Tell the UI the run finished, so the Evals tab refreshes without polling.
-    // Emitted AFTER finishRun so a listener that re-fetches sees the final
-    // status, not a `running` row.
     skill_eval_events.emitSkillEvalEvent(allocator, args.event_bus, .{
         .action = "run_finished",
         .run_id = run_id,
@@ -650,14 +579,11 @@ pub fn runEval(
 }
 
 pub fn execRunSkillEval(ctx: tools.ToolExecContext, tc: agent.ToolCall) !tools.ToolExecResult {
-    // Under `--auth` the user's settings live in `users.config_json` and never
-    // reach `ctx.config`, so resolve the block per session before deciding.
-    // Null in file mode, where the singleton is already authoritative.
+    // Under `--auth` the user's settings live in `users.config_json` and never reach `ctx.config`, so resolve the block per session before deciding.
     const evals_cfg = skill_evals_config.resolve(ctx.allocator, ctx.db, ctx.session_id) orelse
         ctx.config.skill_evals;
     const enabled = evals_cfg.enabled;
-    // The SSE bus, when the singleton is up. Null in tests and in any
-    // dispatch with no live context — the emit is then a no-op.
+    // The SSE bus, when the singleton is up.
     const bus: ?*pabrikcore.event_bus.EventBus = if (pabrikcore.getSingleton()) |di| di.event_bus else |_| null;
     const outcome = runEval(ctx.allocator, ctx.io, ctx.db, ctx.logger, .{
         .session_id = ctx.session_id,
@@ -762,8 +688,7 @@ test "runEval does nothing at all when the switch is off" {
     defer out.deinit(alloc);
 
     try testing.expect(out.disabled);
-    // Nothing read, nothing written: "off" must not mean "off, but it still
-    // touched the database".
+    // Nothing read, nothing written: "off" must not mean "off, but it still touched the database".
     try testing.expectEqual(@as(i64, 0), try countResults(alloc, &ctx.db));
 }
 
@@ -819,22 +744,18 @@ test "a skill this workspace does not have is an honest needs_human, not a guess
     try testing.expectEqualStrings("needs_human", row.values[0]);
     try testing.expectEqualStrings("needs_human", row.values[1]);
     try testing.expectEqualStrings("the skill is not installed in this workspace", row.values[2]);
-    // The key names the workspace, so this row can never be mistaken for
-    // another workspace's result about the same skill name.
+    // The key names the workspace, so this row can never be mistaken for another workspace's result about the same skill name.
     try testing.expectEqualStrings("ws_a:definitely-not-a-real-skill-xyz", row.values[3]);
 }
 
 test "a session with no workspace says that, instead of blaming a body" {
-    // Two different problems, two different fixes: "no workspace" is a wiring
-    // problem the user can fix, "the file is gone" sends them hunting for a
-    // file that was never where they thought it was.
+    // Two different problems, two different fixes: "no workspace" is a wiring problem the user can fix, "the file is gone" sends them hunting for a file that was …
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // No `workspace_item_tasks` row and no cwd match: unresolvable, and the
-    // resolver fails closed rather than guessing a workspace.
+    // No `workspace_item_tasks` row and no cwd match: unresolvable, and the resolver fails closed rather than guessing a workspace.
     try seedLoaded(alloc, &ctx.db, ctx.threaded.io(), "sess_orphan", "some-skill");
     const out = try runEval(alloc, ctx.threaded.io(), &ctx.db, null, .{
         .session_id = "sess_orphan",
@@ -851,15 +772,12 @@ test "a session with no workspace says that, instead of blaming a body" {
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
     try testing.expectEqualStrings("this session is not linked to any workspace, so the skill cannot be read", row.values[0]);
-    // A sentinel a workspace id cannot collide with, so these rows stay out
-    // of any real workspace's fact cache.
+    // A sentinel a workspace id cannot collide with, so these rows stay out of any real workspace's fact cache.
     try testing.expectEqualStrings("<no-workspace>:some-skill", row.values[1]);
 }
 
 test "an empty skill body is not evaluated as if it were a good one" {
-    // `content` defaults to `''` and a model routinely writes the body after
-    // the row exists. Hashing "" would publish a fact about nothing and
-    // report the skill as merely unremarkable — a `keep` nobody earned.
+    // `content` defaults to `''` and a model routinely writes the body after the row exists.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -913,8 +831,7 @@ test "the same skill name in two workspaces gets its own fact, not the other's v
     try seedWorkspace(alloc, &ctx.db, "sess_a", "ws_a");
     try seedWorkspace(alloc, &ctx.db, "sess_b", "ws_b");
 
-    // Workspace A's copy is current; workspace B's names a path that does not
-    // exist. Same name, same repo, different bodies and different verdicts.
+    // Workspace A's copy is current; workspace B's names a path that does not exist.
     const a_body =
         \\---
         \\name: pdf
@@ -954,8 +871,7 @@ test "the same skill name in two workspaces gets its own fact, not the other's v
     });
     defer b.deinit(alloc);
 
-    // Neither run reused the other's fact, and B's rot was found rather than
-    // answered from A's cache.
+    // Neither run reused the other's fact, and B's rot was found rather than answered from A's cache.
     try testing.expectEqual(@as(u32, 0), a.reused_facts);
     try testing.expectEqual(@as(u32, 0), b.reused_facts);
     try testing.expectEqual(@as(u32, 1), b.update);
@@ -966,8 +882,7 @@ test "the same skill name in two workspaces gets its own fact, not the other's v
     defer frow.deinit(alloc);
     try testing.expectEqualStrings("2", frow.values[0]);
 
-    // Each result carries ITS OWN workspace in the key and ITS OWN body as the
-    // before/after a human reads.
+    // Each result carries ITS OWN workspace in the key and ITS OWN body as the before/after a human reads.
     var q = try ctx.db.query(alloc,
         \\SELECT skill_key, content_at_use, verdict FROM skill_eval_results ORDER BY skill_key
     , &.{});
@@ -986,9 +901,7 @@ test "the same skill name in two workspaces gets its own fact, not the other's v
 }
 
 test "a skill in ANOTHER workspace is invisible to this session" {
-    // The read is scoped, not filtered afterwards. A session in ws_a must not
-    // be able to evaluate ws_b's body even when the name matches, or the
-    // verdict would be about text this workspace never held.
+    // The read is scoped, not filtered afterwards.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1033,8 +946,7 @@ test "a second call in the same session reuses the run instead of redoing it" {
     defer first.deinit(alloc);
     try testing.expect(!first.reused);
 
-    // The agent can emit this twice in one turn. The partial unique index is
-    // the arbiter, and the loser must not evaluate again.
+    // The agent can emit this twice in one turn.
     const second = try runEval(alloc, ctx.threaded.io(), &ctx.db, null, .{
         .session_id = "sess_1",
         .cwd = "/tmp",
@@ -1094,8 +1006,6 @@ test "max_skills = 0 evaluates nothing and does not crash" {
 }
 
 // ─── the publish / reuse paths ───────────────────────────────────────────
-// These need a skill that actually EXISTS in the session's workspace, because
-// every test above names one that does not and therefore exits at the "no
 
 fn seedWorkspaceRow(alloc: std.mem.Allocator, db: *database.Db, ws_id: []const u8) !void {
     try db.exec(alloc,
@@ -1103,9 +1013,7 @@ fn seedWorkspaceRow(alloc: std.mem.Allocator, db: *database.Db, ws_id: []const u
     , &.{ws_id});
 }
 
-/// Give `session_id` a workspace through the exact task link a kanban task
-/// session has (`workspace_item_tasks.id` IS the session id) — the first
-/// branch of `workspace_scope.resolveWorkspaceId`.
+/// Give `session_id` a workspace through the exact task link a kanban task session has (`workspace_item_tasks.id` IS the session id) — the first branch of …
 fn seedWorkspace(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, ws_id: []const u8) !void {
     try seedWorkspaceRow(alloc, db, ws_id);
     const item_id = try std.fmt.allocPrint(alloc, "wi_{s}", .{ws_id});
@@ -1192,9 +1100,7 @@ test "a second session reuses the shared fact AND links the result to it" {
     defer ctx.db.deinit();
     const io = ctx.threaded.io();
 
-    // BOTH sessions are in ONE workspace: two tasks on one item. That is what
-    // makes the fact shared rather than accidentally separated by a key that
-    // forgot the workspace.
+    // BOTH sessions are in ONE workspace: two tasks on one item.
     try seedWorkspace(alloc, &ctx.db, "sess_a", "ws_shared");
     try seedWorkspace(alloc, &ctx.db, "sess_b", "ws_shared");
 
@@ -1306,7 +1212,6 @@ test "a skill that was only LISTED is still evaluated when configured" {
     try seedSkillRow(alloc, &ctx.db, "ws_offered", "offered-only", body);
 
     // Only a `listed` event — the agent was offered the skill and never read it.
-    // The row carries no `scope` and no `path`: a skill has neither any more.
     const listed =
         \\{"tool":"search_skills","success":true,"data":{"query":"","skills":[{"name":"offered-only","description":"d"}],"count":1,"total":1},"error":null,"v":1}
     ;
@@ -1319,8 +1224,7 @@ test "a skill that was only LISTED is still evaluated when configured" {
         .llm_history_id = "h1",
     });
 
-    // With include_listed_only = true (the default) it IS evaluated: "the agent
-    // was handed the right skill and ignored it" is a real finding.
+    // With include_listed_only = true (the default) it IS evaluated: "the agent was handed the right skill and ignored it" is a real finding.
     const with_listed = try runEval(alloc, io, &ctx.db, null, .{
         .session_id = "sess_1",
         .cwd = ".",
@@ -1352,8 +1256,7 @@ test "a run that fails mid-loop is finalized as error, not left running" {
 
     // A session with a ledger row, so the run is claimed...
     try seedLoaded(alloc, &ctx.db, io, "sess_1", "whatever");
-    // ...then drop the results table so the first insertResult fails. This is
-    // the shape of any transient DB error mid-loop.
+    // ...then drop the results table so the first insertResult fails.
     try ctx.db.exec(alloc, "DROP TABLE skill_eval_results", &.{});
 
     const result = runEval(alloc, io, &ctx.db, null, .{
@@ -1362,8 +1265,7 @@ test "a run that fails mid-loop is finalized as error, not left running" {
         .environment = null,
         .enabled = true,
     });
-    // It must propagate an error. Which variant arrives is the backend's own
-    // affair: sqlite fails at prepare, postgres at execute.
+    // It must propagate an error.
     if (result) |_| {
         return error.ExpectedMissingTableError;
     } else |err| switch (err) {
@@ -1371,9 +1273,7 @@ test "a run that fails mid-loop is finalized as error, not left running" {
         else => return err,
     }
 
-    // ...and the run must NOT be left `running`. A stuck run both shows a
-    // permanently spinning UI and, because the partial unique index still holds
-    // the row, blocks every later eval for this session forever.
+    // ...and the run must NOT be left `running`.
     var q = try ctx.db.query(alloc, "SELECT status FROM skill_eval_runs", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -1400,9 +1300,7 @@ test "judge_enabled with no live agent context still completes the deterministic
     });
     defer outcome.deinit(alloc);
 
-    // The session is in no workspace at all, so there is no row to read and
-    // Tier 0 records a `needs_human` result — and the judge tier did not
-    // disturb it.
+    // The session is in no workspace at all, so there is no row to read and Tier 0 records a `needs_human` result — and the judge tier did not disturb it.
     try testing.expectEqual(@as(i64, 1), try countResults(alloc, &ctx.db));
 
     const rows = try skill_evals_db.listResults(alloc, &ctx.db, outcome.run_id);
@@ -1410,8 +1308,7 @@ test "judge_enabled with no live agent context still completes the deterministic
     try testing.expectEqual(@as(usize, 1), rows.len);
     try testing.expectEqualStrings("needs_human", rows[0].verdict);
     try testing.expectEqualStrings("needs_human", rows[0].status);
-    // Nothing was judged, so the session-relative half is untouched at 0 —
-    // never a fabricated score.
+    // Nothing was judged, so the session-relative half is untouched at 0 — never a fabricated score.
     const scores = (try skill_evals_db.readJudgeScores(alloc, &ctx.db, rows[0].id)).?;
     defer scores.deinit(alloc);
     try testing.expectEqual(@as(u8, 0), scores.relevance);
@@ -1421,9 +1318,7 @@ test "judge_enabled with no live agent context still completes the deterministic
 }
 
 test "the judge tier is off unless a caller opts in" {
-    // `judge_enabled` defaults false, so the shipped tool spends nothing on
-    // sub-agents. This pins the default: a future edit that flips it would
-    // start billing a sub-agent per skill on every eval.
+    // `judge_enabled` defaults false, so the shipped tool spends nothing on sub-agents.
     const args = RunArgs{
         .session_id = "s",
         .cwd = ".",
@@ -1431,21 +1326,18 @@ test "the judge tier is off unless a caller opts in" {
         .enabled = true,
     };
     try testing.expectEqual(false, args.judge_enabled);
-    // And the allowlist the judge runs with is read-only: a judge that could
-    // write could edit the very skill it is judging.
+    // And the allowlist the judge runs with is read-only: a judge that could write could edit the very skill it is judging.
     for (args.judge_tools) |tool| {
         try testing.expect(std.mem.eql(u8, tool, "read_file") or
             std.mem.eql(u8, tool, "search") or
             std.mem.eql(u8, tool, "glob"));
     }
-    // `runBatch` refuses a batch whose allowlist is empty or wildcard, so the
-    // judge's tools must satisfy the same policy the tool's do.
+    // `runBatch` refuses a batch whose allowlist is empty or wildcard, so the judge's tools must satisfy the same policy the tool's do.
     try batch.validateJobs(&.{.{ .name = "skill-eval-judge", .instruction = "judge", .tools = args.judge_tools }});
 }
 
 test "a result row stores the exact body its base_content_hash was computed from" {
-    // `content_at_use` existed in the schema from the start and had exactly
-    // one reference in the whole repo: the CREATE TABLE.
+    // `content_at_use` existed in the schema from the start and had exactly one reference in the whole repo: the CREATE TABLE.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1454,9 +1346,7 @@ test "a result row stores the exact body its base_content_hash was computed from
 
     try seedWorkspace(alloc, &ctx.db, "sess_ca", "ws_snapshot");
 
-    // Frontmatter, blank lines and all — the row stores what a human typed,
-    // and this test is the one place that proves nothing is normalised on the
-    // way in.
+    // Frontmatter, blank lines and all — the row stores what a human typed, and this test is the one place that proves nothing is normalised on the way in.
     const body =
         \\---
         \\name: snapshot-skill
@@ -1488,20 +1378,17 @@ test "a result row stores the exact body its base_content_hash was computed from
     try testing.expectEqualStrings(body, row.values[0]);
     try testing.expect(row.values[0].len > 0);
 
-    // And the hash on the row is the SHA-256 of exactly that text, so the guard
-    // can be re-derived from what is stored rather than trusted blind.
+    // And the hash on the row is the SHA-256 of exactly that text, so the guard can be re-derived from what is stored rather than trusted blind.
     var hash_buf: [64]u8 = undefined;
     skill_evals_db.sha256Hex(row.values[0], &hash_buf);
     try testing.expectEqualStrings(hash_buf[0..], row.values[1]);
 
-    // Tier 0 proposes no text -- that is the judge's job -- so this stays empty
-    // rather than being back-filled with the before body.
+    // Tier 0 proposes no text -- that is the judge's job -- so this stays empty rather than being back-filled with the before body.
     try testing.expectEqualStrings("", row.values[2]);
 }
 
 test "a result whose body could not be read stores no before" {
-    // The `needs_human` branch has no body, so `content_at_use` must be empty
-    // rather than a placeholder that would look like a snapshot.
+    // The `needs_human` branch has no body, so `content_at_use` must be empty rather than a placeholder that would look like a snapshot.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1510,8 +1397,7 @@ test "a result whose body could not be read stores no before" {
 
     try seedWorkspace(alloc, &ctx.db, "sess_cm", "ws_missing");
 
-    // Ledger says the session read it; this workspace has no such skill, so
-    // the body read fails and the row lands on the needs_human branch.
+    // Ledger says the session read it; this workspace has no such skill, so the body read fails and the row lands on the needs_human branch.
     try seedLoaded(alloc, &ctx.db, io, "sess_cm", "never-written");
 
     const out = try runEval(alloc, io, &ctx.db, null, .{

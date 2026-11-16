@@ -1,5 +1,4 @@
-//! S3 backend for the object store, aimed at rustfs (and any other
-//! S3-compatible server). Path-style addressing, SigV4, four verbs.
+//! S3 backend for the object store, aimed at rustfs (and any other S3-compatible server).
 
 const std = @import("std");
 const storage = @import("storage.zig");
@@ -20,8 +19,7 @@ pub const S3Storage = struct {
     io: std.Io,
     config: Config,
     transport: transport_mod.Transport,
-    /// Fixed `YYYYMMDDTHHMMSSZ` stamp. Null reads the real clock; tests set it
-    /// so a signature is reproducible.
+    /// Fixed `YYYYMMDDTHHMMSSZ` stamp.
     amz_date_override: ?[]const u8 = null,
 
     pub fn init(
@@ -57,8 +55,7 @@ pub const S3Storage = struct {
         return amzDateNow(self.io, buf);
     }
 
-    /// Sign and dispatch one request. Every allocation is freed before return;
-    /// the response body is the caller's.
+    /// Sign and dispatch one request.
     fn send(
         self: *S3Storage,
         allocator: std.mem.Allocator,
@@ -172,9 +169,7 @@ pub const S3Storage = struct {
 
 pub const EnsureBucketError = error{ ServiceNotReady, IoFailed, OutOfMemory };
 
-/// Create the bucket if it is not there: a supervised rustfs starts empty, so
-/// the first write would fail with NoSuchBucket. `409` is success, and `503`
-/// means rustfs is still bringing its IAM and storage quorum up.
+/// Create the bucket if it is not there: a supervised rustfs starts empty, so the first write would fail with NoSuchBucket.
 pub fn ensureBucket(self: *S3Storage) EnsureBucketError!void {
     const url = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{
         endpointBase(self.config.endpoint),
@@ -296,8 +291,7 @@ const Seen = struct {
     content_sha256: []u8,
 };
 
-/// A transport that records what it was asked to send and replies with a canned
-/// status. The fake is the seam: no socket, no clock, no bucket.
+/// A transport that records what it was asked to send and replies with a canned status.
 const FakeTransport = struct {
     allocator: std.mem.Allocator,
     status: u16 = 200,
@@ -359,8 +353,7 @@ const FakeTransport = struct {
     }
 };
 
-/// Heap-allocated so `store.transport.ptr` can point at `fake` and stay valid:
-/// a by-value fixture would leave the transport pointing at a dead stack slot.
+/// Heap-allocated so `store.transport.ptr` can point at `fake` and stay valid
 const Fixture = struct {
     fake: FakeTransport,
     store: S3Storage,

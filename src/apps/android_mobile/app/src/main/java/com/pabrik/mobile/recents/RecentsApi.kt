@@ -7,63 +7,18 @@ import java.time.DateTimeException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
-/**
- * The sidebar's two endpoints, and the wire shape that comes back.
- *
- * Both are read-only lists the desktop store already consumes:
- * `GET /api/workspaces?is_include_items=false` for the dropdown and
- * `GET /api/session?workspace_id=…` for recents. (`/api/llm/session` is the
- * same handler under an alias; the desktop store uses that one, either is fine.)
- *
- * Auth is the `pabrik_session` cookie and nothing else — the backend accepts no
- * `Authorization` header and has no CSRF token, so a native client has to send
- * the cookie itself. See [RecentsClient].
- */
+/** The sidebar's two endpoints, and the wire shape that comes back. */
 object RecentsApi {
-    /**
-     * `is_include_items` defaults to `"true"` on the server, which drags along
-     * every workspace item and its tasks. The sidebar only shows names, so the
-     * parameter is always sent explicitly and the payload stays one row per
-     * workspace.
-     */
+    /** `is_include_items` defaults to `"true"` on the server, which drags along every workspace item and its tasks. */
     const val WORKSPACES_PATH = "/api/workspaces?is_include_items=false"
 
-    /**
-     * How many rows the drawer's preview asks for.
-     *
-     * Five is the drawer, not the data: a drawer on a phone is a switchboard,
-     * and thirty rows of chat titles push the Projects section — the part of
-     * this drawer people navigate *by* — off the bottom of the screen. The rows
-     * behind this are one tap away, on a full-screen page, which is the same
-     * trade the project section makes and the reason both name this constant
-     * the same way.
-     *
-     * The request is sized to the preview so there is no second, hidden cap in
-     * the composable to drift from it: the drawer renders what it fetched.
-     */
+    /** How many rows the drawer's preview asks for. */
     const val DRAWER_PREVIEW_ROWS = 5
 
-    /**
-     * How many rows one page of the **full-screen** list asks for.
-     *
-     * Twenty is `ProjectsApi.TASKS_PAGE_LIMIT`, deliberately: this list and a
-     * project's chats are the same shape — a preview inline, a page behind it,
-     * paging on scroll — so they pay the same cost per screen and not two
-     * different ones. A request size, never a list size.
-     */
+    /** How many rows one page of the **full-screen** list asks for. */
     const val CHATS_PAGE_LIMIT = 20
 
-    /**
-     * `workspace_id` is only honoured when it resolves to real sessions, so this
-     * is a scoped list rather than a client-side filter. An unknown id fails
-     * closed to an empty array — never send a guessed id.
-     *
-     * [cursor] is the server's own `next_cursor`, handed back verbatim. It is
-     * a raw sort-field value (`'2026-09-26 05:12:37'` when sorting by
-     * `updated_at`), not an opaque token and not an id — parse it, compare it or
-     * synthesize it and pagination silently degrades. Round-tripping it is the
-     * only supported way to get page 2+.
-     */
+    /** `workspace_id` is only honoured when it resolves to real sessions, so this is a scoped list rather than a client-side filter. */
     fun chatsPath(
         workspaceId: String,
         cursor: String? = null,
@@ -74,8 +29,7 @@ object RecentsApi {
         append(limit.coerceIn(1, MAX_LIMIT))
         append("&workspace_id=")
         append(encodeQueryValue(workspaceId))
-        // A blank cursor is indistinguishable from "first page" to the server,
-        // so sending it would restart the list and re-serve page 1 forever.
+        // A blank cursor is indistinguishable from "first page" to the server, so sending it would restart the list and re-serve page 1 forever.
         if (!cursor.isNullOrBlank()) {
             append("&cursor=")
             append(encodeQueryValue(cursor))
@@ -107,23 +61,7 @@ object RecentsApi {
         workspaceId: String,
     ): List<ChatSummary> = parseChatsPage(body, workspaceId).chats
 
-    /**
-     * One page of recents plus everything a *drain* needs to know whether to
-     * ask for another one. The sidebar walks pages until this says the list is
-     * finished; nothing else in the app pages the recents list.
-     *
-     * Two of those fields are traps, and both are the server's contract rather
-     * than this client's choice (`buildSessionListJson` in
-     * `llm_history.zig`):
-     *
-     * - **`has_more` means "the page came back full"** (`len == limit`), not
-     *   "there is at least one more row". A final page that happens to be
-     *   exactly full therefore reports `true` and costs one extra round-trip.
-     *   [total] is the full filtered count, so it is the cheap way to avoid it.
-     * - **`nextCursor` is non-null even on the last page** — it is the last
-     *   row's sort value whenever the page was non-empty. Nothing about it
-     *   signals the end of the list, so the *only* terminator is `hasMore`.
-     */
+    /** One page of recents plus everything a *drain* needs to know whether to ask for another one. */
     fun parseChatsPage(
         body: String,
         workspaceId: String,
@@ -140,21 +78,13 @@ object RecentsApi {
                 add(
                     ChatSummary(
                         id = id,
-                        // The scoped response does not echo the workspace back,
-                        // so the id we asked with is the only one available.
+                        // The scoped response does not echo the workspace back, so the id we asked with is the only one available.
                         workspaceId = workspaceId,
                         title = session.stringField("session_name"),
-                        // Two answers, deliberately: the page is ordered by
-                        // `updated_at` (that is what `sort_by=updated_at` asked
-                        // the server for), while the pill shows the human's own
-                        // last visit. Keeping them apart is what lets a running
-                        // session sit at the top of the list without its label
-                        // pretending the human just came back to it.
+                        // Two answers, deliberately: the page is ordered by `updated_at` (that is what `sort_by=updated_at` asked the server for), while the pill shows the human's own …
                         updatedAtEpochMillis = sessionOrderTimestampMillis(session),
                         lastHumanTouchedAtEpochMillis = sessionLabelTimestampMillis(session),
-                        // `stringField` maps an explicit JSON null to "", so
-                        // the blank check is what separates "no project" from
-                        // a project whose id happened to be empty.
+                        // `stringField` maps an explicit JSON null to "", so the blank check is what separates "no project" from a project whose id happened to be empty.
                         projectId = session.stringField("workspace_item_id")
                             .takeIf { it.isNotBlank() },
                     ),
@@ -167,27 +97,15 @@ object RecentsApi {
 
         return ChatsPage(
             chats = chats,
-            // `total` is a backstop, not the primary signal. An older server
-            // that omits it reports 0, and reading that as "we have them all"
-            // would silently truncate every list to page 1.
+            // `total` is a backstop, not the primary signal.
             hasMore = serverHasMore && (total <= 0 || chats.size < total),
-            // A blank cursor is worse than none: it would restart the list at
-            // page 1 and hand back rows the sidebar already shows.
+            // A blank cursor is worse than none: it would restart the list at page 1 and hand back rows the sidebar already shows.
             nextCursor = root.optNullableString("next_cursor")?.takeIf { it.isNotBlank() },
             total = total,
         )
     }
 
-    /**
-     * Write-through merge for a page append: a same-id incoming row replaces
-     * the one already held, order is preserved.
-     *
-     * Dedupe is not defensive paranoia — a session that gets touched while the
-     * user is between pages moves to the head of the ordering, so a page
-     * boundary can legitimately hand back a row that is already on screen.
-     * Without this, the sidebar grows duplicate rows that select the same chat
-     * twice. Mirrors `ChatApi.mergeById`.
-     */
+    /** Write-through merge for a page append: a same-id incoming row replaces the one already held, order is preserved. */
     fun mergeChatsById(
         current: List<ChatSummary>,
         incoming: List<ChatSummary>,
@@ -199,44 +117,18 @@ object RecentsApi {
         return byId.values.toList()
     }
 
-    /**
-     * The **order** key: plain `updated_at`, then `created_at`.
-     *
-     * This is the column the server was asked to sort by
-     * (`sort_by=updated_at&direction=desc`), so honouring it is what keeps a
-     * running session — the one with the most recent `updated_at` because the
-     * agent keeps touching it — at the top of Recent, exactly as the desktop
-     * sidebar does. `last_human_touched_at` is deliberately NOT consulted: a
-     * session the human walked away from an hour ago but the agent is still
-     * working on is the newest row, not the oldest.
-     */
+    /** The **order** key: plain `updated_at`, then `created_at`. */
     private fun sessionOrderTimestampMillis(session: JSONObject): Long =
         parseTimestampEpochMillis(session.stringField("updated_at"))
             ?: parseTimestampEpochMillis(session.stringField("created_at"))
             ?: UNKNOWN_TIMESTAMP
 
-    /**
-     * The **label** key: `last_human_touched_at`, then `updated_at`, then
-     * `created_at` — the desktop's `last_human_touched_at || updated_at`, with
-     * a `created_at` leg so a legacy row never renders the epoch (which would
-     * read as `56y` in the sidebar).
-     *
-     * `last_human_touched_at` is an empty string for rows predating Migration
-     * 082, hence the fallbacks.
-     */
+    /** The **label** key: `last_human_touched_at`, then `updated_at`, then `created_at` — the desktop's `last_human_touched_at || updated_at`, with a `created_at` leg … */
     private fun sessionLabelTimestampMillis(session: JSONObject): Long =
         parseTimestampEpochMillis(session.stringField("last_human_touched_at"))
             ?: sessionOrderTimestampMillis(session)
 
-    /**
-     * Parses the two timestamp shapes the backend emits into epoch millis, or
-     * null when the value is absent or unparseable.
-     *
-     * The REST list sends a SQLite datetime string (`2026-09-26 05:07:34`) which
-     * the server formats in UTC — reading it as device-local time would shift
-     * every label by the device's offset. SSE emits the same field as bare unix
-     * millis, so a digits-only string is accepted too.
-     */
+    /** Parses the two timestamp shapes the backend emits into epoch millis, or null when the value is absent or unparseable. */
     fun parseTimestampEpochMillis(raw: String?): Long? {
         val trimmed = raw?.trim().orEmpty()
         if (trimmed.isEmpty()) return null
@@ -259,8 +151,7 @@ object RecentsApi {
                 .toInstant(ZoneOffset.UTC)
                 .toEpochMilli()
         } catch (_: DateTimeException) {
-            // Calendar-invalid values ("2026-02-31 00:00:00") parse as digits
-            // but are not instants; a missing label beats a wrong one.
+            // Calendar-invalid values ("2026-02-31 00:00:00") parse as digits but are not instants; a missing label beats a wrong one.
             null
         }
     }
@@ -277,18 +168,10 @@ object RecentsApi {
     /** Any integer at or above this is a plausible unix-seconds/millis stamp. */
     private const val MIN_UNIX_MILLIS_DIGITS = 10
 
-    /**
-     * Sentinel for a session whose every timestamp was missing. Distinct from
-     * 0 so [ChatSummary.hasTimestamp] can tell "no data" from the epoch.
-     */
+    /** Sentinel for a session whose every timestamp was missing. */
     const val UNKNOWN_TIMESTAMP = 0L
 }
 
-/**
- * `JSONObject.optString` renders an explicit null as the four-character text
- * `"null"`, and does not trim. Top-level and `internal` so the projects client
- * reads the wire the same way rather than re-deriving it — a second
- * implementation is a second set of bugs.
- */
+/** `JSONObject.optString` renders an explicit null as the four-character text `"null"`, and does not trim. */
 internal fun JSONObject.stringField(name: String): String =
     if (isNull(name)) "" else optString(name).trim()

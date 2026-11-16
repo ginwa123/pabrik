@@ -4,9 +4,7 @@ const recentLocalMutations = new Map<string, number>()
 
 export function registerRecentLocalMutations(ids: string[], expiryMs: number): void {
   const now = Date.now()
-  // Lazy GC: drop expired entries on every register call to keep
-  // the Map small. O(N) per PATCH is acceptable for v1 (worst case
-  // bounded by the mutation rate; typically < 50 entries).
+  // Lazy GC: drop expired entries on every register call to keep the Map small.
   for (const [id, exp] of recentLocalMutations) {
     if (exp < now) recentLocalMutations.delete(id)
   }
@@ -15,9 +13,7 @@ export function registerRecentLocalMutations(ids: string[], expiryMs: number): v
   }
 }
 
-/**  * True iff `elementId` was mutated by this client within the last `RECENT_MUTATION_TTL_MS`
- * milliseconds. Read by the SSE handler to decide whether to skip the GET fan-out for an incoming
- * event. Exported for `stores/designSse.ts`. Side effect: expired entries are lazily GC'd on read. */
+/** True iff `elementId` was mutated by this client within the last `RECENT_MUTATION_TTL_MS` milliseconds. */
 export function isRecentLocalMutation(elementId: string): boolean {
   const exp = recentLocalMutations.get(elementId)
   if (exp === undefined) return false
@@ -28,8 +24,7 @@ export function isRecentLocalMutation(elementId: string): boolean {
   return true
 }
 
-/**  * Test-only helper to clear the dedupe Map between tests. NOT exposed in the production API surface
- * — exported via the store's returned object only for unit tests. */
+/** Test-only helper to clear the dedupe Map between tests. */
 export function _clearRecentLocalMutationsForTests(): void {
   recentLocalMutations.clear()
 }

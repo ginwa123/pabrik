@@ -8,7 +8,6 @@ const ai_mod = pabrik_core.ai_mod;
 const auth_common = @import("auth_common.zig");
 
 /// Forward an SSE event to every client registered under `routing_key`.
-/// Lifted verbatim from kanban_events_sse.zig:34-76.
 fn forwardToClients(routing_key: []const u8, data: ai_mod.on_event_sent.SseEvent) void {
     const di = pabrik_core.getSingleton() catch return;
     const allocator = di.allocator;
@@ -49,22 +48,18 @@ fn forwardToClients(routing_key: []const u8, data: ai_mod.on_event_sent.SseEvent
     }
 }
 
-/// True when the SSE client identified by `client_id` may receive an event
-/// about `session_id`.
+/// True when the SSE client identified by `client_id` may receive an event about `session_id`.
 fn clientMayReceive(di: *pabrik_core.App, client_id: [16]u8, data: ai_mod.on_event_sent.SseEvent) bool {
     const owner = pabrik_core.getClientOwner(client_id) orelse return true;
     if (auth_common.isSharedOwner(owner)) return true;
 
-    // Resolve the session this event is about, then ask whether the owner
-    // may see it. `null` means "cannot be attributed to a session" — deliver,
-    // because there is nothing to scope on.
+    // Resolve the session this event is about, then ask whether the owner may see it.
     const session_id = resolveEventSessionId(di.allocator, di.db, data) orelse return true;
     if (session_id.len == 0) return true;
     return auth_common.canSeeSession(di.allocator, di.db, session_id, owner);
 }
 
-/// Resolve the session id an SSE event is about, or null when it cannot be
-/// attributed to one.
+/// Resolve the session id an SSE event is about, or null when it cannot be attributed to one.
 fn resolveEventSessionId(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -86,8 +81,7 @@ const PayloadFields = struct {
     id: []const u8 = "",
 };
 
-/// Extract `session_id` and `id` from an SSE payload. Null when the payload
-/// is not a JSON object.
+/// Extract `session_id` and `id` from an SSE payload.
 fn payloadFields(allocator: std.mem.Allocator, data: []const u8) ?PayloadFields {
     if (data.len == 0) return null;
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, data, .{}) catch return null;
@@ -130,9 +124,7 @@ fn workerSessionId(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, wo
 
 /// ChannelList — the parsed result of `?channels=`.
 pub const ChannelList = struct {
-    /// Each entry is a routing key the handler must subscribe a
-    /// callback to. Duplicates are not deduplicated (the SSE
-    /// event_bus handles duplicate subscribers without error).
+    /// Each entry is a routing key the handler must subscribe a callback to.
     routing_keys: []const []const u8,
 
     pub fn deinit(self: ChannelList, allocator: std.mem.Allocator) void {
@@ -142,17 +134,13 @@ pub const ChannelList = struct {
 };
 
 /// Parse `?channels=workers,sessions,kanban,llm,queue,documents`.
-/// Returns the list of routing keys to subscribe + register. Returns
-/// ChannelParseError on missing/empty/unknown channel tokens.
 pub const ChannelParseError = error{
     MissingChannels,
     UnknownChannel,
     OutOfMemory,
 };
 
-/// `pub` so `unified_events_sse_test.zig` can import it for behavioral
-/// tests (Plan Reviewer finding #3). The `pub` is harmless — the
-/// function is only called from `unifiedEventsStreamHandler`.
+/// `pub` so `unified_events_sse_test.zig` can import it for behavioral tests (Plan Reviewer finding #3).
 pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParseError!ChannelList {
     // Trim whitespace from the raw value (the router does not trim).
     const trimmed = std.mem.trim(u8, raw, " \t");
@@ -181,48 +169,35 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
         } else if (std.mem.eql(u8, token, "queue")) {
             try routing_keys.append(allocator, try allocator.dupe(u8, "queue"));
         } else if (std.mem.eql(u8, token, "background_process")) {
-            // Background-process lifecycle (`background_process_created` /
-            // `background_process_completed` on the central
-            // "background_process" key — see background_process_events.zig).
+            // Background-process lifecycle (`background_process_created` /`background_process_completed` on the central "background_process" key — see …
             try routing_keys.append(allocator, try allocator.dupe(u8, "background_process"));
         } else if (std.mem.eql(u8, token, "skill_evals")) {
-            // Skill-eval lifecycle (`skill_evals_run_started` /
-            // `_run_finished` / `_result_applied` on the central
-            // "skill_evals" key — see skill_eval_events.zig).
+            // Skill-eval lifecycle (`skill_evals_run_started` /`_run_finished` / `_result_applied` on the central "skill_evals" key — see skill_eval_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "skill_evals"));
         } else if (std.mem.eql(u8, token, "git_file_stage")) {
-            // File stage/unstage (`git_file_staged` / `git_file_unstaged` on
-            // the central "git_file_stage" key — see
-            // git_file_stage_events.zig).
+            // File stage/unstage (`git_file_staged` / `git_file_unstaged` on the central "git_file_stage" key — see git_file_stage_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "git_file_stage"));
         } else if (std.mem.eql(u8, token, "git_pr_state")) {
-            // Change-request state (`git_pr_state_merged` /
-            // `git_pr_state_closed` on the central "git_pr_state" key — see
-            // git_pr_state_events.zig).
+            // Change-request state (`git_pr_state_merged` /`git_pr_state_closed` on the central "git_pr_state" key — see git_pr_state_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "git_pr_state"));
         } else if (std.mem.eql(u8, token, "design_element")) {
             // Design-mode element mutations.
             try routing_keys.append(allocator, try allocator.dupe(u8, "design_element"));
         } else if (std.mem.eql(u8, token, "documents")) {
-            // Document mutations (`document_created` / `document_updated` /
-            // `document_deleted` on the central "documents" key — see
-            // modules/agent/loop/document_events.zig).
+            // Document mutations (`document_created` / `document_updated` /`document_deleted` on the central "documents" key — see modules/agent/loop/document_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "documents"));
         } else {
             return error.UnknownChannel;
         }
     }
 
-    // If the raw value was non-empty but every comma-delimited token was
-    // empty (e.g. ",,,"), we still need to error.
+    // If the raw value was non-empty but every comma-delimited token was empty (e.g.
     if (routing_keys.items.len == 0) return error.MissingChannels;
 
     return ChannelList{ .routing_keys = try routing_keys.toOwnedSlice(allocator) };
 }
 
-// =============================================================================
-// Callback structs (top-level, NOT inline). Each routing key gets its own
-// callback.
+// Callback structs (top-level, NOT inline).
 
 /// Callback for `kanban_column` routing key — fires on column create/update/delete.
 pub const CallbackUnifiedColumnStream = struct {
@@ -252,18 +227,14 @@ pub const CallbackUnifiedSessionsStream = struct {
     }
 };
 
-/// Callback for the central "llm" routing key. Forwards to every
-/// client registered under "llm" — the frontend listener then
-/// filters by `data.session_id` on the JS side.
+/// Callback for the central "llm" routing key.
 pub const CallbackUnifiedLLMBroadcast = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("llm", data);
     }
 };
 
-/// Callback for the central "queue" routing key. Forwards to every
-/// client registered under "queue" — the frontend listener then
-/// filters by `data.session_id` on the JS side.
+/// Callback for the central "queue" routing key.
 pub const CallbackUnifiedQueueBroadcast = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("queue", data);
@@ -305,18 +276,14 @@ pub const CallbackUnifiedGitPrStateStream = struct {
     }
 };
 
-/// Callback for the central "documents" routing key. Fires when an agent tool
-/// creates, rewrites or removes a document — the sidebar's Documents list and
-/// an editor open on that document refresh from it.
+/// Callback for the central "documents" routing key.
 pub const CallbackUnifiedDocumentsStream = struct {
     pub fn callback(data: ai_mod.on_event_sent.SseEvent) void {
         forwardToClients("documents", data);
     }
 };
 
-/// Terminate an SSE stream the handler cannot serve (auth failure,
-/// missing/empty/unknown `?channels=`). kabelweb sends the `200
-/// text/event-stream` headers AND registers the fd BEFORE this handler runs,
+/// Terminate an SSE stream the handler cannot serve (auth failure, missing/empty/unknown `?channels=`). kabelweb sends the `200 text/event-stream` headers AND …
 fn terminateSseStream(ctx: gserverz.HttpContext, event_name: ?[]const u8, data_json: []const u8) void {
     const cid = ctx.client_id orelse return;
     const di = pabrik_core.getSingleton() catch return;
@@ -328,8 +295,7 @@ fn terminateSseStream(ctx: gserverz.HttpContext, event_name: ?[]const u8, data_j
     di.server.sse_manager.removeClient(cid, .explicit_shutdown);
 }
 
-/// SSE stream endpoint — single endpoint for all server-pushed events. The
-/// `?channels=` query parameter is REQUIRED.
+/// SSE stream endpoint — single endpoint for all server-pushed events.
 pub fn unifiedEventsStreamHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -398,27 +364,19 @@ pub fn unifiedEventsStreamHandler(
     if (ctx.client_id) |client_id| {
         const client_id_copy: [16]u8 = client_id;
 
-        // 2a. Record this client's owner for the per-user fan-out filter
-        // (W3). Absent/unknown owner => the fan-out delivers, so auth-off
-        // (owner_buf == null) stays byte-identical.
+        // 2a.
         if (owner_buf) |o| {
             pabrik_core.registerClientOwner(client_id_copy, o);
         }
 
-        // 2b. Register the client_id under EVERY routing key.
-        // registerSessionClient dupes the key internally, so we can pass each
-        // entry of channels.routing_keys (already-owned slices) directly.
+        // 2b.
         for (channels.routing_keys) |rk| {
             ai_mod.registerSessionClient(rk, client_id_copy, true) catch {};
         }
 
-        // 2b. Subscribe ONE callback per routing key. The callback
-        // looks up the client list for ITS OWN routing key only —
-        // see forwardToClients.
+        // 2b.
         for (channels.routing_keys) |rk| {
-            // event_bus.subscribe dupes the key internally, so we can
-            // pass each entry directly and it remains valid for the
-            // call. See worker_sse.zig:81 and kanban_events_sse.zig:117.
+            // event_bus.subscribe dupes the key internally, so we can pass each entry directly and it remains valid for the call.
             if (std.mem.eql(u8, rk, "kanban_column")) {
                 event_bus.subscribe(ai_mod.on_event_sent.SseEvent, rk, CallbackUnifiedColumnStream.callback) catch {};
             } else if (std.mem.eql(u8, rk, "kanban_task")) {
@@ -446,8 +404,7 @@ pub fn unifiedEventsStreamHandler(
             }
         }
 
-        // 3. Send the connected handshake (the verbatim byte sequence
-        //    pinned by sse_handshake_test.zig:12).
+        // 3.
         const connected_event = "event: connected\ndata: {\"connected\": true}\n\n";
         server.sse_manager.sendToClient(client_id_copy, connected_event) catch {};
     }
@@ -456,14 +413,11 @@ pub fn unifiedEventsStreamHandler(
 }
 
 // ===== Tests merged from sse_handshake_test.zig (2026-09-11 flatten) =====
-// Regression test for the SSE `connected` event handshake.
 
 const pabrikcore = @import("pabrikcore");
 const testing = std.testing;
 
 // ─── Behavioral tests for parseChannels ────────────────────────────────
-// Plan Reviewer finding #3: source-grep contracts only verify the file's
-// shape, not the parser's correctness.
 
 test "parseChannels: workers → 1 routing key" {
     const allocator = testing.allocator;
@@ -523,8 +477,7 @@ test "parseChannels: mixed 5 channels (bare llm+queue) → 6 routing keys (kanba
 
 test "parseChannels: multiple bare tokens (llm+queue repeated) → 2 keys" {
     const allocator = testing.allocator;
-    // Bare 'llm' and 'queue' tokens each register once under their central
-    // key.
+    // Bare 'llm' and 'queue' tokens each register once under their central key.
     const list = try parseChannels(allocator, "llm,llm,queue,queue");
     defer list.deinit(allocator);
     try testing.expectEqual(@as(usize, 4), list.routing_keys.len);
@@ -598,8 +551,6 @@ test "parseChannels: trims whitespace around tokens" {
 }
 
 // ===== Per-user fan-out filter (plan 2026-09-25, W3) =====================
-// The bus fans out by family routing key, so the fan-out must resolve which
-// session an event is about before deciding whether a client may see it.
 
 fn testDb(alloc: std.mem.Allocator) !pabrikcore.database.Db {
     var db: pabrikcore.database.Db = .{};
@@ -646,9 +597,7 @@ test "resolveEventSessionId: worker event with empty payload session_id maps id 
     var db = try testDb(alloc);
     defer db.deinit();
 
-    // `llm_history.updateWorkerActivity` emits exactly this shape: the
-    // envelope id is "workers", the payload's session_id is empty, and the
-    // worker id is in `id`.
+    // `llm_history.updateWorkerActivity` emits exactly this shape: the envelope id is "workers", the payload's session_id is empty, and the worker id is in `id`.
     const ev = ai_mod.on_event_sent.SseEvent{
         .session_id = "workers",
         .data = "{\"action\":\"updated\",\"id\":\"w_a\",\"session_id\":\"\"}",
@@ -664,8 +613,7 @@ test "resolveEventSessionId: unattributable event resolves to null (delivered)" 
     var db = try testDb(alloc);
     defer db.deinit();
 
-    // design_element events carry a workspace_id, not a session id — there is
-    // nothing to scope on, so the fan-out must deliver rather than drop.
+    // design_element events carry a workspace_id, not a session id — there is nothing to scope on, so the fan-out must deliver rather than drop.
     const ev = ai_mod.on_event_sent.SseEvent{
         .session_id = "design_element",
         .data = "{\"action\":\"created\",\"workspace_id\":\"ws_1\"}",

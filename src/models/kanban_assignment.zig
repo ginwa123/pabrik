@@ -1,5 +1,4 @@
-//! Data model for the `kanban` join table. One row per task-to-column
-//! assignment.
+//! Data model for the `kanban` join table.
 
 const std = @import("std");
 

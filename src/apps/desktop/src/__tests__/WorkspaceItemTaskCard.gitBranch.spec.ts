@@ -28,9 +28,7 @@ describe('WorkspaceItemTaskCard — git branch badge', () => {
     const badge = wrapper.find('[data-testid="task-git-branch"]')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('feature/x')
-    // The branch text is wrapped in its own <span> so the SVG can
-    // stay aria-hidden. Lock the inner-span content to be the
-    // branch name verbatim (the SVG does NOT count as text).
+    // The branch text is wrapped in its own <span> so the SVG can stay aria-hidden.
     expect(badge.text()).toBe('feature/x')
   })
 
@@ -77,9 +75,7 @@ describe('WorkspaceItemTaskCard — git branch badge', () => {
     })
     const badge = wrapper.find('[data-testid="task-git-branch"]')
     expect(badge.exists()).toBe(true)
-    // Lock in the icon — the GitHub-style fork/branch SVG. If anyone
-    // replaces it with a different icon (e.g. a generic branch dot),
-    // this test fails.
+    // Lock in the icon — the GitHub-style fork/branch SVG.
     const svg = badge.find('svg')
     expect(svg.exists()).toBe(true)
     // The path "M6 3v12M18 9..." is the distinctive fork/branch shape.
@@ -121,7 +117,6 @@ describe('WorkspaceItemTaskCard — git branch badge', () => {
 
   it('renders the branch badge alongside the type badge in the meta row', () => {
     // Memory tasks have a "memory" type label AND now a branch badge.
-    // Both should be in the same data-testid="task-meta" row.
     const wrapper = mount(WorkspaceItemTaskCard, {
       props: {
         task: makeTask({
@@ -142,9 +137,7 @@ describe('WorkspaceItemTaskCard — git branch badge', () => {
   })
 
   it('renders the badge alone (no type badge) when only git_branch is set', () => {
-    // Standard task with a branch — no routine/memory type badge,
-    // but the meta row should still render because the branch badge
-    // is present.
+    // Standard task with a branch — no routine/memory type badge, but the meta row should still render because the branch badge is present.
     const wrapper = mount(WorkspaceItemTaskCard, {
       props: {
         task: makeTask({

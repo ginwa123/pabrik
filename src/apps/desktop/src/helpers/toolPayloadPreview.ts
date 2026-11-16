@@ -1,7 +1,6 @@
 import { tryUnwrapToolOutput } from './unwrapToolOutput'
 
-/** Render a tool result's payload as readable text for the EXPANDED body of ChatView's generic tool
- * fallback. */
+/** Render a tool result's payload as readable text for the EXPANDED body of ChatView's generic tool fallback. */
 export const TOOL_PAYLOAD_PREVIEW_MAX = 20_000
 
 function cap(text: string, maxChars: number): string {
@@ -18,9 +17,7 @@ export function toolPayloadPreview(
   const raw = content.trim()
   if (raw === '') return ''
 
-  // `tryUnwrapToolOutput` swallows its own `JSON.parse` failure and answers
-  // `null`; the fallback below is the same bytes the caller already had, not
-  // a hidden failure, so there is nothing to log.
+  // `tryUnwrapToolOutput` swallows its own `JSON.parse` failure and answers `null`; the fallback below is the same bytes the caller already had, not a hidden …
   const unwrapped = tryUnwrapToolOutput(raw)
   if (unwrapped === null) return cap(raw, maxChars)
   if (!unwrapped.success) {
@@ -28,7 +25,6 @@ export function toolPayloadPreview(
     return cap(message || 'tool failed', maxChars)
   }
   if (unwrapped.data === null || unwrapped.data === undefined) return cap(raw, maxChars)
-  // `data` came out of JSON.parse, so it is acyclic and free of BigInt —
-  // `JSON.stringify` here cannot throw.
+  // `data` came out of JSON.parse, so it is acyclic and free of BigInt — `JSON.stringify` here cannot throw.
   return cap(JSON.stringify(unwrapped.data, null, 2), maxChars)
 }

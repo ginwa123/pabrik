@@ -36,8 +36,7 @@ pub const Migration057AddDesignElementProperties = struct {
         try addColumnIfMissing(.{ .db = db }, allocator, "design_page_elements", "parent_id",
             "parent_id TEXT");
 
-        // Analyze so the query planner sees the new columns on
-        // legacy DBs.
+        // Analyze so the query planner sees the new columns on legacy DBs.
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

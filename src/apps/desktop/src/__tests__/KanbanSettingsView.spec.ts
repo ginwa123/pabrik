@@ -1,6 +1,4 @@
-/** Tests for KanbanSettingsView — the dedicated full-page route for per-board kanban settings.
- * Replaces KanbanSettingsDialog (the centered modal that used to pop up when the user clicked ⚙ on
- * a kanban board header). URL: /app/{ws}/projects/{itemId}/settings (vue-router route). */
+/** Tests for KanbanSettingsView — the dedicated full-page route for per-board kanban settings. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -56,9 +54,7 @@ function setupRoute(
   const obj = reactive({ query, path, params, fullPath: path })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   useRouteMock.mockReturnValue(obj as any)
-  // Mocked router methods apply their `query` argument to the reactive
-  // route object (mirrors what a real router does) so URL-backed
-  // computed refs in the page re-evaluate after `router.replace`.
+  // Mocked router methods apply their `query` argument to the reactive route object (mirrors what a real router does) so URL-backed computed refs in the page …
   const apply = (target: { query?: Record<string, string> }) => {
     if (target.query) {
       // Reactive replacement — triggers computed re-eval.
@@ -95,13 +91,10 @@ function setInputValue(selector: string, value: string) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-/** Seed the workspacesStore with a workspace that contains the given
- * kanban item. Returns the store so tests can inspect/assert. */
+/** Seed the workspacesStore with a workspace that contains the given kanban item. */
 function seedWorkspaces(item: WorkspaceItem | null = baseItem) {
   const store = useWorkspacesStore()
-  // Force-create the workspace + items arrays; we don't need the full
-  // initializeFromSystemFolder fetch since the page only reads
-  // workspaces[].items[].
+  // Force-create the workspace + items arrays; we don't need the full initializeFromSystemFolder fetch since the page only reads workspaces[].items[].
   store.workspaces = [
     {
       id: 'ws_1',
@@ -111,8 +104,7 @@ function seedWorkspaces(item: WorkspaceItem | null = baseItem) {
       expanded: true,
     },
   ]
-  // activeWorkspaceItemId is set via setActiveWorkspaceItem so the
-  // computed works as expected.
+  // activeWorkspaceItemId is set via setActiveWorkspaceItem so the computed works as expected.
   if (item) {
     store.setActiveWorkspaceItem(item.id)
   }
@@ -139,19 +131,15 @@ describe('KanbanSettingsView', () => {
       attachTo: document.body,
       global: {
         stubs: {
-          // Stub the memories panel — it fetches its own list and we only
-          // test its presence/absence here.
+          // Stub the memories panel — it fetches its own list and we only test its presence/absence here.
           WorkspaceMemoriesPanel: { template: '<div data-testid="stub-memories"></div>' },
-          // Stub AgentView — it renders the full Knowledge + Tools + System Prompt
-          // UI (reused from `item_type='agent'`). We only assert its
-          // presence/absence here; AgentView's own spec covers behaviour.
+          // Stub AgentView — it renders the full Knowledge + Tools + System Prompt UI (reused from `item_type='agent'`).
           AgentView: {
             template:
               '<div data-testid="kanban-settings-page-agent-panel-stub"><slot name="right-extra" /></div>',
             props: ['item', 'workspaceId', 'itemId', 'knowledge', 'tools', 'systemPrompts'],
           },
-          // Stub KanbanColumnEditor to avoid the Teleport + nested dialog complexity in the
-          // rename/delete tests.
+          // Stub KanbanColumnEditor to avoid the Teleport + nested dialog complexity in the rename/delete tests.
           KanbanColumnEditor: {
             template:
               '<div v-if="show" :data-testid="`kanban-column-editor-${mode}`">' +
@@ -219,9 +207,7 @@ describe('KanbanSettingsView', () => {
   })
 
   it('deletes a column via the per-row Delete button (opens editor, then confirms)', async () => {
-    // The per-row Delete button opens the editor in delete mode (mirrors KanbanSettingsDialog's
-    // 2-step flow). The editor's Delete submit is what fires `deleteColumn`. Mirrors the original
-    // KanbanSettingsDialog test at line 166.
+    // The per-row Delete button opens the editor in delete mode (mirrors KanbanSettingsDialog's 2-step flow).
     seedWorkspaces()
     mountView()
     await flushPromises()
@@ -262,8 +248,7 @@ describe('KanbanSettingsView', () => {
     mountView()
     await flushPromises()
     clickInDom('[data-testid="kanban-settings-page-back"]')
-    // Canonical path shape (not the legacy `/app?view=workspace` one) so the
-    // board's sub-state survives the boot rewrite.
+    // Canonical path shape (not the legacy `/app?view=workspace` one) so the board's sub-state survives the boot rewrite.
     expect(router.replace).toHaveBeenCalledWith({
       path: '/app/ws_1/projects/wi_test',
       query: {},
@@ -416,8 +401,7 @@ describe('KanbanSettingsView', () => {
   })
 
   it('preserves the browser tab ID (?tab=tab_xxx) when the Agent tab is clicked', async () => {
-    // Regression: browser-style tab mode owns `?tab=<tabId>`. Clicking
-    // Agent must write `?section=agent` alongside it, never clobber it.
+    // Regression: browser-style tab mode owns `?tab=<tabId>`.
     seedWorkspaces()
     const { router } = setupRoute({ tab: 'tab_mu0lle6j940yz' })
     mountView()
@@ -431,9 +415,7 @@ describe('KanbanSettingsView', () => {
   })
 
   it('stays on columns when ?tab= holds a browser tab ID (tab-mode coexistence)', async () => {
-    // The exact URL from the bug report: /app/kanban/<id>/settings?tab=tab_mu0lle6j940yz — the
-    // settings getter must ignore the browser ID (fall back to columns) rather than crash or
-    // misroute.
+    // The exact URL from the bug report: /app/kanban/<id>/settings?tab=tab_mu0lle6j940yz — the settings getter must ignore the browser ID (fall back to columns) …
     seedWorkspaces()
     setupRoute({ tab: 'tab_mu0lle6j940yz' })
     mountView()

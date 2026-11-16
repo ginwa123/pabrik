@@ -1,22 +1,15 @@
-//! Data model for the `logs` entity table. Captures structured log entries
-//! emitted by the agent runtime — both backend (Zig) logs and frontend
-//! (browser console) logs.
+//! Data model for the `logs` entity table.
 
 const std = @import("std");
 
 pub const EntityId = []u8;
 
 id: EntityId,
-/// Unix-milliseconds timestamp (NOT a DATETIME string). The
-/// frontend's `console.error` hook stamps this directly with
-/// `Date.now()` before posting to the backend.
+/// Unix-milliseconds timestamp (NOT a DATETIME string).
 created_at: i64,
 /// One of `"error"` | `"warn"` | `"info"` | `"debug"` | `"trace"`.
-/// The DB column has no CHECK constraint.
 level: []u8,
-/// One of `"console_error"` | `"console_warn"` |
-/// `"unhandled_rejection"` | `"window_error"` | `"unknown"`. The
-/// DB column has no CHECK constraint.
+/// One of `"console_error"` | `"console_warn"` | `"unhandled_rejection"` | `"window_error"` | `"unknown"`.
 kind: []u8,
 message: []u8,
 stack: ?[]u8 = null,
@@ -24,8 +17,7 @@ source: ?[]u8 = null,
 line: ?i64 = null,
 route_path: ?[]u8 = null,
 session_id: ?[]u8 = null,
-/// De-duplication counter. Frontend batches consecutive identical
-/// log entries and bumps this rather than inserting a new row.
+/// De-duplication counter.
 count: i64 = 1,
 
 const Self = @This();

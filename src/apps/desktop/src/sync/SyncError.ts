@@ -1,6 +1,4 @@
-/** The sync engine's error channel. Before Effect, every failure in this subsystem was funnelled
- * into a bare `catch {}` that returned a fallback value, so a backend outage, a corrupt IndexedDB
- * database and a legitimately empty result all reached the UI as the same value. */
+/** The sync engine's error channel. */
 import { Data } from 'effect'
 
 /** The local cache (IndexedDB or its in-memory fallback) failed. */

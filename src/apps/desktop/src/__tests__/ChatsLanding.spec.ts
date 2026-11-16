@@ -2,17 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-// The landing navigates with the app router only after a successful
-// create — the spec mocks it (the real `/app/:workspaceId` route is
-// registered elsewhere; components never touch router files).
+// The landing navigates with the app router only after a successful create — the spec mocks it (the real `/app/:workspaceId` route is registered elsewhere …
 const { push } = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 
 import Chats from '../components/views/Chats.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 
-/** The landing page is a static brand page with ONE affordance, amended by
- * the 2026-09-22 revamp plan — `/app` now creates workspaces. */
+/** The landing page is a static brand page with ONE affordance, amended by the 2026-09-22 revamp plan — `/app` now creates workspaces. */
 describe('Chats — Pabrik landing page', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -39,8 +36,7 @@ describe('Chats — Pabrik landing page', () => {
 
   it('no longer fakes an assistant turn (scope guard)', () => {
     const wrapper = mount(Chats)
-    // the old stub rendered this string with a `new Date()` timestamp, so it
-    // looked like a real reply that could never be answered
+    // the old stub rendered this string with a `new Date()` timestamp, so it looked like a real reply that could never be answered
     expect(wrapper.text()).not.toContain('AI coding assistant')
     expect(wrapper.text()).not.toContain('How can I help you today')
   })

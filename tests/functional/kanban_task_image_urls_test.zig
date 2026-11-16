@@ -1,5 +1,4 @@
-// Functional tests for Migration 092 — lightweight task list/get payload +
-// lazy media endpoint.
+// Functional tests for Migration 092 — lightweight task list/get payload + lazy media endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,23 +7,15 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// Tiny valid PNG header (1x1 transparent pixel, base64). Small enough
-// to keep the wire payload trivial but a real `data:image/png;base64,`
-// prefix so `image_urls` validation accepts it.
+// Tiny valid PNG header (1x1 transparent pixel, base64).
 const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
-// The second data URL `create_with_multiple_images_preserves_order_in_media`
-// appends after the `||` join, and the value `put_image_urls_sets_flag`
-// writes over the PNG.
+// The second data URL `create_with_multiple_images_preserves_order_in_media` appends after the `||` join, and the value `put_image_urls_sets_flag` writes over …
 const JPEG_DATA_URL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD//2Q==";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Parse OWNED bytes into a `harness.Json`. A `harness.Json` aliases the
-/// `Response` body it was parsed from, so a helper may not RETURN one (the
-/// body dies with the response).
+/// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
@@ -79,9 +70,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST .../kanban/tasks` with `mode: "create_session"` — mirrors the
-/// frontend's "Create task" button (no agent run). Returns the WHOLE
-/// response body, owned; the caller parses the `task` object out of it.
+/// `POST .../kanban/tasks` with `mode: "create_session"` — mirrors the frontend's "Create task" button (no agent run).
 fn createTaskBody(
     h: *Harness,
     workspace_id: []const u8,
@@ -90,9 +79,7 @@ fn createTaskBody(
     description: []const u8,
     image_urls: ?[]const u8,
 ) ![]u8 {
-    // `image_urls` is OMITTED (not sent as `""`) when the caller passes
-    // null — the Python helper used two separate literals, and the
-    // server distinguishes "no key" from "empty key".
+    // `image_urls` is OMITTED (not sent as `""`) when the caller passes null — the Python helper used two separate literals, and the server distinguishes "no key" …
     var body: []u8 = undefined;
     if (image_urls) |urls| {
         body = try std.json.Stringify.valueAlloc(gpa, .{
@@ -122,8 +109,7 @@ fn createTaskBody(
     return gpa.dupe(u8, r.body);
 }
 
-/// `_create_task_with_image`: the frontend joins the array with `||`
-/// before sending, so `image_urls_joined` is one string.
+/// `_create_task_with_image`: the frontend joins the array with `||` before sending, so `image_urls_joined` is one string.
 fn createTaskWithImage(
     h: *Harness,
     workspace_id: []const u8,
@@ -134,7 +120,6 @@ fn createTaskWithImage(
 }
 
 /// `GET .../tasks?limit=10` — the paginated list the kanban board uses.
-/// Owned body.
 fn listTasksBody(h: *Harness, workspace_id: []const u8, kanban_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -144,8 +129,7 @@ fn listTasksBody(h: *Harness, workspace_id: []const u8, kanban_id: []const u8) !
     defer gpa.free(path);
 
     var r = try h.http(io, .GET, path, .{
-        // `params` values are percent-encoded by the harness; `10` has
-        // nothing to escape, so it lands verbatim.
+        // `params` values are percent-encoded by the harness; `10` has nothing to escape, so it lands verbatim.
         .params = &.{.{ .name = "limit", .value = "10" }},
         .expect = &.{200},
     });
@@ -203,9 +187,7 @@ fn putImageUrls(h: *Harness, task_id: []const u8, image_urls: []const u8) !void 
     defer r.deinit();
 }
 
-/// `PUT ...` asserting ONLY that it was REJECTED (400 or 413). The
-/// status itself is part of the contract but the set is the assertion,
-/// so `expect` names both.
+/// `PUT ...` asserting ONLY that it was REJECTED (400 or 413).
 fn putImageUrlsExpectingRejection(h: *Harness, task_id: []const u8, image_urls: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/tasks/{s}", .{task_id});
     defer gpa.free(path);
@@ -273,8 +255,7 @@ fn expectStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, ctx: []
     }
 }
 
-/// Python `assert key not in obj` — the perf win under test. Prints the
-/// sorted key list on failure, exactly as `sorted(task)` did.
+/// Python `assert key not in obj` — the perf win under test.
 fn expectKeyAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     if (obj.get(key) != null) {
         const rendered = try renderKeys(obj);
@@ -298,13 +279,9 @@ fn strLessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .lt;
 }
 
-// ============================================================================
 // Test 1: create → flags on the wire, media via the lazy endpoint
-// ============================================================================
 
-// Create with an image → create/list/get carry is_have_image=true (and
-// NO image_urls field — the perf win); the media endpoint returns the
-// persisted column.
+// Create with an image → create/list/get carry is_have_image=true (and NO image_urls field — the perf win); the media endpoint returns the persisted column.
 test "create_with_image_returns_flag_and_media_endpoint_serves_urls" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -390,8 +367,7 @@ test "create_with_image_returns_flag_and_media_endpoint_serves_urls" {
     }
 }
 
-// Multiple images are stored as the `||`-joined string in send order;
-// the media endpoint returns them verbatim.
+// Multiple images are stored as the `||`-joined string in send order; the media endpoint returns them verbatim.
 test "create_with_multiple_images_preserves_order_in_media" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -429,8 +405,7 @@ test "create_with_multiple_images_preserves_order_in_media" {
     try expectStr(map, "image_urls", joined, "media response");
 }
 
-// A task created without images reports is_have_image=false and the
-// media endpoint returns empty sentinels.
+// A task created without images reports is_have_image=false and the media endpoint returns empty sentinels.
 test "create_without_image_reports_no_media" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -443,8 +418,7 @@ test "create_without_image_reports_no_media" {
     const kanban_id = try createKanban(&h, ws_id, "sprint-img");
     defer gpa.free(kanban_id);
 
-    // No `image_urls` KEY at all — not `""`. The two cases are
-    // different on the wire and the server must treat them the same.
+    // No `image_urls` KEY at all — not `""`.
     const created = try createTaskBody(&h, ws_id, kanban_id, "no img", "", null);
     defer gpa.free(created);
     const task_id = blk: {
@@ -493,8 +467,7 @@ test "create_without_image_reports_no_media" {
     try expectStr(map, "video_urls", "", "media response");
 }
 
-// An unknown task id on the media route is a 404 — the body is not
-// asserted, only the status, exactly as in Python.
+// An unknown task id on the media route is a 404 — the body is not asserted, only the status, exactly as in Python.
 test "media_endpoint_404_for_unknown_task" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -518,12 +491,9 @@ test "media_endpoint_404_for_unknown_task" {
     defer r.deinit();
 }
 
-// ============================================================================
 // Test 2: PUT updates + clears the flag
-// ============================================================================
 
-// `PUT /api/workspaces/tasks/:task_id` with `image_urls` persists the
-// new value and flips the flag (the media endpoint serves it).
+// `PUT /api/workspaces/tasks/:task_id` with `image_urls` persists the new value and flips the flag (the media endpoint serves it).
 test "put_image_urls_sets_flag" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -610,8 +580,7 @@ test "put_empty_image_urls_clears_flag" {
     };
     defer gpa.free(task_id);
 
-    // The empty string is LOAD-BEARING here: it is the "clear" signal,
-    // distinct from omitting the key.
+    // The empty string is LOAD-BEARING here: it is the "clear" signal, distinct from omitting the key.
     try putImageUrls(&h, task_id, "");
 
     {
@@ -647,8 +616,7 @@ test "put_empty_image_urls_clears_flag" {
     try expectStr(map, "image_urls", "", "media response after empty PUT");
 }
 
-// A malformed data URL is rejected with 400 (or 413 for the size
-// guard) and the stored value — and the flag — are untouched.
+// A malformed data URL is rejected with 400 (or 413 for the size guard) and the stored value — and the flag — are untouched.
 test "put_invalid_image_urls_rejected_400" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -710,9 +678,7 @@ test "put_invalid_image_urls_rejected_400" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = parseJson;
     _ = createWorkspace;
     _ = createKanban;

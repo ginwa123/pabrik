@@ -37,13 +37,10 @@ const route = useRoute()
 const secretsStore = useSecretsStore()
 const workspacesStore = useWorkspacesStore()
 
-// The credential fields (agent API key, MCP header and env values) offer this
-// workspace's secret NAMES, so a placeholder can be picked instead of typed.
+// The credential fields (agent API key, MCP header and env values) offer this workspace's secret NAMES, so a placeholder can be picked instead of typed.
 provideSecretNames(computed(() => secretsStore.secrets.map((secret) => secret.name)))
 
-/**  * The workspace this settings page belongs to. Read from the route param, not from `parseAppPath`:
- * `/app/{ws}/settings` is not one of the shapes `helpers/appUrl.ts` knows. Falls back to the active
- * workspace so the page still works if it is ever mounted without the param. */
+/** The workspace this settings page belongs to. Read from the route param, not from `parseAppPath` */
 const workspaceId = computed<string>(() => {
   const fromPath = route?.params?.workspaceId
   if (typeof fromPath === 'string' && fromPath.length > 0) return fromPath
@@ -57,9 +54,7 @@ const workspaceName = computed<string>(() => {
   return workspaceId.value || 'this workspace'
 })
 
-/**  * The four sections that moved here from the User-scope Pabrik page. They render through ONE
- * long-lived `PabrikConfigEditor` rather than one instance per section: switching between them must
- * not remount the editor, or every unsaved edit would be thrown away by a nav click. */
+/** The four sections that moved here from the User-scope Pabrik page. */
 const isAgentSection = computed<boolean>(() =>
   (WORKSPACE_AGENT_SECTIONS as readonly string[]).includes(route?.params ? sectionFromRoute() : ''),
 )
@@ -70,8 +65,7 @@ function sectionFromRoute(): string {
   return typeof value === 'string' ? value : ''
 }
 
-/** The source is rebuilt per workspace; the editor is keyed on the id so a
- * workspace switch remounts it rather than editing the previous workspace. */
+/** The source is rebuilt per workspace; the editor is keyed on the id so a workspace switch remounts it rather than editing the previous workspace. */
 const agentSource = computed(() => workspaceConfigSource(workspaceId.value))
 
 const itemCount = computed<number>(() => {
@@ -80,8 +74,7 @@ const itemCount = computed<number>(() => {
   return ws.items?.length ?? 0
 })
 
-// Fetch per workspace, and only when there IS one. `reset()` on every id change is what stops one
-// workspace's secrets (or its failure banner) from being painted under another workspace's header.
+// Fetch per workspace, and only when there IS one.
 function loadSecretsFor(id: string): void {
   secretsStore.reset()
   if (id) void secretsStore.fetchSecrets(id)
@@ -94,15 +87,12 @@ onMounted(() => {
 onBeforeRouteUpdate((to) => {
   const raw = to.params.workspaceId
   const next = typeof raw === 'string' ? raw : ''
-  // Query-only navigations (e.g. `?section=` tab switches) reuse this
-  // component too — refetching there would wipe the list mid-click.
+  // Query-only navigations (e.g.
   if (next === workspaceId.value) return
   loadSecretsFor(next)
 })
 
-/**  * Hand a new credential to the store, which forwards it to the API and keeps nothing. This handler
- * deliberately does not stash the payload on any reactive state — the emit already delivered it and
- * the component has already cleared its inputs. */
+/** Hand a new credential to the store, which forwards it to the API and keeps nothing. */
 async function handleAdd(payload: {
   name: string
   value: string

@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import LoadMemory from '../LoadMemory.vue'
 
-// ────────────────────────────────────────────────────────────────────────
 // jsdom clipboard stub (matches ReadWorkspaceSession.spec.ts pattern)
-// ────────────────────────────────────────────────────────────────────────
 let clipboardWrites: string[] = []
 
 beforeEach(() => {
@@ -25,9 +23,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Helpers
-// ────────────────────────────────────────────────────────────────────────
 const makeSuccessContent = (
   opts: {
     query?: string
@@ -88,9 +84,7 @@ const makeEmptyContent = (query = 'no-such-memory') => ({
   results: [],
 })
 
-// ────────────────────────────────────────────────────────────────────────
 // Tests
-// ────────────────────────────────────────────────────────────────────────
 describe('LoadMemory.vue — happy path', () => {
   it('renders the tool name pill + query + count in the header', () => {
     const wrapper = mount(LoadMemory, {
@@ -109,8 +103,7 @@ describe('LoadMemory.vue — happy path', () => {
     expect(wrapper.text()).toContain('load_memory')
     expect(wrapper.text()).toContain('"preferred model"')
     expect(wrapper.text()).toContain('3 hits')
-    // No status indicator on success (matches ReadWorkspaceSession pattern —
-    // FTS5 result tools don't render a ✓ pill).
+    // No status indicator on success (matches ReadWorkspaceSession pattern — FTS5 result tools don't render a ✓ pill).
     expect(wrapper.text()).not.toContain('Error')
   })
 
@@ -417,8 +410,7 @@ describe('LoadMemory.vue — interaction', () => {
 
     await wrapper.find('[data-testid="load-memory-entry-copy-0"]').trigger('click')
     expect(clipboardWrites).toEqual(['mem_aaaa000000000001'])
-    // Still expanded (the click was stopPropagation'd inside the
-    // copy handler, so it didn't bubble to the header).
+    // Still expanded (the click was stopPropagation'd inside the copy handler, so it didn't bubble to the header).
     expect(wrapper.find('[data-testid="load-memory-entries"]').exists()).toBe(true)
 
     wrapper.unmount()

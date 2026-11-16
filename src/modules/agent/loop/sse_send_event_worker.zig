@@ -17,9 +17,7 @@ pub const OnEventInputWorkers = struct {
 };
 
 
-/// Send worker events to all subscribed clients via SSE Broadcasts worker
-/// list updates (created, updated, deleted) SSE event name (the value of
-/// `event:` in the wire format): - workers: worker_created | worker_updated |
+/// Send worker events to all subscribed clients via SSE Broadcasts worker list updates (created, updated, deleted) SSE event name (the value of `event:` in the …
 pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorkers) !void {
 
     const event_bus = input.event_bus;
@@ -44,9 +42,7 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     // Duplicate the data so event owns its own copy (buf will be deallocated below)
     const data_copy = try allocator.dupe(u8, buf.items);
 
-    // Granular event name drives the SSE wire format `event:` line — the
-    // frontend's EventSource dispatches each named event to its registered
-    // listener without any JSON parsing (see project memory
+    // Granular event name drives the SSE wire format `event:` line — the frontend's EventSource dispatches each named event to its registered listener without any …
     const event_type_name: []const u8 = if (std.mem.eql(u8, input.action, "created"))
         "worker_created"
     else if (std.mem.eql(u8, input.action, "updated"))
@@ -66,9 +62,7 @@ pub fn onEventSendWorkers(allocator: std.mem.Allocator, input: OnEventInputWorke
     event_bus.emit(SseEvent, "workers", event);
 }
 
-// ─── Tests
-// ────────────────────────────────────────────────────────────────── These
-// tests exercise `onEventSendWorkers` against a real `EventBus` with a
+// ─── Tests ────────────────────────────────────────────────────────────────── These tests exercise `onEventSendWorkers` against a real `EventBus` with a
 
 var captured: ?SseEvent = null;
 
@@ -88,9 +82,7 @@ fn tearDownBusAndIo(s: *@TypeOf(setupBusAndIo() catch @panic("setupBusAndIo fail
     s.threaded.deinit();
 }
 
-/// Free the captured event's heap-allocated `data` slice. Must be called
-/// at the end of every test that asserts on `captured` — otherwise the
-/// testing allocator reports a leak.
+/// Free the captured event's heap-allocated `data` slice.
 fn freeCapturedData() void {
     if (captured) |ev| {
         testing.allocator.free(ev.data);
@@ -256,8 +248,6 @@ test "onEventSendWorkers: emitted event has its own heap-allocated data copy" {
     });
 
     const ev = captured orelse return error.NoEventCaptured;
-    // The data pointer must not alias the stack-local buf the helper
-    // used to build the JSON — it must be a heap copy that survives
-    // after the helper returns.
+    // The data pointer must not alias the stack-local buf the helper used to build the JSON — it must be a heap copy that survives after the helper returns.
     try testing.expect(ev.data.len > 0);
 }

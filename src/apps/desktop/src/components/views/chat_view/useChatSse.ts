@@ -89,13 +89,10 @@ export function useChatSse(deps: ChatSseDeps) {
     liveMessageIds,
   } = deps
 
-  // ─── SSE ───────────────────────────────────────────────────────────────────── Bus listener
-  // unsubscribes.
+  // ─── SSE ─────────────────────────────────────────────────────────────────────
   let offLlm: (() => void) | null = null
   let offQueue: (() => void) | null = null
-  // Stale-on-wake (cross-tab sharing): fires when this window takes over the
-  // shared SSE connection, or returns from a long hidden period, so the visible
-  // chat never shows a stale history. See `helpers/sseTabChannel.ts`.
+  // Stale-on-wake (cross-tab sharing): fires when this window takes over the shared SSE connection, or returns from a long hidden period, so the visible chat never …
   let offResync: (() => void) | null = null
 
   const persistSseFullRowLocally = (
@@ -128,8 +125,7 @@ export function useChatSse(deps: ChatSseDeps) {
             is_input: event.is_input,
             is_output: event.is_output,
             reasoning_content: event.reasoning_content || undefined,
-            // Kept on the cached row too, so a cached mount labels the reply the
-            // same way the network shape does (`toChatMessages` reads `agent`).
+            // Kept on the cached row too, so a cached mount labels the reply the same way the network shape does (`toChatMessages` reads `agent`).
             agent: event.agent_name,
           }),
         ]),
@@ -145,20 +141,15 @@ export function useChatSse(deps: ChatSseDeps) {
     if (!sid) return
     claimLiveMessageSession(sid)
 
-    // Defensive: if a previous connectSse didn't clean up (e.g. mid-mount session change), tear down
-    // before re-registering. The bus's single global EventSource is already open (App.vue opens it
-    // once), so we only need to manage our listener subscriptions here.
+    // Defensive: if a previous connectSse didn't clean up (e.g. mid-mount session change), tear down before re-registering.
     disconnectSse()
 
     streamingContent.value = ''
 
-    // App.vue normally installs the bus in its own onMounted, which runs
-    // after a child ChatView mounts. Install lazily here as well so an
-    // early subscription is never silently lost.
+    // App.vue normally installs the bus in its own onMounted, which runs after a child ChatView mounts.
     installSseBus()
     const bus = useSseBus()
-    // Subscribe FIRST so we don't miss any bus events that arrive between registration and the next
-    // tick.
+    // Subscribe FIRST so we don't miss any bus events that arrive between registration and the next tick.
     offLlm = bus.on('llm', (event: api.SseEvent) => {
       if (event.session_id !== sid) return
 
@@ -266,9 +257,7 @@ export function useChatSse(deps: ChatSseDeps) {
             if (event.total_tokens) {
               maxTotalTokens.value = event.total_tokens
             }
-            // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result
-            // emit, stale on assistant emit — see handle_tool.zig:459 vs :745). REST remains initial
-            // source. Scoped by the event.session_id !== sid filter at handler entry.
+            // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result emit, stale on assistant emit — see handle_tool.zig:459 vs :745).
             if (Array.isArray(event.session_skills))
               sessionSkills.value = event.session_skills as api.SkillInfo[]
             maybeRefreshWorktreeBinding(role, event.tool_name)
@@ -296,9 +285,7 @@ export function useChatSse(deps: ChatSseDeps) {
           tool_name: event.tool_name,
           diffview_before: event.diffview_before,
           diffview_after: event.diffview_after,
-          // Decode the `||`-joined wire string the backend sends. A plain `split('|')` would turn
-          // `A||B` into `["A", "", "B"]`, and the empty entry renders as `<img src="">` — a
-          // broken-image icon in the transcript.
+          // Decode the `||`-joined wire string the backend sends.
           image_urls: splitMediaUrlsWire(event.image_url),
           video_urls: splitMediaUrlsWire(event.video_url),
           file_attachments: event.file_attachments,
@@ -308,13 +295,10 @@ export function useChatSse(deps: ChatSseDeps) {
           is_input: event.is_input,
           is_output: event.is_output,
           reasoning_content: event.reasoning_content || undefined,
-          // The backend sends the author on every `llm_full` (SseEventLLMHistory
-          // .agent_name); without this the live reply renders anonymous and the
-          // badge only appears after the transcript reloads from REST.
+          // The backend sends the author on every `llm_full` (SseEventLLMHistory .agent_name); without this the live reply renders anonymous and the badge only appears …
           agent_name: event.agent_name || undefined,
         })
-        // Write-through: persist the SSE `full` row with its full wire shape
-        // so cached mounts render it identically. Best-effort.
+        // Write-through: persist the SSE `full` row with its full wire shape so cached mounts render it identically.
         persistSseFullRowLocally(sid, event, role, messageId, messageTimestamp)
         if (streamingGroupKey && event.id) {
           const newGroupKey = groupKeyForMessageId(event.id)
@@ -325,14 +309,10 @@ export function useChatSse(deps: ChatSseDeps) {
         streamingContent.value = ''
         isStreaming.value = false
         logger().markProgrammatic()
-        // One more auto-stick fires (scrollToBottom below) for the final, post-stream assistant
-        // message. Mark the timestamp so the loadMore gate sees the stick as still active during the
-        // tail of the message-complete render frame.
+        // One more auto-stick fires (scrollToBottom below) for the final, post-stream assistant message.
         lastAutoStickAt.value = Date.now()
         nextTick(() => {
-          // Recompute the height model BEFORE the auto-stick (append-gap fix): the streaming-* row
-          // was just replaced by the canonical DB row, which re-renders at a DIFFERENT height
-          // (markdown settles, reasoning collapses). nextTick first.
+          // Recompute the height model BEFORE the auto-stick (append-gap fix): the streaming-* row was just replaced by the canonical DB row, which re-renders at a …
           if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
           scrollToBottom(false, 'sse-message-complete')
         })
@@ -353,9 +333,7 @@ export function useChatSse(deps: ChatSseDeps) {
         if (event.total_tokens) {
           maxTotalTokens.value = event.total_tokens
         }
-        // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result
-        // emit, stale on assistant emit — see handle_tool.zig:459 vs :745). REST remains initial
-        // source. Scoped by the event.session_id !== sid filter at handler entry.
+        // Live skills: backend piggybacks session_skills on every llm_full (fresh on tool-result emit, stale on assistant emit — see handle_tool.zig:459 vs :745).
         if (Array.isArray(event.session_skills))
           sessionSkills.value = event.session_skills as api.SkillInfo[]
         maybeRefreshWorktreeBinding(role, event.tool_name)
@@ -388,16 +366,13 @@ export function useChatSse(deps: ChatSseDeps) {
           id: event.id ?? `q-${Date.now()}`,
           message: event.message,
         })
-        // A queued turn renders no transcript row — it is only ever a row in the composer's queue
-        // panel — so nothing in `messages` grows and none of the auto-stick triggers fire.
+        // A queued turn renders no transcript row — it is only ever a row in the composer's queue panel — so nothing in `messages` grows and none of the auto-stick …
         followNewestTurn('queue-queued')
       } else if (event.action === 'deleted') {
         queuedMessages.value = queuedMessages.value.filter((m) => m.id !== event.id)
       }
     })
-    // Stale-on-wake (cross-tab sharing): if this window just took over the shared connection, or
-    // slept through a long hidden period, llm/queue events may have been missed entirely — fetch just
-    // the tail (cursor+asc) and merge it.
+    // Stale-on-wake (cross-tab sharing): if this window just took over the shared connection, or slept through a long hidden period, llm/queue events may have been …
     offResync =
       bus.onResync?.(() => {
         if (sessionId.value !== sid) return
@@ -429,9 +404,7 @@ export function useChatSse(deps: ChatSseDeps) {
           }
         })()
       }) ?? null
-    // Set isStreaming LAST so external observers (tests, UI) can poll it as a "listeners are wired
-    // up" signal — flipping it before would race with test assertions that fire events into the bus
-    // expecting the listener to be registered.
+    // Set isStreaming LAST so external observers (tests, UI) can poll it as a "listeners are wired up" signal — flipping it before would race with test assertions …
     isStreaming.value = true
   }
 
@@ -453,15 +426,11 @@ export function useChatSse(deps: ChatSseDeps) {
     messages.value = messages.value.filter((m) => !m.id.startsWith('streaming-'))
   }
 
-  // Coalesce flag for SSE-driven `scrollToBottom` calls. SSE chunks can fire 20+ times/sec, but we
-  // only need one scrollToBottom per animation frame. Without this, the console floods with
-  // `scroll-to-bottom-conditional` lines and we do redundant geometry reads.
+  // Coalesce flag for SSE-driven `scrollToBottom` calls.
   let sseScrollPending = false
 
   const updateStreamingMessage = () => {
     // Every SSE chunk drives an auto-stick via scrollToBottom below (coalesced to one-per-frame).
-    // Mark the timestamp NOW, before the rAF coalesce, so the gate reflects the chunk that just
-    // arrived — not the rAF callback that runs up to 16ms later.
     lastAutoStickAt.value = Date.now()
     const existingMsg = messages.value.find(
       (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
@@ -478,17 +447,13 @@ export function useChatSse(deps: ChatSseDeps) {
     }
     const stripped = stripThinkingTags(streamingContent.value)
     if (stripped && stripped.trim() !== '') {
-      // Coalesce: SSE chunks can fire 20+ times/sec, but we only need one scrollToBottom per
-      // animation frame. Without this, the console floods with `scroll-to-bottom-conditional` lines
-      // and we do redundant geometry reads.
+      // Coalesce: SSE chunks can fire 20+ times/sec, but we only need one scrollToBottom per animation frame.
       if (!sseScrollPending) {
         sseScrollPending = true
         requestAnimationFrame(() => {
           sseScrollPending = false
           logger().markProgrammatic()
-          // Recompute the height model BEFORE scrolling (append-gap fix), but ONLY when the stick is
-          // engaged. A scrolled-up user must not be disturbed: remeasure mutates the sizer, and sizer
-          // mutations during active reading = the bouncing-text bug.
+          // Recompute the height model BEFORE scrolling (append-gap fix), but ONLY when the stick is engaged.
           if (isAtBottom.value) virtualScrollerRef.value?.remeasure()
           scrollToBottom(false, 'sse-chunk')
         })

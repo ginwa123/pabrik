@@ -34,8 +34,7 @@ export function createKanbanTasks(p: KanbanTasksParams) {
   const { taskEngineDb, taskRequest, primeTaskCache } = taskCache
   const { revalidateTaskCache, replaceItemTasksForColumn } = taskCache
 
-  // Refresh an item's tasks from the backend and merge the response into the local `item.tasks`
-  // array.
+  // Refresh an item's tasks from the backend and merge the response into the local `item.tasks` array.
   async function fetchKanbanTasks(
     workspaceId: string,
     itemId: string,
@@ -48,9 +47,7 @@ export function createKanbanTasks(p: KanbanTasksParams) {
   ): Promise<void> {
     const item = findItem(workspaceId, itemId)
     if (!item) return
-    // Mark this column's first page as in-flight so KanbanColumn / KanbanRowView can show a
-    // skeleton instead of the "No tasks yet" empty state. Only for page-1 (no cursor) — a "Load
-    // more" fetch already has rows on screen and its own `isLoading` flag.
+    // Mark this column's first page as in-flight so KanbanColumn / KanbanRowView can show a skeleton instead of the "No tasks yet" empty state.
     const isFirstPage = !cursor
     if (isFirstPage) {
       firstPageLoadingColumns.value.add(firstPageLoadingKey(itemId, columnId))
@@ -70,9 +67,7 @@ export function createKanbanTasks(p: KanbanTasksParams) {
         direction,
       )
       if (fresh) {
-        // A complete page (has_more=false) lists every row in this context —
-        // cached rows it omits were deleted or moved out, so they are dropped
-        // instead of merged back in.
+        // A complete page (has_more=false) lists every row in this context — cached rows it omits were deleted or moved out, so they are dropped instead of merged back …
         const merged = new Map((fresh.has_more ? cached : []).map((task) => [task.id, task]))
         for (const task of fresh.tasks) merged.set(task.id, task)
         replaceItemTasksForColumn(item, columnId, [...merged.values()])
@@ -91,16 +86,14 @@ export function createKanbanTasks(p: KanbanTasksParams) {
         }
       }
 
-      // Track the active q so SSE handlers + loadMoreTasks can
-      // forward it on subsequent refetches.
+      // Track the active q so SSE handlers + loadMoreTasks can forward it on subsequent refetches.
       if (q && q.length > 0) {
         activeSearchQueries.set(itemId, q)
       } else {
         activeSearchQueries.delete(itemId)
       }
 
-      // Track the active sort so loadMoreTasksForColumn + kanbanSse
-      // can forward it on subsequent refetches.
+      // Track the active sort so loadMoreTasksForColumn + kanbanSse can forward it on subsequent refetches.
       if (sortBy && direction) {
         activeSortBy.set(itemId, sortBy)
         activeSortDirection.set(itemId, direction)
@@ -109,30 +102,23 @@ export function createKanbanTasks(p: KanbanTasksParams) {
         activeSortDirection.delete(itemId)
       }
 
-      // Card-first async media: cards already rendered from the
-      // flag-only payload above; queue thumbnail loads behind it.
+      // Card-first async media: cards already rendered from the flag-only payload above; queue thumbnail loads behind it.
       queueCardMediaLoad(workspaceId, itemId)
     } catch (err) {
       console.error(
         `[workspacesStore.fetchKanbanTasks] API call failed for column ${columnId}:`,
         err,
       )
-      // Leave the existing tasks array untouched so the UI doesn't
-      // flash to empty on a transient network blip. The next SSE
-      // event will trigger another fetch.
+      // Leave the existing tasks array untouched so the UI doesn't flash to empty on a transient network blip.
     } finally {
-      // Clear the first-page flag on BOTH paths — a failed fetch must not park the skeleton forever
-      // (the column falls back to its empty state, which is the honest answer when the request
-      // failed).
+      // Clear the first-page flag on BOTH paths — a failed fetch must not park the skeleton forever (the column falls back to its empty state, which is the honest …
       if (isFirstPage) {
         firstPageLoadingColumns.value.delete(firstPageLoadingKey(itemId, columnId))
       }
     }
   }
 
-  // Fire `fetchKanbanTasks` for every column of a kanban item. Per-column pagination (Option B,
-  // 2026-08-06 amendment): every task fetch must carry a `column_id`, including the initial page-1
-  // fetch.
+  // Fire `fetchKanbanTasks` for every column of a kanban item.
   async function fetchKanbanTasksForAllColumns(
     workspaceId: string,
     itemId: string,
@@ -145,15 +131,12 @@ export function createKanbanTasks(p: KanbanTasksParams) {
     if (!item) return
     let columns = item.kanban_columns ?? []
     if (columns.length === 0) {
-      // No columns loaded yet — fetch them first so we have ids.
-      // fetchKanbanColumns is idempotent (just an HTTP GET), safe
-      // to call even if the columns are already in flight.
+      // No columns loaded yet — fetch them first so we have ids. fetchKanbanColumns is idempotent (just an HTTP GET), safe to call even if the columns are already in …
       await fetchKanbanColumns(workspaceId, itemId)
       columns = item.kanban_columns ?? []
     }
     if (columns.length === 0) return // still empty → board has no columns
-    // Fire one fetch per column in parallel. Each fetch updates
-    // its own slice of item.tasks + its own columnPagination entry.
+    // Fire one fetch per column in parallel.
     await Promise.all(
       columns.map((col) =>
         fetchKanbanTasks(
@@ -168,13 +151,11 @@ export function createKanbanTasks(p: KanbanTasksParams) {
         ),
       ),
     )
-    // Card-first async media: every column's cards rendered from the
-    // flag-only payload; queue thumbnail loads behind them in one batch.
+    // Card-first async media: every column's cards rendered from the flag-only payload; queue thumbnail loads behind them in one batch.
     queueCardMediaLoad(workspaceId, itemId)
   }
 
-  // Load the next page of tasks for ONE column of a kanban item (per-column pagination, plan
-  // 2026-08-06-kanban-per-column- pagination.md).
+  // Load the next page of tasks for ONE column of a kanban item (per-column pagination, plan 2026-08-06-kanban-per-column- pagination.md).
   async function loadMoreTasksForColumn(workspaceId: string, itemId: string, columnId: string) {
     const workspace = workspaces.value.find((ws) => ws.id === workspaceId)
     if (!workspace) return
@@ -188,13 +169,9 @@ export function createKanbanTasks(p: KanbanTasksParams) {
 
     colState.isLoading = true
     try {
-      // Kanban task search (Chunk 4): forward the active q so "Load more" fetches the next page of
-      // MATCHES, not the next page of everything. Read from activeSearchQueries (set by
-      // fetchKanbanTasks(q)).
+      // Kanban task search (Chunk 4): forward the active q so "Load more" fetches the next page of MATCHES, not the next page of everything.
       const activeQ = activeSearchQueries.get(itemId)
-      // Kanban sort-by (Chunk 3): forward the active sort. The cursor is tied to the sort order —
-      // using a different sort here would fetch a meaningless slice. Read from activeSortBy +
-      // activeSortDirection (set by the most recent fetchKanbanTasks with both args defined).
+      // Kanban sort-by (Chunk 3): forward the active sort.
       const activeSort = activeSortBy.get(itemId)
       const activeDirection = activeSortDirection.get(itemId)
       const { tasks, has_more, next_cursor } = await api.getTasks(
@@ -207,9 +184,7 @@ export function createKanbanTasks(p: KanbanTasksParams) {
         columnId, // per-column filter (the new arg)
         activeQ,
       )
-      // Append the new page to the existing list. We push (not unshift) because tasks are ordered
-      // newest-first, so older tasks go at the end of the list. Migration 067 — normalize tags from
-      // wire string to in-memory string[] at every fetch site.
+      // Append the new page to the existing list.
       if (!item.tasks) item.tasks = []
       const seenIds = new Set(item.tasks.map((t) => t.id))
       for (const t of tasks.map(normalizeTaskTags)) {
@@ -228,18 +203,14 @@ export function createKanbanTasks(p: KanbanTasksParams) {
         ),
         'tasks.putLocal',
       )
-      // Update this column's pagination state with the new cursor +
-      // hasMore. The backend tells us if THIS column has more pages.
+      // Update this column's pagination state with the new cursor + hasMore.
       colState.cursor = next_cursor
       colState.hasMore = has_more
-      // Card-first async media: appended cards rendered from the
-      // flag-only payload; queue their thumbnail loads behind them.
+      // Card-first async media: appended cards rendered from the flag-only payload; queue their thumbnail loads behind them.
       queueCardMediaLoad(workspaceId, itemId)
     } catch (err) {
       console.error(`Failed to load more tasks for item ${itemId} column ${columnId}:`, err)
-      // Leave hasMore/cursor as-is so the user can retry by
-      // clicking the button again. Do not surface a toast — keep the
-      // failure mode quiet (same pattern as addTask's catch block).
+      // Leave hasMore/cursor as-is so the user can retry by clicking the button again.
     } finally {
       colState.isLoading = false
     }
@@ -247,13 +218,9 @@ export function createKanbanTasks(p: KanbanTasksParams) {
 
   return {
     fetchKanbanTasks,
-    // Per-column initial fetch helper (Option B). Iterates
-    // kanban_columns and fires one fetch each, all with column_id
-    // set. Replaces the previous "one board-wide fetch" pattern.
+    // Per-column initial fetch helper (Option B).
     fetchKanbanTasksForAllColumns,
-    // Per-column pagination (kanban-per-column-pagination plan, 2026-08-06). Replaces the old
-    // board-wide `loadMoreTasks`. Each kanban column paginates independently — the column's
-    // auto-load sentinel + manual "Load more" button call this action with the column's id.
+    // Per-column pagination (kanban-per-column-pagination plan, 2026-08-06).
     loadMoreTasksForColumn,
   }
 }

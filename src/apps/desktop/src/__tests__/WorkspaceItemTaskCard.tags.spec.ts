@@ -1,5 +1,4 @@
-/** * WorkspaceItemTaskCard — tags row (Migration 067). Covers: empty/undefined tags → no row,
- * non-empty tags → chips, max 3 visible + "+N more" affordance, deterministic color. */
+/** WorkspaceItemTaskCard — tags row (Migration 067). */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -108,9 +107,7 @@ describe('WorkspaceItemTaskCard — tags row', () => {
   })
 
   it('different tags usually get different colors (probabilistic check)', async () => {
-    // 'frontend' and 'backend' hash to different indices in the
-    // 6-color palette with overwhelming probability. Verify via
-    // direct property comparison.
+    // 'frontend' and 'backend' hash to different indices in the 6-color palette with overwhelming probability.
     const wrapper = mount(WorkspaceItemTaskCard, {
       props: { task: makeTask({ tags: ['frontend', 'backend'] }), workspaceId: 'ws_1', itemId: 'item_1' },
     })

@@ -1,6 +1,4 @@
-/** Tests for ChatView's llm_chunk streaming-append behavior. 2026-08-23 llm-chunk-streaming — the
- * backend sends RAW DELTAS (choices[0].delta.content per provider SSE), so the chunk handler must
- * APPEND to streamingContent (the old `=` replace left only the last fragment visible). */
+/** Tests for ChatView's llm_chunk streaming-append behavior. 2026-08-23 llm-chunk-streaming — the backend sends RAW DELTAS (choices[0].delta.content per provider … */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -33,8 +31,7 @@ function makeHandler() {
   const maxTotalTokens = ref(0)
   let finalEventsSeen = 0
 
-  // Mirrors ChatView.vue connectSse() bus.on('llm') handler — the
-  // relevant branches only, in the same order as the real component.
+  // Mirrors ChatView.vue connectSse() bus.on('llm') handler — the relevant branches only, in the same order as the real component.
   const onEvent = (event: SseEventLike) => {
     if (event.session_id !== SID) return
 
@@ -74,9 +71,7 @@ function makeHandler() {
     }
   }
 
-  // Mirrors ChatView.vue updateStreamingMessage() — find-and-mutate
-  // keeps ONE streaming row (pushing a new row per chunk would thrash
-  // VirtualScroller height estimates).
+  // Mirrors ChatView.vue updateStreamingMessage() — find-and-mutate keeps ONE streaming row (pushing a new row per chunk would thrash VirtualScroller height …
   function updateStreamingMessage() {
     const existing = messages.value.find(
       (m) => m.role === 'assistant' && m.id.startsWith('streaming-'),
@@ -156,8 +151,7 @@ describe('ChatView llm_chunk streaming append', () => {
 
     expect(h.maxTotalTokens.value).toBe(4321)
     expect(h.getFinalSeen()).toBe(1)
-    // No message pushed by chunk_final itself; streaming buffer intact
-    // until the canonical full event arrives.
+    // No message pushed by chunk_final itself; streaming buffer intact until the canonical full event arrives.
     expect(h.streamingContent.value).toBe('streaming text')
     expect(
       h.messages.value.filter((m) => !m.id.startsWith('streaming-')),

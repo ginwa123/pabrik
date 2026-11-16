@@ -1,5 +1,4 @@
-//! Agent-callable tool: `used_tools` — list the tools currently equipped for
-//! this session (the "what tools am I using" answer).
+//! Agent-callable tool: `used_tools` — list the tools currently equipped for this session (the "what tools am I using" answer).
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -34,15 +33,13 @@ pub const used_tools_tool = AgentTool{
     },
 };
 
-/// One equipped tool as the LLM sees it. The exec adapter builds these
-/// from `AgentTool` defs (built-ins) and the MCP cache (equipped MCP tools).
+/// One equipped tool as the LLM sees it.
 pub const ToolSummary = struct {
     name: []const u8,
     description: []const u8,
 };
 
-/// Execute used_tools. Returns a JSON string for the LLM:
-/// `{"count":N,"tools":[{"name":...,"description":...}]}`.
+/// Execute used_tools. Returns a JSON string for the LLM
 pub fn executeUsedTools(
     allocator: std.mem.Allocator,
     equipped: []const ToolSummary,
@@ -99,7 +96,6 @@ test "executeUsedTools: preserves input order" {
 }
 
 // Exec adapter — merged from `used_tools.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_testing = std.testing;
 const pabrikcore = @import("pabrikcore");
@@ -118,9 +114,7 @@ const agent = pabrikcore.agent;
 const main_agent_only = pabrikcore.main_agent_only;
 const wrapToolOutput = exec_tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
-/// Resolve the session's effective tool list (mirror of
-/// `workflow.filterAndMergeTools`, minus the MCP-null branch which is handled
-/// by the live cache lookup below).
+/// Resolve the session's effective tool list (mirror of `workflow.filterAndMergeTools`, minus the MCP-null branch which is handled by the live cache lookup below).
 fn resolveEquipped(ctx: ToolExecContext) ![]ToolSummary {
     const registered = tools_equipped.equips(ctx.allocator);
     const enabled = try tool_eligibility.allowlistFilter(
@@ -187,8 +181,6 @@ fn resolveEquipped(ctx: ToolExecContext) ![]ToolSummary {
 
 pub fn execUsedTools(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     // No input to parse — the schema declares zero required params.
-    // Use `tc.function.arguments` for the envelope's `parameters`
-    // field verbatim (the LLM is expected to send `{}`).
     const equipped = resolveEquipped(ctx) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
@@ -228,9 +220,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Build a `ToolExecContext` for used_tools tests. `allowed_tools` is the
-/// already-resolved CSV (what `handle_tool` threads through at dispatch);
-/// `is_sub_agent` selects the main-agent-only strip.
+/// Build a `ToolExecContext` for used_tools tests.
 fn makeTestCtx(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -285,9 +275,7 @@ fn testConfig(allocator: std.mem.Allocator) !config_mod.LlmConfig {
 
 test "execUsedTools: reports exactly the allowlisted tools" {
     const alloc = exec_testing.allocator;
-    // resolveEquipped has intermediate allocs (equips dupe, allowlist
-    // filter, summary list) that the per-request arena reaps in
-    // production — mirror that here with a per-test arena.
+    // resolveEquipped has intermediate allocs (equips dupe, allowlist filter, summary list) that the per-request arena reaps in production — mirror that here with a …
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     const a = arena.allocator();
@@ -379,8 +367,7 @@ test "execUsedTools: none sentinel yields count 0" {
 // ─── Registration: the tool is actually offered to the model ────────────────
 
 test "used_tools is offered to the model and resolves to a dispatchable registry entry" {
-    // `equips()` is the list the workflow hands the LLM; dropping the entry
-    // there makes the tool unreachable without any other test noticing.
+    // `equips()` is the list the workflow hands the LLM; dropping the entry there makes the tool unreachable without any other test noticing.
     const equip = tools_equipped.equips(exec_testing.allocator);
     defer exec_testing.allocator.free(equip);
 
@@ -390,9 +377,7 @@ test "used_tools is offered to the model and resolves to a dispatchable registry
     }
     try exec_testing.expect(in_equips);
 
-    // Advertised AND dispatchable, carrying the SAME tool def — a registry
-    // entry under a different def means the model sees one schema and the
-    // dispatcher answers with another.
+    // Advertised AND dispatchable, carrying the SAME tool def — a registry entry under a different def means the model sees one schema and the dispatcher answers …
     var entries: usize = 0;
     for (tools_equipped.UNIFIED_TOOL_REGISTRY()) |entry| {
         if (!std.mem.eql(u8, entry.name, "used_tools")) continue;

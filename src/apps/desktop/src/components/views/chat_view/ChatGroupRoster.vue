@@ -9,8 +9,7 @@ const props = defineProps<{
   isBusy: boolean
   error: string | null
   agents: Array<{ name: string }>
-  /** The agent this chat answers as when no member is routed: the composer's
-   * cascade. The panel's own copy promises it, so it has to be named. */
+  /** The agent this chat answers as when no member is routed: the composer's cascade. */
   ownAgent: string
 }>()
 

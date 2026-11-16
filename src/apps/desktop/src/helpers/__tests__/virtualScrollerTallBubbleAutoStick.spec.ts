@@ -1,6 +1,4 @@
-/** The reported shape, at the layer that can express it: "Chatview has issue if sse send a llm
- * chunk and llm full data finish reason stop, its like automatically go to bottom scrollbar
- * chatview" + "if the messages many and the content response is long, it is not auto scroll. */
+/** The reported shape, at the layer that can express it: "Chatview has issue if sse send a llm chunk and llm full data finish reason stop, its like automatically … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -39,9 +37,7 @@ function mountLongChat(n: number = ITEM_COUNT) {
   })
   const el = wrapper.element as HTMLElement
   Object.defineProperty(el, 'clientHeight', { value: VIEWPORT, configurable: true })
-  // In a real browser `scrollHeight` IS the sizer's height. A static stub does
-  // not move as rows are measured, which would make `bottomScrollTop()` report
-  // a stale edge and the at-bottom test below meaningless.
+  // In a real browser `scrollHeight` IS the sizer's height.
   const sizer = el.querySelector('.virtual-scroller-sizer') as HTMLElement | null
   Object.defineProperty(el, 'scrollHeight', {
     configurable: true,
@@ -75,9 +71,7 @@ function scrollTo(el: HTMLElement, top: number) {
   el.dispatchEvent(new Event('scroll'))
 }
 
-/**  * Teach the height model the profile, so corrections are measured against a realistic scale instead
- * of the 64px seed. Several passes, because the rendered window only covers part of a 1000-item
- * list and each pass measures the rows that are on screen. */
+/** Teach the height model the profile, so corrections are measured against a realistic scale instead of the 64px seed. */
 async function learnProfile(el: HTMLElement, scale = 1) {
   for (let pass = 0; pass < 4; pass++) {
     scrollTo(el, 0)
@@ -116,14 +110,11 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     await learnProfile(el)
 
     let bottom = await parkAtBottom(el, vm)
-    // Precondition: this is the "many messages" half of the report — the
-    // corrections under test are thousands of pixels, not tens.
+    // Precondition: this is the "many messages" half of the report — the corrections under test are thousands of pixels, not tens.
     expect(bottom / VIEWPORT).toBeGreaterThan(50)
     expect(el.scrollTop).toBe(bottom)
 
-    // A long response lands: the rows already on screen turn out to be much
-    // taller than the model reserved (markdown settles, a collapsed thought
-    // block expands, a code block renders). One measure pass, then assert.
+    // A long response lands: the rows already on screen turn out to be much taller than the model reserved (markdown settles, a collapsed thought block expands, a …
     paintProfileHeights(el, 1.8)
     vm.remeasure()
 
@@ -136,8 +127,7 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
   })
 
   it('keeps a bottom reader on the bottom when a pass deflates the model above the anchor', async () => {
-    // The opposite swing, and the one in the recorded browser capture: rows above the anchor settle
-    // far SHORTER than the model reserved.
+    // The opposite swing, and the one in the recorded browser capture: rows above the anchor settle far SHORTER than the model reserved.
     const { wrapper, el, vm } = mountLongChat()
     // Learn the profile INFLATED, then let it settle to the real heights.
     await learnProfile(el, 1.8)
@@ -157,25 +147,19 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
   })
 
   it('holds the invariant across a long response, pass after pass', async () => {
-    // One pass proving the rule is not one pass proving it survives a whole turn. The reported
-    // symptom only shows up once the stick has already died, so the LATER passes are the ones that
-    // matter. Each cycle is deliberately SYNCHRONOUS — park, paint, pass, assert.
+    // One pass proving the rule is not one pass proving it survives a whole turn.
     const { wrapper, el, vm } = mountLongChat()
     await learnProfile(el)
 
     const bottom0 = await parkAtBottom(el, vm)
     expect(bottom0 / VIEWPORT).toBeGreaterThan(50)
 
-    // A turn that grows in steps, as a streamed response does. Scales swing
-    // both ways so the correction under test is sometimes positive and
-    // sometimes negative and large.
+    // A turn that grows in steps, as a streamed response does.
     const gaps: number[] = []
     const bottoms: number[] = []
     for (const scale of [1.15, 1.35, 1.6, 1.9, 0.9, 1.25]) {
       scrollTo(el, vm.bottomScrollTop())
-      // Vue's render is ASYNC: without this the window is still the one from the previous position
-      // when `remeasure()` runs, so the pass measures rows that are not the ones the reader is
-      // looking at and the model never moves.
+      // Vue's render is ASYNC: without this the window is still the one from the previous position when `remeasure()` runs, so the pass measures rows that are not the …
       await nextTick()
       paintProfileHeights(el, scale)
       vm.remeasure()
@@ -194,22 +178,17 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
       }
       expect(Math.abs(gap)).toBeLessThanOrEqual(SLACK_PX)
     }
-    // The model really was being corrected during the turn, so the gaps above are measured against
-    // a moving bottom and not a static one.
+    // The model really was being corrected during the turn, so the gaps above are measured against a moving bottom and not a static one.
     expect(Math.max(...bottoms)).toBeGreaterThan(bottom0)
     wrapper.unmount()
   })
 
   it('leaves a reader in the history alone (the anchor still owns them)', async () => {
-    // The guard against over-correcting into "the scroller always jumps to the
-    // bottom". In a 1000-message chat the history reader is a long way from the
-    // bottom, and the anchor rule must keep holding THEIR view still.
+    // The guard against over-correcting into "the scroller always jumps to the bottom".
     const { wrapper, el, vm } = mountLongChat()
     await learnProfile(el)
 
-    // Request a position deep in the history, then let the settle passes run. The reader is NOT
-    // expected to still be at exactly the requested pixel — measuring the rows that scroll in
-    // legitimately corrects the model above them, and the anchor carries them along.
+    // Request a position deep in the history, then let the settle passes run.
     const inHistory = Math.round(vm.bottomScrollTop() * 0.4)
     scrollTo(el, inHistory)
     await nextTick()
@@ -231,8 +210,7 @@ describe('VirtualScroller — a 1000-message chat with full-screen-tall bubbles'
     console.log(
       `[tall-bubbles] history reader: scrollTop=${after} bottom=${bottom} distance=${distance}`,
     )
-    // They moved — that is the anchor doing its job, riding a model that grew
-    // above them — but they are still deep in the history, NOT at the tail.
+    // They moved — that is the anchor doing its job, riding a model that grew above them — but they are still deep in the history, NOT at the tail.
     expect(distance).toBeGreaterThan(VIEWPORT * 5)
     wrapper.unmount()
   })

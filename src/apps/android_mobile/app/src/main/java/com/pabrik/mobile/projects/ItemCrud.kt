@@ -1,11 +1,9 @@
 package com.pabrik.mobile.projects
 
-// Optimistic item CRUD helpers. Pure functions, unit-testable without a
-// ViewModel or a network.
+// Optimistic item CRUD helpers.
 object ItemCrud {
 
-    // Remove [itemId] from [items] optimistically. Returns the new list and
-    // the removed item (or null if not found) so the caller can restore it.
+    // Remove [itemId] from [items] optimistically.
     fun <T : Any> remove(items: List<T>, idOf: (T) -> String, itemId: String): Pair<List<T>, T?> {
         val idx = items.indexOfFirst { idOf(it) == itemId }
         if (idx < 0) return items to null

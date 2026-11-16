@@ -5,12 +5,10 @@ const gserverz = pabrik_core.gserverz;
 const git_route = @import("git_route.zig");
 const pr_provider = pabrik_core.pr_provider;
 
-/// Cap for the returned unified diff (1MB). Larger PRs truncate with
-/// `truncated=true` — the panel renders what fits and notes the cut.
+/// Cap for the returned unified diff (1MB).
 pub const MAX_DIFF_BYTES: usize = 1024 * 1024;
 
-/// Which backend produces the diff. Resolved purely from
-/// (provider, cli_available) so it is unit-testable without IO.
+/// Which backend produces the diff.
 pub const DiffStrategy = enum {
     gh_cli,
     glab_cli,
@@ -19,8 +17,7 @@ pub const DiffStrategy = enum {
     git_local_range,
 };
 
-/// Pick the diff strategy. `cli_available` = whether the provider's CLI (`gh`
-/// / `glab`) is on PATH. `generic` never has a CLI and always diffs locally.
+/// Pick the diff strategy.
 pub fn resolveStrategy(provider: pr_provider.PrProvider, cli_available: bool) DiffStrategy {
     return switch (provider) {
         .github => if (cli_available) .gh_cli else .git_fetch_pr_ref,
@@ -31,9 +28,7 @@ pub fn resolveStrategy(provider: pr_provider.PrProvider, cli_available: bool) Di
 
 const PrDiffError = error{ NotARepository, FetchFailed, DiffFailed };
 
-/// Every strategy returns OWNED slices — `diff_content` may be up to
-/// MAX_DIFF_BYTES, so leaking it per request is not an option, and `base` /
-/// `head` must outlive the `defer`s that built them.
+/// Every strategy returns OWNED slices — `diff_content` may be up to MAX_DIFF_BYTES, so leaking it per request is not an option, and `base` /`head` must outlive …
 const PrDiffResult = struct {
     diff_content: []const u8,
     truncated: bool,
@@ -48,7 +43,6 @@ const PrDiffResult = struct {
 };
 
 /// Check whether a CLI binary resolves on PATH (`gh` / `glab`).
-/// Pure spawn probe: `cmd --version`, output discarded.
 fn cliAvailable(allocator: std.mem.Allocator, io: std.Io, cmd: []const u8) bool {
     const res = std.process.run(allocator, io, .{ .argv = &.{ cmd, "--version" } }) catch return false;
     defer {
@@ -58,13 +52,10 @@ fn cliAvailable(allocator: std.mem.Allocator, io: std.Io, cmd: []const u8) bool 
     return res.term.exited == 0;
 }
 
-/// Twice the reporting cap, so `capDiff` can tell "at the cap" from "over it"
-/// and set `truncated` on a diff this endpoint refuses to send whole.
+/// Twice the reporting cap, so `capDiff` can tell "at the cap" from "over it" and set `truncated` on a diff this endpoint refuses to send whole.
 const DIFF_CAPTURE_BYTES: usize = MAX_DIFF_BYTES * 2;
 
-/// Run `git <args>` in `path`, return its stdout on exit 0/1 (git diff uses
-/// exit 1 when differences exist), else the mapped error. `path` is routed:
-/// under `--saas` this is the workspace's VM, and the host never runs it.
+/// Run `git <args>` in `path`, return its stdout on exit 0/1 (git diff uses exit 1 when differences exist), else the mapped error.
 fn runGit(allocator: std.mem.Allocator, io: std.Io, path: []const u8, args: []const []const u8, opts: git_route.Options) ![]u8 {
     var capped = opts;
     capped.max_output_bytes = DIFF_CAPTURE_BYTES;
@@ -75,8 +66,7 @@ fn runGit(allocator: std.mem.Allocator, io: std.Io, path: []const u8, args: []co
     return res.stdout;
 }
 
-/// Auto-detect the base branch: origin/main → origin/master → origin/develop
-/// → "main" fallback.
+/// Auto-detect the base branch: origin/main → origin/master → origin/develop → "main" fallback.
 fn detectBase(allocator: std.mem.Allocator, io: std.Io, path: []const u8, opts: git_route.Options) ![]const u8 {
     const bases = [_][]const u8{ "main", "master", "develop" };
     for (bases) |b| {
@@ -106,14 +96,10 @@ fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8, opt
     return allocator.dupe(u8, trimmed);
 }
 
-/// GitHub refuses to serve the `/pulls/{n}` diff once a pull request
-/// touches more than this many files, answering HTTP 406 (surfaced by
-/// `gh pr diff` as `PullRequest.diff too_large` on a nonzero exit).
+/// GitHub refuses to serve the `/pulls/{n}` diff once a pull request touches more than this many files, answering HTTP 406 (surfaced by `gh pr diff` as …
 pub const FORGE_MAX_DIFF_FILES: u32 = 300;
 
-/// Try the forge CLI (`gh pr diff` / `glab mr diff`). Returns null when the
-/// CLI is absent, exits nonzero, or produced nothing usable — every case
-/// where the caller must fall back to the git refspec.
+/// Try the forge CLI (`gh pr diff` / `glab mr diff`).
 fn tryForgeCli(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -137,8 +123,7 @@ fn tryForgeCli(
     }
     const capped = try capDiff(allocator, res.stdout);
     errdefer allocator.free(capped.text);
-    // The CLI reports no base/head (it diffs server-side); owned empties so
-    // PrDiffResult.deinit can free all three unconditionally.
+    // The CLI reports no base/head (it diffs server-side); owned empties so PrDiffResult.deinit can free all three unconditionally.
     const base = try allocator.dupe(u8, "");
     errdefer allocator.free(base);
     const head = try allocator.dupe(u8, "");
@@ -150,9 +135,7 @@ fn tryForgeCli(
     };
 }
 
-/// Fetch the forge's well-known head ref over the repo's own `origin`
-/// (`pull/N/head` on GitHub, `merge-requests/IID/head` on GitLab) and diff it
-/// against the base.
+/// Fetch the forge's well-known head ref over the repo's own `origin` (`pull/N/head` on GitHub, `merge-requests/IID/head` on GitLab) and diff it against the base.
 fn fetchRefRange(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -205,8 +188,7 @@ fn fetchRefRange(
     return .{ .diff_content = capped.text, .truncated = capped.truncated, .base = base, .head = local_ref };
 }
 
-/// Cap diff output at MAX_DIFF_BYTES. Consumes `owned`: returns it
-/// whole when small, otherwise a duped prefix (original freed).
+/// Cap diff output at MAX_DIFF_BYTES.
 fn capDiff(allocator: std.mem.Allocator, owned: []u8) !struct { text: []const u8, truncated: bool } {
     if (owned.len <= MAX_DIFF_BYTES) return .{ .text = owned, .truncated = false };
     const prefix = try allocator.dupe(u8, owned[0..MAX_DIFF_BYTES]);
@@ -256,9 +238,7 @@ fn useCase(
     };
 
     switch (strategy) {
-        // The CLI is a fast path, not a guarantee: it exits nonzero on auth
-        // failure AND on the forge's oversized-PR refusal (GitHub caps the PR
-        // diff at FORGE_MAX_DIFF_FILES files).
+        // The CLI is a fast path, not a guarantee: it exits nonzero on auth failure AND on the forge's oversized-PR refusal (GitHub caps the PR diff at …
         .gh_cli, .glab_cli => {
             if (try tryForgeCli(allocator, io, provider, normalized)) |cli_result| {
                 return cli_result;
@@ -276,8 +256,7 @@ fn useCase(
             errdefer allocator.free(base);
             const head: []const u8 = blk: {
                 if (head_override) |h| break :blk try allocator.dupe(u8, h);
-                // Detached HEAD reports "", which `git diff main...` cannot
-                // resolve; fall back to the literal ref.
+                // Detached HEAD reports "", which `git diff main...` cannot resolve; fall back to the literal ref.
                 const cb = try currentBranch(allocator, io, path, opts);
                 if (cb.len != 0) break :blk cb;
                 allocator.free(cb);
@@ -293,8 +272,7 @@ fn useCase(
     }
 }
 
-/// GET /api/git/pr/diff?path=<cwd>&pr_url=<url>[&provider=][&base=][&head=]
-/// Returns the PR's full unified diff (1MB cap) for the right panel.
+/// GET /api/git/pr/diff?path=<cwd>&pr_url=<url>[&provider=][&base=][&head=] Returns the PR's full unified diff (1MB cap) for the right panel.
 pub fn gitPrDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
     const io = ctx.io;

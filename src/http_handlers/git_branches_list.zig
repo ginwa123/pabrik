@@ -16,8 +16,7 @@ pub const BranchEntry = struct {
 };
 
 const BranchListResult = struct {
-    /// Empty in a bare repo or on a detached HEAD — the picker then has
-    /// no highlighted row.
+    /// Empty in a bare repo or on a detached HEAD — the picker then has no highlighted row.
     current_branch: []const u8,
     branches: []const BranchEntry,
 };
@@ -28,8 +27,7 @@ pub const RawRef = struct {
     is_remote: bool,
 };
 
-/// Validate the `path` query param before it is handed to `git -C`. Pure — no
-/// IO. Returns null on success, or an error message.
+/// Validate the `path` query param before it is handed to `git -C`.
 pub fn validateRepoPath(path: []const u8) ?[]const u8 {
     if (path.len == 0) return "path is required";
     if (path.len > 4096) return "path exceeds 4096 characters";
@@ -43,8 +41,7 @@ pub fn validateRepoPath(path: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Parse the tab-separated `%(refname)\t%(refname:short)\t%(symref)` output
-/// of `git for-each-ref refs/heads refs/remotes` into short-name rows.
+/// Parse the tab-separated `%(refname)\t%(refname:short)\t%(symref)` output of `git for-each-ref refs/heads refs/remotes` into short-name rows.
 pub fn parseRefRows(allocator: std.mem.Allocator, raw: []const u8) ![]RawRef {
     var out: std.ArrayList(RawRef) = .empty;
     errdefer {
@@ -101,8 +98,7 @@ pub fn pickDefaultRef(refs: []const RawRef) []const u8 {
     return "";
 }
 
-/// Stable ordering for the picker: `default_name` first (when present), then
-/// every remote-tracking ref, then every local branch.
+/// Stable ordering for the picker: `default_name` first (when present), then every remote-tracking ref, then every local branch.
 pub fn orderRefs(
     allocator: std.mem.Allocator,
     refs: []const RawRef,
@@ -132,8 +128,7 @@ pub fn orderRefs(
     return out.toOwnedSlice(allocator);
 }
 
-/// Use case — ask git for the repo's branches at `path`. Takes primitives,
-/// returns a domain struct. No HTTP types.
+/// Use case — ask git for the repo's branches at `path`.
 fn listBranchesUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -148,8 +143,7 @@ fn listBranchesUseCase(
     const current_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, opts) catch return error.NotARepository;
     const current_branch = std.mem.trim(u8, current_result.stdout, " \n\r\t");
 
-    // 3) Every local + remote-tracking ref, with symbolic refs flagged
-    //    in the third column so parseRefRows can drop them.
+    // 3) Every local + remote-tracking ref, with symbolic refs flagged in the third column so parseRefRows can drop them.
     const refs_result = git_route.run(allocator, io, path, &.{
         "for-each-ref", "--format=%(refname)%09%(refname:short)%09%(symref)", "refs/heads",
         "refs/remotes",
@@ -192,8 +186,6 @@ pub fn gitBranchesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
         },
         // Allocator failures (OOM) fall through to the server's generic 500.
-        // The explicit `else` is required: the use case's error set is
-        // inferred and includes `std.mem.Allocator.Error`.
         else => return err,
     };
 
@@ -264,9 +256,7 @@ test "parseRefRows skips blank lines, malformed rows, and whitespace symrefs" {
     const raw =
         "\n" ++
         "refs/heads/only-one-field\n" ++
-        // The /HEAD full-refname guard catches this row even though the
-        // symref column is whitespace-only (a build of git that did not
-        // report the symref target would otherwise surface a bogus branch
+        // The /HEAD full-refname guard catches this row even though the symref column is whitespace-only (a build of git that did not report the symref target would …
         "refs/remotes/origin/HEAD\torigin\t   \n" ++
         "refs/heads/main\tmain\t\n" ++
         "\n";

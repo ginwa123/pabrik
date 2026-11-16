@@ -13,8 +13,7 @@ export const folderDiffTargets = (
 ): DiffTarget[] => [
   ...staged.map((f) => ({ path: f.path, staged: true })),
   ...unstaged.map((f) => ({ path: f.path, staged: false })),
-  // Untracked files carry the flag to the centre diff's whole-file control:
-  // a new file's diff IS the whole file, so nothing needs fetching.
+  // Untracked files carry the flag to the centre diff's whole-file control
   ...untracked.map((f) => ({ path: f.path, staged: false, untracked: true })),
 ]
 
@@ -48,12 +47,9 @@ export const folderDiffApplied = (
   targets: DiffTarget[],
   batch: GitFileDiffsResponse,
 ): { counts: DiffCounts; list: DiffSelection[] } => {
-  // Hand the payload to every other reader (the file rows' click handler
-  // and the standalone GitFileViewer) before rendering, so a click landing
-  // in the next few milliseconds is already a cache hit.
+  // Hand the payload to every other reader (the file rows' click handler and the standalone GitFileViewer) before rendering, so a click landing in the next few …
   primeFolderDiffs(cwd, batch.diffs)
-  // Counts come straight off the payload we already have — no second
-  // request, and no re-derivation from the parsed line arrays below.
+  // Counts come straight off the payload we already have — no second request, and no re-derivation from the parsed line arrays below.
   const counts: DiffCounts = new Map()
   for (const d of batch.diffs) {
     const { added, removed } = countDiffLines(d.diff_content)

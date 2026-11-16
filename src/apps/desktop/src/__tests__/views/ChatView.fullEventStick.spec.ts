@@ -1,6 +1,4 @@
-/** Regression tests for the reported bug: "Chatview has issue if sse send a llm chunk and llm full
- * data finish reason stop, its like automatically go to bottom scrollbar chatview". ── Why this
- * file exists ──────────────────────────────────────────────────── 1. COVERAGE GAP. */
+/** Regression tests for the reported bug: "Chatview has issue if sse send a llm chunk and llm full data finish reason stop, its like automatically go to bottom … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'
@@ -53,8 +51,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-// jsdom does not implement HTMLElement.prototype.scrollTo — polyfill a real
-// implementation so scrollToBottom observably moves scrollTop.
+// jsdom does not implement HTMLElement.prototype.scrollTo — polyfill a real implementation so scrollToBottom observably moves scrollTop.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -75,8 +72,7 @@ if (
   }
 }
 
-// No layout in jsdom: every element reports these, so the transcript is
-// scrollable from mount and the bottom is a fixed, known number.
+// No layout in jsdom: every element reports these, so the transcript is scrollable from mount and the bottom is a fixed, known number.
 const TOTAL_HEIGHT = 20000
 const VIEWPORT = 800
 const BOTTOM = TOTAL_HEIGHT - VIEWPORT
@@ -152,16 +148,13 @@ async function mountChatView(
     attachTo: document.body,
     global: { provide: { processingState } },
   })
-  // Wait for the transcript to paint. The mount gate is `!isInitializing && (isLoading ||
-  // messageGroups.length > 0)` on the <VirtualScroller>, and `isInitializing` only clears once the
-  // history load settles — so the scroller's presence IS the load-completed signal.
+  // Wait for the transcript to paint.
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 40))
     await nextTick()
     if (wrapper.find('.virtual-scroller').exists()) break
   }
-  // Let mount-time timers (VirtualScroller measure, loadMore debounce,
-  // initial-load rAFs) flush so the scenario starts clean.
+  // Let mount-time timers (VirtualScroller measure, loadMore debounce, initial-load rAFs) flush so the scenario starts clean.
   await new Promise((r) => setTimeout(r, 400))
   await nextTick()
   return wrapper
@@ -257,8 +250,7 @@ describe('ChatView — llm_chunk then llm_full(finish_reason=stop) auto-scroll',
     await settle()
     expect(container.scrollTop).toBe(5000)
 
-    // llm_full with finish_reason=stop — the streaming row is swapped for
-    // the canonical DB row. This is the reported trigger.
+    // llm_full with finish_reason=stop — the streaming row is swapped for the canonical DB row.
     emitLlm({
       type: 'full',
       session_id: 'task_full_stick_up',
@@ -297,8 +289,7 @@ describe('ChatView — llm_chunk then llm_full(finish_reason=stop) auto-scroll',
     })
     await settle()
 
-    // The stick must survive — over-correcting into "never auto-scroll" is
-    // the opposite failure.
+    // The stick must survive — over-correcting into "never auto-scroll" is the opposite failure.
     expect(container.scrollTop).toBe(BOTTOM)
   })
 })

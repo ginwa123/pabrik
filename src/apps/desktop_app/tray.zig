@@ -1,6 +1,4 @@
-// src/apps/desktop_app/tray.zig Platform-independent part of the desktop
-// app's system-tray icon: the menu entries, what a click means, and where
-// the icon comes from. The per-OS backends render this model.
+// src/apps/desktop_app/tray.zig Platform-independent part of the desktop app's system-tray icon: the menu entries, what a click means, and where the icon comes …
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,8 +10,7 @@ pub const Action = enum {
     open_in_browser,
     quit,
 
-    /// Stable identifier for the action — the backend maps a native menu
-    /// item back to this, so it must not be a display string.
+    /// Stable identifier for the action — the backend maps a native menu item back to this, so it must not be a display string.
     pub fn id(self: Action) [:0]const u8 {
         return switch (self) {
             .show_window => "show",
@@ -64,13 +61,10 @@ pub const IconSource = union(enum) {
 /// Icon-theme name to fall back to when no image file on disk resolves.
 pub const theme_icon = "pabrik";
 
-/// The PNG the desktop app already materialises next to index.html; using
-/// it means the tray shows the real brand mark with no extra asset.
+/// The PNG the desktop app already materialises next to index.html; using it means the tray shows the real brand mark with no extra asset.
 pub const webapp_icon_file = "apple-touch-icon.png";
 
-/// Pick the icon: an explicit `--icon` wins, then the webapp's own icon,
-/// then the icon-theme name. A returned `.file` may point into `buf`, so
-/// `buf` must outlive the result.
+/// Pick the icon: an explicit `--icon` wins, then the webapp's own icon, then the icon-theme name.
 pub fn resolveIcon(
     explicit: ?[]const u8,
     webapp_dir: []const u8,
@@ -86,16 +80,14 @@ pub fn resolveIcon(
     return .{ .theme = theme_icon };
 }
 
-/// `<webapp_dir>/apple-touch-icon.png`, with exactly one separator. Null
-/// when the directory is empty or does not fit in `buf`.
+/// `<webapp_dir>/apple-touch-icon.png`, with exactly one separator.
 pub fn joinIconPath(webapp_dir: []const u8, buf: []u8) ?[]const u8 {
     const dir = std.mem.trimEnd(u8, webapp_dir, "/");
     if (dir.len == 0) return null;
     return std.fmt.bufPrint(buf, "{s}/{s}", .{ dir, webapp_icon_file }) catch null;
 }
 
-// The tray is a POSIX-desktop concept here: Windows keeps its existing
-// title-bar behaviour, so the facade selects a no-op backend there.
+// The tray is a POSIX-desktop concept here: Windows keeps its existing title-bar behaviour, so the facade selects a no-op backend there.
 pub const Backend = switch (builtin.os.tag) {
     .linux => @import("tray_linux.zig"),
     .macos => @import("tray_macos.zig"),
@@ -108,8 +100,7 @@ pub fn install(handler: Handler, icon: IconSource) InstallError!void {
     return Backend.install(handler, icon);
 }
 
-/// Bring the native window to the front. `native` is whatever
-/// `webview_lib.webview_get_window` returned.
+/// Bring the native window to the front.
 pub fn presentNativeWindow(native: ?*anyopaque) void {
     return Backend.presentNativeWindow(native);
 }
@@ -160,8 +151,7 @@ test "every menu entry carries a non-empty label" {
     }
 }
 
-/// The `.file` path of `icon`, or a plain test failure — reading the union
-/// field directly would abort the whole binary on a tag mismatch.
+/// The `.file` path of `icon`, or a plain test failure — reading the union field directly would abort the whole binary on a tag mismatch.
 fn expectFileIcon(icon: IconSource) ![]const u8 {
     return switch (icon) {
         .file => |path| path,

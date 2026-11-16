@@ -11,9 +11,7 @@ import {
   type WebSearchProviderRow,
 } from '../components/pabrik/webSearchProviders'
 
-/**  * `key` may arrive from the API as a MASK rather than as the secret. `MASKED` stands in for the
- * shape of such a value (leading chars, dots, trailing chars) — the point is that the frontend
- * cannot tell it apart from a real credential, and therefore must never rewrite it. */
+/** `key` may arrive from the API as a MASK rather than as the secret. */
 const MASKED = 'sk••••••7f2'
 
 const TINYFISH: PabrikWebSearchProvider = {
@@ -86,8 +84,7 @@ describe('WebSearchSection', () => {
     const row = wrapper.find('[data-row-id="tinyfish"]')
     expect(fieldValue(wrapper, 'tinyfish', 'name-input')).toBe('tinyfish')
     expect(fieldValue(wrapper, 'tinyfish', 'url-input')).toBe(TINYFISH.url)
-    // The key is a password field — a secret must not be readable off
-    // the screen — but it must be IN the field, or a save would blank it.
+    // The key is a password field — a secret must not be readable off the screen — but it must be IN the field, or a save would blank it.
     expect(row.find('[data-testid="key-input"]').attributes('type')).toBe('password')
     expect(fieldValue(wrapper, 'tinyfish', 'key-input')).toBe(MASKED)
     expect(fieldValue(wrapper, 'tinyfish', 'curl-textarea')).toBe(TINYFISH.curl)
@@ -97,9 +94,7 @@ describe('WebSearchSection', () => {
 
   // ─── The regressions this section exists to prevent ──────────────────────
   it('submitting the MASKED key does not blank the stored key', async () => {
-    // The user opens Settings and hits Save without touching the key. The field still holds the
-    // backend's mask, and that mask is what goes back — never `""`, which would destroy the stored
-    // credential while looking exactly like "the user cleared the field".
+    // The user opens Settings and hits Save without touching the key.
     const parsed = rows({ tinyfish: TINYFISH })
     const wrapper = mount(WebSearchSection, { props: { modelValue: parsed } })
     expect(fieldValue(wrapper, 'tinyfish', 'key-input')).toBe(MASKED)
@@ -118,9 +113,7 @@ describe('WebSearchSection', () => {
   })
 
   it('an EMPTY key is OMITTED from the payload, not sent as an empty string', () => {
-    // A self-hosted provider has no credential. `{"key": ""}` is a DIFFERENT thing to the backend
-    // than an absent key — an empty slice binds as SQL NULL and `isUsable` reads it as a declared
-    // but unusable credential — so the field must not be materialised.
+    // A self-hosted provider has no credential.
     const saved = serializeWebSearchProviders(rows({ selfhosted: SELFHOSTED }))
     expect(savedProvider(saved, 'selfhosted')).not.toHaveProperty('key')
     expect(Object.keys(savedProvider(saved, 'selfhosted'))).not.toContain('key')
@@ -128,15 +121,13 @@ describe('WebSearchSection', () => {
   })
 
   it('a backend rejection message is surfaced on the row, not swallowed', () => {
-    // What the parent does with a rejected save: pin the message onto
-    // the row whose name it mentions, verbatim.
+    // What the parent does with a rejected save: pin the message onto the row whose name it mentions, verbatim.
     const parsed = rows({ tinyfish: TINYFISH, selfhosted: SELFHOSTED })
     const rejection = "web_search provider 'tinyfish': url host 127.0.0.1 is not public"
     const errors = webSearchRowErrorsFromMessage(rejection, parsed)
     expect(errors).toEqual({ tinyfish: rejection })
 
-    // The section renders it on THAT row — not as a generic failure, and
-    // not on the other row.
+    // The section renders it on THAT row — not as a generic failure, and not on the other row.
     const wrapper = mount(WebSearchSection, {
       props: { modelValue: parsed, errors },
     })
@@ -167,8 +158,7 @@ describe('WebSearchSection', () => {
   })
 
   it('omits enabled when true and keeps enabled: false', () => {
-    // Omit-when-true, matching serializeMcpServers: the backend defaults
-    // `enabled` to true, so writing the default only adds churn.
+    // Omit-when-true, matching serializeMcpServers: the backend defaults `enabled` to true, so writing the default only adds churn.
     const on = serializeWebSearchProviders(rows({ selfhosted: SELFHOSTED }))
     expect(savedProvider(on, 'selfhosted')).not.toHaveProperty('enabled')
 
@@ -180,8 +170,7 @@ describe('WebSearchSection', () => {
 
   it('omits the whole web_search key when the list is empty', () => {
     expect(serializeWebSearchProviders([])).toBeUndefined()
-    // A half-filled row the user abandoned has no name, so it never
-    // reaches the wire.
+    // A half-filled row the user abandoned has no name, so it never reaches the wire.
     const blank: WebSearchProviderRow = {
       id: 'new-1',
       name: '',
@@ -220,8 +209,7 @@ describe('WebSearchSection', () => {
 
   // ─── Host pin + {key} rules, checked before the row reaches the backend ─
   it('flags a pinned URL the backend would refuse', () => {
-    // The same matrix `isNonPublicHost` refuses in
-    // `web_search_curl.zig`, plus the scheme rule.
+    // The same matrix `isNonPublicHost` refuses in `web_search_curl.zig`, plus the scheme rule.
     const badUrls = [
       'http://api.search.tinyfish.ai', // http scheme
       'https://127.0.0.1', // loopback

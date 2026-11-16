@@ -1,5 +1,4 @@
-// ChatAppBar — the ONE app bar shared by every workspace-item chat mode (kanban / agent / standard
-// folder-chat). These tests pin the bar's contract so the three modes cannot drift apart again.
+// ChatAppBar — the ONE app bar shared by every workspace-item chat mode (kanban / agent / standard folder-chat).
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatAppBar from '../components/views/ChatAppBar.vue'

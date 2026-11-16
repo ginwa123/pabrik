@@ -1,6 +1,4 @@
-/** Persistent cache for `GET /api/git/status`, keyed by cwd. Stale-while-revalidate: ChatView
- * paints the last-known status for a cwd synchronously on init / cwd switch so the bottom chip
- * shows a branch immediately, then the network fetch revalidates it in the background. */
+/** Persistent cache for `GET /api/git/status`, keyed by cwd. */
 import type { GitStatus } from '../api'
 import { userScopedKey } from './userScope'
 
@@ -10,8 +8,7 @@ function storageKey(cwd: string): string {
   return userScopedKey(`${KEY_PREFIX}${cwd}`)
 }
 
-/** Normalizes whatever JSON was stored (or what an older/newer backend emitted) into the
- * `GitStatus` shape ChatView renders. */
+/** Normalizes whatever JSON was stored (or what an older/newer backend emitted) into the `GitStatus` shape ChatView renders. */
 function normalizeStatus(raw: unknown): GitStatus | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Record<string, unknown>
@@ -44,8 +41,7 @@ export function writeGitStatusCache(cwd: string, status: GitStatus): void {
   try {
     localStorage.setItem(storageKey(cwd), JSON.stringify(status))
   } catch {
-    // quota / private mode / no storage — the live fetch still works,
-    // only the next init's instant paint is lost.
+    // quota / private mode / no storage — the live fetch still works, only the next init's instant paint is lost.
   }
 }
 

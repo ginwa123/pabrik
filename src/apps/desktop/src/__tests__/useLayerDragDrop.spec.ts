@@ -1,6 +1,4 @@
-/** Behavioural tests for `useLayerDragDrop` composable — the pure state machine that backs the
- * LayersPanel drag affordance. Multi-drag semantics: when the dragged row is in `selectedIds`, the
- * WHOLE selection is dragged together (per D4 of the plan). */
+/** Behavioural tests for `useLayerDragDrop` composable — the pure state machine that backs the LayersPanel drag affordance. */
 import { describe, expect, it } from 'vitest'
 
 import { useLayerDragDrop, TOP_LEVEL_SENTINEL } from '../composables/useLayerDragDrop'
@@ -158,8 +156,7 @@ describe('useLayerDragDrop — drop resolution', () => {
     })
     handlers.onDragStart('leaf_top_1', new Event('dragstart'))
     const result = handlers.onDrop('group_a', new Event('drop'))!
-    // The result.elementIds array order matches the order they were
-    // added to the Set (insertion order).
+    // The result.elementIds array order matches the order they were added to the Set (insertion order).
     expect(result.elementIds).toEqual(['leaf_top_1', 'leaf_top_2'])
   })
 })
@@ -187,8 +184,7 @@ describe('useLayerDragDrop — cycle prevention', () => {
   })
 
   it('blocks dropping a mixed selection onto one of its own members (cycle)', () => {
-    // Selecting [group_a, leaf_in_a] — group_a is an ancestor of
-    // leaf_in_a, so dropping on leaf_in_a would create a cycle.
+    // Selecting [group_a, leaf_in_a] — group_a is an ancestor of leaf_in_a, so dropping on leaf_in_a would create a cycle.
     const { handlers, state } = useLayerDragDrop({
       elements: STANDARD_ELEMENTS(),
       selectedIds: () => new Set(['group_a', 'leaf_in_a']),

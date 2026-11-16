@@ -1,5 +1,4 @@
-//! `DELETE /api/agent-kanbans/:kanban_id/system_prompt/:prompt_id`. Removes a
-//! system-prompt entry. Returns `{ok: true}` on success.
+//! `DELETE /api/agent-kanbans/:kanban_id/system_prompt/:prompt_id`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,8 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_kanban_db = @import("../models/agent_kanban.db.zig");
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const SystemPromptDeleteError = error{
     /// `kanban_id` or `prompt_id` path param was missing or empty.
     IdsRequired,
@@ -23,13 +21,9 @@ pub const SystemPromptDeleteInput = struct {
     prompt_id: []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Delete a system-prompt row for the given agent-kanbans config. The
-/// use-case is transport-agnostic: it works for both the per-request
-/// arena (production HTTP handler) and `testing.allocator` (unit tests).
+/// Delete a system-prompt row for the given agent-kanbans config.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -43,9 +37,7 @@ fn useCase(
         return error.DeleteFailed;
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanSystemPromptDeleteHandler(
@@ -84,7 +76,6 @@ pub fn agentKanbanSystemPromptDeleteHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

@@ -79,22 +79,18 @@ class RecentsSidebarTest {
 
         assertEquals("workspace-b", selectedWorkspaceId)
 
-        // Picking a workspace is a filter, not a destination. Closing the
-        // drawer here hides the chats the user just asked to see, and makes
-        // them reopen the menu to reach the row they were about to tap.
+        // Picking a workspace is a filter, not a destination.
         composeTestRule.onNodeWithTag("sidebar_sheet").assertIsDisplayed()
         composeTestRule.onNodeWithTag("workspace_menu").assertDoesNotExist()
         composeTestRule.onNodeWithTag("chat_row_chat-b1").assertIsDisplayed()
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertDoesNotExist()
 
-        // Still in the drawer, so the chat is one tap away — no second trip
-        // through the menu button.
+        // Still in the drawer, so the chat is one tap away — no second trip through the menu button.
         composeTestRule.onNodeWithTag("chat_row_chat-b1").performClick()
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("sidebar_sheet").assertIsNotDisplayed()
-        // The closed drawer is still composed, so the title also appears in its
-        // chat row. Address the home content by its tag, not by its text.
+        // The closed drawer is still composed, so the title also appears in its chat row.
         composeTestRule.onNodeWithTag("home_chat_title")
             .assertIsDisplayed()
             .assertTextEquals("Router regression")
@@ -115,8 +111,7 @@ class RecentsSidebarTest {
 
         assertEquals("chat-a2", selectedChatId)
         composeTestRule.onNodeWithTag("sidebar_sheet").assertIsNotDisplayed()
-        // The closed drawer is still composed, so the title also appears in its
-        // chat row. Address the home content by its tag, not by its text.
+        // The closed drawer is still composed, so the title also appears in its chat row.
         composeTestRule.onNodeWithTag("home_chat_title")
             .assertIsDisplayed()
             .assertTextEquals("Release checklist")
@@ -185,9 +180,7 @@ class RecentsSidebarTest {
             }
         }
 
-        // chat-a1 is the selected row and idle; chat-a2 is the one with a live
-        // worker. Both markers share one trailing slot, so this also pins that
-        // the selected dot did not push the spinner off the row.
+        // chat-a1 is the selected row and idle; chat-a2 is the one with a live worker.
         composeTestRule.onNodeWithTag("chat_row_running_chat-a2").assertIsDisplayed()
         composeTestRule.onNodeWithTag("chat_row_running_chat-a1").assertDoesNotExist()
     }
@@ -226,16 +219,14 @@ class RecentsSidebarTest {
         }
         composeTestRule.onNodeWithTag("chat_row_running_chat-a2").assertIsDisplayed()
 
-        // The stop arrives as a worker_deleted frame and a resync, both of which
-        // land here. A spinner that only knows how to appear is the bug.
+        // The stop arrives as a worker_deleted frame and a resync, both of which land here.
         composeTestRule.runOnIdle { running.value = emptySet() }
         composeTestRule.onNodeWithTag("chat_row_running_chat-a2").assertDoesNotExist()
     }
 
     @Test
     fun aRunningRowSaysSoInItsOwnDescription() {
-        // The spinner is decorative and carries no semantics, so the row's
-        // merged description is the only place the fact reaches a screen reader.
+        // The spinner is decorative and carries no semantics, so the row's merged description is the only place the fact reaches a screen reader.
         composeTestRule.setContent {
             PabrikTheme {
                 MobileHomeScreen(
@@ -275,8 +266,7 @@ class RecentsSidebarTest {
             }
         }
 
-        // The account line is what turns "Log out" from a label into a
-        // decision: the user can see whose session they are about to end.
+        // The account line is what turns "Log out" from a label into a decision: the user can see whose session they are about to end.
         composeTestRule.onNodeWithTag("sidebar_account_email")
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("ada@example.com").assertIsDisplayed()
@@ -289,9 +279,7 @@ class RecentsSidebarTest {
 
     @Test
     fun anOpenServerShowsNoSignOutRow() {
-        // `auth_enabled=false`: the server is running without --auth, so there
-        // is no session. A row that did nothing but clear caches would be a
-        // control that lies about what it controls.
+        // `auth_enabled=false`: the server is running without --auth, so there is no session.
         composeTestRule.setContent {
             PabrikTheme {
                 MobileHomeScreen(
@@ -310,8 +298,7 @@ class RecentsSidebarTest {
 
     @Test
     fun aSignOutInFlightDisablesTheRowAndSaysSo() {
-        // Two presses would be two POSTs and two cache purges; the label has to
-        // admit the wait or the button looks broken on a slow connection.
+        // Two presses would be two POSTs and two cache purges; the label has to admit the wait or the button looks broken on a slow connection.
         composeTestRule.setContent {
             PabrikTheme {
                 MobileHomeScreen(
@@ -331,9 +318,7 @@ class RecentsSidebarTest {
 
     @Test
     fun theSignOutRowSurvivesTheNoWorkspacesState() {
-        // The branch that matters most: with no workspaces there is nothing to
-        // navigate to, so hiding the only route back to signing in would strand
-        // the user on a screen with no controls at all.
+        // The branch that matters most: with no workspaces there is nothing to navigate to, so hiding the only route back to signing in would strand the user on a screen …
         var logoutCalls = 0
         composeTestRule.setContent {
             PabrikTheme {
@@ -357,8 +342,7 @@ class RecentsSidebarTest {
 
     @Test
     fun theSignOutRowIsReachableFromTheModalDrawerToo() {
-        // The phone layout is the one people actually use, and it renders the
-        // sidebar through a different call site than the wide layout.
+        // The phone layout is the one people actually use, and it renders the sidebar through a different call site than the wide layout.
         var logoutCalls = 0
         composeTestRule.setContent {
             PabrikTheme {
@@ -373,10 +357,7 @@ class RecentsSidebarTest {
             }
         }
 
-        // Not reachable while the drawer is closed. A closed ModalDrawerSheet
-        // stays composed just off-screen, so the row still exists in the
-        // semantics tree — `assertDoesNotExist` asserts that Compose disposed
-        // it, which a closed drawer never promised to do.
+        // Not reachable while the drawer is closed.
         composeTestRule.onNodeWithTag("sidebar_logout").assertIsNotDisplayed()
 
         composeTestRule.onNodeWithTag("sidebar_open_menu").performClick()
@@ -399,17 +380,14 @@ class RecentsSidebarTest {
         composeTestRule.onNodeWithText("Recent").assertIsDisplayed()
         composeTestRule.onNodeWithTag("projects_section_header").assertIsDisplayed()
         composeTestRule.onNodeWithText("Projects").assertIsDisplayed()
-        // Unfolded by default: a section the reader has to open before it shows
-        // anything is a section most people never open.
+        // Unfolded by default: a section the reader has to open before it shows anything is a section most people never open.
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertIsDisplayed()
         composeTestRule.onNodeWithTag("project_row_item-a").assertIsDisplayed()
     }
 
     @Test
     fun theRecentsHeaderFoldsTheChatsAndUnfoldsThemAgain() {
-        // State, not a counter, because the sidebar only re-renders when the
-        // fold actually changes — which is the contract worth pinning: the
-        // composable asks, it does not decide.
+        // State, not a counter, because the sidebar only re-renders when the fold actually changes — which is the contract worth pinning: the composable asks, it does …
         var toggles = 0
         val recentsOpen = mutableStateOf(true)
         showModalScreen(
@@ -428,8 +406,7 @@ class RecentsSidebarTest {
         composeTestRule.waitForIdle()
 
         assertEquals(1, toggles)
-        // Folded: the rows go, the section's own title stays, and the *other*
-        // section is untouched — a fold is local to the section it belongs to.
+        // Folded: the rows go, the section's own title stays, and the *other* section is untouched — a fold is local to the section it belongs to.
         composeTestRule.onNodeWithTag("recents_section_header").assertIsDisplayed()
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertDoesNotExist()
         composeTestRule.onNodeWithTag("chats_list_footer").assertDoesNotExist()
@@ -446,8 +423,6 @@ class RecentsSidebarTest {
     @Test
     fun theRecentsTitleStaysPutWhileTheChatsScrollUnderIt() {
         // The whole reason the header is a `stickyHeader` and not an `item`.
-        // Without the pin, the name scrolls away with the rows it names and the
-        // reader loses track of which list they are reading halfway down.
         val manyChats = (1..60).map { index ->
             ChatSummary(
                 id = "chat-$index",
@@ -485,8 +460,6 @@ class RecentsSidebarTest {
         composeTestRule.waitForIdle()
 
         // Both rows at once on a real device: five chats and the way past them.
-        // A drawer that offers one without the other is offering a button that
-        // leads to the list it is already showing.
         composeTestRule.onNodeWithTag("chat_row_chat-a1").assertIsDisplayed()
         composeTestRule.onNodeWithTag(SEE_ALL_ROW_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("See all chats").assertIsDisplayed()
@@ -494,9 +467,7 @@ class RecentsSidebarTest {
 
     @Test
     fun theDestinationLeavesTheModalDrawerAndReachesNavigation() {
-        // The modal drawer is the one that covers content, so a destination that
-        // did not dismiss would land the reader on the new page *underneath*
-        // the sheet they just tapped.
+        // The modal drawer is the one that covers content, so a destination that did not dismiss would land the reader on the new page *underneath* the sheet they just …
         var opens = 0
         showModalScreen(
             hasMoreChats = true,
@@ -524,19 +495,14 @@ class RecentsSidebarTest {
         composeTestRule.onNodeWithTag(SEE_ALL_ROW_TAG).assertDoesNotExist()
     }
 
-    /**
-     * Two projects, each with a loaded page, so the section has enough loaded to
-     * attribute a running session to a project at all — see
-     * `ProjectsState.runningProjectIds` for why "loaded" is the whole qualifier.
-     */
+    /** Two projects, each with a loaded page, so the section has enough loaded to attribute a running session to a project at all — see … */
     private fun twoProjectsWithChats() = ProjectsState(
         expanded = true,
         items = listOf(
             ProjectSummary("item-a", "workspace-a", ProjectTypes.KANBAN, "sprint board"),
             ProjectSummary("item-b", "workspace-a", ProjectTypes.AGENT, "release bot"),
         ),
-        // Folded, which is the state the report was taken in: the web lights a
-        // spinner on a *collapsed* row and this has to as well.
+        // Folded, which is the state the report was taken in: the web lights a spinner on a *collapsed* row and this has to as well.
         expandedItemIds = emptySet(),
         chats = mapOf(
             "item-a" to ProjectChatsPage(
@@ -572,23 +538,16 @@ class RecentsSidebarTest {
             }
         }
 
-        // The reported gap, restated at the level the Projects section can see:
-        // one of two projects has a live worker, and before this the section
-        // showed nothing at all for either.
+        // The reported gap, restated at the level the Projects section can see
         composeTestRule.onNodeWithTag("project_running_item-b").assertIsDisplayed()
         composeTestRule.onNodeWithTag("project_running_item-a").assertDoesNotExist()
-        // And the header, which is the only row left on screen once every
-        // project is folded away.
+        // And the header, which is the only row left on screen once every project is folded away.
         composeTestRule.onNodeWithTag("projects_section_header_running").assertIsDisplayed()
     }
 
     @Test
     fun aFoldedProjectLightsFromTheRecentsAlone() {
-        // The gap this closes, and the state the report's screenshot was in:
-        // every project row folded, so no page was ever loaded and the
-        // indicator had nothing to read. The recents are held for the whole
-        // workspace at all times and now carry each chat's own project, so the
-        // row resolves with no request and no fan-out.
+        // The gap this closes, and the state the report's screenshot was in
         val recentsWithProjects = listOf(
             chats[0].copy(projectId = "item-a"),
             chats[1].copy(projectId = "item-b"),
@@ -626,9 +585,7 @@ class RecentsSidebarTest {
 
     @Test
     fun aRunningChatWithNoProjectLightsNoProjectRow() {
-        // The case that must not be "helpfully" attributed somewhere. A chat
-        // outside any project is ordinary — the server sends "" — and guessing
-        // which project owns it is how a spinner ends up on the wrong row.
+        // The case that must not be "helpfully" attributed somewhere.
         composeTestRule.setContent {
             PabrikTheme {
                 MobileHomeScreen(
@@ -636,8 +593,7 @@ class RecentsSidebarTest {
                     chats = chats.map { it.copy(projectId = null) },
                     drawerLayout = MobileDrawerLayout.Permanent,
                     runningSessionIds = setOf("chat-a2"),
-                    // Same two projects, both with nothing loaded — so the
-                    // recents are the only thing that could attribute a run.
+                    // Same two projects, both with nothing loaded — so the recents are the only thing that could attribute a run.
                     projects = ProjectsState(
                         expanded = true,
                         items = listOf(
@@ -660,8 +616,7 @@ class RecentsSidebarTest {
         composeTestRule.onNodeWithTag("project_running_item-a").assertDoesNotExist()
         composeTestRule.onNodeWithTag("project_running_item-b").assertDoesNotExist()
         composeTestRule.onNodeWithTag("projects_section_header_running").assertDoesNotExist()
-        // The chat row itself still spins — the recents indicator never
-        // depended on the project.
+        // The chat row itself still spins — the recents indicator never depended on the project.
         composeTestRule.onNodeWithTag("chat_row_running_chat-a2").assertIsDisplayed()
     }
 
@@ -686,8 +641,7 @@ class RecentsSidebarTest {
 
     @Test
     fun aRunningProjectRowSaysSoInItsOwnDescription() {
-        // The spinner is decorative, so the row's description is the only place
-        // the fact reaches a screen reader — same contract the chat rows keep.
+        // The spinner is decorative, so the row's description is the only place the fact reaches a screen reader — same contract the chat rows keep.
         composeTestRule.setContent {
             PabrikTheme {
                 MobileHomeScreen(
@@ -702,8 +656,7 @@ class RecentsSidebarTest {
 
         composeTestRule.onNodeWithTag("project_row_item-b")
             .assertContentDescriptionContains("agent is working")
-        // Exactly one row in the whole section carries the phrase, so the idle
-        // one did not inherit it.
+        // Exactly one row in the whole section carries the phrase, so the idle one did not inherit it.
         composeTestRule.onAllNodes(describesARunningAgent).assertCountEquals(1)
     }
 
@@ -716,14 +669,7 @@ class RecentsSidebarTest {
         errorMessage = null,
     )
 
-    /**
-     * The modal drawer, with the Recents fold as *state* rather than a value.
-     *
-     * State and not a `Boolean` because a test that folds the section has to
-     * change the fold and re-compose; a plain parameter would need the screen
-     * built a second time, and `setContent` may only be called once. Defaulted
-     * so the tests that do not care about folding pass nothing.
-     */
+    /** The modal drawer, with the Recents fold as *state* rather than a value. */
     private fun showModalScreen(
         projects: ProjectsState = ProjectsState.Empty,
         recentsOpen: MutableState<Boolean> = mutableStateOf(true),

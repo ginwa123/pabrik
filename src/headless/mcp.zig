@@ -1,5 +1,4 @@
-//! `pabrik headless mcp-add` — register an MCP server through the SAME
-//! `execAddMcpServer` path the agent tool uses, with no server and no port.
+//! `pabrik headless mcp-add` — register an MCP server through the SAME `execAddMcpServer` path the agent tool uses, with no server and no port.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

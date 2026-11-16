@@ -12,17 +12,13 @@ pub const Migration049AddDefensiveIndexes = struct {
     pub const name = "add_defensive_indexes";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Defensive: covers listAllWorkspaceItems (llm_history.zig:2317)
-        // which today has no callers. The query is ORDER BY wi.position DESC,
-        // wi.id ASC with no WHERE.
+        // Defensive: covers listAllWorkspaceItems (llm_history.zig:2317) which today has no callers.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_workspace_items_position_id " ++
             "ON workspace_items(position DESC, id ASC)",
             &[_][]const u8{});
 
-        // Defensive: covers resetStuckRunning (loop/Scheduler.zig:51)
-        // which runs once at startup. The WHERE on last_status='running' has
-        // no index today.
+        // Defensive: covers resetStuckRunning (loop/Scheduler.zig:51) which runs once at startup.
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_routines_last_status " ++
             "ON routines(last_status)",

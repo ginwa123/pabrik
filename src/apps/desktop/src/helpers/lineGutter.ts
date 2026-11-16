@@ -1,6 +1,4 @@
-/** lineGutter — per-line gutter marks for the Code view. The Code view renders worktree (new-file)
- * content, so every mark is keyed by NEW-file line number: `added` (green bar), `modified` (orange
- * bar), `deleted` (red tick where lines were removed). */
+/** lineGutter — per-line gutter marks for the Code view. */
 export type GutterKind = 'added' | 'modified' | 'deleted'
 
 export interface GutterSourceLine {
@@ -33,8 +31,7 @@ export function buildLineGutter(lines: GutterSourceLine[]): LineGutter {
     if (line.type === 'remove') removed++
   }
 
-  // One deleted tick per surplus-remove group; placed on the next visible
-  // new line (or clamped to the last line at EOF).
+  // One deleted tick per surplus-remove group; placed on the next visible new line (or clamped to the last line at EOF).
   let pendingDelete = false
   const placeTick = (at: number | undefined) => {
     if (at === undefined) {

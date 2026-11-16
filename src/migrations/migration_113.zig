@@ -5,9 +5,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 113 — a detached job can belong to a workspace VM. The table
-/// recorded a HOST pid; a row for a job that ran inside a VM needs that VM and
-/// the pid within it. The defaults say "not a guest job", so nothing rewrites.
+/// Migration 113 — a detached job can belong to a workspace VM.
 pub const Migration113AddGuestJobColumns = struct {
     pub const version: u32 = 113;
     pub const name = "add_background_process_guest_columns";

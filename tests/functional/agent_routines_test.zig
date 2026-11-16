@@ -1,5 +1,4 @@
-// Functional tests for the Agent-Routines mirror (Migration 087). Zig port of
-// `tests/functional/agent_routines_test.py` (same test names, same order).
+// Functional tests for the Agent-Routines mirror (Migration 087).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
@@ -35,7 +32,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/<ws>/items/routine {"name", "path"}` → item id.
-/// Owned.
 fn createRoutine(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const routine_path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-routines-test"});
     defer gpa.free(routine_path);
@@ -101,8 +97,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `GET /api/workspaces/<ws>/items/<item>/agent_routine` → the WHOLE
-/// body as OWNED bytes.
+/// `GET /api/workspaces/<ws>/items/<item>/agent_routine` → the WHOLE body as OWNED bytes.
 fn bundleBody(h: *Harness, workspace_id: []const u8, item_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -116,9 +111,7 @@ fn bundleBody(h: *Harness, workspace_id: []const u8, item_id: []const u8) ![]u8 
     return gpa.dupe(u8, r.body);
 }
 
-/// Issue a request under `/api/agent-routines/<routine>/<suffix>` and
-/// return the body as OWNED bytes. `expect` names the accepted statuses
-/// because the suite asserts on 201 / 200 / 400 / 409 in the same shape.
+/// Issue a request under `/api/agent-routines/<routine>/<suffix>` and return the body as OWNED bytes.
 fn routineCall(
     h: *Harness,
     method: harness.HttpMethod,
@@ -184,9 +177,7 @@ fn expectInt(obj: std.json.ObjectMap, key: []const u8, want: i64, ctx: []const u
     }
 }
 
-/// Python `obj.get(key) == []` — the key must be PRESENT and empty. An
-/// absent key is Python's `None`, which is not `[]`, so `orelse` (not a
-/// defaulted empty array) is what makes "the field vanished" fail here.
+/// Python `obj.get(key) == []` — the key must be PRESENT and empty.
 fn expectEmptyArray(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: missing `{s}` (must be an empty array)\n", .{ ctx, key });
@@ -224,9 +215,7 @@ fn expectErrorContains(obj: std.json.ObjectMap, needle: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Fresh routine is born configured (seeded row) with zero tools.
 test "bundle_get_fresh_routine_is_seeded" {
@@ -266,8 +255,7 @@ test "bundle_get_fresh_routine_is_seeded" {
     };
     try expectStr(routine_obj, "id", routine_id, "bundle agent_routine");
 
-    // An EMPTY allowlist means "all tools" (kanban D5 semantics), so a
-    // fresh routine seeds none of its own.
+    // An EMPTY allowlist means "all tools" (kanban D5 semantics), so a fresh routine seeds none of its own.
     try expectEmptyArray(bundle, "tools", "bundle");
     try expectEmptyArray(bundle, "knowledges", "bundle");
     try expectEmptyArray(bundle, "system_prompts", "bundle");
@@ -393,8 +381,7 @@ test "knowledge_patch_mode_switch" {
     const routine_id = try createRoutine(&h, ws_id, "routine");
     defer gpa.free(routine_id);
 
-    // Seed a FILE-BACKED row first: the switch only means something when
-    // the row changes from one source kind to the other.
+    // Seed a FILE-BACKED row first: the switch only means something when the row changes from one source kind to the other.
     const seed_path = try harness.harnessPath(gpa, h.temp_dir, &.{ "agent-routines-test", "switch.md" });
     defer gpa.free(seed_path);
 
@@ -472,8 +459,6 @@ test "knowledge_reorder_not_shadowed" {
     defer gpa.free(second);
 
     // ordered_ids[0] takes the HIGHEST position -> first in DESC order.
-    // If route shadowing bit, this would 404 ("knowledge row not found",
-    // captured by :knowledge_id="reorder") instead of {ok:true}.
     const reorder_body = try std.fmt.allocPrint(
         gpa,
         "{{\"ordered_ids\":[\"{s}\",\"{s}\"]}}",
@@ -687,8 +672,7 @@ test "tools_enable_unknown_returns_400" {
             return error.TestUnexpectedResult;
         },
     };
-    // Python: `assert r.json().get("error")` — truthy, i.e. a NON-EMPTY
-    // string. An absent or empty `error` fails.
+    // Python: `assert r.json().get("error")` — truthy, i.e. a NON-EMPTY string.
     const msg = switch (obj.get("error") orelse {
         std.debug.print("400 body has no `error` key: {s}\n", .{raw});
         return error.TestUnexpectedResult;
@@ -849,9 +833,7 @@ test "tools_list_and_delete" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = parseJson;
     _ = createWorkspace;
     _ = createRoutine;

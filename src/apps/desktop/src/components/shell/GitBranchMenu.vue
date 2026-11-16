@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { forgeWording } from '../../helpers/forgeWording'
-/** Right-click menu for git-branch badges (sidebar chat rows + kanban cards). Teleported to body so
- * overflow ancestors never clip it; hosts resolve the URLs and wire @open-branch / @open-pr. */
+/** Right-click menu for git-branch badges (sidebar chat rows + kanban cards). */
 const props = withDefaults(
   defineProps<{
     x: number

@@ -1,5 +1,4 @@
-/** Tests for ListDirectory.vue — the tool-output card component for the `list_directory` agent
- * tool. */
+/** Tests for ListDirectory.vue — the tool-output card component for the `list_directory` agent tool. */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, provide } from 'vue'
@@ -39,8 +38,7 @@ const makeSuccessContent = (opts: {
 }
 
 const makeErrorContent = (msg = 'list_directory failed: PathNotFound') =>
-  // normalizeToolContent unwraps the full envelope; the component reads
-  // the error from the normalized payload.
+  // normalizeToolContent unwraps the full envelope; the component reads the error from the normalized payload.
   JSON.stringify({
     tool: 'list_directory',
     parameters: { path: '/missing' },
@@ -204,9 +202,7 @@ describe('ListDirectory.vue — expand/collapse interaction', () => {
     const wrapper = makeWrapper({ content: makeSuccessContent() })
     expect(wrapper.find('[data-testid="list-directory-row"]').exists()).toBe(false)
 
-    // wrapper.find returns the first match — there's exactly one
-    // role="button" in the card (the header), so we don't need
-    // .findAll(...)[0].
+    // wrapper.find returns the first match — there's exactly one role="button" in the card (the header), so we don't need .findAll(...)[0].
     await wrapper.find('[role="button"]').trigger('click')
     expect(wrapper.find('[data-testid="list-directory-row"]').exists()).toBe(true)
 

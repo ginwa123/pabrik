@@ -13,8 +13,7 @@ pub const EventBus = struct {
     mutex: std.Io.Mutex = .init,
     io: std.Io,
 
-    /// Caller must ensure `name` outlives this EventBus,
-    /// or dupe it before passing.
+    /// Caller must ensure `name` outlives this EventBus, or dupe it before passing.
     pub fn init(name: []const u8, alloc: std.mem.Allocator, io: std.Io) Self {
         return .{ .name = name, .alloc = alloc, .listeners = .{}, .mutex = .init, .io = io };
     }
@@ -45,9 +44,7 @@ pub const EventBus = struct {
     }
 
     pub fn emit(self: *Self, comptime T: type, id: []const u8, data: T) void {
-        // Deliberately unlocked: emit runs on the caller's thread and the
-        // listener map is only mutated under the lock elsewhere, so taking
-        // it here would serialise every dispatch behind subscribe/unsubscribe.
+        // Deliberately unlocked: emit runs on the caller's thread and the listener map is only mutated under the lock elsewhere, so taking it here would serialise every …
 
         if (self.listeners.get(id)) |cb| {
             const typed_fn: *const fn (T) void = @ptrCast(@alignCast(cb.ptr));
@@ -68,14 +65,11 @@ pub const EventBus = struct {
 };
 
 // ===== Tests merged from event_test.zig (2026-09-29 flatten) =====
-// Comprehensive edge-case tests for `EventBus` (see `event.zig`).
 
 // Reused in many tests.
 const event_test_alloc = std.testing.allocator;
 
-// ---------------------------------------------------------------------------
-// A. Basic subscribe → emit round-trip
-// ---------------------------------------------------------------------------
+// A.
 
 var a_callback_count: u32 = 0;
 var a_last_value: u32 = 0;
@@ -157,9 +151,7 @@ test "emit preserves listener name field on the bus" {
     try std.testing.expectEqualStrings("my-bus-name", bus.name);
 }
 
-// ---------------------------------------------------------------------------
-// B. Multiple subscribers — one id per listener
-// ---------------------------------------------------------------------------
+// B.
 
 var b1_count: u32 = 0;
 var b2_count: u32 = 0;
@@ -256,7 +248,6 @@ test "subscribe stress: 1000 different ids then unsubscribe all then emit" {
     try std.testing.expectEqual(@as(u32, 0), b1_count);
 }
 
-// ---------------------------------------------------------------------------
 // C.
 
 test "subscribe twice with same id same T — second call is a no-op (first cb stays)" {
@@ -268,8 +259,7 @@ test "subscribe twice with same id same T — second call is a no-op (first cb s
 
     bus.emit(u32, "id", 777);
 
-    // First callback was registered first → only it fires. The
-    // second subscribe() silently dropped B2Handler.cb.
+    // First callback was registered first → only it fires.
     try std.testing.expectEqual(@as(u32, 1), b1_count);
     try std.testing.expectEqual(@as(u32, 0), b2_count);
 }
@@ -278,9 +268,7 @@ test "subscribe twice with same id different T — first callback still wins (UB
     resetB();
     var bus = EventBus.init("c", event_test_alloc, std.testing.io);
     defer bus.deinit();
-    // Register with u32, then register again with a different T. The T is
-    // compile-time; we use the same T but a different callback to surface the
-    // contract.
+    // Register with u32, then register again with a different T.
     try bus.subscribe(u32, "id", B1Handler.cb);
     try bus.subscribe(u32, "id", B2Handler.cb);
 
@@ -303,18 +291,14 @@ test "subscribe twice then unsubscribe — bus is empty" {
     try std.testing.expectEqual(@as(u32, 0), b2_count);
 }
 
-// ---------------------------------------------------------------------------
-// D. ID lifecycle — bus owns the id, not the caller
-// ---------------------------------------------------------------------------
+// D.
 
 test "subscribe copies the id — caller mutating the buffer afterward is invisible" {
     resetB();
     var bus = EventBus.init("d", event_test_alloc, std.testing.io);
     defer bus.deinit();
 
-    // The bus dupe()s the id internally (per source: dupe + errdefer free on
-    // getOrPut failure). Mutating the caller's buffer after subscribe must
-    // not affect anything.
+    // The bus dupe()s the id internally (per source: dupe + errdefer free on getOrPut failure).
     var id_buf: [12]u8 = .{ 'i', 'd', '_', 'l', 'i', 'f', 'e', 'c', 'y', 'c', 'l', 'e' };
     const id_slice = id_buf[0..];
     try bus.subscribe(u32, id_slice, B1Handler.cb);
@@ -322,8 +306,7 @@ test "subscribe copies the id — caller mutating the buffer afterward is invisi
     // Corrupt the caller's buffer in place.
     @memset(id_buf[0..], 'X');
 
-    // The bus's stored id was separately allocated by alloc.dupe(),
-    // so this emit must still locate it.
+    // The bus's stored id was separately allocated by alloc.dupe(), so this emit must still locate it.
     bus.emit(u32, "id_lifecycle", 99);
 
     try std.testing.expectEqual(@as(u32, 1), b1_count);
@@ -335,15 +318,13 @@ test "subscribe with short-lived caller allocation — bus does not borrow" {
     var bus = EventBus.init("d", event_test_alloc, std.testing.io);
     defer bus.deinit();
 
-    // Build a key in a scope, then let the scope end so the backing
-    // array goes away. The bus should have its own copy.
+    // Build a key in a scope, then let the scope end so the backing array goes away.
     const key = blk: {
         var buf: [4]u8 = .{ 'a', 'b', 'c', 'd' };
         break :blk buf[0..];
     };
     try bus.subscribe(u32, key, B1Handler.cb);
-    // key is technically out of scope (zig knows) but the bus
-    // should have copied it.
+    // key is technically out of scope (zig knows) but the bus should have copied it.
 
     bus.emit(u32, "abcd", 11);
     try std.testing.expectEqual(@as(u32, 1), b1_count);
@@ -380,9 +361,7 @@ test "ids differing in trailing space are distinct (no trimming)" {
     try std.testing.expectEqual(@as(u32, 1), b3_count);
 }
 
-// ---------------------------------------------------------------------------
-// E. Edge-case id values
-// ---------------------------------------------------------------------------
+// E.
 
 test "subscribe with empty id — emit on empty id routes to it" {
     resetB();
@@ -404,8 +383,7 @@ test "subscribe with id containing embedded NUL bytes" {
     const key_slice: []const u8 = &key_with_nul;
     try bus.subscribe(u32, key_slice, B1Handler.cb);
 
-    // Emit must use the exact same byte pattern. String literals
-    // contain 0x00 as '\x00' so this is legal.
+    // Emit must use the exact same byte pattern.
     bus.emit(u32, &.{ 'a', 0, 'b', 0, 'c' }, 17);
 
     try std.testing.expectEqual(@as(u32, 1), b1_count);
@@ -461,9 +439,7 @@ test "subscribe with id that contains '/', '.', ':' (path-like) — works as raw
     try std.testing.expectEqual(@as(u32, 1), b1_count);
 }
 
-// ---------------------------------------------------------------------------
-// F. Unsubscribe edge cases
-// ---------------------------------------------------------------------------
+// F.
 
 test "unsubscribe of an id that was never subscribed is a silent no-op" {
     resetB();
@@ -507,9 +483,7 @@ test "unsubscribe then resubscribe — second subscription behaves as if it were
     try bus.subscribe(u32, "id", B1Handler.cb);
     bus.unsubscribe("id");
 
-    // After unsubscribe, the map slot is gone. A fresh subscribe
-    // with a DIFFERENT callback should actually register (this
-    // proves the slot was truly released).
+    // After unsubscribe, the map slot is gone.
     try bus.subscribe(u32, "id", B2Handler.cb);
 
     bus.emit(u32, "id", 88);
@@ -517,9 +491,7 @@ test "unsubscribe then resubscribe — second subscription behaves as if it were
     try std.testing.expectEqual(@as(u32, 1), b2_count);
 }
 
-// ---------------------------------------------------------------------------
-// G. Data type shape — what can `T` be?
-// ---------------------------------------------------------------------------
+// G.
 
 var g_struct_received: u32 = 0;
 var g_string_received: []const u8 = "";
@@ -587,7 +559,6 @@ test "callback can be called with a zero-sized payload (T=void)" {
     try std.testing.expectEqual(@as(u32, 3), g_zero_sized_fires);
 }
 
-// ---------------------------------------------------------------------------
 // H.
 
 const Reentrant = struct {
@@ -598,9 +569,7 @@ const Reentrant = struct {
         const b = bus_ref orelse unreachable;
         count += 1;
         _ = data;
-        // Add a new listener while mid-callback. subscribe can fail
-        // on OOM; we ignore that since this test only cares that the
-        // call RAN, not whether it succeeded.
+        // Add a new listener while mid-callback. subscribe can fail on OOM; we ignore that since this test only cares that the call RAN, not whether it succeeded.
         b.subscribe(u32, "added_from_callback", on_emit) catch {};
         // emit returns void (no error union), so no catch here.
         b.emit(u32, "added_from_callback", 555);
@@ -637,20 +606,16 @@ test "callback may subscribe a brand-new id without affecting the firing entry" 
     var bus = EventBus.init("h", event_test_alloc, std.testing.io);
     defer bus.deinit();
 
-    // Per the documented contract: subscribe() with a duplicate id is a NO-OP
-    // — the FIRST subscription wins and stays.
+    // Per the documented contract: subscribe() with a duplicate id is a NO-OP — the FIRST subscription wins and stays.
     Reentrant.bus_ref = &bus;
     try bus.subscribe(u32, "trigger", Reentrant.on_event);
 
-    // Subscribe a separate id (not "trigger") for B1, so that
-    // B1 has its own firing path that's independent of re-entrance.
+    // Subscribe a separate id (not "trigger") for B1, so that B1 has its own firing path that's independent of re-entrance.
     try bus.subscribe(u32, "sibling", B1Handler.cb);
 
     bus.emit(u32, "trigger", 111);
 
-    // The re-entrant path executed (on_event ran) and registered + dispatched
-    // to a new listener. count >= 2 means: - 1 from the on_event path itself
-    // - 1+ from the on_emit path triggered inside on_event
+    // The re-entrant path executed (on_event ran) and registered + dispatched to a new listener. count >= 2 means: - 1 from the on_event path itself - 1+ from the …
     try std.testing.expect(Reentrant.count >= 2);
     // B1 is independent of the re-entrance (different id).
     try std.testing.expectEqual(@as(u32, 0), b1_count);
@@ -674,8 +639,7 @@ test "callback may unsubscribe a different id without affecting the firing entry
         }
     };
     Sabotage.bus_ref = &bus;
-    // Sabotage subscribed FIRST for "trigger" so it's the listener
-    // (per subscribe's first-wins contract on duplicate ids).
+    // Sabotage subscribed FIRST for "trigger" so it's the listener (per subscribe's first-wins contract on duplicate ids).
     try bus.subscribe(u32, "trigger", Sabotage.on_event);
 
     bus.emit(u32, "trigger", 1);
@@ -686,9 +650,7 @@ test "callback may unsubscribe a different id without affecting the firing entry
     try std.testing.expectEqual(@as(u32, 0), b2_count);
 }
 
-// ---------------------------------------------------------------------------
-// I. Lifecycle — deinit edge cases
-// ---------------------------------------------------------------------------
+// I.
 
 test "deinit on an empty bus is a safe no-op" {
     var bus = EventBus.init("empty", event_test_alloc, std.testing.io);
@@ -707,9 +669,7 @@ test "deinit on a bus with many entries releases all owned keys" {
         defer event_test_alloc.free(key); // free the caller's allocPrint buffer each iteration
         try bus.subscribe(u32, key, B1Handler.cb);
     }
-    // If deinit did not free a duped key, std.testing.allocator's
-    // DebugAllocator would report a leak at test-binary exit. The
-    // `testing.allocator` is leak-checked by the harness.
+    // If deinit did not free a duped key, std.testing.allocator's DebugAllocator would report a leak at test-binary exit.
     try std.testing.expect(true);
 }
 
@@ -721,9 +681,7 @@ test "deinit on a bus where one id was added and removed is also safe" {
     try std.testing.expect(true);
 }
 
-// ---------------------------------------------------------------------------
-// J. Static contract — type / shape of the public surface
-// ---------------------------------------------------------------------------
+// J.
 
 test "EventBus has init, subscribe, unsubscribe, emit, deinit as public methods" {
     try std.testing.expect(@hasDecl(EventBus, "init"));
@@ -747,9 +705,7 @@ test "EventBus.subscribe takes (self, T, id, callback) — verify via @typeInfo"
     const T = @TypeOf(EventBus.subscribe);
     const info = @typeInfo(T).@"fn";
     try std.testing.expectEqual(@as(usize, 4), info.params.len);
-    // params: self: *Self, comptime T: type, id: []const u8, callback: *const
-    // fn (T) void Type names are non-canonicalized module-wide strings;
-    // assert only the trailing namespace token to avoid coupling to
+    // params: self: *Self, comptime T: type, id: []const u8, callback: *const fn (T) void Type names are non-canonicalized module-wide strings; assert only the …
     try std.testing.expect(std.mem.endsWith(u8, @typeName(info.params[0].type.?), ".EventBus"));
     try std.testing.expectEqualStrings("type", @typeName(info.params[1].type.?));
     try std.testing.expectEqualStrings("[]const u8", @typeName(info.params[2].type.?));
@@ -774,7 +730,6 @@ test "EventBus.deinit returns void (not error union)" {
     try std.testing.expectEqualStrings("void", @typeName(info.return_type.?));
 }
 
-// ---------------------------------------------------------------------------
 // K.
 
 const FailingAllocator = struct {

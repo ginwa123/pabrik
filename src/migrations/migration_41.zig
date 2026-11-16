@@ -12,9 +12,7 @@ pub const Migration041AddPerformanceIndexes = struct {
     pub const name = "add_performance_indexes";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // Hot read paths in llm_history.zig +
-        // http_handlers/queue_messages_get.zig +
-        // http_handlers/worker_list.zig + http_handlers/workspaces_list.zig.
+        // Hot read paths in llm_history.zig + http_handlers/queue_messages_get.zig + http_handlers/worker_list.zig + http_handlers/workspaces_list.zig.
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_llm_history_session_created ON llm_history(session_id, created_at DESC)", &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_sessions_cwd_created ON sessions(cwd, created_at DESC)", &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC)", &[_][]const u8{});
@@ -25,9 +23,7 @@ pub const Migration041AddPerformanceIndexes = struct {
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspace_item_tasks_item_created ON workspace_item_tasks(workspace_item_id, created_at DESC)", &[_][]const u8{});
         try db.exec(allocator, "CREATE INDEX IF NOT EXISTS idx_workspaces_created_at ON workspaces(created_at DESC)", &[_][]const u8{});
 
-        // ANALYZE updates sqlite_stat1 so the query planner knows the new indexes
-        // exist and how selective they are. Without this, the planner may still pick
-        // a full scan on existing databases that pre-date the new indexes.
+        // ANALYZE updates sqlite_stat1 so the query planner knows the new indexes exist and how selective they are.
         try db.exec(allocator, "ANALYZE", &[_][]const u8{});
     }
 };

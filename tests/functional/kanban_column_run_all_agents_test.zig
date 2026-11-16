@@ -1,6 +1,4 @@
-// Functional tests for the bulk `run_all_agents` column endpoint. Zig port of
-// `tests/functional/kanban_column_run_all_agents_test.py` (same test names,
-// same order).
+// Functional tests for the bulk `run_all_agents` column endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// The seeded workspace / board / column / three task ids.
 const Seed = struct {
@@ -49,7 +45,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/{ws}/items/kanban` → the new board's id.
-/// Caller frees.
 fn createKanban(h: *Harness, ws_id: []const u8, name: []const u8) ![]u8 {
     const body = try std.fmt.allocPrint(gpa, "{{\"name\":\"{s}\"}}", .{name});
     defer gpa.free(body);
@@ -148,9 +143,7 @@ fn createTask(
     return gpa.dupe(u8, id);
 }
 
-/// Seed workspace -> kanban -> first column with 3 tasks. Mirrors
-/// `_seed_column_with_three_tasks`: returns the workspace, board, column and
-/// the three task ids, and asserts the ids are DISTINCT.
+/// Seed workspace -> kanban -> first column with 3 tasks.
 fn seedColumnWithThreeTasks(h: *Harness) !Seed {
     const ws_id = try createWorkspace(h, "run-all-ws");
     errdefer gpa.free(ws_id);
@@ -217,8 +210,7 @@ fn runAllAgents(
     return h.http(io, .POST, path, .{ .json_body = "{}", .expect = expect });
 }
 
-/// Assert the three id lists cover EXACTLY `ids` (the Python
-/// `union == set(ids)`), printing the body on failure.
+/// Assert the three id lists cover EXACTLY `ids` (the Python `union == set(ids)`), printing the body on failure.
 fn expectBulkCoversExactly(doc: *const harness.Json, body: []const u8, ids: []const []const u8) !void {
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     defer seen.deinit(gpa);
@@ -276,9 +268,7 @@ fn expectTrue(doc: *const harness.Json, key: []const u8, body: []const u8) !void
     }
 }
 
-// ============================================================================
 // Test 1: start_agent on task-1 first
-// ============================================================================
 
 // Precondition for the bulk split: task-1 starts cleanly (-> 200).
 test "start_agent_on_task1_first" {
@@ -309,13 +299,9 @@ test "start_agent_on_task1_first" {
     try testing.expectEqualStrings("triggered", status);
 }
 
-// ============================================================================
 // Test 2: bulk run covers all three with a started/skipped split
-// ============================================================================
 
-// POST run_all_agents -> 200 with started/skipped/failed covering all 3.
-// task-1 already owns a worker (started above), so it must land in `skipped`
-// while the worker is in-flight.
+// POST run_all_agents -> 200 with started/skipped/failed covering all 3. task-1 already owns a worker (started above), so it must land in `skipped` while the …
 test "run_all_agents_started_skipped_split" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -351,9 +337,7 @@ test "run_all_agents_started_skipped_split" {
 
     try expectBulkCoversExactly(&doc, r.body, seed.idSlice());
 
-    // task-1 is covered by the started/skipped split (never silently
-    // dropped into `failed` alone — the union check above is the hard
-    // gate; this pins the split explicitly).
+    // task-1 is covered by the started/skipped split (never silently dropped into `failed` alone — the union check above is the hard gate; this pins the split …
     if (!try listHas(&doc, "skipped", seed.ids[0]) and
         !try listHas(&doc, "started", seed.ids[0]))
     {
@@ -364,8 +348,7 @@ test "run_all_agents_started_skipped_split" {
         return error.TestUnexpectedResult;
     }
 
-    // The two idle tasks should have been started (at least one of them —
-    // the other may be skipped if the first bulk call raced a worker write).
+    // The two idle tasks should have been started (at least one of them — the other may be skipped if the first bulk call raced a worker write).
     const started_len = (doc.array("started") orelse return error.TestUnexpectedResult).items.len;
     if (started_len < 1) {
         std.debug.print("expected >=1 started, got: {s}\n", .{r.body});
@@ -373,9 +356,7 @@ test "run_all_agents_started_skipped_split" {
     }
 }
 
-// ============================================================================
 // Test 3: re-POST is safe
-// ============================================================================
 
 // Second POST -> still 200 with the same 3-id coverage (no 409/500).
 test "run_all_agents_repost_safe" {
@@ -414,9 +395,7 @@ test "run_all_agents_repost_safe" {
     try expectBulkCoversExactly(&doc, second.body, seed.idSlice());
 }
 
-// ============================================================================
 // Test 4: unknown column -> 404
-// ============================================================================
 
 // POST run_all_agents on a bogus column -> 404 `column not found`.
 test "run_all_agents_unknown_column_404" {
@@ -444,9 +423,7 @@ test "run_all_agents_unknown_column_404" {
     }
 }
 
-// ============================================================================
 // Test 5: single-task GET unshadowed
-// ============================================================================
 
 // GET .../tasks/:task_id still returns the single task (not the list).
 test "single_task_get_unshadowed" {
@@ -536,13 +513,9 @@ test "single_task_get_unshadowed" {
     }
 }
 
-// ============================================================================
 // Test 6: run_all_agents never corrupts selected_profile_model wire shape
-// ============================================================================
 
-// After `run_all_agents`, `GET /api/llm/session/:id` (and
-// `.../messages?limit=1`) must carry `selected_profile_model` as a JSON
-// string (or null/absent) — never a byte array like `[170, 170, ...]`.
+// After `run_all_agents`, `GET /api/llm/session/:id` (and `.../messages?limit=1`) must carry `selected_profile_model` as a JSON string (or null/absent) — never a …
 test "run_all_agents_preserves_profile_string_wire" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -572,8 +545,7 @@ test "run_all_agents_preserves_profile_string_wire" {
         try expectTrue(&doc, "success", r.body);
     }
 
-    // Poll the detail endpoint: workers persist asynchronously, so the
-    // corruption (if present) lands after the POST returns.
+    // Poll the detail endpoint: workers persist asynchronously, so the corruption (if present) lands after the POST returns.
     var saw_pinned: bool = false;
     const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + 10_000;
     while (true) {

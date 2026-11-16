@@ -1,6 +1,4 @@
-/** isBackgroundCommandOutput — detect + parse the session-queue envelope the background-process
- * watcher/cron inserts when a detached `command` finishes. THREE shapes are recognised, and they
- * are tried newest-first: 1. */
+/** isBackgroundCommandOutput — detect + parse the session-queue envelope the background-process watcher/cron inserts when a detached `command` finishes. */
 import { Effect, Either, Data } from 'effect'
 import {
   extractBool,
@@ -23,21 +21,15 @@ export interface ParsedBackgroundCommandOutput {
 /** XML envelope — non-greedy so a body containing tags can't overrun. */
 const BACKGROUND_XML_RE = /<background_command>([\s\S]*?)<\/background_command>/
 
-/** A candidate JSON envelope: an object whose first key is `pid`. Cheap and deliberately narrow. It
- * keeps `JSON.parse` off the hot path of ordinary chat history, and lets the predicate answer
- * without parsing, so a user message that merely contains `{` is not misdetected. */
+/** A candidate JSON envelope: an object whose first key is `pid`. */
 const JSON_ENVELOPE_RE = /^\s*\{\s*"pid"\s*:/
 
-/**  * Failure of the JSON branch. A tagged error so the failure channel has a type instead of `unknown`
- * — `local/no-try-catch` bans the `try`/`catch` spelling, and an `Effect` keeps the failure in the
- * signature (same reasoning as `sync/SyncError.ts`). */
+/** Failure of the JSON branch. */
 class BackgroundEnvelopeJsonError extends Data.TaggedError('BackgroundEnvelopeJsonError')<{
   reason: string
 }> {}
 
-/**  * Parse the JSON envelope without a `try`/`catch`. `Effect.try` moves a throw into the error
- * channel and `Effect.either` turns it into a VALUE, so `runSync` here cannot throw: the failure is
- * a `Left`, which is `null` to the caller. Same idiom as `helpers/prStatusCache.ts`. */
+/** Parse the JSON envelope without a `try`/`catch`. */
 function parseJsonEnvelope(content: string): ParsedBackgroundCommandOutput | null {
   const outcome = Effect.runSync(
     Effect.either(
@@ -51,8 +43,7 @@ function parseJsonEnvelope(content: string): ParsedBackgroundCommandOutput | nul
   return shapeFromJson(outcome.right)
 }
 
-/**  * Map a parsed value onto the card's fields, or `null` when it is not our envelope after all. The
- * wire names are the BACKEND's (`stdout`); `body` is the card's name for the same thing. */
+/** Map a parsed value onto the card's fields, or `null` when it is not our envelope after all. */
 function shapeFromJson(value: unknown): ParsedBackgroundCommandOutput | null {
   if (typeof value !== 'object' || value === null) return null
   const obj = value as Record<string, unknown>
@@ -83,12 +74,10 @@ export function isBackgroundCommandOutput(content: string): boolean {
 }
 
 export function parseBackgroundCommandOutput(content: string): ParsedBackgroundCommandOutput | null {
-  // Newest shape first. A no-op for the older two (the regex does not match),
-  // and for anything that is not a JSON envelope.
+  // Newest shape first.
   if (JSON_ENVELOPE_RE.test(content)) {
     const fromJson = parseJsonEnvelope(content)
-    // `null` means "looked like ours, was not" — fall through rather than
-    // returning, so the older shapes still get their attempt.
+    // `null` means "looked like ours, was not" — fall through rather than returning, so the older shapes still get their attempt.
     if (fromJson !== null) return fromJson
   }
 
@@ -110,13 +99,10 @@ export function parseBackgroundCommandOutput(content: string): ParsedBackgroundC
   return parseLegacyProse(content)
 }
 
-/**  * Legacy prose fallback: `This is an output from background command (pid {d}, command \`{s}\`):` +
- * first-to-last `"{3,5}` fence slice. The body passes through verbatim (trimmed) — the real
- * envelope never had a header line inside the fences. */
+/** Legacy prose fallback: `This is an output from background command (pid {d}, command \`{s}\`):` + first-to-last `"{3,5}` fence slice. */
 function parseLegacyProse(content: string): ParsedBackgroundCommandOutput | null {
   if (!content.startsWith(LEGACY_PREFIX)) return null
-  // Real envelope: `(pid {d}, command \`{s}\`)` — the closing paren comes
-  // after the command, so only anchor on `(pid {digits}`.
+  // Real envelope: `(pid {d}, command \`{s}\`)` — the closing paren comes after the command, so only anchor on `(pid {digits}`.
   const pidMatch = content.match(/\(pid (\d+)/)
   if (!pidMatch) return null
   const pid = pidMatch[1]!
@@ -136,9 +122,7 @@ function parseLegacyProse(content: string): ParsedBackgroundCommandOutput | null
   return { pid, command, body: content.slice(bodyStart, bodyEnd).trim(), truncated: false, logPath: null }
 }
 
-/**  * Re-emit a parsed background completion as the shell result PAYLOAD the tool cards already read
- * (`parseCommand`): the JSON `data` object of a shell envelope. `stderr` is empty because the
- * background logger merges streams, and there is no exit code because the watcher only sees the log. */
+/** Re-emit a parsed background completion as the shell result PAYLOAD the tool cards already read (`parseCommand`): the JSON `data` object of a shell envelope. */
 export function backgroundToShellData(
   parsed: ParsedBackgroundCommandOutput,
 ): Record<string, unknown> {

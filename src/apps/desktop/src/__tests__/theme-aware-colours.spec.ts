@@ -1,6 +1,4 @@
-/** A surface that paints a Tailwind palette colour does not flip with `data-theme`, so light-red ink
- * lands on a light card and disappears. Every painted colour comes from a token in `style.css`.
- * `UNPAINTED` is the exception: a scrim and a media letterbox must darken in every scheme. */
+/** A surface that paints a Tailwind palette colour does not flip with `data-theme`, so light-red ink lands on a light card and disappears. */
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'

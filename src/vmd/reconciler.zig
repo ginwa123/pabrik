@@ -1,6 +1,4 @@
-//! The reconciler: the only writer of a workspace's VM state. `decide` is a
-//! pure function of the record plus three probes, so the state machine is
-//! testable without a VMM, a clock or a socket.
+//! The reconciler: the only writer of a workspace's VM state.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -35,9 +33,7 @@ pub const State = enum(u8) {
 
 pub const default_sweep_interval_ms: u32 = 15_000;
 pub const default_backoff_base_ms: i64 = 1_000;
-/// Thirty minutes: the window a workspace may sit unused before its VM is
-/// stopped. Chosen so a coffee break never costs a cold boot, and so the RAM
-/// of a workspace nobody has touched since yesterday is not held all day.
+/// Thirty minutes: the window a workspace may sit unused before its VM is stopped.
 pub const default_idle_stop_ms: u32 = 1_800_000;
 
 pub const Config = struct {
@@ -48,30 +44,22 @@ pub const Config = struct {
     mem_mib: u32 = vm_client.default_mem_mib,
     vcpus: u32 = vm_client.default_vcpus,
     boot_timeout_ms: u32 = vm_client.boot_timeout_ms,
-    /// A VMM that has not answered `hello` within this window is `failed`, so
-    /// a guest that never comes up cannot read as `starting` forever.
+    /// A VMM that has not answered `hello` within this window is `failed`, so a guest that never comes up cannot read as `starting` forever.
     hello_deadline_ms: i64 = 30_000,
     backoff_base_ms: i64 = default_backoff_base_ms,
     backoff_max_ms: i64 = 60_000,
     stop_timeout_ms: u32 = 5_000,
-    /// How long a workspace's VM may go unused before its VMM is stopped. 0
-    /// disables the idle reaper, which is the kill switch: today's behaviour
-    /// with no code revert.
+    /// How long a workspace's VM may go unused before its VMM is stopped. 0 disables the idle reaper, which is the kill switch: today's behaviour with no code revert.
     idle_stop_ms: u32 = default_idle_stop_ms,
-    /// A VMM younger than this is never reaped, whatever its readings say: the
-    /// first command after a boot is allowed to arrive.
+    /// A VMM younger than this is never reaped, whatever its readings say: the first command after a boot is allowed to arrive.
     idle_grace_ms: u32 = 60_000,
-    /// Guest CPU in one sweep window that still counts as activity. An idle
-    /// Firecracker with halted vCPUs reads ~0, so this only has to clear noise.
+    /// Guest CPU in one sweep window that still counts as activity.
     idle_cpu_ms: u32 = 50,
-    /// How long a detached job nobody has looked at is still believed in. Four
-    /// idle windows: long enough that a real build is never dropped early,
-    /// short enough that a job that died unseen cannot pin a VM forever.
+    /// How long a detached job nobody has looked at is still believed in.
     job_trust_ms: i64 = 4 * @as(i64, default_idle_stop_ms),
 };
 
-/// The retry delay after `attempts` consecutive failures: exponential from the
-/// base, capped. `attempts` is 1-based, so the first failure waits one base.
+/// The retry delay after `attempts` consecutive failures: exponential from the base, capped.
 pub fn backoffMs(attempts: u32, config: Config) i64 {
     if (attempts == 0) return 0;
     var delay = config.backoff_base_ms;
@@ -96,8 +84,7 @@ pub const Observation = struct {
 };
 
 pub const Reason = enum {
-    /// A VMM the daemon has no pid for is listening on `api.sock`. Unlinking
-    /// it would put a second VMM on one disk, so this is refused, not repaired.
+    /// A VMM the daemon has no pid for is listening on `api.sock`.
     socket_owned_by_unrecorded_vmm,
     guest_never_answered_hello,
     backing_off,
@@ -118,8 +105,7 @@ pub const Decision = union(enum) {
     refuse: Refusal,
 };
 
-/// A live socket nobody recorded outranks every other reading: it is the one
-/// state where acting would corrupt a workspace.
+/// A live socket nobody recorded outranks every other reading: it is the one state where acting would corrupt a workspace.
 pub fn decide(obs: Observation, config: Config) Decision {
     const live_pid = obs.pid != 0 and obs.pid_alive;
     if (obs.socket_owned and !live_pid) {
@@ -141,31 +127,24 @@ pub fn decide(obs: Observation, config: Config) Decision {
     return .boot;
 }
 
-/// The readings the idle reaper decides on: all measured, none inferred. A
-/// field that could not be read is null, and null is never idle — keeping a VM
-/// costs RAM, taking one down wrongly costs somebody's build.
+/// The readings the idle reaper decides on: all measured, none inferred.
 pub const IdleObservation = struct {
     recorded: State = .absent,
     since_ms: i64 = 0,
     now_ms: i64 = 0,
-    /// When the daemon last served a request that carries work for this
-    /// workspace. Null means it has no idea (a fresh daemon), which is not idle.
+    /// When the daemon last served a request that carries work for this workspace.
     last_work_ms: ?i64 = null,
     in_flight: u32 = 0,
     live_jobs: u32 = 0,
-    /// Guest CPU over the last sweep window. Null means unreadable or the first
-    /// sample after a boot: cannot tell, so not idle.
+    /// Guest CPU over the last sweep window.
     cpu_delta_ms: ?u64 = null,
 };
 
-/// Is this workspace's VM holding memory nobody is using? Pure: no clock, no
-/// socket, no pid. Every veto is separate so a test can prove each one alone
-/// keeps a VM up.
+/// Is this workspace's VM holding memory nobody is using?
 pub fn isIdle(obs: IdleObservation, config: Config) bool {
     if (config.idle_stop_ms == 0) return false;
     if (obs.recorded != .ready) return false;
-    // The fail-safe direction: a reading this daemon does not have is not
-    // evidence of idleness.
+    // The fail-safe direction: a reading this daemon does not have is not evidence of idleness.
     const last_work = obs.last_work_ms orelse return false;
     const cpu = obs.cpu_delta_ms orelse return false;
     if (obs.now_ms - obs.since_ms < config.idle_grace_ms) return false;
@@ -194,15 +173,13 @@ pub const Record = struct {
     since_ms: i64 = 0,
     hello_ms: i64 = 0,
 
-    /// Every `Record` owns `last_error`, empty or not, so a caller can always
-    /// free it and a static string is never passed to the allocator.
+    /// Every `Record` owns `last_error`, empty or not, so a caller can always free it and a static string is never passed to the allocator.
     pub fn deinit(self: *const Record, allocator: std.mem.Allocator) void {
         allocator.free(self.last_error);
     }
 };
 
-/// The state file is one `key=value` per line, and every key is optional: a
-/// truncated or unknown file degrades to `absent` instead of failing a lookup.
+/// The state file is one `key=value` per line, and every key is optional: a truncated or unknown file degrades to `absent` instead of failing a lookup.
 pub fn parseRecord(allocator: std.mem.Allocator, text: []const u8) !Record {
     var record = Record{ .last_error = try allocator.dupe(u8, "") };
     errdefer allocator.free(record.last_error);
@@ -233,8 +210,7 @@ pub fn parseRecord(allocator: std.mem.Allocator, text: []const u8) !Record {
     return record;
 }
 
-/// A newline inside an error message would forge a second line, so the writer
-/// folds every control character into a space.
+/// A newline inside an error message would forge a second line, so the writer folds every control character into a space.
 pub fn renderRecord(allocator: std.mem.Allocator, record: Record) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -254,8 +230,7 @@ pub fn renderRecord(allocator: std.mem.Allocator, record: Record) ![]u8 {
 
 // ─── the effectful shell: real time, real pids, real sockets ────────────
 
-/// Every non-deterministic input the shell uses is a field here, so a test can
-/// replace one and leave the rest real.
+/// Every non-deterministic input the shell uses is a field here, so a test can replace one and leave the rest real.
 pub const Env = struct {
     ctx: *anyopaque = undefined,
     nowMs: *const fn (ctx: *anyopaque) i64 = realNowMs,
@@ -266,17 +241,14 @@ pub const Env = struct {
     waitGone: *const fn (ctx: *anyopaque, pid: i64, timeout_ms: u32) bool = realWaitGone,
     boot: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator, spec: vm_client.Spec) anyerror!i64 = realBoot,
     waitReady: *const fn (ctx: *anyopaque, layout: vm_client.Layout, timeout_ms: u32) anyerror!void = realWaitReady,
-    /// The VMM's own numbers: real /proc in production, a fixed reading under a
-    /// test — a test's pid is not a live VMM, so /proc can never answer for it.
+    /// The VMM's own numbers: real /proc in production, a fixed reading under a test — a test's pid is not a live VMM, so /proc can never answer for it.
     cpuTicks: *const fn (ctx: *anyopaque, pid: i64) ?u64 = realCpuTicks,
     rssMib: *const fn (ctx: *anyopaque, pid: i64) ?u32 = realRssMib,
-    /// Blocking `flock` on the workspace directory: two callers must not bind
-    /// one disk. `tryLock` is the sweeper's, and skips a workspace in flight.
+    /// Blocking `flock` on the workspace directory: two callers must not bind one disk.
     lock: *const fn (ctx: *anyopaque, dir: []const u8) anyerror!i64 = realLock,
     tryLock: *const fn (ctx: *anyopaque, dir: []const u8) ?i64 = realTryLock,
     unlock: *const fn (ctx: *anyopaque, fd: i64) void = realUnlock,
-    /// Says one thing about one workspace: the daemon's log, or nothing at all
-    /// under a unit test, which is the default.
+    /// Says one thing about one workspace: the daemon's log, or nothing at all under a unit test, which is the default.
     logReaped: *const fn (ctx: *anyopaque, workspace_id: []const u8, idle_ms: i64, rss_mib: u32) void = realLogReaped,
 };
 
@@ -293,8 +265,7 @@ pub const Reconciler = struct {
         return .{ .allocator = allocator, .config = config };
     }
 
-    /// The size this workspace boots with: its own record when it has one,
-    /// the manager's defaults otherwise.
+    /// The size this workspace boots with: its own record when it has one, the manager's defaults otherwise.
     pub fn specFor(self: *const Reconciler, workspace_id: []const u8) vm_client.Spec {
         const override = spec_store.read(self.config.root, workspace_id);
         return .{
@@ -319,9 +290,7 @@ pub const Reconciler = struct {
         return readRecord(allocator, layout);
     }
 
-    /// What the workspace's VM is doing right now, repairing only what is
-    /// provably dead. A workspace somebody else is booting is reported as it
-    /// stands rather than fought over.
+    /// What the workspace's VM is doing right now, repairing only what is provably dead.
     pub fn observe(self: *const Reconciler, allocator: std.mem.Allocator, workspace_id: []const u8) !Record {
         const layout = try self.layoutFor(allocator, workspace_id);
         defer layout.deinit(allocator);
@@ -332,8 +301,7 @@ pub const Reconciler = struct {
         return self.observeLocked(allocator, layout);
     }
 
-    /// A workspace whose VM is up and ready, booted only when the decision says
-    /// nothing is running and no backoff is in force.
+    /// A workspace whose VM is up and ready, booted only when the decision says nothing is running and no backoff is in force.
     pub fn request(self: *const Reconciler, allocator: std.mem.Allocator, workspace_id: []const u8) !Record {
         const layout = try self.layoutFor(allocator, workspace_id);
         defer layout.deinit(allocator);
@@ -358,8 +326,7 @@ pub const Reconciler = struct {
         }
     }
 
-    /// Stop-on-request. The sockets go only once nothing owns them, so a VMM
-    /// the daemon cannot account for keeps its workspace.
+    /// Stop-on-request.
     pub fn stop(self: *const Reconciler, allocator: std.mem.Allocator, workspace_id: []const u8) !Record {
         const layout = try self.layoutFor(allocator, workspace_id);
         defer layout.deinit(allocator);
@@ -370,8 +337,7 @@ pub const Reconciler = struct {
         return self.stopLocked(allocator, layout);
     }
 
-    /// The same stop under a lock the caller already holds. The idle reaper
-    /// arrives holding the sweep's try-lock and must never take a second one.
+    /// The same stop under a lock the caller already holds.
     fn stopLocked(self: *const Reconciler, allocator: std.mem.Allocator, layout: vm_client.Layout) !Record {
         const pid = vm_client.readPid(layout) orelse 0;
         var ended = true;
@@ -414,8 +380,7 @@ pub const Reconciler = struct {
         return ids.toOwnedSlice(allocator);
     }
 
-    /// Every workspace VM under this root, stopped. A manager that is going
-    /// down takes the VMs it owns with it.
+    /// Every workspace VM under this root, stopped.
     pub fn stopAll(self: *const Reconciler, allocator: std.mem.Allocator) !u32 {
         const ids = try self.workspaceIds(allocator);
         defer freeWorkspaceIds(allocator, ids);
@@ -431,9 +396,7 @@ pub const Reconciler = struct {
         return stopped;
     }
 
-    /// One pass over every workspace: reclaim the dead, count the rest, and —
-    /// with activity readings — stop the VMs nobody is using. The lock is a
-    /// TRY: a workspace somebody is using belongs to them, never waited for.
+    /// One pass over every workspace: reclaim the dead, count the rest, and — with activity readings — stop the VMs nobody is using.
     pub fn sweep(self: *const Reconciler, allocator: std.mem.Allocator, opts: SweepOptions) !Sweep {
         const root = try std.fmt.allocPrint(allocator, "{s}/workspaces", .{self.config.root});
         defer allocator.free(root);
@@ -467,9 +430,7 @@ pub const Reconciler = struct {
         return report;
     }
 
-    /// Stop this workspace's VMM if nothing has used it for a whole idle
-    /// window. Called with the sweep's lock held and the record that pass just
-    /// observed, so one pass costs one `hello` and one decision.
+    /// Stop this workspace's VMM if nothing has used it for a whole idle window.
     fn reapLocked(
         self: *const Reconciler,
         allocator: std.mem.Allocator,
@@ -496,16 +457,12 @@ pub const Reconciler = struct {
         }, self.config);
         if (!idle) return;
 
-        // Read the RSS BEFORE the kill: afterwards there is no /proc entry left
-        // to ask, and the number is the only thing that makes this feature
-        // visible in a log.
+        // Read the RSS BEFORE the kill: afterwards there is no /proc entry left to ask, and the number is the only thing that makes this feature visible in a log.
         const rss_mib = self.env.rssMib(self.env.ctx, record.pid) orelse 0;
         const stopped = self.stopLocked(allocator, layout) catch return;
         defer stopped.deinit(allocator);
         if (stopped.state != .absent) {
-            // The VMM would not die, or an unaccounted one still owns its
-            // socket. `failed` is the honest record there, and the next sweep
-            // decides again — never a kill loop, never a wrong `absent`.
+            // The VMM would not die, or an unaccounted one still owns its socket.
             return;
         }
         report.reaped += 1;
@@ -647,12 +604,10 @@ pub const Sweep = struct {
     starting: u32 = 0,
     absent: u32 = 0,
     failed: u32 = 0,
-    /// Workspaces whose VM was stopped for being idle this pass, and the RSS
-    /// they were holding when they went.
+    /// Workspaces whose VM was stopped for being idle this pass, and the RSS they were holding when they went.
     reaped: u32 = 0,
     reaped_mib: u32 = 0,
-    /// Workspaces somebody else held the lock on: never waited for, never
-    /// guessed about.
+    /// Workspaces somebody else held the lock on: never waited for, never guessed about.
     busy: u32 = 0,
 
     pub fn count(self: *Sweep, state: State) void {
@@ -666,9 +621,7 @@ pub const Sweep = struct {
     }
 };
 
-/// What a sweep is allowed to do beyond counting. The daemon passes its
-/// activity readings, which turns the pass into the idle reaper; a test that
-/// only wants the count passes `.{}` and reaps nothing.
+/// What a sweep is allowed to do beyond counting.
 pub const SweepOptions = struct {
     activity: ?*activity.Activity = null,
 };
@@ -683,8 +636,7 @@ fn copy(allocator: std.mem.Allocator, record: Record) !Record {
     return out;
 }
 
-/// Only the sockets of a VMM proven dead: the pid is gone and nothing accepts
-/// on `api.sock`. Firecracker refuses to rebind an existing socket file.
+/// Only the sockets of a VMM proven dead: the pid is gone and nothing accepts on `api.sock`.
 fn reclaim(layout: vm_client.Layout) void {
     remove(layout.api_sock);
     remove(layout.vsock_sock);
@@ -726,8 +678,7 @@ fn writeFile(path: []const u8, bytes: []const u8) bool {
     return true;
 }
 
-/// `rename(2)` inside one directory, so a reader sees the old record or the new
-/// one and never a half-written file.
+/// `rename(2)` inside one directory, so a reader sees the old record or the new one and never a half-written file.
 fn renameFile(from: []const u8, to: []const u8) bool {
     var from_buf: [4096]u8 = undefined;
     var to_buf: [4096]u8 = undefined;
@@ -750,8 +701,7 @@ fn openDirFd(dir: []const u8) ?linux.fd_t {
     return @intCast(rc);
 }
 
-/// `getdents64`, because the daemon carries no `Io` for `std.Io.Dir`. Only the
-/// directory names come back.
+/// `getdents64`, because the daemon carries no `Io` for `std.Io.Dir`.
 fn listDirs(allocator: std.mem.Allocator, dir: []const u8, out: *std.ArrayList([]u8)) !void {
     const fd = openDirFd(dir) orelse return error.FileNotFound;
     defer _ = linux.close(fd);
@@ -802,8 +752,7 @@ fn realPidAlive(_: *anyopaque, pid: i64) bool {
     return err == .SUCCESS or err == .PERM;
 }
 
-/// A connect that succeeds is the only evidence a socket has an owner: the
-/// socket file itself outlives the VMM that made it.
+/// A connect that succeeds is the only evidence a socket has an owner: the socket file itself outlives the VMM that made it.
 fn realSocketOwned(_: *anyopaque, path: []const u8) bool {
     const fd = vm_client.connectUnix(path) catch return false;
     _ = linux.close(fd);
@@ -875,12 +824,10 @@ const Fake = struct {
     ready: bool = true,
     boot_error: bool = false,
     boot_pid: i64 = 777,
-    /// The pids the fake reports as running. Empty means "every pid runs",
-    /// which is what the single-workspace cases want.
+    /// The pids the fake reports as running.
     live: [8]i64 = .{0} ** 8,
     live_count: usize = 0,
-    /// What /proc would say about this fake's VMM. A constant means a sweep
-    /// reads ZERO CPU for it: a quiet guest.
+    /// What /proc would say about this fake's VMM.
     cpu_ticks: ?u64 = 100,
     rss_mib: ?u32 = 78,
     reaps_logged: u32 = 0,
@@ -970,9 +917,7 @@ fn testReconciler(fake: *Fake, root: []const u8) Reconciler {
     return rec;
 }
 
-/// A workspace on the real filesystem, because the pid file, the state file and
-/// the socket files ARE the reconciler's inputs. Named per test, so two tests
-/// in one binary cannot share it.
+/// A workspace on the real filesystem, because the pid file, the state file and the socket files ARE the reconciler's inputs.
 const Scratch = struct {
     allocator: std.mem.Allocator,
     root: []u8,
@@ -1381,8 +1326,7 @@ test "a workspace that is not ready is never idle" {
 }
 
 test "a reading the daemon does not have is never idle" {
-    // The fail-safe direction: no last-work clock, or no CPU sample, is not
-    // evidence that nobody is using the VM.
+    // The fail-safe direction: no last-work clock, or no CPU sample, is not evidence that nobody is using the VM.
     var no_work = idleBaseline();
     no_work.last_work_ms = null;
     try std.testing.expect(!isIdle(no_work, idle_config));
@@ -1418,8 +1362,7 @@ test "a quiet workspace is reaped, and its record lands in absent" {
     defer act.deinit();
     try quietWorkspace(&scratch, &act);
 
-    // The first pass only TAKES the CPU sample: a delta needs two readings, so
-    // a freshly booted VM can never be reaped on the sweep that met it.
+    // The first pass only TAKES the CPU sample: a delta needs two readings, so a freshly booted VM can never be reaped on the sweep that met it.
     _ = try rec.sweep(alloc, .{ .activity = &act });
     try std.testing.expectEqual(@as(u32, 0), fake.kills);
 

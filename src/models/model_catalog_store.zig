@@ -23,9 +23,7 @@ pub const SaveStats = struct {
     models: usize,
 };
 
-/// Replace the whole catalog in ONE transaction. Replace-not-merge is
-/// deliberate: a refresh is a snapshot of an external source of truth, and a
-/// model deleted upstream must disappear here too.
+/// Replace the whole catalog in ONE transaction.
 pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catalog) !SaveStats {
     try db.exec(alloc, dialect.begin_write, &.{});
     errdefer db.exec(alloc, "ROLLBACK", &.{}) catch {};
@@ -103,8 +101,7 @@ pub fn saveCatalog(db: *database.Db, alloc: Allocator, cat: *const catalog.Catal
     return .{ .providers = provider_count, .models = model_count };
 }
 
-/// The freshness row. `null` means "never synced" — which the UI must render
-/// differently from "synced, zero models".
+/// The freshness row.
 pub fn loadMeta(db: *database.Db, alloc: Allocator) !?Meta {
     var rows = try db.query(alloc,
         \\SELECT schema_version, COALESCE(CAST(source AS TEXT), ''), fetched_at_ms,
@@ -129,13 +126,9 @@ pub fn freeMeta(alloc: Allocator, meta: *const Meta) void {
     alloc.free(meta.source);
 }
 
-/// Load the whole catalog into an in-memory `Catalog`. `null` when there is
-/// no usable catalog: no meta row (never synced), or a meta row written by
-/// another schema version.
+/// Load the whole catalog into an in-memory `Catalog`.
 pub fn loadCatalog(db: *database.Db, alloc: Allocator) !?*catalog.Catalog {
-    // `std.json.parseFromSliceLeaky` is LEAKY BY DESIGN — it wants an
-    // allocator whose memory is released wholesale, not one that has to free
-    // each piece.
+    // `std.json.parseFromSliceLeaky` is LEAKY BY DESIGN — it wants an allocator whose memory is released wholesale, not one that has to free each piece.
     var scratch = std.heap.ArenaAllocator.init(alloc);
     defer scratch.deinit();
     const sa = scratch.allocator();
@@ -238,8 +231,7 @@ pub fn loadCatalog(db: *database.Db, alloc: Allocator) !?*catalog.Catalog {
     return cat;
 }
 
-/// `""` binds as SQL NULL in this backend, which is the correct encoding of
-/// "unknown context window" — not 0, which is a real (if useless) value.
+/// `""` binds as SQL NULL in this backend, which is the correct encoding of "unknown context window" — not 0, which is a real (if useless) value.
 fn nullOr(buf: []u8, v: ?u32) []const u8 {
     const value = v orelse return "";
     return std.fmt.bufPrint(buf, "{d}", .{value}) catch "";
@@ -260,7 +252,6 @@ fn parseFloat(raw: []const u8) ?f64 {
     return std.fmt.parseFloat(f64, raw) catch null;
 }
 
-// ============================================================================
 // Tests — in-memory SQLite, the same TestCtx shape the other stores use.
 
 const testing = std.testing;
@@ -288,8 +279,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// One provider with an endpoint and one without, plus a model whose window is
-/// unknown — the same three states the real catalog contains.
+/// One provider with an endpoint and one without, plus a model whose window is unknown — the same three states the real catalog contains.
 fn buildFixture(alloc: Allocator) !*catalog.Catalog {
     const cat = try alloc.create(catalog.Catalog);
     errdefer alloc.destroy(cat);
@@ -377,8 +367,7 @@ test "ModelCatalogStore: a catalog round-trips through the database" {
     try testing.expect(m.temperature);
     try testing.expectEqual(@as(f64, 0.15), m.cost.?.input);
 
-    // A model that never declared a window must come back as `null`, not 0 —
-    // 0 would make the compaction threshold 80% of nothing.
+    // A model that never declared a window must come back as `null`, not 0 — 0 would make the compaction threshold 80% of nothing.
     const mystery = after.lookup("deepseek", "mystery-model") orelse return error.TestUnexpectedResult;
     try testing.expect(mystery.context_window == null);
     try testing.expect(mystery.output_tokens == null);
@@ -441,8 +430,7 @@ test "ModelCatalogStore: a save REPLACES the snapshot, it does not merge" {
     defer catalog.freeCatalog(alloc, first);
     _ = try saveCatalog(&ctx.db, alloc, first);
 
-    // Upstream deleted two models and added one provider. A merge would keep
-    // rows nobody can explain; a snapshot must not.
+    // Upstream deleted two models and added one provider.
     const second = try alloc.create(catalog.Catalog);
     defer catalog.freeCatalog(alloc, second);
     second.* = catalog.Catalog.init(alloc);
@@ -482,8 +470,7 @@ test "ModelCatalogStore: a catalog written by another schema version is not load
     try ctx.db.exec(alloc, "UPDATE model_catalog_meta SET schema_version = 99 WHERE id = 1", &.{});
 
     try testing.expect(try loadCatalog(&ctx.db, alloc) == null);
-    // The meta row is still readable — "there is a catalog, we just cannot read
-    // it" is information the UI needs, not an absence.
+    // The meta row is still readable — "there is a catalog, we just cannot read it" is information the UI needs, not an absence.
     const meta = (try loadMeta(&ctx.db, alloc)) orelse return error.TestUnexpectedResult;
     defer freeMeta(alloc, &meta);
     try testing.expectEqual(@as(u32, 99), meta.schema_version);

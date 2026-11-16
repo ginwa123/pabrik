@@ -1,6 +1,4 @@
-//! `pabrik headless documents …` — the document-folder backend with no server
-//! and no port. Every op goes through the same store the HTTP handlers use;
-//! stdout gets exactly one JSON object and nothing else.
+//! `pabrik headless documents …` — the document-folder backend with no server and no port.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -44,8 +42,7 @@ const ListDto = struct {
     document_count: usize,
 };
 
-/// What a `backfill` run did. `moved` counts bodies written to the object
-/// store; a second run reports `moved = 0`, which is the idempotency check.
+/// What a `backfill` run did.
 const BackfillDto = struct {
     scanned: usize,
     moved: usize,
@@ -114,7 +111,6 @@ fn folderJson(allocator: std.mem.Allocator, folder: folders_store.FolderRow) ![]
 }
 
 /// The `{workspace_id, documents, count}` envelope, without the folder tree.
-/// `search` returns matches, not a level of the tree.
 fn documentsJson(
     allocator: std.mem.Allocator,
     workspace_id: []const u8,
@@ -152,9 +148,7 @@ pub fn run(
     }, a);
 }
 
-/// The tool call the model would have made, dispatched through the SAME path
-/// the agent loop uses — hooks, registry, `dispatchFromRegistry`. That is what
-/// makes this a proof of the agent tool and not just of the store.
+/// The tool call the model would have made, dispatched through the SAME path the agent loop uses — hooks, registry, `dispatchFromRegistry`.
 fn runToolOp(
     allocator: std.mem.Allocator,
     backend: *boot_mod.Backend,
@@ -238,8 +232,7 @@ fn runToolOp(
     return error.ToolRefused;
 }
 
-/// True when the tool envelope reports `success: true`. A refusal is a
-/// non-zero exit, never a JSON object a caller could mistake for a write.
+/// True when the tool envelope reports `success: true`.
 fn envelopeSucceeded(envelope: []const u8) !bool {
     const Wire = struct { success: bool = false };
     const parsed = std.json.parseFromSlice(Wire, std.heap.page_allocator, envelope, .{
@@ -249,8 +242,7 @@ fn envelopeSucceeded(envelope: []const u8) !bool {
     return parsed.value.success;
 }
 
-/// One document, body included, read back through the store the HTTP GET
-/// handler uses.
+/// One document, body included, read back through the store the HTTP GET handler uses.
 fn documentBodyJson(
     allocator: std.mem.Allocator,
     backend: *boot_mod.Backend,
@@ -282,9 +274,7 @@ fn documentBodyJson(
     }, .{});
 }
 
-/// `export`: write the document — or a zip of `--documents` — to a file and report where it
-/// landed. The bytes come from `documents_export`, the same module the HTTP endpoints answer
-/// with, so a CLI export and a browser download are the same file.
+/// `export`: write the document — or a zip of `--documents` — to a file and report where it landed.
 fn exportJson(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -324,8 +314,7 @@ fn exportJson(
     }, .{});
 }
 
-/// The `--documents` value split into ids. Blank entries are dropped, so a
-/// trailing comma is not an id and an empty value is an empty list.
+/// The `--documents` value split into ids.
 fn parseIdList(allocator: std.mem.Allocator, raw: []const u8) ![]const []const u8 {
     var ids: std.ArrayList([]const u8) = .empty;
     errdefer ids.deinit(allocator);
@@ -339,9 +328,7 @@ fn parseIdList(allocator: std.mem.Allocator, raw: []const u8) ![]const []const u
     return ids.toOwnedSlice(allocator);
 }
 
-/// Write `bytes` to `out`, or to `default_name` in the current directory when
-/// the caller named no path. Returns the path actually written, owned by the
-/// caller.
+/// Write `bytes` to `out`, or to `default_name` in the current directory when the caller named no path.
 fn writeExport(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -354,8 +341,7 @@ fn writeExport(
     return allocator.dupe(u8, path);
 }
 
-/// The message a send would hand the model, with every `/document-<id>` token
-/// resolved through the same function `sessionCreateUseCase` calls.
+/// The message a send would hand the model, with every `/document-<id>` token resolved through the same function `sessionCreateUseCase` calls.
 fn expandJson(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -370,8 +356,7 @@ fn expandJson(
     }, .{});
 }
 
-/// The op table, over a plain `*Db` so a test can drive it against an
-/// in-memory database without booting a backend.
+/// The op table, over a plain `*Db` so a test can drive it against an in-memory database without booting a backend.
 pub fn runWithDb(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -381,8 +366,7 @@ pub fn runWithDb(
     switch (a.op) {
         .list => return listJson(allocator, store, a.workspace_id),
 
-        // These need the process singleton (the tool dispatch resolves the
-        // object store from it), so they only run through `run`.
+        // These need the process singleton (the tool dispatch resolves the object store from it), so they only run through `run`.
         .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_delete => return error.RequiresBackend,
 
         .export_file => return exportJson(allocator, io, store, a),
@@ -456,8 +440,7 @@ pub fn runWithDb(
 
         .set_icon => {
             if (a.document_id == null and a.folder_id == null) return error.DocumentOrFolderRequired;
-            // `--icon ""` is the "Reset to default" write: an empty value
-            // clears the override rather than storing an empty name.
+            // `--icon ""` is the "Reset to default" write: an empty value clears the override rather than storing an empty name.
             const icon: ?[]const u8 = if (a.icon.len == 0) null else a.icon;
             if (a.document_id) |document_id| {
                 const row = try store.updateDocumentIcon(allocator, a.workspace_id, document_id, icon);
@@ -660,8 +643,7 @@ test "headless documents: set-icon persists a document glyph and list reads it b
         try testing.expectEqualStrings("note", parsed.value.object.get("icon").?.string);
     }
 
-    // A SECOND call, through the list path, is the read-back that proves the
-    // write landed in the table rather than in the response builder.
+    // A SECOND call, through the list path, is the read-back that proves the write landed in the table rather than in the response builder.
     const list_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{ .op = .list, .workspace_id = "ws_1" });
     defer alloc.free(list_json);
     const list = try std.json.parseFromSlice(std.json.Value, alloc, list_json, .{});

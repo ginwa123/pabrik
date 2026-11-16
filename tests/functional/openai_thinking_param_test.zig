@@ -1,5 +1,4 @@
-//! Wire test: an openai-style CHAT turn must NOT carry the non-standard
-//! `thinking` / `enable_thinking` request params.
+//! Wire test: an openai-style CHAT turn must NOT carry the non-standard `thinking` / `enable_thinking` request params.
 
 const std = @import("std");
 const testing = std.testing;
@@ -26,8 +25,7 @@ const SSE_STREAM =
     "data: [DONE]\n" ++
     "\n";
 
-/// Cap on the recorded request body — a runaway client must not grow the
-/// accumulation without bound.
+/// Cap on the recorded request body — a runaway client must not grow the accumulation without bound.
 const MAX_BODY_BYTES = 1 << 20;
 
 /// One recorded upstream request body. Owned by the Stub.
@@ -39,8 +37,7 @@ const Recorded = struct {
     }
 };
 
-/// A configurable one-request-at-a-time stub LLM upstream that records
-/// request BODIES.
+/// A configurable one-request-at-a-time stub LLM upstream that records request BODIES.
 const Stub = struct {
     io: Io,
     port: u16,
@@ -48,13 +45,10 @@ const Stub = struct {
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
     /// Guards `reqs`; the serve thread appends while the test reads.
-    /// `std.Io.Mutex`, not `std.Thread.Mutex`: Zig 0.16 deleted the latter,
-    /// and the replacement takes the `Io` handle for its contended path.
     mutex: Io.Mutex = .init,
     reqs: std.ArrayList(Recorded) = .empty,
 
-    /// Bind and start serving on `stub`. An OUT-PARAMETER, and that is
-    /// load-bearing.
+    /// Bind and start serving on `stub`.
     fn start(stub: *Stub) !void {
         stub.* = .{
             .io = io,
@@ -78,8 +72,7 @@ const Stub = struct {
             var c = conn;
             c.close(self.io);
         } else |_| {
-            // Listener already gone: `accept` returned an error and the
-            // serve loop has exited. Nothing to wake.
+            // Listener already gone: `accept` returned an error and the serve loop has exited.
         }
 
         self.thread.join();
@@ -106,9 +99,7 @@ const Stub = struct {
 
 fn serve(stub: *Stub) void {
     while (!stub.stop.load(.acquire)) {
-        // `defer` inside a loop body runs at the end of THAT iteration,
-        // so each accepted socket is closed before the next accept —
-        // the connection is what the upstream does per POST.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept — the connection is what the upstream …
         var stream = stub.server.accept(stub.io) catch break;
         defer stream.close(stub.io);
         if (stub.stop.load(.acquire)) break;
@@ -116,8 +107,7 @@ fn serve(stub: *Stub) void {
     }
 }
 
-/// Read one request (head AND body), record the body, reply with the SSE
-/// transcript.
+/// Read one request (head AND body), record the body, reply with the SSE transcript.
 fn handleRequest(stub: *Stub, stream: Io.net.Stream) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var sr = stream.reader(stub.io, &rbuf);
@@ -207,8 +197,7 @@ const POLL_BUDGET_MS: i64 = 60_000;
 /// `time.sleep(0.5)` between polls.
 const POLL_INTERVAL_MS: i64 = 500;
 
-/// Poll `GET /api/llm/session/<id>/messages` until an assistant message
-/// with content lands. Returns an OWNED copy of its text.
+/// Poll `GET /api/llm/session/<id>/messages` until an assistant message with content lands.
 fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -239,8 +228,7 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
             return gpa.dupe(u8, content.string);
         }
 
-        // Sleep the INTERVAL, capped by what is left of the budget — never
-        // the whole remainder.
+        // Sleep the INTERVAL, capped by what is left of the budget — never the whole remainder.
         const remaining = deadline - std.Io.Timestamp.now(io, .awake).toMilliseconds();
         if (remaining > 0) {
             const nap = @min(remaining, POLL_INTERVAL_MS);
@@ -248,9 +236,7 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
         }
     }
 
-    // Say WHICH failure it was: zero recorded requests means the profile
-    // never pointed at the stub; a non-zero count means the turn reached the
-    // upstream and the SSE transcript is what failed to parse.
+    // Say WHICH failure it was: zero recorded requests means the profile never pointed at the stub; a non-zero count means the turn reached the upstream and the SSE …
     const tail = try h.tailLog(io, gpa, 40);
     defer gpa.free(tail);
     std.debug.print(
@@ -263,14 +249,11 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
 }
 
 /// Install an openai profile pointing at the stub and run one chat turn.
-/// `thinking` is the profile's raw `thinking` string — the exact value the
-/// Edit-profile modal's Thinking dropdown writes ("off" / "on" / "auto").
 fn runTurnWithThinking(h: *Harness, stub: *Stub, thinking: []const u8, session_id: []const u8) !void {
     const stub_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/v1/chat/completions", .{stub.port});
     defer gpa.free(stub_url);
 
-    // Mirrors the pabrik_config PUT shape. `url_style: "openai"` is what
-    // selects `buildJsonOpenAIRequest` in `Agent.callStreaming`.
+    // Mirrors the pabrik_config PUT shape.
     const cfg_body = try std.fmt.allocPrint(gpa,
         \\{{"api_endpoint":"{s}","api_key":"sk-openai-test","model":"stub-model","url_style":"openai","profiles":{{"oa-stub":{{"model":"stub-model","base_url":"{s}","api_key":"sk-openai-test","url_style":"openai","thinking":"{s}"}}}},"active_profile":"oa-stub"}}
     , .{ stub_url, stub_url, thinking });
@@ -283,16 +266,13 @@ fn runTurnWithThinking(h: *Harness, stub: *Stub, thinking: []const u8, session_i
         defer r.deinit();
     }
 
-    // The exact `sendChatMessage` wire (session_id + queue_message + profile
-    // selection).
+    // The exact `sendChatMessage` wire (session_id + queue_message + profile selection).
     const session_body = try std.fmt.allocPrint(gpa,
         \\{{"session_id":"{s}","queue_message":"say hi","cwd_session":"","image_urls":"","selected_profile_model":"oa-stub","is_auto_retry_until_stop":""}}
     , .{session_id});
     defer gpa.free(session_body);
     {
-        // `expect=(200, 201, 500)` — the worker runs in the background,
-        // so a 500 here can still be a healthy boot with a failed turn
-        // that the poll below reports on.
+        // `expect=(200, 201, 500)` — the worker runs in the background, so a 500 here can still be a healthy boot with a failed turn that the poll below reports on.
         var r = try h.http(io, .POST, "/api/llm/session", .{
             .json_body = session_body,
             .expect = &.{ 200, 201, 500 },
@@ -308,9 +288,7 @@ fn runTurnWithThinking(h: *Harness, stub: *Stub, thinking: []const u8, session_i
     }
 }
 
-/// Assert that NO recorded request body carries `thinking` or
-/// `enable_thinking`, and that the body IS valid JSON with the core
-/// chat-completions fields present.
+/// Assert that NO recorded request body carries `thinking` or `enable_thinking`, and that the body IS valid JSON with the core chat-completions fields present.
 fn assertNoThinkingParams(stub: *Stub) !void {
     var seen = try stub.snapshot();
     defer {
@@ -322,9 +300,7 @@ fn assertNoThinkingParams(stub: *Stub) !void {
         return error.TestUnexpectedResult;
     }
     for (seen.items, 0..) |r, i| {
-        // Substring check first — cheap, and it catches the field under any
-        // spelling (`"thinking"`, `"enable_thinking"`, and the
-        // `reasoning_content` echo is a DIFFERENT field, so it must not trip
+        // Substring check first — cheap, and it catches the field under any spelling (`"thinking"`, `"enable_thinking"`, and the `reasoning_content` echo is a DIFFERENT …
         if (std.mem.indexOf(u8, r.body, "\"thinking\"") != null or
             std.mem.indexOf(u8, r.body, "\"enable_thinking\"") != null)
         {
@@ -335,9 +311,7 @@ fn assertNoThinkingParams(stub: *Stub) !void {
             return error.TestUnexpectedResult;
         }
 
-        // Parsed check — the authoritative one. A substring scan can be
-        // fooled by a message whose CONTENT mentions the word; a parsed
-        // key lookup cannot.
+        // Parsed check — the authoritative one.
         var parsed = std.json.parseFromSlice(std.json.Value, gpa, r.body, .{}) catch {
             std.debug.print("request {d}: body is not valid JSON: {s}\n", .{ i, r.body });
             return error.TestUnexpectedResult;
@@ -357,9 +331,7 @@ fn assertNoThinkingParams(stub: *Stub) !void {
             );
             return error.TestUnexpectedResult;
         }
-        // Positive controls: the same builder emits these, so their
-        // presence proves the body is the real chat-completions shape
-        // and the absence above is not "we recorded an empty request".
+        // Positive controls: the same builder emits these, so their presence proves the body is the real chat-completions shape and the absence above is not "we recorded …
         if (obj.get("model") == null or obj.get("messages") == null) {
             std.debug.print(
                 "request {d}: body is missing model/messages — not a chat-completions body: {s}\n",
@@ -370,25 +342,18 @@ fn assertNoThinkingParams(stub: *Stub) !void {
     }
 }
 
-// ============================================================================
 // Test 1: thinking "off" — the reported bug
-// ============================================================================
 
-// The exact reported failure: Thinking = "Off" in the Edit-profile modal,
-// openai body shape, strict upstream.
+// The exact reported failure: Thinking = "Off" in the Edit-profile modal, openai body shape, strict upstream.
 test "openai_chat_turn_thinking_off_omits_thinking_and_enable_thinking" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Registered FIRST so it runs LAST: the recorded bodies are read by
-    // the assertions, and the serve thread must outlive the harness
-    // teardown's shutdown of the child.
+    // Registered FIRST so it runs LAST: the recorded bodies are read by the assertions, and the serve thread must outlive the harness teardown's shutdown of the …
     var stub: Stub = undefined;
     try stub.start();
     defer stub.deinit();
 
-    // `stub_llm_profile` is load-bearing, not a convenience: without a
-    // configured profile the binary has no model to run the turn with, so
-    // nothing ever reaches the stub.
+    // `stub_llm_profile` is load-bearing, not a convenience: without a configured profile the binary has no model to run the turn with, so nothing ever reaches the …
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
@@ -403,9 +368,7 @@ test "openai_chat_turn_thinking_off_omits_thinking_and_enable_thinking" {
     try assertNoThinkingParams(&stub);
 }
 
-// ============================================================================
 // Test 2: thinking "on" — the control
-// ============================================================================
 
 // The positive control for Test 1's absence assertions.
 test "openai_chat_turn_thinking_on_also_omits_thinking_and_enable_thinking" {
@@ -430,9 +393,7 @@ test "openai_chat_turn_thinking_on_also_omits_thinking_and_enable_thinking" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never
-    // type-checked, so a stdlib rename inside one would stay invisible
-    // until some caller appeared.
+    // Body-analysis barrier: an unreferenced function is never type-checked, so a stdlib rename inside one would stay invisible until some caller appeared.
     _ = Stub;
     _ = Stub.start;
     _ = Stub.deinit;

@@ -1,4 +1,3 @@
-// RED: apiFetch must time out hung requests (idle-freeze fix)
 /* eslint-disable @typescript-eslint/no-explicit-any -- test mocks legitimately use loose types */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

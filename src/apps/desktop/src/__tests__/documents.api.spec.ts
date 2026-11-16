@@ -1,6 +1,4 @@
-/** The documents API client's wire shape (Migration 095). In its own file, with NO
- * `vi.mock('../api')`: a module factory that spreads the real module re-wraps the exports, and the
- * real `apiFetch` never reaches the `fetch` spy the assertions install. */
+/** The documents API client's wire shape (Migration 095). */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
@@ -41,9 +39,7 @@ describe('documents API client — scoping', () => {
   })
 
   it('never sends a workspace id in the query string or the body', async () => {
-    // The server resolves scope from the path alone. A helper that
-    // ALSO passed `workspace_id` in the body would be one refactor away
-    // from the server trusting the body, which is a spoofing vector.
+    // The server resolves scope from the path alone.
     const bodies: string[] = []
     fetchSpy.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       urls.push(String(input))
@@ -61,8 +57,7 @@ describe('documents API client — scoping', () => {
   })
 
   it('url-encodes the workspace and document ids', async () => {
-    // A workspace id containing a slash would otherwise reshape the path
-    // and hit a different route (or none).
+    // A workspace id containing a slash would otherwise reshape the path and hit a different route (or none).
     await api.getDocument('ws/1', 'doc 1')
     expect(urls[0]).toBe('/api/workspaces/ws%2F1/documents/doc%201')
   })
@@ -82,15 +77,12 @@ describe('documents API client — scoping', () => {
     await api.updateDocument('ws_1', 'doc_1', { content: 'x' })
     await api.deleteDocument('ws_1', 'doc_1')
 
-    // A PATCH sent as a PUT (or a create sent as a POST with no body)
-    // would 400 at the wire; assert it here where the failure is legible.
+    // A PATCH sent as a PUT (or a create sent as a POST with no body) would 400 at the wire; assert it here where the failure is legible.
     expect(methods).toEqual(['GET', 'GET', 'POST', 'PATCH', 'DELETE'])
   })
 
   it('omits content from a create body when only a title is given', async () => {
-    // The backend treats `"content": ""` and an absent `content` the same (both store ''), but
-    // sending the empty string explicitly is one less thing for a future "absent means keep" PATCH
-    // semantic to get wrong. Assert the default rather than trust it.
+    // The backend treats `"content": ""` and an absent `content` the same (both store ''), but sending the empty string explicitly is one less thing for a future …
     let body = ''
     fetchSpy.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
       body = String(init?.body ?? '')

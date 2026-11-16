@@ -5,15 +5,12 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 135 — drop the two RBAC tables nothing ever wrote. Migration 077
-/// created `user_companies` + `user_company_members` for an org/tenant model
-/// that was built but never adopted: zero rows, zero application call sites.
+/// Migration 135 — drop the two RBAC tables nothing ever wrote.
 pub const Migration135DropUnusedRbacTables = struct {
     pub const version: u32 = 135;
     pub const name = "drop_unused_rbac_tables";
 
-    /// Child before parent, so postgres never sees a table that another one
-    /// still references.
+    /// Child before parent, so postgres never sees a table that another one still references.
     pub const dropped_tables = [_][]const u8{ "user_company_members", "user_companies" };
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {

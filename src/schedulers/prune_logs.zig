@@ -1,6 +1,4 @@
-//! The 30-day retention pass over `logs`. It is a debugging aid, not an audit
-//! log: 96% of its rows were warn-level noise, and 597 MB of its 600 MB of
-//! message text was past this window.
+//! The 30-day retention pass over `logs`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -12,21 +10,16 @@ const testing = std.testing;
 
 pub const retention_days: i64 = 30;
 
-/// Rows per `DELETE`. One statement over 45,000 rows holds the write lock for as
-/// long as it takes to walk them; 500 at a time keeps every lock short enough for
-/// a live request to get in between batches.
+/// Rows per `DELETE`.
 pub const batch_rows: usize = 500;
 
-/// Ceiling on batches per tick, so a backlog is worked down over several ticks
-/// instead of in one long pass.
+/// Ceiling on batches per tick, so a backlog is worked down over several ticks instead of in one long pass.
 pub const max_batches: usize = 200;
 
 const seconds_per_day: i64 = 86_400;
 const micros_per_second: i64 = 1_000_000;
 
-/// `logs.created_at_nano` holds MICROseconds (`frontend_log_post` stamps
-/// `microsecondsNow()`) despite the name, so the cutoff is scaled by the row's
-/// own magnitude instead of trusting the column. P4 is where the units unify.
+/// `logs.created_at_nano` holds MICROseconds (`frontend_log_post` stamps `microsecondsNow()`) despite the name, so the cutoff is scaled by the row's own magnitude …
 const older_than_cutoff =
     "created_at_nano < CASE WHEN created_at_nano >= 100000000000000000 " ++
     "THEN CAST(? AS BIGINT) * 1000 ELSE CAST(? AS BIGINT) END";

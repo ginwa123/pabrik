@@ -1,6 +1,4 @@
-/** The `ask_user` block the agent writes as the last thing in a message:
- * `<ask_user>{"question":"…","options":["a","b"]}</ask_user>`. The turn that carries it ends
- * with `finish_reason=awaiting_user`, and the answer rewrites the block in place. */
+/** The `ask_user` block the agent writes as the last thing in a message */
 export type AskUserStatus = 'pending' | 'answered' | 'skipped' | 'abandoned'
 
 export interface AskUserQuestion {

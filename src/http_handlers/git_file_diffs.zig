@@ -4,8 +4,7 @@ const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 const git_route = @import("git_route.zig");
 
-/// Batch file diff endpoint — collapses the SidebarDiffPanel N+1 fan-out (one
-/// `GET /api/git/file/diff` per changed file) into at most 2 git spawns.
+/// Batch file diff endpoint — collapses the SidebarDiffPanel N+1 fan-out (one `GET /api/git/file/diff` per changed file) into at most 2 git spawns.
 pub const MAX_BATCH_FILES: usize = 200;
 pub const MAX_PER_FILE_BYTES: usize = 512 * 1024;
 
@@ -19,9 +18,7 @@ pub const BatchDiffBody = struct {
     path: []const u8,
     files: ?[]BatchFileItem = null,
     folder: ?[]const u8 = null,
-    /// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the
-    /// client can render every line of the file with the changes still
-    /// marked.
+    /// WHOLE-FILE mode — `git diff -U<all>` for exactly ONE path, so the client can render every line of the file with the changes still marked.
     whole_file: ?bool = null,
 };
 
@@ -33,14 +30,11 @@ pub const BatchDiffEntry = struct {
 
 pub const BatchDiffResponse = struct {
     diffs: []BatchDiffEntry,
-    /// Set when a whole-file request could not be answered in full (the diff
-    /// exceeds `MAX_WHOLE_FILE_BYTES`). The entry's `diff_content` is then
-    /// EMPTY — never a partial file, which would read as a complete one.
+    /// Set when a whole-file request could not be answered in full (the diff exceeds `MAX_WHOLE_FILE_BYTES`).
     whole_file_refused: bool = false,
 };
 
 /// Split a combined `git diff` output into per-file chunks.
-/// Returns slices into `combined` — caller keeps `combined` alive.
 pub fn splitCombinedDiff(allocator: std.mem.Allocator, combined: []const u8) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(allocator);
     if (combined.len == 0) return map;
@@ -56,8 +50,7 @@ pub fn splitCombinedDiff(allocator: std.mem.Allocator, combined: []const u8) !st
         const end = if (i + 1 < starts.items.len) starts.items[i + 1] else combined.len;
         const chunk = combined[start..end];
         const path = extractDiffPath(chunk) orelse continue;
-        // First chunk wins for a path; duplicates shouldn't happen within
-        // one (staged|unstaged) output.
+        // First chunk wins for a path; duplicates shouldn't happen within one (staged|unstaged) output.
         if (!map.contains(path)) {
             map.put(path, chunk) catch continue;
         }
@@ -66,8 +59,6 @@ pub fn splitCombinedDiff(allocator: std.mem.Allocator, combined: []const u8) !st
 }
 
 /// Extract the repo-relative path from one `diff --git` chunk.
-/// Prefers `+++ b/<path>`, falls back to `--- a/<path>`, then the
-/// `diff --git a/<x> b/<y>` header's b-side.
 fn extractDiffPath(chunk: []const u8) ?[]const u8 {
     // +++ b/<path>
     if (std.mem.indexOf(u8, chunk, "\n+++ b/")) |pos| {
@@ -100,8 +91,7 @@ fn extractDiffPath(chunk: []const u8) ?[]const u8 {
 /// True when `folder` is usable as a `git diff -- <pathspec>` argument.
 pub fn isSafeRelativeFolder(folder: []const u8) bool {
     if (std.fs.path.isAbsolute(folder)) return false;
-    // Windows-style absolute ("C:\x", "\\server\share") is not isAbsolute on
-    // every platform this builds for.
+    // Windows-style absolute ("C:\x", "\\server\share") is not isAbsolute on every platform this builds for.
     if (std.mem.indexOf(u8, folder, "\\") != null) return false;
     var it = std.mem.tokenizeScalar(u8, folder, '/');
     while (it.next()) |seg| {
@@ -110,8 +100,7 @@ pub fn isSafeRelativeFolder(folder: []const u8) bool {
     return true;
 }
 
-/// Turn `git status --porcelain` output into the same (file, staged) target
-/// list a LIST-mode caller would have sent.
+/// Turn `git status --porcelain` output into the same (file, staged) target list a LIST-mode caller would have sent.
 pub fn parseStatusTargets(allocator: std.mem.Allocator, porcelain: []const u8) ![]BatchFileItem {
     var targets = std.ArrayList(BatchFileItem).empty;
     errdefer freeTargetList(allocator, targets.items);
@@ -127,8 +116,7 @@ pub fn parseStatusTargets(allocator: std.mem.Allocator, porcelain: []const u8) !
         const y = line[1];
         var file = std.mem.trim(u8, line[3..], " \t\r");
         if (file.len == 0) continue;
-        // Rename/copy porcelain prints "old -> new". Diff against the new
-        // side, which is what `+++ b/` carries too.
+        // Rename/copy porcelain prints "old -> new".
         if (std.mem.indexOf(u8, file, " -> ")) |arrow| file = std.mem.trim(u8, file[arrow + 4 ..], " \t\r");
         if (file.len == 0) continue;
 
@@ -155,8 +143,6 @@ pub fn freeTargetList(allocator: std.mem.Allocator, targets: []const BatchFileIt
 }
 
 /// Whole-file mode is a DIFFERENT budget from the panel's diff view.
-/// `MAX_PER_FILE_BYTES` truncates a diff and marks the cut, which is fine for
-/// a hunk list — the reader scrolls and the diff keeps its meaning.
 pub const MAX_WHOLE_FILE_BYTES: usize = 2 * 1024 * 1024;
 
 /// `-U` for whole-file mode.
@@ -165,8 +151,7 @@ pub const WHOLE_FILE_UNIFIED_FLAG = "--unified=100000";
 /// Marker appended to a diff that exceeded MAX_PER_FILE_BYTES.
 pub const TRUNCATION_SUFFIX = "\n... [truncated]\n";
 
-/// Cap a per-file diff at MAX_PER_FILE_BYTES. Every length below is derived
-/// from the literal itself.
+/// Cap a per-file diff at MAX_PER_FILE_BYTES.
 fn capDiff(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     if (s.len <= MAX_PER_FILE_BYTES) return try allocator.dupe(u8, s);
     const total = MAX_PER_FILE_BYTES + TRUNCATION_SUFFIX.len;
@@ -176,9 +161,7 @@ fn capDiff(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     return buf;
 }
 
-/// Cap a whole-file diff — ALL OR NOTHING. Returns `null` when the body is
-/// over `MAX_WHOLE_FILE_BYTES`, in which case the caller serves an empty diff
-/// plus `whole_file_refused`.
+/// Cap a whole-file diff — ALL OR NOTHING.
 pub fn capWholeFile(allocator: std.mem.Allocator, s: []const u8) !?[]const u8 {
     if (s.len > MAX_WHOLE_FILE_BYTES) return null;
     return try allocator.dupe(u8, s);
@@ -226,23 +209,17 @@ fn readHostFile(io: std.Io, allocator: std.mem.Allocator, abs: []const u8) ?[]u8
     return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
 }
 
-/// Bytes of a file the diff never mentioned: an untracked file has no diff, so
-/// its `new file` hunk is built from the file itself — ROUTED, because under
-/// `--saas` the bytes live in the guest and this host holds no copy.
+/// Bytes of a file the diff never mentioned: an untracked file has no diff, so its `new file` hunk is built from the file itself — ROUTED, because under `--saas` …
 fn readNewFile(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8, opts: git_route.Options) ?[]u8 {
     const full = std.fs.path.join(allocator, &.{ repo_path, file }) catch return null;
     defer allocator.free(full);
-    // `openFileAbsolute` ASSERTS the path is absolute and ABORTS the whole
-    // process (Debug/ReleaseSafe) instead of returning an error, so never
-    // hand it a relative path — `repo_path` is validated at the handler
+    // `openFileAbsolute` ASSERTS the path is absolute and ABORTS the whole process (Debug/ReleaseSafe) instead of returning an error, so never hand it a relative …
     if (!std.fs.path.isAbsolute(full)) return null;
     var route = git_route.routeFor(allocator, repo_path, opts.workspace_id);
     defer route.deinit();
     return switch (route) {
         .unavailable => null,
-        // `file` is relative to `repo_path` and the guest refuses `.`/`..`
-        // segments when it resolves the path inside the workspace, so the
-        // joined form cannot climb out (`fs.readAll` -> `policy.relativeWorkspace`).
+        // `file` is relative to `repo_path` and the guest refuses `.`/`..` segments when it resolves the path inside the workspace, so the joined form cannot climb out …
         .guest => |*fs| fs.readAll(full) catch null,
         .host => readHostFile(io, allocator, full),
     };
@@ -269,24 +246,19 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     if (parsed.path.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "Missing path") });
     }
-    // `parsed.path` is the repo root used as the BASE of every
-    // `std.fs.path.join` below, and the joined values reach
-    // `std.Io.Dir.openFileAbsolute` in `syntheticFallback`.
+    // `parsed.path` is the repo root used as the BASE of every `std.fs.path.join` below, and the joined values reach `std.Io.Dir.openFileAbsolute` in …
     if (!std.fs.path.isAbsolute(parsed.path)) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "path must be an absolute directory") });
     }
     const no_files: []const BatchFileItem = &.{};
     const list_mode_files: []const BatchFileItem = parsed.files orelse no_files;
-    // Folder mode only when the caller sent `folder` and did NOT send a file
-    // list. A caller that sends both gets list mode — it named the paths.
+    // Folder mode only when the caller sent `folder` and did NOT send a file list.
     const folder_mode = parsed.folder != null and list_mode_files.len == 0;
     if (!folder_mode and list_mode_files.len == 0) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "No files") });
     }
     const whole_file = parsed.whole_file orelse false;
-    // Whole-file is per FILE by construction: `-U<all>` for one path. A
-    // folder-wide or multi-file request would be a multi-megabyte response
-    // that the caller only ever asked for one section of.
+    // Whole-file is per FILE by construction: `-U<all>` for one path.
     if (whole_file and (folder_mode or list_mode_files.len != 1)) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "whole_file needs exactly one file and no folder") });
     }
@@ -294,9 +266,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "Too many files (max 200)") });
     }
 
-    // FOLDER mode: one `git status` gives the target list. Owned here, freed
-    // on exit — `defer` reads the variable at scope exit, so it sees the
-    // slice the spawn assigned, not the empty one it started as.
+    // FOLDER mode: one `git status` gives the target list.
     const folder = parsed.folder orelse "";
     if (folder_mode and !isSafeRelativeFolder(folder)) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "folder must be a repo-relative path without '..'") });
@@ -312,9 +282,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     if (folder_mode) {
         var args = std.ArrayList([]const u8).empty;
         defer args.deinit(allocator);
-        // `-uall` lists untracked FILES, not the untracked directory that
-        // `git status --porcelain` reports by default — otherwise every
-        // untracked folder collapses to one `dir/` entry and gets no diff.
+        // `-uall` lists untracked FILES, not the untracked directory that `git status --porcelain` reports by default — otherwise every untracked folder collapses to one …
         args.appendSlice(allocator, &.{ "status", "--porcelain", "-uall" }) catch {};
         if (folder.len > 0) {
             args.appendSlice(allocator, &.{ "--", folder }) catch {};
@@ -333,8 +301,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
                 unstaged.append(allocator, t.file) catch continue;
             }
         }
-        // Nothing changed under the folder: that is a real answer, not a
-        // client error — return an empty list rather than a 400.
+        // Nothing changed under the folder: that is a real answer, not a client error — return an empty list rather than a 400.
         if (owned_targets.len == 0) {
             const empty = std.json.Stringify.valueAlloc(allocator, BatchDiffResponse{ .diffs = &.{} }, .{}) catch return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, "serialize failed") });
             return res.jsonResponse(.{ .status_code = 200, .data = empty });
@@ -350,9 +317,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         }
     }
 
-    // Two git processes, never N. FOLDER mode passes the folder as the
-    // pathspec so argv stays 7 entries however many files changed; LIST mode
-    // passes the paths the caller named.
+    // Two git processes, never N.
     var staged_out: []u8 = &.{};
     var unstaged_out: []u8 = &.{};
     if (staged.items.len > 0) {
@@ -441,7 +406,6 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// Splitter is pure (no IO) so it is unit-testable here.
 
 /// A file at `rel` under the repository root, creating parents as needed.
 fn writeRepoFile(dir: std.Io.Dir, rel: []const u8, body: []const u8) !void {
@@ -475,8 +439,7 @@ test "capWholeFile passes a body under the cap through unmarked" {
     const capped = (try capWholeFile(allocator, body)).?;
     defer allocator.free(capped);
     try std.testing.expectEqualStrings(body, capped);
-    // The whole point of the whole-file budget: no truncation marker, because
-    // a marked-up file view would claim to be complete.
+    // The whole point of the whole-file budget: no truncation marker, because a marked-up file view would claim to be complete.
     try std.testing.expect(std.mem.indexOf(u8, capped, TRUNCATION_SUFFIX) == null);
 }
 
@@ -495,15 +458,12 @@ test "capWholeFile REFUSES one byte over the cap instead of truncating" {
     const over = try allocator.alloc(u8, MAX_WHOLE_FILE_BYTES + 1);
     defer allocator.free(over);
     @memset(over, 'x');
-    // Null, not a shortened slice: the caller serves an empty diff and sets
-    // `whole_file_refused`, so the UI can offer the code viewer. Returning a
-    // 2 MiB prefix here would look like the end of the file.
+    // Null, not a shortened slice: the caller serves an empty diff and sets `whole_file_refused`, so the UI can offer the code viewer.
     try std.testing.expect(try capWholeFile(allocator, over) == null);
 }
 
 test "whole-file mode is a bigger budget than the panel diff cap" {
-    // If these two ever invert, whole-file mode can never serve a file that
-    // the hunk view already renders.
+    // If these two ever invert, whole-file mode can never serve a file that the hunk view already renders.
     try std.testing.expect(MAX_WHOLE_FILE_BYTES > MAX_PER_FILE_BYTES);
     try std.testing.expect(std.mem.startsWith(u8, WHOLE_FILE_UNIFIED_FLAG, "--unified="));
 }
@@ -548,8 +508,7 @@ test "isSafeRelativeFolder accepts repo-relative paths and the whole-repo empty 
 }
 
 test "isSafeRelativeFolder rejects absolute and parent-escaping paths" {
-    // These become `git diff -- <folder>` argv entries, and `..` would walk
-    // the pathspec out of the repo the caller named.
+    // These become `git diff -- <folder>` argv entries, and `..` would walk the pathspec out of the repo the caller named.
     try std.testing.expect(!isSafeRelativeFolder("/etc"));
     try std.testing.expect(!isSafeRelativeFolder(".."));
     try std.testing.expect(!isSafeRelativeFolder("../sibling"));
@@ -559,8 +518,7 @@ test "isSafeRelativeFolder rejects absolute and parent-escaping paths" {
 
 test "parseStatusTargets routes each porcelain row to the side it belongs to" {
     const allocator = std.testing.allocator;
-    // M  staged-and-modified → BOTH sides;  M  worktree-only → unstaged;
-    // ?? untracked → unstaged;  A  added → staged.
+    // M staged-and-modified → BOTH sides; M worktree-only → unstaged; ?? untracked → unstaged; A added → staged.
     const porcelain =
         "MM src/both.txt\n" ++
         " M src/worktree.txt\n" ++
@@ -592,9 +550,7 @@ test "parseStatusTargets never emits an untracked file as staged" {
 
 test "parseStatusTargets takes the new side of a rename" {
     const allocator = std.testing.allocator;
-    // `+++ b/` in the diff carries the destination too, so a rename must be
-    // keyed on the destination or the lookup misses and the file falls back
-    // to a synthetic (wrong) new-file diff.
+    // `+++ b/` in the diff carries the destination too, so a rename must be keyed on the destination or the lookup misses and the file falls back to a synthetic …
     const targets = try parseStatusTargets(allocator, "R  old/name.txt -> new/name.txt\n");
     defer freeTargetList(allocator, targets);
     try std.testing.expectEqual(@as(usize, 1), targets.len);
@@ -636,14 +592,11 @@ test "capDiff truncates one byte over the cap" {
     defer allocator.free(over);
     @memset(over, 'a');
 
-    // This is the call that used to abort the process: it panicked with
-    // "source and destination arguments have non-equal lengths" because the
-    // destination slice was 24 bytes and the suffix literal was 17.
+    // This is the call that used to abort the process: it panicked with "source and destination arguments have non-equal lengths" because the destination slice was …
     const capped = try capDiff(allocator, over);
     defer allocator.free(capped);
 
-    // Exactly the bytes written. A longer slice would ship uninitialized
-    // heap memory to the client through the JSON response.
+    // Exactly the bytes written.
     try std.testing.expectEqual(MAX_PER_FILE_BYTES + TRUNCATION_SUFFIX.len, capped.len);
     try std.testing.expectEqualSlices(u8, over[0..MAX_PER_FILE_BYTES], capped[0..MAX_PER_FILE_BYTES]);
     try std.testing.expectEqualStrings(TRUNCATION_SUFFIX, capped[MAX_PER_FILE_BYTES..]);

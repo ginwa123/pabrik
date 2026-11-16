@@ -1,6 +1,4 @@
-//! Restart the turns a previous process left mid-flight: a `worker` row is a
-//! session whose run was cut off. Sub-agent workers, live owners and cleanly
-//! finished turns are skipped — see `decide`, which is the whole policy.
+//! Restart the turns a previous process left mid-flight: a `worker` row is a session whose run was cut off.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -26,9 +24,7 @@ pub const Candidate = struct {
     run_token: []const u8,
 };
 
-/// A sub-agent session names its parent (Migration 091). The parent row in the
-/// `worker` table is touched on behalf of a sub-agent too, so the parent's own
-/// session is NOT a sub-agent — only a row whose session carries the marker is.
+/// A sub-agent session names its parent (Migration 091).
 pub fn isSubAgentWorker(parent_session_id: []const u8, sub_agent_name: []const u8, session_id: []const u8) bool {
     if (sub_agent_name.len > 0) return true;
     if (parent_session_id.len == 0) return false;
@@ -50,9 +46,7 @@ pub const Decision = enum {
     skip_finished,
 };
 
-/// What boot should do with one row. `owner_alive` comes from the pid embedded
-/// in the lease (`session_lock.isOwnerAlive`): a second pabrik on another port
-/// must NOT steal a session the first one is still running.
+/// What boot should do with one row.
 pub fn decide(candidate: Candidate, owner_alive: bool) Decision {
     if (isSubAgentWorker(candidate.parent_session_id, candidate.sub_agent_name, candidate.session_id)) return .skip_sub_agent;
     if (owner_alive) return .skip_live_owner;
@@ -78,8 +72,7 @@ const select_sql =
     \\ORDER BY w.last_activity_nano DESC;
 ;
 
-/// Wake every session a previous process left mid-turn. Never fails: a boot
-/// sequence has nothing useful to do with the error.
+/// Wake every session a previous process left mid-turn.
 pub fn resumeWorkersOnBoot(di: *pabrikcore.App) void {
     const logger = di.logger;
     var arena = std.heap.ArenaAllocator.init(di.allocator);
@@ -139,8 +132,7 @@ pub fn resumeWorkersOnBoot(di: *pabrikcore.App) void {
     }
 }
 
-/// The `worker` rows as resume candidates — the query half, so the SQL is
-/// testable without a booted app.
+/// The `worker` rows as resume candidates — the query half, so the SQL is testable without a booted app.
 pub fn readCandidates(allocator: std.mem.Allocator, db: *database.Db) ![]Candidate {
     var rows = try db.query(allocator, select_sql, &.{});
     defer rows.deinit();
@@ -165,8 +157,7 @@ pub fn readCandidates(allocator: std.mem.Allocator, db: *database.Db) ![]Candida
     return out.toOwnedSlice(allocator);
 }
 
-/// Drop the row the previous process wrote. Its lease belongs to a process that
-/// no longer exists, so it must not block the run this boot is about to emit.
+/// Drop the row the previous process wrote.
 fn clearWorkerRow(di: *pabrikcore.App, allocator: std.mem.Allocator, session_id: []const u8) void {
     di.db.exec(allocator, "DELETE FROM worker WHERE id = ?", &.{session_id}) catch |err| {
         di.logger.warnFmt(

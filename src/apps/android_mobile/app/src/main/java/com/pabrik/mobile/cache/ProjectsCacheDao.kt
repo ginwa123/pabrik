@@ -6,17 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 
-/**
- * The projects cache's SQL: a workspace's projects, and each project's chats.
- *
- * Partitioned by user *and* workspace, one level deeper than
- * [RecentsCacheDao] — a project's chats are only meaningful next to the project
- * they belong to, and the same project id is fetched again under a different
- * workspace's scope.
- *
- * Blocking and `Flow`-free for the same reasons as every other DAO here; see
- * [PabrikCacheDatabase] on `allowMainThreadQueries`.
- */
+/** The projects cache's SQL: a workspace's projects, and each project's chats. */
 @Dao
 abstract class ProjectsCacheDao {
 
@@ -69,14 +59,7 @@ abstract class ProjectsCacheDao {
         projectId: String,
     )
 
-    /**
-     * Replace-not-merge, for both lists, in one transaction each.
-     *
-     * Same argument as [RecentsCacheDao.replaceChats]: a project deleted on the
-     * server must stay deleted, and a delete that is not in the same
-     * transaction as its insert leaves an empty list that reads as "you have no
-     * projects" if the process dies between them.
-     */
+    /** Replace-not-merge, for both lists, in one transaction each. */
     @Transaction
     open fun replaceProjects(
         userId: String,
@@ -98,19 +81,7 @@ abstract class ProjectsCacheDao {
         if (rows.isNotEmpty()) upsertProjectChats(rows)
     }
 
-    /**
-     * Drop a workspace's chats when the workspace's projects are replaced.
-     *
-     * Without this, a project removed on the server leaves its chat rows behind
-     * forever — unreachable through the UI, but still on disk, still under the
-     * previous account's key, and still readable by anyone who opens the file.
-     *
-     * The empty case is its own statement on purpose. `NOT IN (:keepProjectIds)`
-     * with an empty bind list is not reliably `NOT IN ()` — that is a syntax
-     * error, and Room's rewrite of an empty collection is not something a cache
-     * should be betting a sign-out on. "The workspace has no projects left, so
-     * drop all of their chats" deserves a query that says exactly that.
-     */
+    /** Drop a workspace's chats when the workspace's projects are replaced. */
     @Transaction
     open fun deleteChatsForWorkspace(
         userId: String,
@@ -137,11 +108,7 @@ abstract class ProjectsCacheDao {
         workspaceId: String,
     )
 
-    /**
-     * Delete the chats of every project not in [keepProjectIds]. Callers pass a
-     * non-empty list; see [deleteChatsForWorkspace] for why the empty case does
-     * not come through here.
-     */
+    /** Delete the chats of every project not in [keepProjectIds]. */
     @Query(
         """
         DELETE FROM cached_project_chats

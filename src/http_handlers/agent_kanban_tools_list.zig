@@ -1,5 +1,4 @@
-//! `GET /api/agent-kanbans/:kanban_id/tools`. Returns `{tools: [string]}` —
-//! the enabled tool_names for the agent-kanbans config.
+//! `GET /api/agent-kanbans/:kanban_id/tools`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,8 +7,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const agent_kanban_db = @import("../models/agent_kanban.db.zig");
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const ToolListError = error{
     /// `kanban_id` path param was missing or empty.
     KanbanIdRequired,
@@ -24,18 +22,14 @@ pub const ToolListInput = struct {
     kanban_id: []const u8,
 };
 
-/// Output of the list-tools use-case. `tool_names` is owned by the
-/// caller (lifetime = request arena).
+/// Output of the list-tools use-case.
 pub const ToolListOutput = struct {
     tool_names: []const []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Resolve the enabled tool_names for the agent-kanbans config. Returns
-/// an owned slice ordered by tool_name ASC. Transport-agnostic.
+/// Resolve the enabled tool_names for the agent-kanbans config.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -48,9 +42,7 @@ fn useCase(
     return .{ .tool_names = tool_names };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentKanbanToolsListHandler(
@@ -87,7 +79,6 @@ pub fn agentKanbanToolsListHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -187,7 +178,6 @@ test "useCase: returns only enabled=1 tools, ordered by tool_name ASC" {
         alloc.free(output.tool_names);
     }
     // Seeded: write_file (1), bash (1), read_file (0), glob (1).
-    // Expect: bash, glob, write_file (read_file excluded).
     try testing.expectEqual(@as(usize, 3), output.tool_names.len);
     try testing.expectEqualStrings("bash", output.tool_names[0]);
     try testing.expectEqualStrings("glob", output.tool_names[1]);

@@ -1,6 +1,4 @@
 //! The size a workspace's VM boots with, recorded beside the VM's own state.
-//! A missing or unreadable record means "the manager's defaults", never a
-//! failure to boot.
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -24,8 +22,7 @@ pub fn pathFor(buf: []u8, root: []const u8, workspace_id: []const u8) ?[]const u
     return std.fmt.bufPrint(buf, "{s}/workspaces/{s}/vm.spec", .{ root, workspace_id }) catch null;
 }
 
-/// Parse the `key=value` record. Unknown keys, bad numbers and out-of-range
-/// values are ignored one by one.
+/// Parse the `key=value` record.
 pub fn parse(text: []const u8) Override {
     var out: Override = .{};
     var lines = std.mem.splitScalar(u8, text, '\n');
@@ -63,8 +60,7 @@ pub fn read(root: []const u8, workspace_id: []const u8) Override {
     return parse(text_buf[0..n]);
 }
 
-/// Record the workspace's size. The caller has already ensured the VM
-/// directory exists (a stop creates it).
+/// Record the workspace's size.
 pub fn write(allocator: std.mem.Allocator, root: []const u8, workspace_id: []const u8, override: Override) !void {
     var path_buf: [4096]u8 = undefined;
     const path = pathFor(&path_buf, root, workspace_id) orelse return error.BadWorkspaceId;

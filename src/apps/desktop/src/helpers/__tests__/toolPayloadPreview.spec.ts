@@ -1,5 +1,4 @@
-/** `toolPayloadPreview` — what the EXPANDED body of ChatView's generic tool fallback shows for a
- * tool with no registered output card. */
+/** `toolPayloadPreview` — what the EXPANDED body of ChatView's generic tool fallback shows for a tool with no registered output card. */
 import { describe, expect, it } from 'vitest'
 
 import { toolPayloadPreview, TOOL_PAYLOAD_PREVIEW_MAX } from '../toolPayloadPreview'

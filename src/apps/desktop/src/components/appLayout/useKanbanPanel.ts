@@ -17,9 +17,7 @@ export function useKanbanPanel(deps: KanbanPanelDeps) {
   const activeWorkspaceItem = deps.activeWorkspaceItem
   const activeWorkspace = deps.activeWorkspace
 
-// ─── Design 3-column resize (separate from kanban) ───────────────────── Design canvases need
-// significantly more horizontal room than kanbans — a typical Figma-style page is 1440px wide, and
-// DesignView itself contains its own 320px Layers+Properties sidebar at full width.
+// ─── Design 3-column resize (separate from kanban) ─────────────────────
 type KanbanEditorMode = 'add' | 'rename' | 'delete'
 const showKanbanColumnEditor = ref(false)
 const kanbanColumnEditorMode = ref<KanbanEditorMode>('add')
@@ -28,9 +26,7 @@ const kanbanColumnEditorInitialName = ref<string>('')
 const kanbanColumnEditorInitialDescription = ref<string>('')
 const kanbanColumnEditorInitialIsDone = ref<boolean>(false)
 
-// Look up the column by id in the active kanban item. Returns
-// undefined if the active item is missing or has no columns — the
-// caller treats that as a no-op.
+// Look up the column by id in the active kanban item.
 const findKanbanColumn = (columnId: string) => {
   return activeWorkspaceItem.value?.kanban_columns?.find((c) => c.id === columnId)
 }
@@ -43,8 +39,7 @@ const handleKanbanAddColumn = () => {
   showKanbanColumnEditor.value = true
 }
 
-// ⋮ menu "Rename" on a column: open the editor in 'rename' mode,
-// pre-filled with the column's current name and description.
+// ⋮ menu "Rename" on a column: open the editor in 'rename' mode, pre-filled with the column's current name and description.
 const handleKanbanRequestRenameColumn = (columnId: string) => {
   const col = findKanbanColumn(columnId)
   if (!col) return
@@ -56,9 +51,7 @@ const handleKanbanRequestRenameColumn = (columnId: string) => {
   showKanbanColumnEditor.value = true
 }
 
-/** Forward a kanban rename (from either the Settings dialog header pencil or the KanbanView header
- * pencil) to the store. Both children emit `rename-item` with the trimmed new name; the store
- * action optimistic-updates + rolls back on error. */
+/** Forward a kanban rename (from either the Settings dialog header pencil or the KanbanView header pencil) to the store. */
 const handleKanbanRenameItem = (newName: string) => {
   if (!activeWorkspaceItem.value) return
   const ws = activeWorkspace.value
@@ -66,8 +59,7 @@ const handleKanbanRenameItem = (newName: string) => {
   void workspacesStore.updateKanbanItemName(ws.id, activeWorkspaceItem.value.id, newName)
 }
 
-// ⋮ menu "Delete" on a column: open the editor in 'delete' mode
-// (the editor renders the confirmation copy itself).
+// ⋮ menu "Delete" on a column: open the editor in 'delete' mode (the editor renders the confirmation copy itself).
 const handleKanbanRequestDeleteColumn = (columnId: string) => {
   const col = findKanbanColumn(columnId)
   if (!col) return
@@ -115,15 +107,12 @@ const handleKanbanColumnEditorDelete = () => {
   showKanbanColumnEditor.value = false
 }
 
-// ─── Kanban settings page (plan: 2026-09-02-kanban-settings-as-page) ──── The settings UI moved
-// from a centered modal dialog (the deleted KanbanSettingsDialog) to a dedicated full-page route
-// (/app/{workspaceId}/projects/{itemId}/settings).
+// ─── Kanban settings page (plan: 2026-09-02-kanban-settings-as-page) ────
 const handleOpenKanbanSettings = () => {
   const itemId = activeWorkspaceItem.value?.id ?? ''
   const workspaceId = activeWorkspace.value?.id ?? ''
   if (!itemId) return
   // The URL names the workspace AND the board, so a reload knows which workspace the board is in.
-  // With no workspace to name, the legacy shape is the only URL available.
   if (!workspaceId) {
     router.push({ path: `/app/kanban/${itemId}/settings` })
     return
@@ -162,8 +151,7 @@ const handleKanbanSettingsDeleteColumn = (columnId: string) => {
   void workspacesStore.deleteKanbanColumn(ws.id, activeWorkspaceItem.value.id, columnId)
 }
 
-// ─── CopyKanbanSpecDialog ──────────────────────────────────────────────── Per-board "copy columns
-// from another kanban" flow. Triggered by the "Copy spec…" footer button in KanbanSettingsDialog.
+// ─── CopyKanbanSpecDialog ────────────────────────────────────────────────
 const showCopyKanbanSpecDialog = ref(false)
 
 const handleOpenCopyKanbanSpec = () => {
@@ -183,14 +171,10 @@ const handleCopyKanbanSpec = (sourceItemId: string, mode: 'replace' | 'append') 
     })
 }
 
-// + Add on a column: handled LOCALLY by KanbanView (no longer bubbles up here). KanbanView opens
-// the KanbanTaskDetailDialog in create mode, then calls workspacesStore.addTask + moveTaskToColumn
-// on submit.
+// + Add on a column: handled LOCALLY by KanbanView (no longer bubbles up here).
 
 
-// Drag-and-drop task move. A 409 opens the "Move anyway" confirm (retry with force=true); any
-// other failure is logged (apiFetch already toasted it). The store mutates only after the API
-// succeeds, so a refused move needs nothing here.
+// Drag-and-drop task move.
 const showMoveBlockedConfirm = ref(false)
 const moveBlockedMessage = ref('')
 const pendingBlockedMove = ref<{ taskId: string; columnId: string; position: number } | null>(null)
@@ -230,8 +214,6 @@ const handleKanbanMoveTask = async (payload: {
 }
 
 // "Move anyway" confirm: retry the pending move with force=true.
-// Cancel just closes — the store never mutated, so the card
-// already sits in its original column.
 const handleMoveBlockedConfirm = () => {
   const pending = pendingBlockedMove.value
   showMoveBlockedConfirm.value = false

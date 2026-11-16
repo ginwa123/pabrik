@@ -11,8 +11,7 @@ import {
 } from '../stores/workspaces'
 import { makeLocalStorageStub } from './helpers'
 
-/** Minimal stub for WorkspaceItemComponent that renders just the `<li>` with the data-* attributes
- * the parent uses for event delegation. */
+/** Minimal stub for WorkspaceItemComponent that renders just the `<li>` with the data-* attributes the parent uses for event delegation. */
 const WorkspaceItemStub = defineComponent({
   name: 'WorkspaceItem',
   props: {
@@ -34,9 +33,7 @@ const WorkspaceItemStub = defineComponent({
           'data-workspace-id': props.workspaceId,
           class: { 'opacity-50': props.isItemDragging },
           style: {
-            // Mirror the real WorkspaceItem's drop indicator: top-line on top-half hover,
-            // bottom-line on bottom- half hover. The test asserts on the rendered boxShadow so any
-            // future regression that desyncs the visual from the drop logic fails here.
+            // Mirror the real WorkspaceItem's drop indicator: top-line on top-half hover, bottom-line on bottom- half hover.
             boxShadow:
               props.isItemDragOver && !props.isItemDragging
                 ? props.isItemDragOverInsertAfter
@@ -72,9 +69,7 @@ describe('ProjectsList item drag-and-drop', () => {
     })
   })
 
-  /**    * Build a fake DragEvent with a writable dataTransfer. JSDOM does not provide the browser's
-   * `DataTransfer` class, so we use a minimal in-memory stub that implements just the surface our
-   * component touches (`setData` / `getData`). */
+  /** Build a fake DragEvent with a writable dataTransfer. */
   function makeDragStore() {
     const store = new Map<string, string>()
     return {
@@ -98,8 +93,7 @@ describe('ProjectsList item drag-and-drop', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const event = new Event(type, { bubbles: true, cancelable: true }) as any
     event.dataTransfer = dt
-    // JSDOM's `getBoundingClientRect()` returns a zeroed DOMRect, so the midpoint of any element is
-    // (0 + 0/2) = 0.
+    // JSDOM's `getBoundingClientRect()` returns a zeroed DOMRect, so the midpoint of any element is (0 + 0/2) = 0.
     event.clientY = clientY
     return event as DragEvent
   }
@@ -122,16 +116,13 @@ describe('ProjectsList item drag-and-drop', () => {
       attachTo: document.body,
       global: { stubs: { WorkspaceItem: WorkspaceItemStub } },
     })
-    // The workspace is already expanded (makeWorkspace sets
-    // expanded: true), so the inner <ul> renders without needing
-    // to click the section header.
+    // The workspace is already expanded (makeWorkspace sets expanded: true), so the inner <ul> renders without needing to click the section header.
     await nextTick()
 
     const items = findDraggableItems(wrapper)
     expect(items.length).toBe(3)
 
     // Drag the second item (item2) onto the first item (item1).
-    // After drop, item2 should be at the top: [item2, item1, item3].
     const sourceItem = items[1]!
     const targetItem = items[0]!
 
@@ -161,8 +152,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('does not emit when an item is dropped on the same slot', async () => {
-    // The item handler short-circuits on self-drop — mirrors the workspace-level handler (which has
-    // the same check).
+    // The item handler short-circuits on self-drop — mirrors the workspace-level handler (which has the same check).
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]
@@ -186,9 +176,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('is a no-op (no emit) when an item is dropped on an item from a different workspace', async () => {
-    // Cross-workspace drop is out of scope for this plan; the handler must silently no-op (no event
-    // emitted) so the source workspace's order stays intact and no API call is made for a drop the
-    // backend would reject.
+    // Cross-workspace drop is out of scope for this plan; the handler must silently no-op (no event emitted) so the source workspace's order stays intact and no API …
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
       makeWorkspace('ws_b', 'B', [makeItem('item3', '3'), makeItem('item4', '4')]),
@@ -201,13 +189,10 @@ describe('ProjectsList item drag-and-drop', () => {
     await nextTick()
 
     const items = findDraggableItems(wrapper)
-    // ProjectsList renders only the SELECTED workspace now, so only
-    // ws_a's items are in the DOM.
+    // ProjectsList renders only the SELECTED workspace now, so only ws_a's items are in the DOM.
     expect(items.length).toBe(2)
 
-    // Drag item1 (workspace A) onto item2 with a FORGED foreign workspace id — ProjectsList can't
-    // render ws_b, but the guard only reads `data-workspace-id` off the target <li>, so this still
-    // exercises the cross-workspace no-op.
+    // Drag item1 (workspace A) onto item2 with a FORGED foreign workspace id — ProjectsList can't render ws_b, but the guard only reads `data-workspace-id` off the …
     const dt = makeDragStore()
     items[1]!.element.setAttribute('data-workspace-id', 'ws_b')
     items[0]!.element.dispatchEvent(makeDragEvent('dragstart', dt))
@@ -219,8 +204,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('inserts the source BEFORE the target when dropped in the TOP half of the target row (top-to-bottom)', async () => {
-    // Regression test for the top-to-bottom off-by-one bug. Before the fix, `handleItemDrop` did:
-    // splice(fromIdx, 1) splice(toIdx, 0, moved) where `toIdx` came from the ORIGINAL array.
+    // Regression test for the top-to-bottom off-by-one bug. Before the fix, `handleItemDrop` did
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', '1'),
@@ -240,8 +224,7 @@ describe('ProjectsList item drag-and-drop', () => {
     const items = findDraggableItems(wrapper)
     expect(items.length).toBe(5)
 
-    // Drag item1 (idx 0) onto item4 (idx 3), drop in top half of
-    // item4 (clientY=0). Expected: item1 ends up BEFORE item4.
+    // Drag item1 (idx 0) onto item4 (idx 3), drop in top half of item4 (clientY=0).
     const sourceItem = items[0]!
     const targetItem = items[3]!
 
@@ -260,8 +243,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('inserts the source AFTER the target when dropped in the BOTTOM half of the target row (top-to-bottom)', async () => {
-    // Counterpart of the previous test — confirms the cursor-Y
-    // toggle works. clientY=1 maps to the bottom half in JSDOM.
+    // Counterpart of the previous test — confirms the cursor-Y toggle works. clientY=1 maps to the bottom half in JSDOM.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', '1'),
@@ -280,8 +262,7 @@ describe('ProjectsList item drag-and-drop', () => {
 
     const items = findDraggableItems(wrapper)
 
-    // Drag item1 (idx 0) onto item4 (idx 3), drop in bottom half of
-    // item4 (clientY=1). Expected: item1 ends up AFTER item4.
+    // Drag item1 (idx 0) onto item4 (idx 3), drop in bottom half of item4 (clientY=1).
     const sourceItem = items[0]!
     const targetItem = items[3]!
 
@@ -317,8 +298,7 @@ describe('ProjectsList item drag-and-drop', () => {
 
     const items = findDraggableItems(wrapper)
 
-    // Drag item5 (idx 4) onto item2 (idx 1), drop in top half of
-    // item2 (clientY=0). Expected: item5 ends up BEFORE item2.
+    // Drag item5 (idx 4) onto item2 (idx 1), drop in top half of item2 (clientY=0).
     const sourceItem = items[4]!
     const targetItem = items[1]!
 
@@ -354,8 +334,7 @@ describe('ProjectsList item drag-and-drop', () => {
 
     const items = findDraggableItems(wrapper)
 
-    // Drag item5 (idx 4) onto item2 (idx 1), drop in bottom half of
-    // item2 (clientY=1). Expected: item5 ends up AFTER item2.
+    // Drag item5 (idx 4) onto item2 (idx 1), drop in bottom half of item2 (clientY=1).
     const sourceItem = items[4]!
     const targetItem = items[1]!
 
@@ -372,8 +351,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('swaps adjacent items when the source is dropped in the BOTTOM half of the target row', async () => {
-    // Adjacent edge case. With [A, B, C], drag B onto C and drop in the bottom half — expected
-    // result is [A, C, B] (swap).
+    // Adjacent edge case.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [
         makeItem('item1', 'A'),
@@ -403,8 +381,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('shows a TOP-line drop indicator when the cursor is in the TOP half of the target row', async () => {
-    // Visual-feedback contract test. After the fix, the drop indicator must show WHERE the drop
-    // will land — a top-line means "insert before", a bottom-line means "insert after".
+    // Visual-feedback contract test.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]
@@ -456,9 +433,7 @@ describe('ProjectsList item drag-and-drop', () => {
   })
 
   it('clears the dragging state on dragend (no opacity-50 after dragend)', async () => {
-    // The dragend handler must clear `draggingItemId` so the
-    // dimmed source <li> goes back to normal. Without this, the
-    // row would stay dimmed forever after every drag.
+    // The dragend handler must clear `draggingItemId` so the dimmed source <li> goes back to normal.
     const workspaces = [
       makeWorkspace('ws_a', 'A', [makeItem('item1', '1'), makeItem('item2', '2')]),
     ]

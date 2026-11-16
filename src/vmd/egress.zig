@@ -1,11 +1,8 @@
-//! The egress deny list, as one pure table: which address a workspace VM may
-//! never dial, and the resolver's half of the same policy. A name is never
-//! trusted — the address that is *dialled* is the address that is classified.
+//! The egress deny list, as one pure table: which address a workspace VM may never dial, and the resolver's half of the same policy.
 
 const std = @import("std");
 
-/// Why an address is refused. `allow` is the only verdict that permits a dial;
-/// every other tag exists so the audit log can say what was attempted.
+/// Why an address is refused.
 pub const Verdict = enum {
     allow,
     loopback,
@@ -27,9 +24,7 @@ pub const Verdict = enum {
     }
 };
 
-/// A dotted quad, strictly: four decimal octets, nothing else. `127.1`, `0x7f.1`
-/// and `2130706433` are refused rather than folded to `127.0.0.1`, because a
-/// lenient parser is how a deny list gets walked around.
+/// A dotted quad, strictly: four decimal octets, nothing else.
 pub fn parseV4(text: []const u8) ?[4]u8 {
     var out: [4]u8 = undefined;
     var octets: usize = 0;
@@ -58,9 +53,7 @@ pub fn parseV4(text: []const u8) ?[4]u8 {
     return null;
 }
 
-/// `::ffff:a.b.c.d` carries an IPv4 address inside an IPv6 one, so it is
-/// classified by the IPv4 table. The deprecated `::a.b.c.d` form is NOT mapped:
-/// it is indistinguishable from `::`/`::1` and those have their own verdicts.
+/// `::ffff:a.b.c.d` carries an IPv4 address inside an IPv6 one, so it is classified by the IPv4 table.
 pub fn mappedV4(addr: [16]u8) ?[4]u8 {
     for (addr[0..10]) |byte| {
         if (byte != 0) return null;
@@ -88,8 +81,7 @@ pub fn classifyV4(addr: [4]u8) Verdict {
     return .allow;
 }
 
-/// `::a.b.c.d` with a non-zero tail: the deprecated v4-compatible form, which
-/// is an IPv4 address wearing an IPv6 header. `::` and `::1` never reach here.
+/// `::a.b.c.d` with a non-zero tail: the deprecated v4-compatible form, which is an IPv4 address wearing an IPv6 header.
 fn compatibleV4(addr: [16]u8) ?[4]u8 {
     for (addr[0..12]) |byte| {
         if (byte != 0) return null;
@@ -114,9 +106,7 @@ pub fn classifyV6(addr: [16]u8) Verdict {
     }
     if (all_zero and addr[15] == 1) return .loopback;
     if (all_zero and addr[15] == 0) return .unspecified;
-    // `::a.b.c.d` (IPv4-compatible), NAT64, 6to4 and Teredo all carry an IPv4
-    // address a routing configuration may deliver, so the table refuses them
-    // rather than trusting this host's routes to keep the promise.
+    // `::a.b.c.d` (IPv4-compatible), NAT64, 6to4 and Teredo all carry an IPv4 address a routing configuration may deliver, so the table refuses them rather than …
     if (all_zero) return .reserved;
     if (compatibleV4(addr)) |v4| return classifyV4(v4);
     if (isNestedV4(addr)) return .reserved;
@@ -126,8 +116,7 @@ pub fn classifyV6(addr: [16]u8) Verdict {
     return .allow;
 }
 
-/// The verdict for an address in text form. Null means "not an address this
-/// table understands", which callers must treat as a denial, not as a pass.
+/// The verdict for an address in text form.
 pub fn classifyText(text: []const u8) ?Verdict {
     const trimmed = std.mem.trim(u8, text, " \t");
     if (trimmed.len == 0) return null;
@@ -140,8 +129,7 @@ pub fn classifyText(text: []const u8) ?Verdict {
     return classifyV6(v6.ip6.bytes);
 }
 
-/// The port half: a proxy dials the ports the tenant declared and nothing else,
-/// so a workspace cannot reach a service that merely happens to be listening.
+/// The port half: a proxy dials the ports the tenant declared and nothing else, so a workspace cannot reach a service that merely happens to be listening.
 pub fn portAllowed(port: u16, declared: []const u16) bool {
     if (port == 0) return false;
     for (declared) |candidate| {
@@ -150,8 +138,7 @@ pub fn portAllowed(port: u16, declared: []const u16) bool {
     return false;
 }
 
-/// The host's own listeners. A workspace may not dial one whatever its address
-/// resolves to, because that is the control plane talking to itself.
+/// The host's own listeners.
 pub fn hostListenerDenied(port: u16, listeners: []const u16) bool {
     for (listeners) |candidate| {
         if (candidate == port) return true;
@@ -164,8 +151,7 @@ pub const Refusal = struct {
     reason: []const u8,
 };
 
-/// The whole decision, in the order the proxy applies it: a host listener port
-/// is refused before any address is resolved, then the address itself.
+/// The whole decision, in the order the proxy applies it: a host listener port is refused before any address is resolved, then the address itself.
 pub fn decide(addr_text: []const u8, port: u16, host_listeners: []const u16) ?Refusal {
     if (hostListenerDenied(port, host_listeners)) {
         return .{ .verdict = .loopback, .reason = "host listener" };
@@ -178,20 +164,16 @@ pub fn decide(addr_text: []const u8, port: u16, host_listeners: []const u16) ?Re
 
 // ─── the resolver's half ────────────────────────────────────────────────
 
-/// A resolver answer may not be larger than this. A UDP DNS answer is 512 bytes
-/// and a TCP one 64 KiB; the cap is what stops a forwarded answer from being a
-/// bulk-exfiltration channel of its own.
+/// A resolver answer may not be larger than this.
 pub const resolver_response_cap: usize = 4096;
 
-/// The resolver refuses an answer whose address is one the proxy would refuse,
-/// so a rebinding name is not a way around the proxy.
+/// The resolver refuses an answer whose address is one the proxy would refuse, so a rebinding name is not a way around the proxy.
 pub fn answerDenied(addr_text: []const u8) bool {
     const verdict = classifyText(addr_text) orelse return true;
     return verdict.denied();
 }
 
-/// A name worth forwarding at all: printable, bounded, no trailing dot games
-/// and no embedded port. Whether it *resolves* somewhere denied is `answerDenied`.
+/// A name worth forwarding at all: printable, bounded, no trailing dot games and no embedded port.
 pub fn queryNameValid(name: []const u8) bool {
     if (name.len == 0 or name.len > 253) return false;
     if (name[0] == '.' or name[name.len - 1] == '.') return false;

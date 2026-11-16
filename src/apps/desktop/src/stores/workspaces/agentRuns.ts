@@ -1,9 +1,7 @@
 import * as api from '../../api'
 
 export function createAgentRuns() {
-  // Manually fire a workspace routine. Returns the backend's `{ session_id }` on success, or
-  // `undefined` on failure (the caller's responsibility to navigate / show an error). We
-  // deliberately do NOT navigate here — that's a UI concern owned by the RoutineView.
+  // Manually fire a workspace routine.
   async function runRoutineItem(
     workspaceId: string,
     itemId: string,
@@ -45,9 +43,7 @@ export function createAgentRuns() {
     }
   }
 
-  // Column "Stop all agents" flow — the mirror of `runAllAgentsInColumn` above. Thin wrapper around
-  // api.stopAllAgentsInColumn (POST .../kanban/columns/:columnId/stop_all_agents) so KanbanView
-  // doesn't import the wire shape directly.
+  // Column "Stop all agents" flow — the mirror of `runAllAgentsInColumn` above.
   async function stopAllAgentsInColumn(
     workspaceId: string,
     itemId: string,
@@ -61,8 +57,7 @@ export function createAgentRuns() {
     }
   }
 
-  // Kanban "create task & run agent" flow. Wraps api.sendChatMessage
-  // so KanbanView doesn't import the wire shape directly.
+  // Kanban "create task & run agent" flow.
   async function runAgentOnNewTask(
     workspaceId: string,
     itemId: string,
@@ -71,13 +66,9 @@ export function createAgentRuns() {
       queueMessage: string
       cwd: string
       isAutoRetryUntilStop?: '0' | '1'
-      // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty / undefined = backend default
-      // ("Default (top-level config)"). When set, the chatview's picker will reflect the chosen
-      // profile immediately on landing.
+      // NEW (plan: 2026-08-06-kanban-task-profile-selector).
       selectedAgent?: string
-      // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces
-      // 2026-08-06-kanban-image-attach-in-chatview). Base64 data URLs of images the user pasted in
-      // the create-mode description.
+      // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces 2026-08-06-kanban-image-attach-in-chatview).
       imageUrls?: string[]
       videoUrls?: string[]
     },
@@ -100,12 +91,9 @@ export function createAgentRuns() {
 
   return {
     runRoutineItem,
-    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Triggers a worker on an existing
-    // task's session without queueing a new user message. Sibling of runAgentOnNewTask
-    // (create-time) and runRoutineItem (workspace-routine manual fire).
+    // NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
     startAgentOnTask,
     // NEW (plan: 2026-09-09-run-all-agents-by-column, Task 4, Option C).
-    // Bulk run for one column — server owns the task list.
     runAllAgentsInColumn,
     // Bulk stop for one column — the mirror of runAllAgentsInColumn.
     stopAllAgentsInColumn,

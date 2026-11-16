@@ -9,9 +9,7 @@ const secrets_store = @import("../modules/agent/loop/secrets_store.zig");
 const secrets_at_rest = @import("../modules/agent/loop/secrets_at_rest.zig");
 const gate = @import("workspace_members_gate.zig");
 
-/// PATCH body. Every field defaults to `null` so an omitted field is
-/// distinguishable from an explicit `""` — the latter is a real "send me an
-/// empty credential" request, and it is refused.
+/// PATCH body.
 const UpdateSecretBody = struct {
     name: ?[]const u8 = null,
     value: ?[]const u8 = null,
@@ -28,8 +26,7 @@ pub const SecretsUpdateError = error{
     NotFound,
     QueryFailed,
     UpdateFailed,
-    /// No master key on this host: the new value cannot be sealed, so the stored
-    /// one is left alone rather than replaced with plaintext.
+    /// No master key on this host: the new value cannot be sealed, so the stored one is left alone rather than replaced with plaintext.
     SealingUnavailable,
     OutOfMemory,
 };
@@ -44,9 +41,7 @@ pub const SecretsUpdateOutput = struct {
     secret: secrets_store.SecretRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -56,9 +51,7 @@ fn useCase(
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (input.secret_id.len == 0) return error.SecretIdRequired;
 
-    // A `name` in the body is a claim about which row is being addressed, not
-    // a rename instruction: renaming would silently break every prompt, skill
-    // and saved tool call that references `{{SECRETS:OLD_NAME}}`.
+    // A `name` in the body is a claim about which row is being addressed, not a rename instruction: renaming would silently break every prompt, skill and saved tool …
     if (input.body.name) |name| {
         if (!secrets_store.isValidName(name)) return error.InvalidName;
         const current = try readRow(allocator, db, input.workspace_id, input.secret_id);
@@ -66,8 +59,7 @@ fn useCase(
         if (!std.mem.eql(u8, current.name, name)) return error.NotFound;
     }
 
-    // The whole body is validated before the first write, so a body that
-    // cannot be stored never leaves the row half-applied.
+    // The whole body is validated before the first write, so a body that cannot be stored never leaves the row half-applied.
     if (input.body.value) |value| {
         if (value.len == 0) return error.ValueRequired;
     }
@@ -91,8 +83,7 @@ fn useCase(
             error.UpdateFailed => return error.UpdateFailed,
             error.SealingUnavailable => return error.SealingUnavailable,
             error.OutOfMemory => return error.OutOfMemory,
-            // The rest of the store's shared error set belongs to the create
-            // and describe paths, which this call never reaches.
+            // The rest of the store's shared error set belongs to the create and describe paths, which this call never reaches.
             error.NameRequired,
             error.InvalidName,
             error.DescriptionTooLong,
@@ -108,17 +99,14 @@ fn useCase(
         return .{ .secret = rotated };
     }
 
-    // Neither field present: the row is returned untouched, which is why
-    // `updated_at` does not advance either.
+    // Neither field present: the row is returned untouched, which is why `updated_at` does not advance either.
     if (input.body.description) |description| {
         return .{ .secret = try describeRow(allocator, db, input.workspace_id, input.secret_id, description) };
     }
     return .{ .secret = try readRow(allocator, db, input.workspace_id, input.secret_id) };
 }
 
-/// `secrets_store.getSecret` narrowed to this handler's error set. The read
-/// projection has no `value` column, so nothing reaches this process that
-/// holds a credential.
+/// `secrets_store.getSecret` narrowed to this handler's error set.
 fn readRow(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -175,9 +163,7 @@ fn describeRow(
     };
 }
 
-// ===================================================================== Error
-// mapping
-// ===================================================================== Two
+// ===================================================================== Error mapping ===================================================================== Two
 
 fn statusFor(err: SecretsUpdateError) u16 {
     return switch (err) {
@@ -187,8 +173,7 @@ fn statusFor(err: SecretsUpdateError) u16 {
         error.ValueRequired,
         error.DescriptionTooLong,
         => 400,
-        // 404, never 403: a 403 would confirm the id exists, which is the
-        // one thing workspace scoping exists to withhold.
+        // 404, never 403: a 403 would confirm the id exists, which is the one thing workspace scoping exists to withhold.
         error.NotFound => 404,
         error.SealingUnavailable, error.QueryFailed, error.UpdateFailed, error.OutOfMemory => 500,
     };
@@ -209,9 +194,7 @@ fn messageFor(err: SecretsUpdateError) []const u8 {
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn secretsUpdateHandler(
     ctx: gserverz.HttpContext,
@@ -299,9 +282,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Read the stored value straight from SQL, bypassing the store, so an
-/// assertion about what was persisted cannot be satisfied by the same code
-/// path it is testing.
+/// Read the stored value straight from SQL, bypassing the store, so an assertion about what was persisted cannot be satisfied by the same code path it is testing.
 fn storedValue(ctx: *TestCtx, id: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
@@ -347,8 +328,7 @@ test "useCase: rotates the value and leaves the name alone" {
     defer alloc.free(kept);
     try testing.expectEqualStrings("ghp_new_do_not_leak", kept);
 
-    // The other workspace's identically named secret is a different row and
-    // was not touched.
+    // The other workspace's identically named secret is a different row and was not touched.
     const theirs = try storedValue(&ctx, "sec_b");
     defer alloc.free(theirs);
     try testing.expectEqualStrings("ghp_ws2_do_not_leak", theirs);
@@ -398,9 +378,7 @@ test "useCase: a rename is refused, and the value is left as it was" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A rename would break every `{{SECRETS:OLD_NAME}}` reference silently,
-    // so the answer is "no such secret" rather than a quiet half-applied
-    // edit — and the same answer a foreign workspace gets.
+    // A rename would break every `{{SECRETS:OLD_NAME}}` reference silently, so the answer is "no such secret" rather than a quiet half-applied edit — and the same …
     try testing.expectError(
         error.NotFound,
         useCase(alloc, &ctx.db, .{
@@ -434,8 +412,7 @@ test "useCase: a body with no value keeps the stored one, untouched" {
     });
     defer secrets_store.freeSecretRow(alloc, output.secret);
 
-    // "Omitted means keep" is only honest if nothing at all moved: the
-    // value stays AND updated_at stays, because no write happened.
+    // "Omitted means keep" is only honest if nothing at all moved: the value stays AND updated_at stays, because no write happened.
     try testing.expectEqualStrings("GITHUB_TOKEN", output.secret.name);
     try testing.expectEqualStrings("2000-01-01 00:00:00", output.secret.updated_at);
 
@@ -526,8 +503,7 @@ test "useCase: value \"\" is ValueRequired, a 400 — never a 500 constraint err
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The empty slice would bind as SQL NULL and violate
-    // `value TEXT NOT NULL`, turning a blank form field into a 500.
+    // The empty slice would bind as SQL NULL and violate `value TEXT NOT NULL`, turning a blank form field into a 500.
     try testing.expectError(
         error.ValueRequired,
         useCase(alloc, &ctx.db, .{
@@ -597,8 +573,7 @@ test "useCase: another workspace's secret id is NotFound — 404, never 403" {
         }),
     );
 
-    // A 403 would confirm the id exists, which is exactly what workspace
-    // scoping exists to withhold.
+    // A 403 would confirm the id exists, which is exactly what workspace scoping exists to withhold.
     try testing.expectEqual(@as(u16, 404), statusFor(error.NotFound));
     try testing.expectEqualStrings("secret not found", messageFor(error.NotFound));
 

@@ -1,12 +1,8 @@
-// Format a date string to relative time (e.g., "5m", "2h", "3d", "1w", "6mo", "2y") Accepts: -
-// SQLite datetime UTC format ("YYYY-MM-DD HH:MM:SS") - the canonical wire shape for `updated_at`
-// (Migration 017+).
+// Format a date string to relative time (e.g., "5m", "2h", "3d", "1w", "6mo", "2y") Accepts: -SQLite datetime UTC format ("YYYY-MM-DD HH:MM:SS") - the canonical …
 export const formatRelativeTime = (dateWillBeRelative: string): string => {
   if (!dateWillBeRelative || dateWillBeRelative.trim() === '') return 'now'
 
-  // Migration 082: detect unix-ms shape (digits-only, length >= 10) before falling through to the
-  // SQLite datetime path. The SSE event emit passes the raw unix-ms integer string; the REST GET
-  // path passes the SQLite datetime string. Both must render correctly.
+  // Migration 082: detect unix-ms shape (digits-only, length >= 10) before falling through to the SQLite datetime path.
   const trimmed = dateWillBeRelative.trim()
   if (/^\d{10,}$/.test(trimmed)) {
     const unixMs = Number(trimmed)
@@ -15,7 +11,6 @@ export const formatRelativeTime = (dateWillBeRelative: string): string => {
   }
 
   // SQLite datetime path ("YYYY-MM-DD HH:MM:SS" UTC).
-  // Handle the space -> 'T' separator and explicit 'Z' (UTC).
   const normalizedDate = trimmed.replace(' ', 'T')
   const date = new Date(normalizedDate + 'Z') // Append 'Z' to treat as UTC
 
@@ -27,8 +22,6 @@ export const formatRelativeTime = (dateWillBeRelative: string): string => {
 }
 
 // Shared formatter for the diff-in-ms -> "5m"/"2h"/... path.
-// Extracted so both the SQLite datetime + unix-ms branches share the
-// exact same buckets, formatting, and "now" short-circuit.
 function formatDiff(diffMs: number): string {
   const diffSec = Math.floor(diffMs / 1000)
   const diffMin = Math.floor(diffSec / 60)

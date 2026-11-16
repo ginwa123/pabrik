@@ -4,8 +4,7 @@ import { extractParam } from '../../helpers/extractParam'
 import ToolParameters from './_shared/ToolParameters.vue'
 import { normalizeToolContent } from './_shared/toolOutputParser'
 
-/** ReadCompactedMessages — renders the rich `<read_compacted_messages>` envelope returned by the
- * `read_compacted_messages` tool. */
+/** ReadCompactedMessages — renders the rich `<read_compacted_messages>` envelope returned by the `read_compacted_messages` tool. */
 interface MessageEntry {
   id: string
   role: string
@@ -73,9 +72,7 @@ const displayMode = computed((): string | null => {
   return extractParam(props.parameters, 'mode')
 })
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const isRunning = computed(() => isEmptyContent(props.content) && displayMode.value !== null)
 
@@ -140,8 +137,7 @@ const copyId = async (e: Event, id: string) => {
 const expandedContentIds = ref<Set<string>>(new Set())
 const isContentExpanded = (id: string): boolean => expandedContentIds.value.has(id)
 const toggleContent = (id: string): void => {
-  // Reassign to trigger reactivity (Vue ref<Set> requires a new Set
-  // instance for reactivity to detect the change).
+  // Reassign to trigger reactivity (Vue ref<Set> requires a new Set instance for reactivity to detect the change).
   const next = new Set(expandedContentIds.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)

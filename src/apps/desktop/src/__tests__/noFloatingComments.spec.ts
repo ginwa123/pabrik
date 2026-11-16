@@ -1,6 +1,4 @@
-/**
- * Regression guard for `local/no-floating-comments`. A rule that silently stops
- */
+/** Regression guard for `local/no-floating-comments`. */
 import { describe, expect, it } from 'vitest'
 import { Linter } from 'eslint'
 import tsParser from '@typescript-eslint/parser'
@@ -11,9 +9,7 @@ const linter = new Linter()
 
 const RULE = 'local/no-floating-comments'
 
-/**
- * Lint `code` with ONLY the floating-comment rule enabled and return the
- */
+/** Lint `code` with ONLY the floating-comment rule enabled and return the */
 function lines(code: string, filename = 'probe.ts'): number[] {
   const isVue = filename.endsWith('.vue')
   const messages = linter.verify(
@@ -29,9 +25,7 @@ function lines(code: string, filename = 'probe.ts'): number[] {
       plugins: { local: plugin as never },
       rules: { [RULE]: 'error' },
     },
-    // The filename is REQUIRED: a flat config's `files` array is a matching
-    // filter, so without a path to match against the block is silently
-    // skipped and the rule reports nothing — assertions would pass vacuously.
+    // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a path to match against the block is silently skipped and the rule …
     filename,
   )
   return messages.filter((m) => m.ruleId === RULE).map((m) => m.line as number)
@@ -48,8 +42,7 @@ describe('local/no-floating-comments', () => {
   })
 
   it('reports the split-to-cheat shape: three blocks, blank-separated, then code', () => {
-    // One nine-line comment cut into three three-line blocks so
-    // `local/max-comment-lines` sees three findings instead of one.
+    // One nine-line comment cut into three three-line blocks so `local/max-comment-lines` sees three findings instead of one.
     const code = [
       '// Alias the key rather than mirroring it into a local ref. This used to be `const keyRef =',
       '// ref(initialKey)` plus a `{ immediate: true }` watcher copying `storageKey.value` into it.',
@@ -67,8 +60,7 @@ describe('local/no-floating-comments', () => {
   })
 
   it('reports every block in the chain, not just the first', () => {
-    // Each block is independently guilty: the reader meets all of them before
-    // the code, so all of them are reported.
+    // Each block is independently guilty: the reader meets all of them before the code, so all of them are reported.
     expect(lines('// one\n// two\n\n// three\n// four\nconst x = 1\n')).toEqual([1, 4])
   })
 
@@ -101,9 +93,7 @@ describe('local/no-floating-comments', () => {
   })
 
   it('reports two comment runs separated by one blank line inside a block', () => {
-    // The same split shape as at top level — nesting does not make it legal. An author's paragraph
-    // break inside one logical comment is exactly the shape the rule looks for, because a reader
-    // cannot tell it apart from a comment cut up to dodge the ceiling.
+    // The same split shape as at top level — nesting does not make it legal.
     const code = [
       'function f() {',
       '  // first paragraph',

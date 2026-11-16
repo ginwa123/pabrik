@@ -1,5 +1,4 @@
-/** SkillDetail.vue — the body's outline and find box, and their absence in
- * edit mode where the textarea owns the pane. */
+/** SkillDetail.vue — the body's outline and find box, and their absence in edit mode where the textarea owns the pane. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

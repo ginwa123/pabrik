@@ -1,5 +1,4 @@
-// Tests for the orphan-pabrik-pid reap step in FunctionalHarness.boot(). Zig
-// port of `tests/functional/harness_orphan_reap_test.py`.
+// Tests for the orphan-pabrik-pid reap step in FunctionalHarness.boot().
 
 const std = @import("std");
 const testing = std.testing;
@@ -11,17 +10,11 @@ const Harness = harness.Harness;
 const builtin = @import("builtin");
 const is_windows = builtin.os.tag == .windows;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Spawn a 60-second sleeper in its own process group, like pabrik. The
-/// caller must kill or `wait` it; `Child.kill` is idempotent, so registering
-/// `defer child.kill(io)` is the safe net either way.
+/// Spawn a 60-second sleeper in its own process group, like pabrik.
 fn spawnLongLivedChild() !std.process.Child {
-    // `/bin/sleep` rather than a Python one-liner: the Python version of this
-    // fixture spawned `sys.executable`, which made the Zig port depend on an
-    // interpreter.
+    // `/bin/sleep` rather than a Python one-liner: the Python version of this fixture spawned `sys.executable`, which made the Zig port depend on an interpreter.
     std.Io.Dir.cwd().access(io, "/bin/sleep", .{ .execute = true }) catch {
         std.debug.print("/bin/sleep missing or not executable\n", .{});
         return error.SkipZigTest;
@@ -33,16 +26,14 @@ fn spawnLongLivedChild() !std.process.Child {
     });
 }
 
-/// `kill(pid, 0)` — Python's `_pid_alive`. NOTE: a zombie process reports
-/// alive here (`kill -0` succeeds).
+/// `kill(pid, 0)` — Python's `_pid_alive`.
 fn pidAlive(pid: u32) bool {
     if (is_windows) return true;
     std.posix.kill(@as(std.posix.pid_t, @intCast(pid)), @as(std.posix.SIG, @enumFromInt(0))) catch return false;
     return true;
 }
 
-/// Allocate AND create `<tmpRoot>/pabrik-func-<hex>` — the namespace
-/// `reapOrphanTestPids` actually scans.
+/// Allocate AND create `<tmpRoot>/pabrik-func-<hex>` — the namespace `reapOrphanTestPids` actually scans.
 fn freshOrphanDir() ![]u8 {
     const root = try harness.tmpRoot(gpa);
     defer gpa.free(root);
@@ -71,8 +62,7 @@ fn makeOrphanMarker(dir: []const u8, harness_pid: u32, child_pid: u32) !void {
     try f.writeStreamingAll(io, text);
 }
 
-/// Write arbitrary bytes into `<dir>/.harness.pid` — for the malformed
-/// and empty pidfile cases.
+/// Write arbitrary bytes into `<dir>/.harness.pid` — for the malformed and empty pidfile cases.
 fn writeRawPidfile(dir: []const u8, contents: []const u8) !void {
     const path = try std.fs.path.join(gpa, &.{ dir, ".harness.pid" });
     defer gpa.free(path);
@@ -96,9 +86,7 @@ fn pidfilePath(dir: []const u8) ![]u8 {
     return std.fs.path.join(gpa, &.{ dir, ".harness.pid" });
 }
 
-/// A `Harness` built WITHOUT `boot`, with `dry_run` set directly. Python
-/// reached this state with `monkeypatch.setenv( "PABRIK_FUNCTIONAL_DRY_RUN",
-/// "1")`.
+/// A `Harness` built WITHOUT `boot`, with `dry_run` set directly.
 fn bareDryRunHarness(temp_dir: []const u8) !Harness {
     return .{
         .allocator = gpa,
@@ -119,12 +107,9 @@ fn bareDryRunHarness(temp_dir: []const u8) !Harness {
     };
 }
 
-// ============================================================================
 // Task 1: reapOrphanTestPids kills an orphan child pid + rmtree's its dir
-// ============================================================================
 
-// A stale pidfile whose harness parent is dead → reap kills the child and
-// rmtree's the tempdir.
+// A stale pidfile whose harness parent is dead → reap kills the child and rmtree's the tempdir.
 test "reap_kills_orphan_pabrik_and_removes_dir" {
     var child = try spawnLongLivedChild();
     defer child.kill(io);
@@ -133,8 +118,7 @@ test "reap_kills_orphan_pabrik_and_removes_dir" {
     const child_pid: u32 = @intCast(child.id.?);
     try testing.expect(pidAlive(child_pid)); // child should be alive right after spawn
 
-    // Create a fake orphan tempdir under the OS temp root so the reap
-    // scan finds it. Use the safety substring so isSafeTmp accepts.
+    // Create a fake orphan tempdir under the OS temp root so the reap scan finds it.
     const temp_dir = try freshOrphanDir();
     defer gpa.free(temp_dir);
     defer harness.cleanupExtraDir(io, gpa, temp_dir); // no-op if reaped
@@ -161,8 +145,7 @@ test "reap_kills_orphan_pabrik_and_removes_dir" {
         return error.TestUnexpectedResult;
     };
 
-    // Reap the zombie via the test process — we are the parent, and
-    // `Child.wait` is the only thing that clears it.
+    // Reap the zombie via the test process — we are the parent, and `Child.wait` is the only thing that clears it.
     _ = child.wait(io) catch {};
 
     // Assert: child killed, dir removed, count reported.
@@ -174,9 +157,7 @@ test "reap_kills_orphan_pabrik_and_removes_dir" {
     try testing.expect(!pathExists(temp_dir));
 }
 
-// ============================================================================
 // Task 3: edge cases
-// ============================================================================
 
 // Calling reap twice with no orphans is safe; second call is a no-op.
 test "reap_idempotent_when_no_orphans" {
@@ -190,15 +171,11 @@ test "reap_idempotent_when_no_orphans" {
         std.debug.print("second reap failed: {s}\n", .{@errorName(err)});
         return error.TestUnexpectedResult;
     };
-    // Python asserted `>= 0` on both, which is the real contract: the
-    // scan must never RAISE, whatever it finds. Recorded rather than
-    // asserted so a failure report says what was actually reaped.
+    // Python asserted `>= 0` on both, which is the real contract: the scan must never RAISE, whatever it finds.
     std.debug.print("reap idempotency: first={d} second={d}\n", .{ first, second });
 }
 
-// A pidfile whose harness parent is alive is NOT reaped. This is the
-// cross-xdist safety case: worker A scanning for orphans must NOT kill worker
-// B's live test's child.
+// A pidfile whose harness parent is alive is NOT reaped.
 test "reap_skips_live_harness" {
     var child = try spawnLongLivedChild();
     defer child.kill(io);
@@ -208,8 +185,7 @@ test "reap_skips_live_harness" {
     defer gpa.free(temp_dir);
     defer harness.cleanupExtraDir(io, gpa, temp_dir);
 
-    // Mark our own process (the test runner) as the harness parent — we
-    // are alive, so reap must skip this entry.
+    // Mark our own process (the test runner) as the harness parent — we are alive, so reap must skip this entry.
     const self_pid: u32 = if (is_windows) 0 else @intCast(std.os.linux.getpid());
     try makeOrphanMarker(temp_dir, self_pid, child_pid);
 
@@ -256,9 +232,7 @@ test "reap_skips_empty_pidfile" {
     try testing.expect(pathIsDir(temp_dir));
 }
 
-// ============================================================================
 // Task 2: boot() writes the pidfile and teardown() removes it
-// ============================================================================
 
 // boot() writes `<harness_pid> <pabrik_pid>` to `<tempdir>/.harness.pid`.
 test "boot_writes_pidfile_with_both_pids" {
@@ -310,9 +284,7 @@ test "boot_writes_pidfile_with_both_pids" {
     }
 }
 
-// teardown() removes the pidfile before rmtree'ing the tempdir. Without this,
-// a dry-run teardown would leave the pidfile behind and a subsequent boot
-// would (incorrectly) see the tempdir as orphaned.
+// teardown() removes the pidfile before rmtree'ing the tempdir.
 test "teardown_removes_pidfile" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -331,15 +303,12 @@ test "teardown_removes_pidfile" {
 
     // After teardown, the tempdir is gone (rmtree'd).
     try testing.expect(!pathExists(temp_dir));
-    // No `defer` on `h`: `deinit` freed every string it owns and then
-    // did `self.* = undefined`.
+    // No `defer` on `h`: `deinit` freed every string it owns and then did `self.* = undefined`.
 }
 
-// Under dry_run, teardown skips rmtree but still removes the pidfile so
-// the next boot doesn't reap this entry.
+// Under dry_run, teardown skips rmtree but still removes the pidfile so the next boot doesn't reap this entry.
 test "teardown_dry_run_removes_pidfile" {
-    // `dry_run` is set on the struct rather than through
-    // `PABRIK_FUNCTIONAL_DRY_RUN=1`; see `bareDryRunHarness` for why.
+    // `dry_run` is set on the struct rather than through `PABRIK_FUNCTIONAL_DRY_RUN=1`; see `bareDryRunHarness` for why.
     const temp_dir = try freshOrphanDir();
     defer gpa.free(temp_dir);
     defer harness.cleanupExtraDir(io, gpa, temp_dir);
@@ -356,19 +325,14 @@ test "teardown_dry_run_removes_pidfile" {
     try testing.expect(pathIsDir(temp_dir)); // dry_run keeps the tempdir
     try testing.expect(!pathExists(pidfile)); // dry_run teardown must remove the pidfile
 
-    // Manual cleanup since dry_run skipped rmtree — `cleanupExtraDir` is
-    // gated by `isSafeTmp`, and this path carries `REQUIRED_TMP_SUBSTR`.
+    // Manual cleanup since dry_run skipped rmtree — `cleanupExtraDir` is gated by `isSafeTmp`, and this path carries `REQUIRED_TMP_SUBSTR`.
 }
 
-// ============================================================================
 // Task 4: TIME_WAIT saturation regression (findFreePort uses SO_REUSEADDR)
-// ============================================================================
 
 // findFreePort uses SO_REUSEADDR so it can scan past TIME_WAIT.
 test "find_free_port_picks_time_wait_port" {
-    // Find a port that's currently FREE on this host (avoid the dev's
-    // 8081 and don't assume 8080 is free — earlier tests may have left
-    // it bound).
+    // Find a port that's currently FREE on this host (avoid the dev's 8081 and don't assume 8080 is free — earlier tests may have left it bound).
     var target_port: ?u16 = null;
     {
         var p: u16 = harness.DEFAULT_PORT;
@@ -385,9 +349,7 @@ test "find_free_port_picks_time_wait_port" {
         return error.SkipZigTest;
     };
 
-    // Create a server-side TIME_WAIT on target_port: bind a listener,
-    // accept a connection, close from the server side (which puts the
-    // server's port into TIME_WAIT), then close everything else.
+    // Create a server-side TIME_WAIT on target_port: bind a listener, accept a connection, close from the server side (which puts the server's port into TIME_WAIT) …
     {
         const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(target) };
         var srv = try addr.listen(io, .{ .reuse_address = true });
@@ -400,8 +362,7 @@ test "find_free_port_picks_time_wait_port" {
     // let the kernel register the TIME_WAIT
     std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
 
-    // Sanity: without SO_REUSEADDR, bind() should now FAIL on
-    // target_port (proves we actually have a TIME_WAIT to test against).
+    // Sanity: without SO_REUSEADDR, bind() should now FAIL on target_port (proves we actually have a TIME_WAIT to test against).
     {
         const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(target) };
         if (addr.listen(io, .{})) |leaked| {
@@ -417,8 +378,7 @@ test "find_free_port_picks_time_wait_port" {
         }
     }
 
-    // findFreePort must succeed despite the TIME_WAIT. Use target_port
-    // as the start so it's the first candidate.
+    // findFreePort must succeed despite the TIME_WAIT.
     const found = harness.findFreePort(target) catch |err| {
         std.debug.print("findFreePort({d}) failed: {s}\n", .{ target, @errorName(err) });
         return error.TestUnexpectedResult;
@@ -433,8 +393,7 @@ test "find_free_port_picks_time_wait_port" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never
-    // type-checked.
+    // Body-analysis barrier: an unreferenced function is never type-checked.
     _ = spawnLongLivedChild;
     _ = pidAlive;
     _ = freshOrphanDir;

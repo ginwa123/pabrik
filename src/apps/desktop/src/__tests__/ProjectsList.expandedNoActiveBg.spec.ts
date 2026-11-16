@@ -1,6 +1,4 @@
-/** Lock in the post-revamp contract: the expanded PROJECTS section renders with no background fill.
- * Only the active content item (URL-driven — see WorkspaceItem.activeFromUrl.spec.ts) gets the
- * `--semantic-active-bg` background + violet accent bar. */
+/** Lock in the post-revamp contract: the expanded PROJECTS section renders with no background fill. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -39,8 +37,7 @@ const baseWorkspace = {
 }
 
 function mountList() {
-  // Stub WorkspaceItem so the test focuses on the section header /
-  // body styling — not the items' internal state.
+  // Stub WorkspaceItem so the test focuses on the section header /body styling — not the items' internal state.
   return mount(ProjectsList, {
     props: {
       workspace: baseWorkspace,
@@ -82,9 +79,7 @@ describe('ProjectsList — expanded section has NO active background', () => {
   it('expanded section does NOT paint --semantic-active-bg anywhere', async () => {
     const wrapper = mountList()
     await nextTick()
-    // With no active item, nothing may carry the active background —
-    // the section (header + body) is plain, only the active item row
-    // would be highlighted.
+    // With no active item, nothing may carry the active background — the section (header + body) is plain, only the active item row would be highlighted.
     expect(wrapper.html()).not.toContain('--semantic-active-bg')
     wrapper.unmount()
   })
@@ -92,8 +87,7 @@ describe('ProjectsList — expanded section has NO active background', () => {
   it('section chevron is rotated while expanded (visual cue)', async () => {
     const wrapper = mountList()
     await nextTick()
-    // `chevron-down` already points down, so the expanded state is the
-    // unrotated one and the collapsed state is rotate(-90deg).
+    // `chevron-down` already points down, so the expanded state is the unrotated one and the collapsed state is rotate(-90deg).
     const chevrons = wrapper.findAll('span[style*="rotate(0deg)"]')
     expect(chevrons.length).toBeGreaterThan(0)
     wrapper.unmount()

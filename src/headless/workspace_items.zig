@@ -1,6 +1,4 @@
-//! `pabrik headless workspace-items …` — the project-row backend with no
-//! server and no port. `set-icon` writes through `updateWorkspaceItemIcon` and
-//! re-reads through `getWorkspaceItem`, so stdout is the persisted state.
+//! `pabrik headless workspace-items …` — the project-row backend with no server and no port.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -14,9 +12,7 @@ const workspace_items_delete = pabrikcore.http_handlers.workspace_items_delete;
 const project_model = pabrikcore.ai_mod.project_model;
 const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 
-/// One project row, as the CLI prints it. Deliberately a subset of the HTTP
-/// wire shape: a caller scripting against this needs the identity and the
-/// glyph, not the timestamps.
+/// One project row, as the CLI prints it.
 const ItemDto = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -92,8 +88,7 @@ pub fn run(
     return runWithDb(allocator, backend.io, backend.ctx.db, a);
 }
 
-/// The op table, over a plain `*Db` so a test can drive it against an
-/// in-memory database without booting a backend.
+/// The op table, over a plain `*Db` so a test can drive it against an in-memory database without booting a backend.
 pub fn runWithDb(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -120,13 +115,11 @@ pub fn runWithDb(
         },
 
         .set_icon => {
-            // `--icon ""` is the "Reset to default" write: an empty value
-            // clears the override rather than storing an empty name.
+            // `--icon ""` is the "Reset to default" write: an empty value clears the override rather than storing an empty name.
             const icon: ?[]const u8 = if (a.icon.len == 0) null else a.icon;
             try workspace_items.updateWorkspaceItemIcon(allocator, db, a.item_id, icon);
 
-            // Read back through the getter, not the argument: this is what
-            // makes the printed JSON evidence of persistence.
+            // Read back through the getter, not the argument: this is what makes the printed JSON evidence of persistence.
             const row = (try workspace_items.getWorkspaceItem(allocator, db, a.item_id)) orelse
                 return error.WorkspaceItemNotFound;
             defer row.deinit(allocator);
@@ -253,8 +246,7 @@ test "headless workspace-items: set-icon persists the glyph and list reads it ba
         try testing.expectEqualStrings("tree", parsed.value.object.get("icon").?.string);
     }
 
-    // A SECOND call, through the list path, is the read-back that proves the
-    // write landed in the table rather than in the response builder.
+    // A SECOND call, through the list path, is the read-back that proves the write landed in the table rather than in the response builder.
     const list_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
     defer alloc.free(list_json);
 

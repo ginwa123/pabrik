@@ -10,10 +10,7 @@ enum class NetworkOutcome {
     Failed,
 }
 
-/**
- * One captured request/response pair, the unit the inspector list renders and the
- * unit "copy as cURL"/"replay" rebuild a call from.
- */
+/** One captured request/response pair, the unit the inspector list renders and the unit "copy as cURL"/"replay" rebuild a call from. */
 data class NetworkLogEntry(
     val id: Long,
     val label: String,

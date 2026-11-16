@@ -1,6 +1,4 @@
-/** Behaviour of the `<slash_skills>` parser: what the human typed, what the
- * server appended, and the exact numbers the transcript card puts on screen.
- * The envelope shape is the one `slash_skill_expand.zig` writes. */
+/** Behaviour of the `<slash_skills>` parser: what the human typed, what the server appended, and the exact numbers the transcript card puts on screen. */
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -19,8 +17,7 @@ const BODY_ONE = [
 ].join('\n')
 const BODY_TWO = 'No comments unless the why is non-obvious.'
 
-/** Exactly the block the server appends: a blank line, the tag, one line per
- * entry, then the closing tag — nothing after it. */
+/** Exactly the block the server appends: a blank line, the tag, one line per entry, then the closing tag — nothing after it. */
 const append = (text: string, entries: Array<[string, string]>): string => {
   const block = entries.map(([name, body]) => `<skill name="${name}">${body}</skill>`).join('\n')
   return `${text}\n\n<slash_skills>\n${block}\n</slash_skills>`

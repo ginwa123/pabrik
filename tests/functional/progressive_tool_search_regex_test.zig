@@ -1,6 +1,4 @@
-// Functional tests for `search_tool`'s regex + paging contract. Zig port of
-// `tests/functional/progressive_tool_search_regex_test.py` (same test names,
-// same order).
+// Functional tests for `search_tool`'s regex + paging contract.
 
 const std = @import("std");
 const testing = std.testing;
@@ -12,13 +10,10 @@ const io = testing.io;
 
 const REGISTRY_ROUTE = "/api/agent-tools/registry";
 
-/// The three progressive meta-tools that must always be listed — they
-/// are ordinary tools as far as the registry is concerned.
+/// The three progressive meta-tools that must always be listed — they are ordinary tools as far as the registry is concerned.
 const REQUIRED_META_TOOLS = [_][]const u8{ "search_tool", "view_tool", "use_tool" };
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// `GET /api/agent-tools/registry` indexed by name.
 const Registry = struct {
@@ -104,8 +99,7 @@ fn strLessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .lt;
 }
 
-/// The description for `name`, failing with the registry's sorted name
-/// list if the tool is absent.
+/// The description for `name`, failing with the registry's sorted name list if the tool is absent.
 fn requireDescription(reg: *const Registry, name: []const u8) ![]const u8 {
     if (reg.description(name)) |d| return d;
     const names = reg.sortedNames() catch return error.TestUnexpectedResult;
@@ -119,8 +113,7 @@ fn requireDescription(reg: *const Registry, name: []const u8) ![]const u8 {
     return error.TestUnexpectedResult;
 }
 
-/// `needle` must occur in `desc`. Prints the whole description on
-/// failure — a substring assertion is unreadable without it.
+/// `needle` must occur in `desc`.
 fn expectCarries(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     if (std.mem.indexOf(u8, desc, needle) != null) return;
     std.debug.print(
@@ -130,9 +123,7 @@ fn expectCarries(desc: []const u8, tool: []const u8, needle: []const u8) !void {
     return error.TestUnexpectedResult;
 }
 
-/// The wire `tools[].name` list, in wire order — the Python `names =
-/// [t["name"] for t in parsed["tools"]]`. Owned: each name is duped out of
-/// the parse arena so the caller can compare/print it after `doc.deinit()`.
+/// The wire `tools[].name` list, in wire order — the Python `names = [t["name"] for t in parsed["tools"]]`.
 fn ownedNames(doc: *const harness.Json) ![][]const u8 {
     const tools = doc.array("tools") orelse return error.TestUnexpectedResult;
     const names = try gpa.alloc([]const u8, tools.items.len);
@@ -163,13 +154,10 @@ fn namesContain(names: []const []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// ASCII whitespace, matching Python's `str.strip()` closely enough for
-/// hand-written tool descriptions.
+/// ASCII whitespace, matching Python's `str.strip()` closely enough for hand-written tool descriptions.
 const ASCII_WS = " \t\n\r\x0b\x0c";
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // The model-facing description must say WHAT (regex, literal) and WHY.
 test "search_tool_description_teaches_regex_with_a_reason" {
@@ -190,15 +178,12 @@ test "search_tool_description_teaches_regex_with_a_reason" {
     try expectCarries(desc, "search_tool", "literal: true");
     try expectCarries(desc, "search_tool", "view_tool"); // the existing workflow hint must survive
 
-    // WHY: concrete patterns, one per reason the substring form cannot
-    // serve.
+    // WHY: concrete patterns, one per reason the substring form cannot serve.
     try expectCarries(desc, "search_tool", "^mcp_.*_create"); // the anchored/wildcard example is gone
     try expectCarries(desc, "search_tool", "doc|documentation"); // the alternation example is gone
     // The word-boundary example.
     try expectCarries(desc, "search_tool", "\\bsearch\\b"); // the word-boundary example is gone
-    // The reason itself, in words — the registry carries the tool-level
-    // description (the `query` PARAM description is not exposed by any HTTP
-    // route, so its wording is locked by the inline schema tests instead).
+    // The reason itself, in words — the registry carries the tool-level description (the `query` PARAM description is not exposed by any HTTP route, so its wording …
     try expectCarries(desc, "search_tool", "one pattern reaches a capability spelled several ways");
 }
 
@@ -280,9 +265,7 @@ test "registry_payload_is_json_clean_and_search_tool_stayed_in_it" {
             else => return error.TestUnexpectedResult,
         };
 
-        // `t["description"].strip() == t["description"]` — a leading or
-        // trailing blank is the fingerprint of a `\` continued line in
-        // the hand-written description that swallowed its indent.
+        // `t["description"].strip() == t["description"]` — a leading or trailing blank is the fingerprint of a `\` continued line in the hand-written description that …
         const trimmed = std.mem.trim(u8, desc, ASCII_WS);
         if (!std.mem.eql(u8, trimmed, desc)) {
             std.debug.print(
@@ -292,9 +275,7 @@ test "registry_payload_is_json_clean_and_search_tool_stayed_in_it" {
             return error.TestUnexpectedResult;
         }
 
-        // `"\x08" not in t["description"]` — a stray backspace, which
-        // a JSON round-trip would happily decode back out of a `\b`
-        // that was meant to be a literal `\b` in a regex example.
+        // `"\x08" not in t["description"]` — a stray backspace, which a JSON round-trip would happily decode back out of a `\b` that was meant to be a literal `\b` in a …
         if (std.mem.indexOfScalar(u8, desc, 0x08) != null) {
             std.debug.print(
                 "stray backspace in {s} description\n",

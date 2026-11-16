@@ -45,9 +45,7 @@ export function useDesignViewport(deps: Deps) {
   const zoomOut = (): void => setZoom(zoom.value - ZOOM_STEP)
   const zoomReset = (): void => setZoom(1.0)
 
-  // Fit-to-viewport: compute the zoom level that makes the union bbox of all elements fit inside the
-  // scroll container with a small margin, then scroll the container so the elements appear centered.
-  // Mirrors Figma's Shift+1 ("Zoom to fit").
+  // Fit-to-viewport: compute the zoom level that makes the union bbox of all elements fit inside the scroll container with a small margin, then scroll the …
   const ZOOM_FIT_MARGIN = 48 // px of padding around the fitted canvas
   const ZOOM_FIT_DEFAULT_W = 1440
   const ZOOM_FIT_DEFAULT_H = 1024
@@ -80,9 +78,7 @@ export function useDesignViewport(deps: Deps) {
     const zoomY = ch / contentH
     const fit = Math.min(zoomX, zoomY)
     setZoom(fit)
-    // Center after the scale change so the elements appear centered. The scroll math mirrors the
-    // Ctrl+wheel handler, but offset by the elements' minX/minY (the canvas div is auto-grown to wrap
-    // elements, so the scroll origin is the bbox top-left, not 0,0).
+    // Center after the scale change so the elements appear centered.
     requestAnimationFrame(() => {
       const scaledW = contentW * zoom.value
       const scaledH = contentH * zoom.value
@@ -104,14 +100,11 @@ export function useDesignViewport(deps: Deps) {
   let pinchStartZoom: number | null = null
 
   const onPinchPointerDown = (event: PointerEvent): void => {
-    // Run the Space-pan handler first — it's a no-op when Space isn't held, and we want both gestures
-    // to coexist on the same element (chained instead of multiple @pointerdown listeners because Vue
-    // 3 templates only bind one listener per event per element).
+    // Run the Space-pan handler first — it's a no-op when Space isn't held, and we want both gestures to coexist on the same element (chained instead of multiple …
     startCanvasPan(event)
     // Mouse can't pinch (single-pointer by definition). Pen / touch only.
     if (event.pointerType === 'mouse') return
-    // Don't pinch-zoom when pinching on a design element — let the
-    // element's own pointerdown handler take the gesture for drag.
+    // Don't pinch-zoom when pinching on a design element — let the element's own pointerdown handler take the gesture for drag.
     const targetEl = event.target as HTMLElement | null
     if (targetEl?.closest('[data-design-element]')) return
     const target = event.currentTarget as HTMLElement | null
@@ -136,8 +129,7 @@ export function useDesignViewport(deps: Deps) {
     p.currentX = event.clientX
     p.currentY = event.clientY
     if (pinchPointers.size < 2 || pinchStartDistance == null || pinchStartZoom == null) return
-    // Two fingers starting at the same point gives distance=0; division
-    // would explode. Treat as no-op until the user actually moves a finger.
+    // Two fingers starting at the same point gives distance=0; division would explode.
     if (pinchStartDistance <= 0) return
     const [p1, p2] = [...pinchPointers.values()] as [PinchPointer, PinchPointer]
     const currentDistance = Math.hypot(p2.currentX - p1.currentX, p2.currentY - p1.currentY)
@@ -158,9 +150,7 @@ export function useDesignViewport(deps: Deps) {
     }
   }
 
-  // Ctrl+wheel zooms in/out at the cursor position. The plain wheel
-  // is left alone (it scrolls the canvas container as usual — matches
-  // Figma / Miro / VS Code). Shift wheel zooms ×4 faster.
+  // Ctrl+wheel zooms in/out at the cursor position.
   const handleCanvasWheel = (event: WheelEvent): void => {
     if (!event.ctrlKey && !event.metaKey) return
     event.preventDefault()
@@ -168,8 +158,7 @@ export function useDesignViewport(deps: Deps) {
     const speed = event.shiftKey ? 4 : 1
     const next = zoom.value + direction * ZOOM_WHEEL_STEP * speed
 
-    // Anchor the zoom at the cursor position so zoom-in feels natural (the point under the cursor
-    // stays under the cursor after the scale).
+    // Anchor the zoom at the cursor position so zoom-in feels natural (the point under the cursor stays under the cursor after the scale).
     const container = event.currentTarget as HTMLElement | null
     if (!container) {
       setZoom(next)
@@ -187,9 +176,7 @@ export function useDesignViewport(deps: Deps) {
     container.scrollTop = cursorY * ratio - (event.clientY - rect.top)
   }
 
-  // Restore zoom on design-item change (different localStorage key). Mount covers the initial item
-  // (the parent keys this component by item id, so item switches remount); the prev-id guard covers
-  // itemId prop changes on a reused instance.
+  // Restore zoom on design-item change (different localStorage key).
   const prevZoomItemId = ref(effectiveItemId.value)
   onMounted(() => {
     prevZoomItemId.value = effectiveItemId.value
@@ -204,42 +191,31 @@ export function useDesignViewport(deps: Deps) {
 
   // ─── Handlers ──────────────────────────────────────────────────────────
   const handleCanvasClick = (event: MouseEvent): void => {
-    // In Preview mode, canvas clicks are user-typed values inside iframes or pan gestures — neither
-    // should clear the selection.
+    // In Preview mode, canvas clicks are user-typed values inside iframes or pan gestures — neither should clear the selection.
     if (isPreviewMode.value) return
-    // If we just finished a pan-drag (Space + drag), swallow the click so it doesn't deselect the
-    // active element. The browser dispatches a synthetic click after pointerup; without this guard,
-    // every pan ends with selection-clear.
+    // If we just finished a pan-drag (Space + drag), swallow the click so it doesn't deselect the active element.
     if (isPanning.value) return
-    // Only clear selection when clicking the canvas itself (not an element child). The DesignElement
-    // child events fire before this and they stopPropagation on their pointerdown — so this handler
-    // is only called for the canvas background.
+    // Only clear selection when clicking the canvas itself (not an element child).
     if ((event.target as HTMLElement | null)?.closest('[data-design-element]')) {
       return
     }
     selectedIds.value = new Set()
   }
 
-  // Chunk 3 (right-click group menu plan): per-instance context menu
-  // for canvas right-clicks. Preview mode silently ignores right-clicks
-  // (Figma parity: the menu is editor-only).
+  // Chunk 3 (right-click group menu plan): per-instance context menu for canvas right-clicks.
   function handleCanvasContextMenu(event: MouseEvent): void {
     if (isPreviewMode.value) return
-    // Open with the current selection — right-click on empty canvas acts on whatever was previously
-    // selected. The LayersPanel owns its own context-menu instance for row-level right-clicks; this
-    // one is canvas-only.
+    // Open with the current selection — right-click on empty canvas acts on whatever was previously selected.
     contextMenu.open(event, Array.from(selectedIds.value))
   }
 
-  // True while the user is mid-drag with Space held. Gates the
-  // canvas-click deselection guard above.
+  // True while the user is mid-drag with Space held.
   const isPanning = ref(false)
 
   // Pointer-drag pan. Fires on the canvas scroll container; only does anything when Space is held.
   const startCanvasPan = (event: PointerEvent): void => {
     if (!isSpacePressed.value) return
-    // Primary button only — middle / right clicks do different things
-    // (autoscroll, context menu) on some browsers.
+    // Primary button only — middle / right clicks do different things (autoscroll, context menu) on some browsers.
     if (event.button !== 0) return
     const target = event.currentTarget as HTMLElement | null
     if (!target) return
@@ -248,17 +224,13 @@ export function useDesignViewport(deps: Deps) {
     document.body.style.cursor = 'grabbing'
 
     // Snapshot the scroll position + pointer position at drag start.
-    // The move handler subtracts the cursor delta from the original
-    // scroll position so the canvas appears to follow the cursor.
     const startScrollLeft = target.scrollLeft
     const startScrollTop = target.scrollTop
     const startClientX = event.clientX
     const startClientY = event.clientY
 
     const onMove = (e: PointerEvent): void => {
-      // cursor delta in screen-px = scroll delta in scroll-px
-      // (no zoom division needed — scrollLeft / scrollTop are in
-      // unscaled coords; the inner div's scale() does not affect them).
+      // cursor delta in screen-px = scroll delta in scroll-px (no zoom division needed — scrollLeft / scrollTop are in unscaled coords; the inner div's scale() does …
       const dx = e.clientX - startClientX
       const dy = e.clientY - startClientY
       target.scrollLeft = startScrollLeft - dx
@@ -269,8 +241,7 @@ export function useDesignViewport(deps: Deps) {
         target.releasePointerCapture(e.pointerId)
       }
       isPanning.value = false
-      // Restore grab cursor only if Space is still held; otherwise
-      // clear back to the default cursor.
+      // Restore grab cursor only if Space is still held; otherwise clear back to the default cursor.
       document.body.style.cursor = isSpacePressed.value ? 'grab' : ''
       target.removeEventListener('pointermove', onMove)
       target.removeEventListener('pointerup', onUp)
@@ -282,9 +253,7 @@ export function useDesignViewport(deps: Deps) {
   }
 
   onUnmounted(() => {
-    // Clear pinch-zoom state — if pointers are still active (rare,
-    // but possible across the chat-toggle unmount/mount cycle), the
-    // next mount would otherwise see stale entries.
+    // Clear pinch-zoom state — if pointers are still active (rare, but possible across the chat-toggle unmount/mount cycle), the next mount would otherwise see stale …
     pinchPointers.clear()
     pinchStartDistance = null
     pinchStartZoom = null

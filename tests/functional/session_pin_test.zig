@@ -1,5 +1,4 @@
-// `POST /api/llm/session/:id/pin` + `POST /api/llm/session/reorder_pinned` —
-// pinned sessions for the PINNED section above RECENT (Migration 104).
+// `POST /api/llm/session/:id/pin` + `POST /api/llm/session/reorder_pinned` — pinned sessions for the PINNED section above RECENT (Migration 104).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +8,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn ensureSession(h: *Harness, sid: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{sid});
@@ -74,9 +71,7 @@ fn fetchList(h: *Harness) !harness.Response {
     });
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 test "pin_returns_200_and_list_carries_is_pinned" {
     try harness.requirePabrikBin(io, gpa);

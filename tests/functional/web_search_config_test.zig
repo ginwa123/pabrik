@@ -1,5 +1,4 @@
-// Functional tests for the `web_search` provider config (plan
-// 2026-10-02-web-search-tool.md, matrix rows 72-73 + the mask contract).
+// Functional tests for the `web_search` provider config (plan 2026-10-02-web-search-tool.md, matrix rows 72-73 + the mask contract).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,19 +7,14 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures / helpers (mirrors config_tools_test.py's shared preamble)
-// ============================================================================
 
-/// `config_tools_test.PROFILE` — a profile-only config so the PUT
-/// live-reload validates (backfill provides the credentials
-/// `validate()` requires).
+/// `config_tools_test.PROFILE` — a profile-only config so the PUT live-reload validates (backfill provides the credentials `validate()` requires).
 const PROFILE_JSON =
     \\{"model":"tools-model","base_url":"https://tools.example.com","api_key":"tools-key","url_style":"openai"}
 ;
 
-/// Provider ENTRIES, not whole objects: `settingsBody` wraps them in the
-/// `web_search` braces itself (see `webSearchObject`).
+/// Provider ENTRIES, not whole objects: `settingsBody` wraps them in the `web_search` braces itself (see `webSearchObject`).
 const TINYFISH_ENTRY =
     \\"tinyfish":{
     \\  "url": "https://api.search.tinyfish.ai",
@@ -41,8 +35,7 @@ const BRAVE_ENTRY =
 const TINYFISH_KEY = "sk-tinyfish-secret-value";
 const BRAVE_KEY = "sk-brave-secret-value";
 
-/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from any
-/// tab, with the `web_search` marker included verbatim.
+/// The EXACT whole-config shape `PabrikSettings.vue` sends on Save from any tab, with the `web_search` marker included verbatim.
 fn settingsBody(web_search_json: ?[]const u8) ![]u8 {
     var buf: std.Io.Writer.Allocating = .init(gpa);
     errdefer buf.deinit();
@@ -84,8 +77,7 @@ fn webSearchObject(entries: []const []const u8) ![]u8 {
     return buf.toOwnedSlice();
 }
 
-/// Boot with the stub LLM profile already on disk — the Zig equivalent of
-/// `preboot(_base_config(...))` (see the header note).
+/// Boot with the stub LLM profile already on disk — the Zig equivalent of `preboot(_base_config(...))` (see the header note).
 fn bootPrebooted() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
 }
@@ -100,14 +92,12 @@ fn getConfig(h: *Harness) !harness.Response {
     return h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
 }
 
-/// The config.json the running binary reads and writes, plus its parsed
-/// form. Both are owned so the document outlives the bytes it came from.
+/// The config.json the running binary reads and writes, plus its parsed form.
 const DiskConfig = struct {
     bytes: []u8,
     doc: harness.Json,
 
-    /// doc FIRST, then bytes: `doc.deinit()` reads nothing, but a future
-    /// accessor might, and the free order here is the safe one either way.
+    /// doc FIRST, then bytes: `doc.deinit()` reads nothing, but a future accessor might, and the free order here is the safe one either way.
     fn deinit(self: *DiskConfig) void {
         self.doc.deinit();
         gpa.free(self.bytes);
@@ -152,9 +142,7 @@ fn webSearchMap(doc: *const harness.Json) !std.json.ObjectMap {
     };
 }
 
-/// One provider entry inside a `web_search` map. `std.json.ObjectMap` is an
-/// ArrayHashMap: it has `get`, not the `Json`-wrapper's `object(key)` sugar,
-/// so the value is unwrapped here.
+/// One provider entry inside a `web_search` map.
 fn provider(map: std.json.ObjectMap, name: []const u8) !std.json.ObjectMap {
     const v = map.get(name) orelse {
         std.debug.print("web_search has no provider '{s}'\n", .{name});
@@ -200,9 +188,7 @@ fn expectNotContains(haystack: []const u8, needle: []const u8, what: []const u8)
     }
 }
 
-/// The masked `key` of a provider in a GET body, owned. Python read it
-/// straight out of the parsed response; a helper cannot return a `Json`,
-/// so this returns the string.
+/// The masked `key` of a provider in a GET body, owned.
 fn maskedKey(h: *Harness, provider_name: []const u8) ![]u8 {
     var r = try getConfig(h);
     defer r.deinit();
@@ -214,9 +200,7 @@ fn maskedKey(h: *Harness, provider_name: []const u8) ![]u8 {
     return gpa.dupe(u8, key);
 }
 
-// ============================================================================
 // (a) PUT persists and GET reflects
-// ============================================================================
 
 test "web_search_round_trips_through_put_and_get" {
     try harness.requirePabrikBin(io, gpa);
@@ -238,8 +222,7 @@ test "web_search_round_trips_through_put_and_get" {
         var doc = try r.json();
         defer doc.deinit();
 
-        // Python: `r.get("success") in (True, None) or "error" not in r
-        // or not r.get("error")`.
+        // Python: `r.get("success") in (True, None) or "error" not in r or not r.get("error")`.
         const success = doc.get("success");
         const success_ok = success == null or switch (success.?) {
             .bool => |b| b,
@@ -288,12 +271,9 @@ test "web_search_round_trips_through_put_and_get" {
     }
 }
 
-// ============================================================================
 // (b) GET MASKS the credential
-// ============================================================================
 
-// The single most important assertion in this file: the credential
-// must not appear anywhere in the GET response body.
+// The single most important assertion in this file: the credential must not appear anywhere in the GET response body.
 test "get_masks_the_api_key" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootPrebooted();
@@ -316,9 +296,7 @@ test "get_masks_the_api_key" {
         var r = try getConfig(&h);
         defer r.deinit();
 
-        // The raw body, not a parsed field: the credential must not
-        // appear ANYWHERE, including in a field the assertions below do
-        // not look at.
+        // The raw body, not a parsed field: the credential must not appear ANYWHERE, including in a field the assertions below do not look at.
         try expectNotContains(r.body, TINYFISH_KEY, "the real TinyFish key leaked through GET");
         try expectNotContains(r.body, BRAVE_KEY, "the real Brave key leaked through GET");
 
@@ -327,16 +305,13 @@ test "get_masks_the_api_key" {
         const map = try webSearchMap(&doc);
         const tinyfish = try provider(map, "tinyfish");
 
-        // Masked, but still recognisable as a mask so the Settings form
-        // can round-trip it back as "unchanged".
+        // Masked, but still recognisable as a mask so the Settings form can round-trip it back as "unchanged".
         const key = try providerStr(tinyfish, "key");
         try expectContains(key, "\u{2026}", "the tinyfish key mask");
     }
 }
 
-// A 6-character key masked as `abc…xyz` would leak 6 of 6 characters —
-// worse than leaking none. Anything under 10 chars gets a fixed-length
-// marker instead.
+// A 6-character key masked as `abc…xyz` would leak 6 of 6 characters — worse than leaking none.
 test "get_masks_a_short_key_without_leaking_it_entirely" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootPrebooted();
@@ -372,8 +347,7 @@ test "get_masks_a_short_key_without_leaking_it_entirely" {
             std.debug.print("the short key came back in cleartext\n", .{});
             return error.TestUnexpectedResult;
         }
-        // Python's `len()` counts CODE POINTS, `key.len` counts UTF-8 BYTES —
-        // and the short mask is four U+2022 BULLETs, i.e. 8 bytes.
+        // Python's `len()` counts CODE POINTS, `key.len` counts UTF-8 BYTES — and the short mask is four U+2022 BULLETs, i.e. 8 bytes.
         if (try std.unicode.utf8CountCodepoints(key) > 8) {
             std.debug.print("mask should not reveal the length: '{s}'\n", .{key});
             return error.TestUnexpectedResult;
@@ -381,13 +355,9 @@ test "get_masks_a_short_key_without_leaking_it_entirely" {
     }
 }
 
-// ============================================================================
 // (c) A Settings save from ANOTHER tab must not erase the providers
-// ============================================================================
 
-// The PUT-strip footgun. If `web_search` is missing from the write
-// struct, every save from another Settings tab silently deletes the
-// user's API key — with no error anywhere.
+// The PUT-strip footgun.
 test "settings_save_without_web_search_does_not_erase_it" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootPrebooted();
@@ -425,9 +395,7 @@ test "settings_save_without_web_search_does_not_erase_it" {
     }
 }
 
-// The Settings form echoes the MASK on save. If PUT stored that, the
-// user would overwrite their own credential with four dots the first time
-// they changed an unrelated setting.
+// The Settings form echoes the MASK on save.
 test "masked_key_round_trips_back_as_unchanged" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootPrebooted();
@@ -479,13 +447,9 @@ test "masked_key_round_trips_back_as_unchanged" {
     }
 }
 
-// ============================================================================
 // (d) A malformed provider is a 400, not a silent drop
-// ============================================================================
 
-/// `PUT` a provider named `broken` whose body is `provider_json`, and assert
-/// the 400 names both the provider and `expect_in_message`, and that nothing
-/// reached disk.
+/// `PUT` a provider named `broken` whose body is `provider_json`, and assert the 400 names both the provider and `expect_in_message`, and that nothing reached …
 fn expectMalformedRejected(h: *Harness, provider_json: []const u8, expect_in_message: []const u8) !void {
     const body = try settingsBody(provider_json);
     defer gpa.free(body);
@@ -572,8 +536,7 @@ test "malformed_provider_missing_curl" {
     , "curl");
 }
 
-// parametrize row 6: a key configured but no {key} in the template —
-// the credential would be silently dropped.
+// parametrize row 6: a key configured but no {key} in the template — the credential would be silently dropped.
 test "malformed_provider_curl_without_key_placeholder" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootPrebooted();
@@ -599,12 +562,9 @@ test "malformed_provider_curl_not_get" {
     , "GET");
 }
 
-// ============================================================================
 // (e) An empty key is OMITTED, never stored as ""
-// ============================================================================
 
-// `SqliteBackend.exec` binds `""` as SQL NULL, and an empty string is
-// exactly the shape that survives a JSON round-trip while meaning unset.
+// `SqliteBackend.exec` binds `""` as SQL NULL, and an empty string is exactly the shape that survives a JSON round-trip while meaning unset.
 test "empty_key_is_omitted_not_stored_as_empty_string" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootPrebooted();
@@ -636,9 +596,7 @@ test "empty_key_is_omitted_not_stored_as_empty_string" {
     }
 }
 
-// ============================================================================
 // (f) GET reports an absent key as absent, not as an empty map
-// ============================================================================
 
 test "get_reports_web_search_null_when_absent" {
     try harness.requirePabrikBin(io, gpa);
@@ -652,8 +610,7 @@ test "get_reports_web_search_null_when_absent" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // The key must be PRESENT so the frontend can tell 'not configured'
-    // from 'field never shipped'.
+    // The key must be PRESENT so the frontend can tell 'not configured' from 'field never shipped'.
     const ws = doc.get("web_search") orelse {
         std.debug.print(
             "the key must be PRESENT so the frontend can tell 'not configured' " ++

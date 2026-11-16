@@ -1,6 +1,4 @@
-/** Behavioural tests for the D2 URL builder. Kroki's GET form is base64url(zlib-deflate(source)) —
- * the assertions decode the encoded string back, so a changed alphabet or a switch to raw deflate
- * fails here instead of as a 400 in the transcript. */
+/** Behavioural tests for the D2 URL builder. */
 import { describe, expect, it } from 'vitest'
 import { D2_DEFAULT_SERVER, d2SvgUrl, encodeD2, resolveD2Server } from '../d2'
 

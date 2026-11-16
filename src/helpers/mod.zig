@@ -23,9 +23,7 @@ pub const xmlUnescape = @import("xml_unescape.zig").xmlUnescape;
 const std = @import("std");
 const builtin = @import("builtin");
 
-// === extern "c" declarations === Zig 0.16's `std.c` exposes some libc
-// functions (fopen, fread, fclose, access) on all platforms but NOT others
-// (fseek, ftell, faccessat, stat).
+// === extern "c" declarations ===
 
 /// `int fseek(FILE *stream, long offset, int whence);` (libc).
 extern "c" fn fseek(stream: *std.c.FILE, offset: Clong, whence: c_int) c_int;
@@ -34,7 +32,6 @@ extern "c" fn fseek(stream: *std.c.FILE, offset: Clong, whence: c_int) c_int;
 extern "c" fn ftell(stream: *std.c.FILE) Clong;
 
 /// `int gettimeofday(struct timeval *tv, struct timezone *tz);` (POSIX).
-/// On Windows, the UCRT provides this function too.
 extern "c" fn gettimeofday(tv: ?*PosixTimeval, tz: ?*anyopaque) c_int;
 
 /// `struct timeval { time_t tv_sec; suseconds_t tv_usec; }` (POSIX/UCRT).
@@ -49,9 +46,7 @@ const PosixTimeval = extern struct {
     usec: Usect,
 };
 
-/// `long` (C `long`, usually 64-bit on Linux/macOS 64-bit, 32-bit on Windows
-/// 64-bit). Matches libc's `long` and `time_t` sizes on all supported
-/// platforms.
+/// `long` (C `long`, usually 64-bit on Linux/macOS 64-bit, 32-bit on Windows 64-bit).
 pub const Clong = if (@bitSizeOf(usize) == 64 and builtin.os.tag != .windows) i64 else i32;
 
 /// `void GetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime);` (Win32).
@@ -60,39 +55,30 @@ extern "kernel32" fn GetSystemTimeAsFileTime(lp_system_time_as_file_time: *std.o
 /// `VOID Sleep(DWORD dwMilliseconds);` (Win32 kernel32).
 extern "kernel32" fn Sleep(dw_milliseconds: u32) callconv(.winapi) void;
 
-/// Cross-platform current working directory getter (no `io: std.Io`
-/// required).
+/// Cross-platform current working directory getter (no `io: std.Io` required).
 pub fn getcwd(buf: []u8) ?[]u8 {
     const result = std.c.getcwd(buf.ptr, buf.len);
     if (result == null) return null;
-    // std.c.getcwd writes a NUL-terminated string. Slice up to (but not
-    // including) the NUL. If the buffer is somehow full with no NUL,
-    // fall back to the full buffer length.
+    // std.c.getcwd writes a NUL-terminated string.
     const p: [*:0]u8 = @ptrCast(result.?);
     const len = std.mem.indexOfScalar(u8, p[0..buf.len], 0) orelse buf.len;
     return p[0..len];
 }
 
-/// Returns true if the file at `path` exists. `std.fs.accessAbsolute` was
-/// REMOVED in Zig 0.16.
+/// Returns true if the file at `path` exists.
 pub fn fileExists(path: []const u8) bool {
     var buf: [std.fs.max_path_bytes:0]u8 = undefined;
     if (path.len >= buf.len) return false;
     @memcpy(buf[0..path.len], path);
     buf[path.len] = 0;
-    // F_OK == 0 (test for existence) — defined in <unistd.h> on POSIX
-    // and via UCRT on Windows. We pass 0 directly because std.c.F_OK
-    // is only defined for Linux/emscripten.
+    // F_OK == 0 (test for existence) — defined in <unistd.h> on POSIX and via UCRT on Windows.
     const rc = std.c.access(&buf, 0);
     return rc == 0;
 }
 
-/// Reads the entire file at `path` into a heap-allocated buffer. Returns the
-/// contents (caller must `free`); returns error if the file does not exist or
-/// cannot be read.
+/// Reads the entire file at `path` into a heap-allocated buffer.
 pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    // Path must be NUL-terminated for libc fopen. Use a stack buffer
-    // (max_path_bytes) to avoid an extra allocation just for the NUL.
+    // Path must be NUL-terminated for libc fopen.
     var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
     if (path.len >= path_buf.len) return error.PathTooLong;
     @memcpy(path_buf[0..path.len], path);
@@ -101,9 +87,7 @@ pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     const f = std.c.fopen(&path_buf, "rb") orelse return error.FileNotFound;
     defer _ = std.c.fclose(f);
 
-    // SEEK_END and SEEK_SET are defined as 2 and 0 respectively on both
-    // POSIX and Windows (UCRT). We pass the literal values to avoid
-    // pulling in the platform-specific std.c.SEEK_* enum.
+    // SEEK_END and SEEK_SET are defined as 2 and 0 respectively on both POSIX and Windows (UCRT).
     if (fseek(f, 0, 2) != 0) return error.ReadFailed; // SEEK_END = 2
     const size_signed = ftell(f);
     if (size_signed < 0) return error.ReadFailed;
@@ -120,8 +104,7 @@ pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return buf;
 }
 
-/// Returns the current Unix timestamp in seconds (i64). `std.time.timestamp`
-/// was REMOVED in Zig 0.16.
+/// Returns the current Unix timestamp in seconds (i64).
 pub fn unixTimestamp() i64 {
     return switch (builtin.os.tag) {
         .linux, .macos => unixTimestampPosix(),
@@ -143,16 +126,13 @@ fn unixTimestampWindows() i64 {
     // Combine low + high 32 bits into u64 (little-endian on Windows).
     const ticks: u64 = (@as(u64, ft.dwHighDateTime) << 32) | @as(u64, ft.dwLowDateTime);
     // 100-ns ticks → seconds: divide by 10_000_000.
-    // Then subtract the 1601→1970 offset (11_644_473_600 seconds).
     const seconds_since_1601: u64 = ticks / 10_000_000;
     const unix_offset: u64 = 11_644_473_600;
     if (seconds_since_1601 < unix_offset) return 0;
     return @intCast(seconds_since_1601 - unix_offset);
 }
 
-/// Cross-platform nanosecond-precision unix timestamp. Returns nanoseconds
-/// since 1970-01-01 UTC as `i128`. Used by code that needs high-resolution
-/// IDs (e.g.
+/// Cross-platform nanosecond-precision unix timestamp.
 pub fn unixTimestampNanos() i128 {
     return switch (builtin.os.tag) {
         .linux, .macos => unixTimestampNanosPosix(),
@@ -168,24 +148,18 @@ fn unixTimestampNanosPosix() i128 {
     return @as(i128, ts.sec) * std.time.ns_per_s + @as(i128, ts.nsec);
 }
 
-/// Pure Win32 FILETIME → unix-nanos conversion (platform-independent so it is
-/// unit-testable on any host; the Windows-only part is just the
-/// `GetSystemTimeAsFileTime` call in `unixTimestampNanosWindows`).
+/// Pure Win32 FILETIME → unix-nanos conversion (platform-independent so it is unit-testable on any host; the Windows-only part is just the …
 fn filetimeTicksToUnixNanos(ticks: u128) i128 {
     const ns_since_1601: i128 = @intCast(ticks * 100);
     const ns_1601_to_1970: i128 = 11_644_473_600 * std.time.ns_per_s;
     return ns_since_1601 - ns_1601_to_1970;
 }
 
-/// Process-global, NOT thread-local: the value feeds PRIMARY KEYs, and
-/// `GetSystemTimeAsFileTime` ticks at ~15.6 ms, so two threads read the same
-/// FILETIME routinely — a thread-local counter minted duplicate ids.
+/// Process-global, NOT thread-local: the value feeds PRIMARY KEYs, and `GetSystemTimeAsFileTime` ticks at ~15.6 ms, so two threads read the same FILETIME …
 var unixNanosWindowsMu: std.atomic.Mutex = .unlocked;
 var unixNanosWindowsLast: i128 = 0;
 
-/// Strictly increasing, process-wide: `candidate` when the clock moved
-/// forward, otherwise one past the last value handed out. Platform-independent
-/// so the uniqueness contract is testable on any host.
+/// Strictly increasing, process-wide: `candidate` when the clock moved forward, otherwise one past the last value handed out.
 fn nextUniqueNanos(candidate: i128) i128 {
     while (!unixNanosWindowsMu.tryLock()) std.atomic.spinLoopHint();
     defer unixNanosWindowsMu.unlock();
@@ -202,8 +176,7 @@ fn unixTimestampNanosWindows() i128 {
     return nextUniqueNanos(filetimeTicksToUnixNanos(ticks));
 }
 
-/// Cross-platform monotonic nanosecond timestamp. Returns a non-negative
-/// `u64` value that increases monotonically with wall-clock time.
+/// Cross-platform monotonic nanosecond timestamp.
 pub fn monotonicTimestampNanos() u64 {
     return switch (builtin.os.tag) {
         .linux, .macos => monotonicTimestampNanosPosix(),
@@ -216,9 +189,7 @@ fn monotonicTimestampNanosPosix() u64 {
     var ts: PosixTimespec = undefined;
     const rc = clock_gettime(CLOCK_MONOTONIC, &ts);
     if (rc != 0) {
-        // clock_gettime with a valid per-OS CLOCK_MONOTONIC should never
-        // fail; if it somehow does, fall back to CLOCK_REALTIME rather than
-        // reading an undefined timespec (@intCast would panic on the garbage
+        // clock_gettime with a valid per-OS CLOCK_MONOTONIC should never fail; if it somehow does, fall back to CLOCK_REALTIME rather than reading an undefined timespec …
         var wall: PosixTimespec = undefined;
         if (clock_gettime(CLOCK_REALTIME, &wall) != 0) return 0;
         return @as(u64, @intCast(wall.sec)) * std.time.ns_per_s + @as(u64, @intCast(wall.nsec));
@@ -231,16 +202,13 @@ fn monotonicTimestampNanosWindows() u64 {
     var freq: std.os.windows.LARGE_INTEGER = undefined;
     _ = std.os.windows.ntdll.RtlQueryPerformanceCounter(&counter);
     _ = std.os.windows.ntdll.RtlQueryPerformanceFrequency(&freq);
-    // Convert ticks to ns: ns = ticks * 1e9 / freq. Both inputs are strictly
-    // positive after a successful RtlQuery call, so the unsigned math is
-    // safe.
+    // Convert ticks to ns: ns = ticks * 1e9 / freq.
     const ns_u128: u128 = @as(u128, @intCast(counter)) * 1_000_000_000;
     const freq_u128: u128 = @as(u128, @intCast(freq));
     return @intCast(@divTrunc(ns_u128, freq_u128));
 }
 
-/// Returns the current UTC time as an ISO-8601 string (`"2026-07-15
-/// 19:43:09"`).
+/// Returns the current UTC time as an ISO-8601 string (`"2026-07-15 19:43:09"`).
 pub fn currentTimeIsoLocal(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     const ts = std.Io.Clock.real.now(io); // wall-clock timestamp
     const ns_i128 = ts.nanoseconds; // guess — compiler will confirm/correct field name
@@ -270,8 +238,7 @@ pub fn currentTimeIsoLocal(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     return allocator.dupe(u8, formatted);
 }
 
-/// Cross-platform millisecond-precision sleep that doesn't require `io:
-/// std.Io`.
+/// Cross-platform millisecond-precision sleep that doesn't require `io
 pub fn sleepMillis(ms: u32) void {
     switch (builtin.os.tag) {
         .linux, .macos => {
@@ -282,8 +249,7 @@ pub fn sleepMillis(ms: u32) void {
             _ = nanosleep(&ts, null);
         },
         .windows => {
-            // The extern Sleep declared at module scope above. Resolves
-            // against kernel32.dll (always loaded on Windows).
+            // The extern Sleep declared at module scope above.
             Sleep(ms);
         },
         else => {},
@@ -299,17 +265,13 @@ pub const PosixTimespec = extern struct {
 /// `int clock_gettime(clockid_t clk_id, struct timespec *tp);` (POSIX).
 pub extern "c" fn clock_gettime(clk_id: c_int, tp: *PosixTimespec) c_int;
 
-/// `int nanosleep(const struct timespec *req, struct timespec *rem);`
-/// (POSIX). `pub` so callers (e.g.
+/// `int nanosleep(const struct timespec *req, struct timespec *rem);` (POSIX).
 pub extern "c" fn nanosleep(req: *const PosixTimespec, rem: ?*PosixTimespec) c_int;
 
-/// POSIX CLOCK_REALTIME. Linux glibc = 0; macOS = 0; matches across
-/// POSIX platforms. Declared as `c_int` literal because `std.c.CLOCK`
-/// is not exposed on all platforms.
+/// POSIX CLOCK_REALTIME.
 pub const CLOCK_REALTIME: c_int = 0;
 
-/// POSIX CLOCK_MONOTONIC. Linux glibc = 1; macOS = 1; matches across all the
-/// POSIX variants we target.
+/// POSIX CLOCK_MONOTONIC.
 pub const CLOCK_MONOTONIC: c_int = if (builtin.os.tag.isDarwin()) 6 else 1;
 
 // === Tests ===
@@ -373,18 +335,14 @@ test "filetimeTicksToUnixNanos: now-scale ticks stay positive (Windows cron-pani
 }
 
 test "unixTimestampNanos: returns positive value within sane range" {
-    // On POSIX this exercises clock_gettime; on Windows CI it exercises
-    // the fixed FILETIME path — the missing coverage that let the `/ 10`
-    // bug ship (only the seconds-precision `unixTimestamp` was asserted).
+    // On POSIX this exercises clock_gettime; on Windows CI it exercises the fixed FILETIME path — the missing coverage that let the `/ 10` bug ship (only the …
     const ns = unixTimestampNanos();
     try std.testing.expect(ns > 1_577_836_800 * std.time.ns_per_s);
     try std.testing.expect(ns < 4_102_444_800 * std.time.ns_per_s);
 }
 
 test "nextUniqueNanos: two threads reading the same tick get different values" {
-    // The Windows clock ticks at ~15.6 ms, so two threads routinely read the
-    // SAME FILETIME. The counter used to be `threadlocal`, so both minted the
-    // same `item_<nanos>` and the second INSERT died on the PK. Red before.
+    // The Windows clock ticks at ~15.6 ms, so two threads routinely read the SAME FILETIME.
     const tick: i128 = 1_000_000_000;
     var results: [2]i128 = .{ 0, 0 };
     var threads: [2]std.Thread = undefined;
@@ -407,14 +365,10 @@ test "nextUniqueNanos: a clock that steps backwards never re-mints a value" {
 }
 
 test "unixTimestamp: 4-byte suseconds_t read does not pick up padding bytes (macOS struct-layout regression guard)" {
-    // On macOS, `suseconds_t` is `__int32_t` (4 bytes). The struct declares
-    // `usec: Usect` (i32 on macOS) so the read matches the C ABI
-    // byte-for-byte.
+    // On macOS, `suseconds_t` is `__int32_t` (4 bytes).
     const ts = unixTimestamp();
     try std.testing.expect(ts > 0);
-    // Tight upper bound: 2100-01-01 (avoids the year-2038 problem
-    // on 32-bit signed time_t, which doesn't apply on 64-bit LP64 /
-    // LLP64 Zig targets but is a sane sanity check anyway).
+    // Tight upper bound: 2100-01-01 (avoids the year-2038 problem on 32-bit signed time_t, which doesn't apply on 64-bit LP64 /LLP64 Zig targets but is a sane sanity …
     try std.testing.expect(ts < 4_102_444_800);
 }
 
@@ -422,8 +376,7 @@ test {}
 
 // ===== Tests merged from cross_platform_test.zig (2026-09-29 flatten) =====
 
-// Cross-platform behavior tests for the helpers.process_status and
-// helpers.getcwd modules.
+// Cross-platform behavior tests for the helpers.process_status and helpers.getcwd modules.
 
 const testing = std.testing;
 
@@ -435,7 +388,6 @@ test "getcwd: returns non-empty absolute path" {
     };
     try testing.expect(cwd.len > 0);
     // Absolute paths on Unix start with '/', on Windows with a drive letter.
-    // We don't enforce either here — just confirm non-empty.
 }
 
 test "getcwd: returns null when buffer is too small" {
@@ -443,17 +395,14 @@ test "getcwd: returns null when buffer is too small" {
     var tiny_buf: [1]u8 = undefined;
     const cwd = getcwd(&tiny_buf);
     // On most platforms this returns null because the path doesn't fit.
-    // On some weird platforms it might succeed; we just check no crash.
     _ = cwd;
 }
 
 test "getcwd: buffer is NUL-terminated internally (handled by wrapper)" {
-    // The wrapper uses indexOfScalar to find the NUL, so the caller
-    // doesn't see it. This test exercises the slice logic.
+    // The wrapper uses indexOfScalar to find the NUL, so the caller doesn't see it.
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = getcwd(&buf) orelse return;
-    // The returned slice should not contain any NUL bytes (the wrapper
-    // strips the terminator).
+    // The returned slice should not contain any NUL bytes (the wrapper strips the terminator).
     for (cwd) |c| try testing.expect(c != 0);
 }
 
@@ -527,9 +476,7 @@ test "process_status: round-trip — isProcessRunning then killProcess" {
     reaped = true;
 
     switch (builtin.os.tag) {
-        // Windows keeps a dead process's pid openable while any handle to the
-        // process object survives (its console host holds one), so the kill is
-        // witnessed by the exit code rather than by a probe by pid.
+        // Windows keeps a dead process's pid openable while any handle to the process object survives (its console host holds one), so the kill is witnessed by the exit …
         .windows => {
             try testing.expect(term == .exited);
             try testing.expect(term.exited != 0);

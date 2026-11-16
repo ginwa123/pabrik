@@ -21,34 +21,24 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
   /** When true, skip the error notification (caller handles UI inline). */
   silent?: boolean
-  /**    * When false, skip the top loading bar. Defaults to true — the bar tracks network activity,
-   * orthogonal to error visibility. Pass false for background pollers so the bar can idle while
-   * they keep polling. */
+  /** When false, skip the top loading bar. */
   track?: boolean
-  /** Timeout in ms. Default 15_000; 0 disables. A caller-provided `signal` is
-   * respected and no timeout signal is added. */
+  /** Timeout in ms. */
   timeoutMs?: number
 }
 
-/**  * Centralized HTTP wrapper. Toasts on 4xx/5xx unless `silent: true`, and throws `ApiError` on
- * non-OK so callers can implement fallback UI. Network failures propagate without a toast —
- * SseStatusBadge covers SSE. */
+/** Centralized HTTP wrapper. */
 export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions = {}): Promise<T> {
   const { body, silent, track = true, timeoutMs = 15_000, ...init } = opts
 
-  // Top loading bar: count this request while in flight. Guarded by
-  // getActivePinia so specs importing the api module without an
-  // installed pinia keep working — untracked in that case.
+  // Top loading bar: count this request while in flight.
   const loading = track && getActivePinia() ? useLoadingStore() : null
   loading?.startApi()
 
   // Idle-freeze fix: hung backend must not park the UI forever.
-  // Respect a caller-provided signal; otherwise arm a timeout signal.
   let signal: AbortSignal | undefined = init.signal as AbortSignal | undefined
   let timeoutId: ReturnType<typeof setTimeout> | undefined
-  // Fallback controller when `AbortSignal.timeout` is unavailable
-  // (older WebKit / jsdom). Only created when we need a timeout and
-  // the caller did not provide their own signal.
+  // Fallback controller when `AbortSignal.timeout` is unavailable (older WebKit / jsdom).
   let fallbackController: AbortController | undefined
   if (!signal && timeoutMs > 0) {
     const withTimeout = (globalThis as { AbortSignal?: typeof AbortSignal }).AbortSignal
@@ -76,9 +66,7 @@ export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions =
 
     if (!response.ok) {
       const responseBody = await response.text().catch(() => '')
-      // Auth enforcement: expired/revoked session mid-use → bounce to /login?redirect=<current>
-      // (router guard covers boot; this covers in-app expiry). Skip for auth endpoints themselves
-      // and when already on /login to avoid loops.
+      // Auth enforcement: expired/revoked session mid-use → bounce to /login?redirect=<current> (router guard covers boot; this covers in-app expiry).
       if (response.status === 401 && !url.startsWith('/auth/')) {
         try {
           const loc = globalThis.location
@@ -112,8 +100,7 @@ export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions =
   }
 }
 
-// Re-export SseClient so call sites that hold a reference (e.g. `const workersSse: api.SseClient |
-// null = null`) can import it from the same place they import the factory functions.
+// Re-export SseClient so call sites that hold a reference (e.g.
 export type { SseClient } from '../helpers/sseClient'
 
 // Health check

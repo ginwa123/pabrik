@@ -1,6 +1,4 @@
-/** Behavioural mount tests for LayersPanel.vue. The component renders the vertical list of elements
- * on the active page (ordered top-to-bottom by z-index) with per-row select / up / down / delete
- * buttons. */
+/** Behavioural mount tests for LayersPanel.vue. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -75,9 +73,7 @@ describe('LayersPanel.vue — flat list (no parent_id set)', () => {
   })
 
   it('renders top-level rows when parent_id is the empty string (the wire form of SQL NULL from the backend)', () => {
-    // The backend's design_model.listElements uses COALESCE(de.parent_id, '') AS parent_id so
-    // top-level elements (parent_id IS NULL) arrive at the frontend with parent_id === "" — NOT
-    // null, NOT undefined.
+    // The backend's design_model.listElements uses COALESCE(de.parent_id, '') AS parent_id so top-level elements (parent_id IS NULL) arrive at the frontend with …
     const elements = [
       makeElement({ id: 'elem_backdrop', name: 'backdrop', type: 'rectangle', z_index: 0, position: 0, parent_id: '' }),
       makeElement({ id: 'elem_card', name: 'dialog-card', type: 'frame', z_index: 0, position: 1, parent_id: '' }),
@@ -114,8 +110,7 @@ describe('LayersPanel.vue — tree render (parent_id set)', () => {
     const rows = wrapper.findAll('[data-testid^="design-layer-elem_"]')
     expect(rows).toHaveLength(3)
 
-    // The group appears first (highest z_index). Its children appear
-    // below it (nested under the group).
+    // The group appears first (highest z_index).
     const testIds = rows.map((r) => r.attributes('data-testid'))
     // Group testid is at index 0 (top of the panel).
     expect(testIds[0]).toBe('design-layer-elem_g')
@@ -172,8 +167,7 @@ describe('LayersPanel.vue — tree render (parent_id set)', () => {
     // Initially: all 3 rows visible (parent + 2 children).
     expect(wrapper.findAll('[data-testid^="design-layer-elem_"]')).toHaveLength(3)
 
-    // Find the chevron button. The button is identified by the
-    // design-layer-toggle-${element.id} data-testid selector.
+    // Find the chevron button.
     const toggleBtn = wrapper.find('[data-testid="design-layer-toggle-elem_g"]')
     expect(toggleBtn.exists()).toBe(true)
 
@@ -242,17 +236,14 @@ describe('LayersPanel.vue — tree render (parent_id set)', () => {
 
     // elem_g has children → chevron.
     expect(wrapper.find('[data-testid="design-layer-toggle-elem_g"]').exists()).toBe(true)
-    // elem_a is a child of elem_g → no chevron of its own (unless
-    // it had nested children, which it doesn't).
+    // elem_a is a child of elem_g → no chevron of its own (unless it had nested children, which it doesn't).
     expect(wrapper.find('[data-testid="design-layer-toggle-elem_a"]').exists()).toBe(false)
     // elem_b is top-level leaf → no chevron.
     expect(wrapper.find('[data-testid="design-layer-toggle-elem_b"]').exists()).toBe(false)
   })
 })
 
-// ─── Drop-zone rows (Chunk 4 Task 4.2 of drag-to-reparent plan) ────────── LayersPanel renders N+1
-// top-level drop-zone rows between real elements (one BEFORE the first row + one AFTER every
-// top-level row).
+// ─── Drop-zone rows (Chunk 4 Task 4.2 of drag-to-reparent plan) ──────────
 describe('LayersPanel.vue — top-level drop-zone rows (must not look like element rows)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -281,9 +272,7 @@ describe('LayersPanel.vue — top-level drop-zone rows (must not look like eleme
   })
 
   it('does NOT render "(unnamed)" text in any drop-zone row', async () => {
-    // The bug: LayerRow.vue rendered `node.element.name || '(unnamed)'`
-    // for ALL rows including drop zones (which have name: ''). The
-    // result: every drop-zone row showed "(unnamed)" in the panel.
+    // The bug: LayerRow.vue rendered `node.element.name || '(unnamed)'` for ALL rows including drop zones (which have name: '').
     const elements = [
       makeElement({ id: 'elem_a', name: 'A', z_index: 0, position: 0 }),
       makeElement({ id: 'elem_b', name: 'B', z_index: 0, position: 1 }),
@@ -298,17 +287,14 @@ describe('LayersPanel.vue — top-level drop-zone rows (must not look like eleme
   })
 
   it('does NOT render a type icon in any drop-zone row', async () => {
-    // Same root cause as above — LayerRow rendered typeIcon(node.element.type)
-    // for ALL rows. The drop zone's synthetic element has type: 'rectangle'
-    // so it rendered '▭', making the row look like a real rectangle element.
+    // Same root cause as above — LayerRow rendered typeIcon(node.element.type) for ALL rows.
     const elements = [
       makeElement({ id: 'elem_a', name: 'A', z_index: 0, position: 0 }),
     ]
     wrapper = mountPanel({ elements })
     await nextTick()
 
-    // Positive control: the real element row DOES draw an icon, so the
-    // absence below is about the drop zone and not about a dead selector.
+    // Positive control: the real element row DOES draw an icon, so the absence below is about the drop zone and not about a dead selector.
     const realRows = wrapper.findAll('[data-testid="design-layer-elem_a"]')
     expect(realRows.length).toBeGreaterThan(0)
     expect(realRows.some((row) => row.find('[data-icon]').exists())).toBe(true)
@@ -316,8 +302,7 @@ describe('LayersPanel.vue — top-level drop-zone rows (must not look like eleme
     const dropZones = wrapper.findAll('[data-testid="design-layer-drop-zone-top-level"]')
     expect(dropZones.length).toBeGreaterThan(0)
     for (const dz of dropZones) {
-      // LayerRow now draws its type through `UiIcon`, which stamps
-      // data-icon on every glyph — one selector covers all 7 types.
+      // LayerRow now draws its type through `UiIcon`, which stamps data-icon on every glyph — one selector covers all 7 types.
       expect(dz.find('[data-icon]').exists()).toBe(false)
     }
   })

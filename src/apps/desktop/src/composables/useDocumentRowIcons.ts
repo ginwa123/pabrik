@@ -1,6 +1,4 @@
-/** The Documents section's row glyphs: which glyph a row draws, the picker that
- * changes it, and the folder row's context menu. Extracted from
- * `DocumentsList.vue` so the component stays a tree renderer. */
+/** The Documents section's row glyphs: which glyph a row draws, the picker that changes it, and the folder row's context menu. */
 import { ref } from 'vue'
 import { useContextMenu } from './useContextMenu'
 import { documentIconFor, folderIconFor } from '../stores/sidebarIcons'

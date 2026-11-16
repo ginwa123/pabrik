@@ -1,6 +1,4 @@
-//! `GET /api/agent-tools/registry`. Returns the canonical tool registry as
-//! `{tools: [{name, description, parameters, kind}]}`. With `?include_mcp=1`
-//! the tools the requested workspace's MCP servers advertise are appended.
+//! `GET /api/agent-tools/registry`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -21,9 +19,7 @@ pub const RegistryParameter = struct {
     /// Borrowed from the tool definition (static, lives forever).
     name: []const u8,
     type: []const u8,
-    /// True when the JSON schema lists it in `required`. A REQUIRED `cwd` is
-    /// what stops a path-taking call from silently inheriting the server's
-    /// working directory instead of the one the model is editing.
+    /// True when the JSON schema lists it in `required`.
     required: bool,
 };
 
@@ -32,8 +28,7 @@ pub const RegistryEntry = struct {
     name: []const u8,
     /// Owned by the use-case (lifetime = request arena).
     description: []const u8,
-    /// One row per schema property, in declaration order. Owned by the
-    /// use-case (lifetime = request arena).
+    /// One row per schema property, in declaration order.
     parameters: []const RegistryParameter,
     /// `builtin` or `mcp` — the picker badges the second kind.
     kind: []const u8,
@@ -50,12 +45,9 @@ pub const RegistryOutput = struct {
     entries: []const RegistryEntry,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Transform the runtime registry into a slice of registry entries, plus one
-/// entry per tool the configured MCP servers advertised.
+/// Transform the runtime registry into a slice of registry entries, plus one entry per tool the configured MCP servers advertised.
 fn useCase(allocator: std.mem.Allocator, mcp_tools: ?[]const tool_models.AgentTool) RegistryError!RegistryOutput {
     const registry = tools_equipped.UNIFIED_TOOL_REGISTRY();
 
@@ -73,8 +65,7 @@ fn useCase(allocator: std.mem.Allocator, mcp_tools: ?[]const tool_models.AgentTo
     return .{ .entries = try list.toOwnedSlice(allocator) };
 }
 
-/// One row per declared property, in declaration order, with `required`
-/// resolved against the schema's own name list.
+/// One row per declared property, in declaration order, with `required` resolved against the schema's own name list.
 fn parametersFor(
     allocator: std.mem.Allocator,
     params: tool_models.ToolParameters,
@@ -90,8 +81,7 @@ fn parametersFor(
     return out;
 }
 
-/// The MCP entries follow the built-ins and are sorted by wire name, so a
-/// server answering `tools/list` in its own order cannot reshuffle the picker.
+/// The MCP entries follow the built-ins and are sorted by wire name, so a server answering `tools/list` in its own order cannot reshuffle the picker.
 fn appendMcpEntries(
     allocator: std.mem.Allocator,
     list: *std.ArrayList(RegistryEntry),
@@ -113,9 +103,7 @@ fn appendMcpEntries(
     }.byName);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// `?include_mcp=1` (or `true`): list the workspace's MCP tools too.
 fn wantsMcpTools(req: gserverz.HttpRequest) bool {
@@ -123,9 +111,7 @@ fn wantsMcpTools(req: gserverz.HttpRequest) bool {
     return std.mem.eql(u8, flag, "1") or std.mem.eql(u8, flag, "true");
 }
 
-/// The tools the requested workspace's MCP servers advertise right now. Live
-/// rather than cached: `mcp_servers` is workspace-scoped, and the picker asks
-/// once per open, so a stale name is worse than one `tools/list` roundtrip.
+/// The tools the requested workspace's MCP servers advertise right now.
 fn mcpToolsForRequest(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -140,8 +126,7 @@ fn mcpToolsForRequest(
 
     const owner = auth_common.resolveRequestUserId(allocator, di.db, di.auth_enabled, req.headers) catch "";
 
-    // No cancel hook: the picker has no Stop button, and a hook that fires
-    // mid-fetch would deny the transport its own cold-start retry.
+    // No cancel hook: the picker has no Stop button, and a hook that fires mid-fetch would deny the transport its own cold-start retry.
     return build_msg_prompt.buildMCPToolsRun(allocator, servers, null, .{
         .scope = .{ .owner = owner, .workspace_id = workspace_id },
         .db = di.db,
@@ -149,8 +134,7 @@ fn mcpToolsForRequest(
     }) catch null;
 }
 
-/// Thin orchestrator over `useCase`. Delegates to `useCase`, and
-/// maps the use-case outcome to an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentToolsRegistryHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -158,8 +142,7 @@ pub fn agentToolsRegistryHandler(
 ) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
 
-    // Only the composer's picker asks for MCP tools; the Settings checklist and
-    // the kanban tools panel keep the compiled-in registry and pay no roundtrip.
+    // Only the composer's picker asks for MCP tools; the Settings checklist and the kanban tools panel keep the compiled-in registry and pay no roundtrip.
     const mcp_tools = if (wantsMcpTools(req)) mcpToolsForRequest(allocator, ctx.io, req) else null;
 
     const output = useCase(allocator, mcp_tools) catch |err| {
@@ -175,14 +158,12 @@ pub fn agentToolsRegistryHandler(
         });
     };
 
-    // Pass the entries directly — std.json.Stringify flattens each struct
-    // into a `{name, description, parameters, kind}` object.
+    // Pass the entries directly — std.json.Stringify flattens each struct into a `{name, description, parameters, kind}` object.
     const data = try std.json.Stringify.valueAlloc(allocator, .{ .tools = output.entries }, .{});
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode).
 
 const testing = std.testing;
 
@@ -216,8 +197,7 @@ fn findIndex(output: RegistryOutput, name: []const u8) ?usize {
     return null;
 }
 
-/// One MCP tool as `buildMCPToolsRun` hands it over: the wire name
-/// `mcp_<server>_<tool>`, the server's description, and the advertised schema.
+/// One MCP tool as `buildMCPToolsRun` hands it over: the wire name `mcp_<server>_<tool>`, the server's description, and the advertised schema.
 fn mcpToolFixture(
     alloc: std.mem.Allocator,
     name: []const u8,
@@ -243,9 +223,7 @@ fn mcpToolFixture(
 }
 
 test "useCase: every path-taking tool REQUIRES an absolute cwd" {
-    // This is the contract the 2026-10-14 change introduced: a call that
-    // touches the filesystem must say which tree it works in, or it silently
-    // acts on the SERVER's directory instead of the one the model is editing.
+    // This is the contract the 2026-10-14 change introduced: a call that touches the filesystem must say which tree it works in, or it silently acts on the SERVER's …
     const alloc = testing.allocator;
     const output = try useCase(alloc, null);
     defer freeOutput(alloc, output);
@@ -276,9 +254,7 @@ test "useCase: every path-taking tool REQUIRES an absolute cwd" {
         }
     }
 
-    // Controls, so the loop above cannot pass vacuously: a tool with no
-    // filesystem parameter must not carry a `cwd`, and the two tools whose
-    // `cwd` was dropped the same day must not have kept one.
+    // Controls, so the loop above cannot pass vacuously: a tool with no filesystem parameter must not carry a `cwd`, and the two tools whose `cwd` was dropped the …
     const cwd_free = [_][]const u8{ "create_kanban_task", "add_mcp_server" };
     for (cwd_free) |tool_name| {
         const entry = findEntry(output, tool_name) orelse {
@@ -288,9 +264,7 @@ test "useCase: every path-taking tool REQUIRES an absolute cwd" {
         try testing.expect(findParam(entry, "cwd") == null);
     }
 
-    // The swept tools are gone from the published schema too — being absent
-    // from the registry is what makes a name uncallable. `list_agents` is
-    // no longer swept: it is the live tool that lists the configured agents.
+    // The swept tools are gone from the published schema too — being absent from the registry is what makes a name uncallable.
     for ([_][]const u8{ "change_agent", "remove_agent" }) |tool_name| {
         try testing.expect(findEntry(output, tool_name) == null);
     }

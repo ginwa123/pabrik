@@ -28,8 +28,7 @@ const use_skill_mod = pabrikcore.skill_tools;
 const remove_skill_mod = pabrikcore.skill_tools;
 const add_skill_mod = pabrikcore.skill_tools;
 const edit_skill_mod = pabrikcore.skill_tools;
-// `set_skill_metadata` — the key-level half of `edit_skill`: it rewrites the
-// fence and leaves the instruction body byte-identical.
+// `set_skill_metadata` — the key-level half of `edit_skill`: it rewrites the fence and leaves the instruction body byte-identical.
 const set_skill_metadata_mod = pabrikcore.skill_tools;
 const set_git_worktree_mod = pabrikcore.set_git_worktree;
 const set_pull_request_mod = pabrikcore.set_pull_request;
@@ -49,25 +48,19 @@ const preview_design_page_mod = pabrikcore.preview_design_page;
 const remove_file_mod = pabrikcore.remove_file;
 const web_search_mod = pabrikcore.web_search;
 const generate_image_mod = pabrikcore.generate_image;
-// Workspace credential discovery. Listed here so `filterAndMergeTools` can
-// find it — that function iterates THIS list, not UNIFIED_TOOL_REGISTRY.
+// Workspace credential discovery.
 const list_secrets_mod = pabrikcore.list_secrets;
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
-// Markdown task plan with - [ ] / - [x] checklist, persisted across iterations.
 const update_plan_mod = pabrikcore.update_plan;
 const get_plan_mod = pabrikcore.get_plan;
-// `compaction` — the agent compresses its own context window. Registered here
-// so it is in every session's tool list; the workspace's
-// `agent_auto_compaction` setting decides whether a call runs.
+// `compaction` — the agent compresses its own context window.
 const compaction_mod = pabrikcore.compaction;
 const list_agents_mod = pabrikcore.list_agents;
 const used_tools_mod = pabrikcore.used_tools;
 const run_skill_eval_mod = @import("../loop/run_skill_eval.zig");
-// 2026-08-28 — add_mcp_server agent tool (Step 5 of
-// 2026-08-28-add-mcp-server-agent-tool.md).
+// 2026-08-28 — add_mcp_server agent tool (Step 5 of 2026-08-28-add-mcp-server-agent-tool.md).
 const add_mcp_server_mod = pabrikcore.add_mcp_server;
-// The edit + delete halves of the MCP-server trio. Registered alongside
-// `add_mcp_server` so the agent can maintain the servers it registers.
+// The edit + delete halves of the MCP-server trio.
 const edit_mcp_server_mod = pabrikcore.edit_mcp_server;
 const delete_mcp_server_mod = pabrikcore.delete_mcp_server;
 const glob_tool_mod = pabrikcore.glob_tool;
@@ -82,9 +75,7 @@ const manage_project_mod = pabrikcore.manage_project;
 const command_tool_mod = pabrikcore.command_tool;
 // `process` — the read/stop/list half of the detached `mode`s.
 const process_tool_mod = pabrikcore.process_tool;
-// Progressive tool search: search_tool / view_tool / use_tool. Pure tool data
-// lives in `pabrikcore.progressive_tools`; the catalog + renderers live in
-// `src/modules/agent/loop/progressive_catalog.zig`.
+// Progressive tool search: search_tool / view_tool / use_tool.
 const progressive_tools_mod = pabrikcore.progressive_tools;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
@@ -98,14 +89,11 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         get_plan_mod.get_plan_tool,
         compaction_mod.compaction_tool,
         list_agents_mod.list_agents_tool,
-        // used_tools: read-only introspection over this very list ("what
-        // tools do I have"). Sub-agent-safe (NOT main-agent-only).
+        // used_tools: read-only introspection over this very list ("what tools do I have").
         used_tools_mod.used_tools_tool,
         // 2026-08-28 — add_mcp_server agent tool (Task 5).
         add_mcp_server_mod.add_mcp_server_tool,
-        // The edit + delete halves. `delete_mcp_server` is deliberately
-        // NOT in DEFAULT_AGENT_TOOLS (irreversible)
-        // but IS listed here so `filterAndMergeTools` can find it.
+        // The edit + delete halves.
         edit_mcp_server_mod.edit_mcp_server_tool,
         delete_mcp_server_mod.delete_mcp_server_tool,
         search_skills_mod.search_skills_tool,
@@ -117,17 +105,13 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         save_memory_mod.save_memory_tool,
         load_memory_mod.load_memory_tool,
         read_workspace_session_mod.read_workspace_session_tool,
-        // run_session: start or resume a session agent, INCLUDING one in
-        // another workspace.
+        // run_session: start or resume a session agent, INCLUDING one in another workspace.
         run_session_mod.run_session_tool,
         // view_session: read one session's detail. Read-only, sub-agent-safe.
         view_session_mod.view_session_tool,
-        // Workspace secrets: the discovery half of `{{SECRETS:NAME}}`. Takes
-        // no parameters and returns NAMES only — the value is substituted at
-        // dispatch and never reaches a tool result.
+        // Workspace secrets: the discovery half of `{{SECRETS:NAME}}`.
         list_secrets_mod.list_secrets_tool,
-        // Workspace-scoped documents (Migration 098): a writer per format, and
-        // one format-agnostic reader.
+        // Workspace-scoped documents (Migration 098): a writer per format, and one format-agnostic reader.
         document_mod.document_markdown_tool,
         document_view_mod.document_tool,
         document_html_mod.document_html_tool,
@@ -171,9 +155,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         get_design_context_mod.get_design_context_tool,
         preview_design_page_mod.preview_design_page_tool,
 
-        // progressive tool search — always present (the workflow appends them
-        // only when the discoverable catalog is non-empty, so an item whose
-        // allowlist covers every built-in and has no MCP servers never sees
+        // progressive tool search — always present (the workflow appends them only when the discoverable catalog is non-empty, so an item whose allowlist covers every …
         progressive_tools_mod.search_tool_tool,
         progressive_tools_mod.view_tool_tool,
         progressive_tools_mod.use_tool_tool,
@@ -197,33 +179,23 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "spawn_sub_agent", .exec = tools.execSpawnSubAgent, .tool_def = spawn_sub_agent_tool.spawn_sub_agent_tool },
         .{ .name = "delegate_agent", .exec = tools.execDelegateAgent, .tool_def = delegate_agent_tool.delegate_agent_tool },
 
-        // === PLAN TOOLS === 2026-08-19 — session_plan agent tools (Task 4 of
-        // 2026-08-19-session-plan-agent-tool.md).
+        // === PLAN TOOLS ===
         .{ .name = "update_plan", .exec = tools.execUpdatePlan, .tool_def = update_plan_mod.update_plan_tool },
         .{ .name = "get_plan", .exec = tools.execGetPlan, .tool_def = get_plan_mod.get_plan_tool },
-        // `compaction` — the agent compacts its own context. Executed only when
-        // the workspace setting `agent_auto_compaction` is on.
+        // `compaction` — the agent compacts its own context.
         .{ .name = "compaction", .exec = tools.execCompaction, .tool_def = compaction_mod.compaction_tool },
         .{ .name = "list_agents", .exec = tools.execListAgents, .tool_def = list_agents_mod.list_agents_tool },
         // used_tools: read-only introspection ("what tools do I have").
-        // Available in every mode; the exec adapter resolves the
-        // session's effective list via the same helpers as the workflow.
         .{ .name = "used_tools", .exec = tools.execUsedTools, .tool_def = used_tools_mod.used_tools_tool },
 
-        // === MCP MANAGEMENT === 2026-08-28 — add_mcp_server (Task 5 of
-        // 2026-08-28-add-mcp-server-agent-tool.md).
+        // === MCP MANAGEMENT ===
         .{ .name = "add_mcp_server", .exec = tools.execAddMcpServer, .tool_def = add_mcp_server_mod.add_mcp_server_tool },
-        // edit_mcp_server — PATCH an existing server. Every field except
-        // `name` is optional, and a call may switch transports.
+        // edit_mcp_server — PATCH an existing server.
         .{ .name = "edit_mcp_server", .exec = tools.execEditMcpServer, .tool_def = edit_mcp_server_mod.edit_mcp_server_tool },
-        // delete_mcp_server — remove a server. Registered here (so it is
-        // dispatchable and appears in the Settings checklist) but
-        // deliberately absent from DEFAULT_AGENT_TOOLS.
+        // delete_mcp_server — remove a server.
         .{ .name = "delete_mcp_server", .exec = tools.execDeleteMcpServer, .tool_def = delete_mcp_server_mod.delete_mcp_server_tool },
 
-        // === PROGRESSIVE TOOL SEARCH === search_tool / view_tool / use_tool
-        // browse and enable the catalog of tools this session does not
-        // already have.
+        // === PROGRESSIVE TOOL SEARCH ===
         .{ .name = "search_tool", .exec = tools.execSearchTool, .tool_def = progressive_tools_mod.search_tool_tool },
         .{ .name = "view_tool", .exec = tools.execViewTool, .tool_def = progressive_tools_mod.view_tool_tool },
         .{ .name = "use_tool", .exec = tools.execUseTool, .tool_def = progressive_tools_mod.use_tool_tool },
@@ -239,28 +211,20 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "edit_skill", .exec = tools.execEditSkill, .tool_def = edit_skill_mod.edit_skill_tool },
         .{ .name = "set_skill_metadata", .exec = tools.execSetSkillMetadata, .tool_def = set_skill_metadata_mod.set_skill_metadata_tool },
 
-        // === SKILL EVALS === run_skill_eval: the agent evaluates the skills
-        // this session actually used.
+        // === SKILL EVALS ===
         .{ .name = "run_skill_eval", .exec = run_skill_eval_mod.execRunSkillEval, .tool_def = run_skill_eval_mod.run_skill_eval_tool },
 
         // === MEMORY TOOLS ===
-        // .{ .name = "list_memory", .exec = tools.execListMemory, .tool_def = list_memory_mod.list_memory_tool },
         .{ .name = "save_memory", .exec = tools.execSaveMemory, .tool_def = save_memory_mod.save_memory_tool },
         .{ .name = "load_memory", .exec = tools.execLoadMemory, .tool_def = load_memory_mod.load_memory_tool },
         .{ .name = "read_workspace_session", .exec = tools.execReadWorkspaceSession, .tool_def = read_workspace_session_mod.read_workspace_session_tool },
-        // run_session — the WRITE sibling of read_workspace_session: it starts
-        // a new session agent or resumes an existing one, and its target
-        // workspace may be another one.
+        // run_session — the WRITE sibling of read_workspace_session: it starts a new session agent or resumes an existing one, and its target workspace may be another …
         .{ .name = "run_session", .exec = tools.execRunSession, .tool_def = run_session_mod.run_session_tool },
-        // view_session — the READ half of the same pair: where a session
-        // runs (cwd, git worktree, task, workspace) and whether it is busy.
+        // view_session — the READ half of the same pair: where a session runs (cwd, git worktree, task, workspace) and whether it is busy.
         .{ .name = "view_session", .exec = tools.execViewSession, .tool_def = view_session_mod.view_session_tool },
-        // Workspace credential discovery. Without a registry entry here the
-        // name reaches the model and dispatch misses with `error.UnknownTool`
-        // — which the UI renders as a tool that is still running.
+        // Workspace credential discovery.
         .{ .name = "list_secrets", .exec = tools.execListSecrets, .tool_def = list_secrets_mod.list_secrets_tool },
-        // Workspace-scoped documents (Migration 098): a writer per format, and
-        // one format-agnostic reader.
+        // Workspace-scoped documents (Migration 098): a writer per format, and one format-agnostic reader.
         .{ .name = "document_markdown", .exec = tools.execDocumentMarkdown, .tool_def = document_mod.document_markdown_tool },
         .{ .name = "document", .exec = tools.execDocumentView, .tool_def = document_view_mod.document_tool },
         .{ .name = "document_html", .exec = tools.execDocumentHtml, .tool_def = document_html_mod.document_html_tool },
@@ -278,20 +242,15 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "set_pull_request", .exec = tools.execSetPullRequest, .tool_def = set_pull_request_mod.set_pull_request_tool },
         .{ .name = "status_pull_request", .exec = tools.execStatusPullRequest, .tool_def = status_pull_request_mod.status_pull_request_tool },
 
-        // === KANBAN TOOLS === Both tools read directly from the DB
-        // (kanban_model.listColumns + a new SELECT on workspace_item_tasks)
-        // instead of going through the HTTP layer.
+        // === KANBAN TOOLS ===
         .{ .name = "kanban_list", .exec = tools.execKanbanList, .tool_def = kanban_list_mod.kanban_list_tool },
         .{ .name = "kanban_move_task", .exec = tools.execKanbanMoveTask, .tool_def = kanban_move_task_mod.kanban_move_task_tool },
         .{ .name = "create_kanban_task", .exec = tools.execCreateKanbanTask, .tool_def = kanban_create_task_tool.create_kanban_task_tool },
 
-        // === PROJECT TOOLS === create/edit a workspace item of item_type
-        // `kanban` or `routine`, scoped to the calling chat's workspace.
+        // === PROJECT TOOLS ===
         .{ .name = "manage_project", .exec = tools.execManageProject, .tool_def = manage_project_mod.manage_project_tool },
 
-        // === DESIGN TOOLS === Three tools cover the v6 design mode LLM
-        // surface: set_design_page — idempotent create/update for a page,
-        // returns page + elements (no HTML bodies). add_element — creates a
+        // === DESIGN TOOLS ===
         .{ .name = "set_design_page", .exec = tools.execSetDesignPage, .tool_def = set_design_page_mod.set_design_page_tool },
         .{ .name = "add_element", .exec = tools.execAddElement, .tool_def = add_design_element_mod.add_design_element_tool },
         .{ .name = "update_element", .exec = tools.execUpdateElement, .tool_def = update_design_element_mod.update_design_element_tool },
@@ -305,15 +264,12 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // === PRESENTATION TOOLS ===
         .{ .name = "present_files", .exec = tools.execPresentFiles, .tool_def = present_files_mod.present_files_tool },
 
-        // === IMAGE GENERATION TOOLS === generate_image calls OpenAI's
-        // /v1/images/generations endpoint (DALL-E 2/3 + gpt-image-1).
+        // === IMAGE GENERATION TOOLS ===
         .{ .name = "generate_image", .exec = tools.execGenerateImage, .tool_def = generate_image_mod.generate_image_tool },
 
         // === LSP TOOLS ===
 
-        // === WEB SEARCH TOOLS === 2026-10-02: the old `web_search` here was
-        // a URL BROWSER that shelled out to `agent-browser snapshot` —
-        // unreachable and commented out.
+        // === WEB SEARCH TOOLS ===
         .{ .name = "web_search", .exec = tools.execWebSearch, .tool_def = web_search_mod.web_search_tool },
         .{ .name = "list_web_search_providers", .exec = tools.execListWebSearchProviders, .tool_def = web_search_mod.list_web_search_providers_tool },
 
@@ -322,23 +278,17 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "search", .exec = tools.execSearch, .tool_def = search_tool_mod.search_tool },
         // 2026-08-14 — first-level ls-like tool (Task 5 of ban-absolute-paths plan).
         .{ .name = "list_directory", .exec = tools.execListDirectory, .tool_def = list_directory_mod.list_directory_tool },
-        // .{ .name = "semantic_search", .exec = execSemanticSearch, .tool_def = semantic_search_mod.semantic_search_tool },
-        // .{ .name = "index_codebase", .exec = execIndexCodebase, .tool_def = semantic_search_mod.index_codebase_tool },
+        // .{ .name = "semantic_search", .exec = execSemanticSearch, .tool_def = semantic_search_mod.semantic_search_tool }, .{ .name = "index_codebase", .exec = …
     };
 }
 
-// =====================================================================
 // Default tools seeded at workspace-item creation (2026-09-06).
 
-/// Canonical default toolset seeded on creation. Single source of truth —
-/// both `workspace_items_create_agent.zig` and
-/// `workspace_items_create_kanban.zig` seed exactly this list.
+/// Canonical default toolset seeded on creation.
 pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     // basic tools
     command_tool_mod.command_tool.function.name,
-    // Default-on, and it has to be: `mode="background_persistence"` is SILENT
-    // by contract, so an agent that can start a dev server but cannot read or
-    // stop it is strictly worse off than one that never started it.
+    // Default-on, and it has to be: `mode="background_persistence"` is SILENT by contract, so an agent that can start a dev server but cannot read or stop it is …
     process_tool_mod.process_tool.function.name,
     read_file_mod.read_file_tool.function.name,
     write_file_mod.write_file_tool.function.name,
@@ -357,16 +307,13 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     save_memory_mod.save_memory_tool.function.name,
     load_memory_mod.load_memory_tool.function.name,
     read_workspace_session_mod.read_workspace_session_tool.function.name,
-    // Default-on, like `spawn_sub_agent`: delegating work to another session
-    // or another workspace is core agent behaviour.
+    // Default-on, like `spawn_sub_agent`: delegating work to another session or another workspace is core agent behaviour.
     run_session_mod.run_session_tool.function.name,
     // Read-only introspection: "where am I working, and is anything running".
     view_session_mod.view_session_tool.function.name,
     // Credential discovery.
     list_secrets_mod.list_secrets_tool.function.name,
-    // Workspace-scoped documents (Migration 098): the writer, and the reader it
-    // is useless without — an agent that can create a document but not read or
-    // find one again has been made worse.
+    // Workspace-scoped documents (Migration 098): the writer, and the reader it is useless without — an agent that can create a document but not read or find one …
     document_mod.document_markdown_tool.function.name,
     document_view_mod.document_tool.function.name,
     manage_project_mod.manage_project_tool.function.name,
@@ -376,8 +323,7 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     remove_skill_mod.remove_skill_tool.function.name,
     add_skill_mod.add_skill_tool.function.name,
     edit_skill_mod.edit_skill_tool.function.name,
-    // The key-level half of `edit_skill`. Ships with it: a model asked to
-    // change one tag must not have to restate the body to do it.
+    // The key-level half of `edit_skill`.
     set_skill_metadata_mod.set_skill_metadata_tool.function.name,
     search_skills_mod.search_skills_tool.function.name,
 
@@ -393,8 +339,7 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     // introspection — "what tools do I have" (read-only, sub-agent-safe).
     used_tools_mod.used_tools_tool.function.name,
 
-    // progressive tool search — part of the default equipped set, seeded at
-    // creation.
+    // progressive tool search — part of the default equipped set, seeded at creation.
     progressive_tools_mod.search_tool_tool.function.name,
     progressive_tools_mod.view_tool_tool.function.name,
     progressive_tools_mod.use_tool_tool.function.name,
@@ -405,9 +350,7 @@ pub const DEFAULT_KANBAN_TOOLS: []const []const u8 = &.{
     kanban_move_task_mod.kanban_move_task_tool.function.name,
 };
 
-/// True when `name` exists in `UNIFIED_TOOL_REGISTRY()`. The PUT handler
-/// and the seed derivation share this so validation and tolerance can
-/// never disagree about what a "known tool" is.
+/// True when `name` exists in `UNIFIED_TOOL_REGISTRY()`.
 pub fn isKnownToolName(name: []const u8) bool {
     for (UNIFIED_TOOL_REGISTRY()) |entry| {
         if (std.mem.eql(u8, entry.name, name)) return true;
@@ -415,15 +358,12 @@ pub fn isKnownToolName(name: []const u8) bool {
     return false;
 }
 
-// =====================================================================
 // Tolerated tool names → current registry entry.
 pub const TOOL_NAME_ALIASES = [_]struct { alias: []const u8, target: []const u8 }{
     .{ .alias = "run_command", .target = "command" },
 };
 
-/// Canonical registry name for a possibly-deprecated tool name, or null
-/// when the name needs no translation. Never returns a name outside
-/// `UNIFIED_TOOL_REGISTRY` (enforced by the test below).
+/// Canonical registry name for a possibly-deprecated tool name, or null when the name needs no translation.
 pub fn resolveToolAlias(name: []const u8) ?[]const u8 {
     for (TOOL_NAME_ALIASES) |pair| {
         if (std.mem.eql(u8, name, pair.alias)) return pair.target;
@@ -431,16 +371,13 @@ pub fn resolveToolAlias(name: []const u8) ?[]const u8 {
     return null;
 }
 
-// =====================================================================
 // RETIRED tool names — refused, with the replacement named.
 pub const RETIRED_TOOL_NAMES = [_]struct { name: []const u8, replacement: []const u8 }{
     .{ .name = "bash", .replacement = "command" },
     .{ .name = "pwsh", .replacement = "command" },
 };
 
-/// The registry entry that replaced a retired tool name, or null when
-/// `name` was never retired. Turns an unknown-tool miss into a correction
-/// instead of a dead end.
+/// The registry entry that replaced a retired tool name, or null when `name` was never retired.
 pub fn retiredToolSuggestion(name: []const u8) ?[]const u8 {
     for (RETIRED_TOOL_NAMES) |entry| {
         if (std.mem.eql(u8, name, entry.name)) return entry.replacement;
@@ -448,9 +385,7 @@ pub fn retiredToolSuggestion(name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// True when the name can be dispatched: a registry name, or a tolerated
-/// alias of one. This is the gate handle_tool uses to decide whether to run a
-/// call.
+/// True when the name can be dispatched: a registry name, or a tolerated alias of one.
 pub fn isDispatchableToolName(name: []const u8) bool {
     if (isKnownToolName(name)) return true;
     const target = resolveToolAlias(name) orelse return false;
@@ -461,8 +396,7 @@ test "every tool alias points at a real registry entry" {
     try std.testing.expect(TOOL_NAME_ALIASES.len > 0);
     for (TOOL_NAME_ALIASES) |pair| {
         try std.testing.expect(isKnownToolName(pair.target));
-        // An alias must never shadow a live registry name — otherwise the
-        // alias table would silently rename a working tool.
+        // An alias must never shadow a live registry name — otherwise the alias table would silently rename a working tool.
         try std.testing.expect(!isKnownToolName(pair.alias));
         try std.testing.expectEqualStrings(pair.target, resolveToolAlias(pair.alias).?);
     }
@@ -476,13 +410,11 @@ test "retired shell names (bash/pwsh) are REFUSED, not aliased back to command" 
         try std.testing.expectEqualStrings("command", retiredToolSuggestion(retired).?);
     }
 
-    // `run_command` stays dispatchable: this product never advertised it, so
-    // tolerating it corrects nothing and breaks nothing.
+    // `run_command` stays dispatchable: this product never advertised it, so tolerating it corrects nothing and breaks nothing.
     try std.testing.expectEqualStrings("command", resolveToolAlias("run_command").?);
     try std.testing.expect(isDispatchableToolName("run_command"));
 
-    // `command` itself is untouched, and a name nobody ever had is neither
-    // dispatchable nor retired.
+    // `command` itself is untouched, and a name nobody ever had is neither dispatchable nor retired.
     try std.testing.expectEqual(@as(?[]const u8, null), resolveToolAlias("command"));
     try std.testing.expect(!isDispatchableToolName("definitely_not_a_tool"));
     try std.testing.expectEqual(@as(?[]const u8, null), retiredToolSuggestion("definitely_not_a_tool"));
@@ -491,22 +423,19 @@ test "retired shell names (bash/pwsh) are REFUSED, not aliased back to command" 
 test "every retired name names a live replacement, stays undispatchable, and is not also an alias" {
     try std.testing.expect(RETIRED_TOOL_NAMES.len > 0);
     for (RETIRED_TOOL_NAMES) |entry| {
-        // The replacement must be a real registry entry, or the correction
-        // would send the model to a second dead end.
+        // The replacement must be a real registry entry, or the correction would send the model to a second dead end.
         try std.testing.expect(isKnownToolName(entry.replacement));
         // A retired name must not shadow a live registry name either.
         try std.testing.expect(!isKnownToolName(entry.name));
         try std.testing.expect(!isDispatchableToolName(entry.name));
-        // The two tables must not overlap — a name cannot be both tolerated
-        // and retired, or which table gets consulted first would decide.
+        // The two tables must not overlap — a name cannot be both tolerated and retired, or which table gets consulted first would decide.
         for (TOOL_NAME_ALIASES) |pair| {
             try std.testing.expect(!std.mem.eql(u8, pair.alias, entry.name));
         }
     }
 }
 
-/// Filter a config-derived list to registry names, deduplicated, preserving
-/// input order.
+/// Filter a config-derived list to registry names, deduplicated, preserving input order.
 fn filterToRegistry(allocator: std.mem.Allocator, names: []const []const u8) ![]const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     defer out.deinit(allocator);
@@ -561,8 +490,7 @@ pub fn seedDefaultKanbanTools(
     const ts = helpers.unixTimestampNanos();
 
     if (config_tools) |cfg| {
-        // Explicit `[]` → ZERO rows: an all-unchecked checklist beats the
-        // mode floor (D2/D3). Only a non-empty list gets the floor union.
+        // Explicit `[]` → ZERO rows: an all-unchecked checklist beats the mode floor (D2/D3).
         if (cfg.len == 0) return;
 
         const base = try filterToRegistry(allocator, cfg);
@@ -580,9 +508,7 @@ pub fn seedDefaultKanbanTools(
             idx += 1;
         }
 
-        // Mode floor: kanban_list / kanban_move_task always seed on a
-        // configured board (the config list may already contain them —
-        // `base` is deduped, so only genuinely new floor names insert).
+        // Mode floor: kanban_list / kanban_move_task always seed on a configured board (the config list may already contain them — `base` is deduped, so only genuinely …
         for (DEFAULT_KANBAN_TOOLS) |tool_name| {
             var present = false;
             for (base) |existing| {
@@ -604,8 +530,7 @@ pub fn seedDefaultKanbanTools(
         return;
     }
 
-    // Legacy path (config key absent): agent defaults + kanban floor,
-    // exactly as before the tools checklist existed.
+    // Legacy path (config key absent): agent defaults + kanban floor, exactly as before the tools checklist existed.
     for (DEFAULT_AGENT_TOOLS, 0..) |tool_name, i| {
         const id = try std.fmt.allocPrint(allocator, "akt_{d}_{d}", .{ ts, i });
         defer allocator.free(id);
@@ -638,13 +563,10 @@ test "DEFAULT_AGENT_TOOLS ships the spawn pair and the progressive meta-tools" {
     }
     try std.testing.expect(found_spawn and found_list);
     try std.testing.expect(found_delegate);
-    // A seeded name the registry does not know is a tool the model can see
-    // and never call.
+    // A seeded name the registry does not know is a tool the model can see and never call.
     try std.testing.expect(isKnownToolName("delegate_agent"));
 
-    // Progressive tool search is part of the default equipped set in every
-    // mode: agent items seed DEFAULT_AGENT_TOOLS, kanban items seed it plus
-    // DEFAULT_KANBAN_TOOLS, so both modes get the three.
+    // Progressive tool search is part of the default equipped set in every mode: agent items seed DEFAULT_AGENT_TOOLS, kanban items seed it plus …
     for (progressive_tools_mod.PROGRESSIVE_TOOL_NAMES) |name| {
         var found = false;
         for (DEFAULT_AGENT_TOOLS) |seeded| {
@@ -679,9 +601,7 @@ fn setupSeedDb() !SeedTestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Sorted tool names seeded for `owner_id` in `table` (always
-/// `agent_config_tools` now). Caller owns the
-/// returned strings + header.
+/// Sorted tool names seeded for `owner_id` in `table` (always `agent_config_tools` now).
 fn seededNames(
     ctx: *SeedTestCtx,
     alloc: std.mem.Allocator,
@@ -705,8 +625,7 @@ fn seededNames(
         defer row.deinit(alloc);
         try out.append(alloc, try alloc.dupe(u8, row.values[0]));
     }
-    // Byte order, in Zig: the database's own collation differs per engine, and
-    // the assertion below compares against a byte-sorted list.
+    // Byte order, in Zig: the database's own collation differs per engine, and the assertion below compares against a byte-sorted list.
     std.mem.sort([]const u8, out.items, {}, struct {
         fn lt(_: void, a: []const u8, b: []const u8) bool {
             return std.mem.order(u8, a, b) == .lt;
@@ -845,9 +764,7 @@ test "every tool offered to the model resolves to a dispatchable registry entry"
     }
 }
 
-// The web-search pair must ship together in all three lists. A discovery tool
-// the model cannot call is dead weight, and an action tool with no way to
-// learn its arguments is just as broken — so neither half is useful alone.
+// The web-search pair must ship together in all three lists.
 test "web_search and list_web_search_providers appear in equips, the registry and the defaults" {
     const names = [_][]const u8{ "web_search", "list_web_search_providers" };
 
@@ -868,8 +785,6 @@ test "web_search and list_web_search_providers appear in equips, the registry an
         try testing.expect(in_defaults);
     }
 
-    // The default list is mirrored in the frontend's BUILTIN_DEFAULT_TOOLS;
-    // a divergence there is what the comment at the top of this list warns
-    // about, so assert the seed stays non-empty for both.
+    // The default list is mirrored in the frontend's BUILTIN_DEFAULT_TOOLS; a divergence there is what the comment at the top of this list warns about, so assert the …
     try testing.expect(DEFAULT_AGENT_TOOLS.len > 0);
 }

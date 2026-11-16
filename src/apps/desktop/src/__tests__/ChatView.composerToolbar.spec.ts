@@ -1,5 +1,4 @@
-/** ChatView V1 composer toolbar — static contract (mirrors the DiffCommentBox.spec.ts
- * source-reading pattern; mounting the full ChatView needs the agentCascade harness). */
+/** ChatView V1 composer toolbar — static contract (mirrors the DiffCommentBox.spec.ts source-reading pattern; mounting the full ChatView needs the agentCascade … */
 import { describe, expect, it } from 'vitest'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,9 +7,7 @@ import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSour
 const __dir = dirname(fileURLToPath(import.meta.url))
 const chatViewSrc = readChatViewBundle()
 
-// The toolbar block: from `<template #toolbar>` to its close. All
-// toolbar assertions scope to this slice so matches elsewhere in the
-// 5k-line file (e.g. message bubbles) can't false-positive.
+// The toolbar block: from `<template #toolbar>` to its close.
 const toolbarSrc = (() => {
   const start = chatViewSrc.indexOf('<template #toolbar>')
   const end = chatViewSrc.indexOf('</template>', start)

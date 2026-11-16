@@ -1,6 +1,4 @@
-// =============================================================================
 // SPECIAL — CompactionAgent, GenerateSessionNameAgent
-// =============================================================================
 
 pub const CompactionAgent =
     \\You are **CompactionAgent**. Your sole job: compress conversation history into a

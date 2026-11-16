@@ -5,27 +5,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The document split, which is the actual reported bug.
- *
- * The phone drew a `web-framework-html-benchmark` turn as a wall of literal
- * `<style>bmw-wrap{font-family:ui-sans-system…`. Nothing was wrong with the
- * markdown and nothing was wrong with the page — the turn simply never got
- * asked whether it was a *document*, and by the time the markdown renderer
- * saw the string the `<html>` envelope had already been stripped off it.
- *
- * These are the shapes that arrive, and each one has to come back as a
- * document rather than as literal text.
- */
+/** The document split, which is the actual reported bug. */
 class HtmlResponseTest {
 
     // ── The reported shape ──────────────────────────────────────────────────
 
     @Test
     fun `the reported turn - a style-led page - is a document`() {
-        // The first line of the screenshot. Note it is NOT `<html>`: the
-        // envelope is already gone by the time anything looks, which is
-        // exactly why the first-line rule exists as a separate test.
+        // The first line of the screenshot.
         val content = """
             <style>bmw-wrap{font-family:ui-sans-system,-apple-system,"Segoe
             UI",Roboto,Inter,sans-serif;background:#1D1C19;color:#c5c9c5}
@@ -82,8 +69,7 @@ class HtmlResponseTest {
 
     @Test
     fun `prose that mentions a tag in the middle is prose`() {
-        // The rule that keeps the first-line heuristic honest: the tag is in
-        // the sentence, never at the start of the turn.
+        // The rule that keeps the first-line heuristic honest: the tag is in the sentence, never at the start of the turn.
         val content = "Wrap the body in <div class=\"wrap\"> and it lays out fine."
 
         assertFalse(HtmlResponse.isHtmlTurn(content))
@@ -92,9 +78,7 @@ class HtmlResponseTest {
 
     @Test
     fun `a fenced markdown answer is prose, not a document`() {
-        // The language alternation is the whole test. A ```markdown fence is
-        // the model's way of handing back an *answer*, and treating it as a
-        // document would put every markdown answer on the phone in a WebView.
+        // The language alternation is the whole test.
         val content = "```markdown\n## Heading\n\n**bold**\n```"
 
         val segments = HtmlResponse.segments(content)
@@ -105,8 +89,7 @@ class HtmlResponseTest {
 
     @Test
     fun `a fenced code block inside a markdown answer survives`() {
-        // Anchored at both ends, or the trailing fence is matched, the block
-        // re-opens, and the answer renders as a paragraph of shell commands.
+        // Anchored at both ends, or the trailing fence is matched, the block re-opens, and the answer renders as a paragraph of shell commands.
         val content = """
             Here is the script:
 
@@ -198,8 +181,7 @@ class HtmlResponseTest {
 
     @Test
     fun `a bare document persisted mid-write is still drawable from its own close tag`() {
-        // `</body>` is the fallback for a turn that is not streaming and has
-        // neither a fence nor an `<html>` wrapper to prove it finished.
+        // `</body>` is the fallback for a turn that is not streaming and has neither a fence nor an `<html>` wrapper to prove it finished.
         val persisted = "<style>b{color:red}</style><div>Report</body>"
 
         assertTrue(HtmlResponse.isHtmlTurn(persisted, isComplete = false))
@@ -225,9 +207,7 @@ class HtmlResponseTest {
 
     @Test
     fun `the frame budget counts position, so five identical documents are still capped`() {
-        // A turn that repeats one document five times compares equal five
-        // times, so an identity-based budget would hand out five frames to a
-        // turn that is supposed to be capped at three.
+        // A turn that repeats one document five times compares equal five times, so an identity-based budget would hand out five frames to a turn that is supposed to be …
         val blocks = "<html><body><h1>Same</h1></body></html>".repeat(5)
         val documents = HtmlResponse.segments(blocks)
             .filterIsInstance<ResponseSegment.Document>()
@@ -251,8 +231,7 @@ class HtmlResponseTest {
         val shell = htmlPreviewDocument("<h1>Report</h1>")
 
         assertTrue(shell.startsWith("<!DOCTYPE html>"))
-        // `color-scheme: dark` or the frame's own scrollbars and form
-        // controls render light inside a dark transcript.
+        // `color-scheme: dark` or the frame's own scrollbars and form controls render light inside a dark transcript.
         assertTrue(shell.contains("color-scheme:dark"))
         assertTrue(shell.contains("background:#1D1C19"))
         assertTrue(shell.contains("<h1>Report</h1>"))
@@ -260,10 +239,7 @@ class HtmlResponseTest {
 
     @Test
     fun `a fragment's text surfaces are forced over the payload's own light chips`() {
-        // Real payload from this project: `style="background:#f6f8fa"` on every
-        // `<pre>`, written by a model that had no idea the transcript is dark.
-        // An inline style beats a stylesheet, which is how light ink ended up
-        // on a light chip at a measured 1.57:1.
+        // Real payload from this project: `style="background:#f6f8fa"` on every `<pre>`, written by a model that had no idea the transcript is dark.
         val shell = htmlPreviewDocument("<pre style=\"background:#f6f8fa\">x</pre>")
 
         assertTrue(shell.contains("pre,code,th,td{background:#24221F!important"))
@@ -320,9 +296,7 @@ class HtmlResponseTest {
 
     @Test
     fun `a frame gets the theme and the reporter in one document`() {
-        // What the `WebView` is handed, asserted whole. A frame with the
-        // theme but no reporter sits at its minimum height forever; one with
-        // the reporter but no theme is a bright slab in a dark transcript.
+        // What the `WebView` is handed, asserted whole.
         val frame = htmlFrameSource("<h1>Report</h1>")
 
         assertTrue(frame.contains("color-scheme:dark"))
@@ -331,14 +305,7 @@ class HtmlResponseTest {
     }
 }
 
-/**
- * A document turn has to be *visible*, not merely renderable.
- *
- * `<html><body><h1>Report</h1></body></html>` strips down to a body with
- * nothing in it, so the visibility gate that keeps empty envelopes out of the
- * transcript also threw the rendered page out with them — the answer was
- * drawn perfectly well and `groupMessages` simply had no row to draw it in.
- */
+/** A document turn has to be *visible*, not merely renderable. */
 class HtmlTurnVisibilityTest {
 
     @Test
@@ -375,8 +342,7 @@ class HtmlTurnVisibilityTest {
 
     @Test
     fun `an envelope-only turn is still not renderable`() {
-        // The gate the change must not weaken: `<markdown></markdown>` has no
-        // answer in it, document or otherwise.
+        // The gate the change must not weaken: `<markdown></markdown>` has no answer in it, document or otherwise.
         val message = ChatMessage(
             id = "m1",
             role = ChatMessage.ROLE_ASSISTANT,
@@ -390,11 +356,7 @@ class HtmlTurnVisibilityTest {
 
     @Test
     fun `an empty html envelope is still not renderable`() {
-        // The gate the change must not weaken. A closed `<html></html>` *is*
-        // matched by the block regex, but with nothing inside it — so it
-        // yields neither a document nor any prose, and the row has nothing to
-        // draw. Claiming renderability here would put a permanently blank row
-        // in the transcript, which is the exact failure the gate exists for.
+        // The gate the change must not weaken.
         val message = ChatMessage(
             id = "m1",
             role = ChatMessage.ROLE_ASSISTANT,
@@ -410,11 +372,7 @@ class HtmlTurnVisibilityTest {
 
     @Test
     fun `a think-only turn keeps the contract it had before documents existed`() {
-        // Deliberate, and unchanged by this work: a turn that is only
-        // `<think>…</think>` is the model's thinking the reader asked to see,
-        // so the envelope strip leaves it alone and it stays renderable. See
-        // `StripContentEnvelopeTest`. Pinning it here is what stops a future
-        // "documents are special" edit quietly reclassifying it.
+        // Deliberate, and unchanged by this work: a turn that is only `<think>…</think>` is the model's thinking the reader asked to see, so the envelope strip leaves it …
         val message = ChatMessage(
             id = "m1",
             role = ChatMessage.ROLE_ASSISTANT,

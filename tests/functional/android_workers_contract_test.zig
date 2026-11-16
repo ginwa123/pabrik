@@ -1,6 +1,4 @@
 // Wire-contract test for the native Android "worker is running" indicator.
-// Zig port of `tests/functional/android_workers_contract_test.py` (same test
-// names, same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,15 +8,12 @@ const gpa = testing.allocator;
 const io = testing.io;
 const Io = std.Io;
 
-// ============================================================================
 // SSE client
-// ============================================================================
 
 /// bytes, so 8 KiB is generous.
 const transfer_buffer_len = 8 * 1024;
 
-/// Monotonic milliseconds (`.awake` is monotonic — an NTP step must not
-/// stretch or shrink a deadline).
+/// Monotonic milliseconds (`.awake` is monotonic — an NTP step must not stretch or shrink a deadline).
 fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
@@ -36,13 +31,10 @@ const SseEvent = struct {
 };
 
 /// An open SSE connection plus the state the reader thread fills in.
-///
-/// The test thread owns the pointer; the reader thread writes into it.
 const SseStream = struct {
     client: std.http.Client,
     req: std.http.Client.Request,
-    /// The transfer buffer `body` reads out of. Owned here so its address
-    /// outlives every read.
+    /// The transfer buffer `body` reads out of.
     transfer_buffer: [transfer_buffer_len]u8 = undefined,
     /// `req.reader` after `resp.reader(&transfer_buffer)`.
     body: *Io.Reader = undefined,
@@ -69,8 +61,7 @@ const SseStream = struct {
         gpa.destroy(self);
     }
 
-    /// A DEEP COPY of the frames collected so far. Caller owns the slice
-    /// (free it with `freeSnapshot`).
+    /// A DEEP COPY of the frames collected so far.
     fn snapshot(self: *SseStream) ![]SseEvent {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -95,8 +86,6 @@ const SseStream = struct {
     }
 
     /// Pop the FIRST frame named `want`, discarding everything before it.
-    /// Returns true iff a matching event was seen — Python's
-    /// `_drain_until(events_q, lambda e, d: e == want, timeout)`.
     fn drainUntilMatching(self: *SseStream, want: []const u8, timeout_ms: i64) bool {
         const deadline = nowMs() + timeout_ms;
         while (true) {
@@ -109,9 +98,7 @@ const SseStream = struct {
                 if (hit) return true;
                 continue;
             }
-            // Snapshot `done` under the SAME lock, then RELEASE before
-            // sleeping: holding the mutex across the sleep starves the
-            // reader, which needs the same lock to append.
+            // Snapshot `done` under the SAME lock, then RELEASE before sleeping: holding the mutex across the sleep starves the reader, which needs the same lock to append.
             const finished = self.done.load(.acquire);
             self.mutex.unlock(io);
             if (finished) return false;
@@ -120,8 +107,7 @@ const SseStream = struct {
         }
     }
 
-    /// Pop the FIRST frame named `want`, discarding everything before it, and
-    /// RETURN it (ownership passes to the caller).
+    /// Pop the FIRST frame named `want`, discarding everything before it, and RETURN it (ownership passes to the caller).
     fn drainUntilMatchingKeep(self: *SseStream, want: []const u8, timeout_ms: i64) ?SseEvent {
         const deadline = nowMs() + timeout_ms;
         while (true) {
@@ -143,14 +129,11 @@ const SseStream = struct {
 };
 
 /// Open `GET /api/events?channels=<channels>` and capture the response head.
-/// The caller owns the returned pointer and must `deinit` it.
 fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers, and an uninitialised
-    // `Io.Mutex` is not a lock at all.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers, and an uninitialised `Io.Mutex` is not a lock at all.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(
@@ -179,8 +162,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     var resp = try s.req.receiveHead(&.{});
     s.status = @intFromEnum(resp.head.status);
 
-    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so
-    // touching `head` afterwards is a use-after-free.
+    // Headers FIRST: `resp.reader()` calls `head.invalidateStrings()`, so touching `head` afterwards is a use-after-free.
     {
         var hit = resp.head.iterateHeaders();
         while (hit.next()) |kv| {
@@ -195,8 +177,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error
-/// occurs. Runs on its own thread.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -212,8 +193,7 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // One LINE, not the whole stream — that is what makes the read
-        // incremental.
+        // One LINE, not the whole stream — that is what makes the read incremental.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
@@ -265,21 +245,17 @@ fn readEvents(s: *SseStream) void {
                 continue;
             };
         }
-        // `:` comment lines and unknown fields are ignored, matching both
-        // the browser EventSource parser and the Python reader.
+        // `:` comment lines and unknown fields are ignored, matching both the browser EventSource parser and the Python reader.
     }
 }
 
-/// Release a blocked `readEvents` by shutting the socket's read side. Without
-/// this the reader thread parks in `readv` forever on an SSE stream that
-/// never ends.
+/// Release a blocked `readEvents` by shutting the socket's read side.
 fn releaseReader(s: *SseStream) void {
     s.stop.store(true, .release);
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Python `_collect(events_q, seconds)`: let the pump run for the whole
-/// window so a slow frame is not a failure, then take everything it saw.
+/// Python `_collect(events_q, seconds)`: let the pump run for the whole window so a slow frame is not a failure, then take everything it saw.
 fn collectFrames(s: *SseStream, window_ms: i64) ![]SseEvent {
     const deadline = nowMs() + window_ms;
     while (nowMs() < deadline and !s.done.load(.acquire)) {
@@ -288,12 +264,9 @@ fn collectFrames(s: *SseStream, window_ms: i64) ![]SseEvent {
     return s.snapshot();
 }
 
-// ============================================================================
 // HTTP helpers
-// ============================================================================
 
-/// An owned response body plus a SELF-CONTAINED parse (`.alloc_always`,
-/// so nothing aliases `bytes`).
+/// An owned response body plus a SELF-CONTAINED parse (`.alloc_always`, so nothing aliases `bytes`).
 const OwnedDoc = struct {
     bytes: []u8,
     doc: harness.Json,
@@ -392,9 +365,7 @@ fn readWorkersUntilPopulated(h: *Harness, timeout_ms: i64) !OwnedDoc {
     return last;
 }
 
-/// `POST /api/llm/session {"queue_message": ..., "allowed_tools": ""}`. Used
-/// only to make a worker register/deregister; the run itself is answered by
-/// the harness's stub LLM.
+/// `POST /api/llm/session {"queue_message": ..., "allowed_tools": ""}`.
 fn queueLlmRun(h: *Harness, message: []const u8) !void {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .queue_message = message,
@@ -409,9 +380,7 @@ fn queueLlmRun(h: *Harness, message: []const u8) !void {
     defer r.deinit();
 }
 
-/// Open the workers SSE channel, run `body` with the reader already spawned,
-/// then release + join + free the stream, and return whatever the body
-/// produced.
+/// Open the workers SSE channel, run `body` with the reader already spawned, then release + join + free the stream, and return whatever the body produced.
 fn withWorkerStream(
     comptime T: type,
     h: *Harness,
@@ -429,8 +398,7 @@ fn withWorkerStream(
     return body(h, s);
 }
 
-/// The presence projection for ONE row: `session_id` preferred, `id` as the
-/// fallback, empty when neither is usable. Borrows `obj`.
+/// The presence projection for ONE row: `session_id` preferred, `id` as the fallback, empty when neither is usable.
 fn projectedId(obj: std.json.ObjectMap) []const u8 {
     if (obj.get("session_id")) |v| switch (v) {
         .string => |s| {
@@ -445,12 +413,9 @@ fn projectedId(obj: std.json.ObjectMap) []const u8 {
     return "";
 }
 
-// ============================================================================
 // GET /api/workers
-// ============================================================================
 
 // `workers` + `count`, and an array even with nothing running.
-// `WorkerApi.parseRunningSessionIds` reads `workers` only.
 test "workers_list_carries_the_envelope_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -470,9 +435,7 @@ test "workers_list_carries_the_envelope_the_android_client_reads" {
     try testing.expectEqual(@as(i64, @intCast(rows.items.len)), count);
 }
 
-// Every row must carry `id`, and `session_id` must be a string or null. `id`
-// is the fallback the client uses whenever `session_id` is empty, so a row
-// missing it entirely is a session the client cannot key a spinner on.
+// Every row must carry `id`, and `session_id` must be a string or null.
 test "workers_list_keeps_the_id_fields_the_android_client_reads" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -533,8 +496,6 @@ test "workers_list_keeps_the_id_fields_the_android_client_reads" {
 }
 
 // `status`/`is_running` are literals — which is why presence is the signal.
-// This is not an assertion that the backend is right; it pins the behaviour
-// the Kotlin parser deliberately ignores.
 test "every_returned_worker_row_reports_itself_as_running" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -578,8 +539,7 @@ test "every_returned_worker_row_reports_itself_as_running" {
         };
         try testing.expectEqualStrings("running", status);
 
-        // `queue_count` defaults to 0 in Python's assertion; only its type
-        // matters here.
+        // `queue_count` defaults to 0 in Python's assertion; only its type matters here.
         if (obj.get("queue_count")) |v| switch (v) {
             .integer => {},
             else => {
@@ -629,9 +589,7 @@ test "workers_limit_is_honoured" {
     }
 }
 
-// ============================================================================
 // GET /api/workers?session_id=…
-// ============================================================================
 
 // An idle session answers `workers: []`, never an absent field.
 test "workers_by_session_id_returns_an_empty_array_not_a_missing_key" {
@@ -659,9 +617,7 @@ test "workers_by_session_id_returns_an_empty_array_not_a_missing_key" {
     try testing.expectEqual(@as(i64, 0), count);
 }
 
-// ============================================================================
 // GET /api/events?channels=workers
-// ============================================================================
 
 // `channels=workers` returns 200 SSE and a `connected` frame.
 test "workers_channel_handshake" {
@@ -694,8 +650,6 @@ test "workers_channel_handshake" {
 }
 
 // One connection, four channels, and a typo in it is silent.
-// `SseChannels.eventsPath()` is `llm,queue,sessions,workers` and it is the
-// app's only subscription.
 test "the_shared_channel_set_carries_everything_the_app_needs" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -721,14 +675,12 @@ test "the_shared_channel_set_carries_everything_the_app_needs" {
             std.debug.print("channels={s}: expected SSE content-type, got '{s}'\n", .{ channels, s.content_type });
             return error.TestUnexpectedResult;
         }
-        // Nothing is subscribed to a stream nobody reads; close the socket
-        // so the server is not left holding a dead peer.
+        // Nothing is subscribed to a stream nobody reads; close the socket so the server is not left holding a dead peer.
         releaseReader(s);
     }
 }
 
-// `id` is always present, and `session_id` never disagrees with it. This is
-// the invariant `decodeChatFrame` actually depends on.
+// `id` is always present, and `session_id` never disagrees with it.
 test "worker_frames_always_carry_the_id_the_android_client_falls_back_to" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -780,9 +732,7 @@ test "worker_frames_always_carry_the_id_the_android_client_falls_back_to" {
             return error.TestUnexpectedResult;
         }
 
-        // The key is always present, even when blank — the client reads it
-        // with `optString`, which yields "" for both a missing key and an
-        // empty one.
+        // The key is always present, even when blank — the client reads it with `optString`, which yields "" for both a missing key and an empty one.
         const sid_value = obj.get("session_id") orelse {
             std.debug.print("{s}: `session_id` key is absent: {s}\n", .{ e.name, e.data });
             return error.TestUnexpectedResult;
@@ -825,9 +775,7 @@ test "a_worker_delete_frame_ships_an_empty_session_id" {
         std.debug.print("teardown: {s}", .{@errorName(err)});
     };
 
-    // `drainUntilMatchingKeep` CONSUMES the frames it scans past and hands
-    // back the matching one, which is what Python's
-    // `_, data = found` needs.
+    // `drainUntilMatchingKeep` CONSUMES the frames it scans past and hands back the matching one, which is what Python's `_, data = found` needs.
     var found = try withWorkerStream(?SseEvent, &h, struct {
         fn body(h2: *Harness, s: *SseStream) !?SseEvent {
             try queueLlmRun(h2, "start then stop");
@@ -910,9 +858,7 @@ test "worker_frames_use_the_event_names_the_android_client_decodes" {
     }
 }
 
-// ============================================================================
 // Body-analysis barrier
-// ============================================================================
 
 comptime {
     _ = nowMs;

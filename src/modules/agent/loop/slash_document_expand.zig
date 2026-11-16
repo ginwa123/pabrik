@@ -1,6 +1,4 @@
-//! Send-time expansion of `/document-<id>` tokens: each one resolves against the
-//! session's workspace into a trailing `<slash_documents>` block carrying the
-//! title and body, the same shape `slash_skill_expand.zig` gives `/skill-<name>`.
+//! Send-time expansion of `/document-<id>` tokens: each one resolves against the session's workspace into a trailing `<slash_documents>` block carrying the title …
 
 const std = @import("std");
 
@@ -15,22 +13,17 @@ const migration = @import("../../../migrations/migration.zig");
 /// The marker the composer writes: a token is this plus a document id.
 pub const TOKEN_PREFIX = "document-";
 
-/// Longest body inlined per document — a body may hold 4 MiB, which is a context
-/// bomb. `bytes`/`shown_bytes` on the element say what was cut, and the model
-/// pages the rest with `document` (`action: "read"`, `offset` / `limit`).
+/// Longest body inlined per document — a body may hold 4 MiB, which is a context bomb.
 pub const MAX_BODY_BYTES: usize = 8 * 1024;
 
-/// Documents one message may reference. Each costs up to `MAX_BODY_BYTES`, so
-/// the cap bounds the block at ~40 KiB however many tokens the text holds.
+/// Documents one message may reference.
 pub const MAX_DOCUMENTS: usize = 5;
 
 fn isTokenChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_' or c == '-';
 }
 
-/// Distinct document ids referenced by `/document-<id>` tokens in `message`,
-/// in first-appearance order. Only the prefixed shape counts: a bare
-/// `/doc_…` is how a skill token reads, and `/document` itself names nothing.
+/// Distinct document ids referenced by `/document-<id>` tokens in `message`, in first-appearance order.
 pub fn extractDocumentTokens(allocator: std.mem.Allocator, message: []const u8) ![][]const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -66,9 +59,7 @@ fn contains(haystack: []const []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// The outcome of `expandSlashDocuments`. `message` is the send text: the
-/// original verbatim when nothing loaded, otherwise the original plus a
-/// trailing `<slash_documents>` block.
+/// The outcome of `expandSlashDocuments`.
 pub const ExpandResult = struct {
     message: []const u8,
     unknown: [][]const u8,
@@ -84,9 +75,7 @@ pub const ExpandResult = struct {
     }
 };
 
-/// Resolve every `/document-<id>` token against the workspace `session_id` belongs
-/// to and append the loaded bodies. A token that names nothing readable — another
-/// workspace's document, a stale id, a body that breaks the block — stays literal.
+/// Resolve every `/document-<id>` token against the workspace `session_id` belongs to and append the loaded bodies.
 pub fn expandSlashDocuments(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -113,8 +102,7 @@ pub fn expandSlashDocuments(
         };
     }
 
-    // No workspace means no document can be named: every token stays literal
-    // rather than silently loading something from another tenant.
+    // No workspace means no document can be named: every token stays literal rather than silently loading something from another tenant.
     const workspace_id = (try workspace_scope.resolveWorkspaceId(allocator, store.db, session_id)) orelse {
         for (tokens) |id| try unknown.append(allocator, try allocator.dupe(u8, id));
         return .{
@@ -139,8 +127,7 @@ pub fn expandSlashDocuments(
             continue;
         };
         defer documents_store.freeDocumentRow(allocator, row);
-        // A body carrying the closing tag would end the element early and hand
-        // the rest of the document to the model as prompt structure.
+        // A body carrying the closing tag would end the element early and hand the rest of the document to the model as prompt structure.
         if (std.mem.indexOf(u8, row.content, "</document") != null) {
             try unknown.append(allocator, try allocator.dupe(u8, id));
             continue;
@@ -208,8 +195,7 @@ fn appendEscaped(
     }
 }
 
-/// The longest prefix of `body` that is at most `max` bytes and still ends on
-/// a UTF-8 boundary, so a multi-byte character is never cut in half.
+/// The longest prefix of `body` that is at most `max` bytes and still ends on a UTF-8 boundary, so a multi-byte character is never cut in half.
 fn truncateUtf8(body: []const u8, max: usize) []const u8 {
     if (body.len <= max) return body;
     var end = max;
@@ -217,9 +203,7 @@ fn truncateUtf8(body: []const u8, max: usize) []const u8 {
     return body[0..end];
 }
 
-// ===================================================================== Tests
-// — behaviour only: expand a real message against real rows in an in-memory
-// workspace and read the resulting string.
+// ===================================================================== Tests — behaviour only: expand a real message against real rows in an in-memory workspace …
 
 const TestCtx = struct {
     db: database.Db,
@@ -237,8 +221,7 @@ const TestCtx = struct {
     }
 };
 
-/// The documents tables plus the three tables `workspace_scope` reads, with
-/// session `task_1` linked to workspace `ws_1`.
+/// The documents tables plus the three tables `workspace_scope` reads, with session `task_1` linked to workspace `ws_1`.
 fn setupSlashDb() !TestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});

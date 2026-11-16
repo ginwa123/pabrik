@@ -1,5 +1,4 @@
-//! Transport: HTTP glue between the TUI and the pabrik backend. Sole user of
-//! `custom_http_client` inside the tui module.
+//! Transport: HTTP glue between the TUI and the pabrik backend.
 
 const std = @import("std");
 const custom_http_client = @import("kabelweb").client;
@@ -9,8 +8,7 @@ pub const TransportError = error{
     OutOfMemory,
 };
 
-/// POST /api/llm/session with a chat message. On success returns the
-/// session id echoed by the server (caller owns).
+/// POST /api/llm/session with a chat message.
 pub fn postSend(
     allocator: std.mem.Allocator,
     client: *custom_http_client.Client,
@@ -37,8 +35,7 @@ pub fn postSend(
     return allocator.dupe(u8, response.body);
 }
 
-/// GET /api/llm/session/:id/messages. Returns the raw JSON body
-/// (caller owns). The caller parses it with std.json.
+/// GET /api/llm/session/:id/messages.
 pub fn getMessages(
     allocator: std.mem.Allocator,
     client: *custom_http_client.Client,
@@ -63,8 +60,7 @@ pub fn getMessages(
     return allocator.dupe(u8, response.body);
 }
 
-/// Open a long-lived SSE stream on /api/events. Caller MUST call
-/// `.deinit()` on the returned stream.
+/// Open a long-lived SSE stream on /api/events.
 pub fn openEvents(
     allocator: std.mem.Allocator,
     client: *custom_http_client.Client,
@@ -90,9 +86,7 @@ fn joinUrl(allocator: std.mem.Allocator, server: []const u8, path: []const u8) !
     return std.fmt.allocPrint(allocator, "{s}{s}", .{ base, path });
 }
 
-/// Build the JSON body for POST /api/llm/session. Every string field is
-/// properly JSON-escaped (quotes, backslashes, control bytes) so user
-/// input containing `"`, `\`, or newlines cannot break the wire shape.
+/// Build the JSON body for POST /api/llm/session.
 pub fn buildSendBody(
     allocator: std.mem.Allocator,
     session_id: []const u8,
@@ -115,9 +109,7 @@ pub fn buildSendBody(
     return aw.toOwnedSlice();
 }
 
-// ----------------------------------------------------------------------------
 // Tests — pure helpers only; HTTP paths need a live server.
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -159,12 +151,9 @@ test "buildSendBody: non-empty cwd is sent as cwd_session (regression: tui alway
     try testing.expectEqualStrings("/home/ginwa/my-project", parsed.value.object.get("cwd_session").?.string);
 }
 
-// ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) ===== TDD
-// round 2 — regression tests written BEFORE the fixes.
+// ===== Tests merged from tdd_round2_test.zig (2026-09-29 flatten) =====
 
-// ============================================================================
 // 1. transport.buildSendBody — JSON injection safety
-// ============================================================================
 
 test "buildSendBody: plain message round-trips" {
     const body = try buildSendBody(testing.allocator, "session-1", "hi", "");

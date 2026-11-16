@@ -45,8 +45,6 @@ function saveToStorage(entries: RecentFolderEntry[]): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
   } catch {
     // localStorage quota exceeded / private mode — swallow silently.
-    // The in-memory state is still updated; the next page load will
-    // start fresh from the (persisted) shadow.
   }
 }
 
@@ -80,8 +78,7 @@ export const useRecentFoldersStore = defineStore('recentFolders', () => {
     } else {
       entries.value.push({ path, lastUsedAt: now, pinned: false })
     }
-    // Cap: evict the OLDEST non-pinned entry if over the cap. Pinned
-    // entries are exempt from auto-eviction.
+    // Cap: evict the OLDEST non-pinned entry if over the cap.
     if (entries.value.length > CAP) {
       const candidates = entries.value
         .filter((e) => !e.pinned)

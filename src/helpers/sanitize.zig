@@ -56,8 +56,7 @@ pub fn sanitizeUtf8(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return result.toOwnedSlice(allocator);
 }
 
-/// Sanitize a JSON string by escaping problematic characters
-/// Returns allocated slice — caller must free
+/// Sanitize a JSON string by escaping problematic characters Returns allocated slice — caller must free
 pub fn sanitizeJsonString(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(allocator);
@@ -119,8 +118,7 @@ test "sanitizeUtf8 incomplete sequence" {
     const allocator = std.testing.allocator;
     const result = try sanitizeUtf8(allocator, "hello\xE4world");
     defer allocator.free(result);
-    // \xE4 starts a 3-byte seq but only 1 continuation byte (w=0x77, not 0x80-0xBF)
-    // Invalid, replaced with U+FFFD (EF BF BD), then 'rld' remains
+    // \xE4 starts a 3-byte seq but only 1 continuation byte (w=0x77, not 0x80-0xBF) Invalid, replaced with U+FFFD (EF BF BD), then 'rld' remains
     try std.testing.expectEqualStrings("hello\xEF\xBF\xBDrld", result);
 }
 
@@ -128,14 +126,11 @@ test "sanitizeUtf8 invalid continuation byte" {
     const allocator = std.testing.allocator;
     const result = try sanitizeUtf8(allocator, "hello\xE4\x90world");
     defer allocator.free(result);
-    // \xE4\x90 is invalid (0x90 is not valid continuation 0x80-0xBF)
-    // Replaced with U+FFFD (EF BF BD), then 'orld' remains
+    // \xE4\x90 is invalid (0x90 is not valid continuation 0x80-0xBF) Replaced with U+FFFD (EF BF BD), then 'orld' remains
     try std.testing.expectEqualStrings("hello\xEF\xBF\xBDorld", result);
 }
 
-/// Sanitize an arbitrary string into a single safe filesystem path component
-/// (one folder/file name — never a multi-level path). Replaces `/ \ < > : " |
-/// ?
+/// Sanitize an arbitrary string into a single safe filesystem path component (one folder/file name — never a multi-level path).
 pub fn sanitizePathComponent(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     if (input.len == 0) return error.InvalidPathComponent;
 
@@ -152,8 +147,6 @@ pub fn sanitizePathComponent(allocator: std.mem.Allocator, input: []const u8) ![
     }
 
     // Windows rejects names ending in dots/spaces — rewrite them.
-    // (This also neutralizes "." and "..": they become "_" / "__",
-    // both valid leaf names.)
     var end: usize = out.len;
     while (end > 0 and (out[end - 1] == '.' or out[end - 1] == ' ')) {
         out[end - 1] = '_';
@@ -169,9 +162,7 @@ pub fn sanitizePathComponent(allocator: std.mem.Allocator, input: []const u8) ![
     return out;
 }
 
-/// Windows-reserved device names, matched case-insensitively against
-/// the stem (before the first '.'): CON, PRN, AUX, NUL, COM1-9, LPT1-9.
-/// `mkdir CON` fails on Windows even with an extension (`CON.txt`).
+/// Windows-reserved device names, matched case-insensitively against the stem (before the first '.'): CON, PRN, AUX, NUL, COM1-9, LPT1-9.
 fn isWindowsReservedName(name: []const u8) bool {
     const stem = if (std.mem.indexOfScalar(u8, name, '.')) |i| name[0..i] else name;
     const reserved = [_][]const u8{

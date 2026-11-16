@@ -1,6 +1,4 @@
-// Regression test for the agent-tool checkbox render bug. Bug: when the user lands directly on the
-// agent view (?view=workspace&itemId=AGENT_ID, no chat task), the AppLayout watcher on
-// `activeTask.value` never fires (activeTask is null), so `agentTools` stays empty.
+// Regression test for the agent-tool checkbox render bug.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -82,14 +80,11 @@ function setRoute(q: Record<string, string>, path = '/app') {
   } as any)
 }
 
-/**  * Mount AppLayout with an agent item as the active workspace item and NO chat task. Returns the
- * wrapper so the test can inspect the props passed to the AgentView stub. */
+/** Mount AppLayout with an agent item as the active workspace item and NO chat task. */
 function mountAgentView(): VueWrapper {
   const ws = useWorkspacesStore()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ws.workspaces = [{ id: WS_ID, name: 'WS', items: [makeAgentItem()] }] as any
-  // Serve the fixtures from the API mocks so init() populates
-  // instead of wiping (lazy-init safe snapshot).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const snapshot = JSON.parse(JSON.stringify(ws.workspaces)) as any[]
   vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: snapshot })
@@ -180,8 +175,6 @@ describe('AppLayout — agent tools fetch on agent view mount (no chat task)', (
     const ws = useWorkspacesStore()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ws.workspaces = [{ id: WS_ID, name: 'WS', items: [makeAgentItem()] }] as any
-    // Serve the fixtures from the API mocks so init() populates
-    // instead of wiping (lazy-init safe snapshot).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const snapshot = JSON.parse(JSON.stringify(ws.workspaces)) as any[]
     vi.spyOn(api, 'getWorkspaces').mockResolvedValue({ workspaces: snapshot })
@@ -195,8 +188,7 @@ describe('AppLayout — agent tools fetch on agent view mount (no chat task)', (
         mocks: { $router: { replace: vi.fn() } },
         provide: { processingState: ref<Record<string, boolean>>({}) },
         stubs: {
-          // The stub MUST be defined this way so the props are captured
-          // synchronously during the first render.
+          // The stub MUST be defined this way so the props are captured synchronously during the first render.
           AgentView: AgentViewStub,
         },
       },

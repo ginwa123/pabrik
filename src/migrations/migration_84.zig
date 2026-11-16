@@ -8,9 +8,7 @@ const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 const dialect = common.dialect;
 
-/// Migration 084 — drop per-task routines, replace with workspace-level
-/// routines (`workspace_routines`, 1:1 with routine `workspace_items`). ##
-/// Why this migration exists Per-task routines (`routines` table from
+/// Migration 084 — drop per-task routines, replace with workspace-level routines (`workspace_routines`, 1:1 with routine `workspace_items`).
 pub const Migration084ReplaceRoutinesWithWorkspaceRoutines = struct {
     pub const version: u32 = 84;
     pub const name = "replace_routines_with_workspace_routines";
@@ -50,8 +48,7 @@ pub const Migration084ReplaceRoutinesWithWorkspaceRoutines = struct {
             "CREATE INDEX IF NOT EXISTS idx_workspace_routines_workspace_item_id ON workspace_routines(workspace_item_id)",
             &[_][]const u8{},
         );
-        // Hot-path index for the Scheduler's due-scan
-        // (SELECT id FROM workspace_routines WHERE enabled=1 AND next_run_at<=now).
+        // Hot-path index for the Scheduler's due-scan (SELECT id FROM workspace_routines WHERE enabled=1 AND next_run_at<=now).
         try db.exec(allocator,
             "CREATE INDEX IF NOT EXISTS idx_workspace_routines_enabled_next_run ON workspace_routines(enabled, next_run_at)",
             &[_][]const u8{},

@@ -15,9 +15,7 @@ pub const MigrationManager = struct {
     allocator: std.mem.Allocator,
     db: *Backend,
     migrations: std.ArrayList(Migration),
-    /// The migration `runMigrations` is applying, or 0. Set BEFORE `up`, because
-    /// the `schema_migrations` row lands only after it succeeds: a caller that
-    /// catches the error is the only thing that can name the migration.
+    /// The migration `runMigrations` is applying, or 0.
     running_version: u32 = 0,
     running_name: []const u8 = "",
 
@@ -111,8 +109,7 @@ pub fn dropColumnIfExists(
     try db.exec(allocator, ddl, &.{});
 }
 
-/// Rename `old_column` to `new_column`, unless the old name is gone or the
-/// new one already exists — either way the migration has nothing left to do.
+/// Rename `old_column` to `new_column`, unless the old name is gone or the new one already exists — either way the migration has nothing left to do.
 pub fn renameColumnIfExists(
     db: pabrikcore.database.DbOrTx,
     allocator: std.mem.Allocator,

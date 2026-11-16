@@ -32,8 +32,7 @@ describe('EditSkill.vue — clean success with args is expandable', () => {
   })
 
   it('falls back to `name` when skill_name is empty', () => {
-    // `''` is not null, so a `??` chain alone would let the blank win and
-    // render an unlabelled card.
+    // `''` is not null, so a `??` chain alone would let the blank win and render an unlabelled card.
     const wrapper = mount(EditSkill, {
       props: {
         content: { skill_name: '', name: 'my-skill', edited: true },

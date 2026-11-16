@@ -1,6 +1,4 @@
-/** The turn sent straight after a compaction. The envelope is a `role=user` row, so that turn is the
- * NEXT user row; the two used to fold into one block that drew the card instead of the message.
- * Asserted where the user sees it: `llm_history` rows in, rendered transcript text out. */
+/** The turn sent straight after a compaction. */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
@@ -59,8 +57,7 @@ function presentationFor(messages: Message[]) {
     isRemoteLoadPending: ref(false),
     mode: () => 'compact',
   })
-  // The first render is an empty transcript; that pass is what resolves the
-  // `messageGroups` ↔ `groupToolNames` cycle. Mirror it before filling the ref.
+  // The first render is an empty transcript; that pass is what resolves the `messageGroups` ↔ `groupToolNames` cycle.
   void deps.messageGroups.value
   messagesRef.value = messages
   return deps

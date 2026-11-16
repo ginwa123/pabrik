@@ -6,19 +6,16 @@ const schemas = @import("schemas.zig");
 
 const AgentTool = schemas.AgentTool;
 
-/// Canonical input type — alias so the wire schema is identical to the
-/// old `bash` / `pwsh` tools.
+/// Canonical input type — alias so the wire schema is identical to the old `bash` / `pwsh` tools.
 pub const CommandInput = shell.ShellInput;
 
-/// Canonical output type — alias so the JSON payload is identical to the
-/// old `bash` / `pwsh` tools.
+/// Canonical output type — alias so the JSON payload is identical to the old `bash` / `pwsh` tools.
 pub const CommandOutput = shell.ShellOutput;
 
 /// argv-prefix for the POSIX shell: `bash -c <command>`.
 pub const COMMAND_BASH_PREFIX: []const []const u8 = &.{ "bash", "-c" };
 
-/// argv-prefix for PowerShell Core: `pwsh -NoProfile -NonInteractive -Command
-/// <script>`. `-NoProfile` skips profile loading (faster, no startup hooks).
+/// argv-prefix for PowerShell Core: `pwsh -NoProfile -NonInteractive -Command <script>`.
 pub const COMMAND_PWSH_PREFIX: []const []const u8 = &.{
     "pwsh", "-NoProfile", "-NonInteractive", "-Command",
 };
@@ -28,8 +25,7 @@ pub const COMMAND_CMD_PREFIX: []const []const u8 = &.{
     "cmd.exe", "/c",
 };
 
-/// Run a shell command on the host-appropriate shell: `pwsh` on Windows (with
-/// a `cmd.exe` retry when pwsh is missing), `bash` everywhere else.
+/// Run a shell command on the host-appropriate shell: `pwsh` on Windows (with a `cmd.exe` retry when pwsh is missing), `bash` everywhere else.
 pub fn execute_command(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -38,8 +34,7 @@ pub fn execute_command(
     return execute_command_with(allocator, io, input, null);
 }
 
-/// `execute_command` with the execution substrate made explicit. `executor`
-/// replaces the host shell spawn; null keeps the host path byte-identical.
+/// `execute_command` with the execution substrate made explicit.
 pub fn execute_command_with(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -49,8 +44,7 @@ pub fn execute_command_with(
     return execute_command_with_cancel(allocator, io, input, executor, null);
 }
 
-/// `execute_command_with` plus the Stop button: the foreground wait loop polls
-/// it and SIGKILLs the child's process group. Detached modes ignore it.
+/// `execute_command_with` plus the Stop button: the foreground wait loop polls it and SIGKILLs the child's process group.
 pub fn execute_command_with_cancel(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -59,16 +53,12 @@ pub fn execute_command_with_cancel(
     cancel_hook: ?shell.CancelHook,
 ) !CommandOutput {
     if (builtin.os.tag == .windows) {
-        // Phase 1 (cmd fallback) is foreground-only: background keeps the
-        // historical pwsh path (spawn_background's nohup idiom + the D8
-        // Start-Process TODO in shell.zig).
+        // Phase 1 (cmd fallback) is foreground-only: background keeps the historical pwsh path (spawn_background's nohup idiom + the D8 Start-Process TODO in shell.zig).
         if (input.background) {
             return shell.execute_shell_with_cancel(allocator, io, COMMAND_PWSH_PREFIX, input, executor, cancel_hook);
         }
         const pwsh_out = shell.execute_shell_with_cancel(allocator, io, COMMAND_PWSH_PREFIX, input, executor, cancel_hook) catch |err| {
-            // Retry ONLY on a missing binary. Any other error (timeout,
-            // forbidden, spawn permission, …) propagates unchanged so real
-            // failures are never masked as "try the other shell".
+            // Retry ONLY on a missing binary.
             if (err != error.FileNotFound) return err;
             return try shell.execute_shell_with_cancel(allocator, io, COMMAND_CMD_PREFIX, input, executor, cancel_hook);
         };
@@ -78,8 +68,7 @@ pub fn execute_command_with_cancel(
     }
 }
 
-/// JSON payload formatter — same 8-field shape as the old
-/// `bash_result_to_string` / `pwsh_result_to_string`.
+/// JSON payload formatter — same 8-field shape as the old `bash_result_to_string` / `pwsh_result_to_string`.
 pub const command_result_to_json = shell.result_to_json;
 
 pub const command_tool_system_prompt =
@@ -204,15 +193,12 @@ pub const command_tool = AgentTool{
     },
 };
 
-// ============================================================================
-// Inline tests — schema shape (existing bash/pwsh tests are NOT duplicated
-// here; bash_test.zig + the pwsh.zig inline tests keep covering the shim
+// Inline tests — schema shape (existing bash/pwsh tests are NOT duplicated here; bash_test.zig + the pwsh.zig inline tests keep covering the shim
 
 const testing = std.testing;
 
 test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
-    // The tool description and system prompt used to instruct the model to
-    // write `timeout <seconds> <cmd>`.
+    // The tool description and system prompt used to instruct the model to write `timeout <seconds> <cmd>`.
     const desc = command_tool.function.description;
     const prompt = command_tool_system_prompt;
 
@@ -234,9 +220,7 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
             }
         }
     }
-    // ...and the replacement guidance is actually there in both places: the
-    // Command Rules bullet in the description, and the opening line of the
-    // system prompt.
+    // ...and the replacement guidance is actually there in both places: the Command Rules bullet in the description, and the opening line of the system prompt.
     try testing.expect(std.mem.indexOf(u8, desc, "do not add one") != null);
     try testing.expect(std.mem.indexOf(u8, prompt, "Do NOT prefix commands") != null);
     // The `command` param's own examples must not open with a timeout either.
@@ -248,8 +232,7 @@ test "command_tool schema: no `timeout` prefix rule in the LLM-facing text" {
 }
 
 test "command_tool schema: exactly ONE deadline param, and it is required" {
-    // This test used to read "a `timeout` param must NOT exist" — it was the
-    // guard against the tool growing a second way to bound a
+    // This test used to read "a `timeout` param must NOT exist" — it was the guard against the tool growing a second way to bound a
     const params = command_tool.function.parameters;
 
     var deadline_count: usize = 0;
@@ -277,9 +260,7 @@ test "command_tool schema: exactly ONE deadline param, and it is required" {
 }
 
 test "command_tool schema: every declared parameter is parsed, none is reported as unrecognized" {
-    // The repair text tells the model which of its fields are not parameters
-    // of this tool, so that list is only honest while the parser reads every
-    // declared field.
+    // The repair text tells the model which of its fields are not parameters of this tool, so that list is only honest while the parser reads every declared field.
     for (command_tool.function.parameters.properties) |prop| {
         const args = if (std.mem.eql(u8, prop.name, "command"))
             try std.fmt.allocPrint(testing.allocator, "{{\"{s}\":[]}}", .{prop.name})
@@ -309,8 +290,7 @@ test "command_tool schema: every declared parameter is parsed, none is reported 
 }
 
 test "command_tool schema: the field named `timeout` is NOT the shell timeout utility" {
-    // The rename put the model's word for the FIELD and its word for the
-    // banned UTILITY on the same string.
+    // The rename put the model's word for the FIELD and its word for the banned UTILITY on the same string.
     var timeout_desc: ?[]const u8 = null;
     for (command_tool.function.parameters.properties) |prop| {
         if (std.mem.eql(u8, prop.name, "timeout")) timeout_desc = prop.description;
@@ -319,18 +299,15 @@ test "command_tool schema: the field named `timeout` is NOT the shell timeout ut
     try testing.expect(std.mem.indexOf(u8, timeout_desc.?, "FIELD, not a command prefix") != null);
     try testing.expect(std.mem.indexOf(u8, timeout_desc.?, "shell `timeout` utility") != null);
 
-    // ...and the tool-level prose still names the utility as forbidden, so a
-    // model that reads only the Rules block sees it too.
+    // ...and the tool-level prose still names the utility as forbidden, so a model that reads only the Rules block sees it too.
     try testing.expect(std.mem.indexOf(u8, command_tool.function.description, "shell `timeout`") != null);
 
-    // ...and the utility is still not RECOMMENDED anywhere, which is what the
-    // banned-substring test above enforces.
+    // ...and the utility is still not RECOMMENDED anywhere, which is what the banned-substring test above enforces.
     try testing.expect(std.mem.indexOf(u8, command_tool_system_prompt, "Do NOT prefix commands") != null);
 }
 
 test "execute_command still enforces timeout at runtime" {
-    // The prompt-text change is cosmetic; the CODE enforcement is the
-    // contract.
+    // The prompt-text change is cosmetic; the CODE enforcement is the contract.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     try testing.expectError(
@@ -374,9 +351,7 @@ test "command_tool schema: required fields are (command, cwd, timeout)" {
 }
 
 test "command_tool schema: is_stop is optional boolean and states its whole contract" {
-    // `is_stop` is the model's own "I am done" signal: it ends the TURN, it
-    // kills NOTHING, and a `background=true` process in the same call keeps
-    // running.
+    // `is_stop` is the model's own "I am done" signal: it ends the TURN, it kills NOTHING, and a `background=true` process in the same call keeps running.
     const params = command_tool.function.parameters;
 
     var is_stop: ?@TypeOf(params.properties[0]) = null;
@@ -397,15 +372,12 @@ test "command_tool schema: is_stop is optional boolean and states its whole cont
     try testing.expect(std.mem.indexOf(u8, d, "not a cancel") != null);
     // …leaves a background process alone…
     try testing.expect(std.mem.indexOf(u8, d, "keeps running") != null);
-    // …and the final answer has to come from the message body, because a
-    // `tool_calls` turn carries no prose. Without this the turn ends on a
-    // bare tool card and the user reads silence.
+    // …and the final answer has to come from the message body, because a `tool_calls` turn carries no prose.
     try testing.expect(std.mem.indexOf(u8, d, "final answer in the message content") != null);
 }
 
 test "command_tool schema: the is_stop rule reaches the description AND the system prompt" {
-    // The description is what the provider embeds in the tool schema; the
-    // system prompt is the prose reminder.
+    // The description is what the provider embeds in the tool schema; the system prompt is the prose reminder.
     try testing.expect(std.mem.indexOf(u8, command_tool.function.description, "is_stop=true") != null);
     try testing.expect(std.mem.indexOf(u8, command_tool_system_prompt, "is_stop=true") != null);
 }
@@ -436,8 +408,7 @@ test "command argv prefixes have the expected shape" {
     try testing.expectEqualStrings("-NoProfile", COMMAND_PWSH_PREFIX[1]);
     try testing.expectEqualStrings("-NonInteractive", COMMAND_PWSH_PREFIX[2]);
     try testing.expectEqualStrings("-Command", COMMAND_PWSH_PREFIX[3]);
-    // T1 RED (cmd.exe fallback): the Windows branch retries with cmd when
-    // pwsh is missing — the prefix const must exist with this exact shape.
+    // T1 RED (cmd.exe fallback): the Windows branch retries with cmd when pwsh is missing — the prefix const must exist with this exact shape.
     try testing.expectEqual(@as(usize, 2), COMMAND_CMD_PREFIX.len);
     try testing.expectEqualStrings("cmd.exe", COMMAND_CMD_PREFIX[0]);
     try testing.expectEqualStrings("/c", COMMAND_CMD_PREFIX[1]);
@@ -463,8 +434,7 @@ test "execute_command runs on the host shell (bash off-Windows)" {
 
 // T1 RED (cmd.exe fallback): availability probe.
 
-/// Probe whether `cmd.exe` is on $PATH. Windows-only: returns false
-/// everywhere else so Linux CI passes. Mirrors pwsh.zig's pwsh_available().
+/// Probe whether `cmd.exe` is on $PATH.
 fn cmd_available() bool {
     if (builtin.os.tag != .windows) return false;
     var child = std.process.spawn(std.testing.io, .{
@@ -480,16 +450,13 @@ fn cmd_available() bool {
 }
 
 test "cmd_available probe does not crash" {
-    // Runs regardless of platform — exercises the boolean probe. On
-    // non-Windows it returns false; on a Windows box with cmd.exe it
-    // returns true. Either way the assertion is "doesn't crash".
+    // Runs regardless of platform — exercises the boolean probe.
     const available = cmd_available();
     _ = available;
     try testing.expect(true);
 }
 
 // Exec adapter — merged from `zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -508,18 +475,14 @@ const wrapToolOutput = tools.wrapToolOutput;
 const bash_args = @import("exec_bash_args.zig");
 const vm_runtime = @import("../loop/vm_runtime.zig");
 const error_explain = @import("tools_error_explain.zig");
-/// What `runWithContext` hands back: the LLM-facing payload, plus the
-/// loop-control request parsed out of the same arguments.
+/// What `runWithContext` hands back: the LLM-facing payload, plus the loop-control request parsed out of the same arguments.
 pub const RunResult = struct {
     payload: []const u8,
-    /// `is_stop` from the arguments. False on the parse-failure path: the
-    /// field could not be read, so nothing may be assumed about it.
+    /// `is_stop` from the arguments.
     stop_loop: bool = false,
 };
 
-/// Merged exec body for the unified `command` tool (Phase A+B of the unify
-/// plan — shared logic moved here from `zig` /
-/// `zig`, which are now thin shims over this module).
+/// Merged exec body for the unified `command` tool (Phase A+B of the unify plan — shared logic moved here from `zig` /`zig`, which are now thin shims over this …
 pub fn runWithContext(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -531,39 +494,29 @@ pub fn runWithContext(
     const input = switch (bash_args.parseShellArgs(allocator, tool_call.function.arguments)) {
         .success => |in| in,
         .failure => |info| {
-            // Both the rendered message and the slices it interpolates are
-            // allocated by the parser; free them once the envelope has copied
-            // the text. The exec_testing allocator catches this path.
+            // Both the rendered message and the slices it interpolates are allocated by the parser; free them once the envelope has copied the text.
             const err_msg = try bash_args.formatInvalidField(allocator, info);
             defer allocator.free(err_msg);
             defer bash_args.freeInvalidField(allocator, info);
             const output = try wrapToolOutput(allocator, "command", tool_call.function.arguments, false, err_msg, "");
-            // `.stop_loop` stays false: the arguments did not parse, so
-            // `is_stop` was never read. Ending a turn on a malformed call
-            // would hide the error the envelope exists to report.
+            // `.stop_loop` stays false: the arguments did not parse, so `is_stop` was never read.
             return .{ .payload = output };
         },
     };
-    // parseShellArgs dups every string field it produces (command / cwd /
-    // stdin_data) so the caller can hold the slice past the JSON value's
-    // lifetime. Free them once execute_command returns.
+    // parseShellArgs dups every string field it produces (command / cwd /stdin_data) so the caller can hold the slice past the JSON value's lifetime.
     defer {
         allocator.free(input.command);
         if (input.cwd) |c| allocator.free(c);
         if (input.stdin_data) |s| allocator.free(s);
     }
 
-    // The RESOLVED mode: `background=true` and `mode="background"` are the same
-    // thing by the time they get here (the parser folds them).
+    // The RESOLVED mode: `background=true` and `mode="background"` are the same thing by the time they get here (the parser folds them).
     const mode = pabrikcore.shell_tool.resolvedMode(input);
 
-    // The substrate decision: under `--saas` the executor runs this command in
-    // the session's workspace VM, and no host shell is ever spawned for it.
+    // The substrate decision: under `--saas` the executor runs this command in the session's workspace VM, and no host shell is ever spawned for it.
     var guest = vm_runtime.GuestContext{ .db = db, .session_id = session_id, .cancel_hook = cancel_hook };
     const executor = vm_runtime.executorFor(&guest);
-    // `cancel_hook` is the Stop button, carried in from the dispatch (see
-    // `session_cancel_probe.Probe`): a foreground run polls it inside its wait
-    // loop and kills the child's process group.
+    // `cancel_hook` is the Stop button, carried in from the dispatch (see `session_cancel_probe.Probe`): a foreground run polls it inside its wait loop and kills the …
     const command_output = try command_tool_mod.execute_command_with_cancel(
         allocator,
         io,
@@ -571,26 +524,21 @@ pub fn runWithContext(
         executor,
         cancel_hook,
     );
-    // Last reader of these slices: they are serialised below and never
-    // exposed, so their ownership ends here.
+    // Last reader of these slices: they are serialised below and never exposed, so their ownership ends here.
     defer {
         allocator.free(command_output.command);
         allocator.free(command_output.stdout);
         allocator.free(command_output.stderr);
     }
-    // A detached command that ran in a guest leaves a GUEST pid behind, and the
-    // accounting row has to say which VM it belongs to.
+    // A detached command that ran in a guest leaves a GUEST pid behind, and the accounting row has to say which VM it belongs to.
     const ran_in_guest = executor != null;
 
     // Record a detached process so it can be listed, read, and stopped later.
-    // `kind` decides whether it is ever NOTIFIED about — see migration 107.
     if (mode.isDetached() and db != null and session_id != null) {
         const db_ptr = db.?;
         const sess_id = session_id.?;
 
-        // The VM is per-workspace, so its identity is the workspace id the
-        // executor resolved. Null means the row cannot be written honestly, so
-        // nothing is recorded.
+        // The VM is per-workspace, so its identity is the workspace id the executor resolved.
         const vm_id: ?[]u8 = if (ran_in_guest)
             try vm_runtime.workspaceIdFor(allocator, db_ptr, sess_id)
         else
@@ -635,13 +583,10 @@ pub fn runWithContext(
                                 // Log error but don't fail the tool execution
                             };
                         }
-                        // Immediate watcher: poll the PID every 2s and queue
-                        // the completion the moment it exits (no cron wait).
+                        // Immediate watcher: poll the PID every 2s and queue the completion the moment it exits (no cron wait).
                         if (pabrikcore.getSingleton() catch null) |di| {
                             background_process_events.emitCreated(allocator, di.event_bus, sess_id, pid, input.command);
-                            // The two detached modes differ in ONE
-                            // obligation: whether the agent is told when the
-                            // process exits.
+                            // The two detached modes differ in ONE obligation: whether the agent is told when the process exits.
                             const notify = mode == .background;
                             if (vm_id) |id| {
                                 background_watcher.spawnGuestWatcher(di, sess_id, .{
@@ -666,18 +611,14 @@ pub fn runWithContext(
 }
 
 pub fn execCommand(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    // Catch ANY remaining error from the run path (e.g. from
-    // `execute_command` itself — fork failures, permission errors, etc.) and
-    // wrap it in the standard tool-error envelope, matching execReadFile /
+    // Catch ANY remaining error from the run path (e.g. from `execute_command` itself — fork failures, permission errors, etc.) and wrap it in the standard …
     const inner = runWithContext(ctx.allocator, ctx.io, tc, ctx.db, ctx.session_id, ctx.cancel_hook) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
         const output = try wrapToolOutput(ctx.allocator, "command", tc.function.arguments, false, err_msg, "");
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
-    // `runWithContext` returns an ALREADY-WRAPPED envelope on its
-    // parse-failure path (it has no other way to report a structured field
-    // error), and a bare payload on the success path.
+    // `runWithContext` returns an ALREADY-WRAPPED envelope on its parse-failure path (it has no other way to report a structured field error), and a bare payload on …
     if (looksWrapped(inner.payload)) {
         return ToolExecResult{ .output = inner.payload, .output_allocated = true };
     }
@@ -695,9 +636,7 @@ fn looksWrapped(s: []const u8) bool {
     return std.mem.startsWith(u8, std.mem.trimStart(u8, s, " \t\r\n"), "{\"tool\":");
 }
 
-// ============================================================================
 // Error-envelope tests — the message must let the model repair its own call.
-// ============================================================================
 
 const exec_testing = std.testing;
 
@@ -780,9 +719,7 @@ test "execCommand: timeout = 0 gets the same explanation as a missing one" {
 }
 
 test "execCommand: a missing cwd explains the field, the wrong-tree risk and the fix" {
-    // `cwd` is required. Without it the shell inherits the SERVER's working
-    // directory, so the command acts on the wrong tree and the caller never
-    // learns that it did.
+    // `cwd` is required.
     if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
 
     const allocator = exec_testing.allocator;
@@ -804,8 +741,7 @@ test "execCommand: a missing cwd explains the field, the wrong-tree risk and the
     try exec_testing.expect(err_msg != null);
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "cwd") != null);
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "required") != null);
-    // "the SERVER's working directory" is the fact that makes the omission
-    // dangerous — without it the correction reads as arbitrary pedantry.
+    // "the SERVER's working directory" is the fact that makes the omission dangerous — without it the correction reads as arbitrary pedantry.
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "SERVER") != null);
     // The error NAME never leaks into the envelope; the model gets prose.
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "MandatoryCwdMissing") == null);
@@ -884,9 +820,7 @@ test "execCommand: an over-max timeout states the ceiling and the alternative" {
 }
 
 test "execCommand: a well-formed call is not refused by the argument validator" {
-    // Positive control for the four tests above. They all assert on the ERROR
-    // envelope, so without this one they could pass vacuously on a tool that
-    // refuses every call.
+    // Positive control for the four tests above.
     if (exec_builtin.os.tag != .linux and exec_builtin.os.tag != .macos) return;
 
     const allocator = exec_testing.allocator;
@@ -909,15 +843,12 @@ test "execCommand: a well-formed call is not refused by the argument validator" 
     // Not the argument-validation messages the four tests above assert on.
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "timeout") == null);
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "not-a-number") == null);
-    // And not a bare Zig error name either — whatever the shell layer
-    // reported, it arrived as a sentence.
+    // And not a bare Zig error name either — whatever the shell layer reported, it arrived as a sentence.
     try exec_testing.expect(std.mem.indexOf(u8, err_msg.?, "command failed:") == null);
     try exec_testing.expect(err_msg.?.len > 20);
 }
 
-// ============================================================================
 // Substrate seam — the P2c behaviour: an executor replaces the host spawn.
-// ============================================================================
 
 /// Stands in for the guest executor so the seam is proven without a VM.
 const FakeGuest = struct {
@@ -957,8 +888,7 @@ test "execute_command_with: an installed executor runs the command instead of th
         allocator.free(out.stderr);
     }
 
-    // The command reached the executor, and its answer is what the tool
-    // returned — not a host process's output.
+    // The command reached the executor, and its answer is what the tool returned — not a host process's output.
     try testing.expectEqualStrings("guest ran: echo hi", out.stdout);
     try testing.expectEqualStrings("echo hi", out.command);
     try testing.expectEqual(@as(i32, 0), out.exit_code);
@@ -986,9 +916,7 @@ test "execute_command: with no executor the host shell runs it, unchanged" {
 
 // ─── Stop reaches a running command ─────────────────────────────────────────
 
-/// The dispatch's probe, faked: the first poll says "cancelled". The hook is
-/// the only input this test does not control via a real database, which is
-/// what keeps it deterministic.
+/// The dispatch's probe, faked: the first poll says "cancelled".
 const AlwaysCancelled = struct {
     fn isCancelled(_: *const anyopaque) bool {
         return true;

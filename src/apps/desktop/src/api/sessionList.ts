@@ -1,8 +1,7 @@
 import type { Chat } from './chatHistory'
 import { apiFetch } from './client'
 
-/** The session list is the one call whose cost grows with the page it returns, so it gets more
- * than `apiFetch`'s 15s default before a slow-but-healthy backend reads as "no chats". */
+/** The session list is the one call whose cost grows with the page it returns, so it gets more than `apiFetch`'s 15s default before a slow-but-healthy backend … */
 export const SESSION_LIST_TIMEOUT_MS = 60_000
 
 // List all chat sessions with pagination
@@ -11,9 +10,7 @@ export async function getChats(
   direction: 'asc' | 'desc' = 'desc',
   limit: number = 10,
   cursor?: string,
-  // Workspace scope (plan: 2026-09-22-revamp-ui-chats). When set, the backend returns only that
-  // workspace's sessions (task-linked + cwd-matched); empty/unknown → empty list (fail-closed).
-  // Omitted → global list (back-compat for non-scoped callers).
+  // Workspace scope (plan: 2026-09-22-revamp-ui-chats).
   workspaceId?: string,
 ): Promise<{
   sessions: Chat[]
@@ -74,26 +71,18 @@ export async function getChats(
           selected_profile_model: session.selected_profile_model || '',
           sub_agent_name: session.sub_agent_name || '',
           parent_session_id: session.parent_session_id || '',
-          // Sidebar git badge — forward the bound worktree path and the per-request resolved branch
-          // ("" = no badge). Empty string when absent so the ChatsList `v-if` is a defined check
-          // (NOT undefined).
+          // Sidebar git badge — forward the bound worktree path and the per-request resolved branch ("" = no badge).
           git_worktree_cwd: session.git_worktree_cwd || '',
           git_branch: session.git_branch || '',
-          // Migration 063 — default to "0" (off) when omitted so the
-          // ChatsList badge condition `=== '1'` is a defined check.
-          // Matches the SQL COALESCE default in llm_history.zig.
+          // Migration 063 — default to "0" (off) when omitted so the ChatsList badge condition `=== '1'` is a defined check.
           is_auto_retry_until_stop: session.is_auto_retry_until_stop || '0',
-          // Migration 082 — forward the chat-side stamp. Empty string
-          // when absent so the ChatsList `?? updated_at` fallback is
-          // a defined check (NOT undefined).
+          // Migration 082 — forward the chat-side stamp.
           last_human_touched_at: session.last_human_touched_at || '',
-          // Migration 104 — pinned sessions. Boolean on the wire;
-          // default false so legacy caches read as unpinned.
+          // Migration 104 — pinned sessions.
           is_pinned: session.is_pinned ?? false,
           pinned_position: session.pinned_position ?? 0,
           last_finish_reason: session.last_finish_reason || '',
-          // NOT `?? false`: a legacy cache row with no field must read
-          // as "no badge", not "reviewed".
+          // NOT `?? false`: a legacy cache row with no field must read as "no badge", not "reviewed".
           needs_human_review: session.needs_human_review ?? undefined,
         }
       })
@@ -106,9 +95,7 @@ export async function getChats(
       total: data.total || 0,
     }
   } catch (e) {
-    // The empty-list shape is a deliberate contract (callers render an empty section instead of
-    // crashing). `failed` is what keeps a failed request from being read as "this scope has no
-    // sessions" — a caller that ignores it behaves exactly as before.
+    // The empty-list shape is a deliberate contract (callers render an empty section instead of crashing).
     console.error('getChats failed; returning an empty list', e)
     return { sessions: [], has_more: false, next_cursor: null, total: 0, failed: true }
   }

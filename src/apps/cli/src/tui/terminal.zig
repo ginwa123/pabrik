@@ -5,8 +5,7 @@ const key_mod = @import("key.zig");
 
 pub const Size = struct { width: u16, height: u16 };
 
-/// Saved termios state returned by `enterRawMode`. Opaque to callers;
-/// hand it back to `leaveRawMode`.
+/// Saved termios state returned by `enterRawMode`.
 pub const RawMode = struct {
     saved: std.posix.termios,
     fd: std.posix.fd_t,
@@ -17,8 +16,6 @@ pub fn isTty() bool {
 }
 
 /// Switch stdin to raw mode (cbreak, no echo, no signal generation).
-/// Returns the saved state — MUST be passed to `leaveRawMode` before
-/// process exit or the terminal is left corrupted.
 pub fn enterRawMode() !RawMode {
     const fd = std.posix.STDIN_FILENO;
     const saved = try std.posix.tcgetattr(fd);
@@ -29,8 +26,7 @@ pub fn enterRawMode() !RawMode {
     raw.lflag.ISIG = false; // don't generate SIGINT on Ctrl-C (we handle it)
     raw.iflag.IXON = false; // don't intercept Ctrl-S/Ctrl-Q flow control
     raw.iflag.ICRNL = false; // don't map CR -> NL
-    // VMIN=0/VTIME=1 — "return as soon as a byte is available; otherwise wait
-    // at most 0.1 s and return 0".
+    // VMIN=0/VTIME=1 — "return as soon as a byte is available; otherwise wait at most 0.1 s and return 0".
     raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
     raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
     try std.posix.tcsetattr(fd, .FLUSH, raw);
@@ -42,8 +38,7 @@ pub fn leaveRawMode(rm: RawMode) void {
     std.posix.tcsetattr(rm.fd, .FLUSH, rm.saved) catch {};
 }
 
-/// Query the window size via TIOCGWINSZ. Falls back to 80x24 when the
-/// ioctl fails (e.g. detached from a tty).
+/// Query the window size via TIOCGWINSZ.
 pub fn size() Size {
     var ws: std.posix.winsize = undefined;
     const rc = ioctlWinsize(std.posix.STDIN_FILENO, &ws);
@@ -55,9 +50,7 @@ pub fn size() Size {
     return .{ .width = 80, .height = 24 };
 }
 
-// --- ioctl plumbing
-// --------------------------------------------------------- Zig 0.16 exposes
-// no portable posix.ioctl; use the libc varargs extern on every platform that
+// --- ioctl plumbing --------------------------------------------------------- Zig 0.16 exposes no portable posix.ioctl; use the libc varargs extern on every …
 
 fn ioctlWinsize(fd: std.posix.fd_t, ws: *std.posix.winsize) bool {
     const TIOCGWINSZ: c_int = switch (@import("builtin").os.tag) {
@@ -70,15 +63,12 @@ fn ioctlWinsize(fd: std.posix.fd_t, ws: *std.posix.winsize) bool {
     return rc == 0;
 }
 
-// ----------------------------------------------------------------------------
 // Tests
-// ----------------------------------------------------------------------------
 
 const testing = std.testing;
 
 test "size: falls back to 80x24 without a tty" {
-    // In CI/test environments stdin may or may not be a tty; either way
-    // this must not crash and must return plausible dimensions.
+    // In CI/test environments stdin may or may not be a tty; either way this must not crash and must return plausible dimensions.
     const s = size();
     try testing.expect(s.width >= 1);
     try testing.expect(s.height >= 1);

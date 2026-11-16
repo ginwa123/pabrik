@@ -1,6 +1,4 @@
-// Functional tests for the `session_created` SSE gate. ─── THE BUG THIS FILE
-// PINS ──────────────────────────────────────────────── The user's report:
-// "when i queue message why i fetch sessions ?" — the Network tab showed
+// Functional tests for the `session_created` SSE gate. ─── THE BUG THIS FILE PINS ──────────────────────────────────────────────── The user's report: "when i …
 
 const std = @import("std");
 const testing = std.testing;
@@ -168,8 +166,7 @@ fn releaseReader(s: *SseStream) void {
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Pop events until one is named `want`, the stream ends, or the deadline
-/// passes.
+/// Pop events until one is named `want`, the stream ends, or the deadline passes.
 fn drainMatching(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
@@ -207,14 +204,11 @@ fn seenNames(s: *SseStream) []u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     for (s.events.items) |e| out.writer.print("{s} ", .{e.name}) catch break;
-    // `toOwnedSlice` can only fail with OutOfMemory, and a best-effort
-    // DIAGNOSTIC string is the wrong place to propagate one — the caller
-    // is already on the failure path.
+    // `toOwnedSlice` can only fail with OutOfMemory, and a best-effort DIAGNOSTIC string is the wrong place to propagate one — the caller is already on the failure …
     return out.toOwnedSlice() catch @panic("toOwnedSlice of the rendered event list failed");
 }
 
-/// `POST /api/llm/session` with a queue_message — the exact wire body the
-/// desktop app's `api.sendChatMessage` sends (minus the media fields).
+/// `POST /api/llm/session` with a queue_message — the exact wire body the desktop app's `api.sendChatMessage` sends (minus the media fields).
 fn sendMessage(h: *Harness, session_id: []const u8, message: []const u8) !void {
     const body = try std.fmt.allocPrint(
         gpa,
@@ -225,16 +219,13 @@ fn sendMessage(h: *Harness, session_id: []const u8, message: []const u8) !void {
 
     var r = try h.http(io, .POST, "/api/llm/session", .{
         .json_body = body,
-        // 201 = queued. 500 is accepted too: with the stub profile the
-        // worker's LLM call fails, and some builds surface that as a 500
-        // AFTER the session row + SSE frame are already committed.
+        // 201 = queued. 500 is accepted too: with the stub profile the worker's LLM call fails, and some builds surface that as a 500 AFTER the session row + SSE frame …
         .expect = &.{ 201, 500 },
     });
     r.deinit();
 }
 
-/// `PUT /api/llm/session/:id` — auto-creates the row via
-/// `ensureSessionExists`, so a session can exist before any message is sent.
+/// `PUT /api/llm/session/:id` — auto-creates the row via `ensureSessionExists`, so a session can exist before any message is sent.
 fn ensureSession(h: *Harness, session_id: []const u8, name: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -244,9 +235,7 @@ fn ensureSession(h: *Harness, session_id: []const u8, name: []const u8) !void {
     r.deinit();
 }
 
-// ============================================================================
 // Test 1: a send into an EXISTING session emits NO session_created
-// ============================================================================
 
 // The regression.
 test "send_into_existing_session_emits_no_session_created" {
@@ -275,8 +264,7 @@ test "send_into_existing_session_emits_no_session_created" {
     // The send under test.
     try sendMessage(&h, session_id, "hello there");
 
-    // Give a buggy backend every chance to emit: the frontend's own
-    // debounce is 400 ms, so wait well past it.
+    // Give a buggy backend every chance to emit: the frontend's own debounce is 400 ms, so wait well past it.
     Io.sleep(io, .fromMilliseconds(1_500), .awake) catch {};
 
     const created = countNamed(s, "session_created");
@@ -293,12 +281,9 @@ test "send_into_existing_session_emits_no_session_created" {
     }
 }
 
-// ============================================================================
 // Test 2: a send that CREATES the session DOES emit session_created
-// ============================================================================
 
-// The other half of the contract, and the reason the gate is `db.changes() >
-// 0` rather than "never emit".
+// The other half of the contract, and the reason the gate is `db.changes() > 0` rather than "never emit".
 test "send_that_creates_session_emits_session_created" {
     try harness.requirePabrikBin(io, gpa);
 

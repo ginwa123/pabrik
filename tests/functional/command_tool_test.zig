@@ -1,5 +1,4 @@
-// Functional wire verification for the unified `command` tool. Zig port of
-// `tests/functional/command_tool_test.py` (same test names, same order).
+// Functional wire verification for the unified `command` tool.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +8,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Expected tool lists — mirrors tests/functional/default_tools.py
-// ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire
-/// order of `GET /api/agents/:agent_id/tools`.
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_skill",
     "command",
@@ -68,8 +64,7 @@ fn isSorted(list: []const []const u8) bool {
     return true;
 }
 
-/// Mirrors `default_tools.agent_defaults_without("command")` — the seeded
-/// agent list minus one tool, still sorted ASC.
+/// Mirrors `default_tools.agent_defaults_without("command")` — the seeded agent list minus one tool, still sorted ASC.
 const DEFAULTS_MINUS_COMMAND: []const []const u8 = blk: {
     var buf: [EXPECTED_DEFAULTS.len - 1][]const u8 = undefined;
     var i: usize = 0;
@@ -96,9 +91,7 @@ comptime {
         @compileError("DEFAULTS_MINUS_COMMAND must NOT contain `command`");
 }
 
-// ============================================================================
 // Helpers (mirror agent_tools_toggle_test.py)
-// ============================================================================
 
 fn boot() !Harness {
     return Harness.boot(io, gpa, .{});
@@ -204,8 +197,6 @@ fn registryNames(h: *Harness) ![][]const u8 {
 }
 
 /// `GET /api/agents/:id/tools` → the enabled tool names, in wire order.
-/// Unlike the registry, this one does NOT assert non-empty: "every tool
-/// deleted" is a legitimate state the lifecycle test walks through.
 fn listTools(h: *Harness, agent_id: []const u8) ![][]const u8 {
     const url = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
     defer gpa.free(url);
@@ -239,9 +230,7 @@ fn freeNames(names: [][]const u8) void {
     gpa.free(names);
 }
 
-/// `POST /api/agents/:id/tools` → 201 + the created row. Asserts `tool_name`
-/// round-tripped, which is what proves the wire field name is the one the
-/// frontend sends (not, say, `name`).
+/// `POST /api/agents/:id/tools` → 201 + the created row.
 fn enableTool(h: *Harness, agent_id: []const u8, tool_name: []const u8) !void {
     const url = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
     defer gpa.free(url);
@@ -263,8 +252,7 @@ fn enableTool(h: *Harness, agent_id: []const u8, tool_name: []const u8) !void {
     }
 }
 
-/// `POST .../tools` with a status the CALLER asserts (409 / 400). The
-/// body is discarded: the Python original only asserted the status.
+/// `POST .../tools` with a status the CALLER asserts (409 / 400).
 fn postToolExpecting(h: *Harness, agent_id: []const u8, tool_name: []const u8, expect: []const u16) !void {
     const url = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
     defer gpa.free(url);
@@ -292,9 +280,7 @@ fn deleteTool(h: *Harness, agent_id: []const u8, tool_name: []const u8) !void {
     try testing.expect(ok);
 }
 
-/// Exact-equality against the wire's `tools` array. The Python original
-/// compared the whole list, and the whole list IS the contract, so a
-/// length mismatch, an order mismatch and a name mismatch all fail.
+/// Exact-equality against the wire's `tools` array.
 fn expectToolList(got: []const []const u8, expected: []const []const u8, what: []const u8) !void {
     if (got.len != expected.len) {
         std.debug.print("{s}: expected {d} tools, got {d}\n", .{ what, expected.len, got.len });
@@ -319,9 +305,7 @@ fn printList(label: []const u8, list: []const []const u8) void {
     std.debug.print("]\n", .{});
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // TestCommandRegistry — the equipped surface is `command` ONLY.
 test "registry_exposes_only_command_no_bash_no_pwsh" {
@@ -351,8 +335,7 @@ test "registry_exposes_only_command_no_bash_no_pwsh" {
     }
 }
 
-// TestCommandEnableDisable — DELETE command removes it; re-POST
-// restores it (round-trip).
+// TestCommandEnableDisable — DELETE command removes it; re-POST restores it (round-trip).
 test "command_enable_list_disable_lifecycle" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -389,8 +372,7 @@ test "command_enable_list_disable_lifecycle" {
     }
 }
 
-// TestCommandEnableDisable — POST of seeded `command` hits the UNIQUE
-// index → 409.
+// TestCommandEnableDisable — POST of seeded `command` hits the UNIQUE index → 409.
 test "command_enable_duplicate_is_409" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -411,8 +393,7 @@ test "command_enable_duplicate_is_409" {
     try expectToolList(names, &EXPECTED_DEFAULTS, "after duplicate POST");
 }
 
-// TestLegacyNamesRejected — the removed `bash` name is no longer
-// equipped (unknown → 400).
+// TestLegacyNamesRejected — the removed `bash` name is no longer equipped (unknown → 400).
 test "bash_enable_now_400s_after_unify" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();
@@ -432,8 +413,7 @@ test "bash_enable_now_400s_after_unify" {
     try expectToolList(names, &EXPECTED_DEFAULTS, "after rejected bash POST");
 }
 
-// TestLegacyNamesRejected — the removed `pwsh` name is no longer
-// equipped (unknown → 400).
+// TestLegacyNamesRejected — the removed `pwsh` name is no longer equipped (unknown → 400).
 test "pwsh_enable_now_400s_after_unify" {
     try harness.requirePabrikBin(io, gpa);
     var h = try boot();

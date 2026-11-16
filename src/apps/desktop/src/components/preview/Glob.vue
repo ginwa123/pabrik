@@ -16,9 +16,7 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 const openInEditor = useInjectOpenInCodeEditor()
 
-// The card receives the bare `data` object (or a full envelope, or a
-// blank string while running). Field access replaces the old
-// pattern="…"/<f>…</f> regex parsing.
+// The card receives the bare `data` object (or a full envelope, or a blank string while running).
 const normalized = computed(() => normalizeToolContent(props.content))
 const dataRecord = computed((): Record<string, unknown> => {
   const { data } = normalized.value
@@ -28,9 +26,7 @@ const dataRecord = computed((): Record<string, unknown> => {
   return {}
 })
 
-// Envelope-level failure (ChatView falls back to the full envelope
-// content). Without this the card renders a bare "0 files" with no
-// explanation — the "not showing output" report.
+// Envelope-level failure (ChatView falls back to the full envelope content).
 const errorMessage = computed(() => normalized.value.error)
 const hasError = computed(() => !!errorMessage.value)
 
@@ -79,8 +75,7 @@ const filePaths = computed((): string[] => {
   return files.filter((f): f is string => typeof f === 'string')
 })
 
-// Arguments guard (mirrors ToolParameters.vue hasArgs): non-empty params
-// mean there is something worth expanding even with zero file results.
+// Arguments guard (mirrors ToolParameters.vue hasArgs): non-empty params mean there is something worth expanding even with zero file results.
 const hasArgs = computed(() => {
   const p = (props.parameters ?? '').trim()
   return p !== '' && p !== '{}'

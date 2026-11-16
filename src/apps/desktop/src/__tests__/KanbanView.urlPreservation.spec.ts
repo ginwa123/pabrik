@@ -42,9 +42,7 @@ const makeItem = (overrides: Partial<WorkspaceItem> = {}): WorkspaceItem => ({
   ...overrides,
 })
 
-/**  * A real router with a catch-all route, so `router.replace` actually commits and `route.query`
- * actually updates. The catch-all keeps the path opaque — these tests assert on the query, and on
- * the path only where the shape is the point. */
+/** A real router with a catch-all route, so `router.replace` actually commits and `route.query` actually updates. */
 async function makeRouter(initial: {
   path: string
   query?: Record<string, string>
@@ -110,9 +108,7 @@ describe('KanbanView — URL preservation (real router)', () => {
     await flushPromises()
 
     const route = router.currentRoute.value
-    // The legacy shape is `path: '/app'` + `?view=workspace`. Emitting it
-    // triggers AppLayout's boot rewrite on the next reload, whose whitelist
-    // drops any param it does not know about.
+    // The legacy shape is `path: '/app'` + `?view=workspace`.
     expect(route.path).not.toBe('/app')
     expect(route.query.view).toBeUndefined()
     expect(route.path).toBe(`/app/${WS_ID}/projects/${ITEM_ID}`)
@@ -146,8 +142,7 @@ describe('KanbanView — URL preservation (real router)', () => {
       item: makeItem({ tasks: [makeTask({ id: 't1' })] }),
     })
 
-    // The detail panel covers the board, so drive the sort through the
-    // column-mode path (the panel is an overlay, the board stays mounted).
+    // The detail panel covers the board, so drive the sort through the column-mode path (the panel is an overlay, the board stays mounted).
     await wrapper.find('[data-testid="kanban-column-col_1-menu-trigger"]').trigger('click')
     await wrapper.find('[data-testid="kanban-column-col_1-menu-sort"]').trigger('click')
     await nextTick()
@@ -208,8 +203,7 @@ describe('KanbanView — URL preservation (real router)', () => {
       item: makeItem({ tasks: [makeTask({ id: 't1' })] }),
     })
 
-    // The panel is open from the URL; close it via the panel's own close
-    // affordance (v-model:show → the showTaskDetail watcher).
+    // The panel is open from the URL; close it via the panel's own close affordance (v-model:show → the showTaskDetail watcher).
     const panel = wrapper.find('[data-testid="kanban-detail-panel"]')
     expect(panel.exists()).toBe(true)
     const closeBtn = panel.find('[data-testid="kanban-task-detail-close"]')
@@ -242,9 +236,7 @@ describe('KanbanView — URL preservation (real router)', () => {
   })
 
   it('the URL after a sort pick is still a valid deep link for row mode', async () => {
-    // The end-to-end contract: pick a sort in row mode, then re-mount from the
-    // resulting URL and confirm row mode is still active. This is what a
-    // shared link / second machine does.
+    // The end-to-end contract: pick a sort in row mode, then re-mount from the resulting URL and confirm row mode is still active.
     const router = await makeRouter({
       path: `/app/${WS_ID}/projects/${ITEM_ID}`,
       query: { layout: 'rows' },

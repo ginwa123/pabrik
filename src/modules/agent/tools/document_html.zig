@@ -1,5 +1,4 @@
-//! `document_html` — the agent tool that authors HTML documents in its own
-//! workspace. Three actions: `create`, `edit`, `delete`.
+//! `document_html` — the agent tool that authors HTML documents in its own workspace.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");

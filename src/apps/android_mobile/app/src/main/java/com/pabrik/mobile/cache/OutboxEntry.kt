@@ -5,8 +5,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-// One pending write in the offline outbox. Drained in createdAt order by
-// OutboxQueue; removed only after the handler reports success.
+// One pending write in the offline outbox.
 @Entity(
     tableName = "outbox",
     indices = [

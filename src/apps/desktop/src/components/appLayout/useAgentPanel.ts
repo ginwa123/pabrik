@@ -38,22 +38,16 @@ export interface UseAgentPanelReturn {
 export function useAgentPanel(deps: AgentPanelDeps): UseAgentPanelReturn {
   const { activeWorkspaceItem, activeWorkspace } = deps
 
-// Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0): agent chat inline view. Driven by
-// `activeTask` — when the user clicks a chat task under an agent, `activeTaskWorkspaceItemId`
-// equals the agent's item id and `activeTaskWorkspaceItem.item_type` is `'agent'`.
+// Agent Mode (plan 2026-08-15-agent-mode, task_1786962724740_0): agent chat inline view.
 const agentKnowledge = ref<api.AgentKnowledgeRow[]>([])
 const agentTools = ref<string[]>([])
-// Agent system prompts (Migration 080) — same plain-ref pattern as
-// knowledge above; the GET /agent bundle carries them in one round-trip.
+// Agent system prompts (Migration 080) — same plain-ref pattern as knowledge above; the GET /agent bundle carries them in one round-trip.
 const agentSystemPrompts = ref<api.AgentSystemPromptRow[]>([])
 
-// True while `loadAgentData` is in flight. AgentView's knowledge and system-prompt panels gate
-// their skeletons on this — without it they render "No knowledge files yet." / "No system prompts
-// yet." during the fetch, which is a false statement about the agent's data.
+// True while `loadAgentData` is in flight.
 const agentDataLoading = ref(false)
 
-// FIX (agent-tools-fetch-on-view): the previous code only fetched `agentTools` inside the
-// `activeTask` watcher.
+// FIX (agent-tools-fetch-on-view): the previous code only fetched `agentTools` inside the `activeTask` watcher.
 async function loadAgentData(agentItemId: string) {
   agentDataLoading.value = true
   try {
@@ -62,40 +56,31 @@ async function loadAgentData(agentItemId: string) {
     const data = await api.getAgent(wsId, agentItemId)
     agentKnowledge.value = data.knowledge
     agentTools.value = data.tools
-    // Migration 080: the bundle now carries system_prompts too. Guard
-    // for older binaries that don't include the field yet.
+    // Migration 080: the bundle now carries system_prompts too.
     agentSystemPrompts.value = data.system_prompts ?? []
   } catch (e) {
     console.error('[AppLayout] failed to load agent:', e)
   } finally {
-    // Cleared on BOTH paths — a failed fetch must not park the
-    // skeleton forever (the panels fall back to their empty states,
-    // which is the honest answer when the request failed).
+    // Cleared on BOTH paths — a failed fetch must not park the skeleton forever (the panels fall back to their empty states, which is the honest answer when the …
     agentDataLoading.value = false
   }
 }
 
 // Load agent bundle for agent items (replaces the old item-id watcher).
-// AppLayout.agentToolsFetchOnView green) + the store subscription pump
-// (covers in-app navigation to an agent item).
 let lastAgentLoadItemId: string | null = null
 const maybeLoadAgentData = () => {
   const id = activeWorkspaceItem.value?.id
   if (!id || activeWorkspaceItem.value?.item_type !== 'agent') return
-  // Fire once per item id (replicates the old watcher, which only fired
-  // on change): setup + onMounted + pump must not triple-fetch.
+  // Fire once per item id (replicates the old watcher, which only fired on change): setup + onMounted + pump must not triple-fetch.
   if (id === lastAgentLoadItemId) return
   lastAgentLoadItemId = id
   // Fire-and-forget; loadAgentData assigns the refs itself.
   void loadAgentData(id)
 }
-// Setup-time call (replicates the old immediate watcher): the setup-time
-// restore above already set the item for direct landings.
+// Setup-time call (replicates the old immediate watcher): the setup-time restore above already set the item for direct landings.
 maybeLoadAgentData()
 
 // Agent knowledge dialog open state + last-targeted agent id.
-// `activeWorkspaceItem` still being set when the user submits (the
-// user could navigate away mid-dialog).
 const agentKnowledgeDialogOpen = ref(false)
 const agentKnowledgeError = ref<string | null>(null)
 const agentKnowledgeBusy = ref(false)
@@ -107,9 +92,7 @@ function openAgentKnowledgeDialog() {
 }
 
 async function handleAgentAddKnowledge() {
-  // v1.1 wiring: open the AgentKnowledgeDialog. Submission is handled by
-  // `handleAgentKnowledgeCreate` (the dialog's `create` emit). Keep this as a thin open-dialog shim
-  // so AgentView's emit contract stays stable.
+  // v1.1 wiring: open the AgentKnowledgeDialog.
   openAgentKnowledgeDialog()
 }
 
@@ -126,13 +109,9 @@ async function handleAgentKnowledgeCreate(filePath: string, label: string, conte
   agentKnowledgeBusy.value = true
   agentKnowledgeError.value = null
   try {
-    // The backend expects `agentId` (== workspace_item_id for agents) on `POST
-    // /api/agents/:agentId/knowledge`. AddAgentItem's convention (Migration 076) is that agents.id
-    // == workspace_items.id.
+    // The backend expects `agentId` (== workspace_item_id for agents) on `POST /api/agents/:agentId/knowledge`.
     const newRow = await api.addAgentKnowledge(itemId, filePath, label, content)
-    // Optimistic append — the GET /agent response won't be re-fetched
-    // until the user navigates away and back. Without this, the new
-    // row is invisible in the UI until a full reload.
+    // Optimistic append — the GET /agent response won't be re-fetched until the user navigates away and back.
     agentKnowledge.value = [...agentKnowledge.value, newRow]
     closeAgentKnowledgeDialog()
   } catch (e) {
@@ -161,8 +140,6 @@ async function handleAgentRemoveKnowledge(knowledgeId: string) {
 }
 
 // Agent knowledge EDIT dialog (plan 2026-08-22-agent-mode-ui-ux, A2).
-// Same open/busy/error pattern as the add dialog above. `row` is
-// captured at open-time so navigation mid-dialog can't break the save.
 const agentKnowledgeDetailOpen = ref(false)
 const agentKnowledgeDetailRow = ref<api.AgentKnowledgeRow | null>(null)
 const agentKnowledgeDetailBusy = ref(false)
@@ -190,16 +167,13 @@ async function handleAgentKnowledgeSave(
   agentKnowledgeDetailBusy.value = true
   agentKnowledgeDetailError.value = null
   try {
-    // The dialog always sends both source fields (file_path + content,
-    // one of them '') so a File↔Text mode switch flips the row cleanly.
+    // The dialog always sends both source fields (file_path + content, one of them '') so a File↔Text mode switch flips the row cleanly.
     const updated = await api.updateAgentKnowledge(itemId, knowledgeId, updates)
     // Replace in place so list order is preserved.
     agentKnowledge.value = agentKnowledge.value.map((k) => (k.id === knowledgeId ? updated : k))
     closeAgentKnowledgeDetailDialog()
   } catch (e) {
     // ApiError carries the backend's JSON body (e.g. {"error":"..."}).
-    // Surface the specific message, not the generic "HTTP 400 Bad
-    // Request" — the user needs to know WHAT was rejected.
     agentKnowledgeDetailError.value =
       e instanceof api.ApiError && e.body
         ? (tryParseErrorBody(e.body) ?? e.message)

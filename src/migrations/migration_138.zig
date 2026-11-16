@@ -54,8 +54,7 @@ test "Migration138 leaves an existing secret with an empty description rather th
     defer ctx.threaded.deinit();
     const db = &ctx.db;
 
-    // A row written before the column existed: it carries no description at
-    // all, and the read projection must still produce a string.
+    // A row written before the column existed: it carries no description at all, and the read projection must still produce a string.
     try db.exec(alloc,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value) VALUES ('sec_old', 'ws_1', 'GH', 'ghp_1')
     , &[_][]const u8{});

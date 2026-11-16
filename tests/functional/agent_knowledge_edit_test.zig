@@ -1,6 +1,4 @@
-// Functional tests for the Agent Knowledge EDIT flow (PR #291). Zig port of
-// `tests/functional/agent_knowledge_edit_test.py` (same test names, same
-// order).
+// Functional tests for the Agent Knowledge EDIT flow (PR #291).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// `POST /api/workspaces {"name": ...}` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -30,8 +26,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent
-/// item's id. Owned.
+/// `POST /api/workspaces/<ws>/items/agent {"name", "path"}` → the agent item's id.
 fn createAgent(h: *Harness, workspace_id: []const u8, name: []const u8) ![]u8 {
     const agent_path = try harness.harnessPath(gpa, h.temp_dir, &.{"agent-knowledge-edit-test"});
     defer gpa.free(agent_path);
@@ -110,9 +105,7 @@ fn postKnowledge(h: *Harness, agent_id: []const u8, json_body: []const u8, expec
     return gpa.dupe(u8, id);
 }
 
-/// `PATCH /api/agents/<agent>/knowledge/<kid>` → the response body as
-/// OWNED bytes. A `harness.Json` would alias the `Response` body this
-/// frame frees, so the caller parses.
+/// `PATCH /api/agents/<agent>/knowledge/<kid>` → the response body as OWNED bytes.
 fn patchKnowledge(
     h: *Harness,
     agent_id: []const u8,
@@ -128,8 +121,7 @@ fn patchKnowledge(
     return gpa.dupe(u8, r.body);
 }
 
-/// `GET /api/workspaces/<ws>/items/<agent>/agent` → OWNED bytes; the
-/// caller reads `body["knowledge"]`.
+/// `GET /api/workspaces/<ws>/items/<agent>/agent` → OWNED bytes; the caller reads `body["knowledge"]`.
 fn getKnowledge(h: *Harness, workspace_id: []const u8, agent_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/items/{s}/agent", .{ workspace_id, agent_id });
     defer gpa.free(path);
@@ -143,8 +135,7 @@ fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
 
-/// The knowledge row whose `id` is `knowledge_id`, borrowed from the
-/// live document. `null` when there is no such row.
+/// The knowledge row whose `id` is `knowledge_id`, borrowed from the live document.
 fn findRow(doc: *const harness.Json, knowledge_id: []const u8) ?std.json.ObjectMap {
     const rows = doc.array("knowledge") orelse return null;
     for (rows.items) |row| {
@@ -203,13 +194,9 @@ fn containsIgnoreCase(haystack: []const u8, needle_lower: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Regression 1: text-mode save (used to 400 NotAbsolutePath)
-// ============================================================================
 
 // The edit dialog's Text-mode save sends {label, content, file_path:""}.
-// Regression: `isAbsolute("")` is false, so the old useCase rejected this
-// with 400 "file_path must be absolute".
 test "text_mode_save_clears_file_path_and_sets_content" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -259,13 +246,9 @@ test "text_mode_save_clears_file_path_and_sets_content" {
     try expectRowStr(mine, "content", "inline body after switch", rows_raw);
 }
 
-// ============================================================================
 // Regression 2: file-mode save (used to 500 NOT NULL constraint)
-// ============================================================================
 
 // The edit dialog's File-mode save sends {label, file_path, content:""}.
-// Regression: SqliteBackend.exec binds empty slices as SQL NULL, so `content:
-// ""` violated the NOT NULL constraint → 500.
 test "file_mode_save_clears_content_and_sets_path" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -312,12 +295,9 @@ test "file_mode_save_clears_content_and_sets_path" {
     try expectRowStr(mine, "content", "", rows_raw);
 }
 
-// ============================================================================
 // Round-trip: repeated mode switches stay consistent
-// ============================================================================
 
-// file→text→file→text: every hop must 200 and leave the row XOR-
-// consistent (exactly one of file_path/content non-empty).
+// file→text→file→text: every hop must 200 and leave the row XOR-consistent (exactly one of file_path/content non-empty).
 test "mode_switch_round_trip_file_text_file_text" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -435,9 +415,7 @@ test "label_only_update_keeps_source_fields" {
     try expectEqualStr(&doc, "file_path", "");
 }
 
-// ============================================================================
 // Guard: non-empty relative path is still rejected
-// ============================================================================
 
 // The empty-string exemption must not weaken the absolute-path guard.
 test "relative_path_still_rejected" {
@@ -473,9 +451,7 @@ test "relative_path_still_rejected" {
     }
 }
 
-// ============================================================================
 // Route-order: /knowledge/reorder must not be shadowed
-// ============================================================================
 
 // PATCH /api/agents/:id/knowledge/reorder must reach the REORDER handler.
 test "reorder_route_not_shadowed_by_param_route" {
@@ -547,9 +523,7 @@ test "reorder_route_not_shadowed_by_param_route" {
     }
 }
 
-// ============================================================================
 // Assertion helpers
-// ============================================================================
 
 fn indexOfId(knowledge: std.json.Array, id: []const u8) ?usize {
     for (knowledge.items, 0..) |row, i| {
@@ -574,8 +548,7 @@ fn expectEqualStrOwned(raw: []const u8, key: []const u8, want: []const u8) !void
 }
 
 comptime {
-    // Body-analysis barrier — an unreferenced helper is never
-    // type-checked, so a stdlib rename inside one stays invisible.
+    // Body-analysis barrier — an unreferenced helper is never type-checked, so a stdlib rename inside one stays invisible.
     _ = createWorkspace;
     _ = createAgent;
     _ = addInlineKnowledge;

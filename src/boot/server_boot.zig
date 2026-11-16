@@ -1,5 +1,4 @@
-//! Server-boot phases extracted from `main`: SIGPIPE handling, CLI parsing,
-//! TLS setup, database open + migrations, port resolution, static-dir config.
+//! Server-boot phases extracted from `main`: SIGPIPE handling, CLI parsing, TLS setup, database open + migrations, port resolution, static-dir config.
 
 const std = @import("std");
 const helpers = @import("helpers");
@@ -20,8 +19,7 @@ const secrets_at_rest = @import("../modules/agent/loop/secrets_at_rest.zig");
 const workspace_settings_store = @import("../modules/agent/loop/workspace_settings_store.zig");
 const secrets_key = @import("secrets_key.zig");
 
-/// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write
-/// must surface as a write error, not a signal (OpenSSL uses plain write(2)).
+/// Ignore SIGPIPE process-wide (non-Windows).
 pub fn ignoreSigpipe() void {
     if (comptime @import("builtin").os.tag != .windows) {
         var sa = std.posix.Sigaction{
@@ -33,9 +31,7 @@ pub fn ignoreSigpipe() void {
     }
 }
 
-/// Parse outcome with reporting left to the caller: asserting every variant
-/// emits no error-level logs (the test runner fails any test that logs at
-/// err level, which `reportFailure` does by design).
+/// Parse outcome with reporting left to the caller: asserting every variant emits no error-level logs (the test runner fails any test that logs at err level …
 pub const CliParseOutcome = union(enum) {
     ok: cli_args.CliArgs,
     help,
@@ -54,9 +50,7 @@ pub fn tryParseCliArgs(
     return .{ .ok = cli };
 }
 
-/// tryParseCliArgs + report + remap to InvalidArgs. Runs BEFORE anything with
-/// side effects: `LlmConfig.init` starts the scheduler thread, after which an
-/// error exit segfaults instead of reporting the real error.
+/// tryParseCliArgs + report + remap to InvalidArgs.
 pub fn parseCliArgs(allocator: std.mem.Allocator, argv: []const []const u8) !?cli_args.CliArgs {
     return switch (try tryParseCliArgs(allocator, argv)) {
         .ok => |cli| cli,
@@ -68,16 +62,14 @@ pub fn parseCliArgs(allocator: std.mem.Allocator, argv: []const []const u8) !?cl
     };
 }
 
-/// One open of a probe path: a missing /dev/kvm or cgroup mount is an answer,
-/// not an error, so this never propagates.
+/// One open of a probe path: a missing /dev/kvm or cgroup mount is an answer, not an error, so this never propagates.
 fn probeReadable(io: std.Io, path: []const u8) bool {
     const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
     file.close(io);
     return true;
 }
 
-/// A manager that answers a ping is the last thing `--saas` needs: without it
-/// the process could start and then have to run tenant commands on the host.
+/// A manager that answers a ping is the last thing `--saas` needs: without it the process could start and then have to run tenant commands on the host.
 fn probeManager(allocator: std.mem.Allocator, socket_path: []const u8) bool {
     var client = vmd_client.Client.init(allocator, socket_path);
     client.guard_ms = 1_000;
@@ -86,8 +78,7 @@ fn probeManager(allocator: std.mem.Allocator, socket_path: []const u8) bool {
     return true;
 }
 
-/// The manager is part of the `--saas` contract, so a boot that finds none
-/// starts one: `--saas` is the platform, not a manual two-step bring-up.
+/// The manager is part of the `--saas` contract, so a boot that finds none starts one: `--saas` is the platform, not a manual two-step bring-up.
 fn startManager(allocator: std.mem.Allocator, io: std.Io, env: *const std.process.Environ.Map, socket_path: []const u8) bool {
     var exe_dir: ?[]u8 = null;
     defer if (exe_dir) |dir| allocator.free(dir);
@@ -109,9 +100,7 @@ fn startManager(allocator: std.mem.Allocator, io: std.Io, env: *const std.proces
     };
 }
 
-/// Applies `--saas`: it implies auth, then refuses unless this host can honour
-/// isolation. Refusal is logged and returns null so the caller can exit. On
-/// success the resolved mode and the manager's socket are recorded process-wide.
+/// Applies `--saas`: it implies auth, then refuses unless this host can honour isolation.
 pub fn enforceRuntimeMode(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -124,8 +113,7 @@ pub fn enforceRuntimeMode(
     if (is_linux) {
         if (cli.saas) {
             if (runtime_mode.defaultSocketPath(allocator, env)) |path| {
-                // Process-lifetime: the tool layer reads it on every command,
-                // so it is never freed.
+                // Process-lifetime: the tool layer reads it on every command, so it is never freed.
                 runtime_mode.setManagerSocket(path);
                 manager_reachable = probeManager(allocator, path);
                 // No manager yet: `--saas` starts one rather than refusing.
@@ -151,15 +139,12 @@ pub fn enforceRuntimeMode(
     };
 }
 
-/// Explicit `--port` wins; otherwise `web_launch_enabled` decides: random
-/// (0) when on so browser-mode URLs never clash, 8081 when off.
+/// Explicit `--port` wins; otherwise `web_launch_enabled` decides: random (0) when on so browser-mode URLs never clash, 8081 when off.
 pub fn resolvePort(cli_port: ?u16, web_launch_enabled: bool) u16 {
     return cli_port orelse (if (web_launch_enabled) 0 else 8081);
 }
 
-/// Generate/reuse the self-signed pair when asked, then load cert+key into
-/// a TLS context. Path typos fail here naming the flag and path, never as
-/// a silent plaintext fallback later. Null when TLS is off.
+/// Generate/reuse the self-signed pair when asked, then load cert+key into a TLS context.
 pub fn setupTlsCtx(
     allocator: std.mem.Allocator,
     env: *const std.process.Environ.Map,
@@ -194,13 +179,9 @@ pub const DatabaseHandles = struct {
     }
 };
 
-/// Resolve the backend `request` names (default: the one this build compiled
-/// in), open it with `boot/db_config.zig`'s measured policy, log the target,
-/// and run migrations.
+/// Resolve the backend `request` names (default: the one this build compiled in), open it with `boot/db_config.zig`'s measured policy, log the target, and run …
 pub fn openDatabase(
-    //
-    // `overrides` are the `--db-*` flags from argv; an empty slice means the
-    // defaults. They are applied on top of `db_config.best`.
+    // `overrides` are the `--db-*` flags from argv; an empty slice means the defaults.
     allocator: std.mem.Allocator,
     io: std.Io,
     env: *std.process.Environ.Map,
@@ -229,9 +210,7 @@ pub fn openDatabase(
     return .{ .target = target, .db = db };
 }
 
-/// Install the master key, then re-seal every row written before this feature existed. Runs on every
-/// open path before a request can reach a secret, and never fails the boot: a keyless host refuses
-/// secret writes and says why on one line. Not a migration — the chain must run without a key.
+/// Install the master key, then re-seal every row written before this feature existed.
 pub fn installSecretsKey(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -264,8 +243,7 @@ pub fn installSecretsKey(
     if (sealed == 0 and sealed_settings == 0) return;
     if (sealed > 0) std.log.info("workspace secrets: sealed {d} legacy plaintext value(s)", .{sealed});
     if (sealed_settings > 0) std.log.info("workspace config: sealed {d} legacy plaintext row(s)", .{sealed_settings});
-    // Only the sqlite backend has a file whose free pages can still hold the
-    // pre-seal bytes.
+    // Only the sqlite backend has a file whose free pages can still hold the pre-seal bytes.
     if (sqlite_path.len == 0) return;
     secrets_at_rest.compactAfterSeal(allocator, db, sqlite_path, io);
 }
@@ -290,9 +268,7 @@ pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
     };
 }
 
-/// Build the `--static-dir DIR` config: absolutize first (`openDirAbsolute`
-/// asserts absolute and aborts on failure — a relative path must never reach
-/// it), then open + canonicalize, with the `/app` + `/login` SPA fallbacks so
+/// Build the `--static-dir DIR` config: absolutize first (`openDirAbsolute` asserts absolute and aborts on failure — a relative path must never reach it), then …
 pub fn loadModelCatalog(allocator: std.mem.Allocator, db: *database.Db) void {
     _ = model_catalog_refresh.loadAtBoot(allocator, db);
     model_catalog_refresh.startBackgroundSync(allocator, db);
@@ -333,9 +309,7 @@ pub fn freeStaticDir(allocator: std.mem.Allocator, cfg: *static_files.StaticDirC
     allocator.destroy(cfg);
 }
 
-/// Find a shipped webapp dir (its `index.html`) without any flags, for
-/// installer layouts where the UI ships beside the install root: `install.sh`
-/// extracts `html/` next to the binaries (mirroring the `zig-out/bin/html`
+/// Find a shipped webapp dir (its `index.html`) without any flags, for installer layouts where the UI ships beside the install root: `install.sh` extracts `html/` …
 pub fn findBundledWebapp(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -350,9 +324,7 @@ pub fn findBundledWebapp(
     return null;
 }
 
-// ---------------------------------------------------------------------------
 // Behaviour tests (call the phase fns, assert outputs)
-// ---------------------------------------------------------------------------
 
 test "server_boot: resolvePort prefers an explicit --port either way" {
     try std.testing.expectEqual(@as(u16, 9090), resolvePort(9090, true));

@@ -1,6 +1,4 @@
-/** The Skills settings list's filter + sort, as pure functions: the
- * behaviour behind the search box, the facet chips and the sort menu.
- * Mirrors the `Skill` row shape from `api/index.ts`. */
+/** The Skills settings list's filter + sort, as pure functions: the behaviour behind the search box, the facet chips and the sort menu. */
 export interface SkillRow {
   name: string
   description: string
@@ -29,8 +27,7 @@ export function isFilterActive(state: SkillFilterState): boolean {
   return state.query.trim().length > 0 || state.facets.length > 0
 }
 
-/** Case-insensitive substring match on name and description. Every term
- * must match somewhere (AND), so "zig test" narrows rather than widens. */
+/** Case-insensitive substring match on name and description. */
 export function matchesQuery(row: SkillRow, query: string): boolean {
   const terms = query
     .toLowerCase()
@@ -48,8 +45,7 @@ export function matchesFacet(row: SkillRow, facet: SkillFacet): boolean {
   return !row.is_can_auto_improve
 }
 
-/** Narrow by query and facets. Facets are OR within themselves and AND
- * with the query, which is what a row of toggle chips means elsewhere. */
+/** Narrow by query and facets. */
 export function filterSkills(rows: SkillRow[], state: SkillFilterState): SkillRow[] {
   const query = state.query.trim()
   const facets = state.facets
@@ -61,8 +57,7 @@ export function filterSkills(rows: SkillRow[], state: SkillFilterState): SkillRo
   })
 }
 
-/** Order the rows. `name` is the backend's own `ORDER BY name`, so it is
- * the default. `numeric: true` puts `skill-2` before `skill-10`. */
+/** Order the rows. */
 export function sortSkills(rows: SkillRow[], sort: SkillSort): SkillRow[] {
   if (sort === 'name') return rows
   const out = rows.slice()
@@ -86,15 +81,12 @@ export function selectVisibleSkills(rows: SkillRow[], state: SkillFilterState): 
   return sortSkills(filterSkills(rows, state), state.sort)
 }
 
-/** How many of the LOADED rows the query and facets leave. The list wire
- * has no total, so this must not claim to be a workspace-wide count. */
+/** How many of the LOADED rows the query and facets leave. */
 export function countVisible(rows: SkillRow[], state: SkillFilterState): number {
   return filterSkills(rows, state).length
 }
 
-/** Encode the filter state for the URL. Empty and default values are
- * omitted, so a default view leaves a clean URL — the rule `KanbanView`
- * applies to `?sorts=` and `?layout=`. */
+/** Encode the filter state for the URL. */
 export function encodeSkillFilter(state: SkillFilterState): Record<string, string> {
   const out: Record<string, string> = {}
   const query = state.query.trim()
@@ -104,8 +96,7 @@ export function encodeSkillFilter(state: SkillFilterState): Record<string, strin
   return out
 }
 
-/** Parse the URL back into filter state. Unknown values are dropped: a
- * hand-edited `?sort=banana` must not reach a state no button produced. */
+/** Parse the URL back into filter state. */
 export function decodeSkillFilter(query: Record<string, unknown>): SkillFilterState {
   const readOne = (key: string): string => {
     const raw = query?.[key]

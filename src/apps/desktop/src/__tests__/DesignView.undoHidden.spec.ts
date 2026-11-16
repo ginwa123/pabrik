@@ -1,5 +1,4 @@
-/** Behavioural tests asserting that the undo/redo feature is HIDDEN from the user in design mode
- * (2026-08-06). The feature was intentionally disabled in response to a product request. */
+/** Behavioural tests asserting that the undo/redo feature is HIDDEN from the user in design mode (2026-08-06). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -175,7 +174,5 @@ describe('DesignView undo/redo feature is hidden (2026-08-06)', () => {
     wrapper.unmount()
   })
 
-  // ─── Regression guard — see DesignView.endToEnd.spec.ts ───────────── The "capture calls still
-  // fire" invariant is verified by the arrow-key nudge test in DesignView.endToEnd.spec.ts (it
-  // asserts capturePreState + capturePostState both fire 3 times for 3 arrow presses).
+  // ─── Regression guard — see DesignView.endToEnd.spec.ts ─────────────
 })

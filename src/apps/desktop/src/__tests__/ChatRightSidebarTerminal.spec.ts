@@ -7,8 +7,6 @@ import { createPinia } from 'pinia'
 import { makeLocalStorageStub } from './helpers'
 
 // ─── xterm fakes (jsdom has no layout/canvas for the real renderer) ─────────
-// vi.mock factories hoist above class declarations, so the fakes live
-// in vi.hoisted (otherwise "Cannot access before initialization").
 const { FakeTerminal, FakeFitAddon, FakeApiError } = vi.hoisted(() => {
   class FakeTerminal {
     static instances: FakeTerminal[] = []
@@ -138,8 +136,7 @@ vi.mock('../api', () => ({
     rows,
   })),
   deleteTerminalSession: vi.fn(async () => ({ ok: true })),
-  // FolderExplorer (the Explorer tab) asks for git status on mount; a strict factory mock without
-  // this export throws inside the component's onMounted.
+  // FolderExplorer (the Explorer tab) asks for git status on mount; a strict factory mock without this export throws inside the component's onMounted.
   getGitChanges: vi.fn(async () => ({
     is_git_repo: false,
     branch: '',
@@ -163,9 +160,7 @@ const flush = async (rounds = 5) => {
   }
 }
 
-// Condition-based waits. Session creation needs ~350ms of real time
-// (300ms cwd-stability window); fixed sleeps assert unreliably under
-// load, so wait for the condition instead.
+// Condition-based waits.
 const waitFor = async (cond: () => boolean, timeoutMs = 8000) => {
   const start = Date.now()
   while (!cond()) {
@@ -234,8 +229,7 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
     await flush()
     await wrapper.find('[data-testid="terminal-empty-new"]').trigger('click')
     await waitForCreates(1)
-    // Under --saas this id is what puts the shell inside the workspace VM; an
-    // empty one is the server's refusal, never a host shell.
+    // Under --saas this id is what puts the shell inside the workspace VM; an empty one is the server's refusal, never a host shell.
     expect(createTerminalSession).toHaveBeenCalledWith('ws_abc', '/workspace', {
       cols: 80,
       rows: 24,
@@ -526,8 +520,7 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
     await waitForCreates(2)
     socketFor('term-2').serverOpen()
 
-    // Switch back: a FRESH socket attaches (server flushes the dead
-    // shell's buffer first), no session is recreated.
+    // Switch back: a FRESH socket attaches (server flushes the dead shell's buffer first), no session is recreated.
     await chips(wrapper)[0]!.trigger('click')
     await flush()
     const socketsForOne = FakeWebSocket.instances.filter((s) => s.url.includes('id=term-1'))
@@ -537,8 +530,7 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
   })
 
   it('waits for late cwd instead of spawning twice', async () => {
-    // Mount before effectiveCwd resolves (the chat-return race): one
-    // session, created with the resolved dir — not fallback + recreate.
+    // Mount before effectiveCwd resolves (the chat-return race): one session, created with the resolved dir — not fallback + recreate.
     const wrapper = mount(TerminalTab, {
       props: { cwd: '', sessionKey: 'chat-late-cwd' },
     })
@@ -579,9 +571,7 @@ describe('ChatRightSidebar terminal tab (Phase 4: multi-session)', () => {
   })
 
   it('ignores mount-time worktree cwd flips, recreates on real change', async () => {
-    // Git worktree binding resolves as session dir -> worktree dir on
-    // every mount. Those mount-time flips must not wipe the restored
-    // session ("always a new term" with worktrees).
+    // Git worktree binding resolves as session dir -> worktree dir on every mount.
     localStorage.setItem(
       'pabrik-terminal-sessions:chat-worktree',
       JSON.stringify([{ id: 'wt-1', label: 'term 1' }]),

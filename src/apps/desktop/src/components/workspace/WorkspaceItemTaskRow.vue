@@ -37,9 +37,7 @@
   keyboard-operable unit. Same pattern as DesignPageRow.vue.
 -->
 <script setup lang="ts">
-// Extracted from WorkspaceItem.vue on 2026-06-10. This component owns ONLY the per-task row inside
-// the expanded workspace-item panel — the item row (chevron / name / hover buttons) and the
-// expansion state stay in WorkspaceItem.
+// Extracted from WorkspaceItem.vue on 2026-06-10.
 import { inject, ref, computed, type Ref } from 'vue'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { useContextMenu } from '../../composables/useContextMenu'
@@ -47,15 +45,12 @@ import { useTaskActions, type TaskComponentProps } from '../../composables/useTa
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
 // 2026-08-29 agent-error-row (task_1787985074550_0) — sidebar variant of the kanban-card indicator.
-// Same store + helper as the kanban card (Task 5); single source of truth so the indicator stays in
-// sync with the chat card across session switches.
 import { useAgentErrorStore } from '../../stores/agentError'
 import { parseAgentErrorHeadline } from '../../helpers/parseAgentErrorHeadline'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useNotificationStore } from '../../stores/notifications'
 
-// Re-inject processingState from App.vue (same key WorkspaceItem and ChatsList consume). Keyed by
-// task.id == session_id.
+// Re-inject processingState from App.vue (same key WorkspaceItem and ChatsList consume).
 const processingState = inject<Ref<Record<string, boolean>>>(
   'processingState',
   ref<Record<string, boolean>>({}),
@@ -63,13 +58,10 @@ const processingState = inject<Ref<Record<string, boolean>>>(
 
 const props = defineProps<TaskComponentProps>()
 
-// A worker is running on this task. Same key the card's elapsed chip and
-// the detail dialog's Start-agent button read; gates the "Run agent"
-// menu row (the backend answers 409 while a worker is in flight).
+// A worker is running on this task.
 const isBusy = computed(() => processingState.value[props.task.id] === true)
 
-// URL-driven "what is the main content area showing?". SIMPLIFY-URL-BROWSER (2026-08-15): the
-// legacy `kind: 'task'` variant has been dropped from useCurrentMainView.
+// URL-driven "what is the main content area showing?".
 const currentMainView = useCurrentMainView()
 const isActive = computed(
   () =>
@@ -82,41 +74,31 @@ const emit = defineEmits<{
   openTaskInBackground: [payload: { workspaceId: string; itemId: string; taskId: string }]
   deleteTask: [workspaceId: string, itemId: string, taskId: string]
   renameTask: [workspaceId: string, itemId: string, taskId: string, currentName: string]
-  // (pinned-tasks feature): emitted by the menu's Pin/Unpin row. Payload
-  // carries the new is_pinned state so the store doesn't have to
-  // re-read the task prop.
+  // (pinned-tasks feature): emitted by the menu's Pin/Unpin row.
   pinTask: [workspaceId: string, itemId: string, taskId: string, isPinned: boolean]
 }>()
 
-// Shared logic — event handlers, drop indicator. See composables/useTaskActions.ts for the
-// contract. Only the two pieces the row still uses inline.
+// Shared logic — event handlers, drop indicator.
 const { dropIndicatorBoxShadow, handleSelectTask } = useTaskActions(props, emit)
 
-// Right-click "Open in new tab" for this task. The menu position lives in useContextMenu; the task
-// ids come from props. The event bubbles up (sidebar list or kanban board) where the host builds
-// the task chat URL and opens a real browser tab.
+// Right-click "Open in new tab" for this task.
 const { menuPos, openAt, openAtPoint, close: closeTaskMenu } = useContextMenu()
 
 const onTaskContextMenu = (event: MouseEvent) => {
   openAt(event)
 }
 
-// Enter / Space activate the row; ContextMenu / Shift+F10 open the action menu. The root is a <div
-// role="button"> rather than a real <button> — see the header comment for why.
+// Enter / Space activate the row; ContextMenu / Shift+F10 open the action menu.
 const handleRowKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     handleSelectTask()
     return
   }
-  // ContextMenu / Shift+F10 open the action menu. Removing the hover buttons took away the only
-  // discoverable route to rename / delete, so the keyboard path is a hard requirement, not a
-  // nice-to-have — otherwise the change is an accessibility regression.
+  // ContextMenu / Shift+F10 open the action menu.
   if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
     event.preventDefault()
-    // Anchor at the row's centre — there is no cursor to follow on a keyboard gesture. Reuses the
-    // same viewport clamp as a real right-click so a row near the bottom-right corner doesn't push
-    // the menu off-screen.
+    // Anchor at the row's centre — there is no cursor to follow on a keyboard gesture.
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
     openAtPoint(
       rect ? rect.left + rect.width / 2 : 0,
@@ -135,16 +117,13 @@ const openTaskMenuInBackground = () => {
   })
 }
 
-// Migration 104 — right-click Pin/Unpin on kanban task rows (session list in kanban). Emits pinTask
-// directly (handlePinToggle needs a click event for stopPropagation; the menu has none). The
-// backend syncs sessions so the PINNED section updates.
+// Migration 104 — right-click Pin/Unpin on kanban task rows (session list in kanban).
 const pinTaskFromMenu = () => {
   closeTaskMenu()
   emit('pinTask', props.workspaceId, props.itemId, props.task.id, !props.task.is_pinned)
 }
 
-// Rename / delete from the menu. Same contract as `pinTaskFromMenu` above: emit straight up with
-// the identical payload the old hover buttons produced.
+// Rename / delete from the menu.
 const renameTaskFromMenu = () => {
   closeTaskMenu()
   emit('renameTask', props.workspaceId, props.itemId, props.task.id, props.task.name)
@@ -155,8 +134,7 @@ const deleteTaskFromMenu = () => {
   emit('deleteTask', props.workspaceId, props.itemId, props.task.id)
 }
 
-// Right-click "Run agent" — starts a worker on this task's existing session without queueing a new
-// user message (the same `startAgentOnTask` the kanban card and the detail dialog use).
+// Right-click "Run agent" — starts a worker on this task's existing session without queueing a new user message (the same `startAgentOnTask` the kanban card and …
 const workspacesStore = useWorkspacesStore()
 const isRunningAgent = ref(false)
 
@@ -192,9 +170,7 @@ const runAgentFromMenu = async () => {
   }
 }
 
-// 2026-08-29 agent-error-row — reactive read of the latest agent error keyed by task.id ==
-// session_id (migration 052 invariant). Same store + helper as the kanban card and ChatView's
-// AgentErrorCard — see stores/agentError.ts and helpers/parseAgentErrorHeadline.ts.
+// 2026-08-29 agent-error-row — reactive read of the latest agent error keyed by task.id == session_id (migration 052 invariant).
 const agentErrorStore = useAgentErrorStore()
 const agentError = computed(() => agentErrorStore.bySession[props.task.id] ?? null)
 const errorHeadline = computed(() =>

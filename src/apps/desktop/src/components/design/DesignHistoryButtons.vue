@@ -20,9 +20,7 @@ const props = defineProps<{
   pageId: string
 }>()
 
-// Keep the pageId prop reactive by deriving a computed. We don't need the workspaceId/itemId here
-// directly (the composable reads them from the workspaces store), but they're required props so any
-// future direct use is ergonomic.
+// Keep the pageId prop reactive by deriving a computed.
 const pageIdComputed = computed(() => props.pageId)
 const history = useDesignHistory(pageIdComputed)
 

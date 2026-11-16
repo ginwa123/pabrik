@@ -1,5 +1,4 @@
-/** V2 sidebar: header shows a quiet count, no search filter.
- * Every project is listed; actions are always visible; indent is compact. */
+/** V2 sidebar: header shows a quiet count, no search filter. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -96,9 +95,7 @@ describe('ProjectsList v2 — count, no search, compact indent', () => {
     wrapper.unmount()
   })
 
-  // The list carried a 12px left margin and a 1px rail, which inset every project row by 13px against
-  // a flush RECENT row. jsdom resolves no Tailwind, so the witness is the class list; the measured box
-  // lives in the functional UI suite.
+  // The list carried a 12px left margin and a 1px rail, which inset every project row by 13px against a flush RECENT row. jsdom resolves no Tailwind, so the …
   it('renders the project list flush, with no indent and no rail', async () => {
     const wrapper = mountList()
     await nextTick()

@@ -94,8 +94,7 @@ const workspacesStore = useWorkspacesStore()
 const router = useRouter()
 const route = useRoute()
 
-// Lazy-load the kanban's columns on mount + whenever the item id changes (e.g. user navigates from
-// one kanban to another without unmounting the component).
+// Lazy-load the kanban's columns on mount + whenever the item id changes (e.g. user navigates from one kanban to another without unmounting the component).
 const effectiveItemId = computed(() => props.itemId || props.item.id)
 
 const emit = defineEmits<KanbanViewEmits>()
@@ -104,8 +103,7 @@ const kanbanColumnsContainer = ref<HTMLElement | null>(null)
 const kanbanScrollStorageKey = computed(() => `kanban-scroll-${effectiveItemId.value}`)
 useKanbanScrollRestore(kanbanColumnsContainer, kanbanScrollStorageKey)
 
-// ─── Layout (columns | rows) ────────────────────────────────────────────── Row mode renders the
-// same board as a vertical list grouped by column.
+// ─── Layout (columns | rows) ──────────────────────────────────────────────
 const readStoredLayout = (): KanbanLayout | null => {
   try {
     const v = localStorage.getItem(LAYOUT_STORAGE_KEY)
@@ -125,23 +123,19 @@ const writeStoredLayout = (next: KanbanLayout): void => {
 }
 
 const readLayoutParam = (): KanbanLayout | null => {
-  // No try/catch: an absent router leaves `route` undefined, and optional chaining is total on
-  // null/undefined, so there is nothing to catch (same reasoning as `readPrsParam`).
+  // No try/catch: an absent router leaves `route` undefined, and optional chaining is total on null/undefined, so there is nothing to catch (same reasoning as …
   const v = route?.query?.[LAYOUT_PARAM]
   return v === 'rows' || v === 'columns' ? v : null
 }
 
 const layout = ref<KanbanLayout>(readLayoutParam() ?? readStoredLayout() ?? 'columns')
 
-// Row-mode scroll position. The columns row scrolls horizontally; the
-// row list scrolls vertically, so it needs its own container + key.
+// Row-mode scroll position.
 const kanbanRowsContainer = ref<HTMLElement | null>(null)
 const kanbanRowScrollStorageKey = computed(() => `kanban-row-scroll-${effectiveItemId.value}`)
 useKanbanScrollRestore(kanbanRowsContainer, kanbanRowScrollStorageKey, 'y')
 
-// ─── Row-mode density (comfortable | compact) ───────────────────────────── The two-line row (name
-// + metadata) is right for most columns but a lot of scrolling for a 100+ row group like `merged`.
-// Compact drops the metadata line back to a single scannable line.
+// ─── Row-mode density (comfortable | compact) ─────────────────────────────
 const readStoredDensity = (): KanbanRowDensity | null => {
   try {
     const v = localStorage.getItem(DENSITY_STORAGE_KEY)
@@ -163,9 +157,7 @@ const setRowDensity = (next: KanbanRowDensity) => {
   }
 }
 
-// ─── Row-mode group collapse ────────────────────────────────────────────── Per board, persisted
-// in localStorage as a JSON array of collapsed column ids. Collapse is a density preference, not a
-// view switch, so it deliberately does NOT go in the URL.
+// ─── Row-mode group collapse ──────────────────────────────────────────────
 const readCollapsedIds = (): string[] => {
   try {
     const raw = localStorage.getItem(`${COLLAPSED_STORAGE_PREFIX}${effectiveItemId.value}`)
@@ -198,9 +190,7 @@ const toggleColumnCollapsed = (columnId: string) => {
 
 const tasks = computed<Task[]>(() => props.item.tasks ?? [])
 
-// ─── Derived data ────────────────────────────────────────────────────────── Columns sorted by
-// position ascending (defensive — the backend already returns them in order, but we sort again
-// locally so a reorder never produces an out-of-order board even before the API response lands).
+// ─── Derived data ──────────────────────────────────────────────────────────
 const sortedColumns = computed(() => {
   return (props.item.kanban_columns ?? []).slice().sort((a, b) => a.position - b.position)
 })
@@ -244,15 +234,13 @@ const setRowsContainerEl = (el: unknown) => {
   kanbanRowsContainer.value = el as HTMLElement | null
 }
 
-// NOTE: KanbanView no longer owns a chat pane. Regression note (2026-08-06): the previous version
-// of this function ONLY fetched URL-mentioned columns when the URL had sort entries.
+// NOTE: KanbanView no longer owns a chat pane.
 const loadColumnsAndTasks = async () => {
   if (!props.workspaceId || !effectiveItemId.value) return
   const wsId = props.workspaceId
   const itemId = effectiveItemId.value
 
-  // Step 1: parse the URL's sorts (defensive — route/router may
-  // be null in tests that don't mock vue-router).
+  // Step 1: parse the URL's sorts (defensive — route/router may be null in tests that don't mock vue-router).
   const routeObj = route ?? null
 
   await loadBoardData({
@@ -268,22 +256,15 @@ const loadColumnsAndTasks = async () => {
   })
 }
 
-// Single onMounted hook (kanban-onmount-single-fetch, task_1785730557641, 2026-08-06). The previous
-// code had TWO onMounted hooks: (a) loadColumnsAndTasks — fetches columns + per-column tasks, (b)
-// URL restore — parsed sorts, updated columnSorts, called setSortMode.
+// Single onMounted hook (kanban-onmount-single-fetch, task_1785730557641, 2026-08-06).
 onMounted(loadColumnsAndTasks)
 
-// NEW (plan: 2026-09-09-run-all-agents-by-column, Tasks 3+4, Option C). Column "Run all agents"
-// host handler. Wired to KanbanColumn's `@request-run-all-agents` emit.
+// NEW (plan: 2026-09-09-run-all-agents-by-column, Tasks 3+4, Option C).
 const runAllBusyByColumn = ref<Record<string, boolean>>({})
 const runAllSummary = ref<string | null>(null)
 // In-flight state for the per-column bulk "Stop all agents" action.
-// The summary reuses `runAllSummary` (one banner slot; a stop that lands
-// after a run overwrites it, which matches the single-action UX).
 const stopAllBusyByColumn = ref<Record<string, boolean>>({})
-// Dialog save handler — delegates to the store action which runs the optimistic update + API call +
-// rollback-on-error. We close the dialog only on success; on error we keep it open so the user can
-// retry without re-typing.
+// Dialog save handler — delegates to the store action which runs the optimistic update + API call + rollback-on-error.
 const handleTaskDetailSave = async (payload: {
   name: string
   description: string
@@ -305,11 +286,9 @@ const handleTaskDetailSave = async (payload: {
   }
 }
 
-// NEW (plan: 2026-08-18-kanban-task-detail-start-agent). Edit-mode Start agent click handler. Wired
-// to the dialog's @start-agent emit.
+// NEW (plan: 2026-08-18-kanban-task-detail-start-agent).
 const handleStartAgent = async (payload: { taskId: string }) => {
-  // Defensive: ignore if the dialog is already closed or the click
-  // somehow fires for a different task than the one we have open.
+  // Defensive: ignore if the dialog is already closed or the click somehow fires for a different task than the one we have open.
   if (!activeTaskDetailId.value || activeTaskDetailId.value !== payload.taskId) return
   if (startAgentBusy.value) return
   startAgentBusy.value = true
@@ -321,8 +300,7 @@ const handleStartAgent = async (payload: { taskId: string }) => {
       payload.taskId,
     )
     startAgentError.value = startAgentFailure(result)
-    // Background worker started successfully: close the panel and stay on the kanban — the user can
-    // click the task card to open the chat view if they want to watch the agent work.
+    // Background worker started successfully: close the panel and stay on the kanban — the user can click the task card to open the chat view if they want to watch …
     if (startAgentError.value === null) closeTaskDetail()
   } catch (err) {
     console.error('Failed to start agent:', err)
@@ -354,8 +332,7 @@ const handleRunAllAgents = async (columnId: string) => {
   }
 }
 
-// Column "Stop all agents" host handler — the mirror of `handleRunAllAgents` above. Wired to
-// KanbanColumn's (and KanbanRowView's) `@request-stop-all-agents` emit.
+// Column "Stop all agents" host handler — the mirror of `handleRunAllAgents` above.
 const handleStopAllAgents = async (columnId: string) => {
   if (!columnId || stopAllBusyByColumn.value[columnId]) return
   const column = (props.item.kanban_columns ?? []).find((c) => c.id === columnId)
@@ -378,8 +355,7 @@ const handleStopAllAgents = async (columnId: string) => {
   }
 }
 
-// Card / row context-menu "Run agent". Wired to KanbanColumn's (and KanbanRowView's) `@run-agent`
-// emit, which the card's right-click menu fires.
+// Card / row context-menu "Run agent".
 const runAgentBusyByTask = ref<Record<string, boolean>>({})
 
 const handleRunAgentFromMenu = async (payload: { taskId: string }) => {
@@ -393,8 +369,7 @@ const handleRunAgentFromMenu = async (payload: { taskId: string }) => {
       taskId,
     )
     const failure = startAgentFailure(result)
-    // Nothing else to do on success — the SSE worker events drive the card's spinner and the elapsed
-    // chip from here.
+    // Nothing else to do on success — the SSE worker events drive the card's spinner and the elapsed chip from here.
     if (failure !== null) useNotificationStore().notifyError(failure, 'Run agent')
   } catch (err) {
     console.error('Failed to run agent from menu:', err)
@@ -407,9 +382,7 @@ const handleRunAgentFromMenu = async (payload: { taskId: string }) => {
   }
 }
 
-// Unattended-mode toggle handler (edit mode only). Persists immediately via PUT
-// /api/llm/session/<id> — the flag lives on the sessions table (task.id == session.id for routine
-// tasks per the project convention), NOT on workspace_item_tasks.
+// Unattended-mode toggle handler (edit mode only).
 const handleUnattendedToggle = async (payload: { value: '0' | '1'; previous: '0' | '1' }) => {
   const taskId = activeTaskDetailId.value
   if (!taskId) return
@@ -417,14 +390,11 @@ const handleUnattendedToggle = async (payload: { value: '0' | '1'; previous: '0'
     await apiUpdateSession(taskId, { isAutoRetryUntilStop: payload.value })
   } catch (err) {
     console.error('Failed to toggle unattended mode:', err)
-    // On failure, the SSE re-fetch (or the dialog re-open via activeTaskDetailId) will paint the
-    // correct server-truth value into the toggle.
+    // On failure, the SSE re-fetch (or the dialog re-open via activeTaskDetailId) will paint the correct server-truth value into the toggle.
   }
 }
 
-// NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Edit-mode cwd picker handler. Persists
-// immediately via PUT /api/workspaces/tasks/<id> with `cwd` — the field already round-trips through
-// the backend's `task_update.zig` validated_cwd block (Migration 070).
+// NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd).
 const handleUpdateCwd = async (payload: { cwd: string }) => {
   const taskId = activeTaskDetailId.value
   if (!taskId) return
@@ -438,9 +408,7 @@ const handleUpdateCwd = async (payload: { cwd: string }) => {
 // Create-task submit handler.
 const handleCreateTaskSave = async (payload: CreateTaskPayload) => {
   if (!activeCreateColumnId.value) return
-  // NEW (plan: 2026-08-24-kanban-create-run-disable-double-click). Re-entry guard: createBusy is
-  // flipped synchronously below, but two clicks in the SAME tick (double-click faster than Vue's
-  // re-render) would both pass the dialog's disabled-button check before the prop propagates.
+  // NEW (plan: 2026-08-24-kanban-create-run-disable-double-click).
   if (createBusy.value) return
   createBusy.value = true
   createError.value = null

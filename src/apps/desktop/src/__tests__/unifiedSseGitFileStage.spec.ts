@@ -1,6 +1,4 @@
-/** The `git_file_stage` channel at the API layer. `SidebarDiffPanel.stage.spec.ts` drives the panel
- * and dispatches synthetic events through `__dispatchSseBus` — which deliberately bypasses
- * `api/index.ts`. */
+/** The `git_file_stage` channel at the API layer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createUnifiedSseConnection } from '../api'
@@ -39,8 +37,7 @@ describe('createUnifiedSseConnection: git_file_stage channel', () => {
   it('pre-registers both granular wire names so the browser dispatches them', () => {
     createUnifiedSseConnection({ channels: { gitFileStage: vi.fn() } })
 
-    // A name missing here is dropped by EventSource before onEvent — the
-    // failure mode that looks exactly like a dead stream.
+    // A name missing here is dropped by EventSource before onEvent — the failure mode that looks exactly like a dead stream.
     expect(capturedOpts?.additionalEventTypes).toContain('git_file_staged')
     expect(capturedOpts?.additionalEventTypes).toContain('git_file_unstaged')
   })
@@ -68,9 +65,7 @@ describe('createUnifiedSseConnection: git_file_stage channel', () => {
   })
 
   it('ignores the event when the channel is not subscribed', () => {
-    // No `gitFileStage` channel → the branch must return early rather than
-    // fall through to the default-message buffer (which would corrupt the
-    // next unnamed event's parse).
+    // No `gitFileStage` channel → the branch must return early rather than fall through to the default-message buffer (which would corrupt the next unnamed event's …
     const workersCb = vi.fn()
     createUnifiedSseConnection({ channels: { workers: workersCb } })
 

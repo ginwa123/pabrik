@@ -1,5 +1,4 @@
-//! `GET /api/agents/:agent_id/tools`. Returns `{tools: [string]}` — the
-//! enabled tool_names for the agent.
+//! `GET /api/agents/:agent_id/tools`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -23,19 +22,14 @@ pub const ToolListInput = struct {
     agent_id: []const u8,
 };
 
-/// Output of the list-tools use-case. `tool_names` is owned by the
-/// caller (lifetime = request arena — freed by the HTTP server
-/// when the request ends).
+/// Output of the list-tools use-case.
 pub const ToolListOutput = struct {
     tool_names: []const []const u8,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
-/// Resolve the enabled tool_names for the agent. Returns an owned slice of
-/// `[]const u8` ordered by tool_name ASC.
+/// Resolve the enabled tool_names for the agent.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -48,13 +42,9 @@ fn useCase(
     return .{ .tool_names = tool_names };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Resolves the singleton DB
-/// handle, delegates to `useCase`, and maps the use-case outcome to
-/// an HTTP response.
+/// Thin orchestrator over `useCase`.
 pub fn agentToolsListHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -89,8 +79,6 @@ pub fn agentToolsListHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention for Agent Mode). 4 behavioural
-// tests cover the use-case: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
@@ -110,9 +98,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // See agent_knowledge_delete.zig for why we re-create
-    // workspace_items with the full shape instead of relying on
-    // Migration 001.
+    // See agent_knowledge_delete.zig for why we re-create workspace_items with the full shape instead of relying on Migration 001.
     try db.exec(testing.allocator,
         "CREATE TABLE workspace_items (id TEXT PRIMARY KEY, workspace_id TEXT, item_type TEXT NOT NULL, name TEXT, path TEXT, position INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         &[_][]const u8{},
@@ -193,7 +179,6 @@ test "useCase: returns only enabled=1 tools, ordered by tool_name ASC" {
         alloc.free(output.tool_names);
     }
     // Seeded: write_file (1), bash (1), read_file (0), glob (1).
-    // Expect: bash, glob, write_file (read_file excluded).
     try testing.expectEqual(@as(usize, 3), output.tool_names.len);
     try testing.expectEqualStrings("bash", output.tool_names[0]);
     try testing.expectEqualStrings("glob", output.tool_names[1]);

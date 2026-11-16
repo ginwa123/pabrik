@@ -1,6 +1,4 @@
-/** Tests for CopyKanbanSpecDialog — the per-board "copy spec from another kanban" modal. Mount
- * pattern: same as KanbanSettingsDialog.spec.ts (Teleport + attachTo: document.body +
- * document.querySelector for DOM assertions). */
+/** Tests for CopyKanbanSpecDialog — the per-board "copy spec from another kanban" modal. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -9,9 +7,7 @@ import CopyKanbanSpecDialog from '@/components/dialogs/CopyKanbanSpecDialog.vue'
 import { useWorkspacesStore, type Workspace, type WorkspaceItem } from '@/stores/workspaces'
 import * as api from '@/api'
 
-// Mock the api module so the source-columns preview fetch doesn't
-// hit a real backend. Default: return an empty list. Tests can
-// override per-case via mockResolvedValueOnce.
+// Mock the api module so the source-columns preview fetch doesn't hit a real backend.
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof api>('@/api')
   return {
@@ -79,9 +75,7 @@ describe('CopyKanbanSpecDialog', () => {
   })
 
   function mountDialog() {
-    // Mount with show: false, then flip to true — the component's watcher on `() => props.show`
-    // only fires on a transition, and this is the lifecycle hook that auto-selects the first source
-    // (matches the convention in AddKanbanDialog.spec.ts).
+    // Mount with show: false, then flip to true — the component's watcher on `() => props.show` only fires on a transition, and this is the lifecycle hook that …
     wrapper = mount(CopyKanbanSpecDialog, {
       attachTo: document.body,
       props: {
@@ -100,8 +94,7 @@ describe('CopyKanbanSpecDialog', () => {
     return w
   }
 
-  /**    * The custom dropdown starts CLOSED. Tests that need to see options click the trigger first, then
-   * await flushPromises so the v-if reactively renders the listbox. */
+  /** The custom dropdown starts CLOSED. */
   async function openDropdown() {
     clickInDom('[data-testid="copy-kanban-spec-source-trigger"]')
     await flushPromises()
@@ -155,9 +148,7 @@ describe('CopyKanbanSpecDialog', () => {
 
     const emitted = w!.emitted('copy')
     expect(emitted).toBeTruthy()
-    // Alphabetical sort: "Bug triage" (wi_src_2) precedes
-    // "Sprint 12 (template)" (wi_src_1), so auto-selection picks
-    // wi_src_2 on open.
+    // Alphabetical sort: "Bug triage" (wi_src_2) precedes "Sprint 12 (template)" (wi_src_1), so auto-selection picks wi_src_2 on open.
     expect(emitted![0]).toEqual(['wi_src_2', 'append'])
   })
 
@@ -191,8 +182,7 @@ describe('CopyKanbanSpecDialog', () => {
     const w = await openDialog()
     await flushPromises()
 
-    // The dropdown isn't open by default, so check the empty-state
-    // marker indirectly via the disabled Confirm button.
+    // The dropdown isn't open by default, so check the empty-state marker indirectly via the disabled Confirm button.
     const confirmBtn = findInDom<HTMLButtonElement>(
       '[data-testid="copy-kanban-spec-confirm"]',
     )

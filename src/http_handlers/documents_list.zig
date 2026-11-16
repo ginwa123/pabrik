@@ -1,5 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/documents`. Returns `{documents,
-//! count}` for one workspace in saved sidebar order.
+//! `GET /api/workspaces/:workspace_id/documents`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -20,17 +19,13 @@ pub const DocumentsListInput = struct {
 };
 
 pub const DocumentsListOutput = struct {
-    /// Owned slice; the caller frees it with
-    /// `documents_store.freeDocumentRows`.
+    /// Owned slice; the caller frees it with `documents_store.freeDocumentRows`.
     documents: []documents_store.DocumentRow,
-    /// Owned slice; the caller frees it with
-    /// `folders_store.freeFolderRows`.
+    /// Owned slice; the caller frees it with `folders_store.freeFolderRows`.
     folders: []folders_store.FolderRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 fn useCase(
     allocator: std.mem.Allocator,
@@ -38,17 +33,14 @@ fn useCase(
     input: DocumentsListInput,
 ) DocumentsListError!DocumentsListOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    // Both reads, one response: the client builds the tree from `parent_id`,
-    // and a second request per folder would be an N+1 on first paint.
+    // Both reads, one response: the client builds the tree from `parent_id`, and a second request per folder would be an N+1 on first paint.
     return .{
         .documents = try store.listDocuments(allocator, input.workspace_id),
         .folders = try folders_store.listFolders(allocator, store.db, input.workspace_id),
     };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn documentsListHandler(
     ctx: gserverz.HttpContext,
@@ -89,9 +81,7 @@ pub fn documentsListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
-/// `?include=content` restores the pre-Migration-143 shape, where every list
-/// row carried its body. It exists as a deprecation window for a client that
-/// has not moved to fetching the body on open; the default is metadata only.
+/// `?include=content` restores the pre-Migration-143 shape, where every list row carried its body.
 fn includeContent(req: gserverz.HttpRequest) bool {
     const value = req.query.get("include") orelse return false;
     return std.mem.eql(u8, value, "content");
@@ -170,8 +160,7 @@ test "useCase: never returns another workspace's documents" {
     try testing.expectEqualStrings("doc_a", mine.documents[0].id);
     try testing.expectEqualStrings("body a", mine.documents[0].preview);
 
-    // The foreign workspace sees only its own row — no leak in either
-    // direction, and no "empty because mis-scoped" false negative.
+    // The foreign workspace sees only its own row — no leak in either direction, and no "empty because mis-scoped" false negative.
     const theirs = try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_2" });
     defer documents_store.freeDocumentRows(alloc, theirs.documents);
     defer folders_store.freeFolderRows(alloc, theirs.folders);
@@ -180,5 +169,3 @@ test "useCase: never returns another workspace's documents" {
 }
 
 // ─── Route contracts ────────────────────────────────────────────────────
-// `matchRoute` walks one shared table in REGISTRATION ORDER, so whether a
-// literal segment is reachable is a property of that TABLE, not of this

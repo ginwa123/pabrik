@@ -1,23 +1,18 @@
-/** PlantUML has no in-browser renderer (it is a Java program), so a `<plantuml>` block becomes an
- * `<img>` whose src is a PlantUML server URL carrying the source — nothing cached, no Java needed. */
+/** PlantUML has no in-browser renderer (it is a Java program), so a `<plantuml>` block becomes an `<img>` whose src is a PlantUML server URL carrying the source — … */
 export const PLANTUML_DEFAULT_SERVER = 'https://www.plantuml.com/plantuml'
 
 /** A trailing slash on the configured value would produce `//svg` — a 404 from most servers. */
 const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, '')
 
-/** `VITE_PLANTUML_SERVER` points this at the deployment's own PlantUML instance (a `plantuml.war`
- * serves the same `/plantuml/svg/<encoded>` path) so diagram source need not leave the box. */
+/** `VITE_PLANTUML_SERVER` points this at the deployment's own PlantUML instance (a `plantuml.war` serves the same `/plantuml/svg/<encoded>` path) so diagram … */
 export const resolvePlantumlServer = (): string => {
-  // Cast rather than `import.meta.env.X`: outside a Vite build (plain node, a unit test) `env` may
-  // be absent entirely, and reading a property off it would throw instead of falling back.
+  // Cast rather than `import.meta.env.X`: outside a Vite build (plain node, a unit test) `env` may be absent entirely, and reading a property off it would throw …
   const env = (import.meta as { env?: Record<string, string | undefined> }).env
   const value = (env?.VITE_PLANTUML_SERVER ?? '').trim()
   return withoutTrailingSlash(value.length > 0 ? value : PLANTUML_DEFAULT_SERVER)
 }
 
-/** PlantUML's UNCOMPRESSED link form: `~h` + the source bytes as lowercase hex. The usual `~1` form
- * is that source deflated with PlantUML's own base64 alphabet, which needs a compressor the browser
- * does not reliably have; hex doubles the bytes, and a 40-arrow diagram is still only a ~2.4 KB URL. */
+/** PlantUML's UNCOMPRESSED link form: `~h` + the source bytes as lowercase hex. */
 export const encodePlantuml = (source: string): string => {
   const bytes = new TextEncoder().encode(source)
   let hex = ''

@@ -1,6 +1,4 @@
-//! `GET /api/workspaces/:workspace_id/items/:item_id/agent_kanban`. Returns
-//! `{agent_kanban, knowledges, tools, system_prompts}` for the agent-kanbans
-//! config bound to this kanban workspace_item.
+//! `GET /api/workspaces/:workspace_id/items/:item_id/agent_kanban`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,9 +16,7 @@ pub const AgentKanbanSystemPromptRow = agent_kanban_db.SystemPromptRow;
 /// Wire shape for the agent-kanbans config row in the GET response.
 pub const AgentKanbanRow = agent_kanban_db.AgentKanbanRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant to an
-/// HTTP status code + message via two exhaustive switches (intentional —
-/// adding a new variant fails to compile until both are updated).
+/// Domain-level error set for `useCase`.
 pub const AgentKanbansGetError = error{
     /// `workspace_id` or `item_id` path param was missing or empty.
     IdsRequired,
@@ -42,8 +38,7 @@ pub const AgentKanbansGetInput = struct {
     item_id: []const u8,
 };
 
-/// Output of the agent-kanbans-get use-case. All slices are owned by
-/// the caller (lifetime = request arena in production).
+/// Output of the agent-kanbans-get use-case.
 pub const AgentKanbansGetOutput = struct {
     agent_kanban: AgentKanbanRow,
     knowledges: []const AgentKanbanKnowledgeRow,
@@ -51,13 +46,9 @@ pub const AgentKanbansGetOutput = struct {
     system_prompts: []const AgentKanbanSystemPromptRow,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Resolve the agent-kanbans config row + children for a workspace_item.
-/// Validates the workspace_item exists + is of type `'kanban'`, then loads
-/// the config row and its 3 sub-collections.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -124,12 +115,9 @@ fn freeSystemPromptRow(allocator: std.mem.Allocator, p: AgentKanbanSystemPromptR
     if (p.updated_at.len > 0) allocator.free(p.updated_at);
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// Thin orchestrator over `useCase`. Resolves the singleton DB handle,
-/// delegates, marshals the output to JSON, maps errors to status codes.
+/// Thin orchestrator over `useCase`.
 pub fn agentKanbansGetHandler(
     ctx: gserverz.HttpContext,
     req: gserverz.HttpRequest,
@@ -179,7 +167,6 @@ pub fn agentKanbansGetHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

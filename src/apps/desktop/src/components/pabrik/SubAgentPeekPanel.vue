@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** SubAgentPeekPanel — right-side slide-over panel for watching a sub-agent's progress without
- * leaving the parent chat. The panel is thin chrome (header / error banner / footer) around an
- * embedded ChatView in read-only mode. */
+/** SubAgentPeekPanel — right-side slide-over panel for watching a sub-agent's progress without leaving the parent chat. */
 import { computed } from 'vue'
 import ChatView from '../views/ChatView.vue'
 import type { Message } from '../../api'
@@ -14,8 +12,7 @@ const props = defineProps<{
   instruction: string
   status: PeekStatus
   errorMessage: string | null
-  /**    * Retained for backward compat — SubAgentPeekHost still passes the composable's rows. The body
-   * renders via the embedded ChatView (which fetches the same session itself), not from this prop. */
+  /** Retained for backward compat — SubAgentPeekHost still passes the composable's rows. */
   messages: Message[]
   totalTokens?: number
 }>()

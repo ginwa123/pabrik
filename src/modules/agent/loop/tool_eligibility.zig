@@ -1,5 +1,4 @@
-//! Pure tool-eligibility helpers shared by the agentic loop. Two independent
-//! policies decide which built-in tools a *thing* may have: 1.
+//! Pure tool-eligibility helpers shared by the agentic loop.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -18,16 +17,14 @@ const set_element_parent_mod = pabrikcore.set_element_parent;
 const move_design_element_mod = pabrikcore.move_design_element;
 const move_element_to_page_mod = pabrikcore.move_element_to_page;
 
-/// Tools that only make sense inside a kanban item. Stripped for `design`
-/// and `folder` items.
+/// Tools that only make sense inside a kanban item.
 pub const KANBAN_ONLY_NAMES = [_][]const u8{
     kanban_list_mod.kanban_list_tool.function.name,
     kanban_move_task_mod.kanban_move_task_tool.function.name,
     kanban_create_task_tool.create_kanban_task_tool.function.name,
 };
 
-/// Tools that only make sense inside a design item. Stripped for `kanban`
-/// and `folder` items.
+/// Tools that only make sense inside a design item.
 pub const DESIGN_ONLY_NAMES = [_][]const u8{
     set_design_page_mod.set_design_page_tool.function.name,
     add_design_element_mod.add_design_element_tool.function.name,
@@ -52,17 +49,13 @@ fn nameInAny(name: []const u8, names: []const []const u8) bool {
 }
 
 /// Apply the agent/kanban allowlist + the sub-agent anti-recursion strip.
-/// `allowed_tools` semantics: - `""` (empty) → NO filtering (every tool
-/// kept).
 pub fn allowlistFilter(
     allocator: std.mem.Allocator,
     tools: []const AgentTool,
     allowed_tools: []const u8,
     is_sub_agent: bool,
 ) ![]AgentTool {
-    // WHY: exact `none` is the explicit-empty sentinel and must mean ZERO
-    // tools — distinct from the pre-existing `""` wart above ("no filtering →
-    // keep everything").
+    // WHY: exact `none` is the explicit-empty sentinel and must mean ZERO tools — distinct from the pre-existing `""` wart above ("no filtering → keep everything").
     if (std.mem.eql(u8, allowed_tools, "none")) {
         return try allocator.alloc(AgentTool, 0);
     }
@@ -90,8 +83,7 @@ pub fn allowlistFilter(
         kept = kept[0..count];
     }
 
-    // Main-agent-only tools must not reach a sub-agent: `spawn_sub_agent`
-    // would recurse, `run_session` and `run_skill_eval` start a whole new run.
+    // Main-agent-only tools must not reach a sub-agent: `spawn_sub_agent` would recurse, `run_session` and `run_skill_eval` start a whole new run.
     if (is_sub_agent) {
         var count: usize = 0;
         for (kept) |tool| {
@@ -106,9 +98,7 @@ pub fn allowlistFilter(
     return kept;
 }
 
-/// Strip the tools the given workspace-item type must not carry: - `design` →
-/// no kanban tools - `kanban` → no design tools - `folder` → neither -
-/// anything else (`agent`, `chat`, empty, unknown) → unchanged Compacts in
+/// Strip the tools the given workspace-item type must not carry: - `design` → no kanban tools - `kanban` → no design tools - `folder` → neither -anything else …
 pub fn itemTypeStrip(tools: []AgentTool, self_item_type: []const u8) []AgentTool {
     const strip_kanban = std.mem.eql(u8, self_item_type, "design") or
         std.mem.eql(u8, self_item_type, "folder");
@@ -127,9 +117,7 @@ pub fn itemTypeStrip(tools: []AgentTool, self_item_type: []const u8) []AgentTool
     return tools[0..count];
 }
 
-/// Names of the tools that survive both policies. Convenience for callers
-/// that only need membership (the progressive catalog) rather than the
-/// tool definitions.
+/// Names of the tools that survive both policies.
 pub fn eligibleNames(
     allocator: std.mem.Allocator,
     tools: []const AgentTool,
@@ -145,9 +133,7 @@ pub fn eligibleNames(
     return out;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
@@ -172,9 +158,7 @@ fn collectNames(allocator: std.mem.Allocator, tools: []const AgentTool) ![][]con
     return out;
 }
 
-/// Compare expected names against either a name list (`[]const []const u8`)
-/// or a tool list (`[]AgentTool`). Chosen by the element type at comptime so
-/// callers do not have to convert.
+/// Compare expected names against either a name list (`[]const []const u8`) or a tool list (`[]AgentTool`).
 fn expectNames(expected: []const []const u8, actual: anytype) !void {
     const child = @typeInfo(@TypeOf(actual)).pointer.child;
     if (child == AgentTool) {
@@ -201,14 +185,12 @@ test "allowlistFilter: exact \"none\" yields an empty tool set (D3 sentinel)" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    // Empty even for a main agent, where no sub-agent strip applies —
-    // the sentinel short-circuits before name matching.
+    // Empty even for a main agent, where no sub-agent strip applies — the sentinel short-circuits before name matching.
     const tools = try makeTools(a, &.{ "read_file", "glob", "search" });
     const kept = try allowlistFilter(a, tools, "none", false);
     try expectNames(&.{}, kept);
 
-    // …and a CSV that merely CONTAINS the word "none" is an ordinary
-    // allowlist (unknown names are ignored, the rest match).
+    // …and a CSV that merely CONTAINS the word "none" is an ordinary allowlist (unknown names are ignored, the rest match).
     const kept2 = try allowlistFilter(a, tools, "none,read_file", false);
     try expectNames(&.{"read_file"}, kept2);
 }
@@ -229,8 +211,7 @@ test "allowlistFilter: CSV keeps only listed names, preserving registry order" {
     const a = arena.allocator();
 
     const tools = try makeTools(a, &.{ "read_file", "glob", "search", "bash" });
-    // Note the reversed CSV order: output must follow the registry order,
-    // exactly like the original inline filter did.
+    // Note the reversed CSV order: output must follow the registry order, exactly like the original inline filter did.
     const kept = try allowlistFilter(a, tools, "search, read_file", false);
     try expectNames(&.{ "read_file", "search" }, kept);
 }
@@ -280,8 +261,7 @@ test "allowlistFilter: sub-agent strip covers every MAIN_AGENT_ONLY_NAMES entry"
     defer arena.deinit();
     const a = arena.allocator();
 
-    // Build a tool list from the list itself, so adding a member to
-    // MAIN_AGENT_ONLY_NAMES without updating this strip fails here.
+    // Build a tool list from the list itself, so adding a member to MAIN_AGENT_ONLY_NAMES without updating this strip fails here.
     var names_buf: [main_agent_only.MAIN_AGENT_ONLY_NAMES.len + 1][]const u8 = undefined;
     @memcpy(names_buf[0..main_agent_only.MAIN_AGENT_ONLY_NAMES.len], &main_agent_only.MAIN_AGENT_ONLY_NAMES);
     names_buf[main_agent_only.MAIN_AGENT_ONLY_NAMES.len] = "read_file";
@@ -372,8 +352,7 @@ test "eligibleNames: both policies compose" {
     const a = arena.allocator();
 
     const tools = try makeTools(a, &.{ "read_file", "glob", "kanban_list", "set_design_page", "spawn_sub_agent" });
-    // Kanban item, allowlist of 4, sub-agent → spawn stripped by policy 1,
-    // design stripped by policy 2.
+    // Kanban item, allowlist of 4, sub-agent → spawn stripped by policy 1, design stripped by policy 2.
     const names = try eligibleNames(a, tools, "read_file,glob,kanban_list,spawn_sub_agent", true, "kanban");
     try expectNames(&.{ "read_file", "glob", "kanban_list" }, names);
 }

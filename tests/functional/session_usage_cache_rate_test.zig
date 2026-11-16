@@ -1,5 +1,4 @@
-//! Wire test: `GET /api/llm/session/:session_id/usage` reports the cache hit
-//! rate the provider actually reported.
+//! Wire test: `GET /api/llm/session/:session_id/usage` reports the cache hit rate the provider actually reported.
 
 const std = @import("std");
 const testing = std.testing;
@@ -29,9 +28,7 @@ const SSE_STREAM =
     "event: content_block_stop\n" ++
     "data: {\"type\":\"content_block_stop\",\"index\":0}\n" ++
     "\n" ++
-    // `output_tokens` > 0 is what makes the parser emit a usage chunk for the
-    // delta, and the aggregator keeps the LAST usage chunk with total > 0 —
-    // this one is what gets persisted.
+    // `output_tokens` > 0 is what makes the parser emit a usage chunk for the delta, and the aggregator keeps the LAST usage chunk with total > 0 — this one is what …
     "event: message_delta\n" ++
     "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"," ++
     "\"stop_sequence\":null},\"usage\":{\"output_tokens\":10}}\n" ++
@@ -47,9 +44,7 @@ const Stub = struct {
     server: Io.net.Server,
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
-    /// Requests answered. Lets a failure say whether the turn ever reached the
-    /// stub (0) or reached it and failed to parse (non-zero) — two very
-    /// different bugs that otherwise read the same.
+    /// Requests answered.
     served: std.atomic.Value(usize) = .init(0),
 };
 
@@ -70,8 +65,7 @@ fn stopStub(stub: *Stub) void {
         var c = conn;
         c.close(stub.io);
     } else |_| {
-        // Listener already gone: `accept` returned an error and the serve
-        // loop has exited. Nothing to wake.
+        // Listener already gone: `accept` returned an error and the serve loop has exited.
     }
 
     stub.thread.join();
@@ -80,8 +74,7 @@ fn stopStub(stub: *Stub) void {
 
 fn serveStub(stub: *Stub) void {
     while (!stub.stop.load(.acquire)) {
-        // `defer` inside a loop body runs at the end of THAT iteration, so
-        // each accepted socket is closed before the next accept.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept.
         var stream = stub.server.accept(stub.io) catch break;
         defer stream.close(stub.io);
         if (stub.stop.load(.acquire)) break;
@@ -162,8 +155,7 @@ fn contentLength(head: []const u8) usize {
 const POLL_BUDGET_MS: i64 = 60_000;
 const POLL_INTERVAL_MS: i64 = 500;
 
-/// Poll `GET /api/llm/session/<id>/messages` until an assistant message with
-/// content lands. Returns an OWNED copy of its text.
+/// Poll `GET /api/llm/session/<id>/messages` until an assistant message with content lands.
 fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -209,9 +201,7 @@ fn waitForAssistantReply(h: *Harness, stub: *Stub, session_id: []const u8) ![]u8
     return error.TestUnexpectedResult;
 }
 
-/// Install an Anthropic-style profile pointing at the stub. Mirrors the
-/// `pabrik_config` PUT shape; `url_style: "anthropic"` is what selects the
-/// Anthropic body + header path in `Agent.callStreaming`.
+/// Install an Anthropic-style profile pointing at the stub.
 fn putAnthropicProfile(h: *Harness, stub_url: []const u8) !void {
     const cfg_body = try std.fmt.allocPrint(gpa,
         \\{{"api_endpoint":"{s}","api_key":"sk-ant-test","model":"stub-claude","url_style":"anthropic","profiles":{{"ant-stub":{{"model":"stub-claude","base_url":"{s}","api_key":"sk-ant-test","url_style":"anthropic"}}}},"active_profile":"ant-stub"}}
@@ -240,8 +230,7 @@ fn usagePath(prefix: []const u8, session_id: []const u8) ![]u8 {
 test "session_usage_reports_the_cache_read_ratio_the_provider_reported" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Registered FIRST so it runs LAST: the serve thread must outlive the
-    // harness teardown's shutdown of the child.
+    // Registered FIRST so it runs LAST: the serve thread must outlive the harness teardown's shutdown of the child.
     var stub: Stub = .{
         .io = io,
         .port = 0,
@@ -269,8 +258,7 @@ test "session_usage_reports_the_cache_read_ratio_the_provider_reported" {
     , .{session_id});
     defer gpa.free(session_body);
     {
-        // The worker runs in the background, so a 500 here can still be a
-        // healthy boot with a failed turn the poll below reports on.
+        // The worker runs in the background, so a 500 here can still be a healthy boot with a failed turn the poll below reports on.
         var r = try h.http(io, .POST, "/api/llm/session", .{
             .json_body = session_body,
             .expect = &.{ 200, 201, 500 },
@@ -298,8 +286,7 @@ test "session_usage_reports_the_cache_read_ratio_the_provider_reported" {
         return error.TestUnexpectedResult;
     }
 
-    // Every persisted row reports prompt=1000 / cache_read=900, so the rate is
-    // 90% regardless of how many calls the turn made.
+    // Every persisted row reports prompt=1000 / cache_read=900, so the rate is 90% regardless of how many calls the turn made.
     const got = doc.number("cache_hit_rate") orelse {
         std.debug.print("usage carries no numeric cache_hit_rate: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
@@ -315,8 +302,7 @@ test "session_usage_reports_the_cache_read_ratio_the_provider_reported" {
         std.debug.print("cache_read_tokens must be positive, got {d}: {s}\n", .{ read, r.body });
         return error.TestUnexpectedResult;
     }
-    // 900/1000 = 9/10 — an integer identity, so it cannot pass on a rounding
-    // coincidence and does not depend on the call count.
+    // 900/1000 = 9/10 — an integer identity, so it cannot pass on a rounding coincidence and does not depend on the call count.
     if (read * 10 != total * 9) {
         std.debug.print(
             "cache_read ({d}) over total input ({d}) must be 9/10: {s}\n",
@@ -324,20 +310,17 @@ test "session_usage_reports_the_cache_read_ratio_the_provider_reported" {
         );
         return error.TestUnexpectedResult;
     }
-    // The stub reports no cache WRITES; a non-zero value here would mean the
-    // write counter is being fed from somewhere it should not be.
+    // The stub reports no cache WRITES; a non-zero value here would mean the write counter is being fed from somewhere it should not be.
     if ((doc.int("cache_creation_tokens") orelse -1) != 0) {
         std.debug.print("cache_creation_tokens must stay 0: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
     }
-    // The provider DID report cache counters, so a client must not render this
-    // as "not reported".
+    // The provider DID report cache counters, so a client must not render this as "not reported".
     if ((doc.int("calls_with_cache") orelse 0) <= 0) {
         std.debug.print("calls_with_cache must be positive: {s}\n", .{r.body});
         return error.TestUnexpectedResult;
     }
-    // Self-consistency: the rate is exactly the two integers it claims to
-    // divide, rounded to two decimals.
+    // Self-consistency: the rate is exactly the two integers it claims to divide, rounded to two decimals.
     const implied = @round(100.0 * @as(f64, @floatFromInt(read)) / @as(f64, @floatFromInt(total)) * 100.0) / 100.0;
     if (@abs(got - implied) > 0.001) {
         std.debug.print(
@@ -348,8 +331,7 @@ test "session_usage_reports_the_cache_read_ratio_the_provider_reported" {
     }
 }
 
-// A session that has made no calls reports a null rate — never a fabricated
-// 0% — and both route prefixes answer identically.
+// A session that has made no calls reports a null rate — never a fabricated 0% — and both route prefixes answer identically.
 test "session_usage_is_null_before_any_call_and_matches_on_both_prefixes" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -381,8 +363,7 @@ test "session_usage_is_null_before_any_call_and_matches_on_both_prefixes" {
     {
         var doc = try a.json();
         defer doc.deinit();
-        // No input tokens to divide by: `null`, not 0. A fabricated 0% here
-        // would read as "the cache never hit" for a session that never called.
+        // No input tokens to divide by: `null`, not 0.
         const rate_val = doc.get("cache_hit_rate") orelse {
             std.debug.print("usage has no cache_hit_rate key: {s}\n", .{a.body});
             return error.TestUnexpectedResult;
@@ -410,9 +391,7 @@ test "session_usage_is_null_before_any_call_and_matches_on_both_prefixes" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced function is never type-checked,
-    // so a stdlib rename inside one would stay invisible until a caller
-    // appeared.
+    // Body-analysis barrier: an unreferenced function is never type-checked, so a stdlib rename inside one would stay invisible until a caller appeared.
     _ = Stub;
     _ = startStub;
     _ = stopStub;

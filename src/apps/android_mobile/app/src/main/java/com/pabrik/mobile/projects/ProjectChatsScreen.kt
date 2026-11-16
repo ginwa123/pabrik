@@ -41,21 +41,7 @@ private const val CONTENT_TYPE_CHAT = "chat"
 
 private const val CONTENT_TYPE_STATE = "state"
 
-/**
- * Every chat in one project, full-screen, paging on scroll.
- *
- * This is the destination behind the drawer's "See all chats" row. The drawer
- * shows a 5-row preview; when that is not enough, the reader comes here rather
- * than the drawer growing a second scroller it cannot fit on a 390dp screen.
- *
- * **It reads [page] and nothing else.** The state is owned by
- * `HomeViewModel` — shared with the drawer on purpose, so expanding a project
- * and then tapping "See all" costs one request rather than two. Handing this
- * screen the whole `HomeUiState` would work just as well and recompose this
- * `LazyColumn` on every unrelated emission, including a recents page append the
- * reader is not looking at. A narrow slice whose `List` reference is unchanged
- * does not rebuild.
- */
+/** Every chat in one project, full-screen, paging on scroll. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectChatsScreen(
@@ -65,22 +51,10 @@ fun ProjectChatsScreen(
     runningSessionIds: Set<String>,
     isLoading: Boolean,
     onChatSelected: (String) -> Unit,
-    /**
-     * Open a chat from this screen. Takes the session id rather than being
-     * zero-argument so the caller has to say *which* chat it is navigating to,
-     * and so this screen's contract is the same shape as the drawer's
-     * `onOpenChat` — the same gesture, the same route, one definition.
-     */
+    /** Open a chat from this screen. */
     onOpenChat: (String) -> Unit,
     onLoadMore: () -> Unit,
-    /**
-     * Open the create flow for *this* project.
-     *
-     * The same flow the drawer's `+` opens, handed in rather than built here: a
-     * reader who makes a chat from the project screen and one who makes one from
-     * the drawer should get the same picker, the same memory rules and the same
-     * validation. Two implementations is how they stop agreeing.
-     */
+    /** Open the create flow for *this* project. */
     onCreateTask: () -> Unit = {},
     /** Whether a create for this project is in flight, for the `+`'s busy state. */
     isCreatingTask: Boolean = false,
@@ -92,12 +66,7 @@ fun ProjectChatsScreen(
     val hasMore = page?.hasMore ?: false
     val listState = rememberLazyListState()
 
-    // One page per approach to the end — *and* one when the reader cannot
-    // approach the end at all. A project the drawer previewed is five rows
-    // long, five rows do not fill a phone, and a `LazyColumn` with no overflow
-    // has no scroll offset to change, so a scroll-only trigger leaves a project
-    // with more than five chats permanently unreadable. Same trigger as the
-    // workspace list, so the two cannot drift back apart.
+    // One page per approach to the end — *and* one when the reader cannot approach the end at all.
     ChatListLoadMoreTrigger(
         listState = listState,
         canPage = hasMore && chats.isNotEmpty() && !isLoading,
@@ -134,14 +103,9 @@ fun ProjectChatsScreen(
                 ),
                 actions = {
                     // The one place on this screen that creates something.
-                    // It sits here rather than as a floating button because the
-                    // list is a plain `LazyColumn` with a footer, and a FAB
-                    // would float over the last chat a reader is trying to tap.
                     IconButton(
                         onClick = onCreateTask,
-                        // Disabled while the create is in flight, so a
-                        // double-tap cannot make two chats. The ViewModel
-                        // refuses a second create too; this is the affordance.
+                        // Disabled while the create is in flight, so a double-tap cannot make two chats.
                         enabled = !isCreatingTask,
                         modifier = Modifier.testTag("project_chats_create"),
                     ) {
@@ -180,10 +144,7 @@ fun ProjectChatsScreen(
                             detail = if (isLoading) {
                                 "Fetching the chats in this project."
                             } else {
-                                // A fresh kanban or agent legitimately has
-                                // none. That is a fact about the project, not a
-                                // failure, so it reads as a state and not as
-                                // an error.
+                                // A fresh kanban or agent legitimately has none.
                                 "Start one from the web app and it will show up here."
                             },
                             showSpinner = isLoading,
@@ -205,9 +166,7 @@ fun ProjectChatsScreen(
                     nowEpochMillis = nowEpochMillis,
                     onClick = {
                         onChatSelected(chat.id)
-                        // A chat is a destination. Same gesture, same route as
-                        // the drawer's — the task id is the session id, so there
-                        // is nothing to translate.
+                        // A chat is a destination.
                         onOpenChat(chat.id)
                     },
                 )
@@ -216,8 +175,7 @@ fun ProjectChatsScreen(
             item(key = LOAD_MORE_KEY, contentType = CONTENT_TYPE_SENTINEL) {
                 ChatListFooter(
                     isLoading = isLoading,
-                    // Claiming the end while more may still exist is a lie the
-                    // reader sees first and then watches get retracted.
+                    // Claiming the end while more may still exist is a lie the reader sees first and then watches get retracted.
                     hasReachedEnd = !hasMore,
                 )
             }

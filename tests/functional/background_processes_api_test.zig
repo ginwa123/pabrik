@@ -1,6 +1,4 @@
-// Functional e2e for session background-process HTTP endpoints. Zig port of
-// `tests/functional/background_processes_api_test.py` (same test names, same
-// order).
+// Functional e2e for session background-process HTTP endpoints.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,25 +9,19 @@ const Io = std.Io;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// A PID that can never be alive on Linux (max pid is 4194304 by
-// default; kill(999999999, 0) -> ESRCH). Fits in i32 so both the cron's
-// parseInt(i32) and the endpoint's parseInt(u32) accept the row.
+// A PID that can never be alive on Linux (max pid is 4194304 by default; kill(999999999, 0) -> ESRCH).
 const DEAD_PID: i64 = 999_999_999;
 const DEAD_PID_2: i64 = 999_999_998;
 
-/// The pid of THIS test process — Python's `os.getpid()`, i.e. the
-/// always-alive probe row.
+/// The pid of THIS test process — Python's `os.getpid()`, i.e. the always-alive probe row.
 fn selfPid() u32 {
     if (builtin.os.tag == .windows) return @intCast(std.os.windows.GetCurrentProcessId());
     return @intCast(std.os.linux.getpid());
 }
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Agent DB inside the isolated tmpdir HOME (Linux layout).
-/// Python `_db_path`.
 fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
@@ -110,9 +102,7 @@ fn writeFile(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// `PUT /api/llm/session/:id` auto-creates the sessions row
-/// (`ensureSessionExists`); no LLM profile needed. Python
-/// `_create_session`.
+/// `PUT /api/llm/session/:id` auto-creates the sessions row (`ensureSessionExists`); no LLM profile needed.
 fn createSession(h: *Harness, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -123,9 +113,7 @@ fn createSession(h: *Harness, session_id: []const u8) !void {
     defer r.deinit();
 }
 
-/// Insert a `session_background_process` row WHILE the binary runs. Schema
-/// mirrors migration 014: `(session_id, pid, command, log_path, started_at,
-/// status)` with composite PK `(session_id, pid)`.
+/// Insert a `session_background_process` row WHILE the binary runs.
 fn insertBgRow(
     h: *Harness,
     session_id: []const u8,
@@ -158,9 +146,7 @@ fn insertBgRow(
     gpa.free(out);
 }
 
-/// `GET .../background_processes` → the whole body. Owned (a
-/// `harness.Json` aliases the response body, so it may not be returned
-/// from a helper).
+/// `GET .../background_processes` → the whole body.
 fn getListBody(h: *Harness, session_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/background_processes", .{session_id});
     defer gpa.free(path);
@@ -171,8 +157,6 @@ fn getListBody(h: *Harness, session_id: []const u8) ![]u8 {
 }
 
 /// `GET .../background_processes/:pid/log[?max_bytes=N]` → the whole body.
-/// Owned. `max_bytes` goes through `.params`, NOT a hand-built query string:
-/// the harness percent-encodes both the name and the value.
 fn getLogBody(
     h: *Harness,
     session_id: []const u8,
@@ -205,8 +189,7 @@ fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
 
-/// Python's `isinstance(v, bool)` — the wire must send a real JSON bool,
-/// not `0`/`1`/a string.
+/// Python's `isinstance(v, bool)` — the wire must send a real JSON bool, not `0`/`1`/a string.
 fn expectBool(obj: std.json.ObjectMap, key: []const u8, want: bool, ctx: []const u8) !void {
     const v = obj.get(key) orelse {
         std.debug.print("{s}: `{s}` is absent\n", .{ ctx, key });
@@ -314,9 +297,7 @@ fn findProcess(arr: std.json.Array, pid: i64, raw: []const u8) !std.json.ObjectM
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Test 1: empty session -> 200 { processes: [], count: 0 }
-// ============================================================================
 
 // A session with no bg rows returns an empty list (200, not 404).
 test "list_empty_for_fresh_session" {
@@ -334,8 +315,7 @@ test "list_empty_for_fresh_session" {
     var doc = try parseJson(raw);
     defer doc.deinit();
 
-    // Python `body.get("processes") == []` — an ABSENT key must fail, so
-    // `orelse` rather than a defaulted empty array.
+    // Python `body.get("processes") == []` — an ABSENT key must fail, so `orelse` rather than a defaulted empty array.
     const processes = try processesOf(&doc, raw);
     if (processes.items.len != 0) {
         std.debug.print("expected [], got {d} processes: {s}\n", .{ processes.items.len, raw });
@@ -352,13 +332,9 @@ test "list_empty_for_fresh_session" {
     }
 }
 
-// ============================================================================
 // Test 2: list shape + live running flags
-// ============================================================================
 
-// Seeded rows come back with the exact wire shape; `running` is
-// computed live (dead PID -> false, own PID -> true) regardless of the
-// status column.
+// Seeded rows come back with the exact wire shape; `running` is computed live (dead PID -> false, own PID -> true) regardless of the status column.
 test "list_shape_and_running_flags" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -378,9 +354,7 @@ test "list_shape_and_running_flags" {
     defer gpa.free(dead_log);
     try writeFile(dead_log, "dead output\n");
 
-    // Dead row keeps status='running' (stale-column case); live row
-    // keeps status='completed' (inverse stale case) — the endpoint must
-    // report OS truth either way.
+    // Dead row keeps status='running' (stale-column case); live row keeps status='completed' (inverse stale case) — the endpoint must report OS truth either way.
     try insertBgRow(&h, session_id, DEAD_PID, "sleep 10", dead_log, "running");
     try insertBgRow(&h, session_id, live_pid, "pytest-probe", live_log, "completed");
 
@@ -404,9 +378,7 @@ test "list_shape_and_running_flags" {
         return error.TestUnexpectedResult;
     }
 
-    // `set(procs) == {DEAD_PID, live_pid}` — assert the pids by looking
-    // each one up and then asserting the count is exactly 2, which is
-    // the set-equality without building a map.
+    // `set(procs) == {DEAD_PID, live_pid}` — assert the pids by looking each one up and then asserting the count is exactly 2, which is the set-equality without …
     const dead = try findProcess(processes, DEAD_PID, raw);
     const live = try findProcess(processes, live_pid, raw);
 
@@ -482,9 +454,7 @@ test "list_scoped_to_session" {
     try expectStr(only, "command", "cmd-a", "scoped process");
 }
 
-// ============================================================================
 // Test 3: log tail
-// ============================================================================
 
 // A small log returns its full content with truncated=false.
 test "log_full_content_under_cap" {
@@ -508,9 +478,7 @@ test "log_full_content_under_cap" {
     defer gpa.free(raw);
     var doc = try parseJson(raw);
     defer doc.deinit();
-    // The log body IS a flat object at the ROOT (`{pid, log_path,
-    // total_bytes, truncated, content}`), so the assertions read it
-    // directly rather than through a key.
+    // The log body IS a flat object at the ROOT (`{pid, log_path, total_bytes, truncated, content}`), so the assertions read it directly rather than through a key.
     const log_obj = try requireRootObject(&doc, raw);
 
     if ((doc.int("pid") orelse return error.TestUnexpectedResult) != DEAD_PID) {
@@ -519,9 +487,7 @@ test "log_full_content_under_cap" {
     }
     try expectStr(log_obj, "log_path", log_path, "log body");
 
-    // `total_bytes == len(content.encode())` — byte length, not rune
-    // count. The fixture is ASCII so the two agree, but `.len` is the
-    // one the server means.
+    // `total_bytes == len(content.encode())` — byte length, not rune count.
     const total = doc.int("total_bytes") orelse {
         std.debug.print("total_bytes mismatch: {s}\n", .{raw});
         return error.TestUnexpectedResult;
@@ -535,8 +501,7 @@ test "log_full_content_under_cap" {
     try expectStr(log_obj, "content", content, "log body");
 }
 
-// A log bigger than max_bytes returns the LAST max_bytes bytes with
-// truncated=true and the full size in total_bytes.
+// A log bigger than max_bytes returns the LAST max_bytes bytes with truncated=true and the full size in total_bytes.
 test "log_tail_when_over_cap" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -567,9 +532,7 @@ test "log_tail_when_over_cap" {
     defer gpa.free(raw);
     var doc = try parseJson(raw);
     defer doc.deinit();
-    // The log body IS a flat object at the ROOT (`{pid, log_path,
-    // total_bytes, truncated, content}`), so the assertions read it
-    // directly rather than through a key.
+    // The log body IS a flat object at the ROOT (`{pid, log_path, total_bytes, truncated, content}`), so the assertions read it directly rather than through a key.
     const log_obj = try requireRootObject(&doc, raw);
 
     const total = doc.int("total_bytes") orelse {
@@ -597,9 +560,7 @@ test "log_tail_when_over_cap" {
     }
 }
 
-// A row whose log file is gone returns 200 with the
-// "(log file not found)" marker and total_bytes 0 (queue-marker
-// convention — not a 404).
+// A row whose log file is gone returns 200 with the "(log file not found)" marker and total_bytes 0 (queue-marker convention — not a 404).
 test "log_missing_file_returns_not_found_marker" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -611,8 +572,7 @@ test "log_missing_file_returns_not_found_marker" {
     const session_id = "sess_bg_api_log_missing_001";
     try createSession(&h, session_id);
 
-    // The path is under the harness tempdir but is NEVER created, so
-    // there is nothing to clean up beyond the tempdir itself.
+    // The path is under the harness tempdir but is NEVER created, so there is nothing to clean up beyond the tempdir itself.
     const missing = try harness.harnessPath(gpa, h.temp_dir, &.{"pabrik-bg-api-never-exists-4244.log"});
     defer gpa.free(missing);
     try insertBgRow(&h, session_id, DEAD_PID, "sleep 5", missing, "running");
@@ -621,9 +581,7 @@ test "log_missing_file_returns_not_found_marker" {
     defer gpa.free(raw);
     var doc = try parseJson(raw);
     defer doc.deinit();
-    // The log body IS a flat object at the ROOT (`{pid, log_path,
-    // total_bytes, truncated, content}`), so the assertions read it
-    // directly rather than through a key.
+    // The log body IS a flat object at the ROOT (`{pid, log_path, total_bytes, truncated, content}`), so the assertions read it directly rather than through a key.
     const log_obj = try requireRootObject(&doc, raw);
 
     const total = doc.int("total_bytes") orelse {
@@ -638,9 +596,7 @@ test "log_missing_file_returns_not_found_marker" {
     try expectStr(log_obj, "content", "(log file not found)", "missing-log body");
 }
 
-// An unknown (session, pid) pair is a 404 — and the log_path is never
-// client-controlled (no traversal possible: there is no path param at
-// all).
+// An unknown (session, pid) pair is a 404 — and the log_path is never client-controlled (no traversal possible: there is no path param at all).
 test "log_unknown_pid_returns_404" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -663,9 +619,7 @@ test "log_unknown_pid_returns_404" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = selfPid;
     _ = dbPath;
     _ = requireSqlite3Cli;

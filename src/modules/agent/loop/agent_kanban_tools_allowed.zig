@@ -1,13 +1,11 @@
-//! Returns the enabled tool names for the agent-kanbans config bound to a
-//! kanban workspace_item.
+//! Returns the enabled tool names for the agent-kanbans config bound to a kanban workspace_item.
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_kanban_db = @import("../../../models/agent_kanban.db.zig");
 
-/// Resolve the enabled tool names for the agent-kanbans config bound to
-/// `workspace_item_id`.
+/// Resolve the enabled tool names for the agent-kanbans config bound to `workspace_item_id`.
 pub fn agentKanbanToolsAllowed(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -23,8 +21,7 @@ pub fn agentKanbanToolsAllowed(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;

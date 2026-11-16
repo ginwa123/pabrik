@@ -1,6 +1,4 @@
-// Wire test: the `skill_evals.enabled` Settings toggle. Zig port of
-// `tests/functional/skill_evals_config_toggle_test.py` (same test names, same
-// order).
+// Wire test: the `skill_evals.enabled` Settings toggle.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,18 +7,14 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Parse owned bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
     return .{ .parsed = try std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) };
 }
 
-/// The config.json the running binary reads and writes. The harness points
-/// HOME at an isolated tmpdir, so this is under that tmpdir — never the
-/// developer's real `~/.config/pabrik/config.json`.
+/// The config.json the running binary reads and writes.
 fn configPath(h: *Harness) ![]u8 {
     const candidates = [_][]const []const u8{
         &.{ ".config", "pabrik", "config.json" },
@@ -36,9 +30,7 @@ fn configPath(h: *Harness) ![]u8 {
     return configPathRglob(h.temp_dir);
 }
 
-/// The `rglob("config.json")` fallback. Python SORTED the matches and took
-/// the first; a Zig `Dir.Walker` has undefined order, so this takes the first
-/// found.
+/// The `rglob("config.json")` fallback.
 fn configPathRglob(home: []const u8) ![]u8 {
     var dir = try std.Io.Dir.cwd().openDir(io, home, .{ .iterate = true });
     defer dir.close(io);
@@ -81,13 +73,9 @@ fn skillEvalsBlock(doc: *const harness.Json) !std.json.ObjectMap {
     return block;
 }
 
-// ============================================================================
 // tests
-// ============================================================================
 
-// The toggle cannot show real state unless GET carries the block. An absent
-// key must read as `enabled: false` — the same default the runtime applies —
-// never as a phantom ON.
+// The toggle cannot show real state unless GET carries the block.
 test "get_exposes_skill_evals_so_the_toggle_can_render" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -167,9 +155,7 @@ test "toggle_round_trips_enabled_through_put_and_get" {
     try testing.expectEqual(true, enabled);
 }
 
-// The regression this whole change exists for. A user hand-edits config.json
-// to opt in (which is what the tool's own error message told them to do),
-// then saves from an unrelated Settings tab.
+// The regression this whole change exists for.
 test "a_save_that_omits_skill_evals_does_not_erase_it" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -182,8 +168,7 @@ test "a_save_that_omits_skill_evals_does_not_erase_it" {
         pr.deinit();
     }
 
-    // Save something else entirely — a payload with no `skill_evals`
-    // key, exactly what the General / Profiles / Tools tabs send.
+    // Save something else entirely — a payload with no `skill_evals` key, exactly what the General / Profiles / Tools tabs send.
     {
         var pr = try put(&h, "{\"web_launch_enabled\":true}");
         pr.deinit();
@@ -212,9 +197,7 @@ test "a_save_that_omits_skill_evals_does_not_erase_it" {
     }
 }
 
-// The UI only edits `enabled`; the rest must round-trip untouched. A
-// hand-tuned `max_skills_per_run` must survive the user flipping the master
-// switch on and off again.
+// The UI only edits `enabled`; the rest must round-trip untouched.
 test "the_toggle_preserves_budget_knobs_it_does_not_expose" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});
@@ -245,8 +228,7 @@ test "the_toggle_preserves_budget_knobs_it_does_not_expose" {
     };
     try testing.expectEqual(false, enabled);
 
-    // A full-object replace is what the handler does; the knobs are not
-    // silently invented, and nothing crashes on a partial body.
+    // A full-object replace is what the handler does; the knobs are not silently invented, and nothing crashes on a partial body.
     const budget = switch (block.get("max_skills_per_run") orelse {
         std.debug.print("skill_evals block has no `max_skills_per_run`\n", .{});
         return error.TestUnexpectedResult;
@@ -279,8 +261,7 @@ test "skill_evals_is_never_serialized_as_json_null" {
     const raw = try readConfigText(&h);
     defer gpa.free(raw);
 
-    // Python normalised tabs before the substring check (`.replace("\t",
-    // " ")`) so the needle could not be defeated by pretty-printing.
+    // Python normalised tabs before the substring check (`.replace("\t", " ")`) so the needle could not be defeated by pretty-printing.
     const normalized = try std.mem.replaceOwned(u8, gpa, raw, "\t", " ");
     defer gpa.free(normalized);
     if (std.mem.indexOf(u8, normalized, "\"skill_evals\": null") != null) {

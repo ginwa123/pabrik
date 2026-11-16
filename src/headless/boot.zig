@@ -1,5 +1,4 @@
-//! The headless backend boot sequence: everything the server boots, minus the
-//! server.
+//! The headless backend boot sequence: everything the server boots, minus the server.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,9 +7,7 @@ const gserverz = @import("kabelweb").server;
 const server_boot = @import("../boot/server_boot.zig");
 const db_target = @import("../boot/db_target.zig");
 
-/// Everything a headless run needs, in the order it must be torn down. MUST
-/// be declared by the caller and passed to `boot` as an out-param — see the
-/// module header for why returning it by value is a use-after-free.
+/// Everything a headless run needs, in the order it must be torn down.
 pub const Backend = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -25,30 +22,25 @@ pub const Backend = struct {
     /// A real `GinwaServer` that never bound a socket. See the module header.
     server: *gserverz.GinwaServer,
 
-    /// Release everything `boot` acquired. ONLY safe when no background task
-    /// is still running.
+    /// Release everything `boot` acquired.
     pub fn deinit(self: *Backend) void {
         const allocator = self.allocator;
         const io = self.io;
 
-        // Cancel the scheduler's group FIRST and drain it, so nothing is
-        // still holding `*ctx` when the context goes away.
+        // Cancel the scheduler's group FIRST and drain it, so nothing is still holding `*ctx` when the context goes away.
         self.ctx.group_emit_session_create.cancel(io);
         self.ctx.group_emit_session_create.await(io) catch {};
 
         self.event_bus.deinit();
 
-        // `destroy` calls `deinit` internally (http_server.zig:564), so
-        // calling `deinit` first would run the whole teardown TWICE — the
-        // second pass reads `cronjob_manager.jobs` out of freed memory and
+        // `destroy` calls `deinit` internally (http_server.zig:564), so calling `deinit` first would run the whole teardown TWICE — the second pass reads …
         self.server.destroy(allocator);
 
         pabrikcore.mcp_http.HttpRegistry.deinitGlobal();
         pabrikcore.mcp_stdio.StdioRegistry.deinitGlobal();
         pabrikcore.mcp_stdio.GuestRegistry.deinitGlobal();
 
-        // `freeAllLlmConfigs` frees `llm_config_holder.current`, which IS
-        // `llm_config_ptr` (boot installed it there).
+        // `freeAllLlmConfigs` frees `llm_config_holder.current`, which IS `llm_config_ptr` (boot installed it there).
         pabrikcore.freeAllLlmConfigs(self.ctx);
         if (self.ctx.storage_runtime) |runtime| runtime.deinit();
         allocator.destroy(self.ctx);
@@ -61,9 +53,7 @@ pub const Backend = struct {
 
     /// End the process with `code`, without unwinding.
     pub fn finish(self: *Backend, code: u8) noreturn {
-        // `std.process.exit` does not unwind, so the `defer` in `deinit` never
-        // runs. The object store is a supervised child process: without this
-        // it outlives the CLI and keeps the rustfs volume locked.
+        // `std.process.exit` does not unwind, so the `defer` in `deinit` never runs.
         if (self.ctx.storage_runtime) |runtime| {
             runtime.deinit();
             self.ctx.storage_runtime = null;
@@ -73,16 +63,13 @@ pub const Backend = struct {
 };
 
 pub const BootOptions = struct {
-    /// Where diagnostics go. Null = `$TMPDIR/agentic_coding.log`, the same
-    /// default `main.zig` uses, so a headless run's log lands where an
-    /// operator already looks for one.
+    /// Where diagnostics go.
     log_file: ?[]const u8 = null,
     /// Which backend to open and where it lives. Empty = the compiled backend.
     db_request: db_target.Request = .{},
 };
 
-/// Boot the backend into caller-owned `out`. Phases before the routine
-/// scheduler unwind cleanly on failure.
+/// Boot the backend into caller-owned `out`.
 pub fn boot(
     out: *Backend,
     allocator: std.mem.Allocator,
@@ -90,9 +77,7 @@ pub fn boot(
     environment: *const std.process.Environ.Map,
     opts: BootOptions,
 ) !void {
-    // SIGPIPE: a peer vanishing mid-write must surface as a write error,
-    // not a signal. Same call the server makes, for the same reason — the
-    // LLM client writes to a socket that can go away.
+    // SIGPIPE: a peer vanishing mid-write must surface as a write error, not a signal.
     server_boot.ignoreSigpipe();
 
     // ─── Config ─── Same call, same arguments as main.zig.
@@ -112,9 +97,7 @@ pub fn boot(
     errdefer allocator.destroy(llm_config_ptr);
     llm_config_ptr.* = llm_config;
 
-    // ─── Database ─── Same open + migration chain as the server. A headless
-    // run therefore sees the same schema, and a migration that breaks the
-    // server breaks headless mode too — which is the point.
+    // ─── Database ───
     var db_handles = server_boot.openDatabase(allocator, io, @constCast(environment), opts.db_request, &.{}) catch |err| {
         std.log.err("headless: failed to open the database: {s}", .{@errorName(err)});
         return error.BootFailed;
@@ -132,9 +115,7 @@ pub fn boot(
     pabrikcore.crash_handler.setCrashIo(io);
     pabrikcore.crash_handler.installCrashHandlers();
 
-    // File-only output: stdout is the machine-readable channel and must
-    // stay clean. This is the one place headless mode deliberately differs
-    // from main.zig, which logs to stdout because a human is watching.
+    // File-only output: stdout is the machine-readable channel and must stay clean.
     pabrikcore.loggermod.initGlobalColor(allocator, io, .{
         .min_level = .debug,
         .output_mode = .file,
@@ -146,9 +127,7 @@ pub fn boot(
     errdefer pabrikcore.loggermod.deinitGlobal(io);
     const global_logger_ptr = pabrikcore.loggermod.getGlobal().?;
 
-    // ─── Publish the stable storage ─── Everything below takes the address
-    // of a field of `out`, so `out` must hold its final values BEFORE any of
-    // those pointers are handed out.
+    // ─── Publish the stable storage ───
     out.* = .{
         .allocator = allocator,
         .io = io,
@@ -181,9 +160,7 @@ pub fn boot(
     };
     out.ctx = ctx;
 
-    // Headless mode has no auth: there is no request to carry a cookie,
-    // so every row lands in the shared bucket — the same behaviour the
-    // server has with `--auth` off.
+    // Headless mode has no auth: there is no request to carry a cookie, so every row lands in the shared bucket — the same behaviour the server has with `--auth` off.
     ctx.auth_enabled = false;
 
     // The object store, when `PABRIK_STORAGE_BACKEND` names one.
@@ -194,16 +171,13 @@ pub fn boot(
 
     try pabrikcore.setSingleton(ctx);
 
-    // models.dev catalog, same as the server boot: a local DB read plus the
-    // detached hourly sync. Without this the CLI runs with no catalog and every
-    // model falls back to the built-in 200k window.
+    // models.dev catalog, same as the server boot: a local DB read plus the detached hourly sync.
     server_boot.loadModelCatalog(allocator, &db_handles.db);
 
     ctx.mcp_stdio_registry = pabrikcore.mcp_stdio.StdioRegistry.global(allocator);
     ctx.mcp_http_registry = pabrikcore.mcp_http.HttpRegistry.global(allocator);
 
-    // Both live in `out`, so the singleton points at storage that outlives
-    // this function.
+    // Both live in `out`, so the singleton points at storage that outlives this function.
     out.event_bus = pabrikcore.event_bus.EventBus.init("my-bus", allocator, io);
     ctx.event_bus = &out.event_bus;
     const backend_event_bus = &out.event_bus;
@@ -215,16 +189,13 @@ pub fn boot(
         pabrikcore.ai_mod.ai_workflow.CallbackAiWorkerFlow.callback,
     );
 
-    // The routine scheduler: a concurrent Io task, no thread spawned. Started
-    // for the same reason the server starts it — a workspace routine that
-    // comes due during a headless run should fire.
+    // The routine scheduler: a concurrent Io task, no thread spawned.
     pabrikcore.ai_mod.startup.start(allocator, dbSqlite, ctx, io) catch |err| {
         std.log.err("headless: failed to submit the routine scheduler: {s}", .{@errorName(err)});
         return error.BootFailed;
     };
 
-    // A real server object that never bound. See the module header for why
-    // this is not a stub.
+    // A real server object that never bound.
     out.server = try gserverz.GinwaServer.init(allocator, io, undefined);
     ctx.server = out.server;
 }

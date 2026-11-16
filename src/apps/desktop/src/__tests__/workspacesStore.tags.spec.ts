@@ -1,12 +1,10 @@
-/** * workspacesStore — kanban task tags passthrough (Migration 067). Covers: addTask forwards tags;
- * updateTaskDetails forwards tags; updateTaskDetails rollback restores tags on API error. */
+/** workspacesStore — kanban task tags passthrough (Migration 067). */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
 import type { Workspace, WorkspaceItem, Task } from '../api'
 
-// Mock the API module so we can spy on createTask / updateTaskSimple
-// calls without spinning up a real server.
+// Mock the API module so we can spy on createTask / updateTaskSimple calls without spinning up a real server.
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
   return {
@@ -17,9 +15,7 @@ vi.mock('../api', async (importOriginal) => {
   }
 })
 
-// Helper: build a minimal Workspace + WorkspaceItem fixture for
-// store-workspace tests. Only the fields the action under test
-// actually reads are populated.
+// Helper: build a minimal Workspace + WorkspaceItem fixture for store-workspace tests.
 function fixtureWorkspaceWithItem(item: WorkspaceItem): Workspace {
   return {
     id: 'ws_1',
@@ -112,8 +108,7 @@ describe('workspacesStore — kanban task tags passthrough', () => {
       fixtureWorkspaceWithItem(kanbanItemWithTask(task)),
     )
 
-    // Mock the API to reject. The store rethrows so the dialog can
-    // surface a retry option; the test catches to inspect rollback.
+    // Mock the API to reject.
     vi.mocked(api.updateTaskSimple).mockRejectedValueOnce(new Error('boom') as never)
 
     await store

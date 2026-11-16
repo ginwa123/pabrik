@@ -1,5 +1,4 @@
-//! Where the bundled rustfs binary lives. Same order as the bundled ripgrep:
-//! override, beside the executable, pabrik's data dir, then the bare name.
+//! Where the bundled rustfs binary lives. Same order as the bundled ripgrep
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -8,9 +7,7 @@ pub const env_override = "PABRIK_RUSTFS_BIN";
 
 const is_windows = builtin.os.tag == .windows;
 
-/// The name the installer writes, and therefore the process name a task
-/// manager shows. Not `rustfs`: `--system` writes to /usr/local/bin, and that
-/// name would shadow a rustfs the user installed themselves.
+/// The name the installer writes, and therefore the process name a task manager shows.
 pub fn exeName() []const u8 {
     return if (is_windows) "pabrik-fs.exe" else "pabrik-fs";
 }
@@ -127,8 +124,7 @@ pub fn resolveDefault(allocator: std.mem.Allocator, io: std.Io) !Resolution {
     }, null, executableAt);
 }
 
-/// Whether a rustfs binary is available at all. The runtime uses this to
-/// decide whether the supervised backend is even possible.
+/// Whether a rustfs binary is available at all.
 pub fn available(allocator: std.mem.Allocator, io: std.Io) bool {
     const found = resolveDefault(allocator, io) catch return false;
     defer found.deinit(allocator);

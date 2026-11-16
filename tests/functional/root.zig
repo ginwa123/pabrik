@@ -1,12 +1,10 @@
-//! Test root for the PRIBRIK functional suite. Every `*_test.zig` in this
-//! package is listed in `suites` below.
+//! Test root for the PRIBRIK functional suite.
 
 const std = @import("std");
 
 pub const harness = @import("harness.zig");
 
 // -- Suites ----------------------------------------------------------------
-// One `const` per ported suite.
 const agent_add_mcp_server_test = @import("agent_add_mcp_server_test.zig");
 const agent_create_kanban_task_session_test = @import("agent_create_kanban_task_session_test.zig");
 const agent_kanbans_test = @import("agent_kanbans_test.zig");
@@ -348,7 +346,6 @@ test {
     inline for (suites) |suite| {
         _ = suite;
     }
-    // Plus the harness module's own decls, so a helper added to `harness.zig`
-    // is analyzed even before a suite uses it.
+    // Plus the harness module's own decls, so a helper added to `harness.zig` is analyzed even before a suite uses it.
     std.testing.refAllDecls(harness);
 }

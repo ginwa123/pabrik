@@ -35,8 +35,7 @@ pub const Routine = struct {
     description: []const u8 = "",
     instruction: []const u8 = "",
     schedule: []const u8 = "",
-    /// The profile name this routine fires under. Empty = the backend's
-    /// `active_agent` → top-level-config cascade.
+    /// The profile name this routine fires under.
     selected_profile_model: []const u8 = "",
     cwd: []const u8 = "",
     enabled: bool,
@@ -207,8 +206,6 @@ fn nullIfEmptyConst(v: []const u8) ?[]const u8 {
 }
 
 // ===== Tests merged from model_test.zig (2026-09-29 flatten) =====
-// Behavioral tests for the `workspace_routines` model (Task 3 of the
-// workspace-items-routines plan).
 
 const testing = std.testing;
 
@@ -222,8 +219,7 @@ const Migration139AddRoutineCwd = migration.Migration139AddRoutineCwd;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
-/// Open a fresh in-memory sqlite DB with the minimal parent tables,
-/// then run Migration 084 to bring it to the post-migration state.
+/// Open a fresh in-memory sqlite DB with the minimal parent tables, then run Migration 084 to bring it to the post-migration state.
 fn setupDb() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -237,8 +233,7 @@ fn setupDb() !struct {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Migration 084's UPDATE touches workspace_item_tasks, and the
-    // FK references workspace_items — both must exist.
+    // Migration 084's UPDATE touches workspace_item_tasks, and the FK references workspace_items — both must exist.
     try db.exec(alloc,
         \\CREATE TABLE workspace_item_tasks (
         \\    id TEXT PRIMARY KEY,
@@ -269,9 +264,7 @@ fn setupDb() !struct {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Run a single-column SELECT and return a duplicated copy of the
-/// first row's first column. Returns null when the query produces no
-/// rows.
+/// Run a single-column SELECT and return a duplicated copy of the first row's first column.
 fn scalarText(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args: []const []const u8) !?[]u8 {
     var q = try db.query(alloc, sql, args);
     defer q.deinit();
@@ -329,8 +322,7 @@ test "Routine: insert + load round-trip" {
     try testing.expect(loaded.last_run_at == null);
     try testing.expectEqual(RoutineRunStatus.idle, loaded.last_status);
     try testing.expect(loaded.last_error == null);
-    // created_at + updated_at are auto-populated by CURRENT_TIMESTAMP
-    // defaults, so they should be non-null.
+    // created_at + updated_at are auto-populated by CURRENT_TIMESTAMP defaults, so they should be non-null.
     try testing.expect(loaded.created_at != null);
     try testing.expect(loaded.updated_at != null);
 }
@@ -463,8 +455,7 @@ test "Routine: claimForRun atomically transitions to running" {
     const first = try claimForRun(alloc, &ctx.db, "item_1");
     try testing.expect(first);
 
-    // A second claim on the same id must fail because last_status is
-    // now 'running' (the WHERE clause excludes already-running rows).
+    // A second claim on the same id must fail because last_status is now 'running' (the WHERE clause excludes already-running rows).
     const second = try claimForRun(alloc, &ctx.db, "item_1");
     try testing.expect(!second);
 
@@ -554,8 +545,7 @@ test "Routine: markFailed sets last_status=failed and last_error" {
     try testing.expectEqual(RoutineRunStatus.failed, loaded.last_status);
     try testing.expectEqualStrings("LLM rate limit", loaded.last_error.?);
     try testing.expectEqualStrings("2099-01-01 00:00:00", loaded.next_run_at.?);
-    // Routine should STAY enabled (a transient failure must not silently
-    // disable a recurring job — the user disables it explicitly).
+    // Routine should STAY enabled (a transient failure must not silently disable a recurring job — the user disables it explicitly).
     try testing.expect(loaded.enabled);
 }
 

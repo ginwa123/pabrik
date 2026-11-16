@@ -62,8 +62,7 @@ describe('SkillDetail — the auto-improve lock', () => {
     const wrapper = mount(SkillDetail, { props: { skillName: 'pdf' } })
     await flushPromises()
 
-    // Read mode is where the user finds out the agent is not allowed to
-    // touch this skill — hiding the checkbox behind Edit would bury it.
+    // Read mode is where the user finds out the agent is not allowed to touch this skill — hiding the checkbox behind Edit would bury it.
     expect(wrapper.find('[data-testid="skill-auto-improve-toggle"]').exists()).toBe(true)
     expect(toggleBox(wrapper).checked).toBe(false)
   })
@@ -81,8 +80,7 @@ describe('SkillDetail — the auto-improve lock', () => {
 
     expect(updateSkillMock).toHaveBeenCalledWith(WS_ID, 'pdf', { is_can_auto_improve: true })
     expect(toggleBox(wrapper).checked).toBe(true)
-    // The list row carries its own copy of the flag, so without this the
-    // left pane keeps showing the skill as pinned.
+    // The list row carries its own copy of the flag, so without this the left pane keeps showing the skill as pinned.
     expect(wrapper.emitted('skillSaved')).toEqual([['pdf']])
   })
 
@@ -102,8 +100,7 @@ describe('SkillDetail — the auto-improve lock', () => {
     await wrapper.find('[data-testid="skill-edit-save"]').trigger('click')
     await flushPromises()
 
-    // Two fields, no flag: the checkbox owns its own patch, so a Save that
-    // also posted the flag could revert a toggle made after the form opened.
+    // Two fields, no flag: the checkbox owns its own patch, so a Save that also posted the flag could revert a toggle made after the form opened.
     expect(updateSkillMock).toHaveBeenCalledWith(WS_ID, 'pdf', {
       description: 'new words',
       content: '# pdf skill',

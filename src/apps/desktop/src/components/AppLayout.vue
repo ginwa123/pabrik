@@ -64,8 +64,7 @@ const route = useRoute()
 const navigationStore = useNavigationStore()
 const tabsStore = useTabsStore()
 const workspacesStore = useWorkspacesStore()
-// URL-derived main view (path-based contract) — used by navigations
-// that need the current workspace without reading store flags.
+// URL-derived main view (path-based contract) — used by navigations that need the current workspace without reading store flags.
 const currentMainView = useCurrentMainView()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const sidebarStore = useSidebarStore()
@@ -77,9 +76,7 @@ const activeWorkspaceItem = computed(() => workspacesStore.activeWorkspaceItem)
 const activeWorkspace = computed(() => workspacesStore.activeWorkspace)
 const activeWorkspaceId = computed(() => activeWorkspace.value?.id ?? '')
 const activeTask = computed(() => workspacesStore.activeTask)
-// Workspace-item id of the currently-active task. Used by the 3-column kanban|chatview template
-// branch to make sure the chatview and the kanban belong to the same parent — otherwise we'd render
-// a chatview of a non-kanban task alongside an unrelated kanban (visual mess).
+// Workspace-item id of the currently-active task.
 const activeTaskWorkspaceItemId = computed(() => workspacesStore.activeTaskWorkspaceItemId)
 const activeChatId = computed(() => navigationStore.activeChatId)
 const activeChatName = computed(() => navigationStore.activeChatName)
@@ -95,19 +92,14 @@ const rightSidebarCwd = computed(() => {
   }
   return ''
 })
-// Effective cwd for the <ChatView> mount. The ChatView child seeds its `sessionCwd` ref from this
-// prop in onMounted (`if (props.cwd) sessionCwd.value = props.cwd`), then sends it as `cwd_session`
-// on every api.sendChatMessage call.
+// Effective cwd for the <ChatView> mount.
 const effectiveChatCwd = computed(() => chatSessionCwd.value || activeWorkspaceItem.value?.path || '')
 
-// Dev-only FPS overlay (desktop scroll-perf plan, Task 5): lets us measure platform rendering fixes
-// (Linux gfx pinning, macOS scheme handler, Windows resize coalescing) in the running app. mount()
-// is a no-op in prod builds; unmount on teardown keeps HMR clean.
+// Dev-only FPS overlay (desktop scroll-perf plan, Task 5): lets us measure platform rendering fixes (Linux gfx pinning, macOS scheme handler, Windows resize …
 onMounted(() => mountFpsOverlay())
 onUnmounted(() => unmountFpsOverlay())
 
-// Code editor session — single source of truth for the open-file flow (file / content / loading /
-// error / requested line / cwd).
+// Code editor session — single source of truth for the open-file flow (file / content / loading /error / requested line / cwd).
 const codeEditorSession = useCodeEditorSession({
   readFile: (cwd, path) => api.readFileContent(cwd, path),
   syncUrl: ({ path, cwd, line, diff, rev, pr }) => {
@@ -125,8 +117,7 @@ const {
   retryEditorRestore, openInCodeEditor,
 } = overlays
 
-// Template and view bindings keep their names — they alias the
-// session refs (same objects, no duplicated state).
+// Template and view bindings keep their names — they alias the session refs (same objects, no duplicated state).
 const codeEditorFile = codeEditorSession.file
 const codeEditorContent = codeEditorSession.content
 const codeEditorLoading = codeEditorSession.loading
@@ -136,8 +127,7 @@ const codeEditorRequestedLine = codeEditorSession.requestedLine
 // Expose openInCodeEditor to all descendants (tool output components) via inject
 provide<OpenInCodeEditorFn>(OPEN_IN_CODE_EDITOR_KEY, openInCodeEditor)
 
-// The open file itself, so a SURFACE can render it: ChatView paints it in its center column next to
-// the chat-owned right sidebar (the user opened the file FROM that sidebar.
+// The open file itself, so a SURFACE can render it: ChatView paints it in its center column next to the chat-owned right sidebar (the user opened the file FROM …
 const codeViewerState: CodeViewerState = buildCodeViewerState(codeEditorSession, closeCodeEditor)
 provide<CodeViewerState>(CODE_VIEWER_STATE_KEY, codeViewerState)
 
@@ -157,8 +147,7 @@ const { pendingUrlRestore, restoreUrlState, syncItemToUrl } = useAppLayoutUrlSta
 const { initSseStores, closeSse } = useAppLayoutSse()
 onUnmounted(() => closeSse())
 
-// NEW (Chunk 1, Task 1.3 of design-element-drag-and-drop plan). Extracted handlers so they're
-// directly unit-testable.
+// NEW (Chunk 1, Task 1.3 of design-element-drag-and-drop plan).
 const designHandlers = useDesignHandlers()
 const designPanel = useDesignPanel({ workspacesStore, designHandlers, activeWorkspaceItem, activeWorkspace })
 const {
@@ -229,8 +218,7 @@ const activeDocumentId = computed(() => {
   return parsed.kind === 'doc' ? parsed.documentId : ''
 })
 
-// The board the settings page shows: the item id the URL names — the project id on the
-// workspace-scoped path, the legacy `:itemId` param on the old kanban path.
+// The board the settings page shows: the item id the URL names — the project id on the workspace-scoped path, the legacy `:itemId` param on the old kanban path.
 const kanbanSettingsItemId = computed(() => {
   const parsed = parseAppPath(route.path)
   if (parsed.kind === 'projectSettings') return parsed.projectId
@@ -238,9 +226,7 @@ const kanbanSettingsItemId = computed(() => {
   return typeof legacy === 'string' ? legacy : ''
 })
 
-/** True when the <main> chain is showing a ChatView surface — i.e. when ChatView owns the center
- * column AND the chat-owned right sidebar (Explorer / Files changed / Terminal). Single source of
- * truth for the three call sites that must agree: 1. */
+/** True when the <main> chain is showing a ChatView surface — i.e. when ChatView owns the center column AND the chat-owned right sidebar (Explorer / Files changed … */
 const chatSurfaceActive = computed(() => {
   const item = activeWorkspaceItem.value
   if (item?.item_type === 'design') return false
@@ -251,8 +237,7 @@ const chatSurfaceActive = computed(() => {
 const currentView = computed(() => {
   const overlay = resolveOverlayView(route.path, !!gitViewerFile.value, !!skillViewerSkill.value)
   if (overlay) return overlay
-  // code-editor view - the open file wins UNLESS a chat surface can display it itself. See
-  // `chatSurfaceActive`.
+  // code-editor view - the open file wins UNLESS a chat surface can display it itself.
   if (codeEditorFile.value && !chatSurfaceActive.value) return 'code-editor'
   return resolvePathView(route.path, route.query.view as string | undefined)
 })
@@ -271,9 +256,7 @@ useAppLayoutPumps({
   isTabsFunnelReady: tabs.isTabsFunnelReady,
 })
 
-// Expose the design chat open handler so tests can simulate the user clicking the 💬 button in
-// DesignView (which emits `openChat`). In production, this is reached via the DesignView emit chain
-// — tests don't render DesignView because they stub it.
+// Expose the design chat open handler so tests can simulate the user clicking the 💬 button in DesignView (which emits `openChat`).
 defineExpose({
   handleDesignOpenChat: designPanel.handleDesignOpenChat,
   handleDesignCreateElement: designPanel.handleDesignCreateElement,

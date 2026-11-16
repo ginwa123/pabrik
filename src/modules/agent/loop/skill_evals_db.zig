@@ -1,5 +1,4 @@
-//! Persistence for Skill Evals — Migration 095's usage ledger (and the home
-//! for the eval-table repository that follows).
+//! Persistence for Skill Evals — Migration 095's usage ledger (and the home for the eval-table repository that follows).
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,11 +9,9 @@ const database = pabrikcore.database;
 const logger_mod = pabrikcore.loggermod;
 const migration = @import("../../../migrations/migration.zig");
 
-/// The kinds of ledger row. Stored as text so a `SELECT` is readable without a
-/// decoder, and so adding a kind later cannot invalidate existing rows.
+/// The kinds of ledger row.
 pub const SkillEventKind = enum {
-    /// The skill appeared in a `search_skills` result. Recorded once per
-    /// `(session, skill)` — see `insertEvent`'s `dedupe` flag.
+    /// The skill appeared in a `search_skills` result.
     listed,
     /// `use_skill` read the body. Carries `content_hash` of what was read.
     loaded,
@@ -44,8 +41,7 @@ pub fn sha256Hex(input: []const u8, out: *[64]u8) void {
     }
 }
 
-/// Monotonic counter for ledger row ids. Atomic because the ledger is written
-/// from tool dispatch, which can run on more than one thread in one process.
+/// Monotonic counter for ledger row ids.
 var event_seq = std.atomic.Value(u64).init(0);
 
 fn nextEventSeq() u64 {
@@ -62,14 +58,11 @@ pub const SkillToolEventArgs = struct {
     tool_result_json: []const u8,
     /// `handle_tool`'s `loop_counter` — the turn this happened on.
     loop_index: u32,
-    /// The `llm_history` row id of this tool result, so the ledger can point
-    /// back at its own evidence.
+    /// The `llm_history` row id of this tool result, so the ledger can point back at its own evidence.
     llm_history_id: []const u8,
 };
 
 /// The `data` keys an "offered skills" result may carry the matches under.
-/// `search_skills` (current) returns ONE `skills` array with `scope` on each
-/// row.
 const offered_buckets = [_][]const u8{ "skills", "global_skills", "local_skills" };
 
 /// Append one ledger row.
@@ -101,8 +94,7 @@ pub fn insertEvent(
         return;
     }
 
-    // A per-call monotonic counter, not the caller's `ordinal` (which every
-    // non-`listed` call site passes as 0).
+    // A per-call monotonic counter, not the caller's `ordinal` (which every non-`listed` call site passes as 0).
     const seq = nextEventSeq();
     const id = try std.fmt.allocPrint(allocator, "sse:{d}_{d}_{d}", .{
         std.Io.Timestamp.now(args.io, .real).nanoseconds,
@@ -153,8 +145,7 @@ const Envelope = struct {
     data: ?std.json.Value = null,
 };
 
-/// Entry point for the save site in `handle_tool.zig`: one call per completed
-/// skill-tool call, and it decides what (if anything) belongs in the ledger.
+/// Entry point for the save site in `handle_tool.zig`: one call per completed skill-tool call, and it decides what (if anything) belongs in the ledger.
 fn logWarn(logger: ?*logger_mod.Logger, comptime fmt: []const u8, args: anytype) void {
     if (logger) |l| l.warnFmt(fmt, args);
 }
@@ -188,16 +179,12 @@ pub fn recordSkillToolEvents(
     };
     defer parsed.deinit();
 
-    // A failed tool call changed nothing, so it records nothing. The ledger is
-    // evidence about what the agent was offered and what it read — not a tool
-    // call log (that is `llm_history`'s job).
+    // A failed tool call changed nothing, so it records nothing.
     if (!parsed.value.success) return;
     const data = parsed.value.data orelse return;
 
     if (std.mem.eql(u8, args.tool_name, "search_skills")) {
-        // One row per matched skill, deduped by the PK, so a session that
-        // searches skills ten times still records each skill once — at the
-        // moment it was FIRST offered.
+        // One row per matched skill, deduped by the PK, so a session that searches skills ten times still records each skill once — at the moment it was FIRST offered.
         var ordinal: u32 = 0;
         for (offered_buckets) |bucket| {
             const arr = dataArray(data, bucket) orelse continue;
@@ -215,8 +202,7 @@ pub fn recordSkillToolEvents(
     const name = dataString(data, "skill_name") orelse dataString(data, "name") orelse return;
 
     if (std.mem.eql(u8, args.tool_name, "use_skill")) {
-        // Only a real read carries a body; a `loaded: false` result (oversized,
-        // unreadable) must not look like a successful load.
+        // Only a real read carries a body; a `loaded: false` result (oversized, unreadable) must not look like a successful load.
         const loaded = if (data == .object) blk: {
             const v = data.object.get("loaded") orelse break :blk false;
             break :blk switch (v) {
@@ -345,8 +331,7 @@ test "recordSkillToolEvents records a successful use_skill as 'loaded' with a co
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
 
-    // The hash must match the body that was read — that is the whole point of
-    // storing it (drift becomes a hash compare later).
+    // The hash must match the body that was read — that is the whole point of storing it (drift becomes a hash compare later).
     var expected: [64]u8 = undefined;
     sha256Hex(body, &expected);
     try testing.expectEqualStrings(expected[0..], row.values[0]);
@@ -361,8 +346,7 @@ test "recordSkillToolEvents ignores a use_skill that did not load" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // `loaded: false` (oversized / unreadable) must not look like a successful
-    // load, or the eval would judge a body the agent never saw.
+    // `loaded: false` (oversized / unreadable) must not look like a successful load, or the eval would judge a body the agent never saw.
     const result =
         \\{"tool":"use_skill","success":true,"data":{"skill_name":"big","content":"","loaded":false},"error":null,"v":1}
     ;
@@ -421,8 +405,7 @@ test "a second search_skills does not duplicate 'listed' rows" {
     recordSkillToolEvents(alloc, &ctx.db, null, args);
     recordSkillToolEvents(alloc, &ctx.db, null, args);
 
-    // The deterministic composite id means the PRIMARY KEY does the dedupe, so
-    // this holds without any read-then-write (which would be a TOCTOU bug).
+    // The deterministic composite id means the PRIMARY KEY does the dedupe, so this holds without any read-then-write (which would be a TOCTOU bug).
     try testing.expectEqual(@as(i64, 1), try countEvents(&ctx.db, alloc, "sess_1"));
 }
 
@@ -441,8 +424,7 @@ test "a listed skill and a loaded skill coexist for the same name" {
     recordSkillToolEvents(alloc, &ctx.db, null, testArgs(ctx.threaded.io(), "sess_1", "search_skills", listed));
     recordSkillToolEvents(alloc, &ctx.db, null, testArgs(ctx.threaded.io(), "sess_1", "use_skill", loaded));
 
-    // Two rows, two kinds — this pair is exactly what distinguishes "offered
-    // and then used" from "offered and ignored".
+    // Two rows, two kinds — this pair is exactly what distinguishes "offered and then used" from "offered and ignored".
     try testing.expectEqual(@as(i64, 2), try countEvents(&ctx.db, alloc, "sess_1"));
     try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "listed"));
     try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "loaded"));
@@ -476,9 +458,7 @@ test "recordSkillToolEvents handles add/edit/metadata/remove" {
     try testing.expectEqual(@as(i64, 4), try countEvents(&ctx.db, alloc, "sess_1"));
     try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "created"));
     try testing.expectEqual(@as(i64, 1), try eventCount(&ctx.db, alloc, "sess_1", "removed"));
-    // A metadata write is a write to the row, so it lands as `edited` beside
-    // `edit_skill` — the ledger would otherwise show a skill changing with no
-    // event explaining it.
+    // A metadata write is a write to the row, so it lands as `edited` beside `edit_skill` — the ledger would otherwise show a skill changing with no event explaining …
     try testing.expectEqual(@as(i64, 2), try eventCount(&ctx.db, alloc, "sess_1", "edited"));
 }
 
@@ -488,8 +468,7 @@ test "recordSkillToolEvents tolerates a payload it cannot parse" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A tool result that is not JSON at all, and one whose `data` was wrapped as
-    // `{"_raw":…}` by `normalizeDataFragment`. Neither may throw or write.
+    // A tool result that is not JSON at all, and one whose `data` was wrapped as `{"_raw":…}` by `normalizeDataFragment`.
     recordSkillToolEvents(alloc, &ctx.db, null, testArgs(ctx.threaded.io(), "sess_1", "use_skill", "not json"));
     recordSkillToolEvents(alloc, &ctx.db, null, testArgs(ctx.threaded.io(), "sess_1", "search_skills",
         \\{"tool":"search_skills","success":true,"data":{"_raw":"oops"},"error":null,"v":1}
@@ -523,9 +502,7 @@ test "recordSkillToolEvents is a no-op without a session id" {
     try testing.expectEqual(@as(i64, 0), try countEvents(&ctx.db, alloc, "sess_1"));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // The report contract
-// ─────────────────────────────────────────────────────────────────────────────
 
 pub const Verdict = enum {
     keep,
@@ -546,9 +523,7 @@ pub const Verdict = enum {
         };
     }
 
-    /// Parse a verdict as an LLM wrote it. Trimmed and case-insensitive,
-    /// because the value comes from generated text and "Keep" is as good an
-    /// answer as "keep".
+    /// Parse a verdict as an LLM wrote it.
     pub fn fromString(raw: []const u8) ?Verdict {
         const s = std.mem.trim(u8, raw, &std.ascii.whitespace);
         inline for (@typeInfo(Verdict).@"enum".fields) |f| {
@@ -558,22 +533,18 @@ pub const Verdict = enum {
     }
 };
 
-/// Severity as reported. Unknown values are not fatal; they simply never count
-/// as `high`, so an unrecognised severity can never authorise a `delete`.
+/// Severity as reported.
 pub fn isHigh(raw: []const u8) bool {
     return std.ascii.eqlIgnoreCase(std.mem.trim(u8, raw, &std.ascii.whitespace), "high");
 }
 
 pub const ReportFinding = struct {
-    /// Which rubric dimension this belongs to (freshness / accuracy /
-    /// duplication / relevance / used / helpfulness / stale_path / structural).
+    /// Which rubric dimension this belongs to (freshness / accuracy /duplication / relevance / used / helpfulness / stale_path / structural).
     dimension: []const u8 = "",
     /// low | medium | high. Only `high` can authorise a delete.
     severity: []const u8 = "",
     claim: []const u8 = "",
-    /// REQUIRED and non-empty. A verdict with no evidence is the single most
-    /// damaging failure mode of an LLM judge, so it is rejected structurally
-    /// rather than trusted.
+    /// REQUIRED and non-empty.
     evidence: []const u8 = "",
 };
 
@@ -600,9 +571,7 @@ pub const Report = struct {
 
 pub const Validation = struct {
     verdict: Verdict = .needs_human,
-    /// True when the submitted verdict was refused and replaced by
-    /// `needs_human`. `reason` says why, and is stored on the result so the
-    /// refusal is auditable rather than silent.
+    /// True when the submitted verdict was refused and replaced by `needs_human`.
     downgraded: bool = false,
     reason: []const u8 = "",
 };
@@ -619,8 +588,6 @@ pub fn hasHighFinding(findings: []const ReportFinding) bool {
 }
 
 /// Validate a submitted report and return the verdict that may be stored.
-/// This is the trust boundary: nothing an eval sub-agent writes reaches the
-/// tables without passing through here.
 pub fn validateReport(report: Report) Validation {
     const submitted = Verdict.fromString(report.verdict) orelse
         return refuse("verdict is not one of keep|update|rewrite|merge|delete|needs_human");
@@ -648,8 +615,7 @@ pub fn validateReport(report: Report) Validation {
             if (report.merge_target.len == 0) return refuse("merge requires merge_target");
         },
         .delete => {
-            // A delete without a high-severity finding is exactly how a good
-            // skill gets destroyed by a confident-sounding report.
+            // A delete without a high-severity finding is exactly how a good skill gets destroyed by a confident-sounding report.
             if (!hasHighFinding(report.findings)) return refuse("delete requires a high-severity finding");
         },
         else => {},
@@ -658,9 +624,7 @@ pub fn validateReport(report: Report) Validation {
     return .{ .verdict = submitted };
 }
 
-/// Combine the shared (intrinsic) half with the per-session half into the
-/// verdict that is shown to a human. Note what is **not** a parameter:
-/// `relevance`, `used`, `helpfulness`.
+/// Combine the shared (intrinsic) half with the per-session half into the verdict that is shown to a human.
 pub fn decideVerdict(intrinsic: Verdict, intrinsic_has_high: bool) Verdict {
     if (intrinsic == .needs_human) return .needs_human;
     if (intrinsic_has_high) return .delete;
@@ -669,15 +633,13 @@ pub fn decideVerdict(intrinsic: Verdict, intrinsic_has_high: bool) Verdict {
         .update => .update,
         .rewrite => .rewrite,
         .merge => .merge,
-        // `delete` only ever arrives with a high finding (validateReport), so
-        // reaching here without one is a needs_human, never a deletion.
+        // `delete` only ever arrives with a high finding (validateReport), so reaching here without one is a needs_human, never a deletion.
         .delete => .needs_human,
         .needs_human => .needs_human,
     };
 }
 
-/// Human-readable reading of the session-relative relevance score. Reported
-/// alongside the verdict; deliberately never able to change it.
+/// Human-readable reading of the session-relative relevance score.
 pub fn relevanceNote(relevance: u8) []const u8 {
     return switch (relevance) {
         0 => "irrelevant to this task - a discovery problem, not a skill problem",
@@ -686,18 +648,14 @@ pub fn relevanceNote(relevance: u8) []const u8 {
     };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Concurrent-state primitives
-// ─────────────────────────────────────────────────────────────────────────────
 
 pub const FactClaim = enum {
     /// We inserted the lease; we own the computation and must publish it.
     won,
     /// A completed fact already exists for this exact question. Reuse it.
     reusable,
-    /// Another session holds a live lease. Do not duplicate the work; the
-    /// caller falls back to `stealFact` (which succeeds only once the lease is
-    /// stale) or records its result with the intrinsic half pending.
+    /// Another session holds a live lease.
     held,
 };
 
@@ -719,8 +677,7 @@ pub fn claimFact(
     , &.{ id, skill_key, content_hash, context_key });
     if (db.changes() > 0) return .won;
 
-    // We lost the insert. Find out whether there is an answer to reuse or a
-    // live owner to leave alone. Either way we do NOT compute.
+    // We lost the insert.
     var q = try db.query(allocator,
         "SELECT verdict_intrinsic FROM skill_eval_facts WHERE skill_key = ? AND content_hash = ? AND context_key = ?",
         &.{ skill_key, content_hash, context_key });
@@ -743,9 +700,7 @@ pub const FactRow = struct {
     missing_paths_json: []u8,
     drift_commits_json: []u8,
 
-    /// Guarded like `Analysis.deinit` and `RunOutcome.deinit`: a field left at
-    /// its `&.{}` default is not an allocation, and freeing it would be a
-    /// double-free the moment a second constructor appears.
+    /// Guarded like `Analysis.deinit` and `RunOutcome.deinit`: a field left at its `&.{}` default is not an allocation, and freeing it would be a double-free the …
     pub fn deinit(self: FactRow, allocator: std.mem.Allocator) void {
         if (self.id.len > 0) allocator.free(self.id);
         if (self.findings_json.len > 0) allocator.free(self.findings_json);
@@ -762,9 +717,7 @@ fn parseScore(raw: []const u8) u8 {
     return if (n > 3) 3 else n;
 }
 
-/// Read a **completed** fact for one exact question, or null. The `!=
-/// 'computing'` predicate is load-bearing, not cosmetic: a lease must never
-/// be mistaken for a verdict, so every read goes through here.
+/// Read a **completed** fact for one exact question, or null.
 pub fn readFact(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -785,8 +738,7 @@ pub fn readFact(
 
     return FactRow{
         .id = try allocator.dupe(u8, row.values[0]),
-        // An unrecognised stored verdict degrades to needs_human rather than
-        // erroring: a corrupt row must not be able to fail a whole eval run.
+        // An unrecognised stored verdict degrades to needs_human rather than erroring: a corrupt row must not be able to fail a whole eval run.
         .verdict = Verdict.fromString(row.values[1]) orelse .needs_human,
         .freshness = parseScore(row.values[2]),
         .accuracy = parseScore(row.values[3]),
@@ -832,9 +784,7 @@ pub const FactValues = struct {
     drift_commits_json: []const u8 = "",
 };
 
-/// Publish the intrinsic half. Only the lease holder can, and only once: the
-/// `verdict_intrinsic = 'computing'` predicate makes a second publish a no-op,
-/// so a stolen lease cannot be overwritten by the original owner waking up.
+/// Publish the intrinsic half.
 pub fn publishFact(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -876,23 +826,19 @@ pub fn publishFact(
 
 // ─── the judge tier's writes ──────────────────────────────────────────────
 
-/// The session-relative half, as the judge submitted it and as
-/// `validateReport` allowed it through. Separate from `FactValues` because
-/// these are per-SESSION facts.
+/// The session-relative half, as the judge submitted it and as `validateReport` allowed it through.
 pub const JudgeValues = struct {
     verdict: Verdict,
     relevance: u8 = 0,
     used: u8 = 0,
     helpfulness: u8 = 0,
     confidence: f32 = 0,
-    /// The sub-agent session that produced the report — the transcript anchor
-    /// a human reads when they want to know why.
+    /// The sub-agent session that produced the report — the transcript anchor a human reads when they want to know why.
     sub_session_id: []const u8 = "",
     /// `done` when a validated report landed, `needs_human` when it did not.
     status: []const u8 = "done",
     rationale: []const u8 = "",
-    /// The text this verdict would write into the skill -- the judge's
-    /// `proposed_content`, stored verbatim.
+    /// The text this verdict would write into the skill -- the judge's `proposed_content`, stored verbatim.
     proposed_diff: []const u8 = "",
 };
 
@@ -903,9 +849,7 @@ pub fn updateJudgeResult(
     result_id: []const u8,
     values: JudgeValues,
 ) !bool {
-    // `exec` binds an empty slice as SQL NULL, so every number goes over the
-    // wire as a non-empty formatted string and every text column is
-    // COALESCE-wrapped (Migration 079's class).
+    // `exec` binds an empty slice as SQL NULL, so every number goes over the wire as a non-empty formatted string and every text column is COALESCE-wrapped …
     const relevance = try std.fmt.allocPrint(allocator, "{d}", .{values.relevance});
     defer allocator.free(relevance);
     const used = try std.fmt.allocPrint(allocator, "{d}", .{values.used});
@@ -939,8 +883,7 @@ pub fn updateJudgeResult(
     return db.changes() > 0;
 }
 
-/// Read the session-relative scores off one result row, for the read path and
-/// for tests. Null when the row does not exist.
+/// Read the session-relative scores off one result row, for the read path and for tests.
 pub const JudgeScores = struct {
     relevance: u8,
     used: u8,
@@ -981,9 +924,7 @@ pub fn readJudgeScores(
     };
 }
 
-/// The task this session was doing, as the judge needs to see it. "Is this
-/// skill relevant?" has no referent without it, so this is not an optional
-/// input to the judge — it is what makes the session-relative half computable
+/// The task this session was doing, as the judge needs to see it.
 pub fn sessionTaskContext(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1003,8 +944,7 @@ pub fn sessionTaskContext(
     const raw = row.values[0];
     if (raw.len == 0) return allocator.dupe(u8, "");
     if (raw.len <= max_bytes) return allocator.dupe(u8, raw);
-    // Truncated with a visible marker: a judge that reads half a task and
-    // reports confidently about all of it is the failure this guards.
+    // Truncated with a visible marker: a judge that reads half a task and reports confidently about all of it is the failure this guards.
     return std.fmt.allocPrint(allocator, "{s}\n… [{d} more characters omitted]", .{
         raw[0..max_bytes],
         raw.len - max_bytes,
@@ -1034,15 +974,12 @@ pub fn claimRun(
         \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), 'running',
         \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
         \\     COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), datetime('now')) ON CONFLICT DO NOTHING
-    // Bind order MUST match the placeholder order in the VALUES clause above:
-    // id, session_id, skill_name, scope, trigger, profile, model, cwd,
-    // context_key.
+    // Bind order MUST match the placeholder order in the VALUES clause above
     , &.{ id, session_id, skill_name, scope, trigger, profile, model, cwd, context_key });
     return db.changes() > 0;
 }
 
-/// Finalize a run. Last write wins, which is correct here: the claim above
-/// guarantees a single owner per `(session, trigger)`.
+/// Finalize a run.
 pub fn finishRun(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1072,9 +1009,7 @@ pub const ApplyClaim = enum {
     missing,
 };
 
-/// Take the exclusive right to apply one verdict. `applied_at IS NULL` in the
-/// WHERE clause is the lock, so two clicks, two clients or two humans cannot
-/// both write the skill.
+/// Take the exclusive right to apply one verdict.
 pub fn claimApply(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1102,8 +1037,7 @@ pub fn releaseApply(
         &.{result_id});
 }
 
-/// Mark a verdict as unapplicable because the body moved on. Recorded rather
-/// than deleted so the UI can offer a re-evaluate.
+/// Mark a verdict as unapplicable because the body moved on.
 pub fn markResultStale(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1124,9 +1058,7 @@ fn resultExists(allocator: std.mem.Allocator, db: *database.Db, result_id: []con
     return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tests — report validation and the verdict function
-// ─────────────────────────────────────────────────────────────────────────────
 
 test "Verdict.fromString trims, ignores case, and rejects anything unknown" {
     try testing.expectEqual(Verdict.keep, Verdict.fromString("keep").?);
@@ -1158,16 +1090,14 @@ test "validateReport refuses a verdict string it does not recognise" {
 }
 
 test "validateReport passes needs_human through WITHOUT calling it a downgrade" {
-    // needs_human is an honest answer, not a refusal — the UI must not label it
-    // as one.
+    // needs_human is an honest answer, not a refusal — the UI must not label it as one.
     const v = validateReport(.{ .skill_name = "s", .verdict = "needs_human" });
     try testing.expectEqual(Verdict.needs_human, v.verdict);
     try testing.expect(!v.downgraded);
 }
 
 test "validateReport refuses an out-of-range score rather than clamping it" {
-    // A score outside 0..3 means the report cannot be relied on in the parts
-    // that DO look well-formed, so the whole report is refused.
+    // A score outside 0..3 means the report cannot be relied on in the parts that DO look well-formed, so the whole report is refused.
     const v = validateReport(.{ .skill_name = "s", .verdict = "keep", .confidence = 0.9, .freshness = 9 });
     try testing.expectEqual(Verdict.needs_human, v.verdict);
     try testing.expect(v.downgraded);
@@ -1212,8 +1142,7 @@ test "validateReport refuses merge without merge_target" {
 }
 
 test "validateReport refuses a delete with no high-severity finding" {
-    // This is the rule that stops a confident-sounding report from destroying a
-    // perfectly good skill.
+    // This is the rule that stops a confident-sounding report from destroying a perfectly good skill.
     const soft = ReportFinding{ .dimension = "freshness", .severity = "medium", .claim = "slightly stale", .evidence = "git log" };
     const refused = validateReport(.{ .verdict = "delete", .confidence = 0.95, .findings = &.{soft} });
     try testing.expectEqual(Verdict.needs_human, refused.verdict);
@@ -1246,23 +1175,19 @@ test "decideVerdict maps the intrinsic half, and a bare delete is never a deleti
     try testing.expectEqual(Verdict.needs_human, decideVerdict(.needs_human, false));
     // A high finding promotes to delete...
     try testing.expectEqual(Verdict.delete, decideVerdict(.keep, true));
-    // ...and a needs_human is never promoted, even with a high finding, because
-    // the intrinsic verdict itself was refused as untrustworthy.
+    // ...and a needs_human is never promoted, even with a high finding, because the intrinsic verdict itself was refused as untrustworthy.
     try testing.expectEqual(Verdict.needs_human, decideVerdict(.needs_human, true));
-    // `delete` only reaches here WITH a high finding (validateReport); without
-    // one it must not delete.
+    // `delete` only reaches here WITH a high finding (validateReport); without one it must not delete.
     try testing.expectEqual(Verdict.needs_human, decideVerdict(.delete, false));
 }
 
 test "relevance can never change the verdict - the whole 0..3 range" {
-    // The structural guarantee that a good skill loaded for the wrong task
-    // cannot be deleted or rewritten.
+    // The structural guarantee that a good skill loaded for the wrong task cannot be deleted or rewritten.
     for ([_]Verdict{ .keep, .update, .rewrite, .merge, .needs_human }) |intrinsic| {
         const base = decideVerdict(intrinsic, false);
         var r: u8 = 0;
         while (r <= 3) : (r += 1) {
-            // Nothing in the call can vary with `r`, so the assertion is about
-            // the signature itself — which is exactly the guarantee wanted.
+            // Nothing in the call can vary with `r`, so the assertion is about the signature itself — which is exactly the guarantee wanted.
             try testing.expectEqual(base, decideVerdict(intrinsic, false));
             _ = relevanceNote(r);
         }
@@ -1273,9 +1198,7 @@ test "relevance can never change the verdict - the whole 0..3 range" {
     try testing.expectEqualStrings("partially relevant to this task", relevanceNote(1));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tests — the concurrent-state primitives
-// ─────────────────────────────────────────────────────────────────────────────
 
 test "claimFact: first writer wins, a live lease is not reusable, a published fact is" {
     const alloc = testing.allocator;
@@ -1288,8 +1211,7 @@ test "claimFact: first writer wins, a live lease is not reusable, a published fa
     const ck = "/repo@abc";
 
     try testing.expectEqual(FactClaim.won, try claimFact(alloc, &ctx.db, "f1", sk, ch, ck));
-    // Second caller for the SAME question: the lease is live, so neither claims
-    // nor reuses. It must not compute — that is the duplicate-work guard.
+    // Second caller for the SAME question: the lease is live, so neither claims nor reuses.
     try testing.expectEqual(FactClaim.held, try claimFact(alloc, &ctx.db, "f2", sk, ch, ck));
 
     // A different body is a different question, so it gets its own lease.
@@ -1316,12 +1238,10 @@ test "readFact returns a published fact and refuses a bare lease" {
 
     _ = try claimFact(alloc, &ctx.db, "f1", "global:foo", "hashA", "/repo@abc");
 
-    // A lease is NOT an answer. If this returned a row, every reader would have
-    // to remember to check for 'computing' — so the check lives in the query.
+    // A lease is NOT an answer.
     try testing.expectEqual(@as(?FactRow, null), try readFact(alloc, &ctx.db, "global:foo", "hashA", "/repo@abc"));
 
-    // Empty free-text columns must round-trip as "" rather than blowing up on
-    // the NOT NULL constraints (the empty-slice-binds-as-NULL trap).
+    // Empty free-text columns must round-trip as "" rather than blowing up on the NOT NULL constraints (the empty-slice-binds-as-NULL trap).
     try testing.expect(try publishFact(alloc, &ctx.db, "f1", .{
         .verdict = .update,
         .freshness = 1,
@@ -1367,8 +1287,7 @@ test "stealFact only takes a lease that has actually expired" {
     // Fresh lease: not stealable, so a second session does not duplicate work.
     try testing.expect(!try stealFact(alloc, &ctx.db, "global:foo", "hashA", "/repo@abc", 300));
 
-    // Age it past the lease (simulating a crashed owner) and it becomes
-    // reclaimable — otherwise the fact could never be computed at all.
+    // Age it past the lease (simulating a crashed owner) and it becomes reclaimable — otherwise the fact could never be computed at all.
     try ctx.db.exec(alloc, "UPDATE skill_eval_facts SET computed_at = datetime('now', '-3600 seconds') WHERE id = 'f1'", &.{});
     try testing.expect(try stealFact(alloc, &ctx.db, "global:foo", "hashA", "/repo@abc", 300));
     try testing.expect(!try stealFact(alloc, &ctx.db, "global:foo", "hashA", "/repo@abc", 300));
@@ -1384,8 +1303,7 @@ test "claimRun: one self-prompted run per session, other triggers unaffected" {
     defer ctx.db.deinit();
 
     try testing.expect(try claimRun(alloc, &ctx.db, "r1", "sess_a", "self_prompt", "", "session", "/cwd", "/cwd@abc", "p", "m"));
-    // The agent can emit two run_skill_eval calls in one turn. The partial
-    // unique index is the arbiter — not a pre-check, which would race.
+    // The agent can emit two run_skill_eval calls in one turn.
     try testing.expect(!try claimRun(alloc, &ctx.db, "r2", "sess_a", "self_prompt", "", "session", "/cwd", "/cwd@abc", "p", "m"));
     // A different session gets its own.
     try testing.expect(try claimRun(alloc, &ctx.db, "r3", "sess_b", "self_prompt", "", "session", "/cwd", "/cwd@abc", "p", "m"));
@@ -1418,8 +1336,7 @@ test "claimApply: exactly one winner, releasable, and honest about a missing row
     try testing.expectEqual(ApplyClaim.already_applied, try claimApply(alloc, &ctx.db, "res_1", "edit"));
     try testing.expectEqual(ApplyClaim.missing, try claimApply(alloc, &ctx.db, "nope", "edit"));
 
-    // The staleness path: we won, discovered the body had moved underneath us,
-    // and must give the claim back or the verdict is unapplicable forever.
+    // The staleness path: we won, discovered the body had moved underneath us, and must give the claim back or the verdict is unapplicable forever.
     try releaseApply(alloc, &ctx.db, "res_1");
     try testing.expectEqual(ApplyClaim.won, try claimApply(alloc, &ctx.db, "res_1", "delete"));
 
@@ -1447,15 +1364,11 @@ test "markResultStale records the refusal instead of deleting the verdict" {
     const row = (try q.next()) orelse return error.RowMissing;
     defer row.deinit(alloc);
     try testing.expectEqualStrings("stale", row.values[0]);
-    // The missing paths are intrinsic and live on the fact; `proposed_diff`
-    // means "the text this verdict would write into the skill", so it must NOT
-    // be used as a scratch column for a JSON array of paths.
+    // The missing paths are intrinsic and live on the fact; `proposed_diff` means "the text this verdict would write into the skill", so it must NOT be used as a …
     try testing.expectEqualStrings("", row.values[1]);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Reading the ledger
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// One skill as the ledger remembers it for a session.
 pub const SessionSkillUse = struct {
@@ -1501,9 +1414,7 @@ pub fn sessionSkillSet(
         const hash = row.values[2];
         const loop_raw = row.values[3];
 
-        // An INDEX, not a pointer: `out` is an ArrayList and the `append`
-        // below can reallocate its backing array, which would invalidate any
-        // pointer taken from an earlier iteration.
+        // An INDEX, not a pointer: `out` is an ArrayList and the `append` below can reallocate its backing array, which would invalidate any pointer taken from an …
         var idx: ?usize = null;
         for (out.items, 0..) |it, i| {
             if (std.mem.eql(u8, it.skill_name, name)) {
@@ -1527,9 +1438,7 @@ pub fn sessionSkillSet(
             it.listed = true;
         } else if (std.mem.eql(u8, event, "loaded")) {
             it.loaded = true;
-            // The LAST read wins for the hash — a reload after an edit is the
-            // body the agent ended up using. The FIRST read wins for the turn,
-            // because that is when the skill entered the session.
+            // The LAST read wins for the hash — a reload after an edit is the body the agent ended up using.
             if (hash.len > 0) {
                 allocator.free(it.content_hash);
                 it.content_hash = try allocator.dupe(u8, hash);
@@ -1576,8 +1485,7 @@ test "sessionSkillSet separates OFFERED skills from READ skills" {
             try testing.expect(it.content_hash.len > 0);
             try testing.expect(it.first_loop_index != null);
         } else {
-            // ...and `ignored-one` was offered and never read. That pair is the
-            // finding `session_skills` could never produce.
+            // ...and `ignored-one` was offered and never read.
             try testing.expect(it.listed);
             try testing.expect(!it.loaded);
             try testing.expectEqualStrings("", it.content_hash);
@@ -1601,9 +1509,7 @@ test "sessionSkillSet is empty for a session with no ledger rows" {
     try testing.expectEqual(@as(usize, 0), empty.len);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Reading the eval tables (the HTTP layer's data source)
-// ─────────────────────────────────────────────────────────────────────────────
 
 pub const RunRow = struct {
     id: []u8,
@@ -1634,8 +1540,7 @@ pub const RunFilter = struct {
     limit: u32 = 25,
 };
 
-/// Optional filters are expressed as `(COALESCE(CAST(? AS TEXT), '') = '' OR col = ?)` rather than by
-/// building SQL text.
+/// Optional filters are expressed as `(COALESCE(CAST(?
 pub fn listRuns(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1698,15 +1603,11 @@ pub const ResultRow = struct {
     rationale: []u8,
     missing_paths_json: []u8,
     intrinsic_fact_id: []u8,
-    /// The hash of the body this verdict was computed against. The apply path
-    /// re-checks it: if the file changed since the eval, the proposal describes
-    /// a body that is gone.
+    /// The hash of the body this verdict was computed against.
     base_content_hash: []u8,
-    /// That same body, verbatim. A hash can only ANSWER "is this still the
-    /// body I judged?" -- it cannot show a human what the body was.
+    /// That same body, verbatim.
     content_at_use: []u8,
-    /// The text this verdict would write, empty when there is none. Pairs with
-    /// `content_at_use` to form a before/after.
+    /// The text this verdict would write, empty when there is none.
     proposed_diff: []u8,
     applied: bool,
     apply_action: []u8,
@@ -1729,9 +1630,7 @@ pub const ResultRow = struct {
     }
 };
 
-/// The projection both result reads share, concatenated (never retyped) into
-/// the two queries below so the column list and `mapResultRow`'s indices
-/// cannot drift apart.
+/// The projection both result reads share, concatenated (never retyped) into the two queries below so the column list and `mapResultRow`'s indices cannot drift …
 const result_projection =
     \\SELECT r.id, r.run_id, COALESCE(CAST(r.session_id AS TEXT), ''),
     \\       r.skill_key, r.skill_name, r.status, r.verdict,
@@ -1769,9 +1668,7 @@ pub fn listResults(
     return try out.toOwnedSlice(allocator);
 }
 
-/// One result by id, or null when there is no such id. The apply path needs
-/// it, and needs the row's own `session_id`: the body it re-hashes lives in the
-/// session's repo, not wherever the server process was started.
+/// One result by id, or null when there is no such id.
 pub fn readResultById(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -1786,9 +1683,7 @@ pub fn readResultById(
     return try mapResultRow(allocator, row);
 }
 
-/// `values[N]` onto the field `result_projection` puts in column N. Read the
-/// two together: a column added to one and not the other mis-maps silently --
-/// every value is a string, so nothing about the call site would complain.
+/// `values[N]` onto the field `result_projection` puts in column N.
 fn mapResultRow(allocator: std.mem.Allocator, row: database.Db.Row) !ResultRow {
     return .{
         .id = try allocator.dupe(u8, row.values[0]),
@@ -1866,16 +1761,12 @@ test "listRuns and listResults read back what a run wrote" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Columns are OMITTED rather than bound to '' — `exec` binds an empty
-    // slice as SQL NULL, and these columns are NOT NULL, so writing '' here
-    // would fail the constraint. (Caught by this very test the first time.)
+    // Columns are OMITTED rather than bound to '' — `exec` binds an empty slice as SQL NULL, and these columns are NOT NULL, so writing '' here would fail the …
     try ctx.db.exec(alloc,
         \\INSERT INTO skill_eval_runs (id, session_id, scope, trigger, status, total_tokens)
         \\VALUES ('run_1', 'sess_1', 'session', 'self_prompt', 'done', 0)
     , &.{});
-    // The intrinsic paths live on the FACT, not on the result — the result
-    // references it. So seed a fact and link it; the assertion below proves the
-    // join resolves it.
+    // The intrinsic paths live on the FACT, not on the result — the result references it.
     try ctx.db.exec(alloc,
         \\INSERT INTO skill_eval_facts (id, skill_key, content_hash, context_key, verdict_intrinsic, freshness, missing_paths_json)
         \\VALUES ('f1', 'global:foo', 'hashA', '/cwd@abc', 'update', 1, '["src/gone.zig"]')
@@ -2012,8 +1903,7 @@ test "updateJudgeResult stores the session-relative half and round-trips" {
 }
 
 test "a judge may escalate a deterministic keep to delete" {
-    // The one escalation that exists, and the reason Tier 1 is worth its
-    // tokens: Tier 0 structurally cannot reach `delete`.
+    // The one escalation that exists, and the reason Tier 1 is worth its tokens: Tier 0 structurally cannot reach `delete`.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2034,9 +1924,7 @@ test "a judge may escalate a deterministic keep to delete" {
 }
 
 test "a judge never rewrites a result a human already applied" {
-    // The apply endpoint is the human's decision. A judge that lands late —
-    // a slow sub-agent, a retried run — must not be able to overwrite it, and
-    // the guard is a predicate on the one statement, not a read-then-write.
+    // The apply endpoint is the human's decision.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2078,8 +1966,7 @@ test "sessionTaskContext returns the FIRST user message, marked when clipped" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Two user turns; the judge must see the one that says what the session
-    // set out to do, not the one it drifted to.
+    // Two user turns; the judge must see the one that says what the session set out to do, not the one it drifted to.
     try ctx.db.exec(alloc,
         \\INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano, model)
         \\VALUES ('h2', 'sess_t', 'user', 'actually now do the other thing', 200, 'm')
@@ -2098,9 +1985,7 @@ test "sessionTaskContext returns the FIRST user message, marked when clipped" {
     defer alloc.free(task);
     try testing.expectEqualStrings("fix the empty state in ChatView", task);
 
-    // Clipped rather than silently cut: a judge reading half a task and
-    // reporting confidently about all of it is the failure this prevents.
-    // 31 bytes in, 10 kept, so 21 are named as omitted.
+    // Clipped rather than silently cut: a judge reading half a task and reporting confidently about all of it is the failure this prevents. 31 bytes in, 10 kept, so …
     const clipped = try sessionTaskContext(alloc, &ctx.db, "sess_t", 10);
     defer alloc.free(clipped);
     try testing.expectEqualStrings("fix the em\n… [21 more characters omitted]", clipped);
@@ -2112,9 +1997,7 @@ test "sessionTaskContext is empty, not an error, for a session with no user turn
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A thin context is a legitimate reason for a judge to answer
-    // needs_human, so it is a value the caller can pass on — not a failure
-    // that would take the whole eval down.
+    // A thin context is a legitimate reason for a judge to answer needs_human, so it is a value the caller can pass on — not a failure that would take the whole eval …
     const none = try sessionTaskContext(alloc, &ctx.db, "sess_never_existed", 4000);
     defer alloc.free(none);
     try testing.expectEqualStrings("", none);
@@ -2125,8 +2008,7 @@ test "sessionTaskContext is empty, not an error, for a session with no user turn
 }
 
 test "updateJudgeResult persists the proposal the judge was made to produce" {
-    // The judge prompt REQUIRES proposed_content for update/rewrite and
-    // validateReport refuses a report without it.
+    // The judge prompt REQUIRES proposed_content for update/rewrite and validateReport refuses a report without it.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2160,8 +2042,7 @@ test "updateJudgeResult persists the proposal the judge was made to produce" {
 }
 
 test "a judge verdict that changes nothing stores no proposal" {
-    // `keep` / `merge` / `delete` have no after, so the column must stay empty
-    // rather than being filled with the body again.
+    // `keep` / `merge` / `delete` have no after, so the column must stay empty rather than being filled with the body again.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2183,8 +2064,7 @@ test "a judge verdict that changes nothing stores no proposal" {
 }
 
 test "listResults carries the before body and the proposal" {
-    // Without these two in ResultRow the read path cannot surface them, so the
-    // write would be invisible everywhere except a raw SQL query.
+    // Without these two in ResultRow the read path cannot surface them, so the write would be invisible everywhere except a raw SQL query.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2207,16 +2087,13 @@ test "listResults carries the before body and the proposal" {
     try testing.expectEqual(@as(usize, 1), rows.len);
     try testing.expectEqualStrings("THE-BEFORE-BODY", rows[0].content_at_use);
     try testing.expectEqualStrings("THE-AFTER-BODY", rows[0].proposed_diff);
-    // The shift of the two pre-existing trailing columns must not have broken
-    // the mapping -- `applied` and `apply_action` sit AFTER the new pair.
+    // The shift of the two pre-existing trailing columns must not have broken the mapping -- `applied` and `apply_action` sit AFTER the new pair.
     try testing.expectEqual(false, rows[0].applied);
     try testing.expectEqualStrings("", rows[0].apply_action);
 }
 
 test "readResultById carries the session_id the apply guard resolves the repo from" {
-    // Apply re-hashes the body against the SESSION's repo
-    // (`readCurrentSkillHash` -> `workspace_scope.sessionCwd`), so a read
-    // that dropped the id re-hashed the server's own cwd and refused a live
+    // Apply re-hashes the body against the SESSION's repo (`readCurrentSkillHash` -> `workspace_scope.sessionCwd`), so a read that dropped the id re-hashed the …
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -2237,22 +2114,18 @@ test "readResultById carries the session_id the apply guard resolves the repo fr
     try testing.expectEqualStrings("sess_sid", row.session_id);
     try testing.expectEqualStrings("HASH-1", row.base_content_hash);
 
-    // The same row through the list read, so the shared projection is proven on
-    // both of its callers.
+    // The same row through the list read, so the shared projection is proven on both of its callers.
     const rows = try listResults(alloc, &ctx.db, "run_sid");
     defer freeResultRows(alloc, rows);
     try testing.expectEqual(@as(usize, 1), rows.len);
     try testing.expectEqualStrings("sess_sid", rows[0].session_id);
 
-    // An id nobody stored is null, not an empty row the apply path would go on
-    // to hash against.
+    // An id nobody stored is null, not an empty row the apply path would go on to hash against.
     try testing.expect((try readResultById(alloc, &ctx.db, "no_such_result")) == null);
 }
 
 test "every projected column lands on its own ResultRow field" {
-    // `result_projection` is mapped by index. One assertion per column, each
-    // carrying a value no other column holds, so an off-by-one fails here
-    // instead of quietly filing a verdict's body hash under the wrong field.
+    // `result_projection` is mapped by index.
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();

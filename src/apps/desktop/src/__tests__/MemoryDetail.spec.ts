@@ -1,6 +1,4 @@
-/** Tests for MemoryDetail.vue. Covers the 4 modes (empty, view, edit,
- * create) and the 3 emit types (memoryDeleted, memorySaved, error).
- * Mocks the api module so no network calls happen. */
+/** Tests for MemoryDetail.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 

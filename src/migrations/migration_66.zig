@@ -7,30 +7,23 @@ const dropColumnIfExists = common.dropColumnIfExists;
 const renameColumnIfExists = common.renameColumnIfExists;
 const helpers = @import("helpers");
 
-/// Migration 066 — Add `design_pages.workspace_item_task_id` foreign key to
-/// bind each design page 1:1 to its `workspace_item_tasks` chat-session row.
-/// ## Why this migration exists Today, the per-page chat lookup in
+/// Migration 066 — Add `design_pages.workspace_item_task_id` foreign key to bind each design page 1:1 to its `workspace_item_tasks` chat-session row.
 pub const Migration066AddDesignPageTaskFk = struct {
     pub const version: u32 = 66;
     pub const name = "add_design_page_task_fk";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // 1. Add the column. Nullable — backfilled below; new
-        //    INSERTs from `design_model.setDesignPage` populate it
-        //    at create time.
+        // 1.
         try addColumnIfMissing(
             .{ .db = db },
             allocator,
             "design_pages",
             "workspace_item_task_id",
-            // name + type — `addColumnIfMissing` uses this verbatim as `ALTER
-            // TABLE {table} ADD COLUMN {definition}`, so omitting the column
-            // name would create a column literally named "TEXT".
+            // name + type — `addColumnIfMissing` uses this verbatim as `ALTER TABLE {table} ADD COLUMN {definition}`, so omitting the column name would create a column …
             "workspace_item_task_id TEXT",
         );
 
-        // 2. UNIQUE index for the 1:1 invariant. `IF NOT EXISTS`
-        //    keeps the migration idempotent on re-run.
+        // 2.
         try db.exec(
             allocator,
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_design_pages_workspace_item_task_id " ++
@@ -48,18 +41,14 @@ pub const Migration066AddDesignPageTaskFk = struct {
         , &[_][]const u8{});
         defer q.deinit();
 
-        // Last task id's nanosecond value — used to guarantee strictly
-        // increasing ids across the batch (Windows FILETIME granularity can
-        // repeat back-to-back ticks).
+        // Last task id's nanosecond value — used to guarantee strictly increasing ids across the batch (Windows FILETIME granularity can repeat back-to-back ticks).
         var last_task_ns: i128 = 0;
 
         while (try q.next()) |row| {
             defer row.deinit(allocator);
             const page_id = row.values[0];
             const item_id = row.values[1];
-            // Defensive normalization: empty page name → "untitled" (we never
-            // want a literal "Design Chat: " with trailing space). COALESCEd
-            // above means empty here == the row had no name.
+            // Defensive normalization: empty page name → "untitled" (we never want a literal "Design Chat: " with trailing space).
             const page_name_raw = row.values[2];
             const full_task_name = if (std.mem.eql(u8, page_name_raw, ""))
                 "Design Chat: untitled"

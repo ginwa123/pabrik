@@ -10,37 +10,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/**
- * AES-GCM under a key held by the Android Keystore, so the key material never
- * exists in the app's process address space.
- *
- * It lives here, in `storage`, rather than next to either of its two callers —
- * the session cookie and the Room cache — because the second copy of this
- * crypto *is* a second copy to keep in sync, and a change to the payload format
- * has to land in both or it silently invalidates whatever one was missed.
- * Each caller still gets its own key alias, so a suspected credential leak and
- * a suspected cache leak stay separate investigations that can be rotated
- * separately.
- *
- * ### Why the key is memoized
- *
- * [EncryptedPrefs] re-reads the key from the Keystore on every call. That is
- * fine for a preferences file, where a value is a few hundred bytes and a read
- * happens once per screen. A sidebar read opens 30 chat titles, so a Keystore
- * round trip per row would put ~30 daemon hops on the main thread of the first
- * frame — more than the single blob decrypt it replaced. The key is fetched
- * once per process; the [Cipher] is still built per operation, because
- * `Cipher` is not safe to share.
- *
- * ### Fail-silent
- *
- * Both operations return null rather than throwing. A key invalidated by a
- * lock-screen change, a restore onto a new device, a truncated payload, or a
- * hardware keystore that refuses to open must degrade the caller to a miss and
- * a skipped write. A broken store is never the reason the app fails. GCM's
- * authentication tag is what makes "wrong key" a failure rather than a silently
- * wrong answer.
- */
+/** AES-GCM under a key held by the Android Keystore, so the key material never exists in the app's process address space. */
 interface SealingCipher {
     /** Null when the value could not be sealed; the caller should not store it. */
     fun seal(plainText: String): String?

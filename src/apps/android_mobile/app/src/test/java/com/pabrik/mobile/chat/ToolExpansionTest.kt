@@ -4,12 +4,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Which cards are open.
- *
- * The rule that is easy to get wrong — and that a plain set of open ids cannot
- * express — is the difference between "no decision" and "explicitly closed".
- */
+/** Which cards are open. */
 class ToolExpansionTest {
 
     @Test
@@ -25,9 +20,7 @@ class ToolExpansionTest {
 
         assertTrue(expansion.isExpanded("q1", defaultsToOpen = true))
 
-        // The case a set of open ids cannot express: absent would have to mean
-        // both "inherit the default" and "explicitly closed", so an `ask_user`
-        // card would be impossible to shut.
+        // The case a set of open ids cannot express: absent would have to mean both "inherit the default" and "explicitly closed", so an `ask_user` card would be …
         expansion.toggle("q1", defaultsToOpen = true)
         assertFalse(expansion.isExpanded("q1", defaultsToOpen = true))
     }
@@ -61,12 +54,7 @@ class ToolExpansionTest {
         assertFalse(expansion.isExpanded("row_2"))
     }
 
-    /**
-     * The saver keeps the *keys*, so after a rotation a closed defaulting card
-     * may reopen. That is the accepted cost of a saver that fits a `Bundle`
-     * without a custom one, and it is called out here so the behaviour is a
-     * decision rather than a surprise.
-     */
+    /** The saver keeps the *keys*, so after a rotation a closed defaulting card may reopen. */
     @Test
     fun `restoring keeps the cards that were open`() {
         val expansion = ToolExpansion()

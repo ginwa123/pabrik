@@ -1,6 +1,4 @@
-//! Functional test for the `--static-dir` concurrency defect that kept
-//! `tests/functional_ui/code_editor_viewer_ui_test.py` red for a week.
-//! SYMPTOM.
+//! Functional test for the `--static-dir` concurrency defect that kept `tests/functional_ui/code_editor_viewer_ui_test.py` red for a week.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -17,8 +15,7 @@ const io = testing.io;
 /// The asset every hammer request asks for.
 const ASSET = "asset.js";
 
-/// Small, but not empty: a zero-byte response is the failure mode, so the
-/// server has to have something to send.
+/// Small, but not empty: a zero-byte response is the failure mode, so the server has to have something to send.
 const ASSET_BODY =
     "// static-serve hammer asset\n" ++
     "export const marker = 'STATIC_SERVE_HAMMER_5c21e8';\n";
@@ -34,8 +31,7 @@ const REQUEST =
 /// How many connections each hammer thread opens.
 const REQUESTS_PER_THREAD = 80;
 
-/// Parallel connections. Six is what a browser opens per origin, and it is
-/// enough for the hijack handoff to race an accept.
+/// Parallel connections.
 const THREADS = 6;
 
 /// Write `contents` to the absolute `path`, creating/truncating it.
@@ -56,12 +52,10 @@ fn armRecvDeadline(handle: std.posix.socket_t, seconds: i64) void {
     ) catch {};
 }
 
-/// The banner pabrik's crash reporter writes at the head of every report
-/// (`src/service/crash_handler.zig::emitCrashReport`).
+/// The banner pabrik's crash reporter writes at the head of every report (`src/service/crash_handler.zig::emitCrashReport`).
 const CRASH_BANNER = "=== CRASH:";
 
-/// Count crash reports in captured child output. Pure — the positive
-/// control below pins that it fires on the banner and not on prose.
+/// Count crash reports in captured child output.
 fn crashReportCount(log: []const u8) usize {
     var n: usize = 0;
     var i: usize = 0;
@@ -90,16 +84,14 @@ const Hammer = struct {
 /// Send one request on a fresh connection and read to EOF.
 fn requestOnce(h: *Hammer) void {
     const addr: Io.net.IpAddress = .{ .ip4 = .loopback(h.port) };
-    // `.timeout = .none` is mandatory on POSIX: `Io.net.connect` panics when
-    // a timeout is requested. The receive deadline below is the real bound.
+    // `.timeout = .none` is mandatory on POSIX: `Io.net.connect` panics when a timeout is requested.
     var stream = addr.connect(io, .{ .mode = .stream, .timeout = .none }) catch return;
     defer stream.close(io);
     const handle = stream.socket.handle;
     armRecvDeadline(handle, 3);
 
     {
-        // The request goes through `Io.net`'s writer: only the RECEIVE side
-        // carries a deadline, so no `EAGAIN` can reach `Io`'s read path.
+        // The request goes through `Io.net`'s writer: only the RECEIVE side carries a deadline, so no `EAGAIN` can reach `Io`'s read path.
         var wbuf: [256]u8 = undefined;
         var sw = stream.writer(io, &wbuf);
         sw.interface.writeAll(REQUEST) catch return;
@@ -109,8 +101,7 @@ fn requestOnce(h: *Hammer) void {
     var buf: [4096]u8 = undefined;
     var total: usize = 0;
     while (total < 1000) {
-        // The deadline (or a reset) breaks out with whatever arrived; that is
-        // the point — zero bytes is the observation under test.
+        // The deadline (or a reset) breaks out with whatever arrived; that is the point — zero bytes is the observation under test.
         const n = std.posix.read(handle, &buf) catch break;
         if (n == 0) break; // orderly EOF
         total += n;
@@ -127,11 +118,9 @@ fn hammer(h: *Hammer) void {
     for (0..REQUESTS_PER_THREAD) |_| requestOnce(h);
 }
 
-// A static asset is never answered with zero bytes, however many connections
-// are in flight. This is the invariant the UI suite's bundle load depends on.
+// A static asset is never answered with zero bytes, however many connections are in flight.
 test "static_serve_answers_every_request_under_concurrency" {
-    // POSIX-only: the client read needs a receive deadline, and the only way
-    // to get one is SO_RCVTIMEO + a raw `read` (see `armRecvDeadline`).
+    // POSIX-only: the client read needs a receive deadline, and the only way to get one is SO_RCVTIMEO + a raw `read` (see `armRecvDeadline`).
     if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     try harness.requirePabrikBin(io, gpa);
 
@@ -160,8 +149,7 @@ test "static_serve_answers_every_request_under_concurrency" {
         std.debug.print("teardown: {s}\n", .{@errorName(err)});
     };
 
-    // Positive control first: the dir really is being served, so a later
-    // all-zero result cannot pass vacuously.
+    // Positive control first: the dir really is being served, so a later all-zero result cannot pass vacuously.
     {
         var r = try h.http(io, .GET, "/" ++ ASSET, .{});
         defer r.deinit();
@@ -176,9 +164,7 @@ test "static_serve_answers_every_request_under_concurrency" {
     for (&threads) |*t| t.* = try std.Thread.spawn(.{}, hammer, .{&state});
     for (&threads) |*t| t.join();
 
-    // Read the child's output BEFORE asserting on anything else: if the
-    // server died, the crash report is the evidence and the failure has to
-    // quote it (a dead server also makes every later request fail, which
+    // Read the child's output BEFORE asserting on anything else: if the server died, the crash report is the evidence and the failure has to quote it (a dead server …
     const child_log = try readChildLog(&h, gpa);
     defer gpa.free(child_log);
     const crashes = crashReportCount(child_log);
@@ -216,13 +202,11 @@ test "static_serve_answers_every_request_under_concurrency" {
     }
 }
 
-// Positive control for the crash detector: it fires on the reporter's
-// banner and stays silent on prose that merely says "CRASH".
+// Positive control for the crash detector: it fires on the reporter's banner and stays silent on prose that merely says "CRASH".
 test "crashReportCount counts the reporter's banner (positive control)" {
     try testing.expectEqual(@as(usize, 0), crashReportCount(""));
     try testing.expectEqual(@as(usize, 0), crashReportCount("all good\ninfo: serving\n"));
-    // Prose, not a banner: a detector without a positive control could pass
-    // vacuously by never matching anything.
+    // Prose, not a banner: a detector without a positive control could pass vacuously by never matching anything.
     try testing.expectEqual(@as(usize, 0), crashReportCount("CRASH: reached unreachable code\n"));
     try testing.expectEqual(
         @as(usize, 1),

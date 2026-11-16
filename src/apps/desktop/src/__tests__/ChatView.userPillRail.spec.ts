@@ -1,5 +1,4 @@
-/** Source-contract tests for the 2026-09-09 chatview user-pill work: cursor-pagination fixes +
- * pill-rail wiring in ChatView.vue. */
+/** Source-contract tests for the 2026-09-09 chatview user-pill work: cursor-pagination fixes + pill-rail wiring in ChatView.vue. */
 import { describe, it, expect } from 'vitest'
 import { readChatViewSource as readChatViewBundle } from './helpers/chatViewSource'
 
@@ -11,9 +10,7 @@ describe('pagination — cursor advances on loadMore', () => {
     // Initial load: cursor + exhaustion flag come straight from the REST page.
     expect(source.match(/messageCursor\.value = data\.next_cursor/g) ?? []).toHaveLength(1)
     expect(source.match(/hasMoreMessages\.value = data\.has_more/g) ?? []).toHaveLength(1)
-    // Every prepend (scroll-back, buffered prefetch, manual button) is routed through
-    // `commitOlderPage`, which advances the cursor from the COMMITTED page. Without this the 2nd+
-    // page re-sends the same cursor and re-prepends the same messages forever.
+    // Every prepend (scroll-back, buffered prefetch, manual button) is routed through `commitOlderPage`, which advances the cursor from the COMMITTED page.
     const commitBody = source.slice(
       source.indexOf('const commitOlderPage = async ('),
       source.indexOf('const evaluateOlderPrefetch = '),
@@ -51,8 +48,7 @@ describe('user-pill rail wiring', () => {
     const source = await readChatViewSource()
     const block = source.match(/const userPills = computed\(\(\): UserPill\[\] => \{[\s\S]*?\n\}\)/)
     expect(block).not.toBeNull()
-    // The rule lives in `isPillGroup` (role === 'user' && !isCompaction), which has its own
-    // behaviour spec in `components/chat/__tests__/activePill.spec.ts`.
+    // The rule lives in `isPillGroup` (role === 'user' && !isCompaction), which has its own behaviour spec in `components/chat/__tests__/activePill.spec.ts`.
     expect(block![0]).toContain('isPillGroup(g.role,')
     expect(block![0]).toContain('isCompactionMessage')
     expect(block![0]).toContain('groupKey(g)')
@@ -77,9 +73,7 @@ describe('user-pill rail wiring', () => {
 
 describe('pill-rail gutter — the rail must not overlap the transcript', () => {
   it('the wrapper carries has-pill-rail on the SAME condition as the rail', async () => {
-    // The gutter must exist exactly when the rail does. Two separate conditions would drift: a rail
-    // with no gutter paints over the messages, a gutter with no rail is dead space in a
-    // 1-user-group chat. Pin the binding to the rail's own `v-if` expression.
+    // The gutter must exist exactly when the rail does.
     const source = await readChatViewSource()
     const wrapper = source.match(
       /class="relative flex-1 min-h-0 flex flex-col messages-scroll-hide-native"\s*\n\s*:class="\{[^}]*\}"/,
@@ -96,9 +90,7 @@ describe('pill-rail gutter — the rail must not overlap the transcript', () => 
   })
 
   it('the gutter is wide enough to clear the rail footprint', async () => {
-    // The rail sits at `right: 18px` with 4px padding and 24px pills, so its footprint reaches 46px
-    // in from the wrapper's right edge. A narrower gutter would leave the pills still overlapping
-    // the text. 48px also covers the pill's `scaleX(1.25)` hover growth (24 → 30px).
+    // The rail sits at `right: 18px` with 4px padding and 24px pills, so its footprint reaches 46px in from the wrapper's right edge.
     const source = await readChatViewSource()
     const m = source.match(/--pill-rail-gutter:\s*(\d+)px/)
     expect(m).not.toBeNull()
@@ -106,8 +98,7 @@ describe('pill-rail gutter — the rail must not overlap the transcript', () => 
   })
 
   it('the gutter is applied as padding-right on the transcript rows', async () => {
-    // `padding-right`, NOT a margin or a width on the scroller: VirtualScroller's `measureItems()`
-    // reads `el.offsetHeight`, so a horizontal padding is invisible to the height model.
+    // `padding-right`, NOT a margin or a width on the scroller: VirtualScroller's `measureItems()` reads `el.offsetHeight`, so a horizontal padding is invisible to …
     const source = await readChatViewSource()
     const rule = source.match(
       /\.messages-scroll-hide-native\.has-pill-rail :deep\(\[data-group-key\]\),[\s\S]*?\}/,
@@ -118,9 +109,7 @@ describe('pill-rail gutter — the rail must not overlap the transcript', () => 
   })
 
   it('the agent-error band takes the same gutter', async () => {
-    // It is a sibling of the VirtualScroller, outside the height model,
-    // so it needs the padding in its own right — otherwise the strip
-    // breaks across that band and the pills overlap it.
+    // It is a sibling of the VirtualScroller, outside the height model, so it needs the padding in its own right — otherwise the strip breaks across that band and …
     const source = await readChatViewSource()
     expect(source).toMatch(/\.messages-scroll-hide-native\.has-pill-rail \.agent-error-list\s*\{/)
   })

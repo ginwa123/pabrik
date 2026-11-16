@@ -1,5 +1,4 @@
-/** Tests for PabrikGeneralSection.vue — the General tab in USER settings. Retry backoff is a
- * workspace value and is covered by PabrikRuntimeSection.spec.ts. */
+/** Tests for PabrikGeneralSection.vue — the General tab in USER settings. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -72,8 +71,7 @@ describe('PabrikGeneralSection', () => {
   })
 
   it('clicking notify_on_error emits update:modelValue with the flipped boolean (independent from complete)', async () => {
-    // Lock the contract that the two toggles are independent — toggling
-    // notify_on_error MUST NOT silently flip notify_on_complete.
+    // Lock the contract that the two toggles are independent — toggling notify_on_error MUST NOT silently flip notify_on_complete.
     const wrapper = mount(PabrikGeneralSection, {
       props: {
         modelValue: {
@@ -91,9 +89,7 @@ describe('PabrikGeneralSection', () => {
   })
 
   it('toggling a control does not lose the OTHER settings (whole-object emit)', async () => {
-    // The component emits the FULL settings object on each change
-    // (not a partial patch). Lock that contract so the parent's
-    // v-model never drops a sibling field.
+    // The component emits the FULL settings object on each change (not a partial patch).
     const wrapper = mount(PabrikGeneralSection, {
       props: {
         modelValue: {

@@ -17,8 +17,7 @@ function makeDesignItem(overrides: Partial<WorkspaceItemType> = {}): WorkspaceIt
     path: '/tmp/test',
     design_elements: [],
     tasks: [
-      // chat tasks linked 1:1 to each design page (the noise we
-      // want to hide).
+      // chat tasks linked 1:1 to each design page (the noise we want to hide).
       {
         id: 'task_design_chat_1',
         name: 'Design Chat: AI Chat View',
@@ -121,14 +120,11 @@ describe('WorkspaceItem — design items hide the tasks list section', () => {
 
     await flushPromises()
 
-    // The pre-fix Tasks List block has data-testid-bearing task rows
-    // (data-task-id). For design items, NONE of those should exist.
+    // The pre-fix Tasks List block has data-testid-bearing task rows (data-task-id).
     const taskRows = wrapper.findAll('[data-task-id]')
     expect(taskRows).toHaveLength(0)
 
-    // The new Design Pages section should be present. The pre-fix
-    // had no testid on the container; check for the + Add Page
-    // button instead (only rendered in the design pages section).
+    // The new Design Pages section should be present.
     expect(wrapper.find('[data-testid="design-sidebar-add-page-button"]').exists()).toBe(true)
 
     wrapper.unmount()
@@ -143,8 +139,7 @@ describe('WorkspaceItem — design items hide the tasks list section', () => {
 
     await flushPromises()
 
-    // Kanban rows are excluded from the sidebar task list for the same reason they get no Add-task
-    // entry: the board is where a board's tasks are read and created.
+    // Kanban rows are excluded from the sidebar task list for the same reason they get no Add-task entry: the board is where a board's tasks are read and created.
     expect(wrapper.findAll('[data-task-id]')).toHaveLength(0)
 
     // No design pages section for kanban items.
@@ -173,9 +168,7 @@ describe('WorkspaceItem — design items hide the tasks list section', () => {
   })
 
   it('collapsed DESIGN item with no pages: nothing rendered under the row', async () => {
-    // Even with tasks populated, an un-expanded design item should not render anything below the
-    // row (the tasks-section guard is `isExpanded && item.item_type !== 'design'` — when collapsed,
-    // neither section renders).
+    // Even with tasks populated, an un-expanded design item should not render anything below the row (the tasks-section guard is `isExpanded && item.item_type !== …
     const store = useWorkspacesStore()
     store.expandedItemIds[ITEM_ID] = false
 

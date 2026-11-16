@@ -15,8 +15,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
 
     const role = agent.Role.from_str(message.role) orelse .assistant;
 
-    // Handle tool result messages (role == "tool") For tool messages, the
-    // tools column contains the tool_call_id string directly.
+    // Handle tool result messages (role == "tool") For tool messages, the tools column contains the tool_call_id string directly.
     if (role == .tool) {
         const agentMessage = agent.AgentMessage{
             .id = try allocator.dupe(u8, message.id),
@@ -26,20 +25,16 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
         };
         try messages.append(allocator, agentMessage);
 
-        // A provider refuses an image part on a tool message, so the picture
-        // rides in a user message directly after it.
+        // A provider refuses an image part on a tool message, so the picture rides in a user message directly after it.
         if (message.image_urls) |urls| {
             if (urls.len > 0) try messages.append(allocator, try toolImageFollowUp(allocator, message.tool_name, urls));
         }
         return messages.toOwnedSlice(allocator);
     }
 
-    // Handle assistant/user/system messages - always create a message if role
-    // is valid (but not tool role which is handled above) const finishReason
-    // = agent.FinishReason.from_str(message.finish_reason); const isToolCalls
+    // Handle assistant/user/system messages - always create a message if role is valid (but not tool role which is handled above) const finishReason = …
 
-    // For assistant/user/system roles, always create a message (even if content is empty)
-    // Tool role is handled separately above
+    // For assistant/user/system roles, always create a message (even if content is empty) Tool role is handled separately above
     if (role != .tool) {
         var tool_calls: ?[]agent.ToolCall = null;
         const toolSource = if (message.tool_calls_json.len > 0) message.tool_calls_json else message.response_content;
@@ -99,9 +94,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
         const reasoning_id: ?[]const u8 = if (message.reasoning_id) |rid| try allocator.dupe(u8, rid) else null;
         const reasoning_encrypted_content: ?[]const u8 = if (message.reasoning_encrypted_content) |rec| try allocator.dupe(u8, rec) else null;
 
-        // Handle vision + video + file support: if image_urls/video_urls or
-        // file attachments are set, create content_parts with text, images,
-        // videos and files.
+        // Handle vision + video + file support: if image_urls/video_urls or file attachments are set, create content_parts with text, images, videos and files.
         var stored_files: ?file_attachments.Stored = null;
         defer if (stored_files) |*s| s.deinit();
         if (message.file_attachments) |raw| {
@@ -146,8 +139,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
                     part_idx += 1;
                 }
             }
-            // Video URL parts (hard error downstream on unsupported model —
-            // never silently dropped)
+            // Video URL parts (hard error downstream on unsupported model — never silently dropped)
             if (message.video_urls) |vums| {
                 for (vums) |video_url| {
                     parts[part_idx] = .{
@@ -162,8 +154,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
                     part_idx += 1;
                 }
             }
-            // File parts: a text-like document rides as text (every style
-            // reads it), a binary one as a provider file part.
+            // File parts: a text-like document rides as text (every style reads it), a binary one as a provider file part.
             for (files) |file| {
                 if (file.text) |_| {
                     parts[part_idx] = .{
@@ -207,8 +198,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
     return messages.toOwnedSlice(allocator);
 }
 
-/// The `user` message that carries a tool's images, so `read_file` on a
-/// screenshot puts the screenshot in front of the model instead of its bytes.
+/// The `user` message that carries a tool's images, so `read_file` on a screenshot puts the screenshot in front of the model instead of its bytes.
 fn toolImageFollowUp(allocator: std.mem.Allocator, tool_name: []const u8, urls: []const []const u8) !agent.AgentMessage {
     const caption = if (tool_name.len > 0)
         try std.fmt.allocPrint(allocator, "The `{s}` tool attached this image — look at it before answering.", .{tool_name})
@@ -244,14 +234,10 @@ fn toolImageFollowUp(allocator: std.mem.Allocator, tool_name: []const u8, urls: 
     };
 }
 
-/// Strip the JSON tool envelope
-/// (`{"tool":…,"parameters":…,"success":…,"data":…,"error":…,"v":1}`)
-/// produced by `tool_registry.wrapToolOutput` and return just the inner
+/// Strip the JSON tool envelope (`{"tool":…,"parameters":…,"success":…,"data":…,"error":…,"v":1}`) produced by `tool_registry.wrapToolOutput` and return just the …
 fn stripToolEnvelope(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     return stripToolEnvelopeImpl(allocator, raw) catch |err| {
-        // Use the project's custom Logger (pabrikcore.loggermod) — it has its
-        // own formatter and does NOT route through std.log, so it won't
-        // increment the test runner's `log_err_count`.
+        // Use the project's custom Logger (pabrikcore.loggermod) — it has its own formatter and does NOT route through std.log, so it won't increment the test runner's …
         if (pabrikcore.loggermod.getGlobal()) |logger| {
             logger.warnFmt(
                 "[stripToolEnvelope] Agent Pabrik System error, the actual error is ->>>> {s} (input_len={d}, looks_like_json={any})",
@@ -292,8 +278,6 @@ fn stripToolEnvelopeImpl(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
 }
 
 // ─── Chat content envelopes (user + assistant) ────────────────────────────
-// / / Option A: `llm_history.response_content` holds a JSON object string for
-// / `role=user` (`{"user","name","msg"}`) and `role=assistant` (`{"agent","msg"}`).
 pub const UserEnvelope = struct {
     user: []const u8,
     name: []const u8,
@@ -313,9 +297,7 @@ pub fn encodeAssistantContent(allocator: std.mem.Allocator, agent_name: []const 
     return try std.json.Stringify.valueAlloc(allocator, AssistantEnvelope{ .agent = agent_name, .msg = msg }, .{});
 }
 
-/// The agent that wrote an assistant row, from its content envelope. Rows
-/// written before the rename carry `model`; both name the agent. Null when
-/// `raw` is not an assistant envelope. Caller frees a non-null result.
+/// The agent that wrote an assistant row, from its content envelope.
 pub fn assistantAuthor(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
     const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
     if (trimmed.len == 0 or trimmed[0] != '{') return null;
@@ -329,17 +311,14 @@ pub fn assistantAuthor(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
     return try allocator.dupe(u8, author.string);
 }
 
-/// The agent name the wire carries for a row: the column when it names a
-/// speaker, else the content envelope's author. Caller frees the result.
+/// The agent name the wire carries for a row: the column when it names a speaker, else the content envelope's author.
 pub fn wireAgentName(allocator: std.mem.Allocator, column: []const u8, envelope: []const u8) ![]u8 {
     if (column.len > 0 and !std.mem.eql(u8, column, "Agent")) return try allocator.dupe(u8, column);
     const author = try assistantAuthor(allocator, envelope);
     return author orelse try allocator.dupe(u8, column);
 }
 
-/// True when `raw` already parses as a chat envelope (object with a string
-/// `msg` plus `user` or `model`). Used by write paths for idempotence —
-/// never double-envelop a row that is already enveloped.
+/// True when `raw` already parses as a chat envelope (object with a string `msg` plus `user` or `model`).
 pub fn isChatEnvelope(allocator: std.mem.Allocator, raw: []const u8) bool {
     const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
     if (trimmed.len == 0 or trimmed[0] != '{') return false;
@@ -355,8 +334,7 @@ pub fn isChatEnvelope(allocator: std.mem.Allocator, raw: []const u8) bool {
     return false;
 }
 
-/// Unwrap a chat envelope to its `.msg` text. Returns a heap-dupe the caller
-/// owns.
+/// Unwrap a chat envelope to its `.msg` text.
 pub fn unwrapChatContent(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
     if (trimmed.len == 0) return try allocator.dupe(u8, raw);
@@ -369,14 +347,12 @@ pub fn unwrapChatContent(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     const obj = parsed.value.object;
     const msg = obj.get("msg") orelse return try allocator.dupe(u8, raw);
     if (msg != .string) return try allocator.dupe(u8, raw);
-    // Require the identity marker so a user-typed `{"msg":"hi"}` literal
-    // without `user`/`model` stays verbatim instead of being unwrapped.
+    // Require the identity marker so a user-typed `{"msg":"hi"}` literal without `user`/`model` stays verbatim instead of being unwrapped.
     if (obj.get("user") == null and obj.get("agent") == null and obj.get("model") == null) return try allocator.dupe(u8, raw);
     return try allocator.dupe(u8, msg.string);
 }
 
-/// Identity for a `role=user` envelope: the session owner's id + display
-/// name, resolved via `sessions.user_id -> users.name`.
+/// Identity for a `role=user` envelope: the session owner's id + display name, resolved via `sessions.user_id -> users.name`.
 pub const ChatIdentity = struct {
     user_id: []u8,
     name: []u8,
@@ -416,8 +392,7 @@ pub fn resolveChatUser(allocator: std.mem.Allocator, db: *database.Db, session_i
     return .{ .user_id = uid, .name = name };
 }
 
-/// Profile name picked for the session (`sessions.selected_profile_model`,
-/// e.g. `"900ribu"`), for the assistant envelope's identity field.
+/// Profile name picked for the session (`sessions.selected_profile_model`, e.g. `"900ribu"`), for the assistant envelope's identity field.
 pub fn resolveProfileName(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ![]u8 {
     var prows = try db.query(allocator, "SELECT COALESCE(selected_profile_model,'') FROM sessions WHERE id=?", &.{session_id});
     defer prows.deinit();
@@ -430,8 +405,7 @@ pub fn resolveProfileName(allocator: std.mem.Allocator, db: *database.Db, sessio
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-/// Build a minimal `LLMHistory` with `role = "tool"` and the given
-/// `response_content`.
+/// Build a minimal `LLMHistory` with `role = "tool"` and the given `response_content`.
 fn makeToolMessage(allocator: std.mem.Allocator, response_content: []const u8) !LLMHistory {
     return LLMHistory{
         .id = try allocator.dupe(u8, "msg_test_001"),
@@ -642,8 +616,7 @@ test "tool message with JSON missing v tag falls back to full content" {
 
 test "tool message with legacy XML envelope degrades to raw text" {
     const allocator = testing.allocator;
-    // Pre-migration history row: not JSON, so it passes through unchanged
-    // and renders as raw text downstream. No bulk-rewrite of history.
+    // Pre-migration history row: not JSON, so it passes through unchanged and renders as raw text downstream.
     const legacy = "<tool><name>foo</name></tool>";
     var msg = try makeToolMessage(allocator, legacy);
     defer msg.deinit(allocator);
@@ -657,8 +630,7 @@ test "tool message with legacy XML envelope degrades to raw text" {
 // ─── Tests: data payload structure (JSON preserved) ────────────────────
 
 test "tool message data containing markup chars keeps the payload intact" {
-    // read_file's data is a JSON object; <>& inside strings need no
-    // escaping and round-trip verbatim through the envelope.
+    // read_file's data is a JSON object; <>& inside strings need no escaping and round-trip verbatim through the envelope.
     const allocator = testing.allocator;
     const envelope =
         "{\"tool\":\"read_file\",\"parameters\":{\"path\":\"/home/user/file.txt\"}," ++

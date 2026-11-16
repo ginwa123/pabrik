@@ -1,5 +1,4 @@
-/** SkillList.vue — search, facets, sort, count and keyboard navigation. The
- * API is mocked at the boundary; the assertions read the rendered rows. */
+/** SkillList.vue — search, facets, sort, count and keyboard navigation. */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -109,8 +108,7 @@ describe('SkillList — searching', () => {
     await wrapper.find('[data-testid="skill-search-input"]').setValue('kubernetes')
     await flushPromises()
 
-    // A distinct state from "this workspace has no skills": the workspace
-    // HAS skills, the search found none, and only this one can be cleared.
+    // A distinct state from "this workspace has no skills": the workspace HAS skills, the search found none, and only this one can be cleared.
     expect(wrapper.find('[data-testid="skill-list-no-match"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="skill-list-empty"]').exists()).toBe(false)
 
@@ -205,8 +203,7 @@ describe('SkillList — sorting', () => {
     await wrapper.find('[data-testid="skill-sort-select"]').setValue('auto_improve')
     await flushPromises()
 
-    // Editable rows first, then alphabetical among them — "verify"
-    // precedes "zig", and the pinned row sinks to the bottom.
+    // Editable rows first, then alphabetical among them — "verify" precedes "zig", and the pinned row sinks to the bottom.
     expect(renderedNames(wrapper)).toEqual([
       'verify-html-wireframe',
       'zig-build-test-sharding',
@@ -333,8 +330,7 @@ describe('SkillList — the auto-improve flag', () => {
     seedWorkspace()
     const wrapper = await mountList()
 
-    // It used to be one checkbox per row — three here, 41 on a real
-    // workspace — each a PATCH on click.
+    // It used to be one checkbox per row — three here, 41 on a real workspace — each a PATCH on click.
     expect(wrapper.findAll('[data-testid="skill-auto-improve-toggle"]').length).toBe(0)
   })
 

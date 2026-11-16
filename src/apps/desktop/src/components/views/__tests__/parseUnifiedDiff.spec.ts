@@ -50,8 +50,7 @@ describe('parseUnifiedDiff', () => {
   })
 })
 
-// A chunk with two hunks, a `\ No newline` marker, and a rename header —
-// the shapes that make a naive `+`/`-` line count disagree with the parser.
+// A chunk with two hunks, a `\ No newline` marker, and a rename header — the shapes that make a naive `+`/`-` line count disagree with the parser.
 const MULTI_HUNK = `diff --git a/x.txt b/x.txt
 similarity index 90%
 rename from old.txt
@@ -75,8 +74,7 @@ describe('countDiffLines', () => {
   })
 
   it('agrees with parseUnifiedDiff on the same chunk', () => {
-    // The row counts and the center diff are two views of one chunk; if
-    // they ever disagree the panel is lying about its own file.
+    // The row counts and the center diff are two views of one chunk; if they ever disagree the panel is lying about its own file.
     const parsed = parseUnifiedDiff(MULTI_HUNK)
     expect(countDiffLines(MULTI_HUNK)).toEqual({
       added: parsed.added,
@@ -85,9 +83,7 @@ describe('countDiffLines', () => {
   })
 
   it('does not count the --- / +++ headers or the no-newline marker', () => {
-    // `--- a/x` and `+++ b/x` both start with -/+ but are headers, and
-    // `\ No newline at end of file` starts with neither. Only the parser's
-    // rule — nothing before the first hunk counts — keeps them out.
+    // `--- a/x` and `+++ b/x` both start with -/+ but are headers, and `\ No newline at end of file` starts with neither.
     const headerOnly = 'diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n'
     expect(countDiffLines(headerOnly)).toEqual({ added: 0, removed: 0 })
   })

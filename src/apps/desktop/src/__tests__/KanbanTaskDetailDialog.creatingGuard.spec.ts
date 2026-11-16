@@ -1,5 +1,4 @@
-/** Tests for the double-click guard on the create-mode commit buttons ("Create task" + "▶ Create
- * task & run agent") in KanbanTaskDetailDialog. */
+/** Tests for the double-click guard on the create-mode commit buttons ("Create task" + "▶ Create task & run agent") in KanbanTaskDetailDialog. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -68,8 +67,6 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     await typeName('My task')
 
     // With no click there is nothing to attribute, so the neutral wording lands on the run action.
-    // The flat "Create task" button keeps its own label — the two used to read "Creating…" side by
-    // side, so the footer could not say which commit the user had actually pressed.
     const runBtn = findInDom<HTMLButtonElement>(
       '[data-testid="kanban-task-detail-create-and-run"]',
     )
@@ -167,9 +164,7 @@ describe('KanbanTaskDetailDialog — creating prop (double-click guard)', () => 
     expect(saveBtn?.disabled).toBe(true)
     expect(saveBtn?.textContent?.trim()).toBe('Save')
 
-    // Make it dirty → Save enables despite creating=true (edit mode ignores the creating prop — the
-    // host only binds it on the create-mode mount). Edit mode's name input uses the
-    // `kanban-task-detail-name` testid (create uses `-create-name`).
+    // Make it dirty → Save enables despite creating=true (edit mode ignores the creating prop — the host only binds it on the create-mode mount).
     const nameInput = findInDom<HTMLInputElement>(
       '[data-testid="kanban-task-detail-name"]',
     )

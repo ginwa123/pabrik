@@ -1,5 +1,4 @@
-//! The HTTP seam the S3 backend talks through. A test supplies a fake and
-//! asserts on the requests it received; production supplies the real client.
+//! The HTTP seam the S3 backend talks through.
 
 const std = @import("std");
 
@@ -36,8 +35,7 @@ pub const Response = struct {
     status: u16,
     /// Owned by the caller; free with `deinit`.
     body: []u8,
-    /// The `Content-Length` the server reported, when it reported one. A HEAD
-    /// response carries the object size here and an empty body.
+    /// The `Content-Length` the server reported, when it reported one.
     content_length: ?u64 = null,
 
     pub fn deinit(self: Response, allocator: std.mem.Allocator) void {

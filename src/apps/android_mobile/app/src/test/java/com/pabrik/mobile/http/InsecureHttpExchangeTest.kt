@@ -14,43 +14,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * The debug build's one deliberate hole, driven against a real socket.
- *
- * A shipped pabrik client is HTTPS-only, and that is enforced in two places: the
- * `require` in `HttpsAuthTransport`'s constructor, and the `as? HttpsURLConnection`
- * casts in the two exchanges. Both were unconditional, which meant an emulator
- * could not reach a pabrik running on the machine hosting it — and a test that
- * cannot reach a server cannot test what the server sent.
- *
- * So the checks were widened behind `BuildConfig.ALLOW_INSECURE_HTTP`. Widening
- * a security check is the kind of change that is easy to make and easy to
- * over-make, so each half is pinned here separately, and the halves fail
- * differently:
- *
- *  * the constructor guard is asserted by *constructing* — it used to throw from
- *    a ViewModel factory, so its failure mode was a crash on launch rather than
- *    a failed request;
- *  * the exchange is driven against a throwaway `ServerSocket` on 127.0.0.1,
- *    because the JSON and binary paths are separate classes and only one of them
- *    was previously reachable from a local server.
- *
- * The socket is a real one on a real loopback port, the same shape
- * `HttpChatEventStreamSocketTest` uses — a stub `openConnection` would prove the
- * cast changed and nothing about bytes.
- */
+/** The debug build's one deliberate hole, driven against a real socket. */
 class InsecureHttpExchangeTest {
 
     private lateinit var server: ServerSocket
     private val accepted = CopyOnWriteArrayList<Socket>()
 
-    /**
-     * The request lines the stub was actually handed.
-     *
-     * The stub answers 200 to anything, so a doubled slash in the path — the
-     * whole point of the normalisation-order test — is invisible in the status
-     * code. The bytes the client wrote are the only place it shows up.
-     */
+    /** The request lines the stub was actually handed. */
     private val requestLines = CopyOnWriteArrayList<String>()
 
     @Before
@@ -67,7 +37,6 @@ class InsecureHttpExchangeTest {
                 Thread {
                     try {
                         // Read the request head so the client's write completes.
-                        // Never read past the blank line: there is no body here.
                         val reader: BufferedReader = socket.getInputStream().bufferedReader()
                         var line = reader.readLine()
                         if (line != null) requestLines += line
@@ -81,10 +50,7 @@ class InsecureHttpExchangeTest {
                         }
                         socket.getOutputStream().write((head + body).toByteArray())
                         socket.getOutputStream().flush()
-                        // Close, so the body is bounded twice over: the client
-                        // can stop at Content-Length and EOF is unambiguous. A
-                        // server that leaves the socket open makes a
-                        // Content-Length bug read as a hung suite.
+                        // Close, so the body is bounded twice over: the client can stop at Content-Length and EOF is unambiguous.
                         socket.close()
                     } catch (_: Exception) {
                         // The client hung up; nothing to do.
@@ -103,13 +69,6 @@ class InsecureHttpExchangeTest {
     private fun baseUrl() = "http://127.0.0.1:${server.localPort}"
 
     // ─── the guard, on the request path ────────────────────────────────────
-    //
-    // These three moved from "constructing it is the assertion" to "the request
-    // is the assertion". The host is a person-typed setting now, resolved per
-    // request, so the scheme rule has to be enforced where the value is used:
-    // an `IllegalArgumentException` out of a constructor would crash the app on
-    // launch for a value the person set, with no way to reach the screen that
-    // would fix it.
 
     /** Fails the first request to [url], and returns what refused it. */
     private fun refusalFor(url: String): IllegalArgumentException =
@@ -127,15 +86,11 @@ class InsecureHttpExchangeTest {
             BuildConfig.ALLOW_INSECURE_HTTP,
         )
 
-        // 127.0.0.1 is one of the three hosts the debug
-        // `network_security_config.xml` grants cleartext to, so the request goes
-        // out over plain HTTP and the scheme rule stays out of it.
+        // 127.0.0.1 is one of the three hosts the debug `network_security_config.xml` grants cleartext to, so the request goes out over plain HTTP and the scheme rule …
         val response = HttpsAuthTransport { baseUrl() }
             .get(path = "/api/auth/me", headers = emptyMap())
 
-        // A round trip, not a construction: the scheme rule now lives on the
-        // request path, so the only proof that it let this through is a server
-        // answering.
+        // A round trip, not a construction: the scheme rule now lives on the request path, so the only proof that it let this through is a server answering.
         assertEquals(200, response.statusCode)
     }
 
@@ -151,10 +106,7 @@ class InsecureHttpExchangeTest {
 
     @Test
     fun `a trailing slash does not change the decision`() {
-        // The normalisation happens before the guard, so this pins the order:
-        // a guard that ran first would accept `http://x/` and then build
-        // `http://x//api/...` URLs. The stub answers 200 to anything, so the
-        // request line is where a doubled slash would actually show up.
+        // The normalisation happens before the guard, so this pins the order
         HttpsAuthTransport { "${baseUrl()}/" }
             .get(path = "/api/auth/me", headers = emptyMap())
 
@@ -179,9 +131,7 @@ class InsecureHttpExchangeTest {
 
     @Test
     fun `a plain-http request round-trips through the binary exchange`() {
-        // The file path is a separate class with its own copy of the decision,
-        // and it is the one that downloads bytes rather than JSON — so it gets
-        // its own round trip rather than trusting the JSON path to imply it.
+        // The file path is a separate class with its own copy of the decision, and it is the one that downloads bytes rather than JSON — so it gets its own round trip …
         val response = HttpsBinaryExchange().execute(
             HttpRequestSpec(method = "GET", url = "${baseUrl()}/api/files/download?path=/a.txt"),
         )
@@ -199,7 +149,6 @@ class InsecureHttpExchangeTest {
     @Test
     fun `an https url still opens a tls connection`() {
         // The relaxation must not have replaced the TLS path with a plain one.
-        // `openConnection` does not connect, so this needs no network.
         val opened = HttpsHttpExchange.openFor("https://agent.ginwa.site/api/auth/me")
 
         assertTrue(

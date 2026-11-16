@@ -1,6 +1,4 @@
-/** Tests for subagentProgress.ts — pure reducer for the chatview's spawn_sub_agent live-progress
- * map. 2026-08-23 spawn-subagent-live-progress: ChatView.vue maintains a per-tool_call_id progress
- * map and feeds it from the SSE bus's `role="subagent_progress"` events. */
+/** Tests for subagentProgress.ts — pure reducer for the chatview's spawn_sub_agent live-progress map. 2026-08-23 spawn-subagent-live-progress: ChatView.vue … */
 import { describe, expect, it } from 'vitest'
 
 import {

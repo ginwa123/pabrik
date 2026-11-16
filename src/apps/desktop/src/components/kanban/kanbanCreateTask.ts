@@ -1,6 +1,4 @@
-/** Create-task plumbing for the board: the dialog payload contract, the File → data-URL staging and
- * the single addKanbanTask + moveTaskToColumn call pair. No try/catch — the caller keeps its guard
- * so the error channel stays in one place. */
+/** Create-task plumbing for the board: the dialog payload contract, the File → data-URL staging and the single addKanbanTask + moveTaskToColumn call pair. */
 import type { useWorkspacesStore } from '../../stores/workspaces'
 import type { PreviewFile } from '../file/FilePreview.vue'
 import { buildTaskCreateMessage } from './buildTaskCreateMessage'
@@ -11,32 +9,21 @@ export interface CreateTaskPayload {
   description: string
   is_auto_retry_until_stop?: '0' | '1'
   // Create-mode worktree toggle from the dialog (undefined = off).
-  // Only consumed on the create_and_run path.
   useGitWorktree?: boolean
-  // Create-mode worktree path from the dialog (undefined/empty =
-  // agent picks the path itself). Only consumed on create_and_run.
+  // Create-mode worktree path from the dialog (undefined/empty = agent picks the path itself).
   worktreePath?: string
-  // Create-mode base ref the worktree branches FROM, e.g. `origin/main`
-  // (undefined/empty = no `Base:` line, so the agent branches from the
-  // repo HEAD). Only consumed on create_and_run.
+  // Create-mode base ref the worktree branches FROM, e.g. `origin/main` (undefined/empty = no `Base:` line, so the agent branches from the repo HEAD).
   worktreeBaseBranch?: string
-  // Create-mode auto-merge flag from the dialog (undefined = off). Bakes
-  // `#Notes AutoMerge` into the create_and_run queue_message, which is what
-  // tells the agent to wait for CI and merge. Only consumed on create_and_run.
+  // Create-mode auto-merge flag from the dialog (undefined = off).
   autoMerge?: boolean
   // The `Method:` line under that note: merge | squash | rebase.
   autoMergeMethod?: string
   tags?: string[]
-  // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default / "Default
-  // (top-level config)". Threaded through to runAgentOnNewTask only (Path A — plain create doesn't
-  // persist the choice; user can set from chatview later).
+  // NEW (plan: 2026-08-06-kanban-task-profile-selector).
   selectedAgent?: string
-  // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces
-  // 2026-08-06-kanban-no-base64-in-desc). Files the dialog staged in create mode
-  // (KanbanDescriptionEditor.pendingFiles).
+  // NEW (plan: 2026-08-06-kanban-image-base64-in-chatview, replaces 2026-08-06-kanban-no-base64-in-desc).
   pendingFiles?: PreviewFile[]
-  // NEW (Migration 112 — kanban multi-skill task create). The skills the
-  // dialog picked, in pick order. Empty array = no skill.
+  // NEW (Migration 112 — kanban multi-skill task create).
   skillNames?: string[]
   cwdSession?: string
 }
@@ -58,8 +45,7 @@ export interface SubmitKanbanTaskArgs {
   uploadedImageUrls: string[]
 }
 
-/** Create the task and move it into the clicked column. `false` means "the store reported no task"
- * — the caller surfaces that as a retryable error and keeps the dialog open. */
+/** Create the task and move it into the clicked column. */
 export const submitKanbanTask = async ({
   store,
   wsId,
@@ -68,8 +54,7 @@ export const submitKanbanTask = async ({
   payload,
   uploadedImageUrls,
 }: SubmitKanbanTaskArgs): Promise<boolean> => {
-  // NEW (plan: 2026-08-14-kanban-task-create-endpoints). The 2-step addTask + (in create_and_run)
-  // runAgentOnNewTask dance is now a single call to addKanbanTask(mode, payload).
+  // NEW (plan: 2026-08-14-kanban-task-create-endpoints).
   const queueMessage =
     payload.mode === 'create_and_run'
       ? buildTaskCreateMessage(
@@ -96,21 +81,15 @@ export const submitKanbanTask = async ({
   })
 
   if (!response.task) {
-    // Partial success (create_and_run only) — the store action
-    // already surfaced a toast. Keep the dialog open so the user
-    // can retry without re-typing.
+    // Partial success (create_and_run only) — the store action already surfaced a toast.
     return false
   }
 
   const taskId = response.task.id
 
-  // Move the task to the column the user clicked. The backend's
-  // auto-assign put it in the first column; moveTaskToColumn
-  // overwrites that. Position 0 = top of the column.
+  // Move the task to the column the user clicked.
   await store.moveTaskToColumn(wsId, itId, taskId, desiredColumnId, 0)
 
-  // In plain create mode the backend's INSERT path already persisted image_urls (via the
-  // createStandardTask useCase). In create_and_run mode the same path applies. We don't need a
-  // follow-up updateTaskDetails call — the columns are populated server-side now.
+  // In plain create mode the backend's INSERT path already persisted image_urls (via the createStandardTask useCase).
   return true
 }

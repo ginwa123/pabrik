@@ -52,15 +52,7 @@ import com.pabrik.mobile.ui.PabrikField
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
 
-/**
- * The `+` that opens the create flow, drawn at the top of an unfolded project.
- *
- * A full-width row rather than a small glyph on the project row itself. The
- * project row is already a 48dp tap target that folds the list, so a second
- * target on it would either be too small to hit reliably or would swallow taps
- * meant for the fold; on a phone a 24dp `+` inside a row that also collapses is
- * a coin flip. The row below it is 44dp tall and does exactly one thing.
- */
+/** The `+` that opens the create flow, drawn at the top of an unfolded project. */
 @Composable
 internal fun CreateTaskRow(
     projectName: String,
@@ -70,9 +62,7 @@ internal fun CreateTaskRow(
 ) {
     Surface(
         onClick = onClick,
-        // Disabled while the create is in flight, so a second tap cannot become
-        // a second "New Chat". The HomeViewModel guards this too — this is the
-        // affordance, that is the invariant.
+        // Disabled while the create is in flight, so a second tap cannot become a second "New Chat".
         enabled = !isBusy,
         modifier = modifier
             .fillMaxWidth()
@@ -116,19 +106,7 @@ internal fun CreateTaskRow(
     }
 }
 
-/**
- * The two cards, and nothing else.
- *
- * Two is the whole set, and the third that used to exist is deliberately not
- * here: per-task routines were deleted with their table (Migration 084) and
- * routines are now their own project type, so a "Routine" card would POST a
- * value the backend answers `400 RoutineTasksRemoved` for. The desktop's
- * `AddTaskPickerDialog` carries the same two.
- *
- * A bottom sheet rather than a dialog because the reader reached it from a
- * drawer that is still behind it, and a sheet that leaves its context visible is
- * the one a thumb can back out of without thinking.
- */
+/** The two cards, and nothing else. */
 @Composable
 fun CreateTaskPickerSheet(
     projectName: String,
@@ -152,14 +130,7 @@ fun CreateTaskPickerSheet(
     )
 }
 
-/**
- * The sheet chrome both pickers share: the "Add to …" heading, the card list,
- * and the drag handle a `ModalBottomSheet` puts above them.
- *
- * @param sheetTestTag lets a UI test name the sheet it is driving. Only one
- *   sheet is left, but the tag is still named rather than inlined so the test
- *   that drives it reads the same way as every other test tag in this file.
- */
+/** The sheet chrome both pickers share: the "Add to …" heading, the card list, and the drag handle a `ModalBottomSheet` puts above them. @param sheetTestTag lets … */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PickerSheetScaffold(
@@ -244,20 +215,7 @@ private fun PickerCard(
     }
 }
 
-/**
- * The memory form: a file name and a body.
- *
- * The name is the **filename**, not a title, and the field says so. The backend
- * writes `<project.path>/.pabrik/memories/<name>` and stores that same string as
- * the task's display name, so asking for a separate title would mean two names
- * for one file and a row in the drawer whose label is not the file the reader
- * will later look for. The desktop's `AddMemoryDialog` asks for the same thing
- * the same way.
- *
- * The `.md` requirement is in the label rather than in an error that appears
- * after a failed submit: every one of these three rules is knowable before
- * typing, and a rule the reader can read is better than a rule they discover.
- */
+/** The memory form: a file name and a body. */
 @Composable
 fun NewMemoryDialog(
     projectName: String,
@@ -287,11 +245,7 @@ fun NewMemoryDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    // Not `enabled = !isSubmitting`: a field that goes dead the
-                    // instant Submit is pressed loses focus and the keyboard,
-                    // and on a slow network that is a visible hiccup on a form
-                    // that is about to close anyway. Read-only says the same
-                    // thing without the flicker.
+                    // Not `enabled = !isSubmitting`: a field that goes dead the instant Submit is pressed loses focus and the keyboard, and on a slow network that is a visible …
                     readOnly = isSubmitting,
                     singleLine = true,
                     label = { Text("File name (must end in .md)") },
@@ -308,8 +262,7 @@ fun NewMemoryDialog(
                     label = { Text("Content") },
                     modifier = Modifier
                         .fillMaxWidth()
-                        // Tall enough to write in. A one-line field for a body
-                        // the agent will read in full is a field nobody fills in.
+                        // Tall enough to write in.
                         .heightIn(min = 120.dp)
                         .testTag("create_memory_content"),
                     colors = fieldColors(),
@@ -338,9 +291,7 @@ fun NewMemoryDialog(
             }
         },
         dismissButton = {
-            // "Back" rather than "Cancel": there is a step behind this form, and
-            // a button labelled Cancel invites the reader to close the flow when
-            // what they mean is "not this one, the other one".
+            // "Back" rather than "Cancel": there is a step behind this form, and a button labelled Cancel invites the reader to close the flow when what they mean is "not …
             TextButton(
                 onClick = onBack,
                 enabled = !isSubmitting,
@@ -363,24 +314,7 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
     cursorColor = PabrikAccent,
 )
 
-/**
- * Renders whichever step [controller] is on, over whatever is already there.
- *
- * One host for both entry points — the drawer's `+` and the project screen's
- * `+` — so there is a single create flow in the app rather than two that agree
- * today. It composes nothing when the flow is [CreateTaskStep.Idle], so calling
- * it unconditionally costs one state read.
- *
- * Every step gets a case here, so a step added to [CreateTaskStep] without a
- * branch is a compile error rather than a form that silently does not open.
- *
- * @param kanbanData what the board's form needs that the form cannot fetch for
- *   itself. Empty is fine: a create needs none of it.
- * @param onRequestKanbanData fired once per open of the board's form, so the
- *   columns, the profiles and the server home arrive while the reader is typing
- *   a title rather than after they press commit. Keyed on the step, so a form
- *   that is already open is not re-fetched on every recomposition.
- */
+/** Renders whichever step [controller] is on, over whatever is already there. */
 @Composable
 fun CreateTaskHost(
     controller: CreateTaskController,

@@ -1,5 +1,4 @@
-// Functional wire test for terminal max-20 cap + 429. Zig port of
-// `tests/functional/terminal_limits_test.py` (same test names, same order).
+// Functional wire test for terminal max-20 cap + 429.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +8,10 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// The server's own cap (`terminal_session.max_sessions`). Both tests
-/// fill exactly this many sessions before probing the 21st.
+/// The server's own cap (`terminal_session.max_sessions`).
 const MAX_SESSIONS: usize = 20;
 
-/// `POST /api/terminal/sessions` with the frontend's exact body shape,
-/// spawning a shell rooted at the harness's isolated tempdir.
+/// `POST /api/terminal/sessions` with the frontend's exact body shape, spawning a shell rooted at the harness's isolated tempdir.
 fn createTerminal(h: *Harness, expect: []const u16) !harness.Response {
     const body = try std.json.Stringify.valueAlloc(gpa, .{
         .cwd = h.temp_dir,
@@ -29,8 +26,7 @@ fn createTerminal(h: *Harness, expect: []const u16) !harness.Response {
     });
 }
 
-/// `DELETE /api/terminal/sessions/<id>` — 200 when it was live, 404 when
-/// the server already reaped it (either status is fine for cleanup).
+/// `DELETE /api/terminal/sessions/<id>` — 200 when it was live, 404 when the server already reaped it (either status is fine for cleanup).
 fn deleteTerminal(h: *Harness, id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/terminal/sessions/{s}", .{id});
     defer gpa.free(path);
@@ -38,9 +34,7 @@ fn deleteTerminal(h: *Harness, id: []const u8) !void {
     defer r.deinit();
 }
 
-/// Python's `try/finally` cleanup block: every id the test created is torn
-/// down whether the assertions passed or not. Zig spells that as a `defer`
-/// that owns the id list.
+/// Python's `try/finally` cleanup block: every id the test created is torn down whether the assertions passed or not.
 const SessionBag = struct {
     h: *Harness,
     ids: std.ArrayList([]u8) = .empty,
@@ -54,7 +48,6 @@ const SessionBag = struct {
     }
 
     /// Hand back the most-recently-added id, freeing the copy.
-    /// The Python original used `ids.pop()` on the same list.
     fn popNewest(self: *SessionBag) ![]u8 {
         const last = self.ids.pop().?;
         return last;
@@ -69,8 +62,7 @@ const SessionBag = struct {
     }
 };
 
-/// Create `n` sessions, tracking every id. Fails the test if any
-/// create does not answer 201.
+/// Create `n` sessions, tracking every id.
 fn fillTerminals(h: *Harness, bag: *SessionBag, n: usize) !void {
     for (0..n) |_| {
         var r = try createTerminal(h, &.{201});
@@ -104,9 +96,7 @@ test "21st_terminal_returns_429" {
     var doc = try rejected.json();
     defer doc.deinit();
 
-    // makeErrorResponse shape: { error: <message> }. Python accepted
-    // the substring anywhere in the rendered body; the contract under
-    // test is that the cap is NAMED in the error.
+    // makeErrorResponse shape: { error: <message> }.
     const message = doc.str("error") orelse {
         std.debug.print("429 body should carry an `error` field, got: {s}\n", .{rejected.body});
         return error.TestUnexpectedResult;
@@ -130,8 +120,7 @@ test "delete_frees_a_slot" {
 
     try fillTerminals(&h, &bag, MAX_SESSIONS);
 
-    // The cap really is full — probe it before freeing anything, so a
-    // later "the slot was free all along" cannot explain the pass.
+    // The cap really is full — probe it before freeing anything, so a later "the slot was free all along" cannot explain the pass.
     {
         var rejected = try createTerminal(&h, &.{429});
         defer rejected.deinit();

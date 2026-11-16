@@ -1,5 +1,4 @@
-// Functional e2e for the terminal duplex WebSocket. Zig port of
-// `tests/functional/terminal_ws_test.py` (same test names, same order).
+// Functional e2e for the terminal duplex WebSocket.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,24 +11,19 @@ const Io = std.Io;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// RFC 6455 §1.3 — the GUID appended to `Sec-WebSocket-Key` before
-/// hashing to produce `Sec-WebSocket-Accept`.
+/// RFC 6455 §1.3 — the GUID appended to `Sec-WebSocket-Key` before hashing to produce `Sec-WebSocket-Accept`.
 const WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-/// Read buffer for the socket. Must exceed the largest frame payload
-/// this suite will see; see hazard (1) in the header.
+/// Read buffer for the socket.
 const rd_buf_len = 128 * 1024;
 
-/// The shell every terminal in this suite runs. Windows has no `/bin/sh`;
-/// `cmd.exe` is its interactive equivalent and every assertion below holds
-/// for it unchanged.
+/// The shell every terminal in this suite runs.
 const SHELL = if (builtin.os.tag == .windows)
     "C:\\Windows\\System32\\cmd.exe"
 else
     "/bin/sh";
 
-/// Write buffer for the socket. One frame is at most a few hundred
-/// bytes here, but `Stream.Writer` needs a real buffer to own.
+/// Write buffer for the socket.
 const wr_buf_len = 8 * 1024;
 
 /// Monotonic milliseconds (`.awake` is monotonic, not wall clock).
@@ -37,8 +31,7 @@ fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// A file-local PRNG for the two places a test needs unpredictable bytes: the
-/// handshake key and the per-frame mask.
+/// A file-local PRNG for the two places a test needs unpredictable bytes: the handshake key and the per-frame mask.
 var prng: std.Random.DefaultPrng = undefined;
 var prng_ready = false;
 
@@ -52,8 +45,7 @@ fn randU64() u64 {
     return prng.random().int(u64);
 }
 
-/// A shutdown watchdog for ONE blocking read. Python expressed the same
-/// budget with `sock.settimeout(remaining)`.
+/// A shutdown watchdog for ONE blocking read.
 const ReadDeadline = struct {
     stop: std.atomic.Value(bool),
     thread: std.Thread,
@@ -62,9 +54,7 @@ const ReadDeadline = struct {
     fn start(stream: *const Io.net.Stream, ms: i64) !*ReadDeadline {
         const self = try gpa.create(ReadDeadline);
         errdefer gpa.destroy(self);
-        // `gpa.create` does not run field defaults, so `stop` is assigned
-        // explicitly — an uninitialised atomic the watchdog happens to read
-        // as "already fired" would shut the socket down on its first poll.
+        // `gpa.create` does not run field defaults, so `stop` is assigned explicitly — an uninitialised atomic the watchdog happens to read as "already fired" would shut …
         self.* = .{ .stop = .init(false), .thread = undefined };
         self.thread = std.Thread.spawn(.{}, watch, .{ stream, &self.stop, ms }) catch |err| {
             gpa.destroy(self);
@@ -79,9 +69,7 @@ const ReadDeadline = struct {
             if (stop.load(.acquire)) return;
             Io.sleep(io, .fromMilliseconds(20), .awake) catch return;
         }
-        // Re-check: the read may have completed in the same window this loop
-        // last polled, and shutting down a socket that is about to be read
-        // again would turn a clean EOF into an error the caller mistakes for
+        // Re-check: the read may have completed in the same window this loop last polled, and shutting down a socket that is about to be read again would turn a clean …
         if (stop.load(.acquire)) return;
         stream.shutdown(io, .recv) catch {};
     }
@@ -94,9 +82,7 @@ const ReadDeadline = struct {
     }
 };
 
-/// A blocking raw-socket WebSocket client (test-only, IPv4). The Python
-/// version was a class over `socket.create_connection` with a `self.buf`
-/// leftover buffer.
+/// A blocking raw-socket WebSocket client (test-only, IPv4).
 const WsConn = struct {
     stream: Io.net.Stream,
     rd_buf: [rd_buf_len]u8 = undefined,
@@ -108,15 +94,11 @@ const WsConn = struct {
     /// True once `deinit` must not double-close.
     closed: bool = false,
 
-    /// Open a socket to `127.0.0.1:port` and send the upgrade request
-    /// for `path`. The response head is NOT read here — the caller
-    /// does that with `readHttpResponse`, matching the Python.
+    /// Open a socket to `127.0.0.1:port` and send the upgrade request for `path`.
     fn connect(port: u16, path: []const u8) !*WsConn {
         const self = try gpa.create(WsConn);
         errdefer gpa.destroy(self);
-        // `gpa.create` does NOT run field default initialisers, so the
-        // defaults (`closed`, and the two `undefined` buffers) are
-        // applied here rather than assumed.
+        // `gpa.create` does NOT run field default initialisers, so the defaults (`closed`, and the two `undefined` buffers) are applied here rather than assumed.
         self.* = .{ .stream = undefined, .reader = undefined, .writer = undefined, .key = undefined };
 
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(port) };
@@ -124,13 +106,11 @@ const WsConn = struct {
         self.stream = try addr.connect(io, .{ .mode = .stream });
         errdefer self.stream.close(io);
 
-        // Built AFTER `self` is final, so the stored buffer addresses
-        // are the heap ones the test will read and write.
+        // Built AFTER `self` is final, so the stored buffer addresses are the heap ones the test will read and write.
         self.reader = self.stream.reader(io, self.rd_buf[0..]);
         self.writer = self.stream.writer(io, self.wr_buf[0..]);
 
-        // 16 random bytes, base64-encoded — exactly what Python's
-        // `base64.b64encode(os.urandom(16))` produced.
+        // 16 random bytes, base64-encoded — exactly what Python's `base64.b64encode(os.urandom(16))` produced.
         var nonce: [16]u8 = undefined;
         var r = randU64();
         for (&nonce) |*b| {
@@ -171,17 +151,13 @@ const WsConn = struct {
         gpa2.destroy(self);
     }
 
-    /// The status line + headers of the upgrade response. Python's
-    /// `read_http_response` returned `(status_line, headers)` with header
-    /// NAMES lowercased.
+    /// The status line + headers of the upgrade response.
     fn readHttpResponse(self: *WsConn, deadline_ms: i64) !HttpHead {
         var guard = try ReadDeadline.start(&self.stream, deadline_ms);
         defer guard.disarm();
 
         var raw: std.Io.Writer.Allocating = .init(gpa);
-        // `errdefer`, NOT `defer`: on the success path `toOwnedSlice`
-        // below TAKES the buffer, and a `defer` deinit would then free
-        // memory `HttpHead.raw` still points at.
+        // `errdefer`, NOT `defer`: on the success path `toOwnedSlice` below TAKES the buffer, and a `defer` deinit would then free memory `HttpHead.raw` still points at.
         errdefer raw.deinit();
 
         var seen: usize = 0;
@@ -203,8 +179,7 @@ const WsConn = struct {
             }
         }
 
-        // `raw_head` is owned by the `HttpHead`: the two views below
-        // are sub-slices of it, so keeping the owner is what frees it.
+        // `raw_head` is owned by the `HttpHead`: the two views below are sub-slices of it, so keeping the owner is what frees it.
         const raw_head = try raw.toOwnedSlice();
         errdefer gpa.free(raw_head);
         const first_nl = std.mem.indexOf(u8, raw_head, "\r\n") orelse raw_head.len;
@@ -259,9 +234,7 @@ const WsConn = struct {
             length = @intCast(wide);
         }
 
-        // Hazard (1): `take` asserts rather than grows, so an
-        // over-long payload is a clear failure here instead of a
-        // DebugAllocator abort inside the stdlib.
+        // Hazard (1): `take` asserts rather than grows, so an over-long payload is a clear failure here instead of a DebugAllocator abort inside the stdlib.
         if (length > rd_buf_len) {
             std.debug.print("frame payload {d} exceeds the {d}-byte reader buffer\n", .{ length, rd_buf_len });
             return error.TestUnexpectedResult;
@@ -286,8 +259,7 @@ const WsConn = struct {
         return error.TestUnexpectedResult;
     }
 
-    /// Send one MASKED client frame. `fin` is always 1 — the Python's
-    /// `send_text` / `send_close` did not fragment either.
+    /// Send one MASKED client frame.
     fn sendFrame(self: *WsConn, opcode: u8, payload: []const u8) !void {
         if (payload.len > 125) {
             std.debug.print("client frame of {d} bytes exceeds the 125-byte single-byte length form\n", .{payload.len});
@@ -320,8 +292,7 @@ const WsConn = struct {
     }
 };
 
-/// The upgrade response. `status_line` and `headers` are VIEWS into
-/// `raw_head`, which the struct owns — one allocation for all three.
+/// The upgrade response.
 const HttpHead = struct {
     /// The whole head, terminator included. Freed by `deinit`.
     raw_head: []u8,
@@ -335,8 +306,7 @@ const HttpHead = struct {
         self.* = undefined;
     }
 
-    /// Case-insensitive header lookup — header names are
-    /// case-insensitive per RFC 9110 and the Python lowercased them.
+    /// Case-insensitive header lookup — header names are case-insensitive per RFC 9110 and the Python lowercased them.
     fn get(self: *const HttpHead, name: []const u8) ?[]const u8 {
         var it = std.mem.splitSequence(u8, std.mem.trimEnd(u8, self.headers, "\r\n"), "\r\n");
         while (it.next()) |line| {
@@ -350,12 +320,9 @@ const HttpHead = struct {
     }
 };
 
-/// `base64(sha1(key + WS_MAGIC))` — the value the server must echo in
-/// `Sec-WebSocket-Accept` (RFC 6455 §4.2.2 step 5.2).
+/// `base64(sha1(key + WS_MAGIC))` — the value the server must echo in `Sec-WebSocket-Accept` (RFC 6455 §4.2.2 step 5.2).
 fn expectedAccept(key: []const u8) ![]u8 {
-    // `key` is a runtime slice, so the concatenation cannot be a
-    // comptime-sized stack array. `Io.Writer.Allocating` is the 0.16
-    // idiom for "build a string I own".
+    // `key` is a runtime slice, so the concatenation cannot be a comptime-sized stack array.
     var buf: std.Io.Writer.Allocating = .init(gpa);
     defer buf.deinit();
     try buf.writer.writeAll(key);
@@ -369,12 +336,9 @@ fn expectedAccept(key: []const u8) ![]u8 {
     return out;
 }
 
-/// `_create_session` — `POST /api/terminal/sessions`, return the OWNED
-/// terminal id.
+/// `_create_session` — `POST /api/terminal/sessions`, return the OWNED terminal id.
 fn createSession(h: *Harness) ![]u8 {
-    // `std.json.Stringify`, never a hand-built template: `h.temp_dir` is a
-    // Windows path full of backslashes, and `{"cwd":"C:\Users\..."}` is not
-    // JSON — the server answers 400 and the failure looks like a terminal
+    // `std.json.Stringify`, never a hand-built template: `h.temp_dir` is a Windows path full of backslashes, and `{"cwd":"C:\Users\..."}` is not JSON — the server …
     const body = try std.json.Stringify.valueAlloc(gpa, .{ .cwd = h.temp_dir, .shell = SHELL }, .{});
     defer gpa.free(body);
 
@@ -390,8 +354,6 @@ fn createSession(h: *Harness) ![]u8 {
 }
 
 /// `_collect_until` — read frames until a binary payload contains `marker`.
-/// Returns the accumulated PTY bytes (OWNED), or null when the deadline
-/// passed / the stream closed first.
 fn collectUntil(ws: *WsConn, marker: []const u8, deadline_ms: i64) !?[]u8 {
     var seen: std.ArrayList(u8) = .empty;
     errdefer seen.deinit(gpa);
@@ -400,8 +362,7 @@ fn collectUntil(ws: *WsConn, marker: []const u8, deadline_ms: i64) !?[]u8 {
     while (nowMs() < deadline) {
         const remaining = deadline - nowMs();
         var frame = ws.readFrame(@max(remaining, 1_000)) catch |err| {
-            // The Python let a timeout/EOF out of the loop and then failed
-            // the marker assertion with `seen`.
+            // The Python let a timeout/EOF out of the loop and then failed the marker assertion with `seen`.
             std.debug.print("stopped collecting: {s}; seen {d} bytes so far\n", .{ @errorName(err), seen.items.len });
             seen.deinit(gpa);
             return null;
@@ -415,21 +376,17 @@ fn collectUntil(ws: *WsConn, marker: []const u8, deadline_ms: i64) !?[]u8 {
                 return try seen.toOwnedSlice(gpa);
             }
         } else if (frame.opcode == 0x1) {
-            // text — JSON control frames (`exit`). No assertion reads
-            // them here; a decode failure is exactly what the Python's
-            // `except (ValueError, UnicodeDecodeError): pass` ignored.
+            // text — JSON control frames (`exit`).
         } else if (frame.opcode == 0x8) {
             break; // close
         }
     }
-    // Deadline reached with frames still arriving, or the server sent a
-    // close: same leak hazard as the read-failure path above.
+    // Deadline reached with frames still arriving, or the server sent a close: same leak hazard as the read-failure path above.
     seen.deinit(gpa);
     return null;
 }
 
-/// Render `seen` for a failure message, with non-printable bytes
-/// escaped (raw PTY output is full of them).
+/// Render `seen` for a failure message, with non-printable bytes escaped (raw PTY output is full of them).
 fn escapeForMessage(gpa_: std.mem.Allocator, s: []const u8) []u8 {
     var out: std.Io.Writer.Allocating = .init(gpa_);
     for (s) |c| {
@@ -444,9 +401,7 @@ fn escapeForMessage(gpa_: std.mem.Allocator, s: []const u8) []u8 {
     };
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Handshake (101 + valid accept) → masked input → binary echo.
 test "ws_echo_round_trip" {
@@ -487,9 +442,7 @@ test "ws_echo_round_trip" {
         }
     }
 
-    // 2. Masked input → binary echo back. The two frames mirror the CLIENT:
-    // the typed text, then Enter as a bare `\r` (xterm's onData) — never CRLF.
-    // A suite that writes its own CRLF tests its spelling, not the contract.
+    // 2. Masked input → binary echo back. The two frames mirror the CLIENT
     const marker = "WS-MARK-4f8e2a";
     {
         const msg = try std.fmt.allocPrint(gpa, "{{\"type\":\"input\",\"data\":\"echo {s}\"}}", .{marker});
@@ -521,8 +474,7 @@ test "ws_echo_round_trip" {
     }
 }
 
-// Attaching to an unknown id yields NO PTY bytes — the server runs the
-// close handshake (a close frame) or drops the socket.
+// Attaching to an unknown id yields NO PTY bytes — the server runs the close handshake (a close frame) or drops the socket.
 test "ws_unknown_id_rejected" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -542,8 +494,7 @@ test "ws_unknown_id_rejected" {
         return error.TestUnexpectedResult;
     }
 
-    // Python: `sock.settimeout(5.0)` then `read_frame(deadline_s=5.0)`,
-    // accepting EITHER a close frame OR a timeout/EOF — but never PTY bytes.
+    // Python: `sock.settimeout(5.0)` then `read_frame(deadline_s=5.0)`, accepting EITHER a close frame OR a timeout/EOF — but never PTY bytes.
     if (ws.readFrame(5_000)) |frame| {
         var f = frame;
         defer f.deinit();
@@ -552,14 +503,12 @@ test "ws_unknown_id_rejected" {
             return error.TestUnexpectedResult;
         }
     } else |_| {
-        // Timed out or EOF without a frame — also acceptable, and
-        // provably "no PTY bytes arrived" because nothing did.
+        // Timed out or EOF without a frame — also acceptable, and provably "no PTY bytes arrived" because nothing did.
         std.debug.print("socket ended without a close frame (also acceptable)\n", .{});
     }
 }
 
-// Resize over the socket is accepted; the REST output endpoint keeps
-// serving the same session (the Phase 2 fallback path is intact).
+// Resize over the socket is accepted; the REST output endpoint keeps serving the same session (the Phase 2 fallback path is intact).
 test "ws_resize_and_rest_fallback" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -602,8 +551,7 @@ test "ws_resize_and_rest_fallback" {
     defer gpa.free(seen);
 
     try ws.sendClose();
-    // Drop the socket before polling REST, exactly as the Python's
-    // `finally: ws.close()` inside the `try`.
+    // Drop the socket before polling REST, exactly as the Python's `finally: ws.close()` inside the `try`.
     ws.stream.close(io);
     ws.closed = true;
 
@@ -618,9 +566,7 @@ test "ws_resize_and_rest_fallback" {
         defer r.deinit();
         var doc = try r.json();
         defer doc.deinit();
-        // Python: `r.json().get("cursor", 0) > 0` — an absent key
-        // defaults to 0, which fails the comparison, so the key must be
-        // present.
+        // Python: `r.json().get("cursor", 0) > 0` — an absent key defaults to 0, which fails the comparison, so the key must be present.
         const cursor = doc.int("cursor") orelse {
             std.debug.print("output body has no integer `cursor`: {s}\n", .{r.body});
             return error.TestUnexpectedResult;

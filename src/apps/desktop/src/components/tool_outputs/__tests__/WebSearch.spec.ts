@@ -122,9 +122,7 @@ describe('WebSearch', () => {
   })
 
   it('70: a payload that cannot be serialised says so, and does not read as "no results"', () => {
-    // An unfamiliar shape is normal (D13); one that JSON.stringify refuses is
-    // still not an error state, and rendering it as an empty block would be
-    // indistinguishable from "the search found nothing".
+    // An unfamiliar shape is normal (D13); one that JSON.stringify refuses is still not an error state, and rendering it as an empty block would be indistinguishable …
     const cyclic: Record<string, unknown> = { name: 'loop' }
     cyclic.self = cyclic
 
@@ -156,9 +154,7 @@ describe('WebSearch', () => {
       },
     })
 
-    // The envelope's word wins over the argument: the card reports who
-    // actually answered. (The Arguments block below still shows the call the
-    // model made — that is the tool-call arguments, not the badge.)
+    // The envelope's word wins over the argument: the card reports who actually answered.
     expect(wrapper.find('[data-testid="web-search-provider"]').text()).toContain('serper')
     expect(wrapper.find('[data-testid="tool-card-primary"]').text()).toBe('serper')
   })
@@ -188,9 +184,7 @@ describe('WebSearch', () => {
   })
 
   it('only makes an http(s) url clickable — the payload is untrusted passthrough', () => {
-    // The backend pins the host it REQUESTS and scrubs the key, but it never
-    // inspects what came back: a `url` here is whatever the provider wrote,
-    // and a clickable `javascript:` href runs in this app's origin.
+    // The backend pins the host it REQUESTS and scrubs the key, but it never inspects what came back: a `url` here is whatever the provider wrote, and a clickable …
     const hostile = {
       results: [
         { title: 'fine', url: 'https://ok.test/a', snippet: 's' },

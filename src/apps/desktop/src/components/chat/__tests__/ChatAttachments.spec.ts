@@ -27,8 +27,7 @@ const videoSrcs = (w: ReturnType<typeof mountAttachments>): string[] =>
 
 describe('ChatAttachments — images', () => {
   it('renders exactly two thumbnails for a ||-joined two-image turn', () => {
-    // THE regression. Pre-fix this mounted three <img> elements; the middle one
-    // had src="" and the browser drew the "Attached image" alt text.
+    // THE regression.
     expect(imgSrcs(mountAttachments(`${PNG_A}||${PNG_B}`))).toEqual([PNG_A, PNG_B])
   })
 
@@ -51,8 +50,7 @@ describe('ChatAttachments — images', () => {
   })
 
   it('decodes a legacy single-pipe value from an older queued client', () => {
-    // `queue_queued` re-emits session_queue_messages.image_url verbatim, which
-    // an older desktop build wrote single-pipe. Same two thumbnails.
+    // `queue_queued` re-emits session_queue_messages.image_url verbatim, which an older desktop build wrote single-pipe.
     expect(imgSrcs(mountAttachments(`${PNG_A}|${PNG_B}`))).toEqual([PNG_A, PNG_B])
   })
 
@@ -82,9 +80,7 @@ describe('ChatAttachments — mixed media and stray blanks', () => {
   })
 
   it('drops blanks from a list that did not come from the wire splitter', () => {
-    // The renderer guard. A message can reach the template from a path the
-    // splitter does not own — a persisted SSE row replayed from the local chat
-    // cache, a future field — and `v-for` over a blank binds :src="".
+    // The renderer guard.
     const w = mount(ChatAttachments, { props: { imageUrls: [PNG_A, '', '   ', PNG_B] } })
     expect(imgSrcs(w)).toEqual([PNG_A, PNG_B])
   })

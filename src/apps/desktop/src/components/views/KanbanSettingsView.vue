@@ -62,8 +62,7 @@ const emit = defineEmits<{
   copySpec: []
 }>()
 
-// ─── State ────────────────────────────────────────────────────────────────── Active tab is
-// URL-backed (?section=columns|agent).
+// ─── State ──────────────────────────────────────────────────────────────────
 const settingsMode = computed<SettingsMode>({
   get: () => {
     const readSection = (v: unknown): SettingsMode | null => {
@@ -74,8 +73,7 @@ const settingsMode = computed<SettingsMode>({
     // Canonical param first.
     const fromSection = readSection(route.query.section)
     if (fromSection) return fromSection
-    // Legacy fallback — only for known settings values, never for
-    // browser tab IDs.
+    // Legacy fallback — only for known settings values, never for browser tab IDs.
     const fromLegacyTab = readSection(route.query.tab)
     if (fromLegacyTab) return fromLegacyTab
     return 'columns'
@@ -83,20 +81,16 @@ const settingsMode = computed<SettingsMode>({
   set: (next) => {
     const rest = { ...route.query }
     if (next === 'columns') {
-      // Default tab — strip from URL to keep it tidy. Never touch
-      // `tab` (the browser tab ID owned by the tab store).
+      // Default tab — strip from URL to keep it tidy.
       delete rest.section
       delete rest.tab
-      // Preserve a browser tab ID if one is present: the legacy `tab`
-      // key may hold either a settings value or a browser ID — only
-      // restore it when it looks like a browser ID.
+      // Preserve a browser tab ID if one is present: the legacy `tab` key may hold either a settings value or a browser ID — only restore it when it looks like a …
       const rawTab = route.query.tab
       const s = Array.isArray(rawTab) ? rawTab[0] : rawTab
       if (typeof s === 'string' && s.startsWith('tab_')) rest.tab = s
     } else {
       rest.section = next
-      // If the legacy `tab` key holds a settings value, drop it so the
-      // URL doesn't carry two sources of truth. A browser tab ID stays.
+      // If the legacy `tab` key holds a settings value, drop it so the URL doesn't carry two sources of truth.
       const rawTab = route.query.tab
       const s = Array.isArray(rawTab) ? rawTab[0] : rawTab
       if (typeof s !== 'string' || !s.startsWith('tab_')) delete rest.tab
@@ -109,9 +103,7 @@ const settingsMode = computed<SettingsMode>({
 const newColumnName = ref('')
 const newColumnDescription = ref('')
 
-// Per-row rename/delete editor (lifted from KanbanSettingsDialog's KanbanColumnEditor). Owns its
-// own state so the page can open the editor independently of any other KanbanColumnEditor mounted
-// by AppLayout for the ⋮ menu flow.
+// Per-row rename/delete editor (lifted from KanbanSettingsDialog's KanbanColumnEditor).
 type SettingsEditorMode = 'rename' | 'delete'
 const showSettingsEditor = ref(false)
 const settingsEditorMode = ref<SettingsEditorMode>('rename')
@@ -121,8 +113,6 @@ const settingsEditorTargetDescription = ref('')
 const settingsEditorTargetIsDone = ref(false)
 
 // ─── Computed ──────────────────────────────────────────────────────────────
-// itemId comes from the path: the project id on the workspace-scoped shape, the legacy `:itemId`
-// param on the old kanban shape. Empty when the URL is malformed — the page then shows a hint.
 const itemId = computed<string>(() => {
   const canonical = route.params.projectId
   if (typeof canonical === 'string' && canonical.length > 0) return canonical
@@ -130,9 +120,7 @@ const itemId = computed<string>(() => {
   return typeof legacy === 'string' ? legacy : ''
 })
 
-// Look up the kanban WorkspaceItem across all workspaces. itemId is globally unique
-// (workspace_items.id is the PK), so we don't need to filter by workspaceId first — but we still
-// derive workspaceId below for the back navigation round-trip.
+// Look up the kanban WorkspaceItem across all workspaces. itemId is globally unique (workspace_items.id is the PK), so we don't need to filter by workspaceId …
 const item = computed(() => {
   const id = itemId.value
   if (!id) return null
@@ -143,8 +131,7 @@ const item = computed(() => {
   return null
 })
 
-// The workspace the board belongs to: the one the URL names, else the one the store says owns the
-// board (the legacy URL shape named no workspace). Empty when the board cannot be found.
+// The workspace the board belongs to: the one the URL names, else the one the store says owns the board (the legacy URL shape named no workspace).
 const workspaceId = computed<string>(() => {
   const fromPath = route.params.workspaceId
   if (typeof fromPath === 'string' && fromPath.length > 0) return fromPath
@@ -159,16 +146,12 @@ const workspaceId = computed<string>(() => {
 const notFound = computed(() => !!itemId.value && !item.value)
 const emptyHint = computed(() => !itemId.value)
 
-// ─── Kanban Agent (reuses AgentView) ──────────────────────────────────────── Kanban boards reuse
-// the same Knowledge + Tools + System Prompt UI as `item_type='agent'` — AgentView is now agnostic
-// (accepts both AgentKnowledgeRow and AgentKanbanKnowledgeRow via union).
+// ─── Kanban Agent (reuses AgentView) ────────────────────────────────────────
 const kanbanKnowledge = ref<api.AgentKanbanKnowledgeRow[]>([])
 const kanbanTools = ref<string[]>([])
 const kanbanSystemPrompts = ref<api.AgentKanbanSystemPromptRow[]>([])
 
-// True while `loadKanbanAgent` is in flight — AgentView's knowledge and system-prompt panels gate
-// their skeletons on this. Without it they render "No knowledge files yet." during the fetch, which
-// is a false statement about the board's data.
+// True while `loadKanbanAgent` is in flight — AgentView's knowledge and system-prompt panels gate their skeletons on this.
 const kanbanAgentLoading = ref(false)
 
 async function loadKanbanAgent() {
@@ -195,9 +178,7 @@ async function loadKanbanAgent() {
   }
 }
 
-// ─── Legacy URL rewrite ─────────────────────────────────────────────────── A legacy deep link
-// (/app/kanban/:itemId/settings) still renders this page, but it names no workspace. Once the
-// owning workspace is known, the URL is rewritten to the workspace-scoped shape.
+// ─── Legacy URL rewrite ───────────────────────────────────────────────────
 const LEGACY_SETTINGS_PATH_RE = /^\/app\/kanban\/[^/]+\/settings\/?$/
 const rewroteLegacyUrl = ref(false)
 function rewriteLegacyUrl(): void {
@@ -207,8 +188,7 @@ function rewriteLegacyUrl(): void {
   const itId = itemId.value
   if (!wsId || !itId) return
   rewroteLegacyUrl.value = true
-  // The query rides along: `?section=` (which section is open) and the browser
-  // tab id must survive the rewrite.
+  // The query rides along: `?section=` (which section is open) and the browser tab id must survive the rewrite.
   const query: Record<string, string> = {}
   for (const [k, v] of Object.entries(route.query)) {
     if (typeof v === 'string') query[k] = v
@@ -221,8 +201,7 @@ function rewriteLegacyUrl(): void {
   void router.replace({ path: target.path, query })
 }
 
-// Reload the agent panel when the resolved item changes: mount covers
-// the initial load, prev-id guard on update covers item switches.
+// Reload the agent panel when the resolved item changes: mount covers the initial load, prev-id guard on update covers item switches.
 const prevAgentItemId = ref(item.value?.id ?? '')
 onMounted(() => {
   prevAgentItemId.value = item.value?.id ?? ''
@@ -436,9 +415,7 @@ async function handleKanbanToggleTool(toolName: string, enabled: boolean) {
     return
   }
   kanbanTools.value = out.canonical
-  // If this was the first enable on an unconfigured board, the backend
-  // auto-seeded the row — reload the full bundle so knowledge/system
-  // prompts become available without a manual refresh.
+  // If this was the first enable on an unconfigured board, the backend auto-seeded the row — reload the full bundle so knowledge/system prompts become available …
   if (kanbanKnowledge.value.length === 0 && kanbanSystemPrompts.value.length === 0) {
     void loadKanbanAgent()
   }
@@ -533,15 +510,11 @@ const handleSettingsEditorDelete = () => {
 
 // ─── Navigation ────────────────────────────────────────────────────────────
 const goBack = () => {
-  // The workspaceId is derived from the store (workspaceId computed
-  // above). itemId comes from route.params. If either is missing,
-  // fall back to /app so the user doesn't get stuck.
+  // The workspaceId is derived from the store (workspaceId computed above). itemId comes from route.params.
   const wsId = workspaceId.value
   const itId = itemId.value
   if (wsId && itId) {
-    // Preserve the board's sub-state (`?sorts=`, `?layout=`, `?detail=`, …) instead of rebuilding
-    // the query from scratch. Dropping `sorts` reset every column to the default sort after a visit
-    // to board settings, and dropping `layout` lost row mode.
+    // Preserve the board's sub-state (`?sorts=`, `?layout=`, `?detail=`, …) instead of rebuilding the query from scratch.
     const sub: Record<string, string> = {}
     for (const [k, v] of Object.entries(route.query)) {
       if (typeof v === 'string') sub[k] = v
@@ -559,9 +532,7 @@ const goBack = () => {
   }
 }
 
-// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset settingsMode
-// when the route changes (so navigating from one kanban's settings to another's starts on the
-// Columns tab, not the Agent tab that the previous kanban had selected).
+// ─── Lifecycle ─────────────────────────────────────────────────────────────
 const prevSettingsItemId = ref(itemId.value)
 onUpdated(() => {
   if (itemId.value !== prevSettingsItemId.value) {
@@ -573,8 +544,6 @@ onUpdated(() => {
 })
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-// Sorted copy — mirrors KanbanView's sortedColumns computed so a
-// re-render during a pending reorder still looks sensible.
 function sortedColumns() {
   return (item.value?.kanban_columns ?? []).slice().sort((a, b) => a.position - b.position)
 }

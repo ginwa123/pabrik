@@ -1,5 +1,4 @@
-/** The documents Pinia store (Migration 095). The store is the one sanctioned place for
- * `try`/`catch` in the desktop app, so every failure has to be VISIBLE afterwards. */
+/** The documents Pinia store (Migration 095). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -40,8 +39,7 @@ const doc = (id: string, overrides: Partial<api.Document> = {}): api.Document =>
   ...overrides,
 })
 
-/** The list is cache-first now, and `documentEngineDb` is a module singleton whose IndexedDB
- * fallback is a module-level Map. */
+/** The list is cache-first now, and `documentEngineDb` is a module singleton whose IndexedDB fallback is a module-level Map. */
 async function clearDocumentsCache(workspaceId = 'ws_1'): Promise<void> {
   const { documentEngineDb } = await import('../sync/DocumentEngineDb')
   const { runSyncVoid } = await import('../sync/runtime')
@@ -79,9 +77,7 @@ describe('documents store — load', () => {
 
     await store.fetchDocuments('ws_1')
 
-    // The pair is the whole point: `error` set AND `loaded` false is what lets the component render
-    // "could not load" instead of "no documents". Asserting only one of the two would pass a store
-    // that sets error on success.
+    // The pair is the whole point: `error` set AND `loaded` false is what lets the component render "could not load" instead of "no documents".
     expect(store.error).toContain('HTTP 500')
     expect(store.loaded).toBe(false)
     expect(store.documents).toEqual([])
@@ -101,8 +97,7 @@ describe('documents store — load', () => {
   it('no workspace id is a no-op, not a request with an empty path', async () => {
     const store = useDocumentsStore()
     await store.fetchDocuments('')
-    // `SqliteBackend.exec` binds "" as SQL NULL server-side; refusing to
-    // issue the request at all is the client-side half of that rule.
+    // `SqliteBackend.exec` binds "" as SQL NULL server-side; refusing to issue the request at all is the client-side half of that rule.
     expect(listDocuments).not.toHaveBeenCalled()
   })
 })
@@ -133,8 +128,7 @@ describe('documents store — mutations', () => {
 
     expect(created).toBe(null)
     expect(store.error).toBe('title is required')
-    // An optimistic insert that is not rolled back on failure shows the
-    // user a document that does not exist.
+    // An optimistic insert that is not rolled back on failure shows the user a document that does not exist.
     expect(store.documents).toHaveLength(1)
   })
 
@@ -148,8 +142,7 @@ describe('documents store — mutations', () => {
 
     expect(store.documents).toHaveLength(2)
     expect(store.findById('doc_1')?.content).toBe('new body')
-    // The replacement must be IN PLACE, not appended: an append would
-    // leave two rows with the same id, one of them stale.
+    // The replacement must be IN PLACE, not appended: an append would leave two rows with the same id, one of them stale.
     expect(store.documents[1]?.id).toBe('doc_2')
     expect(store.documents.filter((d) => d.id === 'doc_1')).toHaveLength(1)
   })
@@ -160,9 +153,7 @@ describe('documents store — mutations', () => {
     const store = useDocumentsStore()
     await store.fetchDocuments('ws_1')
 
-    // The PATCH body must contain `title` and NOT `content`. Sending `content: undefined` through
-    // JSON.stringify drops it, but sending `content: ''` would CLEAR the body — the store must not
-    // invent the key to satisfy its own type.
+    // The PATCH body must contain `title` and NOT `content`.
     let body: Record<string, unknown> = {}
     updateDocument.mockImplementation((_ws, _id, patch) => {
       body = JSON.parse(JSON.stringify(patch))
@@ -220,8 +211,7 @@ describe('documents store — mutations', () => {
     updateDocument.mockRejectedValue(new Error('nope'))
     const store = useDocumentsStore()
     await store.updateDocument('ws_1', 'doc_1', { content: 'x' })
-    // A `saving` flag stuck true after an error disables the Save button
-    // forever, with no error explaining why.
+    // A `saving` flag stuck true after an error disables the Save button forever, with no error explaining why.
     expect(store.saving).toBe(false)
   })
 })
@@ -236,9 +226,7 @@ describe('documents store — single-document load', () => {
 
     const loaded = await store.loadDocument('ws_1', 'doc_1')
 
-    // The list is cache-first, but the OPEN document must be the server's: a
-    // cached body is what made an agent edit invisible and a cleared body
-    // render as a blank page.
+    // The list is cache-first, but the OPEN document must be the server's: a cached body is what made an agent edit invisible and a cleared body render as a blank …
     expect(getDocument).toHaveBeenCalledWith('ws_1', 'doc_1')
     expect(loaded?.content).toBe('server body')
   })
@@ -271,8 +259,7 @@ describe('documents store — single-document load', () => {
 
     await store.loadDocument('ws_1', 'doc_1')
 
-    // The row stays in the list (the sidebar keeps it) and now carries the
-    // body, so an offline open still has something to render.
+    // The row stays in the list (the sidebar keeps it) and now carries the body, so an offline open still has something to render.
     expect(store.documents).toHaveLength(1)
     expect(store.findById('doc_1')?.content).toBe('body')
   })
@@ -285,8 +272,7 @@ describe('documents store — single-document load', () => {
 
     expect(loaded?.id).toBe('doc_9')
     expect(getDocument).toHaveBeenCalledWith('ws_1', 'doc_9')
-    // Inserted, so the page has a row to render instead of "Loading document…"
-    // forever.
+    // Inserted, so the page has a row to render instead of "Loading document…" forever.
     expect(store.findById('doc_9')?.content).toBe('deep link')
   })
 
@@ -296,8 +282,7 @@ describe('documents store — single-document load', () => {
 
     const loaded = await store.loadDocument('ws_1', 'doc_9')
 
-    // Returning `doc(...)` with an empty body here would render a blank
-    // document that looks like a real, empty note.
+    // Returning `doc(...)` with an empty body here would render a blank document that looks like a real, empty note.
     expect(loaded).toBe(null)
     expect(store.error).toBe('document not found')
   })
@@ -319,9 +304,7 @@ describe('documents store — workspace switch', () => {
   })
 
   it('never filters by workspace client-side — the server already scoped it', async () => {
-    // A response containing another workspace's row is a BACKEND bug, and
-    // hiding it here would hide the bug too. Assert the absence of a
-    // filter so a future "defensive" one is a visible decision.
+    // A response containing another workspace's row is a BACKEND bug, and hiding it here would hide the bug too.
     listDocuments.mockResolvedValue({
       documents: [doc('doc_1', { workspace_id: 'ws_2' })],
       count: 1,

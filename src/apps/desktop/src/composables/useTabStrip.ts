@@ -1,7 +1,6 @@
 import { inject, type InjectionKey } from 'vue'
 
-/**    * What the strip needs from the layout that owns the router and the tab funnel. The strip renders and
- * asks; it never navigates by itself, so every tab gesture takes the same path a sidebar click takes. */
+/** What the strip needs from the layout that owns the router and the tab funnel. */
 export type TabStripActions = {
   /** Make this tab the active one and move the URL to its target. */
   activate: (tabId: string) => void

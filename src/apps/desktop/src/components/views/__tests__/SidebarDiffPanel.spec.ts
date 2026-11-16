@@ -85,8 +85,7 @@ describe('SidebarDiffPanel', () => {
   it('emits show-diff with parsed lines on file click (center renders)', async () => {
     const wrapper = mount(SidebarDiffPanel, { global: { plugins: [testRouter] }, props: { cwd: '/repo' } })
     await flushPromises()
-    // The mount already fetched the whole repo and primed the shared
-    // snapshot, so the click is a map read — no request at all.
+    // The mount already fetched the whole repo and primed the shared snapshot, so the click is a map read — no request at all.
     const before = getGitFolderDiffsMock.mock.calls.length
     await wrapper.get('[data-testid="sidebar-diff-file-unstaged-dirty.txt"]').trigger('click')
     await flushPromises()
@@ -103,9 +102,7 @@ describe('SidebarDiffPanel', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const wrapper = mount(SidebarDiffPanel, { global: { plugins: [testRouter] }, props: { cwd: '/repo' } })
     await flushPromises()
-    // Mount primes the snapshot from its own folder fetch. Drop it and arm a
-    // failure so the click has to revalidate — that is the TTL-expiry path,
-    // and it must surface an error rather than an empty diff.
+    // Mount primes the snapshot from its own folder fetch.
     clearFolderDiffCache()
     getGitFolderDiffsMock.mockRejectedValueOnce(new Error('nope'))
     await wrapper.get('[data-testid="sidebar-diff-file-unstaged-dirty.txt"]').trigger('click')

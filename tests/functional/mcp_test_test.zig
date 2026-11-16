@@ -1,5 +1,4 @@
-// End-to-end functional tests for `POST /api/mcp/test` (the "Test" button on
-// the Add/Edit MCP server modal).
+// End-to-end functional tests for `POST /api/mcp/test` (the "Test" button on the Add/Edit MCP server modal).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,9 +10,7 @@ const io = testing.io;
 
 const Io = std.Io;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 fn bootStubProfile() !Harness {
     return Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -22,8 +19,7 @@ fn bootStubProfile() !Harness {
 /// Locate the `mcp-hello-world` binary, or skip.
 fn requireMcpBin() ![]u8 {
     if (builtin.os.tag == .windows) {
-        // Python: `if sys.platform == "win32": pytest.skip("mcp-hello-world
-        // shell wrapper requires POSIX sh")`.
+        // Python: `if sys.platform == "win32": pytest.skip("mcp-hello-world shell wrapper requires POSIX sh")`.
         return error.SkipZigTest;
     }
     return harness.mcpHelloWorldBin(io, gpa) catch |err| switch (err) {
@@ -131,8 +127,7 @@ fn freeNames(names: [][]const u8) void {
     gpa.free(names);
 }
 
-/// Assert `names` is exactly `want`, as a SET — Python built a set, so
-/// an extra tool fails exactly like a missing one.
+/// Assert `names` is exactly `want`, as a SET — Python built a set, so an extra tool fails exactly like a missing one.
 fn expectNameSet(got: [][]const u8, want: []const []const u8, what: []const u8) !void {
     if (got.len != want.len) {
         std.debug.print("{s}: expected {d} tools, got {d}\n", .{ what, want.len, got.len });
@@ -150,9 +145,7 @@ fn expectNameSet(got: [][]const u8, want: []const []const u8, what: []const u8) 
     }
 }
 
-/// Print the failing probe body the way Python's `_post_test` did — the
-/// harness wipes the server log on teardown, so the body is the only
-/// diagnostic a failure has.
+/// Print the failing probe body the way Python's `_post_test` did — the harness wipes the server log on teardown, so the body is the only diagnostic a failure has.
 fn dumpBody(doc: *const std.json.Parsed(std.json.Value)) void {
     const rendered = std.json.Stringify.valueAlloc(gpa, doc.value, .{}) catch {
         std.debug.print("[mcp_test] body: <unrenderable>\n", .{});
@@ -166,15 +159,13 @@ fn monotonicMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
 
-/// `fchmod 0755` on POSIX; a no-op on Windows (which has no execute
-/// bit, and where every test that needs a shell script skips anyway).
+/// `fchmod 0755` on POSIX; a no-op on Windows (which has no execute bit, and where every test that needs a shell script skips anyway).
 fn makeExecutable(f: std.Io.File) !void {
     if (builtin.os.tag == .windows) return;
     try f.setPermissions(io, @enumFromInt(0o755));
 }
 
-/// Write `contents` to `<scratch>/<name>`, make it executable, and
-/// return its absolute path (owned).
+/// Write `contents` to `<scratch>/<name>`, make it executable, and return its absolute path (owned).
 fn writeExecutableScript(scratch: []const u8, name: []const u8, contents: []const u8) ![]u8 {
     const path = try std.fs.path.join(gpa, &.{ scratch, name });
     errdefer gpa.free(path);
@@ -185,31 +176,26 @@ fn writeExecutableScript(scratch: []const u8, name: []const u8, contents: []cons
     return path;
 }
 
-// ============================================================================
 // Stub SSE upstream (Test 8)
-// ============================================================================
 
 /// The JSON-RPC payload the stub answers with.
 const SSE_TOOLS_JSON =
     \\{"jsonrpc":"2.0","id":"1","result":{"tools":[{"name":"resolve-library-id","description":"Resolves a lib id"},{"name":"query-docs","description":"Queries docs"}]}}
 ;
 
-/// Byte-for-byte the context7 shape: an `event:` line, then a `data:` line,
-/// then the SSE terminator.
+/// Byte-for-byte the context7 shape: an `event:` line, then a `data:` line, then the SSE terminator.
 const SSE_PAYLOAD = "event: message\n" ++
     \\data: {"jsonrpc":"2.0","id":"1","result":{"tools":[{"name":"resolve-library-id","description":"Resolves a lib id"},{"name":"query-docs","description":"Queries docs"}]}}
 ++ "\n\n";
 
-/// One-shot HTTP stub that records the probe's request and answers with a
-/// fixed `text/event-stream` body.
+/// One-shot HTTP stub that records the probe's request and answers with a fixed `text/event-stream` body.
 const SseStub = struct {
     port: u16,
     payload: []const u8,
     server: Io.net.Server,
     thread: std.Thread,
     stop: std.atomic.Value(bool) = .init(false),
-    /// Guards `req_head` / `req_body`; the serve thread writes while the
-    /// test reads.
+    /// Guards `req_head` / `req_body`; the serve thread writes while the test reads.
     mutex: Io.Mutex = .init,
     req_head: ?[]u8 = null,
     req_body: ?[]u8 = null,
@@ -221,8 +207,7 @@ const SseStub = struct {
             .server = undefined,
             .thread = undefined,
         };
-        // `Io.net` has no getsockname, so the port is picked the way
-        // `Harness.boot` picks one for the child and then bound.
+        // `Io.net` has no getsockname, so the port is picked the way `Harness.boot` picks one for the child and then bound.
         stub.port = try harness.findFreePortRandom(gpa);
         const addr: Io.net.IpAddress = .{ .ip4 = .loopback(stub.port) };
         stub.server = try addr.listen(io, .{ .reuse_address = true });
@@ -275,8 +260,7 @@ fn handleStubRequest(stub: *SseStub, stream: Io.net.Stream) !void {
     var sr = stream.reader(io, &rbuf);
     const r = &sr.interface;
 
-    // Head and body overlap in the socket buffer: one `fill` typically
-    // returns both, so accumulate and cut at the first `\r\n\r\n`.
+    // Head and body overlap in the socket buffer: one `fill` typically returns both, so accumulate and cut at the first `\r\n\r\n`.
     var head_acc: Io.Writer.Allocating = .init(gpa);
     defer head_acc.deinit();
     var head_len: usize = 0;
@@ -315,8 +299,7 @@ fn handleStubRequest(stub: *SseStub, stream: Io.net.Stream) !void {
     stub.req_head = try gpa.dupe(u8, head_acc.written()[0..head_len]);
     stub.req_body = try gpa.dupe(u8, body_acc.written());
 
-    // `Content-Length` counts the WHOLE SSE payload (`event:` line,
-    // `data:` line and the blank-line terminator), not just the JSON.
+    // `Content-Length` counts the WHOLE SSE payload (`event:` line, `data:` line and the blank-line terminator), not just the JSON.
     const response = try std.fmt.allocPrint(
         gpa,
         "HTTP/1.1 200 OK\r\n" ++
@@ -360,13 +343,9 @@ fn headerValue(head: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-// ============================================================================
 // Test 1: stdio success — fires tools/list against mcp-hello-world
-// ============================================================================
 
-// mcp-hello-world responds to tools/list with 3 tools well inside the
-// 10s probe timeout. Proves the happy path: spawn child + framed
-// send/recv + parse + return the tools list.
+// mcp-hello-world responds to tools/list with 3 tools well inside the 10s probe timeout.
 test "mcp_test_stdio_success_lists_hello_world_tools" {
     const binary = try requireMcpBin();
     defer gpa.free(binary);
@@ -409,12 +388,9 @@ test "mcp_test_stdio_success_lists_hello_world_tools" {
     }
 }
 
-// ============================================================================
 // Test 2: stdio bad command
-// ============================================================================
 
-// A non-existent command binary returns `{ok: false, ...}` rather than
-// hanging — proves the spawn-failed path is reachable from the probe.
+// A non-existent command binary returns `{ok: false, ...}` rather than hanging — proves the spawn-failed path is reachable from the probe.
 test "mcp_test_stdio_bad_command_returns_spawn_failure" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootStubProfile();
@@ -437,8 +413,7 @@ test "mcp_test_stdio_bad_command_returns_spawn_failure" {
     const msg = try errorOf(&result);
     const lowered = msg;
     if (std.mem.indexOf(u8, lowered, "spawn") == null and std.mem.indexOf(u8, lowered, "child") == null) {
-        // Case-insensitive on both sides: the message the backend emits
-        // is "failed to spawn child process …".
+        // Case-insensitive on both sides: the message the backend emits is "failed to spawn child process …".
         var matched = false;
         for ([_][]const u8{ "spawn", "child" }) |needle| {
             if (containsIgnoreCase(msg, needle)) matched = true;
@@ -454,8 +429,7 @@ test "mcp_test_stdio_bad_command_returns_spawn_failure" {
     }
 }
 
-/// Case-insensitive `in`, for a message whose exact casing the test does
-/// not pin.
+/// Case-insensitive `in`, for a message whose exact casing the test does not pin.
 fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
     if (haystack.len < needle.len) return false;
@@ -466,13 +440,9 @@ fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-// ============================================================================
 // Test 3: http unreachable — a closed port
-// ============================================================================
 
 // An HTTP URL with no server listening returns `{ok: false, …}`.
-// Port 1 is used because the kernel refuses connections there — and it
-// is never the reserved dev port 8081.
 test "mcp_test_http_unreachable_returns_send_failure" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootStubProfile();
@@ -491,9 +461,7 @@ test "mcp_test_http_unreachable_returns_send_failure" {
         dumpBody(&result);
         return error.TestUnexpectedResult;
     }
-    // The message comes from the libcurl client ("Connection refused",
-    // "Couldn't connect to server", …) — we only assert that SOMETHING
-    // failed, and that it failed fast.
+    // The message comes from the libcurl client ("Connection refused", "Couldn't connect to server", …) — we only assert that SOMETHING failed, and that it failed …
     const msg = try errorOf(&result);
     if (msg.len == 0) {
         dumpBody(&result);
@@ -506,12 +474,9 @@ test "mcp_test_http_unreachable_returns_send_failure" {
     }
 }
 
-// ============================================================================
 // Test 4: invalid transport discriminator
-// ============================================================================
 
-// A transport other than `stdio` / `http` returns a readable error
-// rather than a 500 — this guards the catch block's exhaustive switch.
+// A transport other than `stdio` / `http` returns a readable error rather than a 500 — this guards the catch block's exhaustive switch.
 test "mcp_test_invalid_transport_returns_clear_error" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootStubProfile();
@@ -535,12 +500,9 @@ test "mcp_test_invalid_transport_returns_clear_error" {
     }
 }
 
-// ============================================================================
 // Test 5: stdio with no command
-// ============================================================================
 
-// stdio without `command` returns a clean error rather than a 500 or a
-// spawn attempt with an empty argv.
+// stdio without `command` returns a clean error rather than a 500 or a spawn attempt with an empty argv.
 test "mcp_test_missing_command_for_stdio_returns_clear_error" {
     try harness.requirePabrikBin(io, gpa);
     var h = try bootStubProfile();
@@ -564,9 +526,7 @@ test "mcp_test_missing_command_for_stdio_returns_clear_error" {
     }
 }
 
-// ============================================================================
 // Regression: spawned MCP children must inherit the parent environment
-// ============================================================================
 const SHIM_SERVER =
     \\#!/bin/sh
     \\IFS= read -r l1
@@ -585,21 +545,15 @@ test "mcp_test_stdio_child_inherits_parent_path" {
         // Python: "shim server requires /bin/sh, not available on Windows".
         return error.SkipZigTest;
     }
-    // TODO(port): see the block comment above — needs
-    // `Harness.BootOptions.extra_env` before the bare-name command below
-    // can be exercised. Skipped rather than weakened.
+    // TODO(port): see the block comment above — needs `Harness.BootOptions.extra_env` before the bare-name command below can be exercised.
     _ = SHIM_SERVER;
     _ = SHIM_COMMAND;
     return error.SkipZigTest;
 }
 
-// ============================================================================
 // Test 6: diagnostic details on child death
-// ============================================================================
 
-// A child that exits immediately (no MCP protocol) produces a diagnostic
-// `details` string containing the attempt count, per-attempt outcome codes,
-// and the child's stderr.
+// A child that exits immediately (no MCP protocol) produces a diagnostic `details` string containing the attempt count, per-attempt outcome codes, and the …
 test "mcp_test_stdio_diagnostic_on_child_death" {
     if (builtin.os.tag == .windows) {
         // Python: "false command not available on Windows".
@@ -624,9 +578,7 @@ test "mcp_test_stdio_diagnostic_on_child_death" {
         return error.TestUnexpectedResult;
     }
 
-    // BOTH the write and the read leg can lose the race against a child that
-    // is already dead: the pipe may close before the request goes out
-    // (SendFailed) or after it lands but before the reply is read
+    // BOTH the write and the read leg can lose the race against a child that is already dead: the pipe may close before the request goes out (SendFailed) or after it …
     const msg = try errorOf(&result);
     const recv = "failed to receive response from MCP server";
     const send = "failed to send request to MCP server";
@@ -636,9 +588,7 @@ test "mcp_test_stdio_diagnostic_on_child_death" {
         return error.TestUnexpectedResult;
     }
 
-    // The DIAGNOSTIC details should include the per-attempt trace so WHY
-    // is visible in the CI log. Format:
-    //   "<err>|attempts=N/M codes=[<3-char codes>...]|last_stderr=<...>"
+    // The DIAGNOSTIC details should include the per-attempt trace so WHY is visible in the CI log.
     const details = detailsOf(&result);
     if (std.mem.indexOf(u8, details, "attempts=") == null) {
         std.debug.print("diagnostic missing the attempts count; details=\"{s}\"\n", .{details});
@@ -660,12 +610,9 @@ test "mcp_test_stdio_diagnostic_on_child_death" {
     }
 }
 
-// ============================================================================
 // Test 7: silent child with empty args returns Timeout, not a hang
-// ============================================================================
 
-/// Consumes every line the probe writes, never writes to stdout, and
-/// only exits when stdin reaches EOF.
+/// Consumes every line the probe writes, never writes to stdout, and only exits when stdin reaches EOF.
 const SILENT_CHILD =
     \\#!/bin/sh
     \\i=0
@@ -675,12 +622,10 @@ const SILENT_CHILD =
     \\done
 ;
 
-// A bare interpreter with no args stays silent → {ok:false} Timeout within
-// ~10s per probe, and the backend stays alive across both probes.
+// A bare interpreter with no args stays silent → {ok:false} Timeout within ~10s per probe, and the backend stays alive across both probes.
 test "mcp_test_stdio_empty_args_silent_child_returns_timeout" {
     if (builtin.os.tag == .windows) {
-        // The shim needs /bin/sh. Python had no explicit guard here
-        // because `sys.executable` always existed on Windows.
+        // The shim needs /bin/sh.
         return error.SkipZigTest;
     }
     try harness.requirePabrikBin(io, gpa);
@@ -699,8 +644,7 @@ test "mcp_test_stdio_empty_args_silent_child_returns_timeout" {
 
     const body = try std.fmt.allocPrint(
         gpa,
-        // The exact body the modal sends for an empty Arguments
-        // textarea: `argsText "" → []`.
+        // The exact body the modal sends for an empty Arguments textarea: `argsText "" → []`.
         "{{\"transport\":\"stdio\",\"command\":{f},\"args\":[]}}",
         .{std.json.fmt(child, .{})},
     );
@@ -729,8 +673,7 @@ test "mcp_test_stdio_empty_args_silent_child_returns_timeout" {
             std.debug.print("probe {d}: details should name RecvTimeout; got \"{s}\"\n", .{ probe_no, details });
             return error.TestUnexpectedResult;
         }
-        // ~10s deadline + 200ms stderr poll + spawn overhead. A 30s
-        // bound proves the deadline fired (pre-fix: infinite).
+        // ~10s deadline + 200ms stderr poll + spawn overhead.
         if (elapsed_ms >= 30_000) {
             std.debug.print("probe {d} took {d}ms (>30s — the deadline regressed!)\n", .{ probe_no, elapsed_ms });
             return error.TestUnexpectedResult;
@@ -738,9 +681,7 @@ test "mcp_test_stdio_empty_args_silent_child_returns_timeout" {
     }
 }
 
-// ============================================================================
 // Test 8: http SSE `event:`-prefixed body parses (context7 shape)
-// ============================================================================
 test "mcp_test_http_sse_event_prefix_parses_tools" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -789,8 +730,7 @@ test "mcp_test_http_sse_event_prefix_parses_tools" {
         std.debug.print("Mcp-Method = \"{s}\", expected \"tools/list\"\n", .{method});
         return error.TestUnexpectedResult;
     }
-    // The `_meta` envelope 400s against a 2026-07-28 server, so the
-    // probe must NOT send one.
+    // The `_meta` envelope 400s against a 2026-07-28 server, so the probe must NOT send one.
     const sent_body = stub.bodyOf() orelse "";
     if (std.mem.indexOf(u8, sent_body, "_meta") != null) {
         std.debug.print("probe body must NOT carry the _meta envelope; got \"{s}\"\n", .{sent_body});
@@ -798,8 +738,7 @@ test "mcp_test_http_sse_event_prefix_parses_tools" {
     }
 }
 
-// Body-analysis barrier. An unreferenced helper is never type-checked, so
-// a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = bootStubProfile;
     _ = requireMcpBin;

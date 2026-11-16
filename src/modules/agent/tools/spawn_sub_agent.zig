@@ -5,8 +5,7 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const inherited_context_helper = @import("../loop/inherited_context.zig");
-// The main-agent-only tool list is shared with `tool_eligibility.zig`'s strip
-// so the parse-time validation here and the strip can never disagree.
+// The main-agent-only tool list is shared with `tool_eligibility.zig`'s strip so the parse-time validation here and the strip can never disagree.
 const main_agent_only = @import("../loop/main_agent_only.zig");
 
 pub const SubAgentInput = struct {
@@ -100,9 +99,7 @@ pub const spawn_sub_agent_tool = AgentTool{
     },
 };
 
-/// Parse JSON input to extract sub-agents
-/// Returns error if JSON is invalid or more than max_agents
-/// Handles both correct format (json_input as string) and LLM mistake (json_input as object)
+/// Parse JSON input to extract sub-agents Returns error if JSON is invalid or more than max_agents Handles both correct format (json_input as string) and LLM …
 pub fn parse_sub_agents(
     allocator: std.mem.Allocator,
     input_json: []const u8,
@@ -188,8 +185,7 @@ fn parseSubAgentsFromValue(
         const instruction = try allocator.dupe(u8, instr_val.string);
         errdefer allocator.free(instruction);
 
-        // Parse REQUIRED "tools" field — explicit allowlist, no omit, no
-        // "all", no empty.
+        // Parse REQUIRED "tools" field — explicit allowlist, no omit, no "all", no empty.
         const tools_val = agent_obj.get("tools") orelse {
             return error.MissingSubAgentTools;
         };
@@ -213,8 +209,7 @@ fn parseSubAgentsFromValue(
             if (std.mem.eql(u8, trimmed, "all")) {
                 return error.AllToolsNotAllowed;
             }
-            // Main-agent-only tools are a hard parse error, NOT a silent
-            // downstream strip.
+            // Main-agent-only tools are a hard parse error, NOT a silent downstream strip.
             if (main_agent_only.isMainAgentOnly(trimmed)) {
                 return error.MainAgentOnlyToolNotAllowed;
             }
@@ -239,9 +234,7 @@ fn parseSubAgentsFromValue(
         errdefer if (inherited_context) |c| allocator.free(c);
         if (agent_obj.get("inherited_context")) |ctx_val| {
             if (ctx_val == .string) {
-                // Validate the mode string at parse time so the LLM gets a clear
-                // error for typo'd modes (e.g. "last:5x" instead of "last:5").
-                // The raw string is still stored; the formatter re-parses it.
+                // Validate the mode string at parse time so the LLM gets a clear error for typo'd modes (e.g.
                 _ = inherited_context_helper.parseMode(ctx_val.string) catch {
                     return error.InvalidInheritedContextMode;
                 };
@@ -249,8 +242,7 @@ fn parseSubAgentsFromValue(
             }
         }
 
-        // Parse required "agent_name" field — the name of a configured
-        // agent, applied as an overlay on the orchestrator's defaults.
+        // Parse required "agent_name" field — the name of a configured agent, applied as an overlay on the orchestrator's defaults.
         const an_val = agent_obj.get("agent_name") orelse {
             return error.MissingSubAgentAgentName;
         };
@@ -341,9 +333,7 @@ test "parse_sub_agents - invalid inherited_context mode returns InvalidInherited
     try std.testing.expectError(error.InvalidInheritedContextMode, parse_sub_agents(alloc, input_json, 20));
 }
 
-// -------------------------------------------------------------------------
 // parse_sub_agents — agent_name (REQUIRED, label + config-driven selection)
-// -------------------------------------------------------------------------
 
 test "parse_sub_agents - agent_name is parsed into SubAgentInput" {
     const alloc = std.testing.allocator;
@@ -416,9 +406,7 @@ test "parse_sub_agents - multiple sub_agents each carry their own agent_name" {
     try std.testing.expectEqualStrings("writer", parsed.sub_agents[2].agent_name);
 }
 
-// -------------------------------------------------------------------------
 // parse_sub_agents — tools (REQUIRED, explicit allowlist, no "all")
-// -------------------------------------------------------------------------
 
 test "parse_sub_agents - missing tools returns MissingSubAgentTools" {
     const alloc = std.testing.allocator;
@@ -464,9 +452,7 @@ test "parse_sub_agents - explicit tools are parsed into SubAgentInput" {
     try std.testing.expectEqualStrings("glob", parsed.sub_agents[0].tools[1]);
 }
 
-// -------------------------------------------------------------------------
-// parse_sub_agents — main-agent-only tools (spawn_sub_agent / run_session)
-// ------------------------------------------------------------------------- A
+// parse_sub_agents — main-agent-only tools (spawn_sub_agent / run_session) ------------------------------------------------------------------------- A
 
 test "parse_sub_agents - tools containing run_session returns MainAgentOnlyToolNotAllowed" {
     const alloc = std.testing.allocator;
@@ -494,8 +480,7 @@ test "parse_sub_agents - tools containing spawn_sub_agent returns MainAgentOnlyT
 
 test "parse_sub_agents - the rejection covers every sub-agent in the batch" {
     const alloc = std.testing.allocator;
-    // The FIRST sub-agent is clean; the SECOND asks for run_session. The whole
-    // call must fail (the batch is atomic) rather than spawning a half-set.
+    // The FIRST sub-agent is clean; the SECOND asks for run_session.
     const input_json =
         \\{"sub_agents":[
         \\  {"agent_name":"a","instruction":"x","tools":["read_file"]},
@@ -529,9 +514,7 @@ test "spawn_sub_agent description teaches the main-agent-only rule" {
     try std.testing.expect(std.mem.indexOf(u8, desc, "MAIN-AGENT-ONLY") != null);
     try std.testing.expect(std.mem.indexOf(u8, desc, "\"spawn_sub_agent\", \"run_session\" and \"run_skill_eval\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, desc, "rejected at parse time") != null);
-    // And the json_input schema block lists it among the rejected shapes
-    // (that text lives on the property, which is what the model reads as the
-    // parameter documentation).
+    // And the json_input schema block lists it among the rejected shapes (that text lives on the property, which is what the model reads as the parameter …
     const json_input_desc = spawn_sub_agent_tool.function.parameters.properties[0].description;
     try std.testing.expect(std.mem.indexOf(u8, json_input_desc, "main-agent-only") != null);
 }
@@ -542,9 +525,7 @@ test "spawn_sub_agent system prompt teaches the main-agent-only rule" {
     try std.testing.expect(std.mem.indexOf(u8, sp, "cannot reach the human") != null);
 }
 
-// -------------------------------------------------------------------------
 // Tool description + system prompt — required-tools + worktree wording
-// -------------------------------------------------------------------------
 
 test "spawn_sub_agent description teaches REQUIRED explicit tools" {
     const desc = spawn_sub_agent_tool.function.description;
@@ -574,7 +555,6 @@ test "spawn_sub_agent system prompt carries tools-required and worktree rules" {
 }
 
 // Exec adapter — merged from `spawn_sub_agent.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
 const exec_tools = @import("../loop/tools.zig");
@@ -591,17 +571,14 @@ pub const slugifySubAgentName = batch.slugifySubAgentName;
 
 pub const ThreadResult = batch.ThreadResult;
 
-/// The batch size this tool advertises in its schema and enforces at parse
-/// time. The runner has its own `MaxBatch`; passing this keeps the tool's
-/// public contract and the runner's ceiling identical.
+/// The batch size this tool advertises in its schema and enforces at parse time.
 const MaxBatch = 20;
 
 pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     ctx.logger.debugFmt("execSpawnSubAgent called, arguments len={}", .{tc.function.arguments.len});
     ctx.logger.debugFmt("arguments: '{s}'", .{tc.function.arguments[0..@min(tc.function.arguments.len, 200)]});
 
-    // 2026-09-04 refresh fix: the snapshot registry (subagent_progress) is
-    // the refresh-rehydrate source until the final envelope lands in the DB.
+    // 2026-09-04 refresh fix: the snapshot registry (subagent_progress) is the refresh-rehydrate source until the final envelope lands in the DB.
     errdefer subagent_progress.clearSnapshot(ctx.tool_call_id);
 
     const parsed = parse_sub_agents(ctx.allocator, tc.function.arguments, MaxBatch) catch |err| {
@@ -643,13 +620,10 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     };
     defer outcome.deinit();
 
-    // The per-agent results below are serialized with
-    // `std.json.Stringify.valueAlloc` (never string-concat) — no
-    // intermediate writer buffer needed.
+    // The per-agent results below are serialized with `std.json.Stringify.valueAlloc` (never string-concat) — no intermediate writer buffer needed.
     const success_count = outcome.succeeded();
 
-    // Build the result JSON object via `std.json.Stringify.valueAlloc` (never
-    // string-concat).
+    // Build the result JSON object via `std.json.Stringify.valueAlloc` (never string-concat).
     const JsonAgent = struct {
         name: []const u8,
         success: bool,
@@ -666,8 +640,7 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
     var agents = try ctx.allocator.alloc(JsonAgent, outcome.results.len);
     defer ctx.allocator.free(agents);
     for (outcome.results, 0..) |result, i| {
-        // Sanitize free text so names/responses carrying control bytes
-        // can't break the JSON payload (Stringify handles the rest).
+        // Sanitize free text so names/responses carrying control bytes can't break the JSON payload (Stringify handles the rest).
         const name = try sanitize(ctx.allocator, result.name);
         try owned.append(ctx.allocator, name);
         const sid: ?[]u8 = if (result.session_id.len > 0)
@@ -706,15 +679,12 @@ pub fn execSpawnSubAgent(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResu
         },
     }, .{});
     const output = try wrapToolOutput(ctx.allocator, "spawn_sub_agent", tc.function.arguments, true, null, inner_owned);
-    // 2026-09-04 refresh fix: the final results payload is built — the DB row
-    // (written by handle_tool's updateAndSendToolResult right after we
-    // return) takes over as the source of truth, so the snapshot has served
+    // 2026-09-04 refresh fix: the final results payload is built — the DB row (written by handle_tool's updateAndSendToolResult right after we return) takes over as …
     subagent_progress.clearSnapshot(ctx.tool_call_id);
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
 /// Resolve the spawned child's config overlay from the live LlmConfig.
-/// `an` is the LLM-provided agent name.
 fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOverrides {
     const resolved = @constCast(ctx.config).resolveAgent(an);
     if (resolved.is_random_fallback) {
@@ -729,9 +699,7 @@ fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOv
         .base_url = resolved.base_url,
         .api_key = resolved.api_key,
         .url_style = resolved.url_style,
-        // Transport + its CLI knobs, threaded the same way — without these
-        // a CLI sub-agent would inherit backend="http" and POST to an empty
-        // base_url.
+        // Transport + its CLI knobs, threaded the same way — without these a CLI sub-agent would inherit backend="http" and POST to an empty base_url.
         .backend = resolved.backend,
         .config_dir = resolved.config_dir,
         .max_turns = resolved.max_turns,
@@ -739,9 +707,7 @@ fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOv
         .opencode_auto = resolved.opencode_auto,
         .is_thinking = resolved.is_thinking,
         .temperature = resolved.temperature,
-        // Model-thinking knobs (plan 2026-08-23-model-thinking), threaded
-        // from ResolvedAgent so the spawned sub-agent can override its
-        // parent profile's thinking budget / reasoning effort without
+        // Model-thinking knobs (plan 2026-08-23-model-thinking), threaded from ResolvedAgent so the spawned sub-agent can override its parent profile's thinking budget / …
         .thinking_budget_tokens = resolved.thinking_budget_tokens,
         .reasoning_effort = resolved.reasoning_effort,
         .system_prompt = resolved.system_prompt,
@@ -751,9 +717,7 @@ fn resolveOverrides(ctx: ToolExecContext, an: []const u8) ai_workflow.SubAgentOv
 const testing = std.testing;
 
 test "slugifySubAgentName keeps URL-safe chars, space->underscore" {
-    // 2026-09-04 subagent-peek P0: sid must be a single URL-safe path
-    // segment. Would have failed before slugify existed (raw spaces
-    // broke the HTTP request line, '/' broke router segment matching).
+    // 2026-09-04 subagent-peek P0: sid must be a single URL-safe path segment.
     const alloc = testing.allocator;
     const s1 = try slugifySubAgentName(alloc, "backend implementer");
     defer alloc.free(s1);

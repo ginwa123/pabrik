@@ -1,5 +1,4 @@
-/** The board-level change-request list: `?prs=` mirroring, the open-count badge and the per-column
- * error-badge key. Extracted from KanbanView.vue. */
+/** The board-level change-request list: `?prs=` mirroring, the open-count badge and the per-column error-badge key. */
 import { computed, nextTick, ref } from 'vue'
 import { listPrs } from '../../api'
 import { forgeWording } from '../../helpers/forgeWording'
@@ -14,7 +13,6 @@ export function useKanbanPrs(deps: KanbanBoardDeps) {
 const prsOpen = ref(false)
 const prsTab = ref<PrListTab>('open')
 // Handle to the mounted list for explicit reloads (tab switches).
-// The list exposes `reload()` instead of watching its props.
 const prListRef = ref<{ reload: () => void } | null>(null)
 const setPrListEl = (el: unknown) => {
   prListRef.value = el as { reload: () => void } | null
@@ -22,9 +20,7 @@ const setPrListEl = (el: unknown) => {
 // Open-count badge: null until the forge answers — never a fake 0.
 const prOpenCount = ref<number | null>(null)
 const prOpenTruncated = ref(false)
-// Forge guess for the button label + close calls. Updated by the
-// mount fetch; the list view learns the authoritative provider from
-// its own response.
+// Forge guess for the button label + close calls.
 const prProviderGuess = ref('')
 const prPluralLabel = computed(() =>
   forgeWording(prProviderGuess.value || undefined).short === 'MR'
@@ -33,9 +29,7 @@ const prPluralLabel = computed(() =>
 )
 
 const readPrsParam = (): PrListTab | null => {
-  // No try/catch here: `local/no-silent-fallback-catch` counts this file's fallbacks against a
-  // baseline, and a `catch → null` would be an 8th. Optional chaining is total on null/undefined,
-  // so there is nothing to catch.
+  // No try/catch here: `local/no-silent-fallback-catch` counts this file's fallbacks against a baseline, and a `catch → null` would be an 8th.
   const raw: unknown = route?.query?.[PRS_PARAM]
   return raw === 'open' || raw === 'closed' ? raw : null
 }
@@ -59,8 +53,7 @@ const openPrList = () => {
 
 const onPrTabChange = (tab: PrListTab) => {
   prsTab.value = tab
-  // The list does not watch the tab prop (`local/no-watch` bans new
-  // watchers) — reload explicitly, after the prop has propagated.
+  // The list does not watch the tab prop (`local/no-watch` bans new watchers) — reload explicitly, after the prop has propagated.
   void nextTick(() => prListRef.value?.reload())
   const query = flattenQuery(route?.query as Record<string, unknown> | undefined)
   query[PRS_PARAM] = tab
@@ -78,9 +71,7 @@ const onPrListOpenCount = (n: number) => {
   prOpenCount.value = n
 }
 
-// One open-count fetch on mount. A failure leaves the badge absent
-// rather than showing 0 — the `.then(ok, err)` shape (no
-// try/catch) matches the list view's own fail-visible contract.
+// One open-count fetch on mount.
 const fetchPrOpenCount = () => {
   const cwd = props.item.path || ''
   if (!cwd) return
@@ -96,8 +87,7 @@ const fetchPrOpenCount = () => {
   )
 }
 
-// After a successful close the board button's count drops by one and the affected card's badge must
-// flip from open to closed.
+// After a successful close the board button's count drops by one and the affected card's badge must flip from open to closed.
 const prBadgeTick = ref(0)
 const prClosedBranches = ref<string[]>([])
 

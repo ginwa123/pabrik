@@ -1,6 +1,4 @@
-/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. Used by the kanban
- * tree to edit a task's name + description with optional metadata (column, type, pinned). Mount
- * pattern: same as KanbanSettingsDialog.spec.ts. */
+/** Tests for KanbanTaskDetailDialog — focused, edit-in-place task detail view. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -28,9 +26,7 @@ function clickInDom(selector: string) {
   el.click()
 }
 
-// ─── Column dropdown (create mode) — plan 2026-08-06-kanban-add-task-button-placement ─── Replaces
-// the read-only column label in create mode with an interactive dropdown. Mirrors the profile
-// picker pattern (button trigger + ▾ dropdown + ✓ checkmark + click-outside close).
+// ─── Column dropdown (create mode) — plan 2026-08-06-kanban-add-task-button-placement ───
 describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
   let wrapper: VueWrapper | null = null
 
@@ -44,8 +40,7 @@ describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
     findAllInDom('[data-testid="kanban-task-detail-dialog"]').forEach((el) => el.remove())
   })
 
-  // Helper: mount the dialog in create mode with the given columns
-  // and an optional initial column (defaults to the first).
+  // Helper: mount the dialog in create mode with the given columns and an optional initial column (defaults to the first).
   function mountCreateWithColumns(
     columns: { id: string; name: string }[],
     initialColumnId: string | null = columns[0]?.id ?? null,
@@ -171,9 +166,7 @@ describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
     expect(findInDom('[data-testid="kanban-task-detail-column-picker-dropdown"]')).toBeNull()
   })
 
-  // NEW (kanban panel restructure). The dropdown is no longer an absolutely positioned overlay
-  // pinned to the trigger's left edge — it renders IN PLACE, as the next normal-flow block below
-  // its trigger. The old pins (min-w-[180px] + left-0 on the dropdown) described the overlay.
+  // NEW (kanban panel restructure).
   it('create mode: the column dropdown flows under a min-w-[180px] trigger with no width cap', async () => {
     mountCreateWithColumns([
       { id: 'col_x', name: 'todo' },
@@ -195,9 +188,7 @@ describe('KanbanTaskDetailDialog — column dropdown (create mode)', () => {
     expect(triggerClass).toContain('min-w-[180px]')
     expect(triggerClass).toContain('justify-between')
 
-    // The dropdown is an in-flow block sharing the trigger's container, laid out
-    // right below it (jsdom has no layout, so "same parent + next element
-    // sibling" is the measurable form of "directly below, same width").
+    // The dropdown is an in-flow block sharing the trigger's container, laid out right below it (jsdom has no layout, so "same parent + next element sibling" is the …
     const dropdownClass = dropdown!.getAttribute('class') ?? ''
     expect(dropdownClass).not.toContain('absolute')
     expect(dropdownClass).not.toContain('top-full')
@@ -254,8 +245,7 @@ describe('KanbanTaskDetailDialog — layout', () => {
     return wrapper
   }
 
-  // Regression for the "huge empty space below form" bug. The previous code used `height: min(80vh,
-  // calc(100vh - 2rem))` on the dialog card, which forced the dialog to always render at 80vh.
+  // Regression for the "huge empty space below form" bug.
   it('uses max-height (not fixed height) so the dialog shrinks to fit short content', async () => {
     mountDialog()
     await flushPromises()
@@ -266,14 +256,11 @@ describe('KanbanTaskDetailDialog — layout', () => {
     const style = card!.getAttribute('style') ?? ''
     // The fix: max-height caps at 80vh, but the card can shrink below it.
     expect(style).toMatch(/max-height:\s*min\(80vh,\s*calc\(100vh\s*-\s*2rem\)\)/)
-    // The bug: a fixed `height: min(80vh, ...)` forced the card to 80vh
-    // regardless of content height. Make sure we haven't reintroduced it.
+    // The bug: a fixed `height: min(80vh, ...)` forced the card to 80vh regardless of content height.
     expect(style).not.toMatch(/(^|[\s;])height:\s*min\(80vh/)
   })
 
-  // User feedback: "make the dialog bigger". The previous `max-w-xl` (576px) was narrow for a
-  // multi-field form (task name + column picker + description + tags + folder picker + profile
-  // picker + unattended mode).
+  // User feedback: "make the dialog bigger".
   it('uses max-w-2xl (bigger) so the form has more horizontal room', async () => {
     mountDialog()
     await flushPromises()
@@ -287,9 +274,7 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(classAttr).not.toMatch(/(^|\s)max-w-xl(\s|$)/)
   })
 
-  // User feedback: "fix the color font folder". The previous folder picker used the `📂` emoji which
-  // renders as a system-colorful icon (orange/yellow) that doesn't match the muted dark theme — the
-  // picker looked "out of place" next to the cleaner robot-emoji profile picker.
+  // User feedback: "fix the color font folder".
   it('create mode: folder picker uses an inline SVG icon (not the 📂 emoji)', async () => {
     mountCreateDialog('/home/user/projects/foo')
     await flushPromises()
@@ -307,8 +292,7 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(svg!.getAttribute('viewBox')).toBe('0 0 20 20')
   })
 
-  // When the cwd is set, the folder picker's text color is bright (`var(--semantic-text)` =
-  // #c5c9c5) — not dim — so the picked folder path reads clearly against the dark background.
+  // When the cwd is set, the folder picker's text color is bright (`var(--semantic-text)` = #c5c9c5) — not dim — so the picked folder path reads clearly against …
   it('create mode: folder picker text color is bright when cwd is set', async () => {
     mountCreateDialog('/home/user/projects/foo')
     await flushPromises()
@@ -317,7 +301,6 @@ describe('KanbanTaskDetailDialog — layout', () => {
     )
     expect(picker).not.toBeNull()
     // Read the inline style and assert it does NOT use the dim color.
-    // The button's color is set via inline style (Vue's :style binding).
     const inlineStyle = picker!.getAttribute('style') ?? ''
     // The new contract: when cwd is set, color is --semantic-text (bright).
     expect(inlineStyle).toMatch(/color:\s*var\(--semantic-text\)/)
@@ -325,9 +308,7 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(inlineStyle).not.toMatch(/color:\s*var\(--semantic-text-dim\)/)
   })
 
-  // When the cwd is NOT set (the "skip" / optional state), the folder picker text stays dim — this
-  // is intentional because the path slot shows the "Skip (no project root)" placeholder, which
-  // shouldn't look like an active selection.
+  // When the cwd is NOT set (the "skip" / optional state), the folder picker text stays dim — this is intentional because the path slot shows the "Skip (no project …
   it('create mode: folder picker text color is dim when cwd is empty', async () => {
     mountCreateDialog('')
     await flushPromises()
@@ -339,9 +320,7 @@ describe('KanbanTaskDetailDialog — layout', () => {
     expect(inlineStyle).toMatch(/color:\s*var\(--semantic-text-dim\)/)
   })
 
-  // ── cwd picker: open at the right place ───────────────────────────────── User feedback: "fix
-  // the folder query" — the per-task cwd picker used to always open at "/" regardless of
-  // cwd_session, forcing the user to navigate back to their cwd on every reopen.
+  // ── cwd picker: open at the right place ─────────────────────────────────
   describe('create mode: cwd picker opens at cwd_session (folder query fix)', () => {
     function mockFetchWithFs(
       entries: Record<string, Array<{ name: string; path: string; is_directory: boolean }>>,
@@ -389,15 +368,11 @@ describe('KanbanTaskDetailDialog — layout', () => {
       // Open the picker.
       clickInDom('[data-testid="kanban-task-detail-cwd-picker"]')
       await flushPromises()
-      // The picker opens on the Recent tab by default (per 2026-08-14-folder-picker-recent-history
-      // plan). Switch to Browse to assert that the cwd's children loaded — Recent is empty for a
-      // fresh test fixture so we can't see items there.
+      // The picker opens on the Recent tab by default (per 2026-08-14-folder-picker-recent-history plan).
       clickInDom('[data-testid="file-picker-tab-browse"]')
       await flushPromises()
 
-      // The cwd's children must be in the content pane — proving
-      // expandAncestors walked the chain back to cwd_session (not
-      // stopping at "/" because the picker opened at cwd_session).
+      // The cwd's children must be in the content pane — proving expandAncestors walked the chain back to cwd_session (not stopping at "/" because the picker opened at …
       expect(
         document.querySelector('[data-testid="file-picker-item-/home/user/projects/foo/src"]'),
       ).not.toBeNull()
@@ -417,13 +392,11 @@ describe('KanbanTaskDetailDialog — layout', () => {
       await flushPromises()
       clickInDom('[data-testid="kanban-task-detail-cwd-picker"]')
       await flushPromises()
-      // Same Recent-vs-Browse dance — the picker opens on Recent
-      // by default, switch to Browse to assert root entries.
+      // Same Recent-vs-Browse dance — the picker opens on Recent by default, switch to Browse to assert root entries.
       clickInDom('[data-testid="file-picker-tab-browse"]')
       await flushPromises()
 
-      // No cwd → picker opens at "/" → listFolder('/') is called →
-      // root entries are displayed.
+      // No cwd → picker opens at "/" → listFolder('/') is called → root entries are displayed.
       expect(document.querySelector('[data-testid="file-picker-item-/home"]')).not.toBeNull()
       // The breadcrumb should show just the root.
       const crumbs = document.querySelectorAll('[data-testid^="file-picker-crumb-"]')
@@ -450,8 +423,7 @@ describe('KanbanTaskDetailDialog — layout', () => {
       clickInDom('[data-testid="file-picker-tab-browse"]')
       await flushPromises()
 
-      // The footer "Selected:" line should reflect cwd_session so the
-      // user sees what they're about to overwrite on Select.
+      // The footer "Selected:" line should reflect cwd_session so the user sees what they're about to overwrite on Select.
       const selectedPath = document.querySelector('[data-testid="file-picker-selected-path"]')
       expect(selectedPath?.textContent?.trim()).toBe('/home/user/projects/foo')
     })

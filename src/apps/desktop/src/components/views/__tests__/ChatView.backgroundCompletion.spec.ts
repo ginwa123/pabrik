@@ -1,6 +1,4 @@
-/** A background-command completion is a TOOL result the backend stores as `role=user` (the loop
- * feeds it back to the model). It must group and fold with the calls — not sit in the transcript as
- * a user turn, and not split one agent run into three cards. */
+/** A background-command completion is a TOOL result the backend stores as `role=user` (the loop feeds it back to the model). */
 import { describe, it, expect } from 'vitest'
 import { ref } from 'vue'
 import {
@@ -91,8 +89,7 @@ function presentation(messages: Message[], mode: 'dev' | 'compact' = 'compact') 
     isRemoteLoadPending: ref(false),
     mode: () => mode,
   })
-  // The component's first render is an empty transcript, and that pass is what resolves the
-  // `messageGroups` ↔ `groupToolNames` cycle. Mirror it here.
+  // The component's first render is an empty transcript, and that pass is what resolves the `messageGroups` ↔ `groupToolNames` cycle.
   void p.messageGroups.value
   messagesRef.value = messages
   return p

@@ -1,6 +1,4 @@
-/** KanbanTaskRow — the elapsed chip in the metadata line. The row already said "busy" two ways (a
- * yellow 3px rail and the muted `● agent running` label). This spec pins the third signal the
- * wireframe added: how long the run has been going, and whether it is still heart-beating. */
+/** KanbanTaskRow — the elapsed chip in the metadata line. */
 import { mount } from '@vue/test-utils'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'
@@ -38,8 +36,7 @@ const mountRow = (
     opts.busy === false ? {} : { [TASK_ID]: true },
   ) as Ref<Record<string, boolean>>
   const activity = ref(opts.activity ?? {}) as Ref<Record<string, WorkerActivity>>
-  // The 1s ticker is app-scoped (`workerNow` in App.vue); the row just
-  // reads it. Handing the test its own ref lets a tick be simulated.
+  // The 1s ticker is app-scoped (`workerNow` in App.vue); the row just reads it.
   const now = ref(Date.now()) as Ref<number>
   return mount(KanbanTaskRow, {
     props: { task: opts.task ?? task(), workspaceId: 'ws_1', itemId: 'item_1' },
@@ -88,8 +85,7 @@ describe('KanbanTaskRow elapsed chip', () => {
   })
 
   it('stays yellow for a long run that is still heart-beating', () => {
-    // 20 minutes old, 2 seconds since the last heartbeat: one long tool
-    // call, not a stall. The elapsed number is large but the state is not.
+    // 20 minutes old, 2 seconds since the last heartbeat: one long tool call, not a stall.
     const wrapper = mountRow({
       activity: {
         [TASK_ID]: { startedAt: ago(1_200_000), lastActivityAt: ago(2_000), description: '' },
@@ -107,9 +103,7 @@ describe('KanbanTaskRow elapsed chip', () => {
   })
 
   it('renders no chip when the row is busy but has no activity entry yet', () => {
-    // The SSE `worker_created` event and the activity map are written in
-    // the same handler, but a row can render in between. Absence must be
-    // silent, not a "0s" chip.
+    // The SSE `worker_created` event and the activity map are written in the same handler, but a row can render in between.
     const wrapper = mountRow({ activity: {} })
     expect(wrapper.find('[data-testid="kanban-row-elapsed"]').exists()).toBe(false)
   })

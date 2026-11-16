@@ -1,5 +1,4 @@
-/** Regression guard for `local/no-any-unknown`. A lint rule that silently stops matching is worse
- * than no rule — it looks enforced and enforces nothing. */
+/** Regression guard for `local/no-any-unknown`. */
 import { describe, expect, it } from 'vitest'
 import { Linter } from 'eslint'
 import tsParser from '@typescript-eslint/parser'
@@ -16,16 +15,14 @@ function lint(code: string): string[] {
     {
       files: ['**/*.ts'],
       languageOptions: {
-        // The same parser the app lints with, so a rule that only works under
-        // one parser cannot pass here and fail in `pnpm run lint:check`.
+        // The same parser the app lints with, so a rule that only works under one parser cannot pass here and fail in `pnpm run lint:check`.
         parser: tsParser as never,
         parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
       },
       plugins: { local: plugin as never },
       rules: Object.fromEntries(ONLY_ANY_UNKNOWN.map((r) => [r, 'error'])),
     },
-    // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a
-    // path to match against the block is silently skipped and every rule reports nothing.
+    // The filename is REQUIRED: a flat config's `files` array is a matching filter, so without a path to match against the block is silently skipped and every rule …
     'probe.ts',
   )
   return messages.map((m) => m.ruleId as string)
@@ -88,8 +85,7 @@ describe('local/no-any-unknown', () => {
   })
 
   it('allows unknown as a function parameter', () => {
-    // The boundary position: the function promises nothing about its input
-    // and must narrow it. This is the repo's `parseX(data: unknown)` shape.
+    // The boundary position: the function promises nothing about its input and must narrow it.
     expect(lint(`function parseRow(data: unknown) { return data }`)).toEqual([])
   })
 

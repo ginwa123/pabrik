@@ -1,6 +1,4 @@
-//! Filesystem backend: the root directory IS the bucket, and a key is a
-//! relative path under it. This is the shape rustfs itself puts on disk, so
-//! moving to the S3 backend later is a config change, not a data migration.
+//! Filesystem backend: the root directory IS the bucket, and a key is a relative path under it.
 
 const std = @import("std");
 const storage = @import("storage.zig");
@@ -47,8 +45,7 @@ pub const FsStorage = struct {
             self.dir.createDirPath(self.io, parent) catch return error.IoFailed;
         }
 
-        // Atomic: the object appears whole or not at all, so a crash mid-write
-        // can never leave a half body behind a key the row already points at.
+        // Atomic: the object appears whole or not at all, so a crash mid-write can never leave a half body behind a key the row already points at.
         var atomic = self.dir.createFileAtomic(self.io, key, .{ .replace = true }) catch return error.IoFailed;
         defer atomic.deinit(self.io);
         atomic.file.writeStreamingAll(self.io, body) catch return error.IoFailed;
@@ -272,8 +269,6 @@ test "fs repeated get does not grow live bytes" {
 }
 
 /// A pass-through allocator that tracks the bytes it is currently holding.
-/// `testing.allocator` only reports a leak when the test ends, so a per-call
-/// leak inside a loop is invisible without this.
 const CountingAllocator = struct {
     parent: std.mem.Allocator,
     live_bytes: usize = 0,

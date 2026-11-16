@@ -1,6 +1,4 @@
 // Functional regression for "the second turn never shows up in pabrik-tui".
-// Zig port of `tests/functional/tui_turn_streaming_test.py` (same test names,
-// same order).
 
 const std = @import("std");
 const testing = std.testing;
@@ -15,18 +13,14 @@ const posix = std.posix;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Turn fixtures
-// ============================================================================
 
 const TURN1_USER = "first question";
 const TURN1_REPLY = "FIRST-TURN-REPLY";
 const TURN2_USER = "second question";
 const TURN2_REPLY = "SECOND-TURN-REPLY";
 
-/// What the fake backend serves. It advances one step per GET so the
-/// client observes: turn 1 streaming -> turn 1 stop -> turn 2 user ->
-/// turn 2 stop.
+/// What the fake backend serves.
 const TURN1 = [_][]const u8{
     \\{"id":"u1","role":"user","content":"first question"}
     ,
@@ -41,8 +35,7 @@ const TURN2_REPLY_ROW =
     \\{"id":"a2","role":"assistant","content":"SECOND-TURN-REPLY","finish_reason":"stop"}
 ;
 
-// Only reached once the client sends its SECOND message — a client that
-// stops polling (the bug) never asks for these.
+// Only reached once the client sends its SECOND message — a client that stops polling (the bug) never asks for these.
 const SEQ_AFTER_POST_1 = [_][]const u8{
     TURN1[0],
     TURN1[0],
@@ -60,9 +53,7 @@ const SEQ_AFTER_POST_2 = [_][]const u8{
     TURN2_USER_ROW,  TURN2_REPLY_ROW,
 };
 
-/// Join a sequence of message rows into `{"messages":[...]}`. `{"messages":[
-/// <seq[index]> ]}` — ONE poll step, not the whole sequence. Owned by the
-/// caller.
+/// Join a sequence of message rows into `{"messages":[...]}`.
 fn messagesBody(allocator: std.mem.Allocator, seq: []const []const u8, index: usize) ![]u8 {
     const rows = seq[index .. index + 1];
     var w: Io.Writer.Allocating = .init(allocator);
@@ -77,22 +68,17 @@ fn messagesBody(allocator: std.mem.Allocator, seq: []const []const u8, index: us
     return w.toOwnedSlice();
 }
 
-// ============================================================================
 // Stub backend
-// ============================================================================
 
-/// A one-request-at-a-time HTTP stub serving the two-turn sequence, driven by
-/// its own thread.
+/// A one-request-at-a-time HTTP stub serving the two-turn sequence, driven by its own thread.
 const Backend = struct {
     io: Io,
     port: u16 = 0,
     server: Io.net.Server = undefined,
     thread: std.Thread = undefined,
-    /// Named `stop_flag`, not `stop`: the method below is `stop`, and a
-    /// struct cannot carry a field and a function of the same name.
+    /// Named `stop_flag`, not `stop`: the method below is `stop`, and a struct cannot carry a field and a function of the same name.
     stop_flag: std.atomic.Value(bool) = .init(false),
-    /// Guards `posts` / `gets`: the serve thread writes them while the test
-    /// reads `posts` after the TUI has been driven.
+    /// Guards `posts` / `gets`: the serve thread writes them while the test reads `posts` after the TUI has been driven.
     mutex: Io.Mutex = .init,
     posts: usize = 0,
     gets: usize = 0,
@@ -126,8 +112,7 @@ const Backend = struct {
 
 fn serve(b: *Backend) void {
     while (true) {
-        // `defer` inside a loop body runs at the end of THAT iteration,
-        // so each accepted socket is closed before the next accept.
+        // `defer` inside a loop body runs at the end of THAT iteration, so each accepted socket is closed before the next accept.
         var stream = b.server.accept(b.io) catch break;
         defer stream.close(b.io);
         if (b.stop_flag.load(.acquire)) break;
@@ -143,9 +128,7 @@ fn handleRequest(b: *Backend, stream: Io.net.Stream) !void {
     var acc: Io.Writer.Allocating = .init(gpa);
     defer acc.deinit();
 
-    // THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER. `fill(1)` reads a
-    // whole syscall's worth, so one call typically returns the head AND the
-    // first chunk of the body.
+    // THE HEAD AND THE BODY OVERLAP IN THE SOCKET BUFFER.
     var head_len: usize = 0;
     while (head_len == 0) {
         r.fill(1) catch return;
@@ -175,8 +158,7 @@ fn handleRequest(b: *Backend, stream: Io.net.Stream) !void {
     if (is_post) {
         b.mutex.lockUncancelable(b.io);
         b.posts += 1;
-        // Turn 2 begins: reset the GET sequence so the client sees turn 1's
-        // rows (including its `stop`) followed by turn 2's.
+        // Turn 2 begins: reset the GET sequence so the client sees turn 1's rows (including its `stop`) followed by turn 2's.
         if (b.posts > 1) b.gets = 0;
         b.mutex.unlock(b.io);
     } else {
@@ -186,8 +168,7 @@ fn handleRequest(b: *Backend, stream: Io.net.Stream) !void {
         b.mutex.unlock(b.io);
 
         const seq: []const []const u8 = if (b.readPosts() <= 1) &SEQ_AFTER_POST_1 else &SEQ_AFTER_POST_2;
-        // `min(gets, len(seq) - 1)` — the sequence sticks on its last
-        // entry rather than wrapping.
+        // `min(gets, len(seq) - 1)` — the sequence sticks on its last entry rather than wrapping.
         const step = @min(idx, seq.len - 1);
         const body = try messagesBody(gpa, seq, step);
         defer gpa.free(body);
@@ -226,9 +207,7 @@ fn contentLength(head: []const u8) usize {
     return 0;
 }
 
-// ============================================================================
 // PTY + the TUI child
-// ============================================================================
 
 const TIOCSPTLCK: u32 = 0x40045431;
 const TIOCGPTN: u32 = 0x80045430;
@@ -253,7 +232,6 @@ fn openPty() !struct { master: posix.fd_t, slave: posix.fd_t } {
     errdefer _ = linux.close(master);
 
     // unlockpt: the ioctl ARGUMENT is a POINTER to an int, not the int.
-    // Passing `0` faults, and the slave open then fails `EIO`.
     var unlock: c_int = 0;
     if (std.posix.errno(linux.ioctl(master, TIOCSPTLCK, @intFromPtr(&unlock))) != .SUCCESS) {
         std.debug.print("unlockpt (TIOCSPTLCK) failed\n", .{});
@@ -283,8 +261,7 @@ fn openPty() !struct { master: posix.fd_t, slave: posix.fd_t } {
     return .{ .master = master, .slave = slave };
 }
 
-/// A running `pabrik-tui` attached to a PTY, with a reader thread
-/// accumulating its output. This is Python's `_Tui`.
+/// A running `pabrik-tui` attached to a PTY, with a reader thread accumulating its output.
 const Tui = struct {
     master: posix.fd_t,
     child: std.process.Child,
@@ -313,8 +290,7 @@ const Tui = struct {
         return error.SkipZigTest;
     }
 
-    /// Returns a HEAP-ALLOCATED `*Tui`, or null after cleaning up. WHY A
-    /// POINTER, NOT A VALUE.
+    /// Returns a HEAP-ALLOCATED `*Tui`, or null after cleaning up.
     fn start(backend_port: u16) !?*Tui {
         if (comptime builtin.os.tag != .linux) return error.SkipZigTest;
 
@@ -334,17 +310,14 @@ const Tui = struct {
             .stdin = .{ .file = slave_file },
             .stdout = .{ .file = slave_file },
             .stderr = .{ .file = slave_file },
-            // Own process group, so the SIGTERM below reaches any subprocess
-            // the TUI spawned.
+            // Own process group, so the SIGTERM below reaches any subprocess the TUI spawned.
             .pgid = 0,
         });
-        // The child's stdio are dups; ours must go or the master never
-        // sees EOF. Python did the same with `os.close(slave)`.
+        // The child's stdio are dups; ours must go or the master never sees EOF.
         _ = linux.close(pty.slave);
 
         const self = try gpa.create(Tui);
-        // `gpa.create` does NOT apply field defaults. Assigning `.*`
-        // applies them all in one shot; `child` is filled in below.
+        // `gpa.create` does NOT apply field defaults.
         self.* = .{
             .master = pty.master,
             .child = child,
@@ -353,18 +326,15 @@ const Tui = struct {
         errdefer gpa.destroy(self);
         self.reader = try std.Thread.spawn(.{}, drain, .{self});
 
-        // Python's fixture: `time.sleep(1.5)` after spawn, before the first
-        // keystroke.
+        // Python's fixture: `time.sleep(1.5)` after spawn, before the first keystroke.
         std.Io.sleep(io, .fromMilliseconds(1_500), .awake) catch {};
         return self;
     }
 
-    /// Stop the child, stop the reader, free everything. Explicit ordering
-    /// rather than a chain of `defer`s, because the order is load-bearing: 1.
+    /// Stop the child, stop the reader, free everything.
     fn deinit(self: *Tui) void {
         harness.signalGroup(@intCast(self.child.id.?), harness.SIGTERM);
-        // The TUI restores the terminal on the way out; give it a
-        // moment before escalating, as Python's `wait(timeout=5)` did.
+        // The TUI restores the terminal on the way out; give it a moment before escalating, as Python's `wait(timeout=5)` did.
         std.Io.sleep(io, .fromMilliseconds(250), .awake) catch {};
         // `kill` is idempotent and reaps — do NOT call `wait` after it.
         self.child.kill(io);
@@ -378,8 +348,7 @@ const Tui = struct {
         gpa.destroy(self);
     }
 
-    /// Type `text` one byte at a time (the TUI is in raw mode and reads
-    /// key-by-key), then Enter, then let the frame settle.
+    /// Type `text` one byte at a time (the TUI is in raw mode and reads key-by-key), then Enter, then let the frame settle.
     fn typeAndSend(self: *Tui, text: []const u8, settle_ms: i64) !void {
         for (text) |ch| {
             try self.writeMaster(&[_]u8{ch});
@@ -401,8 +370,7 @@ const Tui = struct {
         if (written != bytes.len) return error.PtyWriteFailed;
     }
 
-    /// Terminal output with CSI/OSC escape sequences stripped — Python's
-    /// `_Tui.plain`. Returns an OWNED buffer the caller frees.
+    /// Terminal output with CSI/OSC escape sequences stripped — Python's `_Tui.plain`.
     fn plain(self: *Tui) ![]u8 {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -440,8 +408,7 @@ const Tui = struct {
                     i = j;
                 },
                 else => {
-                    // Not a sequence this regex matched — Python left
-                    // the ESC byte in place too, so do the same.
+                    // Not a sequence this regex matched — Python left the ESC byte in place too, so do the same.
                     try out.writeByte(src[i]);
                     i += 1;
                 },
@@ -478,8 +445,7 @@ fn drain(t: *Tui) void {
     while (!t.stop.load(.acquire)) {
         const ready = posix.poll(&fds, 100) catch 0;
         if (ready == 0) continue;
-        // A PTY master reports EOF as `EIO` once the slave is gone, not
-        // as a zero-length read. Either ends the loop.
+        // A PTY master reports EOF as `EIO` once the slave is gone, not as a zero-length read.
         const got = posix.read(t.master, &scratch) catch break;
         if (got == 0) break;
 
@@ -489,9 +455,7 @@ fn drain(t: *Tui) void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Control: the turn that worked before must keep working.
 test "first_turn_renders" {
@@ -519,9 +483,7 @@ test "first_turn_renders" {
     }
 }
 
-// The regression: a completed previous turn must not end the next one. The
-// poll response always contains the whole session, so turn 1's
-// `finish_reason="stop"` row is present during turn 2.
+// The regression: a completed previous turn must not end the next one.
 test "second_turn_renders_after_the_previous_turn_finished" {
     try requireTuiBin();
 
@@ -559,9 +521,7 @@ test "second_turn_renders_after_the_previous_turn_finished" {
         std.debug.print("turn-2 reply never reached the viewport; screen was:\n{s}\n", .{screen});
         return error.TestUnexpectedResult;
     }
-    // The fake backend only serves turn 2's payloads once the client
-    // has sent its second message, so reaching them proves polling
-    // continued.
+    // The fake backend only serves turn 2's payloads once the client has sent its second message, so reaching them proves polling continued.
     if (backend.readPosts() != 2) {
         std.debug.print(
             "expected exactly 2 POSTs (one per typed message), got {d}\n",
@@ -571,8 +531,7 @@ test "second_turn_renders_after_the_previous_turn_finished" {
     }
 }
 
-// Body-analysis barrier. An unreferenced function is never type-checked,
-// so a stdlib rename inside one stays invisible until a caller appears.
+// Body-analysis barrier.
 comptime {
     _ = messagesBody;
     _ = Backend.start;

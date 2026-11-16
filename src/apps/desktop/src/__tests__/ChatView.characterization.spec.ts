@@ -1,5 +1,4 @@
-/** Behavior lock for ChatView: mounts the real component against a wire fixture that reaches every
- * render branch, then pins what renders — it fails when a refactor changes what the user sees. */
+/** Behavior lock for ChatView: mounts the real component against a wire fixture that reaches every render branch, then pins what renders — it fails when a … */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -48,8 +47,7 @@ const COMPACTION = JSON.stringify({ compact_messages: [{ role: 'user', content: 
 
 const FILE_ATTACHMENTS = JSON.stringify([{ name: 'spec.pdf', mime: 'application/pdf', bytes: 10 }])
 
-/** One row per render branch: multi-message groups, reasoning, rich blocks, tool cards,
- *  image-only user rows, document chips, a compaction envelope and a background completion. */
+/** One row per render branch: multi-message groups, reasoning, rich blocks, tool cards, image-only user rows, document chips, a compaction envelope and a … */
 const FIXTURE_ROWS = [
   { id: 'u1', role: 'user', content: 'hello there', created_at: 1_700_000_001 },
   {
@@ -210,9 +208,7 @@ function projectRow(el: Element): string[] {
   return tokens
 }
 
-/** What the transcript must contain, as an order-independent multiset of landmark paths.
- *  DOM order is not stable in jsdom (the scroller re-windows on every measure), so the lock is on
- *  WHICH rows render and WHAT each row draws — never on their sequence. */
+/** What the transcript must contain, as an order-independent multiset of landmark paths. */
 const EXPECTED_ROW_TOKENS: string[][] = [
   [],
   ['markdown', 'tool-sequence', 'tool-item'],
@@ -404,8 +400,7 @@ describe('ChatView behavior lock — transcript projection', () => {
     await row.trigger('click')
     await flushPromises()
 
-    // A mention addresses an agent: it joins the chat's roster, which is what
-    // makes the loop route the turn to it. The session's own agent stays put.
+    // A mention addresses an agent: it joins the chat's roster, which is what makes the loop route the turn to it.
     expect(join).toHaveBeenCalledWith('s_char_agents', 'alpha')
     expect(update).not.toHaveBeenCalled()
   })

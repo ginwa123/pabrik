@@ -1,6 +1,4 @@
-/** One home for the kanban tag colour cycle (Migration 067). A tag's chip is the djb2 hash of its
- * lowercase name, so the same tag keeps the same colour in the row, the card and the editor. The six
- * hues are theme TOKENS: a tag darkens with the light theme instead of glowing on it. */
+/** One home for the kanban tag colour cycle (Migration 067). */
 const TAG_HUES = ['violet', 'blue', 'green', 'yellow', 'orange', 'red'] as const
 
 export interface TagStyle {

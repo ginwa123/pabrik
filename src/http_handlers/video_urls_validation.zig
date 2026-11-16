@@ -1,15 +1,11 @@
-//! Validation + joining helpers for `workspace_item_tasks.video_urls`
-//! (Migration 090 — kanban video urls column).
+//! Validation + joining helpers for `workspace_item_tasks.video_urls` (Migration 090 — kanban video urls column).
 
 const std = @import("std");
 
-/// Cap on the total joined `video_urls` payload (25 MB). Base64 inflates
-/// ~33%, so this fits roughly one 18 MB raw video or several smaller clips.
+/// Cap on the total joined `video_urls` payload (25 MB).
 pub const MAX_VIDEO_URLS_BYTES: usize = 25 * 1024 * 1024;
 
-/// Validate each URL in `joined` is a `data:video/<mime>;base64,...` URL with
-/// an allowlisted mime, and the total byte length is within
-/// `MAX_VIDEO_URLS_BYTES`.
+/// Validate each URL in `joined` is a `data:video/<mime>;base64,...` URL with an allowlisted mime, and the total byte length is within `MAX_VIDEO_URLS_BYTES`.
 pub fn validateVideoUrls(joined: []const u8) ![]const u8 {
     if (joined.len > MAX_VIDEO_URLS_BYTES) return error.VideoUrlsTooLarge;
     if (joined.len == 0) return joined; // empty = no videos
@@ -23,8 +19,7 @@ pub fn validateVideoUrls(joined: []const u8) ![]const u8 {
 }
 
 fn isAllowedVideoMime(mime: []const u8) bool {
-    // Allowlist: video/mp4, video/webm, video/quicktime (mov),
-    // video/x-msvideo (avi), video/x-matroska (mkv).
+    // Allowlist: video/mp4, video/webm, video/quicktime (mov), video/x-msvideo (avi), video/x-matroska (mkv).
     if (std.mem.eql(u8, mime, "video/mp4")) return true;
     if (std.mem.eql(u8, mime, "video/webm")) return true;
     if (std.mem.eql(u8, mime, "video/quicktime")) return true;
@@ -33,9 +28,7 @@ fn isAllowedVideoMime(mime: []const u8) bool {
     return false;
 }
 
-/// `data:video/<mime>;base64,<payload>` — the only shape the frontend's
-/// `FileReader.readAsDataURL` produces for video files. Empty payloads
-/// are rejected.
+/// `data:video/<mime>;base64,<payload>` — the only shape the frontend's `FileReader.readAsDataURL` produces for video files.
 fn isValidVideoDataUrl(segment: []const u8) bool {
     const prefix = "data:video/";
     if (!std.mem.startsWith(u8, segment, prefix)) return false;

@@ -1,6 +1,4 @@
-// Functional tests for full video upload to LLM (Migration 090). Zig port of
-// `tests/functional/agent_video_upload_test.py` (same test names, same
-// order).
+// Functional tests for full video upload to LLM (Migration 090).
 
 const std = @import("std");
 const testing = std.testing;
@@ -14,9 +12,7 @@ const MP4 = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE="
 const WEBM = "data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84E";
 const MOV = "data:video/quicktime;base64,AAAAIGZ0eXBxdCA=";
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
 /// Parse OWNED bytes into a `harness.Json`.
 fn parseJson(bytes: []const u8) !harness.Json {
@@ -41,7 +37,6 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
 }
 
 /// `POST /api/workspaces/<ws>/items/kanban {"name", "path"}` → item id.
-/// Owned.
 fn createKanban(h: *Harness, workspace_id: []const u8) ![]u8 {
     const board_path = try harness.harnessPath(gpa, h.temp_dir, &.{"video-test"});
     defer gpa.free(board_path);
@@ -77,8 +72,7 @@ fn createKanban(h: *Harness, workspace_id: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// `POST .../kanban/tasks` → the WHOLE response body, owned. `expect`
-/// carries the status so the two 400 cases reuse this helper.
+/// `POST .../kanban/tasks` → the WHOLE response body, owned.
 fn createTaskBody(
     h: *Harness,
     ws: []const u8,
@@ -133,8 +127,7 @@ fn getTaskBody(h: *Harness, ws: []const u8, kb: []const u8, task_id: []const u8)
     return gpa.dupe(u8, r.body);
 }
 
-/// `GET .../tasks/<task_id>/media` → the WHOLE media body, owned. The lazy
-/// media payload (media-flags change).
+/// `GET .../tasks/<task_id>/media` → the WHOLE media body, owned.
 fn getTaskMediaBody(h: *Harness, ws: []const u8, kb: []const u8, task_id: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(
         gpa,
@@ -190,8 +183,7 @@ fn sessionId(body: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// Poll session messages until a user row appears (async worker drain), then
-/// report whether any user row's `video_url` contains `needle`.
+/// Poll session messages until a user row appears (async worker drain), then report whether any user row's `video_url` contains `needle`.
 fn userMessageHasVideo(h: *Harness, session_id: []const u8, needle: []const u8, timeout_s: f64) !bool {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}/messages", .{session_id});
     defer gpa.free(path);
@@ -203,8 +195,7 @@ fn userMessageHasVideo(h: *Harness, session_id: []const u8, needle: []const u8, 
     var hit = false;
     while (true) {
         var r = try h.http(io, .GET, path, .{
-            // `params` values are percent-encoded by the harness; none of
-            // these three need escaping, so they land verbatim.
+            // `params` values are percent-encoded by the harness; none of these three need escaping, so they land verbatim.
             .params = &.{
                 .{ .name = "sort_by", .value = "created_at" },
                 .{ .name = "direction", .value = "asc" },
@@ -310,8 +301,7 @@ fn expectStr(obj: std.json.ObjectMap, key: []const u8, want: []const u8, ctx: []
     }
 }
 
-/// Python `assert key not in obj` — prints the sorted key list on
-/// failure, exactly as `sorted(task)` did.
+/// Python `assert key not in obj` — prints the sorted key list on failure, exactly as `sorted(task)` did.
 fn expectKeyAbsent(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !void {
     if (obj.get(key) != null) {
         const rendered = try renderKeys(obj);
@@ -335,9 +325,7 @@ fn strLessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.order(u8, a, b) == .lt;
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // Create with a video -> the flag is set and `/media` round-trips it.
 test "create_task_with_mp4_echoes_video_urls" {
@@ -369,9 +357,7 @@ test "create_task_with_mp4_echoes_video_urls" {
             std.debug.print("expected task object, got: {s}\n", .{resp_raw});
             return error.TestUnexpectedResult;
         };
-        // The create response carries the flag, not the payload — asserting
-        // `task["video_urls"]` here is what broke when the media-flags change
-        // moved the full string to the lazy /media route.
+        // The create response carries the flag, not the payload — asserting `task["video_urls"]` here is what broke when the media-flags change moved the full string to …
         try expectTrue(task, "is_have_video", "create response task");
         try expectKeyAbsent(task, "video_urls", "create response should stay flag-only");
     }
@@ -681,8 +667,7 @@ test "create_session_with_video_urls_attaches_them_to_user_message" {
     }
 }
 
-// The async path: create_and_run queues a message, and the worker drains
-// it into llm_history with the video attached.
+// The async path: create_and_run queues a message, and the worker drains it into llm_history with the video attached.
 test "chat_send_with_video_urls_persists_to_session_messages" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -743,8 +728,7 @@ test "chat_send_direct_with_video_urls" {
     }
 }
 
-// Regression: session_create rejected bodies > 1 MB with 413. A real 1.8 MB
-// mp4 base64-encodes to ~2.4 MB of JSON.
+// Regression: session_create rejected bodies > 1 MB with 413.
 test "chat_send_with_2mb_video_body_is_accepted" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
@@ -752,8 +736,7 @@ test "chat_send_with_2mb_video_body_is_accepted" {
         std.debug.print("teardown: {s}", .{@errorName(err)});
     };
 
-    // `"A" * (2 * 1024 * 1024)` inside the data URL — base64 text, not
-    // decoded media, so the payload stays honest at 2 MB.
+    // `"A" * (2 * 1024 * 1024)` inside the data URL — base64 text, not decoded media, so the payload stays honest at 2 MB.
     const big: usize = 2 * 1024 * 1024;
     var payload: std.Io.Writer.Allocating = .init(gpa);
     defer payload.deinit();
@@ -790,9 +773,7 @@ test "chat_send_with_2mb_video_body_is_accepted" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = parseJson;
     _ = createWorkspace;
     _ = createKanban;

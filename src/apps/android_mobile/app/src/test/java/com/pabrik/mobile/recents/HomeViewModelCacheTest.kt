@@ -23,19 +23,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The stale-while-revalidate contract at the ViewModel level.
- *
- * The cache contract is about ORDERING: paint from cache, then revalidate. A
- * synchronous unit test cannot observe the intermediate state users actually
- * see — which is precisely the state that makes a cache worth having.
- *
- * Main and IO run on SEPARATE schedulers, mirroring the device. On a single
- * scheduler the fetch completes inline inside `onUserChanged` (the test body is
- * already on that dispatcher, so `withContext` never suspends), and the
- * "painted before the network answered" assertion becomes untestable. With two
- * schedulers the fetch is genuinely pending until drained.
- */
+/** The stale-while-revalidate contract at the ViewModel level. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelCacheTest {
 
@@ -98,14 +86,10 @@ class HomeViewModelCacheTest {
     ) = HomeViewModel(
         client = RecentsClient(MemorySessionStore(), httpTransport = transport),
         cache = cache,
-        // The projects section has no say in these tests, so it gets a
-        // client that answers nothing and a cache that answers nothing —
-        // which is what keeps an unrelated project fetch from showing up
-        // as a second request these tests would then have to account for.
+        // The projects section has no say in these tests, so it gets a client that answers nothing and a cache that answers nothing — which is what keeps an unrelated …
         projectsClient = ProjectsClient(MemorySessionStore()),
         projectsCache = InMemoryProjectsCache(),
-        // Same reasoning: these tests are about the recents cache, and the
-        // board's form is never opened by any of them.
+        // Same reasoning: these tests are about the recents cache, and the board's form is never opened by any of them.
         kanbanClient = KanbanClient(MemorySessionStore()),
         positionStore = positionStore,
         ioDispatcher = ioDispatcher,
@@ -171,9 +155,7 @@ class HomeViewModelCacheTest {
 
         model.selectWorkspace("ws_2")
 
-        // Without priming here this would be empty until the network answered:
-        // a spinner over rows already on disk. The web's loadChats primes from
-        // cache on every call, not just on mount.
+        // Without priming here this would be empty until the network answered
         val state = model.uiState.value
         assertEquals(listOf("two-cached-chat"), state.chats.map { it.id })
         assertEquals("ws_2", state.chats.single().workspaceId)
@@ -204,8 +186,7 @@ class HomeViewModelCacheTest {
         s.drain()
 
         val state = model.uiState.value
-        // No cache AND no network must read as an error, never as "you have no
-        // workspaces" — those are different truths.
+        // No cache AND no network must read as an error, never as "you have no workspaces" — those are different truths.
         assertTrue(state.workspaces.isEmpty())
         assertTrue("expected an error message", state.errorMessage != null)
         assertEquals(false, state.isEmpty)
@@ -252,8 +233,7 @@ class HomeViewModelCacheTest {
         model.onUserChanged("user_a")
         assertEquals(listOf("A's workspace"), model.uiState.value.workspaces.map { it.name })
 
-        // B signs in on the same device. B must never see A's rows, not even
-        // for the frames before B's own fetch lands.
+        // B signs in on the same device.
         model.onUserChanged("user_b")
 
         assertTrue(model.uiState.value.workspaces.isEmpty())

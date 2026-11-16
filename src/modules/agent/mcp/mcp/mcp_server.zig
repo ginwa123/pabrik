@@ -550,15 +550,12 @@ pub const McpServer = struct {
     }
 };
 
-// The McpServer tests that used to live in mcp_server_test.zig are now
-// inline at the bottom of this file (2026-09-29 flatten).
+// The McpServer tests that used to live in mcp_server_test.zig are now inline at the bottom of this file (2026-09-29 flatten).
 
 // ===== Tests merged from mcp_server_test.zig (2026-09-29 flatten) =====
 const testing = std.testing;
 
-// Note: McpServer cannot be directly instantiated in tests because it contains
-// a function pointer field (toolExecutor) which requires comptime.
-// The server is tested via integration tests. This file tests the types.
+// Note: McpServer cannot be directly instantiated in tests because it contains a function pointer field (toolExecutor) which requires comptime.
 
 // ============ Error Code Tests ============
 

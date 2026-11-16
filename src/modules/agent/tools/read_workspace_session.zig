@@ -13,14 +13,11 @@ const sanitize = helpers.sanitize_control_chars;
 
 /// Input for read_workspace_session.
 pub const ReadWorkspaceSessionInput = struct {
-    /// Target session for READ / SEARCH-WITHIN. Must belong to the same
-    /// workspace as the calling session or the call is denied.
+    /// Target session for READ / SEARCH-WITHIN.
     session_id: []const u8 = "",
     /// FTS5 query for SEARCH / SEARCH-WITHIN (auto-sanitized, OR recall).
     query: []const u8 = "",
-    /// Comma-separated message ids. Returns full `content` for these ids
-    /// (capped at `MAX_MESSAGE_IDS`). In SEARCH the lookup is restricted
-    /// to workspace sessions — ids from other workspaces are skipped.
+    /// Comma-separated message ids.
     message_ids: []const u8 = "",
     /// Optional exact-match role filter.
     role: []const u8 = "",
@@ -28,44 +25,33 @@ pub const ReadWorkspaceSessionInput = struct {
     since: []const u8 = "",
     /// Optional upper bound on created_at (inclusive).
     until: []const u8 = "",
-    /// When true, restrict to rows with `is_feed_to_llm = 1` (currently in
-    /// the LLM's live context). Mutually exclusive with `compacted_only`.
+    /// When true, restrict to rows with `is_feed_to_llm = 1` (currently in the LLM's live context).
     live_only: bool = false,
-    /// When true, restrict to rows with `is_feed_to_llm = 0` (dropped from
-    /// the LLM's context by compaction). Mutually exclusive with
-    /// `live_only`.
+    /// When true, restrict to rows with `is_feed_to_llm = 0` (dropped from the LLM's context by compaction).
     compacted_only: bool = false,
-    /// Optional exact-match filter on `tool_name`. Useful for "find every
-    /// `command` invocation that ran `cargo test`".
+    /// Optional exact-match filter on `tool_name`.
     tool_name: []const u8 = "",
-    /// Optional exact-match filter on `parent_session_id`. Useful for
-    /// sub-agent debugging — find every message in any session whose parent
-    /// is the given session_id.
+    /// Optional exact-match filter on `parent_session_id`.
     parent_session_id: []const u8 = "",
-    /// Optional exact-match filter on `agent`. Useful when one session has
-    /// multiple agents (planning vs chat vs sub-agent).
+    /// Optional exact-match filter on `agent`.
     agent: []const u8 = "",
     /// Max rows to return. Defaults to 20; capped at 200 (LIST caps at 50).
     limit: u32 = 20,
-    /// Skip the first N results. SEARCH only — used to paginate through FTS
-    /// results when there are more than `limit` matches.
+    /// Skip the first N results.
     offset: u32 = 0,
-    /// Order direction for READ. "asc" (chronological forward, default) or
-    /// "desc" (most-recent-first). SEARCH always orders by FTS rank.
+    /// Order direction for READ.
     order: []const u8 = "asc",
     /// When true, the caller's OWN session is included in the results.
     is_current_session: bool = false,
 };
 
-/// Hard cap on how many `message_ids` the LLM can request at once. Prevents a
-/// single call from dumping megabytes of full `content` into the context.
+/// Hard cap on how many `message_ids` the LLM can request at once.
 pub const MAX_MESSAGE_IDS: u32 = 50;
 
 /// Hard cap on bytes of full `content` per individual message.
 pub const MAX_FULL_CONTENT_BYTES: u32 = 16 * 1024;
 
-/// Hard cap on LIST rows. Discovery should stay cheap — the LLM can
-/// SEARCH once it knows what to look for.
+/// Hard cap on LIST rows.
 pub const MAX_LIST_LIMIT: u32 = 50;
 
 pub const read_workspace_session_tool_system_prompt =
@@ -160,8 +146,7 @@ fn deniedJSON(allocator: std.mem.Allocator, session_id: []const u8) ![]u8 {
     }, .{});
 }
 
-/// Refusal for READ / SEARCH-WITHIN aimed at the caller's own session while
-/// `is_current_session` is false.
+/// Refusal for READ / SEARCH-WITHIN aimed at the caller's own session while `is_current_session` is false.
 fn currentSessionRefusedJSON(allocator: std.mem.Allocator, behavior: []const u8) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, .{
         .behavior = behavior,
@@ -172,8 +157,7 @@ fn currentSessionRefusedJSON(allocator: std.mem.Allocator, behavior: []const u8)
     }, .{});
 }
 
-/// Owned copy of `ids` with the caller's own session removed, unless
-/// `include_caller`. Free with `workspace_scope.freeSessionIds`.
+/// Owned copy of `ids` with the caller's own session removed, unless `include_caller`.
 fn withoutCallerSession(
     allocator: std.mem.Allocator,
     ids: []const []const u8,
@@ -192,9 +176,7 @@ fn withoutCallerSession(
     return try out.toOwnedSlice(allocator);
 }
 
-/// Execute read_workspace_session. Returns an XML string for the LLM.
-/// `caller_session_id` is the session invoking the tool (server-side,
-/// from the dispatch context — never from LLM input).
+/// Execute read_workspace_session.
 pub fn execute_read_workspace_session(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -243,8 +225,7 @@ pub fn execute_read_workspace_session(
     if (want_search and !want_read) {
         const ws_ids = try workspace_scope.workspaceSessionIds(allocator, db, ws.?);
         defer workspace_scope.freeSessionIds(allocator, ws_ids);
-        // Drop the caller unless asked for it. `executeSearch` treats an
-        // empty scoped set as "no results" rather than "no filter".
+        // Drop the caller unless asked for it.
         const scoped_ids = try withoutCallerSession(allocator, ws_ids, caller_session_id, input.is_current_session);
         defer workspace_scope.freeSessionIds(allocator, scoped_ids);
         return executeSearch(allocator, db, scoped_ids, null, feed_filter, input);
@@ -295,9 +276,7 @@ fn executeList(
 
     const list_limit = @min(input.limit, MAX_LIST_LIMIT);
 
-    // Metadata for every workspace session except the caller's own —
-    // unless `is_current_session` opted it back in.
-    // Bound IN-list (never string-interpolated ids).
+    // Metadata for every workspace session except the caller's own — unless `is_current_session` opted it back in.
     var metas: std.ArrayList(SessionMeta) = .empty;
     errdefer {
         for (metas.items) |m| m.deinit(allocator);
@@ -438,8 +417,7 @@ fn executeSearch(
     };
 
     const hits = blk: {
-        // An empty session-id set means "this workspace has no session other
-        // than yours" (the caller is alone and is_current_session is false).
+        // An empty session-id set means "this workspace has no session other than yours" (the caller is alone and is_current_session is false).
         if (ws_ids) |ids| {
             if (ids.len == 0) break :blk try allocator.alloc(llm_history.SearchHit, 0);
         }
@@ -532,9 +510,7 @@ fn executeSearch(
         };
     }
 
-    // Full content block — workspace-scoped: ids resolving outside the
-    // workspace are skipped, never leaked. Null when no message_ids
-    // were requested.
+    // Full content block — workspace-scoped: ids resolving outside the workspace are skipped, never leaked.
     var clean_full: ?[]JsonFull = null;
     if (parsed_ids.len > 0) {
         const full_messages = llm_history.getMessagesByIds(allocator, db, parsed_ids) catch |err| {
@@ -598,8 +574,7 @@ fn executeSearch(
     }, .{});
 }
 
-/// True when `session_id` belongs to the search scope: the workspace id
-/// set, or the single within-session.
+/// True when `session_id` belongs to the search scope: the workspace id set, or the single within-session.
 fn isIdInWorkspace(
     ws_ids: ?[][]u8,
     within_session_id: ?[]const u8,
@@ -898,7 +873,6 @@ fn setupDb() !TestCtx {
     , &.{});
 
     // Workspace w1: task-linked s1 + plain-chat s3 (cwd under /proj/a).
-    // Workspace w2: task-linked s2.
     try db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('i1', 'w1', 'kanban', 'A', '/proj/a', 1),
@@ -1021,9 +995,7 @@ test "read_workspace_session: SEARCH with no peer session returns empty, never a
     }
     const alloc = testing.allocator;
 
-    // w3 has exactly one session (s4) and it is the caller. Excluding the
-    // caller leaves an empty id set — which must read as "no results", not
-    // as "no filter", or the FTS query would sweep every workspace.
+    // w3 has exactly one session (s4) and it is the caller.
     try s.db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('i3', 'w3', 'kanban', 'C', '/proj/c', 1)
@@ -1182,8 +1154,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
     }
     const alloc = testing.allocator;
 
-    // Reading your own session needs an explicit opt-in — otherwise the
-    // response is a hint, not your own history back.
+    // Reading your own session needs an explicit opt-in — otherwise the response is a hint, not your own history back.
     const self = try execute_read_workspace_session(alloc, s.threaded.io(), &s.db, "s1", .{
         .session_id = "s1",
     });
@@ -1237,9 +1208,7 @@ test "read_workspace_session: self-read refused by default, allowed on opt-in, g
 }
 
 test "read_workspace_session: tool schema advertises is_current_session and defaults it off" {
-    // The JSON schema IS the wire contract with the LLM provider — the
-    // registry HTTP endpoint only exposes {name, description}, so this is
-    // the only place the new param can be asserted for the wire.
+    // The JSON schema IS the wire contract with the LLM provider — the registry HTTP endpoint only exposes {name, description}, so this is the only place the new …
     const props = read_workspace_session_tool.function.parameters.properties;
 
     var found = false;
@@ -1247,31 +1216,26 @@ test "read_workspace_session: tool schema advertises is_current_session and defa
         if (!std.mem.eql(u8, p.name, "is_current_session")) continue;
         found = true;
         try testing.expectEqualStrings("boolean", p.type);
-        // The description has to say the default is off, otherwise the model
-        // has no reason to ever set it.
+        // The description has to say the default is off, otherwise the model has no reason to ever set it.
         try testing.expect(std.mem.indexOf(u8, p.description, "Default false") != null);
     }
     try testing.expect(found);
 
-    // Optional param — putting it in `required` would break every existing
-    // call that omits it.
+    // Optional param — putting it in `required` would break every existing call that omits it.
     for (read_workspace_session_tool.function.parameters.required) |r| {
         try testing.expect(!std.mem.eql(u8, r, "is_current_session"));
     }
 
-    // The struct default is what actually excludes the current session when
-    // the model never sends the key at all.
+    // The struct default is what actually excludes the current session when the model never sends the key at all.
     const default_input = ReadWorkspaceSessionInput{};
     try testing.expect(!default_input.is_current_session);
 
-    // The tool description and system prompt both have to teach the flag, or
-    // the model sees a param with no guidance.
+    // The tool description and system prompt both have to teach the flag, or the model sees a param with no guidance.
     try testing.expect(std.mem.indexOf(u8, read_workspace_session_tool.function.description, "is_current_session") != null);
     try testing.expect(std.mem.indexOf(u8, read_workspace_session_tool_system_prompt, "is_current_session") != null);
 }
 
 // Exec adapter — merged from `read_workspace_session.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1295,8 +1259,7 @@ pub fn execReadWorkspaceSession(ctx: ToolExecContext, tc: agent.ToolCall) !ToolE
     };
     defer parsed.deinit();
 
-    // Workspace scope is derived server-side from the calling session —
-    // the LLM never supplies (or spoofs) a workspace id.
+    // Workspace scope is derived server-side from the calling session — the LLM never supplies (or spoofs) a workspace id.
     const inner = read_workspace_session_mod.execute_read_workspace_session(
         ctx.allocator,
         ctx.io,

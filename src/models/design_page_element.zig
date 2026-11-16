@@ -1,6 +1,4 @@
-//! Data model for the `design_page_elements` entity table. One row per
-//! positioned element on a design page (rectangle, ellipse, text, image,
-//! frame, or group).
+//! Data model for the `design_page_elements` entity table.
 
 const std = @import("std");
 
@@ -9,29 +7,22 @@ pub const EntityId = []u8;
 id: EntityId,
 page_id: []u8,
 name: []u8,
-/// Absolute or workspace-relative path to the HTML body file on
-/// disk. Empty slice for elements created before the file model
-/// migration.
+/// Absolute or workspace-relative path to the HTML body file on disk.
 file_path: []u8 = &.{},
 x: i64 = 0,
 y: i64 = 0,
 width: i64 = 375,
 height: i64 = 667,
-/// Stack order within a page. Higher = on top. The kanban-model
-/// convention puts containers BELOW children (`min_z - 1`), so a
-/// group painted with `fill: #181616` does NOT occlude its kids.
+/// Stack order within a page.
 z_index: i64 = 0,
 /// Order within the (z_index, position) sort key.
 position: i64 = 0,
 created_at: []u8,
 updated_at: []u8,
-/// One of `"rectangle"` | `"ellipse"` | `"text"` | `"image"` |
-/// `"frame"` | `"group"` | `"unknown"`. The DB column has no CHECK
-/// constraint.
+/// One of `"rectangle"` | `"ellipse"` | `"text"` | `"image"` | `"frame"` | `"group"` | `"unknown"`.
 elem_type: []u8,
 rotation: f64 = 0.0,
-/// CSS color string (`#rrggbb`, `rgba(...)`, etc.). Empty slice
-/// is "no fill" (the canvas background shows through).
+/// CSS color string (`#rrggbb`, `rgba(...)`, etc.).
 fill: []u8 = &.{},
 stroke: []u8 = &.{},
 stroke_width: i64 = 0,
@@ -42,8 +33,7 @@ text_content: []u8 = &.{},
 /// JSON-encoded text-style object (font, weight, size, etc.).
 text_style: []u8 = &.{},
 image_url: []u8 = &.{},
-/// Migration 057 — FK to a `group` or `frame` on the same page
-/// (NULL for top-level).
+/// Migration 057 — FK to a `group` or `frame` on the same page (NULL for top-level).
 parent_id: ?[]u8 = null,
 
 const Self = @This();

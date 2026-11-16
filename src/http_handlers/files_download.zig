@@ -1,6 +1,4 @@
-//! `GET
-//! /api/files/download?session_id=<id>&path=<abs>&disposition=<inline|attachment>`
-//! Serves workspace file bytes for the `present_files` agent tool card
+//! `GET /api/files/download?session_id=<id>&path=<abs>&disposition=<inline|attachment>` Serves workspace file bytes for the `present_files` agent tool card
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
@@ -12,8 +10,7 @@ const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
 const presented_source = @import("../modules/agent/tools/presented_source.zig");
 const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 
-/// Cap mirrors `present_files.zig:MAX_FILE_BYTES` so every presented
-/// file is downloadable. Must stay in sync (see the sync test below).
+/// Cap mirrors `present_files.zig:MAX_FILE_BYTES` so every presented file is downloadable.
 pub const MAX_DOWNLOAD_BYTES: usize = 50 * 1024 * 1024;
 
 pub const Disposition = enum {
@@ -21,8 +18,7 @@ pub const Disposition = enum {
     attachment,
 };
 
-/// Parse the `?disposition=` query value. Absent → attachment (the safe
-/// default: browsers download rather than render).
+/// Parse the `?disposition=` query value.
 pub fn parseDisposition(raw: ?[]const u8) !Disposition {
     const s = raw orelse return .attachment;
     if (std.mem.eql(u8, s, "attachment")) return .attachment;
@@ -30,9 +26,7 @@ pub fn parseDisposition(raw: ?[]const u8) !Disposition {
     return error.InvalidDisposition;
 }
 
-/// The only media types a browser may render from the app origin. A tenant's
-/// `.html` or `.svg` is an active document, so neither is ever in here; the
-/// list is raster images, pdf and media.
+/// The only media types a browser may render from the app origin.
 const inline_allowlist = [_][]const u8{
     "image/png",
     "image/jpeg",
@@ -54,8 +48,7 @@ pub fn inlineAllowed(mime: []const u8) bool {
     return false;
 }
 
-/// Inline is a REQUEST, never a right: a type outside the allowlist is served
-/// as an attachment whatever the caller asked for.
+/// Inline is a REQUEST, never a right: a type outside the allowlist is served as an attachment whatever the caller asked for.
 pub fn effectiveDisposition(requested: Disposition, mime: []const u8) Disposition {
     if (requested == .attachment) return .attachment;
     return if (inlineAllowed(mime)) .inline_preview else .attachment;
@@ -93,8 +86,7 @@ const mime_table = [_]MimeEntry{
     .{ .ext = ".mp4", .mime = "video/mp4" },
 };
 
-/// Extension-based mime (case-insensitive ASCII, last `.` after the final
-/// `/`).
+/// Extension-based mime (case-insensitive ASCII, last `.` after the final `/`).
 pub fn mimeForPath(path: []const u8) []const u8 {
     var dot_idx: ?usize = null;
     for (path, 0..) |c, i| {
@@ -112,13 +104,9 @@ pub fn mimeForPath(path: []const u8) []const u8 {
     return "application/octet-stream";
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
-/// What the browser is handed: the bytes, the type it may be read as, and the
-/// name it downloads under. `bytes` and `basename` belong to the caller's
-/// allocator — the per-request one every response payload lives in.
+/// What the browser is handed: the bytes, the type it may be read as, and the name it downloads under.
 pub const Fetched = struct {
     bytes: []u8,
     mime: []const u8,
@@ -205,8 +193,7 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
         );
     };
 
-    // Empty path is the PR #291 trap (`""` binds as NULL / fails
-    // `isAbsolute`) — reject before touching the filesystem.
+    // Empty path is the PR #291 trap (`""` binds as NULL / fails `isAbsolute`) — reject before touching the filesystem.
     if (path_param.len == 0) {
         return gserverz.HttpResponse.init(400, "Bad Request", allocator).withJson(
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Empty path" }),
@@ -217,8 +204,7 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path must be absolute" }),
         );
     }
-    // Defense in depth (mirrors `static_files.resolve`): the canonicalization
-    // below is the real protection.
+    // Defense in depth (mirrors `static_files.resolve`): the canonicalization below is the real protection.
     if (file_sandbox.hasParentSegment(path_param)) {
         return gserverz.HttpResponse.init(403, "Forbidden", allocator).withJson(
             try http_response.makeErrorResponse(allocator, .{ .@"error" = "Path traversal rejected" }),
@@ -236,9 +222,7 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     };
     defer allocator.free(root);
 
-    // The tree lives in the workspace's VM under `--saas`, and on this host
-    // everywhere else. A VM that cannot answer is a refusal, never a quiet
-    // read of whatever this host happens to have at the same path.
+    // The tree lives in the workspace's VM under `--saas`, and on this host everywhere else.
     var guest = workspace_fs.forSession(allocator, di.db, session_id) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return gserverz.HttpResponse.init(503, "Service Unavailable", allocator).withJson(
@@ -287,17 +271,13 @@ pub fn filesDownloadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest
     const mime = fetched.mime;
     const basename = fetched.basename;
     const effective = effectiveDisposition(disposition, mime);
-    // `withHeader` stores the slice by reference (same as `setContentType`
-    // and every `makeErrorResponse` payload in this codebase) — do NOT free
-    // it; it lives in the per-request allocator like all other handler
+    // `withHeader` stores the slice by reference (same as `setContentType` and every `makeErrorResponse` payload in this codebase) — do NOT free it; it lives in the …
     const disp_value = switch (effective) {
         .attachment => try std.fmt.allocPrint(allocator, "attachment; filename=\"{s}\"", .{basename}),
         .inline_preview => try std.fmt.allocPrint(allocator, "inline; filename=\"{s}\"", .{basename}),
     };
 
     // `withBody` sets Content-Length; `setContentType` sets Content-Type.
-    // `nosniff` is unconditional: the extension-derived type must never be
-    // re-interpreted by the browser into something renderable.
     var resp = gserverz.HttpResponse.init(200, "OK", allocator).withBody(fetched.bytes).setContentType(mime).withHeader(
         "Content-Disposition",
         disp_value,
@@ -354,8 +334,7 @@ test "effectiveDisposition: an inline request for an active document downloads" 
 }
 
 test "every mime the table can produce is classified, never left undefined" {
-    // An uploaded `.svg` is the stored-XSS case: mimeForPath knows it, and the
-    // disposition rule must still refuse to render it.
+    // An uploaded `.svg` is the stored-XSS case: mimeForPath knows it, and the disposition rule must still refuse to render it.
     try testing.expectEqualStrings("image/svg+xml", mimeForPath("/a/logo.svg"));
     try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, mimeForPath("/a/logo.svg")));
     try testing.expectEqual(Disposition.attachment, effectiveDisposition(.inline_preview, mimeForPath("/a/x.html")));
@@ -363,9 +342,7 @@ test "every mime the table can produce is classified, never left undefined" {
 }
 
 test "the shared rule is the one this endpoint applies" {
-    // The container / sibling / drive-letter cases live in
-    // `file_sandbox.zig` (they need the explicit PathStyle to be testable
-    // from a posix host). This only pins that the handler reaches for it.
+    // The container / sibling / drive-letter cases live in `file_sandbox.zig` (they need the explicit PathStyle to be testable from a posix host).
     const style = file_sandbox.nativeStyle();
     try testing.expect(file_sandbox.isInsideRoot("/tmp/abc", "/tmp/abc", style));
     try testing.expect(file_sandbox.isInsideRoot("/tmp/abc", "/tmp/abc/file.txt", style));
@@ -382,8 +359,6 @@ test "MAX_DOWNLOAD_BYTES stays in sync with the tool cap" {
 }
 
 // ─── Workspace-VM tests ──────────────────────────────────────────────────
-// Under `--saas` the presented file is inside the workspace's microVM: the host
-// has never had these bytes, and the card's own download is what this answers.
 
 test "a file that exists only in the workspace VM is served with its own bytes" {
     const alloc = testing.allocator;

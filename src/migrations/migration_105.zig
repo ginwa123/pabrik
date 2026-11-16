@@ -4,8 +4,7 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 105 - create `workspace_settings`, the per-workspace config
-/// overlay.
+/// Migration 105 - create `workspace_settings`, the per-workspace config overlay.
 pub const Migration105CreateWorkspaceSettings = struct {
     pub const version: u32 = 105;
     pub const name = "create_workspace_settings";

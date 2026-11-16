@@ -1,14 +1,10 @@
-//! One-shot migration of the two on-disk skill directories into the `skills`,
-//! `skill_assets` and `skill_metadata` tables. 39 skills are installed today:
-//! 22 under `~/.config/pabrik/skills/` and 17 under `<cwd>/.pabrik/skills/`.
+//! One-shot migration of the two on-disk skill directories into the `skills`, `skill_assets` and `skill_metadata` tables. 39 skills are installed today: 22 under …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const database = pabrikcore.database;
-/// `frontmatter.parse` is used HERE and in the write tools: this is the one
-/// moment the promoted keys move out of the body and into their columns, and
-/// the rest of the block becomes `skill_metadata` rows.
+/// `frontmatter.parse` is used HERE and in the write tools: this is the one moment the promoted keys move out of the body and into their columns, and the rest of …
 const frontmatter = @import("skill_frontmatter.zig");
 const skills_store = @import("skills_store.zig");
 
@@ -18,23 +14,15 @@ pub const SKILL_FILE_NAME = "SKILL.MD";
 /// How deep to walk inside one skill directory looking for companions.
 pub const MAX_SKILL_DEPTH: usize = 8;
 
-// =====================================================================
 // Report
-// =====================================================================
 
-/// Why one directory entry did not become a row. `not_a_directory` is not
-/// necessarily a problem: a README.md sitting in the skills directory shows
-/// up here. The other variants mean a real skill was left behind.
+/// Why one directory entry did not become a row.
 pub const SkipReason = enum {
-    /// The directory name fails `isValidSkillName` (`.hidden`, `..`,
-    /// `has space`, a name longer than 128 bytes). Checked BEFORE any file
-    /// is opened, because the name becomes a path component.
+    /// The directory name fails `isValidSkillName` (`.hidden`, `..`, `has space`, a name longer than 128 bytes).
     invalid_name,
     /// An entry in the skills directory that is not a skill folder.
     not_a_directory,
-    /// A symlink inside a bundle. Not followed: it is either a cycle or a
-    /// pointer outside the bundle, and materialising the target under a
-    /// `rel_path` the body never mentions would be a surprise.
+    /// A symlink inside a bundle.
     symlinked_entry,
     /// No readable `SKILL.MD` in the directory.
     missing_skill_file,
@@ -54,35 +42,27 @@ pub const SkipReason = enum {
     unsafe_rel_path,
     /// The bundle nests deeper than `MAX_SKILL_DEPTH`.
     max_depth_exceeded,
-    /// The skills directory itself could not be opened for a reason that
-    /// is not "it is not there".
+    /// The skills directory itself could not be opened for a reason that is not "it is not there".
     skills_dir_unreadable,
 };
 
 /// One entry that did not become a row. All strings are allocator-owned.
 pub const SkippedEntry = struct {
-    /// The DIRECTORY name, which is always known — even when the
-    /// frontmatter was unusable and there is no better identifier. An
-    /// operator can always find this folder on disk with it.
+    /// The DIRECTORY name, which is always known — even when the frontmatter was unusable and there is no better identifier.
     dir_name: []const u8,
     reason: SkipReason,
-    /// The offending relative path, the I/O error name, or "" when the
-    /// reason speaks for itself.
+    /// The offending relative path, the I/O error name, or "" when the reason speaks for itself.
     detail: []const u8,
 };
 
 pub const ImportReport = struct {
-    /// Rows CREATED, counted per (skill, destination workspace). A skill
-    /// fanned out to three workspaces contributes three.
+    /// Rows CREATED, counted per (skill, destination workspace).
     skills_written: usize = 0,
-    /// Rows that already held that name and were updated in place, same
-    /// counting rule.
+    /// Rows that already held that name and were updated in place, same counting rule.
     skills_updated: usize = 0,
     /// Companion rows written, across every skill written above.
     assets_written: usize = 0,
-    /// Everything that did NOT make it in, with the reason. Empty is the
-    /// only acceptable steady state; a caller that logs
-    /// `skipped.len` at start-up turns a silent loss into a visible one.
+    /// Everything that did NOT make it in, with the reason.
     skipped: []const SkippedEntry = &.{},
 };
 
@@ -96,8 +76,7 @@ pub fn freeImportReport(allocator: std.mem.Allocator, report: ImportReport) void
 
 /// A skills directory and the workspaces that should receive it.
 pub const DirTarget = struct {
-    /// `~/.config/pabrik/skills` or `<project>/.pabrik/skills`, resolved
-    /// against the process cwd. Ignored when `open_dir` is set.
+    /// `~/.config/pabrik/skills` or `<project>/.pabrik/skills`, resolved against the process cwd.
     dir: []const u8 = "",
     /// An ALREADY-OPEN handle to that directory, for a caller that has one.
     open_dir: ?std.Io.Dir = null,
@@ -105,21 +84,16 @@ pub const DirTarget = struct {
     workspace_ids: []const []const u8,
 };
 
-/// The importer's error surface is exactly the store's, plus "you handed me
-/// no directory".
+/// The importer's error surface is exactly the store's, plus "you handed me no directory".
 pub const ImportError = skills_store.ListSkillsError ||
     skills_store.GetSkillError ||
     skills_store.UpsertSkillError ||
     skills_store.ReplaceAssetsError ||
     error{SkillsDirRequired};
 
-// =====================================================================
 // Entry points
-// =====================================================================
 
-/// Read one skills directory into one workspace. The shape most callers want:
-/// `~/.config/pabrik/skills` or one project's `.pabrik/skills`, one
-/// destination.
+/// Read one skills directory into one workspace. The shape most callers want
 pub fn importFromDir(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -132,8 +106,7 @@ pub fn importFromDir(
     });
 }
 
-/// Read every directory in `targets`, writing each one's skills into each of
-/// that target's workspaces.
+/// Read every directory in `targets`, writing each one's skills into each of that target's workspaces.
 pub fn importFromTargets(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -177,26 +150,18 @@ pub fn importFromTargets(
     return report;
 }
 
-// =====================================================================
 // Read phase
-// =====================================================================
 
-/// A skill as it exists on disk, fully loaded, ready to be written to any
-/// number of workspaces. Read once per directory, written N times.
+/// A skill as it exists on disk, fully loaded, ready to be written to any number of workspaces.
 const LoadedSkill = struct {
-    /// Row name. The frontmatter's `name:` when it parses AND passes
-    /// `isValidSkillName`, else the directory name.
+    /// Row name.
     name: []const u8,
     description: []const u8,
-    /// The body's `is_can_auto_improve:` when it declares one. It only wins
-    /// on the FIRST import: `upsertSkill` deliberately leaves the column
-    /// alone on conflict, so a re-import cannot undo a human's unlock.
+    /// The body's `is_can_auto_improve:` when it declares one.
     is_can_auto_improve: ?bool = null,
     /// Byte-exact SKILL.MD, frontmatter included.
     body: []const u8,
-    /// Companion files, `rel_path` relative to the SKILL DIRECTORY (so
-    /// `scripts/convert.py`, never `pdf/scripts/convert.py`) — the path
-    /// the body refers to, and the path `use_skill` materialises.
+    /// Companion files, `rel_path` relative to the SKILL DIRECTORY (so `scripts/convert.py`, never `pdf/scripts/convert.py`) — the path the body refers to, and the …
     assets: []skills_store.SkillAssetInput,
 };
 
@@ -227,9 +192,7 @@ fn recordSkip(
     reason: SkipReason,
     detail: []const u8,
 ) !void {
-    // Logged AND recorded: the record is what an operator reads after the
-    // fact, and the log is what reaches them the one time they are looking at
-    // the console.
+    // Logged AND recorded: the record is what an operator reads after the fact, and the log is what reaches them the one time they are looking at the console.
     std.log.info(
         "skills_import: skipped '{s}': {s}{s}{s}",
         .{
@@ -254,13 +217,9 @@ fn openAndLoadDir(
     loaded: *std.ArrayList(LoadedSkill),
     skipped: *std.ArrayList(SkippedEntry),
 ) !void {
-    // follow_symlinks = true here (the default) so a symlinked skills
-    // directory still opens; the recursion into a skill's own
-    // subdirectories uses false.
+    // follow_symlinks = true here (the default) so a symlinked skills directory still opens; the recursion into a skill's own subdirectories uses false.
     const dir = std.Io.Dir.cwd().openDir(io, skills_dir, .{ .iterate = true }) catch |err| switch (err) {
-        // A machine with no `~/.config/pabrik/skills` has nothing to
-        // import, and that is not a skip worth reporting — reporting it
-        // would put a permanent entry in every fresh install's report.
+        // A machine with no `~/.config/pabrik/skills` has nothing to import, and that is not a skip worth reporting — reporting it would put a permanent entry in every …
         error.FileNotFound, error.NotDir, error.BadPathName => return,
         else => |e| {
             try recordSkip(allocator, skipped, skills_dir, .skills_dir_unreadable, @errorName(e));
@@ -272,8 +231,7 @@ fn openAndLoadDir(
     try loadDir(io, allocator, skills_dir, dir, loaded, skipped);
 }
 
-/// Every skill in one already-open directory, plus everything in it that did
-/// not qualify.
+/// Every skill in one already-open directory, plus everything in it that did not qualify.
 fn loadDir(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -317,9 +275,7 @@ fn loadSkill(
     };
     defer std.Io.Dir.close(dir, io);
 
-    // Limit one byte over the cap so an oversized file is DETECTED rather
-    // than surfacing as `error.StreamTooLong`, which would be
-    // indistinguishable from a read failure.
+    // Limit one byte over the cap so an oversized file is DETECTED rather than surfacing as `error.StreamTooLong`, which would be indistinguishable from a read …
     const body = dir.readFileAlloc(
         io,
         SKILL_FILE_NAME,
@@ -346,8 +302,7 @@ fn loadSkill(
     }
     errdefer allocator.free(body);
 
-    // Name, description and the lock: the promoted keys, plus the metadata
-    // the callers below re-derive from `body` rather than re-parse here.
+    // Name, description and the lock: the promoted keys, plus the metadata the callers below re-derive from `body` rather than re-parse here.
     var parsed = try frontmatter.parse(allocator, body);
     defer parsed.deinit(allocator);
 
@@ -416,8 +371,7 @@ fn collectAssets(
     out: *std.ArrayList(skills_store.SkillAssetInput),
 ) !void {
     if (depth > MAX_SKILL_DEPTH) {
-        // `detail` is duped by recordSkip, so the borrowed prefix is fine
-        // here — an allocPrint would be a second copy nobody frees.
+        // `detail` is duped by recordSkip, so the borrowed prefix is fine here — an allocPrint would be a second copy nobody frees.
         try recordSkip(allocator, skipped, skill_dir_name, .max_depth_exceeded, rel_prefix);
         return;
     }
@@ -432,9 +386,7 @@ fn collectAssets(
         // The body's own file is not a companion of itself.
         if (depth == 0 and std.mem.eql(u8, entry.name, SKILL_FILE_NAME)) continue;
 
-        // `defer`, not `errdefer`: the block ends every iteration, and the
-        // success path copies the path into the asset row rather than handing
-        // over this buffer.
+        // `defer`, not `errdefer`: the block ends every iteration, and the success path copies the path into the asset row rather than handing over this buffer.
         const rel_path = try std.fmt.allocPrint(
             allocator,
             "{s}{s}",
@@ -442,9 +394,7 @@ fn collectAssets(
         );
         defer allocator.free(rel_path);
 
-        // A name assembled from directory entries cannot contain `..` today,
-        // but this is the guard the store's own contract promises, and it is
-        // cheaper here than discovering the hole after some future caller
+        // A name assembled from directory entries cannot contain `..` today, but this is the guard the store's own contract promises, and it is cheaper here than …
         if (!isSafeRelPath(rel_path)) {
             try recordSkip(allocator, skipped, skill_dir_name, .unsafe_rel_path, rel_path);
             continue;
@@ -452,9 +402,7 @@ fn collectAssets(
 
         switch (entry.kind) {
             .directory => {
-                // follow_symlinks = false: a link loop would otherwise walk
-                // until MAX_SKILL_DEPTH, and a link out of the bundle would
-                // materialise a file the body never mentions.
+                // follow_symlinks = false: a link loop would otherwise walk until MAX_SKILL_DEPTH, and a link out of the bundle would materialise a file the body never mentions.
                 const sub = skill_dir.openDir(io, entry.name, .{
                     .iterate = true,
                     .follow_symlinks = false,
@@ -519,24 +467,17 @@ fn readCompanion(
 
     try out.append(allocator, .{
         .rel_path = owned_rel_path,
-        // Byte-exact. Not trimmed, not re-encoded: a companion is a script
-        // the model may RUN, and normalising it would change behaviour.
+        // Byte-exact.
         .content = content,
     });
 }
 
-/// True when `rel_path` is safe to hand to `use_skill`'s materialisation
-/// directory: relative, no `..`, no `.`, no backslash, no empty or trailing
-/// component.
+/// True when `rel_path` is safe to hand to `use_skill`'s materialisation directory: relative, no `..`, no `.`, no backslash, no empty or trailing component.
 pub fn isSafeRelPath(rel_path: []const u8) bool {
     if (rel_path.len == 0) return false;
-    // A backslash is a separator on Windows and a legal filename byte
-    // everywhere else; a rel_path containing one means the caller built it on
-    // the wrong platform, and writing it out would resolve differently than
+    // A backslash is a separator on Windows and a legal filename byte everywhere else; a rel_path containing one means the caller built it on the wrong platform, and …
     if (std.mem.indexOfScalar(u8, rel_path, '\\') != null) return false;
-    // Covers `/etc/passwd`, `\\server\share` and the Windows drive form
-    // `C:\\x`, which `std.fs.path.isAbsolute` refuses to recognise when the
-    // build target is POSIX.
+    // Covers `/etc/passwd`, `\\server\share` and the Windows drive form `C:\\x`, which `std.fs.path.isAbsolute` refuses to recognise when the build target is POSIX.
     if (std.fs.path.isAbsolute(rel_path)) return false;
     const first = rel_path[0];
     if (first == '/' or first == '\\') return false;
@@ -544,17 +485,14 @@ pub fn isSafeRelPath(rel_path: []const u8) bool {
 
     var it = std.mem.splitScalar(u8, rel_path, '/');
     while (it.next()) |segment| {
-        // Covers a leading "/" ("/etc/passwd" splits to "" then "etc"),
-        // a doubled "//", and a trailing "/".
+        // Covers a leading "/" ("/etc/passwd" splits to "" then "etc"), a doubled "//", and a trailing "/".
         if (segment.len == 0) return false;
         if (std.mem.eql(u8, segment, ".") or std.mem.eql(u8, segment, "..")) return false;
     }
     return true;
 }
 
-// =====================================================================
 // Write phase
-// =====================================================================
 
 fn writeSkills(
     allocator: std.mem.Allocator,
@@ -564,8 +502,7 @@ fn writeSkills(
     report: *ImportReport,
 ) ImportError!void {
     for (loaded) |skill| {
-        // Read before writing so the report can separate "new row" from "row
-        // already there, updated".
+        // Read before writing so the report can separate "new row" from "row already there, updated".
         const existing = skills_store.getSkillByName(allocator, db, workspace_id, skill.name) catch |err| switch (err) {
             error.NotFound, error.WorkspaceIdNameRequired => null,
             error.QueryFailed => return error.QueryFailed,
@@ -593,9 +530,7 @@ fn writeSkills(
     }
 }
 
-// ============================================================================
 // skills_import — inline tests
-// ============================================================================
 
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
@@ -605,8 +540,7 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// The `skills_store` fixture, unchanged: in-memory database plus the real
-/// Migration 101 DDL imported from the migration file rather than re-typed.
+/// The `skills_store` fixture, unchanged: in-memory database plus the real Migration 101 DDL imported from the migration file rather than re-typed.
 fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
@@ -621,9 +555,7 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-/// Write a file under `dir`, creating every parent directory. Bytes are
-/// written verbatim — one fixture companion is deliberately invalid UTF-8
-/// to exercise the binary-companion skip.
+/// Write a file under `dir`, creating every parent directory.
 fn writeFixture(
     io: std.Io,
     dir: std.Io.Dir,
@@ -655,8 +587,7 @@ const SIMPLE_BODY =
     \\trailing spaces here. 
 ;
 
-/// Byte-exact, including the trailing space on this line — a normalising
-/// importer would silently drop it and change the sha256.
+/// Byte-exact, including the trailing space on this line — a normalising importer would silently drop it and change the sha256.
 const BUNDLE_BODY =
     \\---
     \\name: pdf
@@ -677,8 +608,7 @@ fn seedSkillsDir(io: std.Io, dir: std.Io.Dir) !void {
     try writeFixture(io, dir, "pdf/references/schemas.md", "# schemas\n");
 }
 
-/// `@import` the store for the assertion helpers rather than re-writing
-/// `getSkillByName` at the call site.
+/// `@import` the store for the assertion helpers rather than re-writing `getSkillByName` at the call site.
 const store = skills_store;
 
 fn expectAssetContent(
@@ -770,9 +700,7 @@ test "skills_import stores a bundle companion at the path the body refers to" {
     });
     defer freeImportReport(alloc, report);
 
-    // `scripts/convert.py`, NOT `pdf/scripts/convert.py`: the body says "run
-    // `scripts/convert.py`" and `use_skill` materialises the row's rel_path
-    // verbatim under the bundle's temp directory.
+    // `scripts/convert.py`, NOT `pdf/scripts/convert.py`: the body says "run `scripts/convert.py`" and `use_skill` materialises the row's rel_path verbatim under the …
     try expectAssetContent(&ctx, "ws_a", "pdf", "scripts/convert.py", SCRIPT);
     try expectAssetContent(&ctx, "ws_a", "pdf", "references/schemas.md", "# schemas\n");
     // Nested subdirectories keep their depth.
@@ -802,9 +730,7 @@ test "skills_import writes the body byte-exact, frontmatter included" {
     });
     defer freeImportReport(alloc, report);
 
-    // `skill_eval` identities are sha256(body). Trimming, re-encoding or
-    // dropping the `---` block would change every hash, which invalidates
-    // every cached verdict for the skill with no other visible symptom.
+    // `skill_eval` identities are sha256(body).
     const trap = try store.getSkillByName(alloc, &ctx.db, "ws_a", "zig-trap");
     defer store.freeSkillRow(alloc, trap);
     try testing.expectEqualStrings(SIMPLE_BODY, trap.content);
@@ -836,14 +762,12 @@ test "skills_import is idempotent: a second run updates in place and keeps every
     });
     defer freeImportReport(alloc, second);
 
-    // Nothing new, everything recognised as already present. This is the
-    // steady state on every start-up after the first.
+    // Nothing new, everything recognised as already present.
     try testing.expectEqual(@as(usize, 0), second.skills_written);
     try testing.expectEqual(@as(usize, 2), second.skills_updated);
     try testing.expectEqual(@as(usize, 0), second.skipped.len);
 
-    // One row per skill and one row per companion — no UNIQUE collision, no
-    // duplicate ids, no orphaned assets.
+    // One row per skill and one row per companion — no UNIQUE collision, no duplicate ids, no orphaned assets.
     try testing.expectEqual(@as(usize, 2), try countRows(&ctx, "SELECT COUNT(*) FROM skills"));
     try testing.expectEqual(@as(usize, 3), try countRows(&ctx, "SELECT COUNT(*) FROM skill_assets"));
 }
@@ -866,8 +790,7 @@ test "skills_import deletes nothing from disk" {
     });
     defer freeImportReport(alloc, report);
 
-    // Non-destructive by contract: a revert of the migration is a revert of
-    // the migration, not a restore from a backup nobody made.
+    // Non-destructive by contract: a revert of the migration is a revert of the migration, not a restore from a backup nobody made.
     try tmp.dir.access(io, "zig-trap/SKILL.MD", .{});
     try tmp.dir.access(io, "pdf/SKILL.MD", .{});
     try tmp.dir.access(io, "pdf/scripts/convert.py", .{});
@@ -892,8 +815,7 @@ test "skills_import reports a directory with no SKILL.MD instead of dropping it"
     });
     defer freeImportReport(alloc, report);
 
-    // The two real skills still import: one bad directory does not abort
-    // the import and take the rest with it.
+    // The two real skills still import: one bad directory does not abort the import and take the rest with it.
     try testing.expectEqual(@as(usize, 2), report.skills_written);
 
     const skip = findSkip(report, "empty-skill") orelse {
@@ -951,9 +873,7 @@ test "skills_import imports the skill but names a non-UTF-8 companion" {
     });
     defer freeImportReport(alloc, report);
 
-    // The skill and its good companion survive; only the binary file is
-    // refused, and it is refused BY NAME with a reason — the alternative is a
-    // row that comes back out of SQLite mangled and fails at materialisation
+    // The skill and its good companion survive; only the binary file is refused, and it is refused BY NAME with a reason — the alternative is a row that comes back …
     try testing.expectEqual(@as(usize, 1), report.skills_written);
     try testing.expectEqual(@as(usize, 1), report.assets_written);
     try expectAssetContent(&ctx, "ws_a", "pdf", "scripts/convert.py", SCRIPT);
@@ -981,9 +901,7 @@ test "skills_import reads both directories and fans one of them out" {
     defer local.cleanup();
     try writeFixture(io, local.dir, "zig-trap/SKILL.MD", SIMPLE_BODY);
 
-    // The policy is the caller's, not the importer's: the global directory
-    // goes to BOTH workspaces, the project-local one to the workspace whose
-    // project it belongs to.
+    // The policy is the caller's, not the importer's: the global directory goes to BOTH workspaces, the project-local one to the workspace whose project it belongs …
     const report = try importFromTargets(io, alloc, &ctx.db, &.{
         .{ .open_dir = global.dir, .workspace_ids = &.{ "ws_a", "ws_b" } },
         .{ .open_dir = local.dir, .workspace_ids = &.{"ws_a"} },
@@ -1021,8 +939,7 @@ test "skills_import does not read a directory with no destination workspace" {
     });
     defer freeImportReport(alloc, report);
 
-    // Reading it and then reporting every skill as skipped would blame the
-    // skills for a routing decision the caller made.
+    // Reading it and then reporting every skill as skipped would blame the skills for a routing decision the caller made.
     try testing.expectEqual(@as(usize, 0), report.skills_written);
     try testing.expectEqual(@as(usize, 0), report.skipped.len);
 }
@@ -1036,8 +953,7 @@ test "skills_import ignores a skills directory that is not there" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A machine that never installed a global skills directory is the
-    // normal case, not a skip worth a permanent line in every report.
+    // A machine that never installed a global skills directory is the normal case, not a skip worth a permanent line in every report.
     const report = try importFromDir(
         io,
         alloc,
@@ -1056,8 +972,7 @@ test "isSafeRelPath refuses every shape that could escape the bundle" {
     try testing.expect(isSafeRelPath("scripts/convert.py"));
     try testing.expect(isSafeRelPath("a/b/c/d.md"));
 
-    // `use_skill` materialises assets under a temp directory and returns
-    // it. A `rel_path` that escapes that directory writes outside it.
+    // `use_skill` materialises assets under a temp directory and returns it.
     try testing.expect(!isSafeRelPath(""));
     try testing.expect(!isSafeRelPath("/etc/passwd"));
     try testing.expect(!isSafeRelPath("../outside.py"));
@@ -1089,9 +1004,7 @@ test "skills_import replaces a companion set rather than merging it" {
     });
     defer freeImportReport(alloc, first);
 
-    // The script is deleted from the bundle. A merge would leave the row
-    // alive and the body would still tell the model to run a file that can
-    // no longer be materialised.
+    // The script is deleted from the bundle.
     try tmp.dir.deleteFile(io, "pdf/scripts/convert.py");
 
     const second = try importFromTargets(io, alloc, &ctx.db, &.{
@@ -1134,9 +1047,7 @@ test "skills_import records the frontmatter keys it does not promote" {
     const rows = try store.listMetadata(alloc, &ctx.db, "ws_a", "pdf");
     defer store.freeSkillMetadataRows(alloc, rows);
 
-    // The filename says SKILL.MD and the body is stored byte-exact, but a
-    // reader no longer has to open it: the three keys with no column are
-    // rows, key-ordered.
+    // The filename says SKILL.MD and the body is stored byte-exact, but a reader no longer has to open it: the three keys with no column are rows, key-ordered.
     try testing.expectEqual(@as(usize, 3), rows.len);
     try testing.expectEqualStrings("license", rows[0].key);
     try testing.expectEqualStrings("origin", rows[1].key);
@@ -1173,8 +1084,7 @@ test "skills_import pins a skill whose body declares is_can_auto_improve: false"
     const row = try store.getSkillByName(alloc, &ctx.db, "ws_a", "pinned");
     defer store.freeSkillRow(alloc, row);
 
-    // A skill checked into a repo can arrive already pinned, and the flag is
-    // a column — it never becomes a metadata row.
+    // A skill checked into a repo can arrive already pinned, and the flag is a column — it never becomes a metadata row.
     try testing.expect(!row.is_can_auto_improve);
     const rows = try store.listMetadata(alloc, &ctx.db, "ws_a", "pinned");
     defer store.freeSkillMetadataRows(alloc, rows);

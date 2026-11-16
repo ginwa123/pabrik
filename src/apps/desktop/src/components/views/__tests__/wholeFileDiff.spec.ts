@@ -1,6 +1,4 @@
-/** Whole-file reader: the cache/dedupe contract that makes "Whole file" cost one request per file
- * instead of one per click. Two properties matter more than the rest, and both are about being
- * WRONG in the safe direction: - a backend failure REJECTS. */
+/** Whole-file reader: the cache/dedupe contract that makes "Whole file" cost one request per file instead of one per click. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearWholeFileDiffCache,

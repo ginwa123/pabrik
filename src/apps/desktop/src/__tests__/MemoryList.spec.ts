@@ -1,6 +1,4 @@
-/** Tests for MemoryList.vue. Mocks the getMemories API and asserts
- * rendering states (loading, empty, populated) and the selectMemory
- * emit on row click. Mirrors the SkillsPopup / SkillList test style. */
+/** Tests for MemoryList.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
@@ -43,8 +41,6 @@ describe('MemoryList', () => {
     mockGetMemories.mockResolvedValue({ memories: [] })
     mountList()
     // Loading state is set synchronously before the awaited call resolves.
-    // The skeleton replaces the old "Loading memories..." text — it holds
-    // the card list's height instead of collapsing the panel to one row.
     expect(document.body.querySelector('[data-testid="memory-list-skeleton"]')).not.toBeNull()
   })
 
@@ -91,7 +87,6 @@ describe('MemoryList', () => {
     mockGetMemories.mockResolvedValueOnce({
       memories: [{ name: 'new.md', title: 'New', path: '/x/new.md', size: 0 }],
     })
-    // Access the exposed refresh via the wrapper's vm.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(w.vm as any).refresh()
     await new Promise((r) => setTimeout(r, 0))

@@ -1,5 +1,4 @@
-/** Renders the real <KanbanRowView> to static HTML for visual review. This is a REVIEW HARNESS, not
- * a test — there are no assertions. */
+/** Renders the real <KanbanRowView> to static HTML for visual review. */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -33,8 +32,7 @@ const columns: KanbanColumn[] = [
   },
 ]
 
-// One row per state in the wireframe, with a long name and a long branch
-// to exercise the truncation paths.
+// One row per state in the wireframe, with a long name and a long branch to exercise the truncation paths.
 const tasks: Task[] = [
   {
     id: 't1',
@@ -115,8 +113,7 @@ function page(body: string, density: string): string {
 </body></html>`
 }
 
-// Colour-accurate when `dist/` exists, OPTIONAL when it does not: a `pnpm run test` on a tree that
-// was never built has no bundle, and the harness renders rows + data attributes either way.
+// Colour-accurate when `dist/` exists, OPTIONAL when it does not: a `pnpm run test` on a tree that was never built has no bundle, and the harness renders rows + …
 function readBundleCss(): string {
   const cssDir = join(process.cwd(), 'dist/assets')
   if (!existsSync(cssDir)) return ''
@@ -149,9 +146,7 @@ describe('KanbanRowView visual preview generator', () => {
       console.log(`[preview] wrote ${out} (${html.length} bytes)`)
       wrapper.unmount()
 
-      // The harness is worthless if it writes an empty page — assert the
-      // rows and the density actually made it into the output, so a
-      // broken mount fails here instead of producing a blank PNG.
+      // The harness is worthless if it writes an empty page — assert the rows and the density actually made it into the output, so a broken mount fails here instead of …
       expect(html).toContain(`data-kanban-row-density="${density}"`)
       expect(html).toContain('data-kanban-row="t1"')
       expect(html).toContain('data-task-row')

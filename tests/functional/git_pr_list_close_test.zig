@@ -1,6 +1,4 @@
-// Functional wire tests for the kanban board's PR surface: GET
-// /api/git/pr/list — the repo's change requests POST /api/git/pr/close —
-// close one of them These are the two routes `KanbanPrList.vue` calls, so
+// Functional wire tests for the kanban board's PR surface: GET /api/git/pr/list — the repo's change requests POST /api/git/pr/close — close one of them These are …
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// The suite's own scratch directory (the git repo + the fake bin),
-/// outside the harness's tempdir namespace.
+/// The suite's own scratch directory (the git repo + the fake bin), outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -22,9 +17,7 @@ const Scratch = struct {
         return .{ .root = try harness.makeScratchDir(gpa) };
     }
 
-    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered
-    /// first — freeing the slice before the cleaner read it is a
-    /// use-after-free that happens to read as a plausible path.
+    /// LIFO note: `cleanupExtraDir` READS `root`, so the free is registered first — freeing the slice before the cleaner read it is a use-after-free that happens to …
     fn deinit(self: *Scratch) void {
         harness.cleanupExtraDir(io, gpa, self.root);
         gpa.free(self.root);
@@ -35,9 +28,7 @@ const Scratch = struct {
     }
 };
 
-/// `git` in `cwd` with the fixture identity baked in, so the suite never
-/// depends on the machine's global git config (`commit.gpgsign=false`
-/// additionally stops a developer's signing setup from failing the commit).
+/// `git` in `cwd` with the fixture identity baked in, so the suite never depends on the machine's global git config (`commit.gpgsign=false` additionally stops a …
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -90,14 +81,11 @@ fn writeExecScript(path: []const u8, contents: []const u8) !void {
     var f = try std.Io.Dir.cwd().createFile(io, path, .{});
     defer f.close(io);
     try f.writeStreamingAll(io, contents);
-    // `.executable_file` also makes the file READABLE, which OR-ing an
-    // exec bit into a fresh file's mode does not guarantee.
+    // `.executable_file` also makes the file READABLE, which OR-ing an exec bit into a fresh file's mode does not guarantee.
     try std.Io.Dir.cwd().setFilePermissions(io, path, .executable_file, .{});
 }
 
-/// An executable `gh` stub in its OWN bindir, so prepending that directory
-/// to PATH cannot shadow another command the server needs (notably `git`,
-/// which the repo gate runs).
+/// An executable `gh` stub in its OWN bindir, so prepending that directory to PATH cannot shadow another command the server needs (notably `git`, which the repo …
 fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     const bindir = try s.path(&.{dir_name});
     errdefer gpa.free(bindir);
@@ -110,17 +98,14 @@ fn installFakeGh(s: *Scratch, dir_name: []const u8, body: []const u8) ![]u8 {
     return bindir;
 }
 
-/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block
-/// `Harness.boot` copies into the child env.
+/// Prepend `prefix` to `PATH` in `std.testing.environ` — the exact block `Harness.boot` copies into the child env.
 const PathShadow = struct {
     gpa: std.mem.Allocator,
     saved: std.process.Environ,
     entries: [:null]const ?[*:0]const u8,
 
     fn install(alloc: std.mem.Allocator, prefix: []const u8) !PathShadow {
-        // POSIX only: on Windows `Environ` is a PEB pointer read through
-        // `GlobalBlock`, which Zig offers no way to shadow — and the
-        // fixture `gh` is a `/bin/sh` script anyway.
+        // POSIX only: on Windows `Environ` is a PEB pointer read through `GlobalBlock`, which Zig offers no way to shadow — and the fixture `gh` is a `/bin/sh` script …
         if (comptime @import("builtin").os.tag != .windows) {
             const saved = std.testing.environ;
             const orig = saved.block.slice;
@@ -160,13 +145,9 @@ const PathShadow = struct {
     }
 };
 
-// ============================================================================
-// The fake `gh` payloads — literals, so what the CLI prints is visible in the
-// diff next to the assertion that reads it.
+// The fake `gh` payloads — literals, so what the CLI prints is visible in the diff next to the assertion that reads it.
 
-/// Two rows: one open PR on a worktree branch (the board join key) and one
-/// merged, draft PR, so `state` normalization and `is_draft` are both
-/// exercised by one payload.
+/// Two rows: one open PR on a worktree branch (the board join key) and one merged, draft PR, so `state` normalization and `is_draft` are both exercised by one …
 const LIST_ROWS_JSON =
     \\[{"number":909,"title":"fix(settings): remove redundant workspace-name box","url":"https://github.com/ginwa123/pabrik/pull/909","state":"OPEN","isDraft":false,"headRefName":"worktree/why-theres-a-box-workspace-1791785919283","baseRefName":"main","author":{"login":"ginwa123"},"updatedAt":"2026-10-12T06:34:01Z"},
     \\ {"number":893,"title":"feat(secrets): seal workspace secret values at rest","url":"https://github.com/ginwa123/pabrik/pull/893","state":"MERGED","isDraft":true,"headRefName":"worktree/workspace-secrets-hardening-impl","baseRefName":"main","author":{"login":"ginwa123"},"updatedAt":"2026-10-11T18:56:40Z"}]
@@ -195,9 +176,7 @@ const GH_AUTH_FAILURE_SCRIPT =
     \\exit 4
 ;
 
-// ============================================================================
-// JSON readers — every one of them FAILS on an absent key rather than
-// defaulting, so a renamed field cannot pass as a value.
+// JSON readers — every one of them FAILS on an absent key rather than defaulting, so a renamed field cannot pass as a value.
 
 fn asObject(v: std.json.Value) !std.json.ObjectMap {
     return switch (v) {
@@ -291,15 +270,12 @@ fn expectObjBool(o: std.json.ObjectMap, key: []const u8, want: bool) !void {
     }
 }
 
-/// The `error` sentence, which must be PRESENT — an absent key is a failure,
-/// not an empty string.
+/// The `error` sentence, which must be PRESENT — an absent key is a failure, not an empty string.
 fn requireError(doc: *const harness.Json, needle: []const u8) !void {
     return requireField(doc, "error", needle);
 }
 
-/// A named string field that must exist and mention `needle`. Shared by the
-/// error bodies (`error`) and the `{ closed: false }` answer (`detail`) — the
-/// assertion is the same, because "the sentence must be there" is.
+/// A named string field that must exist and mention `needle`.
 fn requireField(doc: *const harness.Json, field: []const u8, needle: []const u8) !void {
     const got = doc.str(field) orelse {
         std.debug.print("body carries no `{s}` field\n", .{field});
@@ -315,20 +291,14 @@ fn bootHarness() !Harness {
     return Harness.boot(io, gpa, .{});
 }
 
-/// The `POST /api/git/pr/close` body the frontend sends, built from the
-/// fixture repo. The harness copies `json_body` internally, so this temporary
-/// is freed by the caller immediately after the request.
+/// The `POST /api/git/pr/close` body the frontend sends, built from the fixture repo.
 fn closeBody(repo: []const u8) ![]const u8 {
     return std.fmt.allocPrint(gpa, "{{\"path\":\"{s}\",\"pr\":\"893\",\"provider\":\"github\"}}", .{repo});
 }
 
-// ============================================================================
 // GET /api/git/pr/list
-// ============================================================================
 
-// 1. No `path` → the HANDLER's 400. This is also the route-resolution
-//    witness: a 404 here would mean `/api/git/pr/list` never reached its
-//    handler (a `:param` sibling registered above it, or a dropped route).
+// 1.
 test "list_missing_path_is_400" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -343,8 +313,7 @@ test "list_missing_path_is_400" {
     try requireError(&doc, "Missing path parameter");
 }
 
-// 2. An unknown `state` is refused before anything is spawned. Accepting it
-//    silently would list the wrong set and label the tab with it.
+// 2.
 test "list_unknown_state_is_400" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -370,8 +339,7 @@ test "list_unknown_state_is_400" {
     try requireError(&doc, "state must be");
 }
 
-// 3. A limit outside 1..=100 is refused, not clamped: a clamped page would
-//    answer `truncated` for a limit the caller never asked for.
+// 3.
 test "list_limit_out_of_range_is_400" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -476,8 +444,7 @@ test "list_returns_rows_with_the_branch_the_board_joins_on" {
     try expectObjBool(second, "is_draft", true);
 }
 
-// 6. An empty answer is a 200 with an empty array — the forge said there is
-//    nothing, which is NOT the same fact as a failure (test 7).
+// 6.
 test "list_empty_is_200_with_an_empty_array" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -513,9 +480,7 @@ test "list_empty_is_200_with_an_empty_array" {
     }
 }
 
-// 7. A failed CLI is a 502 carrying its own sentence. If this ever renders
-//    as an empty 200, the UI shows "no open pull requests" for a repo it
-//    could not read at all.
+// 7.
 test "list_gh_failure_is_502_with_the_cli_sentence" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -545,12 +510,9 @@ test "list_gh_failure_is_502_with_the_cli_sentence" {
     try requireError(&doc, "gh auth login");
 }
 
-// ============================================================================
 // POST /api/git/pr/close
-// ============================================================================
 
-// 8. No `pr` → 400 from the handler. An empty ref would make both CLIs close
-//    whatever branch happens to be checked out.
+// 8.
 test "close_missing_pr_is_400" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -568,9 +530,7 @@ test "close_missing_pr_is_400" {
     try requireError(&doc, "pr is required");
 }
 
-// 9. The happy path: the CLI closes it, the re-read confirms, the answer is
-//    200 with `closed: true` AND the post-close status the PR tab's badge
-//    renders.
+// 9.
 test "close_returns_the_forge_answer" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -620,9 +580,7 @@ test "close_returns_the_forge_answer" {
     try expectObjStr(inner, "head_ref", "worktree/workspace-secrets-hardening-impl");
 }
 
-// 10. Exit 0 plus a re-read that still says OPEN is `closed: false` with a
-//     sentence — never a success. This is the whole reason the endpoint
-//     re-reads instead of trusting the exit code.
+// 10.
 test "close_that_the_forge_still_reports_open_is_not_success" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -660,9 +618,7 @@ test "close_that_the_forge_still_reports_open_is_not_success" {
     defer doc.deinit();
 
     try expectEqualBool(&doc, "closed", false);
-    // The sentence rides in `detail`: this is a 200, because the forge DID answer —
-    // it simply did not do what was asked. An `error` field here would be claiming a
-    // transport/command failure the forge never reported.
+    // The sentence rides in `detail`: this is a 200, because the forge DID answer — it simply did not do what was asked.
     try requireField(&doc, "detail", "still reports");
     if (doc.get("error") != null) {
         std.debug.print("closed:false must not carry an `error`\n", .{});
@@ -670,9 +626,7 @@ test "close_that_the_forge_still_reports_open_is_not_success" {
     }
 }
 
-// 11. A close the forge refuses is a 502 with the forge's sentence. It must
-//     not be a 200 with `closed: false` ("the forge did nothing") — those are
-//     different failures and the row renders them differently.
+// 11.
 test "close_failure_is_502_with_the_forge_sentence" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -708,8 +662,7 @@ test "close_failure_is_502_with_the_forge_sentence" {
 }
 
 comptime {
-    // Body-analysis barrier: an unreferenced helper is never type-checked, so
-    // a stdlib rename inside one is invisible until a caller appears.
+    // Body-analysis barrier: an unreferenced helper is never type-checked, so a stdlib rename inside one is invisible until a caller appears.
     _ = Scratch.init;
     _ = Scratch.deinit;
     _ = Scratch.path;

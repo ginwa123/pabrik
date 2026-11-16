@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isChatRouteStaleForSession } from '../appUrl'
 
-/** Regression: left-sidebar chat click did nothing after opening a file in the right sidebar
- * (Changes tab). Root cause: ChatView's diff URL writers (`syncDiffParam`, `syncDiffQuery`) guarded
- * only legacy `?view=/?session=` query URLs. */
+/** Regression: left-sidebar chat click did nothing after opening a file in the right sidebar (Changes tab). */
 describe('isChatRouteStaleForSession — dying view must not touch the URL', () => {
   const WS = 'ws_1'
   const A = 'sess_A'
@@ -14,8 +12,7 @@ describe('isChatRouteStaleForSession — dying view must not touch the URL', () 
   })
 
   it('stale: new chat path seen from dying view is not writable', () => {
-    // The exact repro: A open with a diff, user clicks B in the left
-    // sidebar, ChatsList pushes /app/ws/chat/B, A's spy fires late.
+    // The exact repro: A open with a diff, user clicks B in the left sidebar, ChatsList pushes /app/ws/chat/B, A's spy fires late.
     expect(isChatRouteStaleForSession(`/app/${WS}/chat/${B}`, A)).toBe(true)
   })
 
@@ -44,8 +41,7 @@ describe('isChatRouteStaleForSession — dying view must not touch the URL', () 
   })
 
   it('positive control: parseAppPath still extracts the session the guard reads', () => {
-    // Guards against a vacuous test where every path is stale because the
-    // parser broke: the matching-session case must stay writable.
+    // Guards against a vacuous test where every path is stale because the parser broke: the matching-session case must stay writable.
     expect(isChatRouteStaleForSession(`/app/${WS}/chat/${B}`, B)).toBe(false)
   })
 })

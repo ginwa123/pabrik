@@ -38,9 +38,7 @@ import {
 } from './_shared/toolOutputParser'
 
 const props = defineProps<{
-  /**    * The tool row's payload — the inner `data` object on success, or the full envelope on failure
-   * (ChatView's `innerToolData` falls back to the whole content when `data` is null, which is what
-   * a failure envelope carries). */
+  /** The tool row's payload — the inner `data` object on success, or the full envelope on failure (ChatView's `innerToolData` falls back to the whole content when … */
   content: unknown
   /** The JSON-stringified tool-call arguments: `{provider, curl}`. */
   parameters?: string
@@ -57,15 +55,11 @@ const parsed = computed<ParsedWebSearch>(() => {
   const p = parseWebSearch(normalized.value.data)
   const text = normalized.value.error
   if (text === null) return p
-  // A failure reaches this card through the envelope's `error` field, which
-  // for the self-correcting reasons carries the whole inner JSON as text.
-  // `parseWebSearchErrorText` reads the flags out of it when they are there.
+  // A failure reaches this card through the envelope's `error` field, which for the self-correcting reasons carries the whole inner JSON as text.
   return { ...p, success: false, error: parseWebSearchErrorText(text) }
 })
 
-/** The provider, preferring the envelope's own word for it and falling back to the name the call
- * asked for — a `configured` failure names no provider at all, and a card that then says "unknown"
- * loses the only fact it has. */
+/** The provider, preferring the envelope's own word for it and falling back to the name the call asked for — a `configured` failure names no provider at all, and … */
 interface WebSearchArgs {
   provider?: string
   curl?: string
@@ -99,9 +93,7 @@ interface ResultRow {
   position: string | null
 }
 
-/** Whether a provider-supplied URL may become an `href`. The payload is passthrough (D13): the
- * backend pins the host it REQUESTS and scrubs the key, but it never inspects what came back, so a
- * `url` here is whatever the provider wrote. */
+/** Whether a provider-supplied URL may become an `href`. */
 function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
@@ -125,8 +117,7 @@ function firstText(record: Record<string, unknown>, keys: string[]): string {
   return ''
 }
 
-/** The ranked list, or null when the payload is not the `results` convention. The check is
- * deliberately narrow: a TOP-LEVEL `results` whose every member is an object. */
+/** The ranked list, or null when the payload is not the `results` convention. */
 const rows = computed<ResultRow[] | null>(() => {
   const raw = asRecord(parsed.value.response).results
   if (!Array.isArray(raw)) return null
@@ -151,8 +142,6 @@ const rows = computed<ResultRow[] | null>(() => {
 const hasResultRows = computed(() => rows.value !== null)
 
 // ─── Formatted JSON fallback ───────────────────────────────────────────────
-/**  * Pretty-print an untyped payload. `JSON.stringify` can refuse (a cycle, a BigInt); the card then
- * says the payload is unprintable instead of showing an empty block that reads like "no results". */
 const prettyResponse = computed(() => {
   const response = parsed.value.response
   if (response === null || response === undefined) return '(no response body)'

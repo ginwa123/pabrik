@@ -12,12 +12,10 @@ pub const Role = router.Role;
 pub const Decision = router.Decision;
 pub const CloseReason = router.CloseReason;
 
-/// How many agent turns one message from the human may trigger before the room
-/// stops and waits for them. A new human message resets the count.
+/// How many agent turns one message from the human may trigger before the room stops and waits for them.
 pub const default_hop_budget: u32 = 8;
 
-/// The last thing said in the thread. `speaker` is empty when the newest row
-/// is the human's, because then no agent has spoken yet.
+/// The last thing said in the thread.
 pub const LastTurn = struct {
     speaker: []const u8,
     text: []const u8,
@@ -28,8 +26,7 @@ pub fn freeMembers(allocator: std.mem.Allocator, members: []Member) void {
     allocator.free(members);
 }
 
-/// Create a session row that is a group from the first moment: no history yet,
-/// so the first turn belongs to the lead. Caller frees the id.
+/// Create a session row that is a group from the first moment: no history yet, so the first turn belongs to the lead.
 pub fn createGroupSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -43,8 +40,7 @@ pub fn createGroupSession(
     return id;
 }
 
-/// Add a member, or move one that is already there. A null position appends,
-/// which is what a join means: the roster keeps the order the agents arrived.
+/// Add a member, or move one that is already there.
 pub fn addMember(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -109,8 +105,6 @@ pub fn listMembers(allocator: std.mem.Allocator, db: *database.Db, session_id: [
 }
 
 /// An empty name clears the lead, which is how a session stops being a group.
-/// The roster follows: exactly the named member carries the `lead` role, so
-/// the roster the app draws and the lead the loop routes by never disagree.
 pub fn setLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, agent_name: []const u8) !void {
     try db.exec(allocator, "UPDATE sessions SET group_lead = ? WHERE id = ?", &.{ agent_name, session_id });
     try db.exec(allocator, "UPDATE session_group_members SET role = 'worker' WHERE session_id = ?", &.{session_id});
@@ -120,8 +114,6 @@ pub fn setLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []con
 }
 
 /// A joining member leads the room when it says so, or when nobody leads yet.
-/// The lead is re-applied either way, so a member that joins after the lead was
-/// chosen still gets its role written.
 pub fn setLeadIfUnset(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -163,9 +155,7 @@ pub fn takePendingDelegate(allocator: std.mem.Allocator, db: *database.Db, sessi
     return name;
 }
 
-/// The identity a routed group turn runs under: the member's own name, then its
-/// persona when it has one. Without it a member answers as whoever the
-/// transcript last named. Caller frees the result.
+/// The identity a routed group turn runs under: the member's own name, then its persona when it has one.
 pub fn speakerIdentity(allocator: std.mem.Allocator, speaker: []const u8, persona: []const u8) ![]u8 {
     if (persona.len == 0) {
         return try std.fmt.allocPrint(allocator, "You are {s}, one of the agents in this chat. Answer as {s}.", .{ speaker, speaker });
@@ -173,8 +163,7 @@ pub fn speakerIdentity(allocator: std.mem.Allocator, speaker: []const u8, person
     return try std.fmt.allocPrint(allocator, "You are {s}, one of the agents in this chat. Answer as {s}.\n\n{s}", .{ speaker, speaker, persona });
 }
 
-/// The persona a turn runs under: the sub-agent's own, else the routed group
-/// member's identity, else the group persona. Caller frees the result.
+/// The persona a turn runs under: the sub-agent's own, else the routed group member's identity, else the group persona.
 pub fn turnPersona(
     allocator: std.mem.Allocator,
     sub_agent_persona: []const u8,
@@ -186,9 +175,7 @@ pub fn turnPersona(
     return try allocator.dupe(u8, group_persona);
 }
 
-/// Null when the session is not a group. Caller frees a non-null result.
-/// `sessions.group_lead` is the cache; the roster's `lead` role is the truth a
-/// chat with no `sessions` row yet still has.
+/// Null when the session is not a group.
 pub fn groupLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?[]const u8 {
     const cached = blk: {
         var row = db.queryRow(
@@ -219,9 +206,7 @@ pub fn groupLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []c
     return try allocator.dupe(u8, row.values[0]);
 }
 
-/// How many agent turns the room has taken since the human last spoke. A
-/// message from the human resets the count, so the budget bounds one
-/// exchange, not the life of the thread.
+/// How many agent turns the room has taken since the human last spoke.
 pub fn hopsSinceHuman(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !u32 {
     var row = try db.queryRow(allocator,
         \\SELECT COUNT(*) FROM llm_history
@@ -237,8 +222,7 @@ pub fn hopsSinceHuman(allocator: std.mem.Allocator, db: *database.Db, session_id
     return std.fmt.parseInt(u32, row.values[0], 10) catch 0;
 }
 
-/// The newest row of the thread, as the router needs it. Caller frees both
-/// fields of a non-null result.
+/// The newest row of the thread, as the router needs it.
 pub fn lastTurn(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?LastTurn {
     var row = db.queryRow(allocator,
         \\SELECT COALESCE(CAST(role AS TEXT), ''),
@@ -275,7 +259,6 @@ pub const NextSpeaker = struct {
 };
 
 /// The production decision the loop makes once per iteration: who speaks now.
-/// Null when the session is not a group.
 pub fn nextSpeaker(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -286,8 +269,7 @@ pub fn nextSpeaker(
     defer if (pending) |p| allocator.free(p);
 
     const lead_owned = try groupLead(allocator, db, session_id);
-    // A pending delegation names the next speaker even when the room has no lead
-    // yet: the tool that set it already decided who answers.
+    // A pending delegation names the next speaker even when the room has no lead yet: the tool that set it already decided who answers.
     if (lead_owned == null and pending == null) return null;
     const lead: []const u8 = lead_owned orelse "";
     errdefer if (lead_owned) |l| allocator.free(l);
@@ -302,9 +284,7 @@ pub fn nextSpeaker(
     }
 
     if (pending) |target| {
-        // The roster supplies the spelling when it has one. A name outside it is
-        // still honoured — the caller asked for that agent by name — and joins
-        // the returned members so the decision's slice outlives this call.
+        // The roster supplies the spelling when it has one.
         var name: []const u8 = target;
         var found = false;
         for (members) |m| {

@@ -1,7 +1,5 @@
 <script setup lang="ts">
-/** "Create a PR" dialog. Mounted by ChatView.vue when the user clicks "Create a PR" in the
- * WorktreeMenu. On mount, calls api.getGitWorktreeInfo(worktreePath) to pre-fill the title and
- * body. User can edit before clicking "Create". */
+/** "Create a PR" dialog. */
 import { ref, onMounted, computed } from 'vue'
 import * as api from '../../api'
 import { forgeWording } from '../../helpers/forgeWording'
@@ -13,8 +11,7 @@ const props = defineProps<{
   prProvider?: string
 }>()
 
-// Provider-aware vocabulary: a GitLab user sees "Create merge request",
-// never "Create PR" — and the error text names the CLI that actually ran.
+// Provider-aware vocabulary: a GitLab user sees "Create merge request", never "Create PR" — and the error text names the CLI that actually ran.
 const forge = computed(() => forgeWording(props.prProvider))
 
 const emit = defineEmits<{
@@ -43,9 +40,7 @@ onMounted(async () => {
   }
 })
 
-// Re-fetch the worktree info against the CURRENT base branch value and overwrite title + body. See
-// design decision #11 for why this is useful. Pass the current base explicitly so the diff is
-// computed against whatever the user has typed (not the auto-detected default).
+// Re-fetch the worktree info against the CURRENT base branch value and overwrite title + body.
 const onRegenerate = async () => {
   if (isRegenerating.value || isSubmitting.value) return
   isRegenerating.value = true

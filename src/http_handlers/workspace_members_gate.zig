@@ -1,6 +1,4 @@
-//! The permission gate for `/api/workspaces/:id/members`: an invisible
-//! workspace is a 404 (as `workspace_delete.zig` answers), a visible one the
-//! caller may not administer is a 403.
+//! The permission gate for `/api/workspaces/:id/members`: an invisible workspace is a 404 (as `workspace_delete.zig` answers), a visible one the caller may not …
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -44,8 +42,7 @@ pub fn check(
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (!auth_common.canSeeWorkspace(allocator, db, workspace_id, caller)) return error.WorkspaceNotFound;
 
-    // `user_system` is the installation owner (auth off). It holds no member
-    // row of its own on a modern workspace, so it short-circuits here.
+    // `user_system` is the installation owner (auth off).
     if (std.mem.eql(u8, caller, auth_common.system_user_id)) return;
 
     const role = store.callerRole(allocator, db, workspace_id, caller) catch |err| switch (err) {
@@ -54,17 +51,14 @@ pub fn check(
     };
 
     const allowed = switch (access) {
-        // Membership — not mere visibility. A workspace shared through a
-        // `user_system` row is visible to everyone, and its member list is
-        // every member's email address.
+        // Membership — not mere visibility.
         .read => role != null,
         .manage => if (role) |r| r.canManageMembers() else false,
     };
     if (!allowed) return error.Forbidden;
 }
 
-/// `check` for a handler that only needs the verdict: resolves the caller from
-/// the request itself, so no call site can pass the wrong user.
+/// `check` for a handler that only needs the verdict: resolves the caller from the request itself, so no call site can pass the wrong user.
 pub fn checkRequest(
     allocator: std.mem.Allocator,
     db: *pabrikcore.database.Db,
@@ -168,8 +162,7 @@ test "check lets only owner and admin manage the list" {
     try check(alloc, &ctx.db, "ws_private", "user_amy", .manage);
     try check(alloc, &ctx.db, "ws_private", "user_ben", .manage);
 
-    // An editor can read the workspace's documents; that is not a licence to
-    // hand it to someone else.
+    // An editor can read the workspace's documents; that is not a licence to hand it to someone else.
     try testing.expectError(error.Forbidden, check(alloc, &ctx.db, "ws_private", "user_cid", .manage));
     try testing.expectError(error.Forbidden, check(alloc, &ctx.db, "ws_private", "user_dan", .manage));
 }
@@ -205,8 +198,7 @@ test "check treats the installation owner as able to do everything" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Auth off: the caller IS the installation owner, and there is no member
-    // row naming it on a workspace that was never shared.
+    // Auth off: the caller IS the installation owner, and there is no member row naming it on a workspace that was never shared.
     try check(alloc, &ctx.db, "ws_private", auth_common.system_user_id, .manage);
     try check(alloc, &ctx.db, "ws_shared", auth_common.system_user_id, .manage);
 }

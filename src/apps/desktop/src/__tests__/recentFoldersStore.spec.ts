@@ -78,8 +78,7 @@ describe('useRecentFoldersStore — basics', () => {
       store.addRecent(`/home/me/folder-${i}`)
     }
     expect(store.list()).toHaveLength(12)
-    // The first 3 (folder-0, folder-1, folder-2) were evicted because they
-    // were the OLDEST non-pinned entries. The most recent 12 remain.
+    // The first 3 (folder-0, folder-1, folder-2) were evicted because they were the OLDEST non-pinned entries.
     const paths = store.list().map((e) => e.path)
     expect(paths).not.toContain('/home/me/folder-0')
     expect(paths).not.toContain('/home/me/folder-1')
@@ -124,8 +123,7 @@ describe('useRecentFoldersStore — basics', () => {
 
   it('togglePin flips the pinned flag and re-sorts the list', () => {
     const store = useRecentFoldersStore()
-    // Force foo's lastUsedAt to be strictly older than bar's so the
-    // `lastUsedAt desc` tiebreaker is deterministic.
+    // Force foo's lastUsedAt to be strictly older than bar's so the `lastUsedAt desc` tiebreaker is deterministic.
     vi.spyOn(Date, 'now')
       .mockReturnValueOnce(1_000_000_000_000) // foo
       .mockReturnValueOnce(2_000_000_000_000) // bar

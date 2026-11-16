@@ -1,18 +1,14 @@
-//! Model-facing explanations for the errors that reach a tool envelope. Every
-//! An exec adapter used to render a failure as `<tool> failed:
-//! <@errorName>`.
+//! Model-facing explanations for the errors that reach a tool envelope.
 
 const std = @import("std");
 
-/// The generic advice appended to the fallback message. Kept as one
-/// const so the wording cannot drift between call sites.
+/// The generic advice appended to the fallback message.
 const FALLBACK_ADVICE =
     "Re-send the call with valid arguments. " ++
     "If the same error repeats, do not retry the identical call — " ++
     "change the arguments or report the blocker.";
 
-/// Render `err` as a sentence the model can act on. The result is allocated
-/// with `allocator`; the caller owns it.
+/// Render `err` as a sentence the model can act on.
 pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8) ![]u8 {
     return switch (err) {
         // ── command / shell ────────────────────────────────────────────
@@ -749,15 +745,13 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
     };
 }
 
-/// Build a path-shaped message. When `context` is null the sentence
-/// degrades to a generic one rather than printing `path '(null)'`.
+/// Build a path-shaped message.
 fn pathMsg(allocator: std.mem.Allocator, context: ?[]const u8, detail: []const u8) ![]u8 {
     const path = context orelse "the requested path";
     return std.fmt.allocPrint(allocator, "Path '{s}' {s}", .{ path, detail });
 }
 
-/// The honest fallback: keep the raw error name so a human reading the
-/// log can still identify it, and add the generic repair advice.
+/// The honest fallback: keep the raw error name so a human reading the log can still identify it, and add the generic repair advice.
 fn fallback(allocator: std.mem.Allocator, err: anyerror) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
@@ -766,16 +760,12 @@ fn fallback(allocator: std.mem.Allocator, err: anyerror) ![]u8 {
     );
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 const testing = std.testing;
 
 test "explain: TimeoutMissing names the field and the fix" {
-    // The reported bug. The message must name the field, say why it is
-    // required, and show what to send — none of which the bare
-    // `TimeoutMissing` does.
+    // The reported bug.
     const msg = try explain(testing.allocator, error.TimeoutMissing, null);
     defer testing.allocator.free(msg);
     try testing.expect(std.mem.indexOf(u8, msg, "timeout") != null);
@@ -789,9 +779,7 @@ test "explain: TimeoutTooLarge states the ceiling and the alternative" {
     const msg = try explain(testing.allocator, error.TimeoutTooLarge, null);
     defer testing.allocator.free(msg);
     try testing.expect(std.mem.indexOf(u8, msg, "600 seconds or fewer") != null);
-    // The way out has to be NAMED, not merely alluded to: `mode="background"`
-    // is the current spelling of "detach and tell me when it finishes", and a
-    // model that cannot see the field and the value has nothing to send.
+    // The way out has to be NAMED, not merely alluded to: `mode="background"` is the current spelling of "detach and tell me when it finishes", and a model that …
     try testing.expect(std.mem.indexOf(u8, msg, "mode=\"background\"") != null);
 }
 
@@ -823,8 +811,7 @@ test "explain: JSON errors name the likely cause, not just the Zig name" {
 }
 
 test "explain: every mapped error produces a non-empty, non-bare message" {
-    // The precedent: walk the errors this module claims to
-    // explain and prove none of them falls through to a bare name.
+    // The precedent: walk the errors this module claims to explain and prove none of them falls through to a bare name.
     const errs = [_]anyerror{
         error.TimeoutMissing,
         error.TimeoutTooLarge,
@@ -883,9 +870,7 @@ test "explain: every mapped error produces a non-empty, non-bare message" {
 }
 
 test "explain: an unmapped error still gets actionable advice" {
-    // Positive control for the `else` prong: an error this module does
-    // not map must keep its name (for the human reading the log) AND
-    // carry the generic repair advice.
+    // Positive control for the `else` prong: an error this module does not map must keep its name (for the human reading the log) AND carry the generic repair advice.
     const err = error.SomeErrorNoOneEverReturns;
     const msg = try explain(testing.allocator, err, null);
     defer testing.allocator.free(msg);
@@ -894,8 +879,7 @@ test "explain: an unmapped error still gets actionable advice" {
 }
 
 test "explain: no message leaks a raw Zig type name or a null pointer" {
-    // A message that says `?[]const u8` or `(null)` is a bug the model
-    // cannot act on. Sweep a representative set.
+    // A message that says `?[]const u8` or `(null)` is a bug the model cannot act on.
     const errs = [_]anyerror{
         error.TimeoutMissing,
         error.FileNotFound,

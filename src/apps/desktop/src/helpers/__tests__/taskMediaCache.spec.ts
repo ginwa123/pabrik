@@ -9,8 +9,7 @@ import {
   writeTaskMediaCache,
 } from '../taskMediaCache'
 
-// jsdom in this project's Vitest does not reliably provide localStorage
-// (same guard as workspacesCache.spec.ts).
+// jsdom in this project's Vitest does not reliably provide localStorage (same guard as workspacesCache.spec.ts).
 function ensureLocalStorage(): void {
   if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
     const store: Record<string, string> = {}
@@ -48,8 +47,7 @@ describe('taskMediaCache', () => {
   })
 
   it('rejects corrupt payloads instead of painting them', () => {
-    // resetTaskMediaCacheMemo (not clear) between stages — clear drops
-    // the staged blob too, and the memo would otherwise pin step 1's parse.
+    // resetTaskMediaCacheMemo (not clear) between stages — clear drops the staged blob too, and the memo would otherwise pin step 1's parse.
     localStorage.setItem(taskMediaCacheKey(), 'not-json{')
     resetTaskMediaCacheMemo()
     expect(readTaskMediaCache('task_1')).toBeNull()
@@ -93,8 +91,7 @@ describe('taskMediaCache', () => {
     } as Storage)
     clearTaskMediaCache() // drop the memo so the failing store is exercised
     expect(() => writeTaskMediaCache('task_1', { imageUrls: [IMG], videoUrls: [] })).not.toThrow()
-    // The memo write-through still serves the session even when the
-    // backing store dies (a post-reload memo would miss, correctly).
+    // The memo write-through still serves the session even when the backing store dies (a post-reload memo would miss, correctly).
     expect(readTaskMediaCache('task_1')).toEqual({ imageUrls: [IMG], videoUrls: [] })
     vi.unstubAllGlobals()
   })

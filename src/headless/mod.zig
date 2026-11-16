@@ -17,9 +17,7 @@ pub const workspace_items = @import("workspace_items.zig");
 pub const mcp_oauth = @import("mcp_oauth.zig");
 pub const compaction = @import("compaction.zig");
 
-/// The subcommand to run, with its arguments already parsed. `help` is a
-/// first-class variant rather than an error so `pabrik headless --help` exits
-/// 0.
+/// The subcommand to run, with its arguments already parsed.
 pub const Command = union(enum) {
     /// One agentic turn: send a message, wait for the assistant reply.
     run: args.RunArgs,
@@ -52,8 +50,7 @@ pub const Command = union(enum) {
     invalid: args.Failure,
 };
 
-/// Parse `argv` (WITHOUT argv[0] and WITHOUT the leading `headless` word)
-/// into a `Command`.
+/// Parse `argv` (WITHOUT argv[0] and WITHOUT the leading `headless` word) into a `Command`.
 pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
     return switch (try args.parse(argv)) {
         .run => |a| .{ .run = a },

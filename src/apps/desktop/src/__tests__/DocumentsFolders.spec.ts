@@ -1,6 +1,4 @@
-/** Document folders (Migration 140): the tree rules, and the gestures the
- * sidebar adds. Placement is asserted through the API calls the gestures
- * produce, so a refactor of the row markup cannot quietly break it. */
+/** Document folders (Migration 140): the tree rules, and the gestures the sidebar adds. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -268,8 +266,7 @@ describe('document folders — the sidebar', () => {
 
     const root = wrapper.get('[data-testid="document-row-doc_root"]')
     const nested = wrapper.get('[data-testid="document-row-doc_in_split"]')
-    // Depth is spent in --sb-mark steps: the root row sits on the gutter,
-    // the row inside Split bill is two levels down.
+    // Depth is spent in --sb-mark steps: the root row sits on the gutter, the row inside Split bill is two levels down.
     expect(root.attributes('style')).toContain('+ 0px')
     expect(nested.attributes('style')).toContain('+ 32px')
     wrapper.unmount()
@@ -325,8 +322,7 @@ describe('document folders — the sidebar', () => {
 
     const dt = makeDragStore()
     dispatchDrag('dragstart', wrapper.get('[data-doc-id="doc_root"]').element, dt)
-    // No `dragover`: a real drag can skip a hover frame, and a drop must not
-    // depend on one. The row under the pointer is the target.
+    // No `dragover`: a real drag can skip a hover frame, and a drop must not depend on one.
     dispatchDrag('drop', wrapper.get('[data-testid="document-folder-fld_debit"]').element, dt)
     await settle()
 
@@ -372,8 +368,7 @@ describe('document folders — the sidebar', () => {
     dispatchDrag('drop', wrapper.get('[data-testid="document-folder-fld_debit"]').element, dt)
     await settle()
 
-    // Some browsers deliver the mouse-up after a drop as a click on the row;
-    // that click must not undo the view of what just landed.
+    // Some browsers deliver the mouse-up after a drop as a click on the row; that click must not undo the view of what just landed.
     await wrapper.get('[data-testid="document-folder-fld_debit"]').trigger('click')
     await nextTick()
     expect(wrapper.find('[data-testid="document-row-doc_root"]').exists()).toBe(true)
@@ -420,8 +415,7 @@ describe('document folders — the sidebar', () => {
     const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
     input.element.dispatchEvent(space)
 
-    // The row's toggle must not eat the keypress — that is what stopped a
-    // space from ever reaching the field.
+    // The row's toggle must not eat the keypress — that is what stopped a space from ever reaching the field.
     expect(space.defaultPrevented).toBe(false)
     expect(wrapper.get('[data-testid="document-folder-fld_debit"]').attributes('aria-expanded')).toBe(
       'true',

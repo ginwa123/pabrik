@@ -1,5 +1,4 @@
-// Behavioural tests for AgentKnowledgeDetailDialog (plan 2026-08-22-agent-mode-ui-ux, Feature A2 +
-// user extension: full edit with File↔Text mode switch).
+// Behavioural tests for AgentKnowledgeDetailDialog (plan 2026-08-22-agent-mode-ui-ux, Feature A2 + user extension: full edit with File↔Text mode switch).
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -38,8 +37,7 @@ function mountDialog(props: {
   busy?: boolean
   error?: string | null
 }) {
-  // attachTo: document.body — required so the teleported content lands
-  // in the live document where document.querySelector can find it.
+  // attachTo: document.body — required so the teleported content lands in the live document where document.querySelector can find it.
   wrapper = mount(AgentKnowledgeDetailDialog, { props, attachTo: document.body })
   return wrapper
 }

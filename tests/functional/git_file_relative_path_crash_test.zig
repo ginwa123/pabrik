@@ -1,5 +1,4 @@
-// Wire test: a relative `path` query/body value no longer ABORTS the server
-// in the git file handlers.
+// Wire test: a relative `path` query/body value no longer ABORTS the server in the git file handlers.
 
 const std = @import("std");
 const testing = std.testing;
@@ -17,13 +16,11 @@ const CRASH_MARKERS = [_][]const u8{
     "panic:",
 };
 
-/// The frontend's cwd, downgraded to a relative path — the malicious/buggy
-/// client case.
+/// The frontend's cwd, downgraded to a relative path — the malicious/buggy client case.
 const RELATIVE_PATH = "relative/repo";
 const FILE = "src/main.zig";
 
-/// pytest's `tmp_path`: a scratch directory outside the harness HOME, gone on
-/// the way out whatever the test's outcome.
+/// pytest's `tmp_path`: a scratch directory outside the harness HOME, gone on the way out whatever the test's outcome.
 const Scratch = struct {
     tmp: std.testing.TmpDir,
     root: []u8,
@@ -42,8 +39,7 @@ const Scratch = struct {
     }
 };
 
-/// The last `n` lines of the server log. Owned by the caller (free, or leak
-/// into a `defer if (len > 0)` as the call sites below do).
+/// The last `n` lines of the server log.
 fn logTail(h: *Harness, n: usize) ![]u8 {
     const data = std.Io.Dir.cwd().readFileAlloc(io, h.log_path, gpa, .limited(1 << 20)) catch |err| switch (err) {
         error.FileNotFound => return gpa.dupe(u8, ""),
@@ -62,8 +58,7 @@ fn logTail(h: *Harness, n: usize) ![]u8 {
     return std.mem.join(gpa, "\n", lines.items[start..]);
 }
 
-/// The server is STILL answering, and its log carries no crash marker. This
-/// is the whole assertion.
+/// The server is STILL answering, and its log carries no crash marker.
 fn assertAlive(h: *Harness, what: []const u8) !void {
     const log_tail = logTail(h, 4000) catch "";
     defer if (log_tail.len > 0) gpa.free(log_tail);
@@ -86,8 +81,7 @@ fn assertAlive(h: *Harness, what: []const u8) !void {
     }
 }
 
-/// `POST /api/git/file/diffs` body — the `SidebarDiffPanel.vue` payload with a
-/// relative `path`.
+/// `POST /api/git/file/diffs` body — the `SidebarDiffPanel.vue` payload with a relative `path`.
 const BatchBody = struct {
     path: []const u8,
     files: []const BatchFile,
@@ -201,9 +195,7 @@ test "file_read_rejects_absolute_file" {
     try assertAlive(&h, "GET /api/git/file/read with an absolute file");
 }
 
-// Positive control: the guard must not break the normal (absolute) call. If
-// the 400s above were a blanket failure this test would not reach a real file
-// read. Reads a fixture under the scratch tmpdir and asserts its bytes.
+// Positive control: the guard must not break the normal (absolute) call.
 test "file_read_still_works_for_absolute_paths" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

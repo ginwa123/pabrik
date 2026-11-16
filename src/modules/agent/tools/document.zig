@@ -1,6 +1,4 @@
-//! `document_markdown` — the agent tool that WRITES its own workspace's
-//! document store (Migration 098). Three actions: `create`, `edit`, `delete`;
-//! read/search are in `document_view.zig`, and `document_html` reuses these.
+//! `document_markdown` — the agent tool that WRITES its own workspace's document store (Migration 098).
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -19,23 +17,17 @@ const migration = @import("../../../migrations/migration.zig");
 
 pub const TOOL_NAME = "document_markdown";
 
-// =====================================================================
 // Input
-// =====================================================================
 
-/// Args for `document_markdown`. `action` selects which fields matter:
-/// `create` reads title/content/format, `edit` reads
-/// document_id/title/content/old_text/new_text/replace_all, `delete` reads document_id.
+/// Args for `document_markdown`. `action` selects which fields matter
 pub const DocumentMarkdownInput = struct {
     action: []const u8 = "",
     document_id: []const u8 = "",
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
-    /// `markdown` (the default) or `office`. An office body is a Univer
-    /// snapshot: one JSON object holding the workbook's sheets and cells.
+    /// `markdown` (the default) or `office`.
     format: []const u8 = "",
-    /// `edit`: exact text to find in the current body. When set, `content` is
-    /// refused and the body is patched in place instead of replaced.
+    /// `edit`: exact text to find in the current body.
     old_text: ?[]const u8 = null,
     /// `edit`: the replacement for `old_text`. `""` deletes the match.
     new_text: ?[]const u8 = null,
@@ -43,9 +35,7 @@ pub const DocumentMarkdownInput = struct {
     replace_all: ?bool = null,
 };
 
-// =====================================================================
 // Tool schema
-// =====================================================================
 
 pub const document_markdown_tool_system_prompt =
     \\## Document Tool — Behavior
@@ -123,13 +113,9 @@ pub const document_markdown_tool = AgentTool{
         .system_prompt = document_markdown_tool_system_prompt,
     },
 };
-// =====================================================================
 // Result payloads
-// =====================================================================
 
-/// Success payload for `create` and `edit`. `content` is echoed because the
-/// model often needs to confirm what landed (and `edit` is a whole-body
-/// replace, so the echo is the only proof of what is now stored).
+/// Success payload for `create` and `edit`.
 pub const DocumentToolSuccess = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -177,9 +163,7 @@ pub fn resolveScope(
     db: *database.Db,
     caller_session_id: []const u8,
 ) !?[]u8 {
-    // Rejected BEFORE any DB access: `Backend.exec` binds a
-    // zero-length slice as SQL NULL, so querying with "" would not be a
-    // harmless no-op.
+    // Rejected BEFORE any DB access: `Backend.exec` binds a zero-length slice as SQL NULL, so querying with "" would not be a harmless no-op.
     if (caller_session_id.len == 0) return null;
     return workspace_scope.resolveWorkspaceId(allocator, db, caller_session_id) catch null;
 }
@@ -199,12 +183,9 @@ pub fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u
     );
 }
 
-// =====================================================================
 // Executors
-// =====================================================================
 
-/// Execute the `create` action. Returns an inner JSON string the exec
-/// wrapper embeds. Caller owns the returned slice and must free it.
+/// Execute the `create` action.
 pub fn executeAddDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -238,8 +219,7 @@ pub fn executeAddDocument(
     return successJSON(allocator, row);
 }
 
-/// Execute the `edit` action. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned slice and must free it.
+/// Execute the `edit` action.
 pub fn executeEditDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -249,8 +229,7 @@ pub fn executeEditDocument(
     return executeEditDocumentWithFormat(allocator, store, caller_session_id, input, null);
 }
 
-/// `executeEditDocument`, refusing a document whose stored format is not
-/// `require_format`. A null `require_format` accepts any format.
+/// `executeEditDocument`, refusing a document whose stored format is not `require_format`.
 pub fn executeEditDocumentWithFormat(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -262,9 +241,7 @@ pub fn executeEditDocumentWithFormat(
         return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action.");
     }
     if (input.title == null and input.content == null and input.old_text == null) {
-        // Silently succeeding here would teach the model that an empty
-        // patch is a valid edit, which is how a document gets "updated"
-        // without any change ever being made.
+        // Silently succeeding here would teach the model that an empty patch is a valid edit, which is how a document gets "updated" without any change ever being made.
         return errorJSON(allocator, "Nothing to change: supply `title`, `content`, or `old_text` + `new_text`. Omitted fields keep their current value.");
     }
     if (input.old_text != null and input.content != null) {
@@ -333,9 +310,7 @@ pub fn readErrorMessage(err: anyerror) []const u8 {
 fn updateErrorMessage(err: anyerror) []const u8 {
     return switch (err) {
         error.IdsRequired => "workspace_id and document_id required",
-        // One message for "no such id", "another workspace's id" and "you
-        // blanked the title" — the first two must be indistinguishable or
-        // the tool becomes an oracle for other workspaces' row ids.
+        // One message for "no such id", "another workspace's id" and "you blanked the title" — the first two must be indistinguishable or the tool becomes an oracle for …
         error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
         error.FormatMismatch => formatMismatchMessage(),
         error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
@@ -360,9 +335,7 @@ fn replaceErrorMessage(err: anyerror) []const u8 {
 
 const ReplaceError = error{ EmptyPattern, NotFound, Ambiguous, OutOfMemory };
 
-/// `body` with `old_text` replaced by `new_text`. Exactly one occurrence is
-/// required unless `replace_all` is set, so a pattern that is not unique is
-/// refused rather than silently patching the wrong place.
+/// `body` with `old_text` replaced by `new_text`.
 pub fn replaceInBody(
     allocator: std.mem.Allocator,
     body: []const u8,
@@ -395,8 +368,7 @@ pub fn replaceInBody(
     return out.toOwnedSlice(allocator);
 }
 
-/// Execute the `delete` action. Returns an inner JSON string the exec
-/// wrapper embeds. Caller owns the returned slice and must free it.
+/// Execute the `delete` action.
 pub fn executeDeleteDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
@@ -414,8 +386,7 @@ pub fn executeDeleteDocument(
     const existing = store.getDocument(allocator, workspace_id, input.document_id) catch |err| {
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
-            // One message for "no such id" and "another workspace's id" —
-            // see the note on the edit action's NotFound arm.
+            // One message for "no such id" and "another workspace's id" — see the note on the edit action's NotFound arm.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
             error.QueryFailed => "Could not read the document (database error).",
             error.OutOfMemory => "Out of memory",
@@ -427,9 +398,7 @@ pub fn executeDeleteDocument(
     store.deleteDocument(allocator, workspace_id, input.document_id) catch |err| {
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
-            // Unreachable in practice: we just read the row through the
-            // same scope guard. It is still mapped rather than leaked, so a
-            // future change cannot turn a race into an unhandled error.
+            // Unreachable in practice: we just read the row through the same scope guard.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
             error.DeleteFailed => "Could not delete the document (database error).",
         };
@@ -457,8 +426,7 @@ const TestCtx = struct {
     }
 };
 
-/// Two workspaces, one session each, so a cross-workspace leak has somewhere
-/// to show up.
+/// Two workspaces, one session each, so a cross-workspace leak has somewhere to show up.
 fn setupDb() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
@@ -483,8 +451,7 @@ fn setupDb() !TestCtx {
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     try migration.Migration148AddDocumentIcon.up(&db, testing.allocator);
 
-    // ws_1 owns item i1; ws_2 owns item i2. s1 is task-linked to i1, s2
-    // to i2 — the exact-task-link branch of resolveWorkspaceId.
+    // ws_1 owns item i1; ws_2 owns item i2. s1 is task-linked to i1, s2 to i2 — the exact-task-link branch of resolveWorkspaceId.
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES
         \\  ('i1', 'ws_1', 'kanban', 'A', '/proj/a', 1),
@@ -506,9 +473,7 @@ fn setupDb() !TestCtx {
     };
 }
 
-/// Owned, deinit-able view of a tool result. `std.json.parseFromSlice`
-/// allocates every string into an arena owned by the `Parsed` value, and
-/// `deinit` frees that arena.
+/// Owned, deinit-able view of a tool result.
 const Parsed = struct {
     allocator: std.mem.Allocator,
     id: []const u8 = "",
@@ -606,8 +571,7 @@ test "document_markdown create: format office stores the envelope and echoes it 
 
     try testing.expect(p.err == null);
     try testing.expectEqualStrings("office", p.format);
-    // The body round-trips through the object store unchanged, so the grid
-    // reopens on the same snapshot the model wrote.
+    // The body round-trips through the object store unchanged, so the grid reopens on the same snapshot the model wrote.
     try testing.expectEqualStrings(body, p.content);
 }
 
@@ -660,8 +624,7 @@ test "document_markdown edit: an office body keeps its format and re-previews fr
     defer e.deinit();
 
     try testing.expect(e.err == null);
-    // `edit` cannot change the format — it is immutable after create —
-    // so the row stays an office document and the preview follows the cells.
+    // `edit` cannot change the format — it is immutable after create — so the row stays an office document and the preview follows the cells.
     try testing.expectEqualStrings("office", e.format);
     try testing.expectEqualStrings("Budget", e.title);
 
@@ -708,8 +671,7 @@ test "document_markdown create: an empty caller session fails closed instead of 
     defer p.deinit();
     try testing.expect(p.err != null);
 
-    // And nothing was written anywhere — "no scope" must not degrade into
-    // "some scope".
+    // And nothing was written anywhere — "no scope" must not degrade into "some scope".
     var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM documents", &.{});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -746,8 +708,7 @@ test "document_markdown create: two workspaces writing the same title never coll
     defer pb.deinit();
     try testing.expectEqualStrings("ws_1", pa.workspace_id);
     try testing.expectEqualStrings("ws_2", pb.workspace_id);
-    // Same title, different rows — the id is nano-timestamp based and the
-    // two calls are separate statements, so they must differ.
+    // Same title, different rows — the id is nano-timestamp based and the two calls are separate statements, so they must differ.
     try testing.expect(!std.mem.eql(u8, pa.id, pb.id));
 }
 
@@ -975,8 +936,7 @@ test "document_markdown edit: workspace B cannot edit workspace A's document, an
     var d = try parseJson(alloc, denied);
     defer d.deinit();
 
-    // Different session, nonexistent id. If these two messages differ,
-    // the tool is an oracle for other workspaces' row ids.
+    // Different session, nonexistent id.
     const missing = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{ .document_id = "doc_does_not_exist", .content = "x" });
     defer alloc.free(missing);
     var m = try parseJson(alloc, missing);
@@ -985,8 +945,7 @@ test "document_markdown edit: workspace B cannot edit workspace A's document, an
     try testing.expect(d.err != null);
     try testing.expectEqualStrings(d.err.?, m.err.?);
 
-    // And the owner's copy is untouched — a rejected cross-workspace edit
-    // must not half-apply.
+    // And the owner's copy is untouched — a rejected cross-workspace edit must not half-apply.
     const read_back = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
     defer documents_store.freeDocumentRow(alloc, read_back);
     try testing.expectEqualStrings("ws_1 only", read_back.content);
@@ -1124,7 +1083,6 @@ test "schema contract: action is the only required argument" {
 }
 
 // Exec adapter — merged from `document.zig` (2026-10-14, task_1791993404141_2).
-// The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
@@ -1136,9 +1094,7 @@ const exec_documents_store = exec_pabrikcore.documents_store;
 const document_events = exec_pabrikcore.document_events;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
-/// The inner tool payload read back at the exec wrapper: a refusal in `"error"`, or the row a
-/// mutation touched (which the `documents` SSE channel needs). Slices borrow from `parsed` — free
-/// it only after `wrapToolOutput`.
+/// The inner tool payload read back at the exec wrapper: a refusal in `"error"`, or the row a mutation touched (which the `documents` SSE channel needs).
 const InnerResultProbe = struct {
     @"error": ?[]const u8 = null,
     id: []const u8 = "",
@@ -1332,8 +1288,7 @@ pub fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
     };
 }
 
-/// Drive a document tool the way the model would: `action` is prepended to
-/// `body`, whose surrounding braces are optional.
+/// Drive a document tool the way the model would: `action` is prepended to `body`, whose surrounding braces are optional.
 pub fn callToolAs(exec: anytype, tool_name: []const u8, ctx: ToolExecContext, action: []const u8, body: []const u8) !ToolExecResult {
     const trimmed = std.mem.trim(u8, body, " \t\n\r");
     const inner = if (trimmed.len >= 2 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}')
@@ -1352,8 +1307,7 @@ pub fn callTool(ctx: ToolExecContext, action: []const u8, body: []const u8) !Too
     return callToolAs(execDocumentMarkdown, TOOL_NAME, ctx, action, body);
 }
 
-/// Flattened, OWNED view of a tool envelope. Two things this deliberately
-/// does not do: - Return `p.value` after `deinit()`.
+/// Flattened, OWNED view of a tool envelope.
 pub const Envelope = struct {
     allocator: std.mem.Allocator,
     raw: []const u8 = "",
@@ -1410,9 +1364,7 @@ fn freeOptSlices(a: std.mem.Allocator, items: []const ?[]const u8) void {
 }
 
 pub fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
-    // The envelope nests the tool payload under `data` (see
-    // `wrapToolOutput`), so BOTH the write fields (add/edit/delete) and the
-    // search fields (count/total/documents) live one level down.
+    // The envelope nests the tool payload under `data` (see `wrapToolOutput`), so BOTH the write fields (add/edit/delete) and the search fields …
     const DocumentRowWire = struct {
         id: []const u8 = "",
         title: []const u8 = "",
@@ -1451,9 +1403,7 @@ pub fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
     const data: DataWire = p.value.data orelse .{};
     const rows = data.documents;
 
-    // Five ArrayLists rather than five `alloc`s filled in place: on an OOM
-    // halfway through the row loop, a partially-initialised slice is a `free`
-    // of undefined pointers — which the exec_testing allocator reports as a leak
+    // Five ArrayLists rather than five `alloc`s filled in place: on an OOM halfway through the row loop, a partially-initialised slice is a `free` of undefined …
     var ids: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (ids.items) |s| allocator.free(s);
@@ -1478,9 +1428,7 @@ pub fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
     errdefer content_lengths.deinit(allocator);
 
     for (rows) |d| {
-        // A null `content` stays null: "not requested" must not collapse
-        // into "", or `include_content: false` would read as "this
-        // document's body is empty" — two very different facts.
+        // A null `content` stays null: "not requested" must not collapse into "", or `include_content: false` would read as "this document's body is empty" — two very …
         try ids.append(allocator, try allocator.dupe(u8, d.id));
         try titles.append(allocator, try allocator.dupe(u8, d.title));
         try excerpts.append(allocator, try allocator.dupe(u8, d.excerpt));
@@ -1542,9 +1490,7 @@ test "document_markdown create: no object store is a tool error, not a document 
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    // The production dispatch used to build its context without the object
-    // store, so every agent-written document lost its body and read back
-    // empty. A missing store must now be a refusal the model can see.
+    // The production dispatch used to build its context without the object store, so every agent-written document lost its body and read back empty.
     const tc = makeTestCtx(alloc, &ctx.db, null, "s1");
     const result = try callTool(tc, "create", "{\"title\":\"Notes\",\"content\":\"# hi\"}");
     defer alloc.free(result.output);
@@ -1593,9 +1539,7 @@ test "document_markdown create: a tool-level refusal surfaces as success=false" 
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    // The tool returns {"error": "..."} as its INNER payload. Without the
-    // InnerErrorProbe re-parse this would be wrapped as success=true and
-    // the model would read a refusal as a written document.
+    // The tool returns {"error": "..."} as its INNER payload.
     const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "");
     const result = try callTool(tc, "create", "{\"title\":\"Nowhere\"}");
     defer alloc.free(result.output);
@@ -1619,9 +1563,7 @@ test "document_markdown create: malformed JSON arguments become a parse failure,
     var env = try parseEnvelope(alloc, result.output);
     defer env.deinit();
     try exec_testing.expect(!env.success);
-    // The message must tell the model WHAT was wrong with its JSON, not
-    // just name the Zig error. `{not json` is a syntax error, so the
-    // explanation names JSON and the usual causes.
+    // The message must tell the model WHAT was wrong with its JSON, not just name the Zig error.
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "JSON") != null);
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
 }
@@ -1631,9 +1573,7 @@ test "document_markdown create: a hallucinated workspace_id is ignored, not hono
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    // s1 belongs to ws_1. The model asks for ws_2. The wrapper parses with
-    // ignore_unknown_fields, the field is dropped, and the write lands in
-    // ws_1 — the session's own workspace, never the requested one.
+    // s1 belongs to ws_1.
     const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     const result = try callTool(tc, "create", "{\"title\":\"Spoof attempt\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}");
     defer alloc.free(result.output);
@@ -1732,9 +1672,7 @@ test "document_markdown delete: malformed JSON arguments become a parse failure,
     var env = try parseEnvelope(alloc, del.output);
     defer env.deinit();
     try exec_testing.expect(!env.success);
-    // The message must tell the model WHAT was wrong with its JSON, not
-    // just name the Zig error. `{not json` is a syntax error, so the
-    // explanation names JSON and the usual causes.
+    // The message must tell the model WHAT was wrong with its JSON, not just name the Zig error.
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "JSON") != null);
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
 }
@@ -1815,8 +1753,7 @@ test "document_markdown delete: an unresolvable session surfaces success=false" 
     try exec_testing.expect(env.err != null);
 }
 
-// The read/search half moved to the `document` tool. A model that still calls
-// the old actions must be told where they went, not left to guess.
+// The read/search half moved to the `document` tool.
 test "document_markdown refuses the retired read action and points at the document tool" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
@@ -1903,8 +1840,6 @@ test "document_markdown is seeded into every new agent and the retired names are
 }
 
 // ─── documents SSE channel ───────────────────────────────────────────────
-// The exec wrapper is the only layer that knows a tool call SUCCEEDED: every failure path above
-// returned before it, so the emit lives here and not in the executor.
 
 const sse_event_mod = @import("../loop/sse.zig");
 const sse_bus_mod = exec_pabrikcore.event_bus;
@@ -1912,8 +1847,7 @@ const sse_bus_mod = exec_pabrikcore.event_bus;
 var sse_captured: ?sse_event_mod.SseEvent = null;
 var sse_payload: []u8 = &.{};
 
-/// The emit frees the buffer it built, so `ev.data` would dangle — copy it
-/// here, while the emit is still on the stack.
+/// The emit frees the buffer it built, so `ev.data` would dangle — copy it here, while the emit is still on the stack.
 fn captureDocumentSse(ev: sse_event_mod.SseEvent) void {
     sse_captured = ev;
     sse_payload = exec_testing.allocator.dupe(u8, ev.data) catch return;
@@ -1925,8 +1859,7 @@ fn releaseDocumentSse() void {
     sse_captured = null;
 }
 
-/// One JSON field out of the captured payload. The slice is copied out before
-/// the parse arena dies.
+/// One JSON field out of the captured payload.
 fn capturedField(field: []const u8) ![]u8 {
     const parsed = try std.json.parseFromSlice(std.json.Value, exec_testing.allocator, sse_payload, .{});
     defer parsed.deinit();
@@ -2080,14 +2013,12 @@ test "a refused document mutation announces nothing" {
     var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
 
-    // A blank title is refused by the store, so nothing may be announced — a listener acting on
-    // `action: "created"` would invent a document that was never written.
+    // A blank title is refused by the store, so nothing may be announced — a listener acting on `action: "created"` would invent a document that was never written.
     const blank = try callTool(tc_ctx, "create", "{\"title\":\"   \"}");
     defer alloc.free(blank.output);
     try exec_testing.expect(sse_captured == null);
 
-    // An id that is not in this workspace reaches neither the update nor the
-    // delete, so neither may be announced.
+    // An id that is not in this workspace reaches neither the update nor the delete, so neither may be announced.
     const edit_miss = try callTool(tc_ctx, "edit", "{\"document_id\":\"doc_missing\",\"title\":\"Renamed\"}");
     defer alloc.free(edit_miss.output);
     try exec_testing.expect(sse_captured == null);

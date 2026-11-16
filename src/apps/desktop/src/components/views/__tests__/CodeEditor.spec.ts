@@ -1,5 +1,4 @@
-/** Behavioural tests for the read-only code viewer (`views/CodeEditor.vue`), rendered from
- * `?view=code-editor`. */
+/** Behavioural tests for the read-only code viewer (`views/CodeEditor.vue`), rendered from `?view=code-editor`. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
@@ -9,9 +8,7 @@ import CodeEditor from '../CodeEditor.vue'
 const codeEditorPath = resolve(__dirname, '..', 'CodeEditor.vue')
 const source = readFileSync(codeEditorPath, 'utf-8')
 
-/**  * Strip comment bodies before the source-contract greps below: this file's own header explains
- * *why* the component no longer uses monaco, so the word appears in prose. Only executable code
- * matters. */
+/** Strip comment bodies before the source-contract greps below: this file's own header explains *why* the component no longer uses monaco, so the word appears in … */
 function stripComments(src: string): string {
   return src
     .replace(/<!--[\s\S]*?-->/g, '')
@@ -115,9 +112,7 @@ describe('CodeEditor.vue — renders the file (not a blank body)', () => {
     expect(diffView.text()).toContain('+const added = 3')
     expect(diffView.text()).toContain('-const gone = 2')
 
-    // A hunk header is diff METADATA: tokenizing `@@ -1,2 +1,2 @@` would
-    // paint its numbers `.tok-number` over the row's hunk colour, which no
-    // other unified surface does. It stays one plain span.
+    // A hunk header is diff METADATA: tokenizing `@@ -1,2 +1,2 @@` would paint its numbers `.tok-number` over the row's hunk colour, which no other unified surface …
     const hunkRow = diffView.get('.diff-row-hunk')
     expect(hunkRow.text()).toContain('@@ -1,2 +1,2 @@')
     expect(hunkRow.findAll('.tok-number')).toHaveLength(0)
@@ -156,16 +151,12 @@ describe('CodeEditor.vue — renders the file (not a blank body)', () => {
 
 describe('CodeEditor.vue — source contract', () => {
   it('does not reference the monaco-editor package at all', () => {
-    // The production bundle broke because `import('monaco-editor')` was left as a runtime
-    // specifier. The viewer renders with the repo's zero-dependency tokenizer, so the package must
-    // not be named here.
+    // The production bundle broke because `import('monaco-editor')` was left as a runtime specifier.
     expect(code).not.toMatch(/['"`]monaco-editor['"`]/)
   })
 
   it('does not use the @vite-ignore escape hatch for a bare import', () => {
-    // `@vite-ignore` keeps the specifier verbatim in the emitted chunk —
-    // that is exactly what shipped ``import(`monaco-editor`)`` to the
-    // browser. Nothing in this component may need it.
+    // `@vite-ignore` keeps the specifier verbatim in the emitted chunk — that is exactly what shipped ``import(`monaco-editor`)`` to the browser.
     expect(code).not.toMatch(/@vite-ignore/)
   })
 

@@ -1,6 +1,4 @@
-//! `POST /api/agent-routines/:routine_id/system_prompt`. Adds a named
-//! system-prompt block to an agent-routines config. Body: `{title?,
-//! content}`.
+//! `POST /api/agent-routines/:routine_id/system_prompt`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -19,8 +17,7 @@ const CreateSystemPromptBody = struct {
 /// Subset of the system-prompt row returned by the use-case.
 pub const SystemPrompt = agent_routine_db.SystemPromptRow;
 
-/// Domain-level error set for `useCase`. The handler maps each variant
-/// to an HTTP status code + message via two exhaustive switches.
+/// Domain-level error set for `useCase`.
 pub const SystemPromptCreateError = error{
     /// `routine_id` path param was missing or empty.
     RoutineIdRequired,
@@ -28,8 +25,7 @@ pub const SystemPromptCreateError = error{
     ContentRequired,
     /// `db.query` failed while looking up the routine.
     LookupFailed,
-    /// The workspace_item doesn't exist / isn't a routine, OR the routine
-    /// has no `agent_routines` row yet.
+    /// The workspace_item doesn't exist / isn't a routine, OR the routine has no `agent_routines` row yet.
     RoutineNotFound,
     /// `db.exec` failed on the INSERT.
     InsertFailed,
@@ -53,9 +49,7 @@ pub const SystemPromptCreateOutput = struct {
     system_prompt: SystemPrompt,
 };
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Create a system-prompt row for the given agent-routines config.
 fn useCase(
@@ -87,9 +81,7 @@ fn useCase(
     return .{ .system_prompt = system_prompt };
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 /// Thin orchestrator over `useCase`.
 pub fn agentRoutineSystemPromptCreateHandler(
@@ -154,7 +146,6 @@ pub fn agentRoutineSystemPromptCreateHandler(
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
-// impl + tests in one file (project convention). Behavioural coverage: 1.
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;

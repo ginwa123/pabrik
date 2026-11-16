@@ -16,16 +16,11 @@ pub const ProcessInfo = struct {
     log_path: []const u8,
     started_at: i64,
     status: []const u8,
-    /// `job` | `service` (migration 107). `service` is `mode =
-    /// "background_persistence"`: a process the agent is deliberately NOT
-    /// notified about, which it polls or stops itself.
+    /// `job` | `service` (migration 107).
     kind: []const u8,
-    /// How many bytes of the log `process read` has already returned
-    /// (migration 108). Without it every read would hand the model the same
-    /// head of the file again.
+    /// How many bytes of the log `process read` has already returned (migration 108).
     last_read_offset: i64 = 0,
-    /// The workspace VM this job ran in (migration 113). Empty means `pid` is a
-    /// pid on THIS host.
+    /// The workspace VM this job ran in (migration 113).
     vm_id: []const u8 = "",
     /// The job's pid INSIDE that VM. Meaningful only when `vm_id` is set.
     guest_pid: u32 = 0,
@@ -41,8 +36,7 @@ pub fn freeProcessInfos(allocator: std.mem.Allocator, infos: []ProcessInfo) void
     allocator.free(infos);
 }
 
-/// Release each entry's strings but NOT the slice — for the partially-built
-/// list an `errdefer` sees, where the slice belongs to the ArrayList.
+/// Release each entry's strings but NOT the slice — for the partially-built list an `errdefer` sees, where the slice belongs to the ArrayList.
 pub fn freeProcessInfoStrings(allocator: std.mem.Allocator, infos: []ProcessInfo) void {
     for (infos) |p| freeProcessInfo(allocator, p);
 }
@@ -59,9 +53,7 @@ pub fn freeProcessInfo(allocator: std.mem.Allocator, p: ProcessInfo) void {
 
 const Backend = database.Db;
 
-/// Where a detached job's pid lives: this host, or the VM of a workspace. The
-/// row's `pid` is the host pid for `.host()` and the guest pid for `.guest()`;
-/// `guest_pid` repeats it so a reader never has to guess.
+/// Where a detached job's pid lives: this host, or the VM of a workspace.
 pub const JobHome = struct {
     vm_id: []const u8 = "",
     guest_pid: u32 = 0,
@@ -79,9 +71,7 @@ pub const JobHome = struct {
     }
 };
 
-/// Save a new background process to the database. `kind` is `KIND_JOB` or
-/// `KIND_SERVICE` — see migration 107; `home` says whether the pid is this
-/// host's or a workspace VM's — see migration 113.
+/// Save a new background process to the database.
 pub fn save(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, command: []const u8, log_path: []const u8, started_at: i64, kind: []const u8, home: JobHome) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{}", .{pid});
     defer allocator.free(pid_str);
@@ -118,8 +108,7 @@ pub fn getBySession(db: *Backend, allocator: std.mem.Allocator, session_id: []co
     }
 
     while (try rows.next()) |row| {
-        // The reader hands back a buffer of its own (`readRowPacked`); the
-        // caller owns it.
+        // The reader hands back a buffer of its own (`readRowPacked`); the caller owns it.
         defer row.deinit(allocator);
         const pid_str = row.values[0];
         const command = row.values[1];
@@ -166,8 +155,7 @@ pub fn delete(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8
     try db.exec(allocator, "DELETE FROM session_background_process WHERE session_id = ? AND pid = ?", &.{ session_id, pid_str });
 }
 
-/// Every `kind='service'` row, with `session_id` — the rows that
-/// `mode="background_persistence"` created.
+/// Every `kind='service'` row, with `session_id` — the rows that `mode="background_persistence"` created.
 pub fn getServices(db: *Backend, allocator: std.mem.Allocator) ![]ProcessInfo {
     var rows = try db.query(allocator,
         \\SELECT session_id, pid, command, log_path, started_at, status, COALESCE(CAST(kind AS TEXT), 'job'), COALESCE(last_read_offset, 0), COALESCE(CAST(vm_id AS TEXT), ''), COALESCE(guest_pid, 0)
@@ -220,19 +208,15 @@ pub fn isAlive(pid: u32) bool {
     };
 }
 
-/// Check if a process with the given PID is still running
-/// Returns true if process exists, false otherwise
+/// Check if a process with the given PID is still running Returns true if process exists, false otherwise
 pub fn isProcessRunning(pid: u32) bool {
-    // Cross-platform: kill(pid, 0) on POSIX, OpenProcess(QUERY_LIMITED) on
-    // Windows. See src/helpers/process_status.zig for the platform switch.
+    // Cross-platform: kill(pid, 0) on POSIX, OpenProcess(QUERY_LIMITED) on Windows.
     return process_status.isProcessRunning(@intCast(pid));
 }
 
-/// Kill a background process by PID
-/// Returns true if killed successfully, false if process doesn't exist or error
+/// Kill a background process by PID Returns true if killed successfully, false if process doesn't exist or error
 pub fn killProcess(pid: u32) bool {
-    // The previous implementation tried SIGTERM (15) first and fell back to
-    // SIGKILL (9).
+    // The previous implementation tried SIGTERM (15) first and fell back to SIGKILL (9).
     return process_status.killProcess(@intCast(pid));
 }
 
@@ -243,8 +227,7 @@ pub fn killServicesForShutdown(db: *Backend, io: std.Io, allocator: std.mem.Allo
 
     var killed: usize = 0;
     for (services) |p| {
-        // The process GROUP, not the PID: a service that forked (vite →
-        // esbuild) survives a single-PID kill and keeps its port.
+        // The process GROUP, not the PID: a service that forked (vite → esbuild) survives a single-PID kill and keeps its port.
         if (shell_tool.stopDetachedProcess(allocator, io, p.pid)) killed += 1;
         try updateStatus(db, allocator, p.session_id, p.pid, "killed");
     }
@@ -280,9 +263,7 @@ pub fn getByPid(db: *Backend, allocator: std.mem.Allocator, session_id: []const 
     };
 }
 
-/// Persist the read cursor. The caller passes the offset it actually RETURNED,
-/// so a failed persist can only cause a repeat (harmless) and never a gap — a
-/// silently skipped line is the failure that would matter.
+/// Persist the read cursor.
 pub fn setLastReadOffset(db: *Backend, allocator: std.mem.Allocator, session_id: []const u8, pid: u32, offset: i64) !void {
     const pid_str = try std.fmt.allocPrint(allocator, "{d}", .{pid});
     defer allocator.free(pid_str);
@@ -305,12 +286,9 @@ pub const DeltaRead = struct {
     total_bytes: i64,
     /// The cap cut this read short — more is waiting past `next_offset`.
     more_pending: bool,
-    /// NOTHING NEW. Distinct from a read that failed: this is an ANSWER ("it has
-    /// said nothing since you last looked"), and it is the answer that makes
-    /// polling cheap enough to be worth doing at all.
+    /// NOTHING NEW.
     empty: bool,
-    /// The log file does not exist — a `nohup` job whose command never started
-    /// produces this, and it is not the same as "no output".
+    /// The log file does not exist — a `nohup` job whose command never started produces this, and it is not the same as "no output".
     missing: bool,
 
     pub fn free(self: DeltaRead, allocator: std.mem.Allocator) void {
@@ -318,9 +296,7 @@ pub const DeltaRead = struct {
     }
 };
 
-/// Read the part of `log_path` the caller has NOT been shown yet. Positional
-/// (`pread`-style) from the stored offset, so it neither depends on a file
-/// handle's own cursor nor reads the head it exists to avoid.
+/// Read the part of `log_path` the caller has NOT been shown yet.
 pub fn readDelta(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -344,9 +320,7 @@ pub fn readDelta(
     };
     const total: i64 = @intCast(stat.size);
 
-    // Clamp: a TRUNCATED log (recreated, or re-opened with `>`) leaves a cursor
-    // past EOF, and without this the read would return nothing for ever — the
-    // model would conclude the process had gone silent.
+    // Clamp: a TRUNCATED log (recreated, or re-opened with `>`) leaves a cursor past EOF, and without this the read would return nothing for ever — the model would …
     const offset: i64 = if (stored_offset > total) 0 else @max(stored_offset, 0);
 
     if (total <= offset) {
@@ -373,8 +347,7 @@ pub fn readDelta(
     defer allocator.free(raw);
     var filled: usize = 0;
     while (filled < raw.len) {
-        // `readPositionalAll` takes a u64 offset; `offset` is clamped >= 0 above,
-        // so the widening is lossless.
+        // `readPositionalAll` takes a u64 offset; `offset` is clamped >= 0 above, so the widening is lossless.
         const at: u64 = @intCast(offset + @as(i64, @intCast(filled)));
         const n = try file.readPositionalAll(io, raw[filled..], at);
         if (n == 0) break; // EOF: the file shrank under us.
@@ -382,8 +355,7 @@ pub fn readDelta(
     }
     const head = raw[0..filled];
 
-    // Compact out NUL bytes, for the same reason `readLogTruncated` does: a
-    // control byte inside a JSON string is not representable.
+    // Compact out NUL bytes, for the same reason `readLogTruncated` does: a control byte inside a JSON string is not representable.
     var kept: usize = 0;
     for (head) |b| {
         if (b != 0) kept += 1;
@@ -398,9 +370,7 @@ pub fn readDelta(
 
     const next_offset = offset + @as(i64, @intCast(filled));
 
-    // Persist BEFORE returning: the caller is handed the bytes and the offset
-    // together, so "what have I already shown you" is answered by the same read
-    // that produced them.
+    // Persist BEFORE returning: the caller is handed the bytes and the offset together, so "what have I already shown you" is answered by the same read that produced …
     setLastReadOffset(db, allocator, session_id, pid, next_offset) catch {};
 
     return .{
@@ -427,9 +397,7 @@ pub fn sweepServicesOnBoot(db: *Backend, io: std.Io, allocator: std.mem.Allocato
 
     var result: ServiceSweepResult = .{ .checked = services.len };
     for (services) |p| {
-        // `reap_pid_nohang` FIRST: a service we spawned in a PREVIOUS pabrik
-        // process is not our child any more, so this answers `.not_our_child`
-        // and the signal probe below decides.
+        // `reap_pid_nohang` FIRST: a service we spawned in a PREVIOUS pabrik process is not our child any more, so this answers `.not_our_child` and the signal probe …
         const alive = switch (shell_tool.reap_pid_nohang(p.pid)) {
             .exited => false,
             .running => true,
@@ -445,9 +413,7 @@ pub fn sweepServicesOnBoot(db: *Backend, io: std.Io, allocator: std.mem.Allocato
     return result;
 }
 
-// ─── Background completion message helpers (Task 1)
-// ───────────────────────── Pure helpers (no DB) used by the Task 2
-// completion queue: read a finished background command's log file with a byte
+// ─── Background completion message helpers (Task 1) ───────────────────────── Pure helpers (no DB) used by the Task 2 completion queue: read a finished …
 
 /// Byte cap callers use when reading a background command's log file.
 pub const completion_log_cap_bytes: usize = 20 * 1024;
@@ -463,9 +429,7 @@ pub const TruncatedLog = struct {
     }
 };
 
-/// Read up to `cap_bytes` bytes (HEAD — the first bytes of the file) from the
-/// log at `log_path`, strip NUL bytes so the content can never break SSE JSON
-/// framing, and report the full file size for the truncation suffix.
+/// Read up to `cap_bytes` bytes (HEAD — the first bytes of the file) from the log at `log_path`, strip NUL bytes so the content can never break SSE JSON framing …
 pub fn readLogTruncated(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -474,9 +438,7 @@ pub fn readLogTruncated(
 ) !TruncatedLog {
     const cwd = std.Io.Dir.cwd();
 
-    // Stat first: yields the total size AND surfaces FileNotFound for a
-    // missing log in one syscall. Absolute paths work through cwd()
-    // (same as Dir.readFileAlloc / writeFile elsewhere in the codebase).
+    // Stat first: yields the total size AND surfaces FileNotFound for a missing log in one syscall.
     const stat = try cwd.statFile(io, log_path, .{});
     const total: usize = stat.size;
 
@@ -491,8 +453,7 @@ pub fn readLogTruncated(
     const truncated = total > cap_bytes;
     const to_read: usize = @min(total, cap_bytes);
 
-    // Absolute log paths (the production `/tmp/bg_*.log` shape) go
-    // through openFileAbsolute; relative paths resolve against cwd().
+    // Absolute log paths (the production `/tmp/bg_*.log` shape) go through openFileAbsolute; relative paths resolve against cwd().
     const file = if (std.fs.path.isAbsolute(log_path))
         try std.Io.Dir.openFileAbsolute(io, log_path, .{})
     else
@@ -510,8 +471,7 @@ pub fn readLogTruncated(
     const head = raw[0..filled];
     defer allocator.free(raw);
 
-    // Compact out NUL bytes into an exactly-sized owned slice. The raw
-    // buffer is freed via defer; `out` is the caller's to free.
+    // Compact out NUL bytes into an exactly-sized owned slice.
     var kept: usize = 0;
     for (head) |b| {
         if (b != 0) kept += 1;
@@ -531,9 +491,7 @@ pub fn readLogTruncated(
     };
 }
 
-/// Build the queue message payload for a finished background command. `home`
-/// and `note` are what a guest job adds, and both are omitted when they say
-/// nothing: a host job's envelope is byte-for-byte what it was.
+/// Build the queue message payload for a finished background command.
 pub fn buildCompletionMessage(
     allocator: std.mem.Allocator,
     command: []const u8,
@@ -731,9 +689,7 @@ test "readLogTruncated strips NUL bytes" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // "nul" is a reserved DOS device name on Windows — `nul.log` makes
-    // NtOpenFile return STATUS_OBJECT_NAME_INVALID, which Zig surfaces as
-    // error.BadPathName (not FileNotFound) on `statFile`. Use a plain name.
+    // "nul" is a reserved DOS device name on Windows — `nul.log` makes NtOpenFile return STATUS_OBJECT_NAME_INVALID, which Zig surfaces as error.BadPathName (not …
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "with_nuls.log", .data = "a\x00b\x00c" });
 
     var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -767,9 +723,7 @@ test "readLogTruncated handles an empty file" {
     try testing.expectEqual(false, got.truncated);
 }
 
-// ============================================================================
 // Tests — the read cursor, and the service-only sweep
-// ============================================================================
 
 const migration = @import("../../../migrations/migration.zig");
 
@@ -783,8 +737,7 @@ const TestCtx = struct {
     }
 };
 
-/// In-memory DB through the REAL migration chain — never a hand-rolled schema,
-/// so `kind` and `last_read_offset` are whatever production actually has.
+/// In-memory DB through the REAL migration chain — never a hand-rolled schema, so `kind` and `last_read_offset` are whatever production actually has.
 fn setupCtx() !TestCtx {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
@@ -831,15 +784,13 @@ test "readDelta returns the whole log once, then only what is new" {
     try testing.expect(!first.more_pending);
     try testing.expect(!first.missing);
 
-    // NOTHING NEW is an answer, not an error — this is what makes polling a
-    // long-running service cheap.
+    // NOTHING NEW is an answer, not an error — this is what makes polling a long-running service cheap.
     const second = try readDelta(testing.allocator, io, &ctx.db, "s1", pid, log_path, first.next_offset, 4096);
     defer second.free(testing.allocator);
     try testing.expectEqualStrings("", second.bytes);
     try testing.expect(second.empty);
 
-    // The process appends; the next read returns ONLY the new bytes — the whole
-    // point of the cursor.
+    // The process appends; the next read returns ONLY the new bytes — the whole point of the cursor.
     {
         const f = try tmp.dir.openFile(io, "svc.log", .{ .mode = .write_only });
         defer f.close(io);
@@ -851,8 +802,7 @@ test "readDelta returns the whole log once, then only what is new" {
     try testing.expect(!third.empty);
     try testing.expectEqual(@as(i64, 23), third.total_bytes);
 
-    // And the cursor was PERSISTED — the next caller sees the same position
-    // without having to pass it, which is what lets the tool be stateless.
+    // And the cursor was PERSISTED — the next caller sees the same position without having to pass it, which is what lets the tool be stateless.
     var q = try ctx.db.query(testing.allocator, "SELECT last_read_offset FROM session_background_process WHERE session_id = ? AND pid = ?", &.{ "s1", "4242" });
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowMissing;
@@ -886,8 +836,7 @@ test "readDelta caps one read and says more is waiting" {
 }
 
 test "readDelta recovers from a cursor past EOF instead of going silent for ever" {
-    // A log can be TRUNCATED under a running cursor: the file is recreated,
-    // or opened with `>`.
+    // A log can be TRUNCATED under a running cursor: the file is recreated, or opened with `>`.
     var ctx = try setupCtx();
     defer ctx.deinit();
     const io = ctx.threaded.io();
@@ -908,8 +857,7 @@ test "readDelta recovers from a cursor past EOF instead of going silent for ever
 }
 
 test "readDelta reports a missing log as `missing`, not as empty output" {
-    // "The command never started" and "the command said nothing" need different
-    // responses from the model, so they must not arrive as the same value.
+    // "The command never started" and "the command said nothing" need different responses from the model, so they must not arrive as the same value.
     var ctx = try setupCtx();
     defer ctx.deinit();
     const io = ctx.threaded.io();
@@ -924,9 +872,7 @@ test "readDelta reports a missing log as `missing`, not as empty output" {
 }
 
 test "getByPid refuses a pid that belongs to another session" {
-    // The pid is the model's argument, so it is untrusted input: without the
-    // session filter a session could read — or stop — another session's
-    // process, and pids are small enough to guess.
+    // The pid is the model's argument, so it is untrusted input: without the session filter a session could read — or stop — another session's process, and pids are …
     var ctx = try setupCtx();
     defer ctx.deinit();
 
@@ -934,8 +880,7 @@ test "getByPid refuses a pid that belongs to another session" {
     // A second session that "knows" the pid.
     try save(&ctx.db, testing.allocator, "intruder", 100, "other", "/tmp/y.log", 1, KIND_JOB, .{});
 
-    // Every non-null answer owns its strings — free them, or the DebugAllocator
-    // reports this test as a leak (which is how CI caught it).
+    // Every non-null answer owns its strings — free them, or the DebugAllocator reports this test as a leak (which is how CI caught it).
     if (try getByPid(&ctx.db, testing.allocator, "owner", 99)) |owned| {
         freeProcessInfo(testing.allocator, owned);
     } else return error.TestUnexpectedResult;
@@ -958,8 +903,7 @@ test "save: a guest job records the VM and the pid inside it, and reads back" {
     defer freeProcessInfo(testing.allocator, row);
     try testing.expectEqualStrings("ws_1", row.vm_id);
     try testing.expectEqual(@as(u32, 77), row.guest_pid);
-    // The host pid column carries the guest pid for a guest row, so `list` and
-    // `read` keep working off one number.
+    // The host pid column carries the guest pid for a guest row, so `list` and `read` keep working off one number.
     try testing.expectEqual(@as(u32, 77), row.pid);
 }
 
@@ -980,9 +924,7 @@ test "killServicesForShutdown touches services only, never a job" {
     defer ctx.deinit();
     const io = ctx.threaded.io();
 
-    // Both PIDs are dead, so nothing is actually signalled and the test asserts
-    // the SELECTION — which is the part that decides whether a user's build is
-    // killed.
+    // Both PIDs are dead, so nothing is actually signalled and the test asserts the SELECTION — which is the part that decides whether a user's build is killed.
     try save(&ctx.db, testing.allocator, "s_svc", 999_999_901, "pnpm run dev", "/tmp/a.log", 1, KIND_SERVICE, .{});
     try save(&ctx.db, testing.allocator, "s_job", 999_999_902, "zig build", "/tmp/b.log", 2, KIND_JOB, .{});
 
@@ -994,8 +936,7 @@ test "killServicesForShutdown touches services only, never a job" {
     defer svc_row.deinit(testing.allocator);
     try testing.expectEqualStrings("killed", svc_row.values[0]);
 
-    // The JOB is untouched: `killServicesForShutdown` runs at shutdown and at
-    // boot, and a bounded build is not a service that outlived its owner.
+    // The JOB is untouched: `killServicesForShutdown` runs at shutdown and at boot, and a bounded build is not a service that outlived its owner.
     var job = try ctx.db.query(testing.allocator, "SELECT status FROM session_background_process WHERE session_id = ?", &.{"s_job"});
     defer job.deinit();
     const job_row = (try job.next()) orelse return error.RowMissing;

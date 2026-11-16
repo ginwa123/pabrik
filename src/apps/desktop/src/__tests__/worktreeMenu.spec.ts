@@ -4,9 +4,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 
 import WorktreeMenu from '../components/workspace/WorktreeMenu.vue'
 
-// Helper: mount the menu with the right props for each test. Centralizing
-// the prop shape keeps the tests focused on the behavior under test, not
-// on Vue's prop-validation ceremony.
+// Helper: mount the menu with the right props for each test.
 function mountMenu(hasWorktree: boolean) {
   return mount(WorktreeMenu, {
     props: { hasWorktree, branch: 'main', status: 'clean' },
@@ -24,9 +22,7 @@ describe('WorktreeMenu — worktree-bound (hasWorktree=true)', () => {
 
   it('renders the three worktree-bound menu items with the correct data-testids', () => {
     wrapper = mountMenu(true)
-    // The component uses the `data-testid` attribute as the contract for
-    // ChatView's click handlers — if any of these IDs change, the
-    // parent wiring silently breaks.
+    // The component uses the `data-testid` attribute as the contract for ChatView's click handlers — if any of these IDs change, the parent wiring silently breaks.
     expect(wrapper.find('[data-testid="worktree-menu-create-pr"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="worktree-menu-view-folder"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="worktree-menu-clear"]').exists()).toBe(true)
@@ -66,24 +62,16 @@ describe('WorktreeMenu — worktree-bound (hasWorktree=true)', () => {
 
   it('clicking outside the menu emits close', async () => {
     wrapper = mountMenu(true)
-    // The component registers a document-level `click` listener in onMounted (with a 0ms setTimeout
-    // so the click that OPENED the menu doesn't immediately close it). After that tick, dispatching
-    // a click on a target OUTSIDE the menu must emit `close`.
+    // The component registers a document-level `click` listener in onMounted (with a 0ms setTimeout so the click that OPENED the menu doesn't immediately close it).
     await new Promise((r) => setTimeout(r, 5))
 
-    // Build a target node that is NOT inside `menuRef`. The menu's
-    // root <div> contains the 3 buttons, so clicking on the body
-    // element works as an "outside" target.
+    // Build a target node that is NOT inside `menuRef`.
     const outsideEl = document.body
     document.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
     // The component checks `menuRef.value.contains(e.target as Node)`.
-    // `document.body` is the dispatch target of the document-level
-    // listener; if the listener is registered correctly, this fires.
     expect(wrapper.emitted('close')).toBeTruthy()
-    // Reference `outsideEl` so TS/lint don't complain about an unused
-    // variable (the dispatch goes through document, not the element,
-    // because of how bubbling lands on the document).
+    // Reference `outsideEl` so TS/lint don't complain about an unused variable (the dispatch goes through document, not the element, because of how bubbling lands on …
     void outsideEl
   })
 })

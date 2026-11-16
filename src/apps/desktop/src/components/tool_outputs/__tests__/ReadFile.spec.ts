@@ -9,8 +9,7 @@ const gutters = (wrapper: ReturnType<typeof makeWrapper>): string[] =>
   wrapper.findAll('.rf-gutter').map((s) => s.text())
 
 const lines = (wrapper: ReturnType<typeof makeWrapper>): Array<string | null> =>
-  // textContent, not .text(): VTU trims whitespace, which would hide
-  // indentation regressions in the raw-content rendering.
+  // textContent, not .text(): VTU trims whitespace, which would hide indentation regressions in the raw-content rendering.
   wrapper.findAll('.rf-line').map((s) => s.element.textContent)
 
 describe('ReadFile.vue — line-number gutter from start_line', () => {

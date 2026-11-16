@@ -20,29 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * What a refetch does to a turn the stream stopped reporting on.
- *
- * **The bug this exists for.** `chunk_final` and `llm_full` are ordinary SSE
- * frames, and the backend keeps no replay buffer — a client that reconnects
- * cannot ask for what it missed. A phone that was backgrounded, rotated, or
- * briefly offline across the end of a run therefore loses both frames and has
- * no way left to learn the run finished: the header reads "Working…", the
- * composer offers a Stop button for a worker that no longer exists, and a
- * `streaming…` hint hangs under an answer that is already complete.
- *
- * Nothing else in the class can repair that. `ChatApi.mergeById` keeps any row
- * whose id never appears in a server page, and a `streaming-` id never can —
- * the placeholder is minted precisely *because* the turn had not been written
- * yet. So the refetch has to do it, and it has to ask two questions rather
- * than one: the transcript says which turns have been **written**, the worker
- * list says whether anything is still **running**.
- *
- * Each test here drives the real reproduction — a live run, a dropped socket
- * across the end of it, and a reconnect — rather than poking the state, because
- * the failure is a *sequence* and a test that seeds the final state proves only
- * that the assertions are true of it.
- */
+/** What a refetch does to a turn the stream stopped reporting on. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelStreamingReconcileTest {
 
@@ -76,16 +54,7 @@ class ChatViewModelStreamingReconcileTest {
         override fun clear() { value = null }
     }
 
-    /**
-     * Routes by path so one fake can answer the three reads a chat screen
-     * makes: the transcript, the worker list, and the in-memory snapshot.
-     *
-     * The envelopes are the backend's own shapes — `{"workers":[…],"count":n}`
-     * from `makeWorkerListResponse`, and the `SessionMessage` fields
-     * `ChatApi.toChatMessage` reads — because a hand-written fixture that
-     * happens to parse proves the parser agrees with the fixture, not with the
-     * server.
-     */
+    /** Routes by path so one fake can answer the three reads a chat screen makes: the transcript, the worker list, and the in-memory snapshot. */
     private class FixtureTransport : AuthTransport {
         /** What `GET /api/llm/session/{id}/messages` answers. */
         var messages: String = emptyPage()
@@ -104,8 +73,7 @@ class ChatViewModelStreamingReconcileTest {
                     AuthHttpResponse(200, workers)
                 }
 
-            // `/queue_messages` does not contain "/messages" — the separator
-            // is `_` — so the two paths cannot be confused for one another.
+            // `/queue_messages` does not contain "/messages" — the separator is `_` — so the two paths cannot be confused for one another.
             path.contains("/messages") -> AuthHttpResponse(200, messages)
             path.endsWith("/stream") -> AuthHttpResponse(200, """{"active":false,"content":""}""")
             else -> AuthHttpResponse(200, "{}")
@@ -130,10 +98,7 @@ class ChatViewModelStreamingReconcileTest {
         nowMillis = { 1_790_835_984_283_000L },
     ).also { it.onUserChanged("user_a") }
 
-    /**
-     * Opens the chat, connects, and gets a delta on screen — a run the phone is
-     * watching, with a placeholder it is still filling.
-     */
+    /** Opens the chat, connects, and gets a delta on screen — a run the phone is watching, with a placeholder it is still filling. */
     private suspend fun TestScope.openedStreamingTurn(
         schedulers: Schedulers,
         transport: FixtureTransport,
@@ -170,9 +135,7 @@ class ChatViewModelStreamingReconcileTest {
             val bus = FakeSseBus()
             val model = openedStreamingTurn(schedulers, transport, bus)
 
-            // The run finished on the server while this phone was not looking:
-            // the turn is persisted, and the worker row is gone. Neither fact
-            // ever arrives as a frame.
+            // The run finished on the server while this phone was not looking
             transport.messages = pageOf(assistantTurn(SAVED_ANSWER))
             transport.workers = noWorker()
             reconnect(schedulers, bus)
@@ -197,8 +160,7 @@ class ChatViewModelStreamingReconcileTest {
             val bus = FakeSseBus()
             val model = openedStreamingTurn(schedulers, transport, bus)
 
-            // The same reconnect, but the worker is still there — so the answer
-            // is still arriving and nothing may be settled.
+            // The same reconnect, but the worker is still there — so the answer is still arriving and nothing may be settled.
             transport.workers = runningWorker()
             reconnect(schedulers, bus)
 
@@ -218,9 +180,7 @@ class ChatViewModelStreamingReconcileTest {
             val bus = FakeSseBus()
             val model = openedStreamingTurn(schedulers, transport, bus)
 
-            // "No answer" is not "no worker". Clearing a live turn because the
-            // network blipped is the same lie as never lighting one up — the
-            // rule `WorkerActivityViewModel` already applies to its own set.
+            // "No answer" is not "no worker".
             transport.workersUnavailable = true
             reconnect(schedulers, bus)
 
@@ -239,11 +199,7 @@ class ChatViewModelStreamingReconcileTest {
             val bus = FakeSseBus()
             val model = openedStreamingTurn(schedulers, transport, bus)
 
-            // No worker and no row: the turn can never be written now, because
-            // nothing is running to write it. That is the cancel-before-the-first-
-            // token path and the crash path, and in both the partial text IS the
-            // answer — so the row is unfrozen rather than deleted, which is
-            // exactly what a reader who pressed Stop is given.
+            // No worker and no row: the turn can never be written now, because nothing is running to write it.
             transport.messages = emptyPage()
             transport.workers = noWorker()
             reconnect(schedulers, bus)
@@ -268,10 +224,7 @@ class ChatViewModelStreamingReconcileTest {
             val bus = FakeSseBus()
             val model = openedStreamingTurn(schedulers, transport, bus)
 
-            // "Your URL" was the whole of a *previous* answer, and the turn in
-            // flight starts with the same words. Only the newest assistant row
-            // may retire a placeholder — otherwise a run two turns old deletes
-            // real text mid-stream.
+            // "Your URL" was the whole of a *previous* answer, and the turn in flight starts with the same words.
             transport.messages = pageOf(
                 assistantTurn("Your URL", id = "old", nanos = OLD_NANOS),
                 assistantTurn("Completely different", id = "new", nanos = NEW_NANOS),
@@ -295,9 +248,7 @@ class ChatViewModelStreamingReconcileTest {
             val bus = FakeSseBus()
             val model = openedStreamingTurn(schedulers, transport, bus)
 
-            // A normal turn: `chunk_final` lands, the placeholder stays on screen
-            // by design until the canonical row does, and a refetch arrives in
-            // that window. Nothing is streaming and nothing may be invented.
+            // A normal turn: `chunk_final` lands, the placeholder stays on screen by design until the canonical row does, and a refetch arrives in that window.
             bus.emit(ChatStreamEvent.ChunkFinished(sessionId = "sess_1", totalTokens = null))
             schedulers.drain()
             transport.messages = emptyPage()
@@ -339,10 +290,7 @@ class ChatViewModelStreamingReconcileTest {
             """{"messages":[${rows.joinToString(",")}],"has_more":false,""" +
                 """"next_cursor":null,"total":${rows.size}}"""
 
-        /**
-         * A persisted assistant turn, in the shape `llm_history` rows take on
-         * the wire: `created_at` is a *string* holding a nanosecond epoch.
-         */
+        /** A persisted assistant turn, in the shape `llm_history` rows take on the wire: `created_at` is a *string* holding a nanosecond epoch. */
         fun assistantTurn(
             content: String,
             id: String = "saved_turn",

@@ -1,5 +1,4 @@
-// Functional tests for progressive tool search (`search_tool` / `view_tool` /
-// `use_tool`).
+// Functional tests for progressive tool search (`search_tool` / `view_tool` /`use_tool`).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -10,14 +9,11 @@ const Io = std.Io;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// `[STREAM START] model=stub-model | messages=2 | tools=5 | streaming=true`
-// The Python module compiled this to a regex; the port scans for the two
-// literal markers instead.
+// `[STREAM START] model=stub-model | messages=2 | tools=5 | streaming=true` The Python module compiled this to a regex; the port scans for the two literal …
 const STREAM_MARKER = "[STREAM START]";
 const TOOLS_KEY = "tools=";
 
-// The three progressive meta-tools that must always be listed — they
-// are ordinary tools as far as the registry is concerned.
+// The three progressive meta-tools that must always be listed — they are ordinary tools as far as the registry is concerned.
 const PROGRESSIVE_TOOL_NAMES = [_][]const u8{ "search_tool", "view_tool", "use_tool" };
 
 // A fresh kanban item seeds DEFAULT_AGENT_TOOLS + DEFAULT_KANBAN_TOOLS.
@@ -25,9 +21,7 @@ const AGENT_DEFAULTS: u32 = 25;
 const KANBAN_ONLY_DEFAULTS: u32 = 2;
 const KANBAN_SEEDED_TOOLS: u32 = AGENT_DEFAULTS + KANBAN_ONLY_DEFAULTS; // 27
 
-// A tool that is NOT in the seeded set and is not design-only, so
-// equipping it is legal for a kanban item and observably adds exactly
-// one tool.
+// A tool that is NOT in the seeded set and is not design-only, so equipping it is legal for a kanban item and observably adds exactly one tool.
 const NOT_SEEDED_KANBAN_TOOL = "set_git_worktree";
 
 /// Python `_wait_for_tool_count`'s `timeout_s`.
@@ -37,12 +31,9 @@ const LOG_TAIL_LINES: usize = 4000;
 /// Python's `time.sleep(0.2)` between log re-reads.
 const POLL_INTERVAL_MS: i64 = 200;
 
-// ============================================================================
 // Helpers
-// ============================================================================
 
-/// Monotonic milliseconds (`.awake` = monotonic, not wall clock) — the
-/// deadline basis `Io.sleep` needs.
+/// Monotonic milliseconds (`.awake` = monotonic, not wall clock) — the deadline basis `Io.sleep` needs.
 fn nowMs() i64 {
     return Io.Timestamp.now(io, .awake).toMilliseconds();
 }
@@ -61,8 +52,7 @@ fn toolsValueOnStreamLine(line: []const u8) ?i64 {
     return std.fmt.parseInt(i64, buf[0..n], 10) catch null;
 }
 
-/// The largest `tools=N` over every `[STREAM START]` line in `tail`,
-/// or -1 when there is none.
+/// The largest `tools=N` over every `[STREAM START]` line in `tail`, or -1 when there is none.
 fn maxToolsInLog(tail: []const u8) i64 {
     var best: i64 = -1;
     var cursor: usize = 0;
@@ -77,9 +67,7 @@ fn maxToolsInLog(tail: []const u8) i64 {
     return best;
 }
 
-/// The largest `tools=N` seen within `timeout_s`, i.e. the main agent
-/// call's tool count. The session-name generator call that precedes it
-/// reports `tools=0`, hence "largest" rather than "last".
+/// The largest `tools=N` seen within `timeout_s`, i.e. the main agent call's tool count.
 fn waitForToolCount(h: *Harness, timeout_s: f64) !i64 {
     const deadline = nowMs() + @as(i64, @intFromFloat(timeout_s * 1000.0));
     var tail: []u8 = "";
@@ -171,7 +159,6 @@ fn sqlLit(s: []const u8) ![]u8 {
 }
 
 /// Agent DB inside the isolated tmpdir HOME (Linux layout).
-/// Python `_db_path`.
 fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
@@ -179,9 +166,7 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
 /// Run one statement against `db_path`; caller frees the returned stdout.
 fn sqliteRun(db_path: []const u8, sql: []const u8) ![]u8 {
     const res = std.process.run(gpa, io, .{
-        // `.timeout 5000` is the CLI's spelling of Python's
-        // `busy_timeout`; the agent DB is WAL-mode and the server holds
-        // a connection open for the whole test.
+        // `.timeout 5000` is the CLI's spelling of Python's `busy_timeout`; the agent DB is WAL-mode and the server holds a connection open for the whole test.
         .argv = &.{ "sqlite3", "-cmd", ".timeout 5000", "-json", db_path, sql },
     }) catch |err| {
         std.debug.print("sqlite3 did not spawn: {s}\n", .{@errorName(err)});
@@ -210,8 +195,7 @@ fn parseSqliteJson(out: []const u8) !std.json.Parsed(std.json.Value) {
     return std.json.parseFromSlice(std.json.Value, gpa, out, .{});
 }
 
-/// Insert an equip row directly, the way a previous iteration would
-/// have. Python `_equip_row`.
+/// Insert an equip row directly, the way a previous iteration would have.
 fn equipRow(h: *Harness, session_id: []const u8, tool_name: []const u8) !void {
     const db = try dbPath(h.temp_dir);
     defer gpa.free(db);
@@ -271,18 +255,13 @@ fn countEquipRows(h: *Harness, session_id: []const u8) !u64 {
     };
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
-// A plain chat session has no workspace item, so `self_item_type` is "" — not
-// agent/kanban — and the three progressive tools must NOT be injected. This
-// is what scopes the default to the two modes the user asked for.
+// A plain chat session has no workspace item, so `self_item_type` is "" — not agent/kanban — and the three progressive tools must NOT be injected.
 test "unbound_chat_session_does_not_get_the_meta_tools" {
     try harness.requirePabrikBin(io, gpa);
 
-    // Python's `stub_harness` fixture: WITH a stub LLM profile, so the
-    // workflow reaches its loop and emits the STREAM line at all.
+    // Python's `stub_harness` fixture: WITH a stub LLM profile, so the workflow reaches its loop and emits the STREAM line at all.
     var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
     defer h.deinit(io) catch |err| {
         std.debug.print("teardown: {s}", .{@errorName(err)});
@@ -301,9 +280,7 @@ test "unbound_chat_session_does_not_get_the_meta_tools" {
     }
 }
 
-// `PRIMARY KEY(session_id, tool_name)` is the DB half of "if it is
-// already equipped, do not insert" — INSERT OR IGNORE leaves exactly
-// one row, which is what makes `use_tool`'s inserted=false honest.
+// `PRIMARY KEY(session_id, tool_name)` is the DB half of "if it is already equipped, do not insert" — INSERT OR IGNORE leaves exactly one row, which is what …
 test "duplicate_equip_row_is_rejected_by_the_primary_key" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -325,9 +302,7 @@ test "duplicate_equip_row_is_rejected_by_the_primary_key" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = nowMs;
     _ = toolsValueOnStreamLine;
     _ = maxToolsInLog;

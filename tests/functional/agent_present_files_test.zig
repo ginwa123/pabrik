@@ -1,6 +1,4 @@
-// Functional tests for the `present_files` download endpoint. Zig port of
-// `tests/functional/agent_present_files_test.py` (same test names, same
-// order).
+// Functional tests for the `present_files` download endpoint.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,15 +8,12 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 const TXT_BODY = "hello present files\nsecond line\n";
-// Minimal JPEG: SOI + JFIF-ish payload. Magic bytes only matter for
-// mime-sniffing tools; here the handler maps by extension.
+// Minimal JPEG: SOI + JFIF-ish payload.
 const JPG_BODY = "\xFF\xD8\xFF\xE0\x00\x10fake-jpeg-payload-1234";
 const SPACED_BODY = "a file whose name has a space in it\n";
 const SECRET_BODY = "a sibling directory must never be served\n";
 
-// ============================================================================
 // sqlite3 CLI helper
-// ============================================================================
 
 fn exitCode(term: std.process.Child.Term) ?u8 {
     return switch (term) {
@@ -67,9 +62,7 @@ fn dbPath(temp_dir: []const u8) ![]u8 {
     return harness.harnessPath(gpa, temp_dir, &.{ ".config", "pabrik", "agent.db" });
 }
 
-/// `UPDATE sessions SET cwd = <lit> WHERE id = <lit>` — the sandbox-root
-/// pin. `.timeout 5000` is the busy_timeout the server's WAL connection
-/// needs; a bare CLI invocation would otherwise fail with SQLITE_BUSY.
+/// `UPDATE sessions SET cwd = <lit> WHERE id = <lit>` — the sandbox-root pin.
 fn setSessionCwd(temp_dir: []const u8, session_id: []const u8, cwd: []const u8) !void {
     const db = try dbPath(temp_dir);
     defer gpa.free(db);
@@ -102,13 +95,9 @@ fn setSessionCwd(temp_dir: []const u8, session_id: []const u8, cwd: []const u8) 
     }
 }
 
-// ============================================================================
 // Fixture + request helpers
-// ============================================================================
 
-/// Write `contents` to `<temp_dir>/<rel>`, creating parents. `rel` is a
-/// slash-separated path RELATIVE to the harness tempdir — never an
-/// absolute literal, for the `isAbsolute` reason in the file header.
+/// Write `contents` to `<temp_dir>/<rel>`, creating parents.
 fn writeFixture(temp_dir: []const u8, rel: []const u8, contents: []const u8) !void {
     var parts: std.ArrayList([]const u8) = .empty;
     defer parts.deinit(gpa);
@@ -121,9 +110,7 @@ fn writeFixture(temp_dir: []const u8, rel: []const u8, contents: []const u8) !vo
     const full = try harness.harnessPath(gpa, temp_dir, parts.items);
     defer gpa.free(full);
 
-    // Create the parent directory chain. `harnessPath` returns an
-    // absolute path; walk back to its parent with `dirname` and make
-    // that path, then write the leaf.
+    // Create the parent directory chain.
     const parent = std.fs.path.dirname(full) orelse return error.TestUnexpectedResult;
     try std.Io.Dir.cwd().createDirPath(io, parent);
 
@@ -132,8 +119,7 @@ fn writeFixture(temp_dir: []const u8, rel: []const u8, contents: []const u8) !vo
     try f.writeStreamingAll(io, contents);
 }
 
-/// `PUT /api/llm/session/<id> {"name": ...}` — PUT auto-creates the
-/// sessions row (`ensureSessionExists`); no LLM profile needed.
+/// `PUT /api/llm/session/<id> {"name": ...}` — PUT auto-creates the sessions row (`ensureSessionExists`); no LLM profile needed.
 fn createSession(h: *Harness, session_id: []const u8) !void {
     const path = try std.fmt.allocPrint(gpa, "/api/llm/session/{s}", .{session_id});
     defer gpa.free(path);
@@ -144,9 +130,7 @@ fn createSession(h: *Harness, session_id: []const u8) !void {
     defer r.deinit();
 }
 
-/// Create session + sandbox, pin cwd. Returns the sandbox ROOT as owned
-/// bytes — `<temp_dir>/present-files-ws`, with `notes.txt` and
-/// `photo.jpg` in it.
+/// Create session + sandbox, pin cwd.
 fn setupSandbox(h: *Harness, session_id: []const u8) ![]u8 {
     try createSession(h, session_id);
 
@@ -164,9 +148,7 @@ fn setupSandbox(h: *Harness, session_id: []const u8) ![]u8 {
     return gpa.dupe(u8, root);
 }
 
-/// `GET /api/files/download` with the card's query shape. `disposition`
-/// is null to omit the parameter entirely (the Python `disposition:
-/// str | None` case).
+/// `GET /api/files/download` with the card's query shape.
 fn download(
     h: *Harness,
     session_id: []const u8,
@@ -190,8 +172,7 @@ fn download(
     });
 }
 
-/// Percent-encode `s` the way the Android client does: RFC 3986 unreserved
-/// set only, so a space is `%20` and `+` is `%2B`.
+/// Percent-encode `s` the way the Android client does: RFC 3986 unreserved set only, so a space is `%20` and `+` is `%2B`.
 fn androidEncode(s: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
@@ -230,9 +211,7 @@ fn expectAbsent(hay: []const u8, needle: []const u8, ctx: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // The tool must be wired into UNIFIED_TOOL_REGISTRY (else enable fails).
 test "present_files_in_registry" {
@@ -248,8 +227,7 @@ test "present_files_in_registry" {
     var doc = try r.json();
     defer doc.deinit();
 
-    // Python: `r.json().get("tools", r.json())` — a list of dicts with a
-    // `name`, or a list of bare strings.
+    // Python: `r.json().get("tools", r.json())` — a list of dicts with a `name`, or a list of bare strings.
     const tools_v = doc.get("tools") orelse doc.value().*;
     const tools = switch (tools_v) {
         .array => |a| a,
@@ -380,8 +358,7 @@ test "missing_file_404" {
     defer r.deinit();
 }
 
-// A real file that canonicalizes outside the sandbox -> 403, never bytes. The
-// probe used to be the literal `/etc/passwd`.
+// A real file that canonicalizes outside the sandbox -> 403, never bytes.
 test "traversal_outside_cwd_403" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -414,9 +391,7 @@ test "dotdot_rejected_403" {
     const root = try setupSandbox(&h, "sess_present_1");
     defer gpa.free(root);
 
-    // Built with `std.fs.path.join(root, "..", "notes.txt")` so the `..`
-    // survives — `join` here is string concatenation of segments and `..` is
-    // a legal one.
+    // Built with `std.fs.path.join(root, "..", "notes.txt")` so the `..` survives — `join` here is string concatenation of segments and `..` is a legal one.
     const dotdot = try std.fs.path.join(gpa, &.{ root, "..", "notes.txt" });
     defer gpa.free(dotdot);
 
@@ -433,14 +408,11 @@ test "unknown_session_404" {
         std.debug.print("teardown: {s}", .{@errorName(err)});
     };
 
-    // The sandbox is a prerequisite for the probe's SHAPE, not for the
-    // assertion: the unknown session id is the only thing under test.
+    // The sandbox is a prerequisite for the probe's SHAPE, not for the assertion: the unknown session id is the only thing under test.
     const root = try setupSandbox(&h, "sess_present_1");
     defer gpa.free(root);
 
-    // The Python probe used a literal `/tmp/x.txt`; deriving the path keeps
-    // it absolute on every platform (the handler checks `isAbsolute` before
-    // anything else).
+    // The Python probe used a literal `/tmp/x.txt`; deriving the path keeps it absolute on every platform (the handler checks `isAbsolute` before anything else).
     const missing = try harness.harnessPath(gpa, h.temp_dir, &.{ "present-files-ws", "x.txt" });
     defer gpa.free(missing);
 
@@ -512,9 +484,7 @@ test "android_percent_twenty_path_decodes_to_a_space" {
         return error.TestUnexpectedResult;
     }
 
-    // The query goes inline in the PATH, NOT through `params`: the point
-    // is the exact bytes the client puts on the wire, so the test must
-    // not hand them to an encoder.
+    // The query goes inline in the PATH, NOT through `params`: the point is the exact bytes the client puts on the wire, so the test must not hand them to an encoder.
     const path = try std.fmt.allocPrint(
         gpa,
         "/api/files/download?session_id=sess_present_android&path={s}&disposition=inline",
@@ -532,8 +502,7 @@ test "android_percent_twenty_path_decodes_to_a_space" {
         );
         return error.TestUnexpectedResult;
     }
-    // The decoded name must survive into Content-Disposition so a viewer
-    // app and the Open action agree on what the file is called.
+    // The decoded name must survive into Content-Disposition so a viewer app and the Open action agree on what the file is called.
     try expectContains(header(&r, "Content-Disposition"), "filename=\"my notes.md\"", "Content-Disposition");
 }
 
@@ -591,8 +560,7 @@ test "sibling_dir_sharing_the_root_prefix_is_403" {
     try expectAbsent(r.body, SECRET_BODY, "a sibling directory must never be served");
 }
 
-// The other half of the same rule — refusing the sibling must not
-// refuse the sandbox's own subdirectories.
+// The other half of the same rule — refusing the sibling must not refuse the sandbox's own subdirectories.
 test "nested_file_inside_the_root_is_still_200" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -616,9 +584,7 @@ test "nested_file_inside_the_root_is_still_200" {
     }
 }
 
-// `report..html` is one filename, not a `..` segment. The endpoint and
-// the `present_files` tool share one rule now, and a filename with two
-// dots in it is a thing the agent presents.
+// `report..html` is one filename, not a `..` segment.
 test "a_dotted_filename_is_not_treated_as_traversal" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();
@@ -640,9 +606,7 @@ test "a_dotted_filename_is_not_treated_as_traversal" {
     const file = try std.fs.path.join(gpa, &.{ root, "IRON-11463 SB-02 .. final.html" });
     defer gpa.free(file);
 
-    // Passed through `params`, so the two SPACES and the `..` are
-    // percent-encoded by the harness exactly as `encodeURIComponent`
-    // would.
+    // Passed through `params`, so the two SPACES and the `..` are percent-encoded by the harness exactly as `encodeURIComponent` would.
     var r = try download(&h, "sess_present_dots", file, null, &.{200});
     defer r.deinit();
 
@@ -653,9 +617,7 @@ test "a_dotted_filename_is_not_treated_as_traversal" {
 }
 
 comptime {
-    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced
-    // function body is never type-checked, so a stdlib rename inside one
-    // stays invisible until a caller appears.
+    // Body-analysis barrier — see `harness.zig`'s note: an unreferenced function body is never type-checked, so a stdlib rename inside one stays invisible until a …
     _ = exitCode;
     _ = requireSqlite3Cli;
     _ = sqlLit;

@@ -74,8 +74,7 @@ const loadRoot = async () => {
   }
 }
 
-// Load git changes for badges. getGitChanges never throws — it resolves a
-// non-repo fallback on transport error — so no try/catch is needed here.
+// Load git changes for badges. getGitChanges never throws — it resolves a non-repo fallback on transport error — so no try/catch is needed here.
 const loadGit = async () => {
   if (!props.cwd) {
     gitMap.value = new Map()
@@ -91,8 +90,7 @@ const loadGit = async () => {
   gitMap.value = data.is_git_repo ? buildGitStatusMap(data) : new Map()
 }
 
-// 30s git poll while a cwd is bound (RightSidebar precedent). Stopped on
-// unmount and whenever the explorer goes unbound.
+// 30s git poll while a cwd is bound (RightSidebar precedent).
 let gitPoll: ReturnType<typeof setInterval> | null = null
 const stopGitPoll = () => {
   if (gitPoll) {
@@ -184,8 +182,6 @@ const toggleFolder = async (entry: FolderEntry) => {
 const isExpanded = (path: string) => expansion.isExpanded(props.cwd ?? '', path)
 
 // Flatten tree for display, joining each row onto the git status map.
-// Absolute explorer paths resolve against the cwd (the repo root the
-// explorer was opened at); paths outside it simply get no badge.
 interface FlatEntry {
   entry: FolderEntry
   depth: number

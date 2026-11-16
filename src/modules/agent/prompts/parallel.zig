@@ -1,6 +1,4 @@
-// =============================================================================
 // PARALLEL — MANDATORY Parallel Work Rules (CONSOLIDATED - Single Source of Truth)
-// =============================================================================
 
 pub const ParallelWork =
     \\## Parallel Work

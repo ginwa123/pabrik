@@ -14,9 +14,7 @@ import SplitDiffTable from './SplitDiffTable.vue'
 import DiffThreads from './DiffThreads.vue'
 import { useDiffMiniChat } from './useDiffMiniChat'
 
-/** Shared full diff view: file header (collapse toggle, back/filename/stats, scope + mode, Open),
- * loading/error/empty states, the unified OR split render of the hunks, and the review mini-chat
- * popup. Presentational — data flows in via props, user actions flow out via emits. */
+/** Shared full diff view: file header (collapse toggle, back/filename/stats, scope + mode, Open), loading/error/empty states, the unified OR split render of the … */
 const props = defineProps<{
   path: string
   lines: ParsedDiffLine[]
@@ -32,13 +30,11 @@ const props = defineProps<{
   backLabel?: string
   /** 'unified' (default, today's render) or 'split' (side-by-side). */
   mode?: 'unified' | 'split'
-  /** Collapsed = header only. The parsed diff stays in the parent's memory,
-   * so expanding is a render, never a refetch. */
+  /** Collapsed = header only. */
   collapsed?: boolean
   /** Whole-file scope: every line of the file, changes still marked. */
   wholeFile?: boolean
-  /** An untracked file's diff already IS the whole file, so the scope
-   * control renders locked at "Whole file" and never fetches. */
+  /** An untracked file's diff already IS the whole file, so the scope control renders locked at "Whole file" and never fetches. */
   untracked?: boolean
 }>()
 
@@ -55,17 +51,14 @@ const emit = defineEmits<{
 const mode = computed<'unified' | 'split'>(() => props.mode ?? 'unified')
 const collapsed = computed(() => props.collapsed === true)
 
-// ── whole-file scope ────────────────────────────────────────────────────── Fetched here (not in
-// the parent) because this component already owns the path + cwd + staged triple the request needs.
+// ── whole-file scope ──────────────────────────────────────────────────────
 const wholeFileResult = ref<WholeFileDiff | null>(null)
 const wholeFileLoading = ref(false)
 const wholeFileError = ref<string | null>(null)
 
 const wholeFileRefused = computed(() => wholeFileResult.value?.refused === true)
 
-/**  * The lines actually rendered: the whole file when we have it, otherwise the hunks we were handed.
- * A refusal falls back to the hunks rather than to nothing — the user still gets their diff, plus a
- * notice. */
+/** The lines actually rendered: the whole file when we have it, otherwise the hunks we were handed. */
 const displayLines = computed<ParsedDiffLine[]>(() => {
   if (!props.wholeFile) return props.lines
   const result = wholeFileResult.value
@@ -80,9 +73,7 @@ async function loadWholeFile(): Promise<void> {
   wholeFileError.value = null
   try {
     const result = await fetchWholeFileDiff(props.cwd, props.path, props.staged === true)
-    // Stale guard: the user may have switched files (or scope) while this
-    // was in flight. Dropping the late answer beats showing file A's body
-    // under file B's header.
+    // Stale guard: the user may have switched files (or scope) while this was in flight.
     if (`${props.staged ? 1 : 0}:${props.path}` !== requested) return
     wholeFileResult.value = result
   } catch (err) {
@@ -93,9 +84,7 @@ async function loadWholeFile(): Promise<void> {
   }
 }
 
-// Whole-file scope sync: mount covers a section mounting with the scope already on (the state lives
-// in ChatView, so remounting after a collapse restores it); the prev-combo guard on update covers
-// scope/path/cwd switches. A path switch also resets the review progress below.
+// Whole-file scope sync: mount covers a section mounting with the scope already on (the state lives in ChatView, so remounting after a collapse restores it); the …
 const prevDiffKey = ref('')
 const diffKey = () =>
   `${props.wholeFile ? '1' : '0'}|${props.untracked ? '1' : '0'}|${props.path}|${props.staged ? '1' : '0'}|${props.cwd}`
@@ -118,9 +107,7 @@ onUpdated(() => {
   }
 })
 
-// ── token colors ────────────────────────────────────────────────────────── One entry per rendered
-// row, computed once per diff instead of once per render — the row red/green background still
-// carries added/removed, the token spans only color the code inside the row.
+// ── token colors ──────────────────────────────────────────────────────────
 const unifiedTokens = computed(() =>
   highlightLinesForFile(
     displayLines.value.map((line) => line.content),
@@ -130,8 +117,7 @@ const unifiedTokens = computed(() =>
 
 // ── split render ──────────────────────────────────────────────────────────
 const splitRows = computed<SplitRow[]>(() => pairSplitRows(displayLines.value))
-/** source line index → split row index, so a review thread left in unified
- * mode keeps its position when the user flips to split. */
+/** source line index → split row index, so a review thread left in unified mode keeps its position when the user flips to split. */
 const splitRowBySource = computed(() => splitRowIndexBySourceIndex(splitRows.value))
 
 const {
@@ -160,8 +146,7 @@ const savedThreads = computed(() => {
   return listSavedComments(props.cwd, props.path)
 })
 
-/** Last source-line index a thread covers — the same anchor the unified
- * render uses, computed once so both renders agree on where a thread hangs. */
+/** Last source-line index a thread covers — the same anchor the unified render uses, computed once so both renders agree on where a thread hangs. */
 const threadAnchors = computed(() => {
   const anchors: { thread: SavedComment; anchor: number }[] = []
   for (const thread of savedThreads.value) {

@@ -37,17 +37,14 @@ const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 // `true` after the user has interacted with the name field (typed anything OR blurred the field).
 const nameTouched = ref(false)
-// Computed error string. `null` when no error should be shown.
-// Mirrors `PabrikConfigEditor.vue:295` / `FileInput.vue:543` styling.
+// Computed error string.
 const nameError = computed<string | null>(() => {
   if (!nameTouched.value) return null
   if (name.value.trim().length === 0) return 'Name is required'
   return null
 })
 
-// ─── Picker data source ──────────────────────────────────────────────────── Adapts the existing
-// listFolder/getSystemFolder API to the picker's agnostic (path: string) => Promise<T[]> contract.
-// When path is empty we return the system folder root entries.
+// ─── Picker data source ────────────────────────────────────────────────────
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
@@ -56,9 +53,7 @@ const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
 // ─── Handlers ──────────────────────────────────────────────────────────────
 const handleFolderSelected = (path: string) => {
   selectedPath.value = path
-  // Close the picker on selection — matches the expected UX (the picker dismisses and the user is
-  // returned to the AddItemDialog with the chosen path filled in). The real FilePickerDialog has a
-  // `closeOnSelect` prop but it defaults to false, so we close from the parent instead.
+  // Close the picker on selection — matches the expected UX (the picker dismisses and the user is returned to the AddItemDialog with the chosen path filled in).
   showPicker.value = false
 }
 
@@ -80,15 +75,12 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// ─── Lifecycle ───────────────────────────────────────────────────────────── Reset state when the
-// dialog opens. We deliberately do NOT preserve selectedPath across open/close — matches the
-// pre-migration behavior and keeps the dialog predictable for users.
+// ─── Lifecycle ─────────────────────────────────────────────────────────────
 const handleOpen = async () => {
   name.value = ''
   selectedPath.value = ''
   showPicker.value = false
   // Reset the touched flag so the error doesn't flash on first open.
-  // The flag flips on the first @input / @blur after open.
   nameTouched.value = false
   await nextTick()
   nameInput.value?.focus()
@@ -98,9 +90,7 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
+// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()

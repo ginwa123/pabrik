@@ -43,8 +43,7 @@ describe('fpsOverlay', () => {
 
   it('updates the displayed FPS after a second of frames', () => {
     mount()
-    // 64 frames at 16ms ≈ 1024ms of wall time → crosses the 1s window
-    // and writes a numeric reading.
+    // 64 frames at 16ms ≈ 1024ms of wall time → crosses the 1s window and writes a numeric reading.
     tickFrames(64)
     const el = document.getElementById('pabrik-fps-overlay')!
     expect(el.textContent).toMatch(/\d+/)

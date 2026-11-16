@@ -1,6 +1,4 @@
-/** The editor's two VIEW modes and its two SCOPES. Modes: `Form` (the section forms) and `JSON`
- * (the whole config as raw text). Scopes: the user config and one workspace's overlay, which is
- * what `PabrikConfigSource` abstracts. */
+/** The editor's two VIEW modes and its two SCOPES. */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,8 +9,7 @@ import PabrikConfigEditor from '../components/pabrik/PabrikConfigEditor.vue'
 import { workspaceConfigSource } from '../helpers/configSource'
 import { makeLocalStorageStub } from './helpers'
 
-// The autosave window is a wall-clock wait in the app; mount it at 0 so a spec settles the PUT
-// with a microtask drain instead of sleeping.
+// The autosave window is a wall-clock wait in the app; mount it at 0 so a spec settles the PUT with a microtask drain instead of sleeping.
 vi.mock('../composables/autosaveDelay', () => ({ AUTOSAVE_DELAY_MS: 0 }))
 
 vi.mock('../api', () => ({
@@ -45,8 +42,7 @@ async function makeRouter(query: Record<string, string> = {}) {
   return router
 }
 
-/** With a 0 ms autosave window the PUT starts inside the edit handler, so a few microtask turns
- * settle it. */
+/** With a 0 ms autosave window the PUT starts inside the edit handler, so a few microtask turns settle it. */
 async function settleAutosave() {
   await flushPromises()
   await flushPromises()
@@ -56,8 +52,7 @@ async function settleAutosave() {
 function mountEditor(options: Parameters<typeof mount>[1] = {}) {
   return mount(PabrikConfigEditor, {
     ...options,
-    // `...options?.global` with no `?? {}`: spreading a falsy value adds
-    // nothing, so the fallback is dead weight (unicorn/no-useless-fallback-in-spread).
+    // `...options?.global` with no `?? {}`: spreading a falsy value adds nothing, so the fallback is dead weight (unicorn/no-useless-fallback-in-spread).
     global: { stubs: { Teleport: true }, ...options?.global },
   })
 }
@@ -118,8 +113,7 @@ describe('PabrikConfigEditor — JSON mode', () => {
     const apply = wrapper.find('[data-testid="config-json-apply"]')
     expect((apply.element as HTMLButtonElement).disabled).toBe(true)
 
-    // Clicking Form must NOT leave the mode with unusable text on screen -
-    // leaving would silently discard the edit the user is mid-way through.
+    // Clicking Form must NOT leave the mode with unusable text on screen -leaving would silently discard the edit the user is mid-way through.
     await wrapper.find('[data-testid="mode-form"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="config-json-panel"]').exists()).toBe(true)
@@ -148,8 +142,7 @@ describe('PabrikConfigEditor — JSON mode', () => {
     await wrapper.find('[data-testid="config-json-apply"]').trigger('click')
     await settleAutosave()
 
-    // Applying is an EDIT, not a write of its own — it reaches the server through the autosave,
-    // which is what makes `setConfig` (re-snapshot = "already saved") the trap this pins.
+    // Applying is an EDIT, not a write of its own — it reaches the server through the autosave, which is what makes `setConfig` (re-snapshot = "already saved") the …
     expect(mockSave).toHaveBeenCalledTimes(1)
     const body = mockSave.mock.calls[0]![0] as Record<string, unknown>
     expect(body.tools).toEqual(['read_file', 'bash'])
@@ -213,9 +206,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
   })
 
   it('accepts only the moved sections, and General is not one of them', async () => {
-    // The editor no longer owns a nav, so "which sections does it offer?" is observable through
-    // what it RENDERS for a given `?section=`: the first entry is the fallback, and a section
-    // outside the list falls back to it rather than rendering a pane that belongs to the user.
+    // The editor no longer owns a nav, so "which sections does it offer?" is observable through what it RENDERS for a given `?section=`: the first entry is the …
     mockGetWs.mockResolvedValueOnce({ active_profile: 'work', profiles: { work: { model: 'm' } } })
     const wrapper = mountEditor({
       props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
@@ -225,8 +216,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     expect(wrapper.find('[data-testid="agent-list"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="pabrik-general-section"]').exists()).toBe(false)
 
-    // `general` is deliberately NOT in WORKSPACE_AGENT_SECTIONS (decision D4),
-    // so asking for it lands back on the first offered section.
+    // `general` is deliberately NOT in WORKSPACE_AGENT_SECTIONS (decision D4), so asking for it lands back on the first offered section.
     const router = await makeRouter({ section: 'general' })
     mockGetWs.mockResolvedValueOnce({ active_profile: 'work', profiles: { work: { model: 'm' } } })
     const withGeneral = mountEditor({
@@ -240,13 +230,11 @@ describe('PabrikConfigEditor — workspace scope', () => {
   })
 
   it('reads and writes through the workspace endpoints, never the user ones', async () => {
-    // Section comes from the URL: that is how the workspace scope actually
-    // navigates (the settings shell owns the nav and writes `?section=`).
+    // Section comes from the URL: that is how the workspace scope actually navigates (the settings shell owns the nav and writes `?section=`).
     const router = await makeRouter({ section: 'tools' })
     mockGetWs.mockResolvedValueOnce({ active_profile: 'work', tools: ['read_file'] })
     mockSaveWs.mockResolvedValueOnce({ success: true })
-    // `set_git_worktree` is NOT a built-in default, so checking it is a real
-    // edit; checking a default would leave the config clean and hide the bar.
+    // `set_git_worktree` is NOT a built-in default, so checking it is a real edit; checking a default would leave the config clean and hide the bar.
     mockRegistry.mockResolvedValue({
       tools: [{ name: 'set_git_worktree', description: 'Create a git worktree and bind it' }],
     })
@@ -259,9 +247,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     })
     await flushPromises()
 
-    // Read: the workspace endpoint, and NOT the user-scope one. This is the
-    // assertion that would fail if the extraction ever fell back to the
-    // default source - which would edit the wrong config entirely.
+    // Read: the workspace endpoint, and NOT the user-scope one.
     expect(mockGetWs).toHaveBeenCalledWith('ws_1')
     expect(mockGet).not.toHaveBeenCalled()
 
@@ -345,8 +331,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     })
     await flushPromises()
 
-    // A second nav inside the editor would be a control that can disagree with
-    // the URL the shell writes.
+    // A second nav inside the editor would be a control that can disagree with the URL the shell writes.
     expect(wrapper.find('button[role="tab"]').exists()).toBe(false)
     // ...but the mode toggle stays: the raw view is not a section.
     expect(wrapper.find('[data-testid="mode-json"]').exists()).toBe(true)
@@ -361,9 +346,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     await wrapper.find('[data-testid="mode-json"]').trigger('click')
     await flushPromises()
 
-    // The JSON shown is the EFFECTIVE config, which includes user-level keys
-    // that a save from here cannot change. Saying so is the difference between
-    // a helpful editor and one that silently drops what you typed.
+    // The JSON shown is the EFFECTIVE config, which includes user-level keys that a save from here cannot change.
     expect(wrapper.find('[data-testid="config-json-panel"]').text()).toContain(
       'Only the settings that live in Workspace settings',
     )

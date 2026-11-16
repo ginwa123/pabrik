@@ -5,9 +5,7 @@ interface MiniChatHost {
   path: string
 }
 
-/** The review mini-chat popup: its open/closed state, the anchor range it was opened at, the
- * viewport-clamped style, and the handlers that open/close it. Owned by the diff view that
- * renders the popup. */
+/** The review mini-chat popup: its open/closed state, the anchor range it was opened at, the viewport-clamped style, and the handlers that open/close it. */
 export function useDiffMiniChat(props: MiniChatHost, displayLines: ComputedRef<ParsedDiffLine[]>) {
   const showMiniChat = ref(false)
   const miniChatPosition = ref({ x: 0, y: 0 })

@@ -1,5 +1,4 @@
-/** The sidebar's scroll ownership — why this file exists. The report was "the Documents section
- * sits at the bottom of the sidebar and is far away from Projects". */
+/** The sidebar's scroll ownership — why this file exists. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
@@ -8,8 +7,7 @@ import Sidebar from '../components/shell/Sidebar.vue'
 import { useSidebarStore } from '../stores/sidebar'
 import { makeLocalStorageStub } from './helpers'
 
-// jsdom 29 dropped localStorage from its globals and the sidebar stores
-// read it during setup.
+// jsdom 29 dropped localStorage from its globals and the sidebar stores read it during setup.
 beforeEach(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     value: makeLocalStorageStub(),
@@ -33,9 +31,7 @@ vi.mock('vue-router', async () => {
   return { ...actual, useRoute: useRouteMock, useRouter: useRouterMock }
 })
 
-/**  * Shallow mount: the nav, its wrapper divs and their class strings render for real; the child
- * components are stubbed, because the assertion is about the geometry contract between them, not
- * their contents. */
+/** Shallow mount: the nav, its wrapper divs and their class strings render for real; the child components are stubbed, because the assertion is about the geometry … */
 function renderSidebar() {
   setActivePinia(createPinia())
   return mount(Sidebar, {
@@ -69,18 +65,14 @@ describe('sidebar scroll ownership', () => {
     const nav = renderSidebar().find('nav').element as Element
     expect(isScroller(nav)).toBe(true)
     expect(classesOf(nav)).toContain('min-h-0')
-    // `overflow-hidden` with no auto/scroll counterpart is what made the
-    // panel a fixed-height stack whose leftover space had to go SOMEWHERE
-    // — and it went to Projects.
+    // `overflow-hidden` with no auto/scroll counterpart is what made the panel a fixed-height stack whose leftover space had to go SOMEWHERE — and it went to …
     expect(classesOf(nav)).not.toContain('overflow-hidden')
   })
 
   it('gives the nav exactly one scroll container', () => {
     const nav = renderSidebar().find('nav').element as Element
     const scrollers = [...nav.querySelectorAll('*')].filter(isScroller)
-    // Shallow mount stubs the children, so the real sections are not in
-    // this tree; what is asserted is that the nav does not hand the job
-    // to a wrapper of its own on top of itself.
+    // Shallow mount stubs the children, so the real sections are not in this tree; what is asserted is that the nav does not hand the job to a wrapper of its own on …
     expect(scrollers.filter((el) => el !== nav)).toEqual([])
   })
 
@@ -89,8 +81,7 @@ describe('sidebar scroll ownership', () => {
     const projects = nav.querySelector('projects-list-stub')
     expect(projects).not.toBeNull()
 
-    // The element directly wrapping ProjectsList, in either the real
-    // component name or the stub's.
+    // The element directly wrapping ProjectsList, in either the real component name or the stub's.
     const wrapper = projects!.parentElement as Element
     expect(wrapper).not.toBe(nav)
     expect(grows(wrapper)).toBe(false)
@@ -123,9 +114,7 @@ describe('the two sidebar sections that must not scroll themselves', () => {
   it('Documents renders no max-height capped scroller of its own', async () => {
     const DocumentsList = (await import('../components/workspace/DocumentsList.vue')).default
     setActivePinia(createPinia())
-    // The body is behind `v-if="documentsExpanded"`, so without this the
-    // assertion would run against an empty section and pass vacuously —
-    // which is exactly how the 30vh cap survived every earlier review.
+    // The body is behind `v-if="documentsExpanded"`, so without this the assertion would run against an empty section and pass vacuously — which is exactly how the …
     useSidebarStore().documentsExpanded = true
     const wrapper = mount(DocumentsList, { props: { workspaceId: 'ws_x' }, shallow: true })
     expect(wrapper.find('[data-testid="documents-section-body"]').exists()).toBe(true)

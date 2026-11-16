@@ -1,5 +1,4 @@
-/** Tests for ChatView's Stop button wiring. The Stop button lives in FileInput.vue (visible only
- * when `isLLMProcessing === true`). */
+/** Tests for ChatView's Stop button wiring. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref, type App as VueApp, type Ref } from 'vue'
@@ -16,9 +15,7 @@ import {
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import { makeLocalStorageStub } from './helpers'
 
-// jsdom 29 dropped `Element.prototype.scrollTo`. The VirtualScroller calls
-// `containerRef.value.scrollTo({top, behavior})` on every render; without the polyfill the test log
-// floods with "containerRef.value.scrollTo is not a function" unhandled errors.
+// jsdom 29 dropped `Element.prototype.scrollTo`.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -83,9 +80,7 @@ function installChatViewMocks() {
   } as any)
 }
 
-// ─── mount helper ───────────────────────────────────────────────────────── Mounts ChatView with
-// `processingState[chatId] === true` so the `isLLMProcessing` computed is true and the Stop button
-// (in FileInput) renders.
+// ─── mount helper ─────────────────────────────────────────────────────────
 async function mountChatViewProcessing(chatId = 'session_proc') {
   const processingState = ref<Record<string, boolean>>({})
   processingState.value[chatId] = true
@@ -155,8 +150,7 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     await flushPromises()
 
     expect(stopSpy).toHaveBeenCalledTimes(1)
-    // The sessionId passed must be un-prefixed (no `chat-`) because the backend route uses the raw
-    // session_id.
+    // The sessionId passed must be un-prefixed (no `chat-`) because the backend route uses the raw session_id.
     expect(stopSpy).toHaveBeenCalledWith('session_proc')
    
   })
@@ -174,18 +168,13 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     const btn = wrapper!.find('[data-testid="stop-session-button"]')
     expect(btn.exists()).toBe(true)
 
-    // Two rapid clicks. FileInput's `handleStopClick` short-circuits on the second click because
-    // `isStopping` is true after the first emit. We mirror that here by setting isStopping=true via
-    // setProps after the first click, then clicking again.
+    // Two rapid clicks.
     await btn.trigger('click')
     // After the first emit, FileInput flips isStopping to true.
-    // Verify the spinner is now showing.
     await wrapper!.setProps({ isStopping: true })
     await flushPromises()
 
-    // Second click: the button is `:disabled`, so the test-utils
-    // click doesn't even reach handleStopClick (the disabled flag
-    // suppresses the click event). Still, ensure no extra call.
+    // Second click: the button is `:disabled`, so the test-utils click doesn't even reach handleStopClick (the disabled flag suppresses the click event).
     await btn.trigger('click')
     await flushPromises()
 
@@ -202,16 +191,12 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     // The button is shown while processing.
     expect(wrapper!.find('[data-testid="stop-session-button"]').exists()).toBe(true)
 
-    // Simulate the backend cancelling + deleting the worker by dispatching the SSE `worker deleted`
-    // event the workflow emits after the loop break — what App.vue's `handleWorkerEvent` listens for.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provides = (wrapper!.vm as any).$.provides as Record<string, unknown>
     const ps = provides['processingState'] as Ref<Record<string, boolean>>
      
     delete ps.value['session_proc']
-    // Reassign to the same shape to guarantee the ref's value-setter
-    // notifies subscribers regardless of how the internal proxy
-    // tracks the delete.
+    // Reassign to the same shape to guarantee the ref's value-setter notifies subscribers regardless of how the internal proxy tracks the delete.
     ps.value = { ...ps.value }
     await nextTick()
     await nextTick()
@@ -221,9 +206,7 @@ describe('ChatView — Stop button (cancel running agent)', () => {
 
   it('D: when api.stopSession rejects, the error is caught (no unhandled promise rejection)', async () => {
     installChatViewMocks()
-    // Suppress console.error noise from the catch handler — the
-    // test is asserting the rejection is CAUGHT, not that it
-    // surfaces to the console.
+    // Suppress console.error noise from the catch handler — the test is asserting the rejection is CAUGHT, not that it surfaces to the console.
     const consoleErrSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(api, 'stopSession').mockRejectedValue(new Error('network down'))
 
@@ -242,8 +225,7 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     try {
       await btn.trigger('click')
       await flushPromises()
-      // Wait for the microtask queue to drain so the rejection
-      // propagates if it ever escapes the catch.
+      // Wait for the microtask queue to drain so the rejection propagates if it ever escapes the catch.
       await new Promise((r) => setTimeout(r, 50))
 
       expect(unhandled).toBeNull()
@@ -267,9 +249,7 @@ describe('ChatView — Stop button (cancel running agent)', () => {
     await btn.trigger('click')
     await flushPromises()
 
-    // Button is still visible because processingState[sessionId] is still true (the API rejection
-    // didn't trigger an SSE event for this test; the backend DID receive the cancel via the network
-    // call, but we're simulating a transport-layer failure before the backend processes it).
+    // Button is still visible because processingState[sessionId] is still true (the API rejection didn't trigger an SSE event for this test; the backend DID receive …
     expect(wrapper!.find('[data-testid="stop-session-button"]').exists()).toBe(true)
   })
 })

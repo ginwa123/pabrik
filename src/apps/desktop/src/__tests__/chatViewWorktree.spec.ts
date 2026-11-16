@@ -1,6 +1,4 @@
-/** Tests for the worktree-aware status bar in ChatView.vue. The chat status bar (the small
- * git-branch + worktree chip at the bottom of the chat) becomes a clickable button when the session
- * is bound to a worktree. */
+/** Tests for the worktree-aware status bar in ChatView.vue. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
@@ -17,9 +15,7 @@ import {
 } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 
-// jsdom 29 (the version used by this project's Vitest) does not implement
-// `Element.prototype.scrollTo`. The VirtualScroller's `scrollToBottom` calls
-// `containerRef.value.scrollTo({top, behavior})` on every render.
+// jsdom 29 (the version used by this project's Vitest) does not implement `Element.prototype.scrollTo`.
 if (
   typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
     ?.prototype.scrollTo === 'undefined'
@@ -31,9 +27,7 @@ if (
   }
 }
 
-// ─── shared SSE stub ──────────────────────────────────────────────────────── Mirrors the helper
-// in `sseBus.spec.ts` / `App.spec.ts` — kept inline rather than shared to avoid coupling between
-// the two spec files.
+// ─── shared SSE stub ────────────────────────────────────────────────────────
 function makeStubClient(initial: SseState): SseClient {
    
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,7 +44,6 @@ function makeStubClient(initial: SseState): SseClient {
 }
 
 // ─── default mocks ──────────────────────────────────────────────────────────
-// `installChatViewMocks` wires up the api.* dependencies the component touches in onMounted.
 function installChatViewMocks(opts: {
   gitWorktreeCwd?: string
   cwd?: string
@@ -64,15 +57,11 @@ function installChatViewMocks(opts: {
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
   }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the mount stalled on a 404 and never reached `startGitStatusPoll()` — the status button
-  // under test is gated on the git-status payload that poll paints.
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches it, so the mount stalled on a 404 and never reached …
   vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
-  // A `watch(() => sessionId.value, ...)` in ChatView fires `api.getSession(newId)` once onMounted
-  // sets the sessionId. The mock must return a session-shaped object so the watch's
-  // `session?.selectedProfile` lookup is safe.
+  // A `watch(() => sessionId.value, ...)` in ChatView fires `api.getSession(newId)` once onMounted sets the sessionId.
   vi.spyOn(api, 'getSession').mockResolvedValue({
     session_id: 'placeholder',
     session_name: '',
@@ -82,9 +71,7 @@ function installChatViewMocks(opts: {
     git_worktree_cwd: '',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any)
-  // The status poll checks `is_git_repo` to decide whether to render
-  // the status button. We always return a clean repo so the button
-  // shows.
+  // The status poll checks `is_git_repo` to decide whether to render the status button.
   vi.spyOn(api, 'getGitStatus').mockResolvedValue({
     is_git_repo: true,
     branch: 'main',
@@ -95,8 +82,7 @@ function installChatViewMocks(opts: {
     status: 'clean',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any)
-  // loadProfiles() is called outside onMounted; the response shape
-  // matches the real `/api/config/pabrik` payload.
+  // loadProfiles() is called outside onMounted; the response shape matches the real `/api/config/pabrik` payload.
   vi.spyOn(api, 'getPabrikConfig').mockResolvedValue({
     profiles: {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,9 +95,7 @@ async function mountChatView(chatId = 'session_test') {
     props: { chatId, chatName: 'Test Chat' },
     attachTo: document.body,
   })
-  // onMounted is async: loadChatHistory → connectSse → startGitStatusPoll → getQueuedMessages. Wait
-  // several ticks for all the awaits to resolve and the template to re-render with the loaded
-  // values.
+  // onMounted is async: loadChatHistory → connectSse → startGitStatusPoll → getQueuedMessages.
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 0))
     await nextTick()
@@ -127,9 +111,7 @@ describe('ChatView worktree status button', () => {
   let app: VueApp | null = null
 
   beforeEach(() => {
-    // jsdom 29 in this project's Vitest does not provide localStorage. navigation.ts reads
-    // localStorage at store init (loadSidebarCollapsed etc.), so we stub a minimal in-memory
-    // implementation that satisfies the `localStorage.getItem/.setItem/.removeItem` calls.
+    // jsdom 29 in this project's Vitest does not provide localStorage. navigation.ts reads localStorage at store init (loadSidebarCollapsed etc.), so we stub a …
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       const store: Record<string, string> = {}
       vi.stubGlobal('localStorage', {
@@ -144,14 +126,10 @@ describe('ChatView worktree status button', () => {
       localStorage.clear()
     }
 
-    // ChatView setup() now reads useNavigationStore() to wire the
-    // sub-agent peek panel (@peek event + lazy peek composable).
-    // Pinia must be active for any useXxxStore() call.
+    // ChatView setup() now reads useNavigationStore() to wire the sub-agent peek panel (@peek event + lazy peek composable).
     setActivePinia(createPinia())
 
-    // Install the bus BEFORE mounting ChatView so ChatView's `useSseBus()` calls in `connectSse()`
-    // find an installed bus (the bus throws "useSseBus called before installSseBus" if not
-    // installed).
+    // Install the bus BEFORE mounting ChatView so ChatView's `useSseBus()` calls in `connectSse()` find an installed bus (the bus throws "useSseBus called before …
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -172,14 +150,10 @@ describe('ChatView worktree status button', () => {
     wrapper = await mountChatView('session_no_wt')
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
-    // The button is ALWAYS clickable now (no `:disabled` binding). Clicking opens a dropdown with
-    // the no-worktree menu items ("Open in folder", "Refresh status") — NOT the worktree-bound
-    // items ("Create a PR", "Clear worktree").
+    // The button is ALWAYS clickable now (no `:disabled` binding).
     const htmlBtn = btn.element as HTMLButtonElement
     expect(htmlBtn.disabled).toBe(false)
-    // The worktree-basename block should be absent (it's gated on v-if="gitWorktreeCwd"). Assert
-    // the icon it would have drawn rather than the glyph's text, which `WorktreeMenu` replaced with
-    // an SVG — the string check passed for the wrong reason.
+    // The worktree-basename block should be absent (it's gated on v-if="gitWorktreeCwd").
     expect(wrapper!.find('[data-icon="tree"]').exists()).toBe(false)
 
     // Open the dropdown.
@@ -187,9 +161,7 @@ describe('ChatView worktree status button', () => {
     await nextTick()
     await nextTick()
 
-    // No-worktree menu items — "Refresh status" is the unambiguous
-    // tell. "Open in folder" shares its data-testid with the
-    // worktree-bound "View in folder" item.
+    // No-worktree menu items — "Refresh status" is the unambiguous tell.
     expect(wrapper!.find('[data-testid="worktree-menu-refresh"]').exists()).toBe(true)
     // Worktree-bound items should NOT be present.
     expect(wrapper!.find('[data-testid="worktree-menu-create-pr"]').exists()).toBe(false)
@@ -205,17 +177,14 @@ describe('ChatView worktree status button', () => {
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
     expect((btn.element as HTMLButtonElement).disabled).toBe(false)
-    // The chip keeps the branch name visible. The worktree basename is intentionally NOT shown in
-    // the chip anymore (it was noisy when branch and basename were nearly identical strings); the
-    // menu header carries the worktree info instead.
+    // The chip keeps the branch name visible.
     expect(btn.text()).toContain('main')
     expect(btn.find('[data-icon="tree"]').exists()).toBe(false)
     expect(btn.text()).not.toContain('auth-fix')
     // The dropdown caret is always rendered now (chip is always clickable).
     expect(btn.text()).toContain('▾')
 
-    // The worktree basename surfaces inside the dropdown menu header
-    // (added in the no-worktree-aware menu refactor).
+    // The worktree basename surfaces inside the dropdown menu header (added in the no-worktree-aware menu refactor).
     await btn.trigger('click')
     await nextTick()
     await nextTick()
@@ -233,9 +202,7 @@ describe('ChatView worktree status button', () => {
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
 
-    // The WorktreeMenu uses the three testids we created in
-    // worktreeMenu.spec.ts. Before the click, none of them exist
-    // (the menu is v-if-bound to showWorktreeMenu=false).
+    // The WorktreeMenu uses the three testids we created in worktreeMenu.spec.ts.
     expect(wrapper!.find('[data-testid="worktree-menu-create-pr"]').exists()).toBe(false)
 
     await btn.trigger('click')
@@ -256,16 +223,12 @@ describe('ChatView worktree status button', () => {
     wrapper = await mountChatView('session_with_wt_title')
     const btn = wrapper!.find('[data-testid="worktree-status-button"]')
     expect(btn.exists()).toBe(true)
-    // The production template binds: :title="gitWorktreeCwd ? `Worktree: ${gitWorktreeCwd}\n...` :
-    // `...`" The full path must appear in the title (the basename is too short to be a unique
-    // identifier when the user has multiple worktrees named the same).
+    // The production template binds: :title="gitWorktreeCwd ? `Worktree: ${gitWorktreeCwd}\n...` 
     const title = btn.attributes('title') ?? ''
     expect(title).toContain('/abs/.worktrees/auth-fix')
   })
 
-  // ─── bus cross-session isolation ────────────────────────────── ChatView's SSE listener drops
-  // `event.session_id !== sid`; a `chunk`'s observable outcome is the transcript row it paints, so
-  // these assert on rendered text — the accumulator is `useChatSse`'s business, not the component's.
+  // ─── bus cross-session isolation ──────────────────────────────
   it('bus llm events for the active session_id paint the transcript', async () => {
     installChatViewMocks({ gitWorktreeCwd: '' })
 
@@ -288,8 +251,7 @@ describe('ChatView worktree status button', () => {
 
     wrapper = await mountChatView('session_bus_isolation')
 
-    // A chunk for the WRONG session_id. The bus's single global EventSource delivers ALL sessions'
-    // events to the listener; the filter is the layer that scopes them to the active ChatView.
+    // A chunk for the WRONG session_id.
     __dispatchSseBus('llm', {
       session_id: 'OTHER_SESSION',
       type: 'chunk',

@@ -42,9 +42,7 @@ test "SkillInfo.deinit does not free loaded_at (it is a value, not a slice)" {
 }
 
 test "SkillInfo.deinit does not free loaded_at when set" {
-    // A non-null loaded_at must NOT be passed to allocator.free — it is a
-    // value, not a slice. The successful return here (no crash) plus the
-    // testing allocator's leak detector confirms correctness.
+    // A non-null loaded_at must NOT be passed to allocator.free — it is a value, not a slice.
     var s = SkillInfo{
         .skill_name = try testing.allocator.dupe(u8, "x"),
         .content = try testing.allocator.dupe(u8, "y"),

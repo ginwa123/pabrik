@@ -30,26 +30,7 @@ import com.pabrik.mobile.ui.PabrikBackground
 import com.pabrik.mobile.ui.PabrikDim
 import com.pabrik.mobile.ui.PabrikMuted
 
-/**
- * The header above a collapsible sidebar section: the word, how many rows it
- * holds, and a chevron that folds the section away.
- *
- * One implementation for both sections because they are the same control with a
- * different noun. A second copy would be a second place to forget the part
- * that matters most — see the background note below — and a second place for
- * the two sections' fold behaviour to drift apart.
- *
- * The background is [PabrikBackground] and never transparent. This row is a
- * **sticky** header: the rows below it scroll *under* it, and a transparent
- * header would show a chat title sliding through the word "Recent". Painting
- * the drawer's own colour makes the pin invisible until something goes beneath
- * it, which is the whole point — the reader sees a fixed title, not a floating
- * bar.
- *
- * [itemCount] is the number of rows the section *holds*, not the number it is
- * showing: a folded section still says how much is in it, which is what makes
- * folding a decision rather than a way to lose rows.
- */
+/** The header above a collapsible sidebar section: the word, how many rows it holds, and a chevron that folds the section away. */
 @Composable
 internal fun SidebarSectionHeader(
     title: String,
@@ -60,20 +41,7 @@ internal fun SidebarSectionHeader(
     onClick: () -> Unit,
     testTag: String,
     modifier: Modifier = Modifier,
-    /**
-     * Whether anything in this section is busy right now.
-     *
-     * Only the Projects header ever passes it. The web mounts a `SessionSlider`
-     * beside the section count for the same reason
-     * (`ProjectsList.vue`, `firstProcessingTaskIdInWorkspace`): the header is
-     * the one row that is on screen when every project row is folded away, so
-     * without it a workspace with work in flight can look completely idle.
-     *
-     * Defaults false so the Recent header — whose own rows carry their own
-     * spinners, and which therefore has nothing extra to say — is unchanged,
-     * and so a caller that forgets it renders honestly rather than claiming
-     * nothing is running.
-     */
+    /** Whether anything in this section is busy right now. */
     isRunning: Boolean = false,
 ) {
     Surface(
@@ -94,11 +62,7 @@ internal fun SidebarSectionHeader(
         color = PabrikBackground,
         contentColor = PabrikDim,
     ) {
-        // 6dp, not 10dp. This row's own padding sits on top of every gap around
-        // it — the spacer above the scroller, the 8dp above the Projects
-        // header, and the list's 4dp `spacedBy` — so 10dp here was slack only
-        // the *sections* carried while their rows carried 4dp, and the word
-        // "Recent" read as a heading a row and a half away from its list.
+        // 6dp, not 10dp.
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -119,9 +83,7 @@ internal fun SidebarSectionHeader(
             }
             if (isRunning) {
                 CircularProgressIndicator(
-                    // Decorative — the section's own description already says
-                    // it, and announcing it a second time is worse than not
-                    // announcing it.
+                    // Decorative — the section's own description already says it, and announcing it a second time is worse than not announcing it.
                     modifier = Modifier
                         .clearAndSetSemantics { }
                         .size(14.dp)

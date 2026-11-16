@@ -1,6 +1,4 @@
 //! `pabrik db <subcommand>` — the operations that need the database to itself.
-//! Peeking at argv[1] and returning false when it is not `db`, so `main` falls
-//! through to the regular server boot (same shape as `pabrik service`).
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -24,13 +22,10 @@ pub const usage =
     \\
 ;
 
-/// `archiveTranscripts` moves `sessions_per_tick` chats per call. A maintenance
-/// run works the whole backlog down, this many calls deep, so it stays bounded
-/// instead of opening an unbounded loop over a 5 GB database.
+/// `archiveTranscripts` moves `sessions_per_tick` chats per call.
 pub const archive_rounds: usize = 64;
 
-/// Exit code the command uses for "ran, and the file is not in the state asked
-/// for" — distinct from a crashed run, which Zig's own error return produces.
+/// Exit code the command uses for "ran, and the file is not in the state asked for" — distinct from a crashed run, which Zig's own error return produces.
 pub const drift_exit_code: u8 = 1;
 
 pub fn dispatchDbSubcommand(
@@ -91,14 +86,11 @@ pub fn dispatchDbSubcommand(
         return true;
     };
 
-    // Switching journal mode needs every other connection closed, so this run
-    // opens with no pooled readers. It is why the command requires a stopped
-    // server: that server's readers are not ours to close.
+    // Switching journal mode needs every other connection closed, so this run opens with no pooled readers.
     overrides.append(allocator, .{ .knob = .read_conns, .raw = "0", .value = 0 }) catch
         return error.OutOfMemory;
 
-    // The same open the server uses, so the file is migrated to the current
-    // schema before anything is rewritten.
+    // The same open the server uses, so the file is migrated to the current schema before anything is rewritten.
     const now_unix = std.Io.Clock.now(.real, io).toSeconds();
 
     var handles = server_boot.openDatabase(allocator, io, environment, request, overrides.items) catch |err| {

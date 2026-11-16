@@ -1,6 +1,4 @@
-//! SQL layer for the `agent_kanbans` entity family. Every statement that
-//! touches `agent_kanbans`, `agent_kanban_knowledges`, `agent_kanban_tools`
-//! or `agent_kanban_system_prompt` lives here.
+//! SQL layer for the `agent_kanbans` entity family.
 
 const std = @import("std");
 const database = @import("databases").database;
@@ -136,12 +134,10 @@ fn readSystemPromptRow(allocator: std.mem.Allocator, r: anytype) !SystemPromptRo
 // ─── agent_kanbans ─────────────────────────────────────────────────────
 
 /// Is there an `agent_kanbans` row with this workspace_item_id?
-/// (spec D3: agent_kanbans.id == workspace_item_id.)
 pub fn exists(allocator: std.mem.Allocator, db: DbOrTx, workspace_item_id: []const u8) bool {
     var q = db.query(allocator, "SELECT 1 FROM agent_configs WHERE workspace_item_id = ? AND item_type = 'kanban'", &.{workspace_item_id}) catch return false;
     defer q.deinit();
-    // The row owns its values[] buffer — release it, or the caller's
-    // allocator leaks one allocation per exists() call.
+    // The row owns its values[] buffer — release it, or the caller's allocator leaks one allocation per exists() call.
     if (q.next() catch null) |row| {
         row.deinit(allocator);
         return true;
@@ -170,9 +166,7 @@ pub fn updateDescription(allocator: std.mem.Allocator, db: DbOrTx, workspace_ite
     return getByWorkspaceItemId(allocator, db, workspace_item_id);
 }
 
-/// Insert the config row, ignoring a UNIQUE conflict. Used by the
-/// auto-seed path: enabling a tool on an unconfigured kanban implies
-/// "configured", and re-enabling must not trip UNIQUE(workspace_item_id).
+/// Insert the config row, ignoring a UNIQUE conflict.
 pub fn insertIgnoreDuplicate(allocator: std.mem.Allocator, db: DbOrTx, id: []const u8, workspace_item_id: []const u8) !void {
     try db.exec(allocator,
         "INSERT INTO agent_configs (id, workspace_item_id, item_type) VALUES (?, ?, 'kanban') ON CONFLICT DO NOTHING",
@@ -276,8 +270,6 @@ pub fn deleteKnowledge(allocator: std.mem.Allocator, db: DbOrTx, knowledge_id: [
 }
 
 /// Rewrite every knowledge row's position inside one transaction.
-/// `ordered_ids[0]` becomes the highest position (`len - 1`), the last
-/// id becomes 0 — so a 1-row ordering lands at 0, not 1.
 pub fn reorderKnowledge(allocator: std.mem.Allocator, db: *database.Db, kanban_id: []const u8, ordered_ids: []const []const u8) !void {
     var tx = db.begin() catch return error.TransactionFailed;
     defer tx.commitOrRollback() catch {};
@@ -318,8 +310,7 @@ pub fn listEnabledToolNames(allocator: std.mem.Allocator, db: DbOrTx, kanban_id:
     return try list.toOwnedSlice(allocator);
 }
 
-/// Insert a tool row. Returns null on a UNIQUE violation (the kanban
-/// already has this tool) so the caller can answer 409.
+/// Insert a tool row.
 pub fn insertTool(allocator: std.mem.Allocator, db: DbOrTx, kanban_id: []const u8, tool_name: []const u8) !?ToolRow {
     const ts = helpers.unixTimestampNanos();
     const id = try std.fmt.allocPrint(allocator, "akt_{d}", .{ts});
@@ -402,9 +393,7 @@ pub fn getSystemPromptById(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: 
     return try readSystemPromptRow(allocator, r);
 }
 
-/// Patch the provided fields of a system-prompt row and return the
-/// refetched row. Both text columns use COALESCE so an empty string
-/// clears the column instead of binding NULL.
+/// Patch the provided fields of a system-prompt row and return the refetched row.
 pub fn updateSystemPrompt(
     allocator: std.mem.Allocator,
     db: DbOrTx,
@@ -440,7 +429,6 @@ pub fn deleteSystemPrompt(allocator: std.mem.Allocator, db: DbOrTx, prompt_id: [
 }
 
 /// Rewrite every system-prompt row's position inside one transaction.
-/// Same ordering contract as `reorderKnowledge`.
 pub fn reorderSystemPrompts(allocator: std.mem.Allocator, db: *database.Db, kanban_id: []const u8, ordered_ids: []const []const u8) !void {
     var tx = db.begin() catch return error.TransactionFailed;
     defer tx.commitOrRollback() catch {};

@@ -1,5 +1,4 @@
-// Functional tests for design advanced (Tier 1.4). Zig port of
-// `tests/functional/design_advanced_test.py` (same test names, same order).
+// Functional tests for design advanced (Tier 1.4).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Helpers — HTTP
-// ============================================================================
 
 fn boot() !Harness {
     return Harness.boot(io, gpa, .{});
@@ -146,8 +143,7 @@ fn elementUrl(ws_id: []const u8, design_id: []const u8, page_id: []const u8, eid
     );
 }
 
-/// `GET .../design/pages/:pid` → an OWNED document (alloc_always, so it
-/// outlives the Response body buffer).
+/// `GET .../design/pages/:pid` → an OWNED document (alloc_always, so it outlives the Response body buffer).
 fn getPage(h: *Harness, ws_id: []const u8, design_id: []const u8, page_id: []const u8) !std.json.Parsed(std.json.Value) {
     const url = try pageUrl(ws_id, design_id, page_id);
     defer gpa.free(url);
@@ -228,9 +224,7 @@ fn freeSetup(s: *Setup) void {
     gpa.free(s.scratch);
 }
 
-// ============================================================================
 // Test 1: group 2 children creates parent at union bbox
-// ============================================================================
 
 test "group_two_elements_creates_parent_at_union_bbox" {
     try harness.requirePabrikBin(io, gpa);
@@ -267,9 +261,7 @@ test "group_two_elements_creates_parent_at_union_bbox" {
     try testing.expectEqual(@as(usize, 2), children.len);
 }
 
-// ============================================================================
 // Test 2: group z-index sits BELOW children
-// ============================================================================
 
 test "group_parent_z_index_below_children" {
     try harness.requirePabrikBin(io, gpa);
@@ -304,9 +296,7 @@ test "group_parent_z_index_below_children" {
     }
 }
 
-// ============================================================================
 // Test 3: type=frame creates a clipping container
-// ============================================================================
 
 test "group_type_frame_creates_clipping_container" {
     try harness.requirePabrikBin(io, gpa);
@@ -334,9 +324,7 @@ test "group_type_frame_creates_clipping_container" {
     try testing.expectEqualStrings("frame", objStr(parent, "type") orelse "");
 }
 
-// ============================================================================
 // Test 4: group rejects single child
-// ============================================================================
 
 test "group_rejects_single_child" {
     try harness.requirePabrikBin(io, gpa);
@@ -372,9 +360,7 @@ test "group_rejects_single_child" {
     }
 }
 
-// ============================================================================
 // Test 5: group rejects already-parented child
-// ============================================================================
 
 test "group_rejects_already_parented_child" {
     try harness.requirePabrikBin(io, gpa);
@@ -416,9 +402,7 @@ test "group_rejects_already_parented_child" {
     }
 }
 
-// ============================================================================
 // Test 6: ungroup removes parent + resets children to top-level
-// ============================================================================
 
 test "ungroup_removes_parent_and_resets_children" {
     try harness.requirePabrikBin(io, gpa);
@@ -485,9 +469,7 @@ test "ungroup_removes_parent_and_resets_children" {
     if (!found_c1 or !found_c2) return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Test 7: reorder changes the z-order on the page
-// ============================================================================
 
 test "reorder_elements_within_page" {
     try harness.requirePabrikBin(io, gpa);
@@ -530,9 +512,7 @@ test "reorder_elements_within_page" {
     try testing.expectEqualStrings(a, top_id orelse "");
 }
 
-// ============================================================================
 // Test 8: reparent-batch moves 5 children to a new parent in one call
-// ============================================================================
 
 test "reparent_batch_moves_multiple_at_once" {
     try harness.requirePabrikBin(io, gpa);
@@ -584,9 +564,7 @@ test "reparent_batch_moves_multiple_at_once" {
     }
 }
 
-// ============================================================================
 // Test 9: translate moves an element by the delta
-// ============================================================================
 
 test "translate_moves_element_by_delta" {
     try harness.requirePabrikBin(io, gpa);
@@ -614,9 +592,7 @@ test "translate_moves_element_by_delta" {
     try testing.expectEqual(@as(f64, 50), objNum(updated[0], "height") orelse -1);
 }
 
-// ============================================================================
 // Test 10: translate cascades to children on a group
-// ============================================================================
 
 test "translate_cascades_to_children_on_group" {
     try harness.requirePabrikBin(io, gpa);
@@ -664,9 +640,7 @@ test "translate_cascades_to_children_on_group" {
     try testing.expectEqual(@as(f64, 90), objNum(c2v.?, "y") orelse -1);
 }
 
-// ============================================================================
 // Test 11: resize changes w/h only; x/y untouched
-// ============================================================================
 
 test "resize_changes_width_height_only" {
     try harness.requirePabrikBin(io, gpa);
@@ -692,9 +666,7 @@ test "resize_changes_width_height_only" {
     try testing.expectEqual(@as(f64, 200), doc.number("y") orelse -1);
 }
 
-// ============================================================================
 // Test 12: geometry-batch updates N elements in one request
-// ============================================================================
 
 test "geometry_batch_patches_n_elements_in_one_request" {
     try harness.requirePabrikBin(io, gpa);
@@ -740,9 +712,7 @@ test "geometry_batch_patches_n_elements_in_one_request" {
     }
 }
 
-// ============================================================================
 // Test 13: move-batch translates many at once
-// ============================================================================
 
 test "move_batch_translates_many_at_once" {
     try harness.requirePabrikBin(io, gpa);
@@ -798,9 +768,7 @@ test "move_batch_translates_many_at_once" {
     }
 }
 
-// ============================================================================
 // Test 14: move-to-page cross-page relocate
-// ============================================================================
 
 test "move_element_to_page_cross_page" {
     try harness.requirePabrikBin(io, gpa);
@@ -829,9 +797,7 @@ test "move_element_to_page_cross_page" {
     try testing.expectEqualStrings(tgt, objStr(updated[0], "page_id") orelse "");
 }
 
-// ============================================================================
 // Test 15: PATCH page updates width + height
-// ============================================================================
 
 test "patch_page_updates_width_height" {
     try harness.requirePabrikBin(io, gpa);
@@ -861,9 +827,7 @@ test "patch_page_updates_width_height" {
     try testing.expectEqual(@as(f64, 1080), objNum(inner, "height") orelse -1);
 }
 
-// ============================================================================
 // Test 16: PATCH page rejects out-of-range dimensions
-// ============================================================================
 
 test "patch_page_rejects_out_of_range_dimensions" {
     try harness.requirePabrikBin(io, gpa);
@@ -907,9 +871,7 @@ test "patch_page_rejects_out_of_range_dimensions" {
     }
 }
 
-// ============================================================================
 // Test 17: PATCH element html atomically rewrites the file
-// ============================================================================
 
 test "patch_element_html_atomically_rewrites_file" {
     try harness.requirePabrikBin(io, gpa);
@@ -943,9 +905,7 @@ test "patch_element_html_atomically_rewrites_file" {
     }
 }
 
-// ============================================================================
 // Test 18: image_url data-URI round-trips on create
-// ============================================================================
 
 test "image_url_data_uri_round_trips" {
     try harness.requirePabrikBin(io, gpa);
@@ -982,9 +942,7 @@ test "image_url_data_uri_round_trips" {
         return error.TestUnexpectedResult;
     };
     if (objStr(v, "image_url")) |got| {
-        // Mirror Python's `if found.get("image_url"):` truthiness: an empty
-        // wire value skips rather than fails (the server may omit/blank it;
-        // only a PRESENT value must round-trip verbatim).
+        // Mirror Python's `if found.get("image_url"):` truthiness: an empty wire value skips rather than fails (the server may omit/blank it; only a PRESENT value must …
         if (got.len == 0) return;
         try testing.expectEqualStrings(data_uri, got);
     }

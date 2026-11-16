@@ -117,8 +117,7 @@ const undo = async (): Promise<void> => {
 }
 
 const toggleFeed = async (m: Message): Promise<void> => {
-  // The target `is_feed_to_llm` IS the current dropped state: a row that is in
-  // context gets dropped, a dropped row comes back.
+  // The target `is_feed_to_llm` IS the current dropped state: a row that is in context gets dropped, a dropped row comes back.
   const next = isDropped(m)
   closeMenu()
   if (busy.value) return

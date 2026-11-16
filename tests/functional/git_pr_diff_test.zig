@@ -1,5 +1,4 @@
-// Functional wire tests for GET /api/git/pr/diff (generic provider). Zig port
-// of `tests/functional/git_pr_diff_test.py` (same test names, same order).
+// Functional wire tests for GET /api/git/pr/diff (generic provider).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,12 +7,9 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // Fixtures
-// ============================================================================
 
-/// The suite's own scratch directory, outside the harness's tempdir
-/// namespace.
+/// The suite's own scratch directory, outside the harness's tempdir namespace.
 const Scratch = struct {
     root: []u8,
 
@@ -65,8 +61,7 @@ fn writeFile(path: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Python's `pr_cwd` fixture: base commit on main, feature branch
-/// modifying base.txt and adding added.txt.
+/// Python's `pr_cwd` fixture: base commit on main, feature branch modifying base.txt and adding added.txt.
 fn buildPrCwd(s: *Scratch) ![]u8 {
     const cwd = try s.path(&.{"pr-diff-proj"});
     errdefer gpa.free(cwd);
@@ -104,8 +99,7 @@ fn buildPrCwd(s: *Scratch) ![]u8 {
     return cwd;
 }
 
-/// Python's `ForgeRepo`: the clone under test, the bare `origin` that
-/// publishes the PR ref, and the seed that pushes to it.
+/// Python's `ForgeRepo`: the clone under test, the bare `origin` that publishes the PR ref, and the seed that pushes to it.
 const ForgeRepo = struct {
     work: []u8,
     origin: []u8,
@@ -118,8 +112,7 @@ const ForgeRepo = struct {
     }
 };
 
-/// Python's `_build_forge_repo`. `pr_files`/`lines_per_file` inflate the
-/// PR diff past the 1MB response cap.
+/// Python's `_build_forge_repo`.
 fn buildForgeRepo(s: *Scratch, dir_name: []const u8, pr_files: usize, lines_per_file: usize) !ForgeRepo {
     const root = try s.path(&.{dir_name});
     defer gpa.free(root);
@@ -209,8 +202,7 @@ fn buildForgeRepo(s: *Scratch, dir_name: []const u8, pr_files: usize, lines_per_
     return .{ .work = work, .origin = origin, .seed = seed };
 }
 
-/// Python's `_rebase_and_force_push`: rewrite the PR head off the base
-/// and force it into `refs/pull/1/head`.
+/// Python's `_rebase_and_force_push`: rewrite the PR head off the base and force it into `refs/pull/1/head`.
 fn rebaseAndForcePush(repo: *const ForgeRepo) !void {
     try git(repo.seed, &.{ "reset", "--hard", "HEAD~1" });
     {
@@ -230,9 +222,7 @@ fn expectContains(haystack: []const u8, needle: []const u8) !void {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // 1. base...head diff surfaces both the modified and the new file.
 test "generic_pr_diff_returns_hunks" {

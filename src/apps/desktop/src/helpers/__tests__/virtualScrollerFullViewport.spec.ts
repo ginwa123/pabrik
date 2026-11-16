@@ -1,6 +1,4 @@
-/** Full-viewport content-window specs for VirtualScroller.vue. Symptom: with many messages,
- * scrolling to the bottom shrinks the `.virtual-scroller-content` div to half (or less) of the chat
- * height, leaving blank sizer below it. */
+/** Full-viewport content-window specs for VirtualScroller.vue. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -80,8 +78,7 @@ describe('VirtualScroller full-viewport content window', () => {
   })
 
   it('no bogus 0px clamp before the container has a size (mount flicker)', async () => {
-    // clientHeight 0: the 0×0 first-paint flicker. min-height must be
-    // absent, not "0px" (which would collapse the window to nothing).
+    // clientHeight 0: the 0×0 first-paint flicker. min-height must be absent, not "0px" (which would collapse the window to nothing).
     const { wrapper, el } = mountScroller(100, { buffer: 5, clientHeight: 0 })
     await nextTick()
 
@@ -98,17 +95,14 @@ describe('VirtualScroller full-viewport content window', () => {
     await nextTick()
 
     const content = el.querySelector('.virtual-scroller-content') as HTMLElement
-    // scrollTop=3200 → startIndex=50 (3200/64) → start=45 →
-    // topSpacer = 45 × 64 = 2880.
+    // scrollTop=3200 → startIndex=50 (3200/64) → start=45 → topSpacer = 45 × 64 = 2880.
     expect(content.style.transform).toBe('translate3d(0px, 2880px, 0px)')
     expect(content.style.minHeight).toBe('800px')
     wrapper.unmount()
   })
 })
 
-/** Two-tier hysteresis: the sizer must converge to the real content bottom instead of parking up to
- * HYSTERESIS_PX (50) per item too tall — the persistent blank gap below the last message at max
- * scroll (sizer 40383px vs content bottom ~37095px in the report). */
+/** Two-tier hysteresis: the sizer must converge to the real content bottom instead of parking up to HYSTERESIS_PX (50) per item too tall — the persistent blank … */
 describe('VirtualScroller two-tier measurement dead-band', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
@@ -157,9 +151,7 @@ describe('VirtualScroller two-tier measurement dead-band', () => {
     await measureAtTop(el, 100)
     expect(modelTotalOf(wrapper)).toBe(2000)
 
-    // Second pass 30px taller — under the 50px dead-band, but every
-    // item is at/below the anchor (scrollTop=0 → anchor=0), so the
-    // exact tier admits it. Old behavior parked the model at 2000.
+    // Second pass 30px taller — under the 50px dead-band, but every item is at/below the anchor (scrollTop=0 → anchor=0), so the exact tier admits it.
     await measureAtTop(el, 130)
     expect(modelTotalOf(wrapper)).toBe(2600)
     wrapper.unmount()
@@ -174,9 +166,7 @@ describe('VirtualScroller two-tier measurement dead-band', () => {
     await measureAtTop(el, 130)
     expect(modelTotalOf(wrapper)).toBe(2600)
 
-    // Scroll to the bottom: anchor = last index (19). Re-measure 20px taller — under the dead-band.
-    // Items 0..18 sit strictly above the anchor and must NOT move; item 19 (at the anchor) takes
-    // the exact tier.
+    // Scroll to the bottom: anchor = last index (19).
     el.scrollTop = 1e7
     el.dispatchEvent(new Event('scroll'))
     mockAllChildren(el, 150)

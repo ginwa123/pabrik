@@ -30,13 +30,9 @@ fn usage() []const u8 {
 }
 
 pub fn main(init: std.process.Init) !void {
-    // `init.gpa` — NOT `init.arena.allocator()`. The TUI allocates and frees
-    // per-frame temporaries (two frame buffers, the diff writer, word-wrap
-    // chunk lists, HTTP bodies).
+    // `init.gpa` — NOT `init.arena.allocator()`.
     const allocator = init.gpa;
-    // The process-lifetime arena is still the right home for strings that
-    // must outlive everything and are never freed individually (argv/env
-    // derived config), e.g. the resolved cwd below.
+    // The process-lifetime arena is still the right home for strings that must outlive everything and are never freed individually (argv/env derived config), e.g. …
     const arena = init.arena.allocator();
     const io = init.io;
     const env = init.environ_map;
@@ -83,22 +79,18 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // Resolve cwd: --cwd flag > PABRIKCLI_CWD env > OS cwd > "" (sandbox fallback).
-    // Priority mirrors pabrikcli's --cwd handling but auto-detects OS cwd when
-    // no explicit value is given — the TUI's project is the shell's cwd.
     if (flag_cwd) |v| {
         cfg.cwd = v;
     } else if (env.get("PABRIKCLI_CWD")) |v| {
         if (v.len > 0) cfg.cwd = v;
     } else {
-        // Capture OS cwd via realPathFile with ".". On failure (e.g., cwd
-        // deleted), fall back to "" so the backend uses its sandbox fallback.
+        // Capture OS cwd via realPathFile with ".".
         var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
         if (std.Io.Dir.cwd().realPathFile(io, ".", &cwd_buf)) |cwd_len| {
             const cwd_slice = cwd_buf[0..cwd_len];
             // Only use if absolute — defensive, realPathFile should always be absolute.
             if (cwd_slice.len > 0 and std.fs.path.isAbsolute(cwd_slice)) {
-                // Dupe into the process arena so it lives for the process
-                // lifetime (the buffer above is a stack local).
+                // Dupe into the process arena so it lives for the process lifetime (the buffer above is a stack local).
                 cfg.cwd = arena.dupe(u8, cwd_slice) catch "";
             }
         } else |_| {
@@ -129,8 +121,7 @@ pub fn main(init: std.process.Init) !void {
     printOut(io, msg_text);
 }
 
-/// Execute the Cmd returned by App.update. Runs on the main thread,
-/// between update and the next draw.
+/// Execute the Cmd returned by App.update.
 fn execCmd(model: *app_mod.App, cmd: tui.Cmd) void {
     switch (cmd) {
         .send_msg => |msg_text| {
@@ -170,8 +161,7 @@ fn sendAndTrack(model: *app_mod.App, msg_text: []const u8) void {
 
 fn pollMessages(model: *app_mod.App) void {
     const sid = model.session_id orelse return;
-    // Bulk-free the per-poll temporaries (HTTP body + JSON parse of up to 100
-    // rows) in one shot instead of tracking each one.
+    // Bulk-free the per-poll temporaries (HTTP body + JSON parse of up to 100 rows) in one shot instead of tracking each one.
     var arena = std.heap.ArenaAllocator.init(model.allocator);
     defer arena.deinit();
     const tmp_allocator = arena.allocator();

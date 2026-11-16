@@ -15,9 +15,7 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 const isEmptyContent = (c: unknown): boolean =>
-  // Running means the tool has not returned yet: the dispatcher passes an
-  // empty-string placeholder. A completed-but-empty result object ({}) is
-  // NOT running — it renders the empty/success state instead.
+  // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
@@ -39,8 +37,7 @@ const contentPath = computed((): string | null => {
   return p && p.trim() !== '' ? p : null
 })
 
-// Prefer the envelope's path; fall back to the parameters prop so a
-// still-running tool (placeholder envelope with empty <data>) shows its path.
+// Prefer the envelope's path; fall back to the parameters prop so a still-running tool (placeholder envelope with empty <data>) shows its path.
 const displayPath = computed((): string | null => {
   return contentPath.value ?? extractParam(props.parameters, 'path')
 })

@@ -35,8 +35,7 @@ describe('hasRichBlocks', () => {
   })
 
   it('is false for a tag whose closing half has not streamed in yet', () => {
-    // Mid-stream the payload must fall through to the legacy markdown path,
-    // not render a half-built frame.
+    // Mid-stream the payload must fall through to the legacy markdown path, not render a half-built frame.
     expect(hasRichBlocks('<html><div>never closed')).toBe(false)
     expect(hasRichBlocks('<mermaid>flowchart TD\n  A --> B')).toBe(false)
   })
@@ -114,17 +113,14 @@ describe('extractRichBlocks', () => {
   })
 
   it('keeps a trailing unterminated block as prose', () => {
-    // Regression guard for streaming: `hasRichBlocks` is false here, but the
-    // splitter must still not swallow the text.
+    // Regression guard for streaming: `hasRichBlocks` is false here, but the splitter must still not swallow the text.
     expect(extractRichBlocks('prose <mermaid>flowchart TD\n  A --> B')).toEqual([
       { kind: 'markdown', payload: 'prose <mermaid>flowchart TD\n  A --> B' },
     ])
   })
 
   it('reads a block whose opening tag carries attributes', () => {
-    // A model writing a real document emits `<html lang="en">`, not a bare tag. A
-    // bare-tag-only pattern dropped the whole block into the markdown path, so the
-    // user saw escaped source instead of a rendered surface.
+    // A model writing a real document emits `<html lang="en">`, not a bare tag.
     expect(extractRichBlocks('<html lang="en"><b>live</b></html>')).toEqual([
       { kind: 'html', payload: '<b>live</b>' },
     ])
@@ -141,8 +137,7 @@ describe('extractRichBlocks', () => {
   })
 
   it("carries an interactive widget's markup and script into the payload untouched", () => {
-    // The frame runs this payload as a live document, so the splitter must not
-    // reorder, escape or drop the handlers and the form.
+    // The frame runs this payload as a live document, so the splitter must not reorder, escape or drop the handlers and the form.
     const widget =
       '<label>Name</label><input id="n" oninput="render()">' +
       '<form onsubmit="event.preventDefault(); render()"><button type="submit">Go</button></form>' +

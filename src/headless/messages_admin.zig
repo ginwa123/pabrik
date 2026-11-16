@@ -1,5 +1,4 @@
-//! `pabrik headless message <op>` — delete, restore or drop ONE `llm_history`
-//! row. Same use-cases the HTTP routes call, so the CLI cannot drift.
+//! `pabrik headless message <op>` — delete, restore or drop ONE `llm_history` row.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

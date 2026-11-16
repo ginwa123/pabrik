@@ -1,5 +1,4 @@
-/** Behaviour of the create-task skill defaults: what the picker remembers for
- * a board, and which remembered names it may prefill. */
+/** Behaviour of the create-task skill defaults: what the picker remembers for a board, and which remembered names it may prefill. */
 import { describe, expect, it } from 'vitest'
 import {
   browserSkillDefaultsStorage,

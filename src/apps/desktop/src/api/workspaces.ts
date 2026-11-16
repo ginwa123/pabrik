@@ -8,13 +8,9 @@ export interface Workspace {
   name: string
   icon: string
   items: WorkspaceItem[]
-  // Server-side item count, present on GET /api/workspaces rows even
-  // when `is_include_items=false` (items stay `[]` until lazily
-  // loaded) — keeps count badges truthful for unvisited workspaces.
+  // Server-side item count, present on GET /api/workspaces rows even when `is_include_items=false` (items stay `[]` until lazily loaded) — keeps count badges …
   items_count?: number
-  // Whether the workspace's work runs in a microVM on this server. False on
-  // a local server (no Firecracker at all), true for the VM-backed workspaces
-  // of a `--saas` server.
+  // Whether the workspace's work runs in a microVM on this server.
   is_vm?: boolean
   expanded: boolean
 }
@@ -23,30 +19,22 @@ export interface WorkspaceItem {
   id: string
   name: string
   item_type: string
-  // The on-disk cwd for kanban items. Optional: legacy kanbans predate the field, folder items keep
-  // their path on each child, and test fixtures omit it. `null` is allowed so the SQLite NULL →
-  // JSON null round-trip type-checks; `v-if="!item.path"` treats null/undefined/"" alike.
+  // The on-disk cwd for kanban items.
   path?: string | null
-  // Migration 147 — the project's own glyph name, or null/absent for "no
-  // override" (the row then derives `folder` / `folder-open`). Optional so
-  // legacy item literals in tests keep type-checking.
+  // Migration 147 — the project's own glyph name, or null/absent for "no override" (the row then derives `folder` / `folder-open`).
   icon?: string | null
   entries?: FolderEntry[]
   isLoaded?: boolean
   isLoading?: boolean
   expanded?: boolean
   tasks?: Task[]
-  // NEW (Chunk 4 of workspace-item-kanban plan). Populated for
-  // `item_type === 'kanban'`, omitted otherwise. Optional so legacy
-  // workspace-item literals in tests keep type-checking.
+  // NEW (Chunk 4 of workspace-item-kanban plan).
   kanban_columns?: KanbanColumn[]
 }
 
 // Workspace API
 export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
-  // Items are loaded separately via getWorkspacesItems(workspace_id) — this keeps the workspaces
-  // list small and lets us fetch items lazily. Persists the list to the workspacesCache
-  // (fail-silent) so the next init can paint instantly and revalidate in the background.
+  // Items are loaded separately via getWorkspacesItems(workspace_id) — this keeps the workspaces list small and lets us fetch items lazily.
   const res = await apiFetch<{ workspaces: Workspace[] }>('/workspaces?is_include_items=false')
   try {
     const { writeWorkspacesCache } = await import('../helpers/workspacesCache')
@@ -65,8 +53,7 @@ export async function getWorkspacesItems(
   )
 }
 
-// Cold-start fallback for the "New Chat" action. This endpoint covers the one case the list cannot:
-// the app was open when Migration 094 ran, so the store's list predates `is_default`.
+// Cold-start fallback for the "New Chat" action. This endpoint covers the one case the list cannot
 export async function getOrCreateDefaultProject(
   workspace_id: string,
 ): Promise<{ item: WorkspaceItem; created: boolean }> {
@@ -100,9 +87,7 @@ export async function updateWorkspace(id: string, data: Partial<Workspace>): Pro
   })
 }
 
-/** Persist a new top-to-bottom display order for workspaces. POST /api/workspaces/reorder
- * with body `{ordered_ids: [...]}`. The server reverses the array (top of list = highest
- * position) and throws on non-2xx so the caller can roll back its optimistic update. */
+/** Persist a new top-to-bottom display order for workspaces. */
 export async function reorderWorkspaces(
   orderedIds: string[],
 ): Promise<{ success: boolean; count: number }> {
@@ -112,9 +97,7 @@ export async function reorderWorkspaces(
   })
 }
 
-/** Persist a new top-to-bottom display order for one workspace's items. POST
- * /api/workspaces/:workspace_id/items/reorder with body `{ordered_ids: [...]}`. Mirrors
- * `reorderWorkspaces` but scoped to a single workspace; the list is the full ordered set. */
+/** Persist a new top-to-bottom display order for one workspace's items. */
 export async function reorderWorkspaceItems(
   workspaceId: string,
   orderedIds: string[],
@@ -141,9 +124,7 @@ export async function createWorkspaceItem(
   })
 }
 
-/** Create a new design workspace item (`item_type='design'`). The `path` is REQUIRED because design
- * elements live as HTML files under `<path>/.pabrik/design/...` (the model layer rejects
- * element-add with `ItemPathMissing` if path is NULL — see design_model.zig). */
+/** Create a new design workspace item (`item_type='design'`). */
 export async function createDesign(
   workspaceId: string,
   name: string,
@@ -164,8 +145,7 @@ export async function deleteWorkspaceItem(
   })
 }
 
-/** Update a workspace item. Supports partial updates — pass only the fields you want to change.
- * Fields: - `item_type`: new type (kanban / folder / chat / memory). */
+/** Update a workspace item. */
 export async function updateWorkspaceItem(
   workspaceId: string,
   itemId: string,
@@ -173,8 +153,7 @@ export async function updateWorkspaceItem(
     item_type?: string
     path?: string | null
     name?: string
-    /** Migration 147 — a glyph name sets the override, `null` clears it back to
-     * the `folder` / `folder-open` default. */
+    /** Migration 147 — a glyph name sets the override, `null` clears it back to the `folder` / `folder-open` default. */
     icon?: string | null
   },
 ): Promise<WorkspaceItem> {

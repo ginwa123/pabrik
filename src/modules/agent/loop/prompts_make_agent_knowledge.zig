@@ -1,18 +1,14 @@
-//! Builds the `## Agent Knowledge` system-prompt section for sessions bound
-//! to an Agent workspace-item.
+//! Builds the `## Agent Knowledge` system-prompt section for sessions bound to an Agent workspace-item.
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const agent_db = @import("../../../models/agent.db.zig");
 
-/// 100 MiB per-file OOM safety. NOT a content budget — the user
-/// explicitly removed the content cap. This is purely to prevent the
-/// server from OOM-ing on a misconfigured path like `/dev/zero`.
+/// 100 MiB per-file OOM safety.
 pub const MAX_FILE_BYTES_OOM_SAFETY: usize = 100 * 1024 * 1024;
 
-/// Resolve the workspace_item_id for a session. Returns "" when the
-/// session doesn't exist (no workspace_item_tasks row).
+/// Resolve the workspace_item_id for a session.
 fn resolveWorkspaceItemId(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -30,8 +26,7 @@ fn resolveWorkspaceItemId(
     return try allocator.dupe(u8, "");
 }
 
-/// Read a single file's full contents. Caller owns the returned slice.
-/// Returns `null` (logged + skipped by caller) on failure.
+/// Read a single file's full contents.
 fn readFileContents(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -54,9 +49,7 @@ fn readFileContents(
     return contents;
 }
 
-/// Resolve `workspace_item_id` → `agent_id` (= workspace_item_id per
-/// spec D3). Returns empty slice when the workspace_item doesn't exist
-/// OR isn't an agent.
+/// Resolve `workspace_item_id` → `agent_id` (= workspace_item_id per spec D3).
 fn isAgentItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -75,8 +68,7 @@ fn isAgentItem(
     return false;
 }
 
-/// Build the `## Agent Knowledge` system-prompt section. Returns an
-/// owned slice (empty for non-agent sessions). Caller frees.
+/// Build the `## Agent Knowledge` system-prompt section.
 pub fn makeAgentKnowledge(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -133,8 +125,7 @@ pub fn makeAgentKnowledge(
     );
 
     for (rows.items) |row| {
-        // Inline text entry — no <file: ...> marker (the path is empty
-        // and the marker would be meaningless to the model).
+        // Inline text entry — no <file: ...> marker (the path is empty and the marker would be meaningless to the model).
         if (row.content.len > 0) {
             try out.appendSlice(allocator, "\n### ");
             if (row.label.len > 0) {
@@ -148,9 +139,7 @@ pub fn makeAgentKnowledge(
             continue;
         }
 
-        // File-backed entry — existing read-from-disk path. Read FIRST
-        // so an unreadable file is skipped without leaking its header
-        // into the section (pre-existing test contract).
+        // File-backed entry — existing read-from-disk path.
         const contents = readFileContents(io, allocator, row.file_path) catch continue;
         const owned = contents orelse continue;
         defer allocator.free(owned);
@@ -173,8 +162,7 @@ pub fn makeAgentKnowledge(
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-// Use a fresh alias for the test section to avoid duplicate-struct-
-// member shadowing (file-level `const sqlite` already exists).
+// Use a fresh alias for the test section to avoid duplicate-struct-member shadowing (file-level `const sqlite` already exists).
 const test_sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const Migration116 = @import("../../../migrations/migration.zig").Migration116UnifyAgentConfigTables;
@@ -215,8 +203,7 @@ fn setupDb() !TestCtx {
         \\)
     , &[_][]const u8{});
     try Migration116.up(&db, alloc);
-    // mirror that, or the `content` column (Migration 079) is missing
-    // and content-row INSERTs fail.
+    // mirror that, or the `content` column (Migration 079) is missing and content-row INSERTs fail.
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -249,8 +236,7 @@ fn insertKnowledge(ctx: *TestCtx, id: []const u8, agent_id: []const u8, file_pat
 
 var test_file_counter: std.atomic.Value(u64) = .init(0);
 
-/// Writes `contents` to a uniquely-named file inside `tmp` and returns its
-/// ABSOLUTE path (caller-owned: `alloc.free` it).
+/// Writes `contents` to a uniquely-named file inside `tmp` and returns its ABSOLUTE path (caller-owned: `alloc.free` it).
 fn writeTestFile(tmp: *std.testing.TmpDir, allocator: std.mem.Allocator, io: std.Io, contents: []const u8) ![]u8 {
     const n = test_file_counter.fetchAdd(1, .seq_cst);
     var name_buf: [64]u8 = undefined;
@@ -371,9 +357,7 @@ test "makeAgentKnowledge: skips empty/relative file paths instead of aborting" {
     try insertWorkspaceItem(&ctx, "ws_item_1", "agent");
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
-    // Two reachable bad states, both of which used to reach
-    // `openFileAbsolute`'s `assert(path.isAbsolute(...))` — an ABORT of the
-    // whole process (Debug/ReleaseSafe) — on EVERY turn, because this runs
+    // Two reachable bad states, both of which used to reach `openFileAbsolute`'s `assert(path.isAbsolute(...))` — an ABORT of the whole process (Debug/ReleaseSafe) — …
     try insertKnowledge(&ctx, "know_empty", "ws_item_1", "", 0);
     try insertKnowledge(&ctx, "know_relative", "ws_item_1", "relative/knowledge.md", 1);
 
@@ -414,9 +398,7 @@ test "makeAgentKnowledge: inlines content rows without <file:> marker" {
     try insertWorkspaceItem(&ctx, "ws_item_1", "agent");
     try insertSession(&ctx, "sess_1", "ws_item_1");
 
-    // Insert an inline-content row directly (content non-empty, path
-    // empty). Parameter binding via db.exec argv (NOT bufPrint) so the
-    // text can contain quotes safely.
+    // Insert an inline-content row directly (content non-empty, path empty).
     try ctx.db.exec(alloc,
         "INSERT INTO agent_config_knowledge (id, config_id, file_path, label, content, position) VALUES ('know_inline', 'ws_item_1', '', 'Deploy notes', 'Always deploy with the canary flag enabled.', 0)",
         &[_][]const u8{},

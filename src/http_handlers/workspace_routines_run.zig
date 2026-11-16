@@ -1,5 +1,4 @@
-//! `POST /api/workspaces/:ws/items/:item/routines/:routine_id/run` — manual
-//! fire of a workspace routine. Triggers a single immediate fire.
+//! `POST /api/workspaces/:ws/items/:item/routines/:routine_id/run` — manual fire of a workspace routine.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -30,9 +29,7 @@ pub fn workspaceRoutinesRunHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     };
     const sqlite_db = di.db;
 
-    // Item scoping: the routine must belong to the parent item in the
-    // URL. A mismatch (or a missing row) is a 404 — never leak one
-    // item's routine through another item's URL.
+    // Item scoping: the routine must belong to the parent item in the URL.
     if (item_id.len > 0) {
         const routine = model.loadWorkspaceRoutineById(allocator, sqlite_db, routine_id) catch {
             return res.jsonResponse(.{
@@ -49,9 +46,7 @@ pub fn workspaceRoutinesRunHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         }
     }
 
-    // Call the fire pipeline. Errors map to HTTP status codes: -
-    // FireError.NotARoutine → 404 - FireError.Disabled → 409 -
-    // FireError.AlreadyRunning → 409 - other → 500
+    // Call the fire pipeline.
     fire.fireWorkspaceRoutine(allocator, sqlite_db, di, io, routine_id) catch |err| switch (err) {
         fire.FireError.NotARoutine => return res.jsonResponse(.{
             .status_code = 404,

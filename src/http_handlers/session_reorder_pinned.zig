@@ -1,5 +1,4 @@
-//! `POST /api/llm/session/reorder_pinned`. Body: `{ "ordered_ids": ["id1",
-//! "id2", ...] }` (top-to-bottom display order of the pinned subset).
+//! `POST /api/llm/session/reorder_pinned`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");

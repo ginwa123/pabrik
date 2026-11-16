@@ -10,8 +10,7 @@ import { makeLocalStorageStub } from './helpers'
 
 const ITEM_ID = 'item_1'
 
-// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at,
-// and a plain object literal silently drifts from the interface the component actually receives.
+// Typed factory rather than a bare literal: KanbanColumn carries workspace_item_id + created_at, and a plain object literal silently drifts from the interface …
 const makeColumn = (overrides: Partial<KanbanColumnType> = {}): KanbanColumnType => ({
   id: 'col_todo',
   workspace_item_id: ITEM_ID,
@@ -21,9 +20,7 @@ const makeColumn = (overrides: Partial<KanbanColumnType> = {}): KanbanColumnType
   ...overrides,
 })
 
-// DOING is a named handle rather than COLUMNS[1]: the repo enables
-// noUncheckedIndexedAccess, so an index reads as `KanbanColumn | undefined`
-// and forces a non-null assertion at every use site.
+// DOING is a named handle rather than COLUMNS[1]: the repo enables noUncheckedIndexedAccess, so an index reads as `KanbanColumn | undefined` and forces a …
 const DOING = makeColumn({ id: 'col_doing', name: 'in progress', position: 1 })
 
 const COLUMNS: KanbanColumnType[] = [
@@ -79,8 +76,7 @@ describe('Move to column — submenu visibility', () => {
   })
 
   it('hides the row entirely when the board has no columns loaded', async () => {
-    // Sidebar-row host / legacy board. A submenu that can only be a dead
-    // end is worse than no submenu.
+    // Sidebar-row host / legacy board.
     const wrapper = mountCard({ id: 't1', name: 'Alpha' }, [], null)
     await wrapper.find('[data-task-card]').trigger('contextmenu', { clientX: 10, clientY: 10 })
     await nextTick()

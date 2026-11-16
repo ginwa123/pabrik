@@ -1,6 +1,4 @@
-//! Live git facts for a working directory: worktree root, repository root,
-//! branch, head and dirty files. Used by the compaction envelope so the next
-//! agent knows which checkout it is in without paying for an LLM summary.
+//! Live git facts for a working directory: worktree root, repository root, branch, head and dirty files.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -54,8 +52,7 @@ pub const GitState = struct {
     }
 };
 
-/// One `git` invocation in `dir`, trimmed stdout or null on any failure. Tests
-/// substitute a fake so none of them needs a repository or a git binary.
+/// One `git` invocation in `dir`, trimmed stdout or null on any failure.
 pub const GitRunner = *const fn (std.mem.Allocator, std.Io, []const u8, []const []const u8) ?[]u8;
 
 pub fn runGit(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, args: []const []const u8) ?[]u8 {
@@ -84,9 +81,7 @@ pub fn runGit(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, args: [
     return allocator.dupe(u8, std.mem.trim(u8, result.stdout, " \t\r\n")) catch null;
 }
 
-/// One `git` invocation for the tree at `dir`, from whichever side of the seam
-/// this run is on: the guest's git over the exec RPC, the host's, or a test's
-/// fake. Every question this module asks goes through one of these.
+/// One `git` invocation for the tree at `dir`, from whichever side of the seam this run is on: the guest's git over the exec RPC, the host's, or a test's fake.
 const Ask = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -100,8 +95,7 @@ const Ask = struct {
     }
 };
 
-/// The guest's answer in the host runner's own shape: trimmed stdout, or null
-/// on any failure — a git that could not be asked is not a git that said no.
+/// The guest's answer in the host runner's own shape: trimmed stdout, or null on any failure — a git that could not be asked is not a git that said no.
 fn guestRunGit(
     allocator: std.mem.Allocator,
     fs: *const workspace_fs.Fs,
@@ -120,9 +114,7 @@ pub fn fetchGitState(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) 
     return fetchGitStateWith(allocator, io, dir, runGit);
 }
 
-/// Git facts for a session's directory. Under `--saas` the questions go to the
-/// workspace's VM, and a workspace whose VM cannot answer is an error — the
-/// host's git is never spawned on a tenant tree (criterion 9).
+/// Git facts for a session's directory.
 pub fn fetchGitStateFor(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -134,8 +126,7 @@ pub fn fetchGitStateFor(
     defer route.deinit();
     const guest: ?*const workspace_fs.Fs = switch (route) {
         .guest => |*fs| fs,
-        // No VM to ask: the ask fails, and the caller's log says why. The
-        // host's git is emphatically not the fallback.
+        // No VM to ask: the ask fails, and the caller's log says why.
         .unavailable => |err| return err,
         .host => null,
     };
@@ -249,9 +240,7 @@ fn fetchDirtyFiles(
     return .{ .files = try files.toOwnedSlice(allocator), .total = total };
 }
 
-/// Write the `<working_directory>` section. The session's own cwd and the
-/// bound worktree are named separately: the worktree is where the file and
-/// command tools actually run, and the two differ for every isolated session.
+/// Write the `<working_directory>` section.
 pub fn appendWorkingDirectoryXml(
     allocator: std.mem.Allocator,
     out: *std.ArrayList(u8),
@@ -515,9 +504,7 @@ test "appendWorkingDirectoryXml escapes xml specials in a branch name" {
 
 // ─── Criterion 9: a tenant tree's git is the GUEST's ───────────────────────
 
-/// A throwaway repository whose `core.fsmonitor` runs a fixture program that
-/// creates a sentinel file. Anything on this host that runs `git status` in it
-/// makes the file appear — the fsmonitor RCE, as a test.
+/// A throwaway repository whose `core.fsmonitor` runs a fixture program that creates a sentinel file.
 const CanaryRepo = struct {
     fx: host_fixture.Fixture,
     repo: []u8,
@@ -559,8 +546,7 @@ fn runGitOrFail(allocator: std.mem.Allocator, argv: []const []const u8) !void {
     if (r.term.exited != 0) return error.GitUnavailable;
 }
 
-/// The canary repository, registered as workspace `w1` / session `s1`, so the
-/// seam resolves it exactly as it would a real tenant's checkout.
+/// The canary repository, registered as workspace `w1` / session `s1`, so the seam resolves it exactly as it would a real tenant's checkout.
 fn canaryRepo() !CanaryRepo {
     const allocator = std.testing.allocator;
     var fx = try host_fixture.Fixture.init(allocator);
@@ -620,8 +606,7 @@ test "fetchGitStateFor: local mode asks the host's git, and the hardening keeps 
     try std.testing.expect(std.mem.endsWith(u8, state.worktree_root, "repo"));
     try std.testing.expect(!canary.fired());
 
-    // The control that makes those absences mean something: WITHOUT the
-    // prefix this host really does execute the repository's own command.
+    // The control that makes those absences mean something: WITHOUT the prefix this host really does execute the repository's own command.
     if (builtin.os.tag != .windows) {
         try canary.statusPlain();
         try std.testing.expect(canary.fired());
@@ -639,8 +624,7 @@ test "fetchGitStateFor: saas never spawns the host's git — the canary stays si
     runtime_mode.setManagerSocket(null);
     defer runtime_mode.setManagerSocket(null);
 
-    // The tree is right there and the canary WOULD fire; the workspace's VM is
-    // not answering, and the ask fails closed rather than falling back.
+    // The tree is right there and the canary WOULD fire; the workspace's VM is not answering, and the ask fails closed rather than falling back.
     try std.testing.expectError(
         workspace_fs.Error.GuestManagerUnavailable,
         fetchGitStateFor(allocator, std.testing.io, &canary.db, "s1", canary.repo),
@@ -659,9 +643,7 @@ test "fetchGitStateFor: saas answers nothing outside the workspace, and runs not
     runtime_mode.setManagerSocket("/nonexistent/pabrik-vmd.sock");
     defer runtime_mode.setManagerSocket(null);
 
-    // A worktree the host keeps OUTSIDE the tenant's root (a session's own
-    // worktree lives there). It has no guest path, so there is no question to
-    // ask — and the host's git is still not the fallback.
+    // A worktree the host keeps OUTSIDE the tenant's root (a session's own worktree lives there).
     const outside = (try fetchGitStateFor(allocator, std.testing.io, &canary.db, "s1", canary.fx.root));
     try std.testing.expect(outside == null);
     try std.testing.expect(!canary.fired());

@@ -1,5 +1,4 @@
-/** Behavioural tests for `<LayersPanel>` drag-and-drop wire (Chunk 4
- * Task 4.2) — drop-zone rendering + multi-reparent emit. */
+/** Behavioural tests for `<LayersPanel>` drag-and-drop wire (Chunk 4 Task 4.2) — drop-zone rendering + multi-reparent emit. */
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -58,8 +57,7 @@ describe('<LayersPanel> drop zone rendering + multi-reparent', () => {
     const wrapper = mount(LayersPanel, {
       props: { elements: makeElements(), selectedIds: [], readonly: false },
     })
-    // For 3 top-level rows, render 4 drop zones: above the first,
-    // between a-b, between b-group, below the last.
+    // For 3 top-level rows, render 4 drop zones: above the first, between a-b, between b-group, below the last.
     const zones = wrapper.findAll('[data-testid="design-layer-drop-zone-top-level"]')
     expect(zones.length).toBeGreaterThanOrEqual(2) // at least 2 — we don't care about the exact number
   })
@@ -73,8 +71,7 @@ describe('<LayersPanel> drop zone rendering + multi-reparent', () => {
         readonly: false,
       },
     })
-    // First, simulate dragging row 'a' (which expands to the full
-    // selection ['a', 'b'] because selectedIds.size > 1).
+    // First, simulate dragging row 'a' (which expands to the full selection ['a', 'b'] because selectedIds.size > 1).
     await wrapper.find('[data-testid="design-layer-a"]').trigger('dragstart', {
       dataTransfer: {},
     })
@@ -120,9 +117,7 @@ describe('<LayersPanel> drop zone rendering + multi-reparent', () => {
     await wrapper.find('[data-testid="design-layer-a"]').trigger('dragstart', {
       dataTransfer: {},
     })
-    // Drop on the FIRST top-level zone — both 'a' AND 'group' become
-    // top-level (no-op for 'a' since it's already top-level; 'group'
-    // leaves its current group context).
+    // Drop on the FIRST top-level zone — both 'a' AND 'group' become top-level (no-op for 'a' since it's already top-level; 'group' leaves its current group context).
     const topZones = wrapper.findAll('[data-testid="design-layer-drop-zone-top-level"]')
     await topZones[0]!.trigger('drop', { dataTransfer: {} })
     expect(wrapper.emitted('reparent')![0]).toEqual([

@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: TBD zig — shared shell-execution core used
-// by `bash.zig` and `pwsh.zig`.
+// SPDX-License-Identifier: TBD zig — shared shell-execution core used by `bash.zig` and `pwsh.zig`.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -9,8 +8,7 @@ const loggermod = @import("../../logger/Logger.zig");
 
 const sanitizeControlChars = helpers.sanitize_control_chars;
 
-/// Canonical wire schema. Per-shell wrappers (bash.zig, pwsh.zig) re-export
-/// this as `BashInput` / `PwshInput` so the JSON contract is identical.
+/// Canonical wire schema.
 pub const RunMode = enum {
     foreground,
     background,
@@ -20,8 +18,7 @@ pub const RunMode = enum {
         return self != .foreground;
     }
 
-    /// Wire spelling. `background` is the value the parser accepts; the enum
-    /// field is `background_persistence` so a `switch` cannot confuse the two.
+    /// Wire spelling.
     pub fn fromWire(w: []const u8) ?RunMode {
         if (std.mem.eql(u8, w, "foreground")) return .foreground;
         if (std.mem.eql(u8, w, "background")) return .background;
@@ -37,8 +34,7 @@ pub const RunMode = enum {
         };
     }
 
-    /// The kind column value a detached command of this mode is recorded
-    /// under.
+    /// The kind column value a detached command of this mode is recorded under.
     pub fn kindFor(self: RunMode) []const u8 {
         return switch (self) {
             .foreground => "job",
@@ -48,9 +44,7 @@ pub const RunMode = enum {
     }
 };
 
-/// Cooperative cancellation for a foreground run: the wait loop polls it, and
-/// a true answer kills the child's process group. `ctx` is the caller's probe
-/// (`session_cancel_probe.Probe` in the agentic loop).
+/// Cooperative cancellation for a foreground run: the wait loop polls it, and a true answer kills the child's process group.
 pub const CancelHook = struct {
     ctx: *const anyopaque,
     is_cancelled: *const fn (ctx: *const anyopaque) bool,
@@ -60,8 +54,7 @@ pub const CancelHook = struct {
     }
 };
 
-/// A pure WIRE type — the LLM's JSON arguments parse into it, so it cannot
-/// carry a function pointer. Hooks travel beside the `Executor` instead.
+/// A pure WIRE type — the LLM's JSON arguments parse into it, so it cannot carry a function pointer.
 pub const ShellInput = struct {
     command: []const u8,
     timeout: ?u32 = null,
@@ -70,8 +63,7 @@ pub const ShellInput = struct {
     stdin_data: ?[]const u8 = null,
     /// LEGACY alias for `mode == .background`.
     background: bool = false,
-    /// See `RunMode`. Additive: everything that does not set it keeps
-    /// running in the foreground, which is the behaviour it had.
+    /// See `RunMode`.
     mode: RunMode = .foreground,
     max_lines: ?usize = 1000,
     do_encoding: bool = false,
@@ -79,8 +71,7 @@ pub const ShellInput = struct {
     is_stop: bool = false,
 };
 
-/// The mode a spawn should actually use, after folding in the legacy
-/// `background` alias.
+/// The mode a spawn should actually use, after folding in the legacy `background` alias.
 pub fn resolvedMode(input: ShellInput) RunMode {
     if (input.background and input.mode == .foreground) return .background;
     return input.mode;
@@ -95,18 +86,14 @@ pub const ShellOutput = struct {
     timeout: bool,
     stdout_lines: usize = 0,
     stderr_lines: usize = 0,
-    /// The run was stopped by `cancel_hook`, not by the child exiting and not
-    /// by `timeout`. The child's process group was SIGKILLed, so `exit_code`
-    /// is the negative signal number (POSIX).
+    /// The run was stopped by `cancel_hook`, not by the child exiting and not by `timeout`.
     cancelled: bool = false,
 };
 
 /// Returned by `execute_shell` when the caller omits `timeout`.
-/// Same semantics as the bash.zig version; shell-neutral.
 pub const TimeoutMissing = error{TimeoutMissing};
 
-/// Returned by `execute_shell` when the caller passes a `timeout` above
-/// `MAX_TIMEOUT_SEC`.
+/// Returned by `execute_shell` when the caller passes a `timeout` above `MAX_TIMEOUT_SEC`.
 pub const TimeoutTooLarge = error{TimeoutTooLarge};
 
 /// Returned by `execute_shell` when the caller omits `cwd`.
@@ -118,16 +105,14 @@ pub const CwdNotAbsolute = error{CwdNotAbsolute};
 /// Upper bound for a single foreground command: 10 minutes.
 pub const MAX_TIMEOUT_SEC: u32 = 600;
 
-// POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call doesn't
-// go through Zig 0.16's Io runtime.
+// POSIX `nanosleep(req, rem)` — declared as `extern "c"` so the call doesn't go through Zig 0.16's Io runtime.
 const NanoSleepTimespec = extern struct {
     sec: c_long,
     nsec: c_long,
 };
 extern "c" fn nanosleep(req: *const NanoSleepTimespec, rem: ?*NanoSleepTimespec) c_int;
 
-/// Sleep ~10ms between deadline polls. Windows: Win32 Sleep via
-/// helpers.sleepMillis.
+/// Sleep ~10ms between deadline polls.
 fn pollSleep10ms() void {
     if (builtin.os.tag == .windows) {
         helpers.sleepMillis(10);
@@ -140,9 +125,7 @@ fn pollSleep10ms() void {
     }
 }
 
-// Win32 GetExitCodeProcess — declared locally because std.os.windows
-// 0.16 doesn't expose it (only the imports the stdlib's own files
-// need). kernel32.dll is always linked on Windows.
+// Win32 GetExitCodeProcess — declared locally because std.os.windows 0.16 doesn't expose it (only the imports the stdlib's own files need). kernel32.dll is …
 extern "kernel32" fn GetExitCodeProcess(
     hProcess: std.os.windows.HANDLE,
     lpExitCode: *u32,
@@ -153,36 +136,27 @@ extern "kernel32" fn GetProcessId(
     process: std.os.windows.HANDLE,
 ) callconv(.winapi) std.os.windows.DWORD;
 
-/// Wall-clock grace period after SIGKILL during which we wait for the kernel
-/// to reap the spawned process group. 2 seconds is enough for normal process
-/// groups to die and be reaped; D-state descendants (uninterruptible sleep)
+/// Wall-clock grace period after SIGKILL during which we wait for the kernel to reap the spawned process group. 2 seconds is enough for normal process groups to …
 const KILL_GRACE_PERIOD_NS: u64 = 2 * std.time.ns_per_s;
 
-// Sentinel stub — Task 1.1 only lands the SKELETON. Subsequent tasks
-// (1.2–1.7) progressively move helpers and the spawn pipeline from bash.zig
-// into this module.
+// Sentinel stub — Task 1.1 only lands the SKELETON.
 const WaitResult = struct {
     /// Outcome category.
     outcome: enum {
-        /// Process was reaped within the grace period. The `status` field
-        /// contains the raw waitpid status word.
+        /// Process was reaped within the grace period.
         reaped,
         /// The grace period expired before the process became a zombie.
         grace_period_expired,
-        /// `waitpid` returned ECHILD — no such process. Either the PID
-        /// never existed or was already reaped by a different waiter
-        /// (e.g. SIGCHLD handler). Treat as "successfully reaped".
+        /// `waitpid` returned ECHILD — no such process.
         no_child,
-        /// `waitpid` returned an unexpected error. Caller should log and
-        /// proceed as if the grace period expired.
+        /// `waitpid` returned an unexpected error.
         unexpected_error,
     },
     /// Raw waitpid status word (only valid when `outcome == .reaped`).
     status: c_int = 0,
 };
 
-/// Poll `waitpid(pid, &status, WNOHANG)` until the process is reaped OR the
-/// grace period expires.
+/// Poll `waitpid(pid, &status, WNOHANG)` until the process is reaped OR the grace period expires.
 pub fn wait_pid_bounded(
     io: std.Io,
     child: *const std.process.Child,
@@ -198,18 +172,14 @@ pub fn wait_pid_bounded(
 }
 
 fn wait_pid_boundedPosix(child: *const std.process.Child, deadline_ns: u64) WaitResult {
-    // `posix.pid_t` is `void` on Windows — Zig 0.16 resolves the type on
-    // every host even inside a body that's only called from POSIX-gated
-    // callers, so we can't reference `posix.pid_t` here at all.
+    // `posix.pid_t` is `void` on Windows — Zig 0.16 resolves the type on every host even inside a body that's only called from POSIX-gated callers, so we can't …
     const pid: c_int = blk: {
         const id_opt: std.process.Child.Id = child.id.?;
         const T = @TypeOf(id_opt);
         if (@typeInfo(T) == .int) {
             break :blk @as(c_int, @intCast(id_opt));
         }
-        // Non-int Id is `HANDLE` (Windows). Unreachable at runtime because
-        // callers gate this fn on `.linux, .macos =>`, but emit a clear
-        // compile-time error if someone ever removes that gate.
+        // Non-int Id is `HANDLE` (Windows).
         @compileError("wait_pid_boundedPosix called on a non-POSIX host");
     };
     while (true) {
@@ -244,9 +214,7 @@ fn wait_pid_boundedWindows(
     const handle: std.os.windows.HANDLE = child.id.?;
     // Poll NtWaitForSingleObject with a short timeout until the deadline.
     while (true) {
-        // 100ms relative timeout (NT's LARGE_INTEGER is `i64` — for relative
-        // waits, the convention is a NEGATIVE 100-ns interval; positive
-        // values are interpreted as an absolute wakeup time, which we'd
+        // 100ms relative timeout (NT's LARGE_INTEGER is `i64` — for relative waits, the convention is a NEGATIVE 100-ns interval; positive values are interpreted as an …
         const timeout_100ms: std.os.windows.LARGE_INTEGER =
             -100 * @as(i64, @intCast(std.time.ns_per_ms));
         const status = std.os.windows.ntdll.NtWaitForSingleObject(
@@ -255,13 +223,10 @@ fn wait_pid_boundedWindows(
             &timeout_100ms,
         );
         if (status == .SUCCESS) {
-            // Process signalled; harvest the exit code via GetExitCodeProcess
-            // (declared above; not in Zig 0.16 std) so the .status slot has
-            // the same shape the POSIX path produces.
+            // Process signalled; harvest the exit code via GetExitCodeProcess (declared above; not in Zig 0.16 std) so the .status slot has the same shape the POSIX path …
             var exit_code: u32 = 0;
             _ = GetExitCodeProcess(handle, &exit_code);
-            // Match std.process.Child.Term's `exited: u8` slot:
-            // (status << 8) | exit_code mimics WIFEXITED.
+            // Match std.process.Child.Term's `exited: u8` slot
             const shifted_status: c_int = @intCast(@as(c_int, 0) << 8);
             const low_byte: c_int = @intCast(@as(c_int, @intCast(exit_code & 0xff)));
             return .{ .outcome = .reaped, .status = shifted_status | low_byte };
@@ -289,9 +254,7 @@ fn term_from_wait(wait_result: WaitResult) std.process.Child.Term {
 }
 
 fn term_from_wait_windows(wait_result: WaitResult) std.process.Child.Term {
-    // The Windows path synthesizes a status with the low 8 bits holding the
-    // exit code (no `posix.SIG.KILL` representation — the historical `.signal
-    // = .KILL` doesn't apply on Windows).
+    // The Windows path synthesizes a status with the low 8 bits holding the exit code (no `posix.SIG.KILL` representation — the historical `.signal = .KILL` doesn't …
     const u: u32 = @bitCast(@as(u32, @intCast(wait_result.status)));
     _ = u;
     return switch (wait_result.outcome) {
@@ -299,8 +262,7 @@ fn term_from_wait_windows(wait_result: WaitResult) std.process.Child.Term {
         .grace_period_expired, .unexpected_error => .{
             // Forced kill via TerminateProcess.
             .exited = 137, // 128 + SIGKILL = 128+9, the bash
-            // convention for "killed by SIGKILL". Portable across
-            // POSIX callers that recognize this magic.
+            // convention for "killed by SIGKILL".
         },
     };
 }
@@ -313,20 +275,15 @@ fn term_from_wait_posix(wait_result: WaitResult) std.process.Child.Term {
             // POSIX path: surface the kill via `posix.SIG.KILL`.
             .{ .signal = .KILL }
         else
-            // Windows path (this `else` arm is unreachable at runtime because
-            // `term_from_wait` dispatches on `builtin.os.tag` first);
-            // included only so the function compiles on every host.
+            // Windows path (this `else` arm is unreachable at runtime because `term_from_wait` dispatches on `builtin.os.tag` first); included only so the function compiles …
             .{ .exited = 137 },
     };
 }
 
 /// Convert a raw `waitpid` status word to a Zig `std.process.Child.Term`.
-/// Mirrors `childWaitPosix` in `std/Io/Threaded.zig:15309`.
 pub fn status_to_term(status: c_int) std.process.Child.Term {
     if (comptime builtin.os.tag == .windows) {
-        // Unreachable at runtime — emitted as a no-op so the package compiles
-        // on every host. The Windows path extracts the exit code directly via
-        // GetExitCodeProcess (see `term_from_wait_windows`).
+        // Unreachable at runtime — emitted as a no-op so the package compiles on every host.
         return .{ .unknown = 0 };
     }
     const u: u32 = @bitCast(@as(u32, @intCast(status)));
@@ -336,33 +293,25 @@ pub fn status_to_term(status: c_int) std.process.Child.Term {
     return .{ .unknown = u };
 }
 
-// ============================================================================
-// Foreground deadline enforcement The deadline has to mean two things, and
-// the old code only delivered the first: 1. the child is terminated when the
+// Foreground deadline enforcement The deadline has to mean two things, and the old code only delivered the first: 1. the child is terminated when the
 
-/// Win32 TerminateProcess — declared locally for the same reason as
-/// `GetExitCodeProcess` above: Zig 0.16's `std.os.windows` does not export
-/// it.
+/// Win32 TerminateProcess — declared locally for the same reason as `GetExitCodeProcess` above: Zig 0.16's `std.os.windows` does not export it.
 extern "kernel32" fn TerminateProcess(
     hProcess: std.os.windows.HANDLE,
     uExitCode: u32,
 ) callconv(.winapi) std.os.windows.BOOL;
 
-/// Grace the reader threads get to observe EOF once the deadline kill has
-/// been issued.
+/// Grace the reader threads get to observe EOF once the deadline kill has been issued.
 const READER_JOIN_GRACE_PERIOD_NS: u64 = 2 * std.time.ns_per_s;
 
-/// Reader threads that were handed off instead of joined (see
-/// `settleReader`).
+/// Reader threads that were handed off instead of joined (see `settleReader`).
 pub var abandoned_reader_count: std.atomic.Value(usize) = .init(0);
 
 /// How the deadline terminates the child.
 const TimeoutKill = enum {
-    /// `kill(-pgid, SIGKILL)`: the child leads its own process group
-    /// (`.pgid = 0` at spawn), so one syscall reaches the whole tree.
+    /// `kill(-pgid, SIGKILL)`: the child leads its own process group (`.pgid = 0` at spawn), so one syscall reaches the whole tree.
     process_group,
-    /// `TerminateProcess(handle)`: Windows has no process groups, so the direct
-    /// child is the only handle we own.
+    /// `TerminateProcess(handle)`: Windows has no process groups, so the direct child is the only handle we own.
     child_handle,
 };
 
@@ -373,8 +322,7 @@ fn timeoutKillPlan(comptime os_tag: std.Target.Os.Tag) []const TimeoutKill {
     };
 }
 
-/// Terminate the child — and on POSIX its whole process group — when the
-/// deadline passes.
+/// Terminate the child — and on POSIX its whole process group — when the deadline passes.
 fn terminateTimedOutChild(child: *const std.process.Child, child_pgid: c_int) void {
     for (timeoutKillPlan(builtin.os.tag)) |kill| {
         switch (kill) {
@@ -392,9 +340,7 @@ fn terminateTimedOutChild(child: *const std.process.Child, child_pgid: c_int) vo
     }
 }
 
-/// One foreground output stream: the pipe, what has been captured from it,
-/// and the ownership protocol that lets the reader thread OUTLIVE the call
-/// that spawned it.
+/// One foreground output stream: the pipe, what has been captured from it, and the ownership protocol that lets the reader thread OUTLIVE the call that spawned it.
 const Reader = struct {
     stream: std.Io.File,
     io: std.Io,
@@ -404,11 +350,9 @@ const Reader = struct {
     truncated: bool = false,
     max_output: usize,
     max_lines: usize,
-    /// Published under `mutex` when the read loop is done; every field above is
-    /// frozen from that point on.
+    /// Published under `mutex` when the read loop is done; every field above is frozen from that point on.
     eof: std.atomic.Value(bool) = .init(false),
-    /// Set under `mutex` by the caller when it stops waiting for `eof`: the
-    /// reader stops capturing and takes ownership of this state.
+    /// Set under `mutex` by the caller when it stops waiting for `eof`: the reader stops capturing and takes ownership of this state.
     handed_off: bool = false,
     /// Lock-free mirror of `handed_off` for the capture path.
     abandoned: std.atomic.Value(bool) = .init(false),
@@ -425,8 +369,7 @@ const Reader = struct {
         return self;
     }
 
-    /// Close the read end and release the state. Exactly one side calls this —
-    /// see `settleReader`.
+    /// Close the read end and release the state.
     fn destroy(self: *Reader) void {
         self.stream.close(self.io);
         self.data.deinit(std.heap.smp_allocator);
@@ -502,16 +445,13 @@ const Reader = struct {
 
 /// Whose job it is to release a settled reader state.
 const Ownership = enum {
-    /// The reader is done. Its fields are frozen, so the caller may read them
-    /// and must release the state (which closes the read end).
+    /// The reader is done.
     caller,
-    /// The reader never saw EOF: it was handed the state, stops capturing, and
-    /// releases it itself once the pipe finally closes.
+    /// The reader never saw EOF: it was handed the state, stops capturing, and releases it itself once the pipe finally closes.
     reader,
 };
 
-/// Bounded join for one reader: wait until `deadline_ns` for EOF, then decide
-/// who releases the state. This is the fix for the hang.
+/// Bounded join for one reader: wait until `deadline_ns` for EOF, then decide who releases the state.
 fn settleReader(state: *Reader, thread: ?std.Thread, deadline_ns: u64, label: []const u8) Ownership {
     if (thread == null) return .caller; // Spawn failed: it never ran, nothing to wait for.
     while (true) {
@@ -536,8 +476,7 @@ fn settleReader(state: *Reader, thread: ?std.Thread, deadline_ns: u64, label: []
     }
 }
 
-/// Settle every reader that has not been taken over yet, and clear its slot so a
-/// later error cannot settle (and release) the same state twice.
+/// Settle every reader that has not been taken over yet, and clear its slot so a later error cannot settle (and release) the same state twice.
 fn settlePendingReaders(pending: []?*Reader, threads: []const ?std.Thread, deadline_ns: u64) void {
     const labels = [_][]const u8{ "stdout", "stderr" };
     for (pending, 0..) |*slot, i| {
@@ -547,21 +486,18 @@ fn settlePendingReaders(pending: []?*Reader, threads: []const ?std.Thread, deadl
     }
 }
 
-/// When the readers have to be settled by: one grace period for the CALL, spent
-/// across both streams rather than two graces spent back to back.
+/// When the readers have to be settled by: one grace period for the CALL, spent across both streams rather than two graces spent back to back.
 fn readersDeadline() u64 {
     return helpers.monotonicTimestampNanos() + READER_JOIN_GRACE_PERIOD_NS;
 }
 
 /// What the caller gets back from one stream.
 const Captured = struct {
-    /// The bytes to return: the empty-capture placeholder, or the capture cut to
-    /// `max_output`. Owned by the caller's allocator.
+    /// The bytes to return: the empty-capture placeholder, or the capture cut to `max_output`.
     bytes: []u8,
     line_count: usize,
     truncated: bool,
-    /// The reader was handed off — a pipe holder outlived the kill — so this is
-    /// whatever had arrived by the deadline.
+    /// The reader was handed off — a pipe holder outlived the kill — so this is whatever had arrived by the deadline.
     abandoned: bool,
 };
 
@@ -595,9 +531,7 @@ fn captureStream(
     };
 }
 
-/// The empty / over-long policy the tool has always applied to a captured
-/// stream: no output at all reads as `empty_placeholder`, anything past
-/// `max_output` is cut.
+/// The empty / over-long policy the tool has always applied to a captured stream: no output at all reads as `empty_placeholder`, anything past `max_output` is cut.
 pub fn shapeCapture(
     alloc: std.mem.Allocator,
     raw: []const u8,
@@ -609,9 +543,7 @@ pub fn shapeCapture(
     return alloc.dupe(u8, raw);
 }
 
-/// An injected executor for the command a tool call asked for. Under `--saas`
-/// it runs the command in the workspace's microVM; in local mode nothing is
-/// injected and the host path runs, unchanged.
+/// An injected executor for the command a tool call asked for.
 pub const Executor = struct {
     ctx: *const anyopaque,
     run: *const fn (
@@ -632,8 +564,7 @@ pub fn execute_shell(
     return execute_shell_with(allocator, io, argv_prefix, input, null);
 }
 
-/// `execute_shell` with the substrate made explicit: an executor replaces the
-/// host spawn, and null means "the host".
+/// `execute_shell` with the substrate made explicit: an executor replaces the host spawn, and null means "the host".
 pub fn execute_shell_with(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -644,9 +575,7 @@ pub fn execute_shell_with(
     return execute_shell_with_cancel(allocator, io, argv_prefix, input, executor, null);
 }
 
-/// `execute_shell_with` plus the Stop button. An injected executor receives the
-/// input only: the guest path (a workspace microVM) has its own lifetime and
-/// its own stop, so the hook does not cross that boundary.
+/// `execute_shell_with` plus the Stop button.
 pub fn execute_shell_with_cancel(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -659,8 +588,7 @@ pub fn execute_shell_with_cancel(
     return run_shell_command_with(allocator, io, argv_prefix, input, cancel_hook);
 }
 
-/// Run a shell command with the supplied argv-prefix (e.g. `&.{ "bash", "-c"
-/// }` or `&.{ "pwsh", "-NoProfile", "-NonInteractive", "-Command" }`).
+/// Run a shell command with the supplied argv-prefix (e.g.
 pub fn run_shell_command(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -670,9 +598,7 @@ pub fn run_shell_command(
     return run_shell_command_with(allocator, io, argv_prefix, input, null);
 }
 
-/// `run_shell_command`, with a hook the foreground wait loop polls. On a true
-/// answer the child's process group is SIGKILLed mid-run and the call returns
-/// with `cancelled = true` instead of waiting out `timeout`.
+/// `run_shell_command`, with a hook the foreground wait loop polls.
 pub fn run_shell_command_with(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -680,9 +606,7 @@ pub fn run_shell_command_with(
     input: ShellInput,
     cancel_hook: ?CancelHook,
 ) !ShellOutput {
-    // --- URL encoding if requested --- cmd.exe treats single quotes
-    // literally (no quoting semantics), so the `"…"` → `'…'` swap would
-    // corrupt URLs on the cmd fallback path — skip it when the resolved shell
+    // --- URL encoding if requested ---
     const is_cmd_shell = argv_prefix.len > 0 and std.mem.eql(u8, argv_prefix[0], "cmd.exe");
     const command = if (input.do_encoding and !is_cmd_shell)
         try encode_command_urls(allocator, input.command)
@@ -695,33 +619,25 @@ pub fn run_shell_command_with(
         return error.CommandForbidden;
     }
 
-    // --- Mandatory-cwd check (BOTH modes) --- Checked before the timeout
-    // guard so a call missing both fields is told about the more dangerous
-    // omission first — the one that runs work in the wrong directory.
+    // --- Mandatory-cwd check (BOTH modes) ---
     const cwd = input.cwd orelse return error.MandatoryCwdMissing;
     if (cwd.len == 0) return error.MandatoryCwdMissing;
     if (!std.fs.path.isAbsolute(cwd)) return error.CwdNotAbsolute;
 
-    // --- Mandatory-timeout check (foreground only) --- Neither detached mode
-    // uses the timeout (the process outlives the call by definition), so the
-    // check is skipped for both.
+    // --- Mandatory-timeout check (foreground only) ---
     const mode = resolvedMode(input);
     if (!mode.isDetached() and input.timeout == null) {
         return error.TimeoutMissing;
     }
     if (input.timeout) |t| {
         if (t == 0) return error.TimeoutMissing;
-        // Foreground only: a detached call ignores the timeout by design, so
-        // an over-max deadline there is harmless. In foreground a huge
-        // deadline is the same as no deadline.
+        // Foreground only: a detached call ignores the timeout by design, so an over-max deadline there is harmless.
         if (!mode.isDetached() and t > MAX_TIMEOUT_SEC) {
             return error.TimeoutTooLarge;
         }
     }
 
-    // --- Detached modes --- Two different detach mechanisms, deliberately,
-    // for one release: * `background` keeps the `nohup` shell idiom it has
-    // always used, so the path every existing caller and test depends on
+    // --- Detached modes ---
     if (mode == .background_persistence) {
         return try spawn_detached_native(allocator, io, argv_prefix, command, cwd);
     }
@@ -729,9 +645,7 @@ pub fn run_shell_command_with(
         return try spawn_background(allocator, io, argv_prefix, command, cwd);
     }
 
-    // --- Foreground mode --- `input.max_output` defaults to 20 KiB in the
-    // schema (see schemas.zig), so the `orelse` fallback here is a
-    // defense-in-depth — it would only fire if someone constructs ShellInput
+    // --- Foreground mode ---
     const max_output = input.max_output orelse 20 * 1024;
     const max_lines = input.max_lines orelse 1000;
     const timeout_sec = input.timeout.?;
@@ -754,9 +668,7 @@ pub fn run_shell_command_with(
         // Zig 0.16: `?posix.pid_t = null`.
         .pgid = if (comptime builtin.os.tag == .windows) null else @as(?std.posix.pid_t, 0),
     });
-    // On Windows, `posix.pid_t` is `void` (Windows has no POSIX pid concept),
-    // so the historical `kill(-child_pgid, .KILL)` group- kill pattern
-    // compiles only on POSIX.
+    // On Windows, `posix.pid_t` is `void` (Windows has no POSIX pid concept), so the historical `kill(-child_pgid, .KILL)` group- kill pattern compiles only on POSIX.
     const child_pgid: c_int = blk: {
         if (comptime builtin.os.tag == .windows) break :blk 0;
         const id_opt: std.process.Child.Id = child.id.?;
@@ -765,8 +677,7 @@ pub fn run_shell_command_with(
         @compileError("child.id is not a POSIX pid_t on a POSIX host");
     };
     errdefer {
-        // Terminate on every platform — see `terminateTimedOutChild`. This used
-        // to be POSIX-only, so a failed Windows spawn left the child running.
+        // Terminate on every platform — see `terminateTimedOutChild`.
         terminateTimedOutChild(&child, child_pgid);
         _ = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
         if (child.stdout) |stdout_pipe| stdout_pipe.close(io);
@@ -786,25 +697,19 @@ pub fn run_shell_command_with(
 
     const timeout_ns = @as(u64, timeout_sec) * std.time.ns_per_s;
 
-    // The pipes stay attached to `child` until BOTH readers exist, so the
-    // spawn-time errdefer still closes them if one of these allocations fails.
+    // The pipes stay attached to `child` until BOTH readers exist, so the spawn-time errdefer still closes them if one of these allocations fails.
     const stdout_reader = try Reader.create(io, child.stdout.?, max_output, max_lines);
     const stderr_reader = try Reader.create(io, child.stderr.?, max_output, max_lines);
-    // Ownership of both pipes is in the readers now: nothing below may close
-    // them, and the spawn-time errdefer above must not either.
+    // Ownership of both pipes is in the readers now: nothing below may close them, and the spawn-time errdefer above must not either.
     child.stdout = null;
     child.stderr = null;
 
     const readers = [2]*Reader{ stdout_reader, stderr_reader };
-    // `pending` is the settle ledger: a slot goes null the moment that reader
-    // changes hands (`captureStream`), so the errdefer can never settle — and
-    // release — the same state twice.
+    // `pending` is the settle ledger: a slot goes null the moment that reader changes hands (`captureStream`), so the errdefer can never settle — and release — the …
     var pending = [2]?*Reader{ stdout_reader, stderr_reader };
     var threads: [2]?std.Thread = .{ null, null };
     errdefer {
-        // The spawn-time errdefer above terminates the child; this one settles
-        // the readers — a plain `join()` here would be unbounded, which is the
-        // hang this file is fixing.
+        // The spawn-time errdefer above terminates the child; this one settles the readers — a plain `join()` here would be unbounded, which is the hang this file is …
         settlePendingReaders(pending[0..], threads[0..], readersDeadline());
     }
 
@@ -817,26 +722,19 @@ pub fn run_shell_command_with(
     var child_term: ?std.process.Child.Term = null;
 
     const deadline_ns = std.Io.Timestamp.now(io, .real).nanoseconds + @as(i64, @intCast(timeout_ns));
-    // `std.process.Child.Term` is `.{ exited: u8, signal: std.posix.SIG, … }`
-    // — `posix.SIG` is `void` on Windows in Zig 0.16, so neither `.signal =
-    // .KILL` nor `status_to_term` (which uses `std.c.W.*` — also `void` on
+    // `std.process.Child.Term` is `.{ exited: u8, signal: std.posix.SIG, … }` — `posix.SIG` is `void` on Windows in Zig 0.16, so neither `.signal = .KILL` nor …
     child_term = blk: {
         while (true) {
-            // Both output streams are closed: the child is finished. Checked
-            // FIRST so a command that ended on its own is never reported as
-            // cancelled or timed out on a poll that lost the race.
+            // Both output streams are closed: the child is finished.
             if (stdout_reader.eof.load(.acquire) and stderr_reader.eof.load(.acquire)) {
                 const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
                 break :blk term_from_wait(wait_result);
             }
-            // Stop button: cheap to poll, because the hook throttles its own
-            // database read.
+            // Stop button: cheap to poll, because the hook throttles its own database read.
             if (cancel_hook) |hook| {
                 if (hook.requested()) {
                     cancel_hit = true;
-                    // The same SIGKILL-the-process-group path the timeout
-                    // takes: one syscall reaches the child and every
-                    // descendant it left in its group.
+                    // The same SIGKILL-the-process-group path the timeout takes: one syscall reaches the child and every descendant it left in its group.
                     terminateTimedOutChild(&child, child_pgid);
                     const wait_result = wait_pid_bounded(io, &child, KILL_GRACE_PERIOD_NS);
                     break :blk term_from_wait(wait_result);
@@ -882,8 +780,7 @@ pub fn run_shell_command_with(
     const command_copy = try allocator.dupe(u8, command);
     errdefer allocator.free(command_copy);
 
-    // `captureStream` already applied the empty / over-long policy, so the
-    // capture IS the payload — no second copy of up to `max_output` bytes.
+    // `captureStream` already applied the empty / over-long policy, so the capture IS the payload — no second copy of up to `max_output` bytes.
     return ShellOutput{
         .command = command_copy,
         .stdout = stdout_cap.bytes,
@@ -897,8 +794,7 @@ pub fn run_shell_command_with(
     };
 }
 
-/// Background-mode spawn (the `nohup` bash idiom). Returns the structured
-/// ShellOutput with `command`, `stdout = "PID: X\nLog: …"`, `exit_code = 0`.
+/// Background-mode spawn (the `nohup` bash idiom).
 pub const OsTag = @TypeOf(@import("builtin").os.tag);
 
 pub fn backgroundSpec(
@@ -946,8 +842,6 @@ pub const BackgroundSpec = struct {
 };
 
 /// Single-quote a string for PowerShell, doubling any embedded `'`.
-/// PowerShell's escape for a single quote inside a single-quoted string is
-/// a doubled one, and nothing else may appear raw.
 pub fn quotePwsh(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -960,12 +854,9 @@ pub fn quotePwsh(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// The platform's own temp directory. The old code interpolated a literal
-/// `/tmp` into a path that was then handed to a Windows
+/// The platform's own temp directory.
 pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
-    // `std.c.getenv` is the same accessor the rest of the codebase uses for
-    // this (service/state_file.zig reads LOCALAPPDATA through it), and it
-    // works on both platforms because the agent process always links libc.
+    // `std.c.getenv` is the same accessor the rest of the codebase uses for this (service/state_file.zig reads LOCALAPPDATA through it), and it works on both …
     const names: []const [*:0]const u8 = if (os_tag == .windows) &.{ "TEMP", "TMP" } else &.{"TMPDIR"};
     for (names) |n| {
         if (std.c.getenv(n)) |value| {
@@ -977,9 +868,7 @@ pub fn tempDirFor(allocator: std.mem.Allocator, os_tag: OsTag) ![]u8 {
     return allocator.dupe(u8, defaultTempDir(os_tag));
 }
 
-/// Last-resort temp directory when the environment is unreadable. The POSIX
-/// literal lives ONLY in the POSIX arm — the original bug was interpolating
-/// `/tmp` into a path that was then handed to a Windows
+/// Last-resort temp directory when the environment is unreadable.
 pub fn defaultTempDir(os_tag: OsTag) []const u8 {
     return if (os_tag == .windows) "C:\\Windows\\Temp" else "/tmp";
 }
@@ -1007,9 +896,7 @@ fn spawn_background(
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
-        // The `nohup … &` idiom runs in the shell we spawn here, and the
-        // detached process inherits THAT shell's cwd — so honoring `cwd` on
-        // this spawn is what puts the background job in the caller's
+        // The `nohup … &` idiom runs in the shell we spawn here, and the detached process inherits THAT shell's cwd — so honoring `cwd` on this spawn is what puts the …
         .cwd = .{ .path = cwd },
         .stdin = .close,
         .stdout = .pipe,
@@ -1052,9 +939,7 @@ fn spawn_background(
     };
 }
 
-/// Log path for a detached command. ONE construction, shared by the `nohup`
-/// path and the native one, so both mechanisms log to the same place and
-/// nothing downstream can tell which started the process.
+/// Log path for a detached command.
 pub fn detachedLogPath(
     allocator: std.mem.Allocator,
     os_tag: OsTag,
@@ -1079,9 +964,7 @@ fn spawn_detached_native(
     const log_path = try detachedLogPath(allocator, builtin.os.tag, tmp_dir, ts);
     defer allocator.free(log_path);
 
-    // Create/truncate the log, hand the descriptor to the child, then close OUR
-    // copy: the child holds its own dup, so nothing here keeps the file open
-    // for the process' lifetime.
+    // Create/truncate the log, hand the descriptor to the child, then close OUR copy: the child holds its own dup, so nothing here keeps the file open for the …
     var log_file = try std.Io.Dir.createFileAbsolute(io, log_path, .{ .truncate = true });
     defer log_file.close(io);
 
@@ -1093,22 +976,18 @@ fn spawn_detached_native(
 
     const child = try std.process.spawn(io, .{
         .argv = argv,
-        // `cwd` is what puts the detached command in the caller's directory;
-        // `.inherit` here is the wrong-tree bug `spawn_background` was fixed
-        // for, and there is no reason to reintroduce it in the new path.
+        // `cwd` is what puts the detached command in the caller's directory; `.inherit` here is the wrong-tree bug `spawn_background` was fixed for, and there is no …
         .cwd = .{ .path = cwd },
         .stdin = .close,
         .stdout = .{ .file = log_file },
         .stderr = .{ .file = log_file },
-        // A new process group whose id equals the child's pid: this is what
-        // makes `kill(-pid)` a tree kill. Windows has no pgid.
+        // A new process group whose id equals the child's pid: this is what makes `kill(-pid)` a tree kill.
         .pgid = if (comptime builtin.os.tag == .windows) null else @as(?std.posix.pid_t, 0),
     });
 
     const pid = childPidForLog(child) orelse return error.SpawnedWithoutPid;
 
-    // NOT `child.wait` — the child outlives this call by design. The reaper in
-    // `background_watcher` collects it.
+    // NOT `child.wait` — the child outlives this call by design.
     const stdout_msg = try std.fmt.allocPrint(allocator, "PID: {d}\nLog: {s}", .{ pid, log_path });
     errdefer allocator.free(stdout_msg);
 
@@ -1136,7 +1015,6 @@ fn spawn_detached_native(
 }
 
 /// Pid of a freshly spawned child, or null when the host has no pid concept.
-/// Windows' `Child.Id` is a HANDLE, so the number is asked of the OS there.
 fn childPidForLog(child: std.process.Child) ?u32 {
     const id_opt = child.id orelse return null;
     if (comptime @typeInfo(@TypeOf(id_opt)) != .int) {
@@ -1152,19 +1030,15 @@ fn childPidForLog(child: std.process.Child) ?u32 {
 
 /// Outcome of one non-blocking reap attempt on a PID we spawned.
 pub const ReapOutcome = union(enum) {
-    /// Reaped by this call. `code` is the exit status (negative = killed by
-    /// that signal, the bash `$?` convention).
+    /// Reaped by this call.
     exited: i32,
     /// Still running.
     running,
     /// `ECHILD`: not (or no longer) our child, so `waitpid` cannot answer.
-    /// The caller must fall back to a signal probe. This is the normal answer
-    /// on Windows (no `waitpid`) and for a row that predates a restart.
     not_our_child,
 };
 
-/// Non-blocking reap. Returns `.running`/`.exited` for a child of this
-/// process, `.not_our_child` otherwise.
+/// Non-blocking reap.
 pub fn reap_pid_nohang(pid: u32) ReapOutcome {
     if (comptime builtin.os.tag == .windows) return .not_our_child;
     if (comptime builtin.os.tag != .linux and builtin.os.tag != .macos) return .not_our_child;
@@ -1182,19 +1056,15 @@ pub fn reap_pid_nohang(pid: u32) ReapOutcome {
     if (rc == 0) return .running;
     const err = std.c.errno(rc);
     if (err == .CHILD) return .not_our_child;
-    // Any other errno (EINVAL on a bad pid, EINTR) is not something this
-    // caller can act on — report "not ours" so the signal probe decides.
+    // Any other errno (EINVAL on a bad pid, EINTR) is not something this caller can act on — report "not ours" so the signal probe decides.
     return .not_our_child;
 }
 
 /// How a stop reaches a detached process.
 pub const StopKill = enum {
-    /// `kill(-pid, SIGKILL)`: `spawn_detached_native` spawns with
-    /// `.pgid = 0`, so the child leads its own group and one syscall reaches
-    /// the command AND everything it forked.
+    /// `kill(-pid, SIGKILL)`: `spawn_detached_native` spawns with `.pgid = 0`, so the child leads its own group and one syscall reaches the command AND everything it …
     process_group,
-    /// `taskkill /T /F /PID`: Windows has no process groups, so the tree walk
-    /// is taskkill's job.
+    /// `taskkill /T /F /PID`: Windows has no process groups, so the tree walk is taskkill's job.
     taskkill_tree,
 };
 
@@ -1205,8 +1075,7 @@ pub fn stopPlan(comptime os_tag: std.Target.Os.Tag) []const StopKill {
     };
 }
 
-/// Stop a process started by `spawn_detached_native`, tree included. Returns
-/// true when the process was signalled or was already gone.
+/// Stop a process started by `spawn_detached_native`, tree included.
 pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) bool {
     var signalled = false;
     for (stopPlan(builtin.os.tag)) |kill| {
@@ -1246,8 +1115,7 @@ pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) b
     return signalled;
 }
 
-/// JSON serialiser — the old `result_to_xml` payload plus `cancelled`, so a
-/// Stop is visible in the transcript instead of a bare SIGKILL exit.
+/// JSON serialiser — the old `result_to_xml` payload plus `cancelled`, so a Stop is visible in the transcript instead of a bare SIGKILL exit.
 pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
     // Strip terminal escape sequences FIRST.
     const ansi_stdout = try helpers.ansi.stripAnsi(allocator, result.stdout);
@@ -1275,8 +1143,6 @@ pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
 }
 
 /// Concatenates `argv_prefix` with `[command]` to form the full spawn argv.
-/// This is a tiny helper kept separate so callers can audit the prefix
-/// without scrolling through the spawn site.
 pub fn build_argv(
     allocator: std.mem.Allocator,
     argv_prefix: []const []const u8,
@@ -1298,9 +1164,7 @@ pub fn is_forbidden_command(command: []const u8) bool {
     return false;
 }
 
-/// Encode special characters in URLs within double quotes Converts: curl -sI
-/// "http://host/path?query=val&sig=xyz" to: curl -sI
-/// 'http://host/path?query=val&sig=xyz' This prevents bash from interpreting
+/// Encode special characters in URLs within double quotes Converts: curl -sI "http://host/path?query=val&sig=xyz" to: curl -sI …
 pub fn encode_command_urls(allocator: std.mem.Allocator, command: []const u8) ![]u8 {
     var result = std.ArrayList(u8).empty;
     errdefer result.deinit(allocator);
@@ -1338,9 +1202,7 @@ pub fn encode_command_urls(allocator: std.mem.Allocator, command: []const u8) ![
 const testing = std.testing;
 
 test "RunMode: wire spellings round-trip and an unknown value is rejected" {
-    // The three categories the product asks for. `fromWire` returning null is
-    // what lets the parser produce a structured error naming the field instead
-    // of coercing a typo into some default mode.
+    // The three categories the product asks for.
     try testing.expectEqual(RunMode.foreground, RunMode.fromWire("foreground").?);
     try testing.expectEqual(RunMode.background, RunMode.fromWire("background").?);
     try testing.expectEqual(RunMode.background_persistence, RunMode.fromWire("background_persistence").?);
@@ -1358,9 +1220,7 @@ test "RunMode: only foreground blocks, and only a service is silent" {
     try testing.expect(RunMode.background.isDetached());
     try testing.expect(RunMode.background_persistence.isDetached());
 
-    // `kindFor` is what the cron filters on and what the popup shows. Getting
-    // it wrong is the difference between "told when the build finished" and
-    // "told a month later that the dev server died" — see migration 107.
+    // `kindFor` is what the cron filters on and what the popup shows.
     try testing.expectEqualStrings("job", RunMode.foreground.kindFor());
     try testing.expectEqualStrings("job", RunMode.background.kindFor());
     try testing.expectEqualStrings("service", RunMode.background_persistence.kindFor());
@@ -1377,16 +1237,13 @@ test "resolvedMode: the legacy background boolean keeps working, and mode wins w
         resolvedMode(.{ .command = "x", .mode = .background_persistence }),
     );
 
-    // Both set and not contradicting: the explicit mode is the answer, so
-    // `mode` can be added to a call site that still carries `background`.
+    // Both set and not contradicting: the explicit mode is the answer, so `mode` can be added to a call site that still carries `background`.
     try testing.expectEqual(
         RunMode.background_persistence,
         resolvedMode(.{ .command = "x", .background = true, .mode = .background_persistence }),
     );
 
-    // The CONTRADICTION is deliberately NOT resolved here — nothing can tell
-    // an explicit `foreground` from a defaulted one at this layer, so
-    // `parseShellArgs` rejects it before a ShellInput is ever built.
+    // The CONTRADICTION is deliberately NOT resolved here — nothing can tell an explicit `foreground` from a defaulted one at this layer, so `parseShellArgs` rejects …
     try testing.expectEqual(
         RunMode.background,
         resolvedMode(.{ .command = "x", .background = true, .mode = .foreground }),
@@ -1404,9 +1261,7 @@ test "detachedLogPath: never the POSIX literal on Windows, and it is the shared 
 }
 
 test "stopPlan: a stop reaches the whole tree on every platform" {
-    // Pure data with the OS tag as a parameter, so the Windows arm is
-    // assertable from a Linux runner — without that it could only ever be
-    // exercised on a Windows CI cell, which is how the `nohup`-on-Windows bug
+    // Pure data with the OS tag as a parameter, so the Windows arm is assertable from a Linux runner — without that it could only ever be exercised on a Windows CI …
     try testing.expectEqualSlices(StopKill, &.{.process_group}, stopPlan(.linux));
     try testing.expectEqualSlices(StopKill, &.{.process_group}, stopPlan(.macos));
     try testing.expectEqualSlices(StopKill, &.{.taskkill_tree}, stopPlan(.windows));
@@ -1454,8 +1309,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     }
     try testing.expectEqual(@as(c_int, @intCast(pid)), pgid);
 
-    // (2b) a NEW group, not OUR group: if the child had inherited ours, the
-    // tree kill would signal the test runner itself.
+    // (2b) a NEW group, not OUR group: if the child had inherited ours, the tree kill would signal the test runner itself.
     const our_pgid = getpgid(0);
     try testing.expect(our_pgid != pgid);
 
@@ -1473,9 +1327,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     }
     if (!saw_marker) return error.ChildOutputNeverReachedTheLog;
 
-    // (4) the stop really stops it — and this is where the zombie distinction
-    // bites, which is why the probe has to be the REAPER and not `kill(pid,
-    // 0)`.
+    // (4) the stop really stops it — and this is where the zombie distinction bites, which is why the probe has to be the REAPER and not `kill(pid, 0)`.
     try testing.expect(stopDetachedProcess(allocator, io, pid));
     attempts = 0;
     var reaped = false;
@@ -1488,8 +1340,7 @@ test "spawn_detached_native: pid == pgid, the log is the child's own stdout, and
     }
     try testing.expect(reaped);
 
-    // ...and once it IS reaped the signal probe finally agrees, so a caller
-    // that reaps first reads the truth either way.
+    // ...and once it IS reaped the signal probe finally agrees, so a caller that reaps first reads the truth either way.
     try testing.expect(!processAliveForTest(pid));
 }
 
@@ -1533,9 +1384,7 @@ fn processAliveForTest(pid: u32) bool {
 }
 
 test "ShellInput JSON schema: same field set as BashInput (alias carries through)" {
-    // ShellInput is the canonical type; BashInput and PwshInput are
-    // `pub const = ShellInput` aliases in their per-shell wrappers. The
-    // JSON-schema parser must accept the same JSON for both names.
+    // ShellInput is the canonical type; BashInput and PwshInput are `pub const = ShellInput` aliases in their per-shell wrappers.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const json_str =
@@ -1555,9 +1404,7 @@ test "ShellInput JSON schema: same field set as BashInput (alias carries through
 }
 
 test "ShellOutput has all 8 fields the bash JSON payload uses" {
-    // The bash_result_to_json payload has: command, stdout, stderr,
-    // exit_code, truncated, timeout, stdout_lines, stderr_lines. ShellOutput
-    // MUST have the same 8 — pwsh_result_to_json reuses it.
+    // The bash_result_to_json payload has: command, stdout, stderr, exit_code, truncated, timeout, stdout_lines, stderr_lines.
     const sample = ShellOutput{
         .command = "",
         .stdout = "",
@@ -1579,8 +1426,6 @@ test "ShellOutput has all 8 fields the bash JSON payload uses" {
 
 test "execute_shell runs bash happy path" {
     // After Task 1.5 lands the spawn pipeline, the placeholder is gone.
-    // Sanity-check the wrapper: a trivial `true` should exit 0 with empty
-    // stdout.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = try execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1598,9 +1443,7 @@ test "execute_shell runs bash happy path" {
 }
 
 test "execute_shell enforces timeout (returns TimeoutMissing when null)" {
-    // Smoke check that the precondition guard at the top of
-    // execute_shell is wired up. The plan locks this contract via
-    // bash_test.zig's existing TimeoutMissing test (kept unchanged).
+    // Smoke check that the precondition guard at the top of execute_shell is wired up.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1612,9 +1455,7 @@ test "execute_shell enforces timeout (returns TimeoutMissing when null)" {
 }
 
 test "execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
-    // A huge deadline is the same as no deadline. The over-max guard
-    // fires before any child is spawned, so these run on ALL platforms.
-    // Boundary: MAX is accepted (validation passes), MAX+1 is rejected.
+    // A huge deadline is the same as no deadline.
     try testing.expectEqual(@as(u32, 600), MAX_TIMEOUT_SEC);
 
     const over_max = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1635,7 +1476,6 @@ test "execute_shell rejects timeout above MAX_TIMEOUT_SEC" {
 
 test "execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
     // Positive control: the boundary value itself must pass validation.
-    // Runs `true` (instant) so the 60 s deadline never matters.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = try execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1652,9 +1492,7 @@ test "execute_shell accepts timeout at exactly MAX_TIMEOUT_SEC" {
 }
 
 test "execute_shell: a pipe holder that escapes the deadline kill cannot hold the call open" {
-    // The deadline path kills the child's PROCESS GROUP, so a descendant that
-    // stays in the group releases the pipe and the reader threads finally see
-    // EOF.
+    // The deadline path kills the child's PROCESS GROUP, so a descendant that stays in the group releases the pipe and the reader threads finally see EOF.
     if (builtin.os.tag != .linux) return; // `setsid` ships with util-linux.
 
     const io = std.testing.io;
@@ -1671,15 +1509,12 @@ test "execute_shell: a pipe holder that escapes the deadline kill cannot hold th
     }
     const elapsed_ms: u64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds - start, 1_000_000));
 
-    // Positive control: `timeout` can only be true if the readers were still
-    // waiting for EOF when the deadline arrived — i.e. the escaped holder
-    // really did survive the group kill.
+    // Positive control: `timeout` can only be true if the readers were still waiting for EOF when the deadline arrived — i.e. the escaped holder really did survive …
     try testing.expect(out.timeout);
     // ...and it returned on OUR schedule, not on the escaped holder's.
     try testing.expect(elapsed_ms < 4500);
 
-    // The other half of the deal: the reader that was left behind is not a
-    // leak.
+    // The other half of the deal: the reader that was left behind is not a leak.
     const handoff_deadline = std.Io.Timestamp.now(io, .real).nanoseconds + 4 * std.time.ns_per_s;
     while (abandoned_reader_count.load(.monotonic) > 0 and
         std.Io.Timestamp.now(io, .real).nanoseconds < handoff_deadline)
@@ -1690,9 +1525,7 @@ test "execute_shell: a pipe holder that escapes the deadline kill cannot hold th
 }
 
 test "timeoutKillPlan: the deadline terminates the child on EVERY platform" {
-    // The reported Windows hang: both kill sites were `if (comptime
-    // builtin.os.tag != .windows)`, so on Windows the deadline recorded
-    // `timeout_hit` and then waited on a child nobody had asked to stop — the
+    // The reported Windows hang: both kill sites were `if (comptime builtin.os.tag != .windows)`, so on Windows the deadline recorded `timeout_hit` and then waited …
     try testing.expectEqualSlices(TimeoutKill, &.{.child_handle}, timeoutKillPlan(.windows));
     try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.linux));
     try testing.expectEqualSlices(TimeoutKill, &.{.process_group}, timeoutKillPlan(.macos));
@@ -1709,8 +1542,7 @@ test "execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
         }),
     );
 
-    // The empty string is the same omission, spelled by a caller that sent a
-    // blank field.
+    // The empty string is the same omission, spelled by a caller that sent a blank field.
     try testing.expectError(
         error.MandatoryCwdMissing,
         execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1720,8 +1552,7 @@ test "execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
         }),
     );
 
-    // Background too — this is the mode that made the bug invisible: it
-    // accepted `cwd`, discarded it, and still reported success.
+    // Background too — this is the mode that made the bug invisible: it accepted `cwd`, discarded it, and still reported success.
     try testing.expectError(
         error.MandatoryCwdMissing,
         execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1733,9 +1564,7 @@ test "execute_shell requires cwd in BOTH modes (MandatoryCwdMissing)" {
 }
 
 test "execute_shell rejects a relative cwd (CwdNotAbsolute)" {
-    // A relative path resolves against the server's cwd — the same
-    // wrong-directory bug, harder to notice because the caller believes it
-    // named a location.
+    // A relative path resolves against the server's cwd — the same wrong-directory bug, harder to notice because the caller believes it named a location.
     try testing.expectError(
         error.CwdNotAbsolute,
         execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1747,8 +1576,7 @@ test "execute_shell rejects a relative cwd (CwdNotAbsolute)" {
 }
 
 test "foreground: the child runs IN cwd, not in the harness's cwd" {
-    // Behavioural witness for the `cwd` contract: `pwd -P` must print the
-    // directory the caller named.
+    // Behavioural witness for the `cwd` contract: `pwd -P` must print the directory the caller named.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -1776,9 +1604,7 @@ test "foreground: the child runs IN cwd, not in the harness's cwd" {
 }
 
 test "background: the DETACHED process starts in cwd, not the server's" {
-    // The regression this pins: `spawn_background` hardcoded `.cwd =
-    // .inherit` and was never even handed `input.cwd`, so a detached command
-    // ran in the SERVER's working directory.
+    // The regression this pins: `spawn_background` hardcoded `.cwd = .inherit` and was never even handed `input.cwd`, so a detached command ran in the SERVER's …
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const allocator = testing.allocator;
@@ -1802,9 +1628,7 @@ test "background: the DETACHED process starts in cwd, not the server's" {
     }
     try testing.expectEqual(@as(i32, 0), out.exit_code);
 
-    // The detach is asynchronous, so poll rather than sleeping a fixed guess —
-    // a fixed sleep is the flaky half of this kind of test. The `else` names
-    // the failure: the marker never appeared under the cwd we passed.
+    // The detach is asynchronous, so poll rather than sleeping a fixed guess — a fixed sleep is the flaky half of this kind of test.
     var attempts: usize = 0;
     while (attempts < 300) : (attempts += 1) {
         const stat = tmp.dir.access(io, "bg_cwd_probe_marker", .{});
@@ -1818,8 +1642,7 @@ test "background: the DETACHED process starts in cwd, not the server's" {
 }
 
 test "execute_shell background mode is exempt from the max-timeout cap" {
-    // Background detaches via nohup and ignores the timeout by design,
-    // so an over-max deadline there must NOT return TimeoutTooLarge.
+    // Background detaches via nohup and ignores the timeout by design, so an over-max deadline there must NOT return TimeoutTooLarge.
     if (builtin.os.tag != .linux and builtin.os.tag != .macos) return;
 
     const out = execute_shell(testing.allocator, std.testing.io, &.{ "bash", "-c" }, .{
@@ -1837,12 +1660,9 @@ test "execute_shell background mode is exempt from the max-timeout cap" {
     }
 }
 
-// Task 6 — schema-shape parity lock. The user requirement: "bash and pwsh
-// have to have the same interface".
+// Task 6 — schema-shape parity lock.
 test "ShellInput is structurally identical to BashInput AND PwshInput (alias liveness check)" {
-    // We use `@typeName` of a constructed instance to force Zig to
-    // resolve the alias — if the alias is broken in a future refactor,
-    // the three names diverge and the test fails closed.
+    // We use `@typeName` of a constructed instance to force Zig to resolve the alias — if the alias is broken in a future refactor, the three names diverge and the …
     const shell_input = ShellInput{ .command = "" };
     const bash_input = @import("schemas.zig").BashInput{ .command = "" };
     const pwsh_input = @import("pwsh.zig").PwshInput{ .command = "" };
@@ -1850,8 +1670,7 @@ test "ShellInput is structurally identical to BashInput AND PwshInput (alias liv
     try testing.expectEqualStrings(@typeName(@TypeOf(shell_input)), @typeName(@TypeOf(bash_input)));
     try testing.expectEqualStrings(@typeName(@TypeOf(shell_input)), @typeName(@TypeOf(pwsh_input)));
 
-    // Wire-schema round-trip: parse the same JSON string through all
-    // three aliases and verify every field round-trips identically.
+    // Wire-schema round-trip: parse the same JSON string through all three aliases and verify every field round-trips identically.
     const json =
         \\{"command":"x","cwd":"/tmp","timeout":3,"max_output":10,
         \\"stdin_data":"y","background":true,"max_lines":20,"do_encoding":true}
@@ -1871,8 +1690,7 @@ test "ShellInput is structurally identical to BashInput AND PwshInput (alias liv
 }
 
 test "result_to_json sanitizes binary ELF stdout into valid JSON" {
-    // Regression for user report: `head -n 40 $(which qs)` dumps the ELF
-    // header (0x7F 'E' 'L' 'F' 0x02 0x01 ... 0x00 + controls).
+    // Regression for user report: `head -n 40 $(which qs)` dumps the ELF header (0x7F 'E' 'L' 'F' 0x02 0x01 ... 0x00 + controls).
     const elf_stdout = "\x7FELF\x02\x01\x01\x00\x00\x01\x02<a>&\"'\x0B\x0C\x1F\x7Fend";
     const out = ShellOutput{
         .command = "head -n 40 /usr/bin/quickshell",
@@ -1909,8 +1727,7 @@ test "result_to_json sanitizes binary ELF stdout into valid JSON" {
 }
 
 test "result_to_json: MSBuild colour codes become plain text, not ?[7m" {
-    // User report: a `dotnet build … | Select-String …` on Windows came back
-    // as a wall of `?[7mwarning ?[0m`.
+    // User report: a `dotnet build … | Select-String …` on Windows came back as a wall of `?[7mwarning ?[0m`.
     const msbuild_stdout =
         "C:\\src\\Microsoft.Common.CurrentVersion.targets(4919,5): " ++
         "\x1b[7mwarning \x1b[0m\x1b[1mMSB\x1b[0m3026: " ++
@@ -1947,9 +1764,7 @@ test "result_to_json: MSBuild colour codes become plain text, not ?[7m" {
 }
 
 test "result_to_json: stderr escapes are stripped too, binary controls still scrubbed" {
-    // The two sanitising passes must not undo each other: an ESC-laden
-    // stderr loses its colour codes, while a genuine NUL (binary stdout)
-    // still becomes U+FFFD rather than silently vanishing.
+    // The two sanitising passes must not undo each other: an ESC-laden stderr loses its colour codes, while a genuine NUL (binary stdout) still becomes U+FFFD rather …
     const out = ShellOutput{
         .command = "build.ps1",
         .stdout = "\x1b[31merror CS1002\x1b[0m;",
@@ -1980,8 +1795,6 @@ test "xmlEscape replaces NUL and C0 controls with U+FFFD" {
 }
 
 // ─── Background detach (Windows) ──────────────────────────────────────────
-// The bug: `spawn_background` built `"nohup {cmd} > /tmp/bg_{n}.log 2>&1 &
-// echo $!"` and handed it to whatever shell was configured.
 test "backgroundSpec: Windows uses Start-Process, never nohup, and no /tmp" {
     const spec = try backgroundSpec(
         testing.allocator,
@@ -2000,8 +1813,7 @@ test "backgroundSpec: Windows uses Start-Process, never nohup, and no /tmp" {
         "C:\\Users\\ginwa\\AppData\\Local\\Temp\\bg_1234.log",
         spec.log_path,
     );
-    // The PID is what the old `echo $!` produced. Start-Process must yield
-    // it too, or the caller can neither report nor kill the process.
+    // The PID is what the old `echo $!` produced.
     try testing.expect(std.mem.indexOf(u8, spec.command, "Id") != null);
 }
 
@@ -2017,8 +1829,7 @@ test "backgroundSpec: the command is single-quoted for PowerShell" {
     const spec = try backgroundSpec(testing.allocator, .windows, "C:\\Temp", "Write-Host 'hi'", 7);
     defer spec.deinit(testing.allocator);
 
-    // The inner `'` must be doubled or it terminates the quoted argument
-    // and the rest of the line is parsed as PowerShell source.
+    // The inner `'` must be doubled or it terminates the quoted argument and the rest of the line is parsed as PowerShell source.
     try testing.expect(std.mem.indexOf(u8, spec.command, "'Write-Host ''hi'''") != null);
 }
 
@@ -2033,8 +1844,7 @@ test "quotePwsh: doubles embedded single quotes and wraps the value" {
 }
 
 test "tempDirFor: the Windows fallback is never the POSIX literal" {
-    // Shape, not this machine's environment: the point is that the Windows
-    // arm cannot reach `/tmp`.
+    // Shape, not this machine's environment: the point is that the Windows arm cannot reach `/tmp`.
     try testing.expect(!std.mem.eql(u8, defaultTempDir(.windows), "/tmp"));
     try testing.expect(std.mem.indexOf(u8, defaultTempDir(.windows), "\\") != null);
     try testing.expectEqualStrings("/tmp", defaultTempDir(.linux));
@@ -2047,9 +1857,7 @@ test "tempDirFor: the Windows fallback is never the POSIX literal" {
 
 // ─── Cancellation: the Stop button reaches a running child ──────────────────
 
-/// A hook that answers "cancelled" from its Nth poll on. The counter is the
-/// test's own state, and it is what makes the run deterministic: the child is
-/// killed on a poll the test controls, not on a wall-clock deadline.
+/// A hook that answers "cancelled" from its Nth poll on.
 fn CancellingAfter(comptime polls_before_cancel: usize) type {
     return struct {
         polls: usize = 0,
@@ -2074,9 +1882,7 @@ test "run_shell_command_with: a cancelled session kills the foreground child ins
     const out = try run_shell_command_with(testing.allocator, testing.io, &.{ "bash", "-c" }, .{
         .command = "sleep 30",
         .cwd = "/tmp",
-        // Five times the width of the test suite: if the hook were ignored,
-        // this test would sit out the whole `timeout` and time out instead of
-        // failing on an assertion.
+        // Five times the width of the test suite: if the hook were ignored, this test would sit out the whole `timeout` and time out instead of failing on an assertion.
         .timeout = 60,
     }, hook_state.hook());
     defer {
@@ -2086,11 +1892,9 @@ test "run_shell_command_with: a cancelled session kills the foreground child ins
     }
 
     try testing.expect(out.cancelled);
-    // The cancel path must not masquerade as the deadline path: the two are
-    // reported separately to the model and in the transcript.
+    // The cancel path must not masquerade as the deadline path: the two are reported separately to the model and in the transcript.
     try testing.expect(!out.timeout);
-    // `bash -c "sleep 30"` leads its own process group, so the group kill
-    // reaches `sleep` too. SIGKILL is 9 on every POSIX host.
+    // `bash -c "sleep 30"` leads its own process group, so the group kill reaches `sleep` too.
     try testing.expectEqual(@as(i32, -9), out.exit_code);
     try testing.expect(hook_state.polls > 0);
 }

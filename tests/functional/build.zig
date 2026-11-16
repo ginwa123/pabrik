@@ -1,6 +1,4 @@
-//! Build for the PRIBRIK functional test package (`tests/functional/`). WHY
-//! THIS IS A SEPARATE PACKAGE (and not a `b.addTest` on the root `pabrikcore`
-//! module): The functional suite is a BLACK-BOX suite.
+//! Build for the PRIBRIK functional test package (`tests/functional/`).
 
 const std = @import("std");
 
@@ -14,8 +12,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // The suite boots the `pabrik` binary, which lives at the REPO root's
-    // `zig-out/bin/`.
+    // The suite boots the `pabrik` binary, which lives at the REPO root's `zig-out/bin/`.
     const unit_tests = b.addTest(.{ .root_module = test_mod });
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.setCwd(b.path("../.."));

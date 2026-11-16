@@ -1,6 +1,4 @@
-//! Data model for the `session_activity` entity table. Append-only timeline
-//! of one-line "what did the agent just do?" entries, surfaced in the
-//! ChatView's "Thinking..." timeline panel.
+//! Data model for the `session_activity` entity table.
 
 const std = @import("std");
 
@@ -8,9 +6,7 @@ pub const EntityId = []u8;
 
 id: EntityId,
 session_id: []u8,
-/// One-line description like `"Implementing | Adding system-deps probe to
-/// custom_http_client/build.zig"`. Never empty — callers MUST supply a
-/// non-empty description on INSERT (the column is NOT NULL with no DEFAULT).
+/// One-line description like `"Implementing | Adding system-deps probe to custom_http_client/build.zig"`.
 description: []u8,
 created_at: []u8,
 

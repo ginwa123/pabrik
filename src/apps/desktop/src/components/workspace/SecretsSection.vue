@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// Workspace secrets — the body of the Settings → Secrets tab. THE ONE RULE THIS COMPONENT EXISTS TO
-// KEEP: a value reaches the screen only because the user asked for THAT row, and only through the
-// `reveal` event — never from the list payload.
+// Workspace secrets — the body of the Settings → Secrets tab.
 import { computed, ref } from 'vue'
 import type { Secret } from '../../api'
 import EmptyState from '../pabrik/EmptyState.vue'
@@ -42,8 +40,7 @@ const emit = defineEmits<{
   retry: []
 }>()
 
-/** Mirrors the server's cap, so an over-long description is stopped at the field instead of
- * costing a round trip to be refused. */
+/** Mirrors the server's cap, so an over-long description is stopped at the field instead of costing a round trip to be refused. */
 const MAX_DESCRIPTION_LEN = 500
 
 const nameInput = ref('')
@@ -54,8 +51,7 @@ const addError = ref<string | null>(null)
 const rotateTarget = ref<Secret | null>(null)
 const deleteTarget = ref<Secret | null>(null)
 
-/** An empty value is not a secret. Silently swallowing the click would look
- * like a success that never happened, so the form says why instead. */
+/** An empty value is not a secret. */
 const canAdd = computed(() => nameInput.value.trim().length > 0 && valueInput.value.length > 0)
 
 function handleAdd(): void {
@@ -67,9 +63,7 @@ function handleAdd(): void {
   }
   addError.value = null
   emit('add', { name, value, description: descriptionInput.value.trim() })
-  // Clear BEFORE the await — the caller may take a moment to answer, and a
-  // credential sitting in a ref in the meantime is a credential sitting in
-  // a ref. Nothing else reads these once the payload has been emitted.
+  // Clear BEFORE the await — the caller may take a moment to answer, and a credential sitting in a ref in the meantime is a credential sitting in a ref.
   nameInput.value = ''
   valueInput.value = ''
   descriptionInput.value = ''
@@ -128,9 +122,7 @@ function formatTimestamp(value: string): string {
   return parsed.toLocaleString()
 }
 
-// The empty state's CTA focuses the name field. Kept as a function in the script block rather than
-// an inline arrow in the template: `document` is not on the component's instance type, so a
-// template expression fails the `vue-tsc --build` type-check that the pre-push hook runs.
+// The empty state's CTA focuses the name field.
 function focusAddName(): void {
   document.getElementById('secret-name')?.focus()
 }

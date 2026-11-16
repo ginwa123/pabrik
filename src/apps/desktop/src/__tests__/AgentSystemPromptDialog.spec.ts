@@ -1,6 +1,4 @@
 // Behavioural tests for AgentSystemPromptDialog (plan 2026-08-21-agent-system-prompt, Task 4).
-// Covers open/reset, create payload, edit/save payload, canSubmit gating (content required,
-// whitespace-only rejected), busy/error rendering.
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'

@@ -1,5 +1,4 @@
-// Functional tests for the config-simplify change (plan
-// 2026-08-24-config-simplify-remove-defaults).
+// Functional tests for the config-simplify change (plan 2026-08-24-config-simplify-remove-defaults).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // The preboot seam
-// ============================================================================
 
 /// Every path `writeStubLlmProfile` seeds, in the same order.
 const CONFIG_CANDIDATES = [_][]const []const u8{
@@ -35,8 +32,7 @@ fn bootSeeded(cfg_json: []const u8) !Harness {
     return h;
 }
 
-/// The `config.json` the running binary reads and writes, plus its parsed
-/// form. Both owned, so the document outlives the bytes it came from.
+/// The `config.json` the running binary reads and writes, plus its parsed form.
 const DiskConfig = struct {
     bytes: []u8,
     doc: harness.Json,
@@ -48,8 +44,7 @@ const DiskConfig = struct {
     }
 };
 
-/// Read the harness HOME's `config.json` from the path the CURRENT platform's
-/// `Config.zig:getDefaultConfigDir` selects.
+/// Read the harness HOME's `config.json` from the path the CURRENT platform's `Config.zig:getDefaultConfigDir` selects.
 fn platformConfigFile(home: []const u8) ![]u8 {
     return switch (@import("builtin").os.tag) {
         .macos => harness.harnessPath(gpa, home, &.{ "Library", "Application Support", "pabrik", "config.json" }),
@@ -58,8 +53,7 @@ fn platformConfigFile(home: []const u8) ![]u8 {
     };
 }
 
-/// Read + parse the on-disk `config.json` (Python's
-/// `json.loads((_platform_config_dir(h.temp_dir) / "config.json").read_text())`).
+/// Read + parse the on-disk `config.json` (Python's `json.loads((_platform_config_dir(h.temp_dir) / "config.json").read_text())`).
 fn readDiskConfig(home: []const u8) !DiskConfig {
     const path = try platformConfigFile(home);
     defer gpa.free(path);
@@ -72,9 +66,7 @@ fn readDiskConfig(home: []const u8) !DiskConfig {
     return .{ .bytes = bytes, .doc = doc };
 }
 
-// ============================================================================
 // Shared assertion helpers
-// ============================================================================
 
 /// The `profiles` map out of a config GET body, or a named failure.
 fn profilesMap(doc: *const harness.Json) !std.json.ObjectMap {
@@ -102,9 +94,7 @@ fn strField(o: std.json.ObjectMap, key: []const u8) ![]const u8 {
     };
 }
 
-/// The seven top-level keys plan 2026-08-24-config-simplify removed. Test 1
-/// asserts none of them is on the GET wire; test 2 asserts none of them is
-/// written back to disk.
+/// The seven top-level keys plan 2026-08-24-config-simplify removed.
 const REMOVED_WIRE_KEYS = [_][]const u8{
     "api_endpoint",
     "api_key",
@@ -115,9 +105,7 @@ const REMOVED_WIRE_KEYS = [_][]const u8{
     "system_prompt",
 };
 
-/// The six keys test 2 checks on DISK (`api_endpoint` is not in this list:
-/// Python's test 2 named only these six, and `api_endpoint` was already not
-/// a field of the on-disk `ConfigJson` writer).
+/// The six keys test 2 checks on DISK (`api_endpoint` is not in this list
 const REMOVED_DISK_KEYS = [_][]const u8{
     "api_key",
     "model",
@@ -137,13 +125,9 @@ fn expectNoKeysAtRoot(doc: *const harness.Json, keys: []const []const u8, what: 
     }
 }
 
-// ============================================================================
 // Test 1: a profile-only config serves a profile-only payload
-// ============================================================================
 
-// A config.json without top-level api_key/model/base_url/url_style serves
-// cleanly. GET /api/config/pabrik → 200 with `profiles` present and NONE of
-// the removed keys on the wire.
+// A config.json without top-level api_key/model/base_url/url_style serves cleanly.
 test "profile_only_config_boots_and_get_has_no_default_fields" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -193,12 +177,9 @@ test "profile_only_config_boots_and_get_has_no_default_fields" {
     try expectNoKeysAtRoot(&doc, &REMOVED_WIRE_KEYS, "on the GET wire");
 }
 
-// ============================================================================
 // Test 2: a defaults-free PUT never writes the defaults back
-// ============================================================================
 
-// PUT exactly what the new frontend sends (no top-level defaults) → 200; the
-// on-disk config.json gains none of the six keys; the PUT'd profile survives.
+// PUT exactly what the new frontend sends (no top-level defaults) → 200; the on-disk config.json gains none of the six keys; the PUT'd profile survives.
 test "put_without_defaults_keeps_file_clean" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -259,13 +240,9 @@ test "put_without_defaults_keeps_file_clean" {
     });
 }
 
-// ============================================================================
 // Test 3: a legacy config with top-level keys still serves
-// ============================================================================
 
-// Backward compat: a legacy config WITH top-level keys still serves. Present
-// keys win over backfill — the read surface answers exactly as it did before
-// this change.
+// Backward compat: a legacy config WITH top-level keys still serves.
 test "old_format_config_still_boots" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -308,13 +285,9 @@ test "old_format_config_still_boots" {
     });
 }
 
-// ============================================================================
 // Test 4: PUT live-reload succeeds on a profile-only config
-// ============================================================================
 
-// The PUT handler live-reloads LlmConfig from disk after saving. On a
-// profile-only config the reload must SUCCEED (backfill provides the
-// credentials validate() requires) — no degraded error body.
+// The PUT handler live-reloads LlmConfig from disk after saving.
 test "put_live_reload_succeeds_on_profile_only_config" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -344,8 +317,6 @@ test "put_live_reload_succeeds_on_profile_only_config" {
         defer r.deinit();
 
         // Python: `body.get("error", "")` then `"failed" not in err.lower()`.
-        // A 200 body carrying "Config saved to disk but ... failed ..." is
-        // exactly the degraded case the test exists to catch.
         var doc = try r.json();
         defer doc.deinit();
         const err = doc.str("error") orelse "";
@@ -367,9 +338,7 @@ test "put_live_reload_succeeds_on_profile_only_config" {
     });
 }
 
-// The helpers are referenced so their bodies are type-checked; an
-// unreferenced function is never analysed, which is where a stdlib rename
-// would hide.
+// The helpers are referenced so their bodies are type-checked; an unreferenced function is never analysed, which is where a stdlib rename would hide.
 comptime {
     _ = bootSeeded;
     _ = readDiskConfig;

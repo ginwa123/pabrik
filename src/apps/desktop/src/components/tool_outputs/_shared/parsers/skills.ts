@@ -7,8 +7,7 @@ import {
   unwrapDataRecord,
 } from './internal'
 
-/** The name a skill tool acted on. `skill_name` is the canonical field on every skill tool payload;
- * `name` is the echo of what was requested and is absent from some rows. */
+/** The name a skill tool acted on. */
 function skillNameField(o: Record<string, unknown>): string {
   const primary = strOrNullField(o, 'skill_name')
   if (primary !== null && primary.trim() !== '') return primary
@@ -72,8 +71,7 @@ export function parseRemoveSkill(data: unknown): ParsedRemoveSkill {
   }
 }
 
-/** One row of a `search_skills` page. Identity is the name ALONE: the page is one workspace's
- * skills, so there is no tier to tag and no path to hand back. */
+/** One row of a `search_skills` page. */
 export interface SkillSearchRow {
   name: string
   description: string

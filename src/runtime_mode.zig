@@ -1,20 +1,14 @@
-//! Which execution substrate this process uses. `--saas` puts every workspace
-//! in a microVM and is Linux-only; without the flag the host runtime is used.
-//! A SaaS process must never fall back to host execution silently.
+//! Which execution substrate this process uses.
 
 const std = @import("std");
 const builtin = @import("builtin");
 
 pub const Mode = enum(u8) { local, saas };
 
-/// The VM backend is compiled in on Linux only, and even there `--saas` needs a
-/// reachable `pabrik-vmd`: without a manager the process could start and then
-/// have to run tenant commands on the host.
+/// The VM backend is compiled in on Linux only, and even there `--saas` needs a reachable `pabrik-vmd`: without a manager the process could start and then have to …
 pub const vm_backend_available = builtin.os.tag == .linux;
 
-/// The mode this process booted in. Process-wide by design (§1 of the plan),
-/// and `local` until the boot path decides otherwise, so anything that never
-/// sets it keeps today's behaviour exactly.
+/// The mode this process booted in.
 var current: std.atomic.Value(Mode) = .init(.local);
 
 pub fn setCurrent(mode: Mode) void {
@@ -25,9 +19,7 @@ pub fn currentMode() Mode {
     return current.load(.seq_cst);
 }
 
-/// The socket the daemon is reachable on. The boot path sets it once; null
-/// means no manager was ever configured, and a SaaS process with no manager
-/// cannot place a command anywhere but the host.
+/// The socket the daemon is reachable on.
 var manager_socket: ?[]const u8 = null;
 
 pub fn setManagerSocket(path: ?[]const u8) void {
@@ -38,8 +30,7 @@ pub fn socketPath() ?[]const u8 {
     return manager_socket;
 }
 
-/// `/run/user/<uid>/pabrik-vmd.sock` when the session has a runtime dir, else
-/// the shared `/tmp`. `PABRIK_VMD_SOCKET` overrides both.
+/// `/run/user/<uid>/pabrik-vmd.sock` when the session has a runtime dir, else the shared `/tmp`.
 pub fn defaultSocketPath(allocator: std.mem.Allocator, env: *const std.process.Environ.Map) ![]u8 {
     if (env.get("PABRIK_VMD_SOCKET")) |path| return allocator.dupe(u8, path);
     if (env.get("XDG_RUNTIME_DIR")) |dir| {
@@ -48,8 +39,7 @@ pub fn defaultSocketPath(allocator: std.mem.Allocator, env: *const std.process.E
     return allocator.dupe(u8, "/tmp/pabrik-vmd.sock");
 }
 
-/// Everything the decision depends on, injected so the tests need no /dev/kvm
-/// and no daemon.
+/// Everything the decision depends on, injected so the tests need no /dev/kvm and no daemon.
 pub const Probe = struct {
     os: std.Target.Os.Tag,
     kvm_readable: bool,

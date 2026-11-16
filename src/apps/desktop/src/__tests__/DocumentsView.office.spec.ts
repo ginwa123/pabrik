@@ -1,5 +1,4 @@
-/** The office branch of the document page: an `office` document opens the Univer
- *  editor instead of a textarea, and Save stores the envelope it hands back. */
+/** The office branch of the document page: an `office` document opens the Univer editor instead of a textarea, and Save stores the envelope it hands back. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { defineComponent, h, nextTick } from 'vue'
@@ -23,9 +22,7 @@ const { useDocumentsStore } = await import('../stores/documents')
 
 const SNAPSHOT = { sheets: { s1: { cellData: { '0': { '0': { v: 'saved' } } } } } }
 
-/** Stands in for the Univer editor: jsdom cannot evaluate the SDK, and the
- *  contract under test is the one the view relies on — `snapshot()` plus a
- *  `change` event. */
+/** Stands in for the Univer editor: jsdom cannot evaluate the SDK, and the contract under test is the one the view relies on — `snapshot()` plus a `change` event. */
 const OfficeEditorStub = defineComponent({
   name: 'OfficeDocumentEditor',
   props: { body: { type: String, default: '' } },
@@ -33,8 +30,7 @@ const OfficeEditorStub = defineComponent({
   setup(props, { expose }) {
     expose({
       snapshot: () => SNAPSHOT,
-      // The view stores the snapshot under the kind the editor mounted, so the
-      // stub reports the kind its body names — exactly like the real one.
+      // The view stores the snapshot under the kind the editor mounted, so the stub reports the kind its body names — exactly like the real one.
       kind: () => (JSON.parse(props.body || '{}').kind === 'doc' ? 'doc' : 'sheet'),
     })
     return () => h('div', { 'data-testid': 'office-editor-stub' })
@@ -107,8 +103,7 @@ describe('DocumentsView — office documents', () => {
     const call = updateDocument.mock.calls[0] as [string, string, Record<string, unknown>]
     expect(call[0]).toBe('ws_1')
     expect(call[1]).toBe('doc_1')
-    // The body is the envelope, not the bare snapshot: the kind has to survive
-    // the round trip or the next open mounts the wrong editor.
+    // The body is the envelope, not the bare snapshot: the kind has to survive the round trip or the next open mounts the wrong editor.
     expect(JSON.parse(String(call[2].content))).toEqual({ kind: 'sheet', snapshot: SNAPSHOT })
     expect('title' in call[2]).toBe(false)
     wrapper.unmount()
@@ -126,24 +121,20 @@ describe('DocumentsView — office documents', () => {
     await flushPromises()
 
     const patch = (updateDocument.mock.calls[0] as [string, string, Record<string, unknown>])[2]
-    // A rename must not rewrite the body: the editor's snapshot is not the
-    // user's intent here, and a whole-body PATCH would revert an agent edit.
+    // A rename must not rewrite the body: the editor's snapshot is not the user's intent here, and a whole-body PATCH would revert an agent edit.
     expect(Object.keys(patch)).toEqual(['title'])
     wrapper.unmount()
   })
 
   it('does not mount the editor until the body has loaded', async () => {
-    // The bug this guards: mounting the editor while the body is still empty
-    // opened a blank spreadsheet for every office document, and Save then wrote
-    // that workbook under the document's real kind.
+    // The bug this guards: mounting the editor while the body is still empty opened a blank spreadsheet for every office document, and Save then wrote that workbook …
     let release: (value: unknown) => void = () => {}
     const gate = new Promise((resolve) => {
       release = resolve
     })
     getDocument.mockReturnValue(gate)
 
-    // A list row: metadata only, no body. This is what the sidebar holds
-    // before the single-document read lands.
+    // A list row: metadata only, no body.
     const { content: _omit, ...listRow } = OFFICE_DOC
     useDocumentsStore().documents = [listRow]
 
@@ -179,8 +170,7 @@ describe('DocumentsView — office documents', () => {
     await flushPromises()
 
     const patch = (updateDocument.mock.calls[0] as [string, string, Record<string, unknown>])[2]
-    // A docx must stay a docx: the envelope's kind and the snapshot inside it
-    // come from the same editor.
+    // A docx must stay a docx: the envelope's kind and the snapshot inside it come from the same editor.
     expect(JSON.parse(String(patch.content)).kind).toBe('doc')
     wrapper.unmount()
   })
@@ -190,8 +180,7 @@ describe('DocumentsView — office documents', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    // The view still renders the editor; the editor owns the "unreadable body"
-    // message, so there is exactly one place that decides what a bad body means.
+    // The view still renders the editor; the editor owns the "unreadable body" message, so there is exactly one place that decides what a bad body means.
     const stub = wrapper.findComponent(OfficeEditorStub)
     expect(stub.exists()).toBe(true)
     expect(stub.props('body')).toBe('not json')

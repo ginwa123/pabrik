@@ -1,6 +1,4 @@
-// Workspace-level routines (Migration 084) wire contract. Zig port of
-// `tests/functional/workspace_routines_test.py` (same test names, same
-// order).
+// Workspace-level routines (Migration 084) wire contract.
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,9 +7,7 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-// ============================================================================
 // JSON accessors
-// ============================================================================
 
 fn rootObj(doc: *const harness.Json, ctx: []const u8) !std.json.ObjectMap {
     return switch (doc.value().*) {
@@ -51,8 +47,7 @@ fn boolAt(obj: std.json.ObjectMap, key: []const u8, ctx: []const u8) !bool {
     };
 }
 
-/// Python `r.json().get("error", "")` with a case-insensitive substring
-/// assertion: any ONE of `needles` must appear (both sides lowercased).
+/// Python `r.json().get("error", "")` with a case-insensitive substring assertion: any ONE of `needles` must appear (both sides lowercased).
 fn expectErrorContains(body: []const u8, needles: []const []const u8, ctx: []const u8) !void {
     var doc: harness.Json = .{ .parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -73,12 +68,9 @@ fn expectErrorContains(body: []const u8, needles: []const []const u8, ctx: []con
     return error.TestUnexpectedResult;
 }
 
-// ============================================================================
 // Owned-document plumbing
-// ============================================================================
 
-/// An owned response body PLUS its parse, so a helper can hand a
-/// document to its caller without the body dying underneath it.
+/// An owned response body PLUS its parse, so a helper can hand a document to its caller without the body dying underneath it.
 const OwnedDoc = struct {
     bytes: []u8,
     doc: harness.Json,
@@ -104,17 +96,13 @@ fn parseOwned(bytes: []u8) !OwnedDoc {
 }
 
 /// Issue a request and hand back an owned, self-contained document.
-/// `.alloc_always` is what makes this legal: no string in the returned tree
-/// borrows `r.body`, which is freed before the caller sees it.
 fn requestDoc(h: *Harness, method: harness.HttpMethod, path: []const u8, opts: harness.Harness.HttpOptions) !OwnedDoc {
     var r = try h.http(io, method, path, opts);
     defer r.deinit();
     return parseOwned(try gpa.dupe(u8, r.body));
 }
 
-// ============================================================================
 // Fixtures (mirror the Python module-level helpers)
-// ============================================================================
 
 /// Python `_create_workspace` → the new workspace's id. Owned.
 fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
@@ -136,9 +124,7 @@ fn createWorkspace(h: *Harness, name: []const u8) ![]u8 {
     return gpa.dupe(u8, id);
 }
 
-/// The per-suite project path every item is created under. Derived from the
-/// harness tempdir — a literal `/tmp/...` would be rejected on Windows, where
-/// `isAbsolute` is platform-relative.
+/// The per-suite project path every item is created under.
 fn projectPath(h: *Harness) ![]u8 {
     return harness.harnessPath(gpa, h.temp_dir, &.{"routine-test"});
 }
@@ -170,9 +156,7 @@ fn createdItemId(created: *const OwnedDoc, ctx: []const u8) ![]const u8 {
 
 /// The `routine` object of any routine response. Borrows `doc`.
 fn routineObj(doc: *const harness.Json, ctx: []const u8) !std.json.ObjectMap {
-    // `doc` was parsed with `.allocate = .alloc_always`, so rendering the
-    // whole tree here would print a copy rather than the wire bytes;
-    // the key absence is the diagnostic worth having.
+    // `doc` was parsed with `.allocate = .alloc_always`, so rendering the whole tree here would print a copy rather than the wire bytes; the key absence is the …
     return doc.object("routine") orelse {
         std.debug.print("{s}: response has no `routine` object\n", .{ctx});
         return error.TestUnexpectedResult;
@@ -260,9 +244,7 @@ fn createPlainTask(h: *Harness, ws_id: []const u8, item_id: []const u8, name: []
     return gpa.dupe(u8, id);
 }
 
-// ============================================================================
 // CREATE
-// ============================================================================
 
 test "create_routine_happy_path" {
     try harness.requirePabrikBin(io, gpa);
@@ -387,9 +369,7 @@ test "create_routine_without_schedule_is_manual_only" {
     try testing.expectEqualStrings("", try strAt(routine, "next_run_at", "manual routine"));
 }
 
-// ============================================================================
 // GET
-// ============================================================================
 
 test "get_bundle_returns_routine" {
     try harness.requirePabrikBin(io, gpa);
@@ -471,9 +451,7 @@ test "get_missing_item_returns_404" {
     defer r.deinit();
 }
 
-// ============================================================================
 // PATCH
-// ============================================================================
 
 test "patch_instruction_keeps_schedule" {
     try harness.requirePabrikBin(io, gpa);
@@ -662,9 +640,7 @@ test "patch_bad_cron_returns_400" {
     try expectErrorContains(r.body, &.{"cron"}, "bad cron patch");
 }
 
-// ============================================================================
 // RUN
-// ============================================================================
 
 test "run_fires_routine" {
     try harness.requirePabrikBin(io, gpa);
@@ -786,8 +762,7 @@ test "run_routine_under_wrong_item_returns_404" {
     defer second.deinit();
     const second_id = try createdItemId(&second, "second routine");
 
-    // The routine belongs to `first`, so running it under `second`
-    // must not resolve.
+    // The routine belongs to `first`, so running it under `second` must not resolve.
     const url = try std.fmt.allocPrint(
         gpa,
         "/api/workspaces/{s}/items/{s}/routines/{s}/run",
@@ -799,9 +774,7 @@ test "run_routine_under_wrong_item_returns_404" {
     defer r.deinit();
 }
 
-// ============================================================================
 // CASCADE
-// ============================================================================
 
 test "delete_item_cascades_routine" {
     try harness.requirePabrikBin(io, gpa);
@@ -851,9 +824,7 @@ test "manual_only_routine_never_auto_fires" {
     const path = try projectPath(&h);
     defer gpa.free(path);
 
-    // A schedule-less routine has NULL next_run_at so the scheduler's
-    // due-scan (`next_run_at <= now`) can never match it — only the
-    // manual run endpoint fires it.
+    // A schedule-less routine has NULL next_run_at so the scheduler's due-scan (`next_run_at <= now`) can never match it — only the manual run endpoint fires it.
     var created = try createRoutine(&h, ws_id, "manual", path, null, null);
     defer created.deinit();
     const item_id = try createdItemId(&created, "manual-only routine");
@@ -888,9 +859,7 @@ test "manual_only_routine_never_auto_fires" {
     try testing.expectEqual(true, doc.boolean("success").?);
 }
 
-// ============================================================================
 // DELETION PROOFS
-// ============================================================================
 
 test "old_global_routines_list_is_gone" {
     try harness.requirePabrikBin(io, gpa);
@@ -975,8 +944,7 @@ test "put_task_with_routine_fields_is_plain_update" {
     const task_id = try createPlainTask(&h, ws_id, folder_id, "plain task");
     defer gpa.free(task_id);
 
-    // Old clients sending schedule/initial_prompt get a 200 plain task
-    // update (unknown fields ignored) — the task stays standard.
+    // Old clients sending schedule/initial_prompt get a 200 plain task update (unknown fields ignored) — the task stays standard.
     const put_body = try std.json.Stringify.valueAlloc(gpa, .{
         .schedule = "*/5 * * * *",
         .initial_prompt = "stale client",
@@ -1017,9 +985,7 @@ test "put_task_with_routine_fields_is_plain_update" {
     }
 }
 
-// ============================================================================
 // Body-analysis barrier
-// ============================================================================
 
 comptime {
     _ = rootObj;

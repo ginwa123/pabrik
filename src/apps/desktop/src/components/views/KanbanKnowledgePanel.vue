@@ -68,9 +68,7 @@ const knowledgeEditRow = ref<AgentKanbanKnowledgeRow | null>(null)
 const promptDialogOpen = ref(false)
 const promptEditRow = ref<AgentKanbanSystemPromptRow | null>(null)
 
-// The reused Agent dialogs expect AgentKnowledgeRow / AgentSystemPromptRow
-// (agent_id-keyed). Adapt kanban rows by mapping kanban_id → agent_id —
-// the dialogs never send the id field back, so the mapping is lossless.
+// The reused Agent dialogs expect AgentKnowledgeRow / AgentSystemPromptRow (agent_id-keyed).
 const knowledgeEditRowAdapted = computed<AgentKnowledgeRow | null>(() => {
   const k = knowledgeEditRow.value
   if (!k) return null
@@ -105,9 +103,7 @@ const load = async () => {
       knowledges.value = data.knowledges
       systemPrompts.value = data.system_prompts
     } else {
-      // 404 "not configured" — expected state. The user bootstraps
-      // the config by enabling a tool on the Tools tab; Knowledge
-      // + System Prompt rows can only exist once that row exists.
+      // 404 "not configured" — expected state.
       config.value = null
       knowledges.value = []
       systemPrompts.value = []

@@ -9,8 +9,7 @@ const llm_history = pabrikcore.llm_history;
 
 pub const SessionListError = error{
     QueryFailed,
-    /// `buildSessionListJson` returns `![]u8` (its body uses
-    /// `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
+    /// `buildSessionListJson` returns `![]u8` (its body uses `std.json.Stringify.valueAlloc` which can fail with `OutOfMemory`).
     OutOfMemory,
 };
 
@@ -21,22 +20,17 @@ pub const SessionListInput = struct {
     limit: u32,
     cursor: ?[]const u8,
     cwd: ?[]const u8,
-    /// Raw `workspace_id` query param. null = param absent (global
-    /// list); present (including empty "") = scope to that workspace.
+    /// Raw `workspace_id` query param. null = param absent (global list); present (including empty "") = scope to that workspace.
     workspace_id: ?[]const u8,
     sort_field: llm_history.SessionSortField,
     sort_direction: llm_history.SessionSortDirection,
-    /// Server-derived owner id. Defaults to the system user so same-file
-    /// tests (and any caller without a request) keep the pre-isolation
-    /// behaviour; the handler always sets the real owner.
+    /// Server-derived owner id.
     owner: []const u8 = auth_common.system_user_id,
 };
 
 pub const SessionListResult = []const u8; // pre-serialized JSON
 
-// =====================================================================
 // Use case
-// =====================================================================
 
 /// Parse query params into the typed input.
 fn parseInput(query: anytype) !SessionListInput {
@@ -65,14 +59,11 @@ fn useCase(
     io: std.Io,
     input: SessionListInput,
 ) SessionListError!SessionListResult {
-    // Workspace scope: resolve `workspace_id` into the concrete session-id
-    // set (task-linked ∪ cwd-matched).
+    // Workspace scope: resolve `workspace_id` into the concrete session-id set (task-linked ∪ cwd-matched).
     var scoped_ids: ?[][]u8 = null;
     defer if (scoped_ids) |ids| pabrikcore.workspace_scope.freeSessionIds(allocator, ids);
 
-    // Const view of the same ids ([][]u8 does not coerce to
-    // []const []const u8 element-wise); pointer-shares the id
-    // buffers owned by scoped_ids — no extra string copies.
+    // Const view of the same ids ([][]u8 does not coerce to []const []const u8 element-wise); pointer-shares the id buffers owned by scoped_ids — no extra string …
     var scope_view = std.ArrayList([]const u8).empty;
     defer scope_view.deinit(allocator);
 
@@ -102,9 +93,7 @@ fn useCase(
         allocator.free(result.sessions);
     }
 
-    // Sidebar git badge (mirrors the kanban tasks_list.zig badge): the branch
-    // of the row's worktree, else of its cwd. Memoised per request — a page
-    // repeats a handful of directories across dozens of rows.
+    // Sidebar git badge (mirrors the kanban tasks_list.zig badge): the branch of the row's worktree, else of its cwd.
     var branches = git_branch.Cache.init(allocator, io);
     defer branches.deinit();
 
@@ -118,8 +107,7 @@ fn useCase(
     // has_more is true iff we got the full page back.
     const has_more = result.sessions.len == @as(usize, input.limit);
 
-    // The cursor value is the last item's sort-field value
-    // (created_at or updated_at depending on sort_field).
+    // The cursor value is the last item's sort-field value (created_at or updated_at depending on sort_field).
     const cursor_value: ?[]const u8 = if (result.sessions.len > 0)
         switch (input.sort_field) {
             .updated_at => result.sessions[result.sessions.len - 1].updated_at,
@@ -137,9 +125,7 @@ fn useCase(
     );
 }
 
-// =====================================================================
 // Handler
-// =====================================================================
 
 pub fn sessionListHandler(
     ctx: gserverz.HttpContext,
@@ -152,9 +138,7 @@ pub fn sessionListHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    // Server-derived owner (cookie only, never a query param). Scopes the
-    // list so B never sees A's chats; with --auth off the system user sees
-    // everything, by decision 2026-09-25.
+    // Server-derived owner (cookie only, never a query param).
     const owner = auth_common.resolveRequestUserId(allocator, sqlite_db, di.auth_enabled, req.headers) catch {
         return res.jsonResponse(.{
             .status_code = 500,
@@ -164,8 +148,7 @@ pub fn sessionListHandler(
     defer allocator.free(owner);
 
     var input = parseInput(req.query) catch |err| {
-        // Today `parseInput` never returns an error (parseInt with catch
-        // defaults; enumFromString with catch defaults).
+        // Today `parseInput` never returns an error (parseInt with catch defaults; enumFromString with catch defaults).
         return res.jsonResponse(.{
             .status_code = 400,
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = @errorName(err) }),
@@ -192,9 +175,7 @@ pub fn sessionListHandler(
     return res.jsonResponse(.{ .status_code = 200, .data = response });
 }
 
-// ===================================================================== Tests
-// — workspace-scoped list end-to-end through the useCase
-// ===================================================================== The
+// ===================================================================== Tests — workspace-scoped list end-to-end through the useCase …
 
 const testing = std.testing;
 
@@ -212,8 +193,7 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // Minimal schema: the columns the session-list SELECT reads plus
-    // the workspace tables the scope resolver joins on.
+    // Minimal schema: the columns the session-list SELECT reads plus the workspace tables the scope resolver joins on.
     try db.exec(alloc,
         \\CREATE TABLE sessions (
         \\  id TEXT PRIMARY KEY,
@@ -252,9 +232,7 @@ fn setupDb() !TestCtx {
         \\)
     , &.{});
 
-    // Workspace A: item i_a (/proj/a) with task-linked sessions
-    // task_a1 + task_a2, plus a plain chat cwd-matched under the
-    // item path. Workspace B: item i_b (/proj/b) with task_b1.
+    // Workspace A: item i_a (/proj/a) with task-linked sessions task_a1 + task_a2, plus a plain chat cwd-matched under the item path.
     try db.exec(alloc,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position)
         \\VALUES ('i_a', 'A', 'kanban', 'Kanban A', '/proj/a', 1),
@@ -311,9 +289,7 @@ test "useCase: workspace_id=A returns exactly task-linked + cwd-matched sessions
 }
 
 test "useCase: each row carries the project it belongs to, and is empty when it belongs to none" {
-    // Why this exists: `workspace_id` is resolved down to a set of *task ids*
-    // and the project is then thrown away, so a client holding this list
-    // cannot tell which project a session came from.
+    // Why this exists: `workspace_id` is resolved down to a set of *task ids* and the project is then thrown away, so a client holding this list cannot tell which …
     var ctx = try setupDb();
     defer teardown(&ctx);
 
@@ -336,9 +312,7 @@ test "useCase: each row carries the project it belongs to, and is empty when it 
             try testing.expectEqualStrings("i_a", project);
             saw_task_a1 = true;
         } else if (std.mem.eql(u8, id, "plain_a")) {
-            // A plain chat under the same cwd, in no project at all. It must be
-            // "" and not "i_a": a client that lights a spinner on the wrong
-            // project is worse than one that lights none.
+            // A plain chat under the same cwd, in no project at all.
             try testing.expectEqualStrings("", project);
             saw_plain_a = true;
         }
@@ -346,8 +320,7 @@ test "useCase: each row carries the project it belongs to, and is empty when it 
     try testing.expect(saw_task_a1);
     try testing.expect(saw_plain_a);
 
-    // Workspace B's session reports B's project — the field tracks the row's
-    // own project, not the scope it was listed under.
+    // Workspace B's session reports B's project — the field tracks the row's own project, not the scope it was listed under.
     const json_b = try runUseCase(&ctx, "B");
     defer testing.allocator.free(json_b);
     try testing.expect(std.mem.indexOf(u8, json_b, "\"workspace_item_id\":\"i_b\"") != null);
@@ -376,8 +349,6 @@ test "useCase: workspace scoping is fail-closed and param-absent stays global" {
     }
 
     // Empty workspace_id (param present but "") → fail closed too.
-    // Guards the `IN ()` / empty-bind bug classes: the resolver
-    // returns an empty set, the SQL must stay valid with 0 rows.
     {
         const json = try runUseCase(&ctx, "");
         defer testing.allocator.free(json);
@@ -397,16 +368,13 @@ test "useCase: workspace scoping is fail-closed and param-absent stays global" {
     }
 }
 
-// =====================================================================
 // Git branch resolution (sidebar git badge, mirrors tasks_list.zig)
-// =====================================================================
 
 test "useCase: session list wire carries git_worktree_cwd + git_branch (sidebar badge)" {
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // Bind a worktree path to one session; the wire must carry it
-    // through even though /proj/a is not a git repo (branch "").
+    // Bind a worktree path to one session; the wire must carry it through even though /proj/a is not a git repo (branch "").
     try ctx.db.exec(testing.allocator, "UPDATE sessions SET git_worktree_cwd = '/tmp/wt-1' WHERE id = 'task_a1'", &.{});
 
     const json = try runUseCase(&ctx, "A");

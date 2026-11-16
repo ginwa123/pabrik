@@ -16,8 +16,7 @@ const handshake_timeout_ms: i64 = 3_000;
 /// How long a pushed stage event may take to arrive after the POST returns.
 const push_timeout_ms: i64 = 5_000;
 
-/// Transfer buffer for the response body reader. NOT `&.{}` — see
-/// background_process_sse_test.zig for why an empty slice livelocks.
+/// Transfer buffer for the response body reader.
 const transfer_buffer_len = 8 * 1024;
 
 fn nowMs() i64 {
@@ -65,9 +64,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     const s = try gpa.create(SseStream);
     errdefer gpa.destroy(s);
 
-    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the
-    // struct's field default initializers. `s.* = .{...}` applies them all
-    // in one shot; `req` is genuinely assigned by `request()` below.
+    // `gpa.create` returns UNINITIALIZED memory — it does NOT run the struct's field default initializers.
     s.* = .{ .client = .{ .allocator = gpa, .io = io }, .req = undefined };
 
     const url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/api/events?channels={s}", .{ port, channels });
@@ -106,8 +103,7 @@ fn openSse(port: u16, channels: []const u8) !*SseStream {
     return s;
 }
 
-/// Read SSE frames from `s` until `stop` is set, the stream ends, or an
-/// error occurs. Runs on its own thread.
+/// Read SSE frames from `s` until `stop` is set, the stream ends, or an error occurs.
 fn readEvents(s: *SseStream) void {
     defer s.done.store(true, .release);
 
@@ -123,9 +119,7 @@ fn readEvents(s: *SseStream) void {
     }
 
     while (!s.stop.load(.acquire)) {
-        // `takeDelimiter` — NOT `takeDelimiterExclusive`. The Exclusive
-        // variant leaves the `\n` in the buffer, so the next call finds a
-        // delimiter at position 0 and returns a ZERO-LENGTH slice, forever.
+        // `takeDelimiter` — NOT `takeDelimiterExclusive`.
         const raw_line_opt = reader.takeDelimiter('\n') catch |err| {
             const msg = switch (err) {
                 error.ReadFailed => "read failed",
@@ -187,13 +181,11 @@ fn releaseReader(s: *SseStream) void {
     s.req.connection.?.stream_reader.stream.shutdown(io, .recv) catch {};
 }
 
-/// Wait until an event named `want` is in `s.events`, or the deadline
-/// passes. Returns true iff the event was seen.
+/// Wait until an event named `want` is in `s.events`, or the deadline passes.
 fn waitForEvent(s: *SseStream, want: []const u8, timeout_ms: i64) bool {
     const deadline = nowMs() + timeout_ms;
     while (true) {
-        // Snapshot under the lock, then RELEASE it before sleeping —
-        // holding the mutex across `Io.sleep` starves the reader.
+        // Snapshot under the lock, then RELEASE it before sleeping — holding the mutex across `Io.sleep` starves the reader.
         s.mutex.lockUncancelable(io);
         const found = blk: {
             for (s.events.items) |e| {
@@ -235,9 +227,7 @@ fn seenNames(s: *SseStream) []u8 {
     };
 }
 
-// ============================================================================
 // Fixture
-// ============================================================================
 
 fn git(cwd: []const u8, args: []const []const u8) !void {
     var full: std.ArrayList([]const u8) = .empty;
@@ -273,8 +263,7 @@ fn writeFileAt(dir: std.Io.Dir, name: []const u8, contents: []const u8) !void {
     try f.writeStreamingAll(io, contents);
 }
 
-/// Build `stage-proj`: one commit, then one MODIFIED (unstaged) file and one
-/// UNTRACKED file — the exact rows the `+` button sits on.
+/// Build `stage-proj`: one commit, then one MODIFIED (unstaged) file and one UNTRACKED file — the exact rows the `+` button sits on.
 fn buildStageRepo(scratch: []const u8) ![]u8 {
     const repo = try std.fs.path.join(gpa, &.{ scratch, "stage-proj" });
     errdefer gpa.free(repo);
@@ -300,9 +289,7 @@ fn buildStageRepo(scratch: []const u8) ![]u8 {
     return repo;
 }
 
-/// Boot a harness plus the fixture repo, with both cleaned up on the way
-/// out. DEFER ORDER IS LIFO AND LOADS-BEARING: `free(scratch)` is
-/// registered BEFORE `cleanupExtraDir(scratch)`.
+/// Boot a harness plus the fixture repo, with both cleaned up on the way out.
 fn bootWithRepo(h: *Harness, scratch: *[]u8, repo: *[]u8) !void {
     try harness.requirePabrikBin(io, gpa);
     h.* = try Harness.boot(io, gpa, .{});
@@ -335,9 +322,7 @@ fn postStage(
     return h.http(io, .POST, url, .{ .expect = expect, .timeout_s = 20.0 });
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 // GET /api/events?channels=git_file_stage returns 200 SSE + connected.
 test "git_file_stage_channel_handshake" {
@@ -377,8 +362,7 @@ test "git_file_stage_channel_handshake" {
     }
 }
 
-// POST /api/git/stage pushes `event: git_file_staged` with the path, the
-// cwd and `failed: false` — the payload the panel's row move reads.
+// POST /api/git/stage pushes `event: git_file_staged` with the path, the cwd and `failed: false` — the payload the panel's row move reads.
 test "stage_pushes_git_file_staged_event" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;
@@ -391,8 +375,7 @@ test "stage_pushes_git_file_staged_event" {
         h.deinit(io) catch {};
     }
 
-    // Subscribe BEFORE the POST: the emit is synchronous with the handler,
-    // so a stream opened afterwards would miss the frame entirely.
+    // Subscribe BEFORE the POST: the emit is synchronous with the handler, so a stream opened afterwards would miss the frame entirely.
     const s = try openSse(h.port, "git_file_stage");
     defer s.deinit();
     const reader = try std.Thread.spawn(.{}, readEvents, .{s});
@@ -415,9 +398,7 @@ test "stage_pushes_git_file_staged_event" {
     }
 
     const data = dataForEvent(s, "git_file_staged") orelse return error.NoPayload;
-    // Arena, not `gpa`: `parseFromSliceLeaky` deliberately does not free its
-    // allocations, and `testing.allocator` reports every one of them as a
-    // leak. The arena is dropped wholesale at the end of the test.
+    // Arena, not `gpa`: `parseFromSliceLeaky` deliberately does not free its allocations, and `testing.allocator` reports every one of them as a leak.
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena.allocator(), data, .{}) catch return error.BadPayload;
@@ -428,8 +409,7 @@ test "stage_pushes_git_file_staged_event" {
     try testing.expectEqualStrings("staged", obj.get("action").?.string);
     try testing.expectEqualStrings("tracked.txt", obj.get("path").?.string);
     try testing.expectEqualStrings(repo, obj.get("cwd").?.string);
-    // A successful `git add` must report `failed: false` — the panel only
-    // moves a row when this is false.
+    // A successful `git add` must report `failed: false` — the panel only moves a row when this is false.
     try testing.expect(!obj.get("failed").?.bool);
 }
 
@@ -486,8 +466,7 @@ test "unstage_pushes_git_file_unstaged_event" {
     try testing.expect(!obj.get("failed").?.bool);
 }
 
-// A stage request for a path git refuses still answers 200 and pushes an
-// event carrying `failed: true` — the panel must NOT move that row.
+// A stage request for a path git refuses still answers 200 and pushes an event carrying `failed: true` — the panel must NOT move that row.
 test "failed_stage_pushes_failed_true" {
     var h: Harness = undefined;
     var scratch: []u8 = undefined;
@@ -506,9 +485,7 @@ test "failed_stage_pushes_failed_true" {
     defer reader.join();
     try testing.expect(waitForEvent(s, "connected", handshake_timeout_ms));
 
-    // A path that does not exist: `git add` exits non-zero, so the handler
-    // records it as failed. The HTTP response is still 200 (the batch
-    // contract reports per-file failures in the body, not the status).
+    // A path that does not exist: `git add` exits non-zero, so the handler records it as failed.
     {
         var r = try postStage(&h, "stage", repo, "does-not-exist.txt", &.{200});
         defer r.deinit();
@@ -525,9 +502,7 @@ test "failed_stage_pushes_failed_true" {
     }
 
     const data = dataForEvent(s, "git_file_staged") orelse return error.NoPayload;
-    // Arena, not `gpa`: `parseFromSliceLeaky` deliberately does not free its
-    // allocations, and `testing.allocator` reports every one of them as a
-    // leak. The arena is dropped wholesale at the end of the test.
+    // Arena, not `gpa`: `parseFromSliceLeaky` deliberately does not free its allocations, and `testing.allocator` reports every one of them as a leak.
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena.allocator(), data, .{}) catch return error.BadPayload;

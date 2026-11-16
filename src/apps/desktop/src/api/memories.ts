@@ -31,9 +31,7 @@ export async function getMemoryDetail(name: string): Promise<MemoryDetailRespons
   try {
     return await apiFetch<MemoryDetailResponse>(`/memories/${encodeURIComponent(name)}`)
   } catch (err) {
-    // Preserve the "404 = not found" semantics — the caller uses the returned shape to decide
-    // whether to show a "create new memory" prompt vs. an error toast. apiFetch surfaces 404 as
-    // ApiError, so we translate it back into the original { memory: null, error_message } shape.
+    // Preserve the "404 = not found" semantics — the caller uses the returned shape to decide whether to show a "create new memory" prompt vs. an error toast. …
     if (err instanceof ApiError && err.status === 404) {
       return { memory: null, error_message: 'Memory not found' }
     }
@@ -62,8 +60,6 @@ export async function deleteMemory(name: string): Promise<MemoryDeleteResponse> 
 }
 
 // Local Memories API (per-cwd memories at `<cwd>/.pabrik/memories/`).
-/** Build the `cwd` query string for a local-memory request.
- * Returns the `?cwd=...` suffix, or `''` if `cwd` is empty. */
 function cwdQuery(cwd?: string): string {
   if (!cwd) return ''
   const encoded = encodeURIComponent(cwd)
@@ -83,9 +79,7 @@ export async function getLocalMemoryDetail(
       `/local-memories/${encodeURIComponent(name)}${cwdQuery(cwd)}`,
     )
   } catch (err) {
-    // Preserve the "404 = not found" semantics — the caller uses the returned shape to decide
-    // whether to show a "create new memory" prompt vs. an error toast. apiFetch surfaces 404 as
-    // ApiError, so we translate it back into the original { memory: null, error_message } shape.
+    // Preserve the "404 = not found" semantics — the caller uses the returned shape to decide whether to show a "create new memory" prompt vs. an error toast. …
     if (err instanceof ApiError && err.status === 404) {
       return { memory: null, error_message: 'Memory not found' }
     }
