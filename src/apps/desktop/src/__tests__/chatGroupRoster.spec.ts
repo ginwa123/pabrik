@@ -249,6 +249,87 @@ describe('ChatGroupRoster', () => {
     expect(wrapper.emitted('make-lead')).toEqual([['deepseek auto']])
   })
 
+  it("lists the chat's own agent once when it also joined the roster", async () => {
+    const wrapper = mountRoster({
+      members: [
+        { name: 'Simple Engineer', role: 'worker' },
+        { name: 'deepseek auto', role: 'lead' },
+      ] as GroupMember[],
+      lead: 'deepseek auto',
+      ownAgent: 'deepseek auto',
+      agents: [{ name: 'Simple Engineer' }, { name: 'deepseek auto' }, { name: 'BEAM' }],
+    })
+
+    await wrapper.get('[data-testid="chat-group-roster-toggle"]').trigger('click')
+
+    const rows = wrapper.findAll(
+      '[data-testid="chat-group-member-deepseek auto"], [data-testid="chat-group-own-agent"]',
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.get('[data-testid="chat-group-own-agent-badge"]').text()).toBe('this chat')
+    expect(rows[0]?.get('[data-testid="chat-group-lead-badge"]').text()).toBe('lead')
+  })
+
+  it("does not offer the chat's own agent for adding while the panel already lists it", async () => {
+    const wrapper = mountRoster({
+      members: [],
+      lead: '',
+      isGroup: false,
+      ownAgent: 'deepseek auto',
+      agents: [{ name: 'deepseek auto' }, { name: 'BEAM' }],
+    })
+
+    await wrapper.get('[data-testid="chat-group-roster-toggle"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="chat-group-add-deepseek auto"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="chat-group-add-BEAM"]').exists()).toBe(true)
+  })
+
+  it("a member that also owns the chat keeps the roster's actions", async () => {
+    const wrapper = mountRoster({
+      members: [
+        { name: 'Simple Engineer', role: 'lead' },
+        { name: 'deepseek auto', role: 'worker' },
+      ] as GroupMember[],
+      lead: 'Simple Engineer',
+      ownAgent: 'deepseek auto',
+    })
+
+    await wrapper.get('[data-testid="chat-group-roster-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="chat-group-make-lead-deepseek auto"]').trigger('click')
+    await wrapper.get('[data-testid="chat-group-remove-deepseek auto"]').trigger('click')
+
+    expect(wrapper.emitted('make-lead')).toEqual([['deepseek auto']])
+    expect(wrapper.emitted('remove')).toEqual([['deepseek auto']])
+  })
+
+  it('stops listening to the document when the panel goes away', () => {
+    const live = new Set<EventListener>()
+    const add = document.addEventListener.bind(document)
+    const remove = document.removeEventListener.bind(document)
+    const addSpy = vi
+      .spyOn(document, 'addEventListener')
+      .mockImplementation((type: string, listener: EventListenerOrEventListenerObject, opts?) => {
+        if (type === 'click') live.add(listener as EventListener)
+        add(type, listener, opts)
+      })
+    const removeSpy = vi
+      .spyOn(document, 'removeEventListener')
+      .mockImplementation((type: string, listener: EventListenerOrEventListenerObject, opts?) => {
+        if (type === 'click') live.delete(listener as EventListener)
+        remove(type, listener, opts)
+      })
+
+    const wrapper = mountRoster()
+    expect(live.size).toBe(1)
+
+    wrapper.unmount()
+
+    expect(live.size).toBe(0)
+    addSpy.mockRestore()
+    removeSpy.mockRestore()
+  })
+
   it('an empty chat says how to start one', async () => {
     const wrapper = mountRoster({ members: [], lead: '', isGroup: false })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { GroupMember } from '../../../api'
 
 const props = defineProps<{
@@ -9,8 +9,6 @@ const props = defineProps<{
   isBusy: boolean
   error: string | null
   agents: Array<{ name: string }>
-  /** The agent this chat answers as when no member is routed: the composer's
-   * cascade. The panel's own copy promises it, so it has to be named. */
   ownAgent: string
 }>()
 
@@ -20,12 +18,33 @@ const emit = defineEmits<{
   'make-lead': [agent: string]
 }>()
 
+interface RosterRow {
+  name: string
+  isOwn: boolean
+  isLead: boolean
+  isMember: boolean
+}
+
 const open = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 
+const rows = computed<RosterRow[]>(() => {
+  const own = props.ownAgent.trim()
+  if (props.members.length === 0) {
+    return own.length > 0 ? [{ name: own, isOwn: true, isLead: false, isMember: false }] : []
+  }
+  return props.members.map((m) => ({
+    name: m.name,
+    isOwn: own.length > 0 && m.name === own,
+    isLead: m.name === props.lead,
+    isMember: true,
+  }))
+})
+
 const addable = computed(() => {
+  const listed = new Set(rows.value.filter((r) => !r.isMember).map((r) => r.name))
   const taken = new Set(props.members.map((m) => m.name))
-  return props.agents.filter((a) => !taken.has(a.name))
+  return props.agents.filter((a) => !taken.has(a.name) && !listed.has(a.name))
 })
 
 const toggle = (): void => {
@@ -37,6 +56,7 @@ const closeOnOutsideClick = (e: MouseEvent): void => {
 }
 
 onMounted(() => document.addEventListener('click', closeOnOutsideClick))
+onBeforeUnmount(() => document.removeEventListener('click', closeOnOutsideClick))
 </script>
 
 <template>
@@ -69,19 +89,53 @@ onMounted(() => document.addEventListener('click', closeOnOutsideClick))
       </p>
 
       <div
+        v-for="row in rows"
+        :key="row.name"
         class="px-2 py-1 rounded flex items-center gap-2"
-        data-testid="chat-group-own-agent"
+        :data-testid="row.isMember ? `chat-group-member-${row.name}` : 'chat-group-own-agent'"
       >
         <span class="truncate text-dense font-mono" style="color: var(--semantic-text)">
-          {{ ownAgent }}
+          {{ row.name }}
         </span>
         <span
+          v-if="row.isOwn"
           class="text-micro px-1 rounded"
           style="color: var(--color-bg); background-color: var(--color-violet)"
           data-testid="chat-group-own-agent-badge"
         >
           this chat
         </span>
+        <span
+          v-if="row.isLead"
+          class="text-micro px-1 rounded"
+          style="color: var(--color-bg); background-color: var(--color-violet)"
+          data-testid="chat-group-lead-badge"
+        >
+          lead
+        </span>
+        <div v-if="row.isMember" class="ml-auto flex items-center gap-2 shrink-0">
+          <button
+            v-if="!row.isLead"
+            type="button"
+            class="text-micro hover:opacity-70"
+            style="color: var(--semantic-text-dim)"
+            :disabled="isBusy"
+            :data-testid="`chat-group-make-lead-${row.name}`"
+            @click="emit('make-lead', row.name)"
+          >
+            Make lead
+          </button>
+          <button
+            type="button"
+            class="text-micro hover:opacity-70"
+            style="color: var(--color-red)"
+            :disabled="isBusy"
+            :data-testid="`chat-group-remove-${row.name}`"
+            @click="emit('remove', row.name)"
+          >
+            Remove
+          </button>
+        </div>
       </div>
 
       <p
@@ -92,47 +146,6 @@ onMounted(() => document.addEventListener('click', closeOnOutsideClick))
       >
         Add an agent and it answers here, beside the chat's own agent.
       </p>
-
-      <div
-        v-for="member in members"
-        :key="member.name"
-        class="px-2 py-1 rounded flex items-center gap-2"
-        :data-testid="`chat-group-member-${member.name}`"
-      >
-        <span class="truncate text-dense font-mono" style="color: var(--semantic-text)">
-          {{ member.name }}
-        </span>
-        <span
-          v-if="member.name === lead"
-          class="text-micro px-1 rounded"
-          style="color: var(--color-bg); background-color: var(--color-violet)"
-          data-testid="chat-group-lead-badge"
-        >
-          lead
-        </span>
-        <button
-          v-if="member.name !== lead"
-          type="button"
-          class="ml-auto text-micro hover:opacity-70"
-          style="color: var(--semantic-text-dim)"
-          :disabled="isBusy"
-          :data-testid="`chat-group-make-lead-${member.name}`"
-          @click="emit('make-lead', member.name)"
-        >
-          Make lead
-        </button>
-        <button
-          type="button"
-          class="text-micro hover:opacity-70"
-          :class="member.name === lead ? 'ml-auto' : ''"
-          style="color: var(--color-red)"
-          :disabled="isBusy"
-          :data-testid="`chat-group-remove-${member.name}`"
-          @click="emit('remove', member.name)"
-        >
-          Remove
-        </button>
-      </div>
 
       <div
         v-if="addable.length > 0"
