@@ -19,3 +19,5 @@ overrides:
   postcss: 8.5.18
   source-map-js: 1.2.2
   undici: 7.30.1
+  # SEC-27: patch brace-expansion DoS advisories (same-major upgrade).
+  brace-expansion: 5.0.11
