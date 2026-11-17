@@ -7,3 +7,8 @@
 # be told it may run, or every `pnpm install` in CI fails.
 allowBuilds:
   protobufjs: true
+
+# SEC-25: pin shell-quote to a patched release (critical newline-escape advisory
+# and a high DoS advisory); npm-run-all2 pulls the vulnerable 1.8.3 transitively.
+overrides:
+  shell-quote: 1.11.0

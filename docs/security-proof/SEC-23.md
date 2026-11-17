@@ -2,9 +2,8 @@
 
 Severity: Medium. File: `src/http_handlers/workspace_items_create.zig:63`.
 
-A client-supplied workspace item `path` was stored verbatim. Registering `/`, a
-drive root, `~...`, or a path with `..` could hand every session under that item
-an over-broad sandbox root.
+A client-supplied item `path` was stored verbatim; `/`, a drive root, `~...`,
+or a path with `..` could hand sessions under that item an over-broad sandbox root.
 
 ## RED (before fix)
 
@@ -26,9 +25,8 @@ zig build test -Dtest-shards=1 --summary all
 +- test mod_tests (all 6555) 6148 pass, 4 skip (6152 total) 0 fail
 ```
 
-Fix: `validateItemPath` rejects empty, filesystem/drive roots, `~` home refs and
-any `..` segment; `useCase` returns `error.InvalidPath` (HTTP 400) for them.
-Normal absolute and relative project paths still pass.
+Fix: `validateItemPath` rejects empty, filesystem/drive roots, `~` refs and `..`
+segments; `useCase` returns `error.InvalidPath` (HTTP 400). Normal paths pass.
 
 ## Re-scan
 
