@@ -854,6 +854,61 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             .{ copy_session_id, loop_counter, retry_count, eff.model },
         );
 
+        // A chat pinned to an agent the user switched OFF says so, and stops: running the top-level config would be a different agent answering under the old one's name.
+        if (live_selected_profile_model.len > 0 and
+            config.getAgent(live_selected_profile_model) != null and
+            !config.agentEnabled(live_selected_profile_model))
+        {
+            const switched_off = std.fmt.allocPrint(allocator,
+                \\[Agent Pabrik System error] this chat runs "{s}", which is switched off.
+                \\Enable it in Settings → Agents, or pick another agent for this chat.
+                \\Nothing was sent to the model.
+            , .{live_selected_profile_model}) catch "agent switched off";
+            logger.errFmt(
+                "WORKFLOW: session_id={s} is pinned to the switched-off agent '{s}' — refusing to run",
+                .{ copy_session_id, live_selected_profile_model },
+            );
+            _ = try insertLLMHistories(.{
+                .allocator = allocator,
+                .io = io,
+                .db = db,
+                .logger = logger,
+                .event_bus = event_bus,
+                .is_emit_sse = true,
+                .is_skip_db = true,
+                // Routed to the frontend's AgentErrorCard, like every other workflow diagnostic.
+                .is_error = true,
+                .cwd = copy_cwd,
+                .entity = .{
+                    .id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}),
+                    .session_id = copy_session_id,
+                    .model = eff.model,
+                    .response_content = switched_off,
+                    .reasoning_content = null,
+                    .role = agent.Role.user.to_str(),
+                    .finish_reason = "null",
+                    .tool_calls_json = "",
+                    .tool_call_id = null,
+                    .agent = live_selected_profile_model,
+                    .loop_index = loop_counter,
+                    .temperature = 0,
+                    .is_thinking = false,
+                    .prompt_tokens = 0,
+                    .completion_tokens = 0,
+                    .total_tokens = 0,
+                    .parent_id = copy_parent_session_id,
+                    .parent_session_id = copy_parent_session_id,
+                    .is_input = true,
+                    .is_output = false,
+                    .image_urls = null,
+                    .created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}),
+                    .is_feed_to_llm = false,
+                },
+            });
+            end_reason = "agent_disabled";
+            break;
+        }
+
         // Cancellation, read in the iteration transaction above — BEFORE `touchCheckpointWorkers` resets the flag on the row.
         if (iter_state.is_cancelled) {
             end_reason = "cancelled";

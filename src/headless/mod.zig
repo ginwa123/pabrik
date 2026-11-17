@@ -16,6 +16,7 @@ pub const memories = @import("memories.zig");
 pub const workspace_items = @import("workspace_items.zig");
 pub const mcp_oauth = @import("mcp_oauth.zig");
 pub const compaction = @import("compaction.zig");
+pub const agents = @import("agents.zig");
 
 /// The subcommand to run, with its arguments already parsed.
 pub const Command = union(enum) {
@@ -44,6 +45,8 @@ pub const Command = union(enum) {
     mcp_add: args.McpAddArgs,
     /// Compact one session through the `compaction` agent tool's path.
     compaction: args.CompactionArgs,
+    /// The configured agents, and the one a call would actually use.
+    agents: args.AgentsArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -66,6 +69,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .mcp_oauth => |a| .{ .mcp_oauth = a },
         .mcp_add => |a| .{ .mcp_add = a },
         .compaction => |a| .{ .compaction = a },
+        .agents => |a| .{ .agents = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };

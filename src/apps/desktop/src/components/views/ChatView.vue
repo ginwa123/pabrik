@@ -203,6 +203,7 @@ const {
   collapsedPaths,
   diffMode,
   effectiveAgent,
+  blockedAgent,
   effectiveCwd,
   gitStatus,
   gitWorktreeCwd,
@@ -668,7 +669,9 @@ const compactSession = async () => {
                     data-testid="composer-agent-chip"
                     :title="agentChipTooltip"
                   >
-                    <span class="composer-agent-label">{{ effectiveAgent || 'Default' }}</span>
+                    <span class="composer-agent-label">{{
+                      effectiveAgent || (blockedAgent ? `${blockedAgent} (off)` : 'Default')
+                    }}</span>
                   </span>
                 </div>
                 <span class="composer-toolbar-divider" aria-hidden="true" />
