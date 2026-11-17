@@ -12,6 +12,8 @@ const mcp_oauth_store = @import("mcp_oauth_store.zig");
 const Io = std.Io;
 const gpa = testing.allocator;
 
+const test_sealing_key = [_]u8{0x2b} ** secrets_at_rest.KEY_LEN;
+
 const Stub = struct {
     threaded: std.Io.Threaded,
     io: Io,
@@ -222,11 +224,13 @@ fn handle(stub: *Stub, stream: Io.net.Stream) !void {
 const Ctx = struct {
     db: database.Db = .{},
     threaded: std.Io.Threaded,
+    previous_key: ?[secrets_at_rest.KEY_LEN]u8 = null,
 
     fn open() !Ctx {
         var threaded = std.Io.Threaded.init(gpa, .{});
         errdefer threaded.deinit();
-        var ctx = Ctx{ .threaded = threaded };
+        var ctx = Ctx{ .threaded = threaded, .previous_key = secrets_at_rest.getKey() };
+        secrets_at_rest.setKey(test_sealing_key);
         try test_db.openMemory(&ctx.db, ctx.threaded.io());
         try pabrikcore.migrations_mod.migration.Migration146AddMcpOAuth.up(&ctx.db, gpa);
         try ctx.db.exec(gpa,
@@ -253,6 +257,7 @@ const Ctx = struct {
     fn deinit(self: *Ctx) void {
         self.db.deinit();
         self.threaded.deinit();
+        secrets_at_rest.setKey(self.previous_key);
     }
 };
 
