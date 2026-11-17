@@ -75,9 +75,6 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     return enabledAgentNames.value.includes(name)
   }
 
-  /**
-   * The session's pinned agent when that agent is switched off: the chat cannot answer until the user enables it or picks another one.
-   */
   const blockedAgent = computed<string | null>(() => {
     const sel = selectedAgent.value
     if (!sel || !configLoaded.value) return null

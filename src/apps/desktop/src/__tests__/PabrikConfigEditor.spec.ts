@@ -48,6 +48,16 @@ const TOOLS_REGISTRY = [
   { name: 'set_git_worktree', description: 'Create a git worktree and bind it' },
 ]
 
+/** The slice of the saved config body the agent tests read back. */
+type SavedConfig = {
+  active_profile?: string
+  profiles?: Record<string, { enabled?: boolean }>
+}
+
+function lastSavedConfig(): SavedConfig | undefined {
+  return mockSave.mock.calls.at(-1)?.[0] as SavedConfig | undefined
+}
+
 describe('PabrikConfigEditor (orchestrator)', () => {
   beforeEach(() => {
     // PabrikSettings reads the tabs store for the "Browser-style tabs" preference (Settings → General), so it needs an active pinia.
@@ -703,9 +713,9 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await settleAutosave()
 
     expect(wrapper.find('[data-testid="active-pill"]').exists()).toBe(false)
-    const saved = mockSave.mock.calls.at(-1)![0] as Record<string, unknown>
-    expect(saved.active_profile).toBe('')
-    expect((saved.profiles as Record<string, Record<string, unknown>>).work!.enabled).toBe(false)
+    const saved = lastSavedConfig()
+    expect(saved?.active_profile).toBe('')
+    expect(saved?.profiles?.work?.enabled).toBe(false)
   })
 
   it('disabling an agent that is not the active one keeps the active pointer', async () => {
@@ -721,7 +731,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await settleAutosave()
 
     expect(wrapper.find('[data-testid="active-pill"]').text()).toBe('home')
-    expect((mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).active_profile).toBe('home')
+    expect(lastSavedConfig()?.active_profile).toBe('home')
   })
 
   it('shows no active agent when the stored pointer names a switched-off agent, and repairs the stored config', async () => {
@@ -739,7 +749,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     await flushPromises()
     await settleAutosave()
 
-    expect((mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).active_profile).toBe('')
+    expect(lastSavedConfig()?.active_profile).toBe('')
   })
 
   it('duplicate copies the whole agent under a "<name> copy" key', async () => {

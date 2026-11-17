@@ -309,10 +309,7 @@ function syncFromConfig() {
     enabled: p.enabled ?? true,
   }))
   activeAgent.value = c.active_profile ?? null
-  /**
-   * A stored pointer at a switched-off agent is not an active agent: show none, and record the clear so the next
-   * save overwrites the stale name instead of leaving the contradiction on disk.
-   */
+  // A stored pointer at a switched-off agent is not an active agent: show none, and record the clear so the next save overwrites the stale name.
   if (agentsList.value.some((a) => a.name === activeAgent.value && !a.enabled)) {
     activeAgent.value = null
     c.active_profile = ''
