@@ -1018,7 +1018,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         var group_speaker_buf: [160]u8 = undefined;
         var group_speaker: []const u8 = "";
         if (!copy_is_sub_agent) {
-            if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
+            if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id)) |speaker| {
                 var resolved = speaker;
                 defer resolved.deinit(allocator);
                 switch (resolved.decision) {
@@ -1500,7 +1500,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
 
                 // A group hands the turn on with no queued message: the row just written names who it addresses.
                 if (!copy_is_sub_agent and asked == null) {
-                    if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
+                    if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id)) |speaker| {
                         var resolved = speaker;
                         defer resolved.deinit(allocator);
                         switch (resolved.decision) {

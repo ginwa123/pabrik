@@ -69,12 +69,10 @@ fn roster(
 }
 
 fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8 {
-    const budget = if (a.budget == 0) session_group.default_hop_budget else a.budget;
-
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
 
-    const decided = try session_group.nextSpeaker(allocator, db, a.session_id, budget);
+    const decided = try session_group.nextSpeaker(allocator, db, a.session_id);
 
     try buf.appendSlice(allocator, "{\"session_id\":");
     try appendJsonString(allocator, &buf, a.session_id);
@@ -85,8 +83,6 @@ fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8
         var resolved = speaker;
         defer resolved.deinit(allocator);
 
-        const budget_text = try std.fmt.allocPrint(allocator, "{d}", .{budget});
-        defer allocator.free(budget_text);
         const hops_text = try std.fmt.allocPrint(allocator, "{d}", .{resolved.hops});
         defer allocator.free(hops_text);
 
@@ -94,8 +90,6 @@ fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8
         try appendJsonString(allocator, &buf, resolved.lead);
         try buf.appendSlice(allocator, ",\"hops\":");
         try buf.appendSlice(allocator, hops_text);
-        try buf.appendSlice(allocator, ",\"budget\":");
-        try buf.appendSlice(allocator, budget_text);
 
         switch (resolved.decision) {
             .speak => |name| {
@@ -167,6 +161,16 @@ fn setupDb() !TestCtx {
     , &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, name) VALUES ('s_1', 'room')", &.{});
     return .{ .db = db, .threaded = threaded };
+}
+
+fn insertHistoryRow(ctx: *TestCtx, id: []const u8, role: []const u8, agent: []const u8, at: i64) !void {
+    var stamp_buf: [24]u8 = undefined;
+    const stamp = try std.fmt.bufPrint(&stamp_buf, "{d}", .{at});
+    try ctx.db.exec(
+        testing.allocator,
+        "INSERT INTO llm_history (id, session_id, role, agent, response_content, created_at_nano) VALUES (?, 's_1', ?, ?, '', ?)",
+        &.{ id, role, agent, stamp },
+    );
 }
 
 fn join(ctx: *TestCtx, agent: []const u8, role: []const u8, position: u32) ![]u8 {
@@ -255,10 +259,9 @@ test "group next names the agent the router picked and the hops it counted" {
     try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"speak\"") != null);
     try testing.expect(std.mem.indexOf(u8, json, "\"agent\":\"Security Engineerr\"") != null);
     try testing.expect(std.mem.indexOf(u8, json, "\"hops\":1") != null);
-    try testing.expect(std.mem.indexOf(u8, json, "\"budget\":8") != null);
 }
 
-test "group next closes the turn when the budget is spent" {
+test "group next keeps handing the turn on past the old hop budget" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -275,11 +278,38 @@ test "group next closes the turn when the budget is spent" {
         \\       ('h3', 's_1', 'assistant', 'Security Engineerr', 'back to @engineer', 3)
     , &.{});
 
-    const json = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1", .budget = 2 });
+    const json = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1" });
     defer testing.allocator.free(json);
 
-    try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"close\"") != null);
-    try testing.expect(std.mem.indexOf(u8, json, "\"reason\":\"hop_budget\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"speak\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"agent\":\"Engineer\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "close") == null);
+}
+
+test "group next keeps one agent working past the hop budget" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const joined = try join(&ctx, "Engineer", "lead", 0);
+    testing.allocator.free(joined);
+
+    try insertHistoryRow(&ctx, "h0", "user", "Engineer", 1);
+    var iteration: u32 = 0;
+    var assistant_id_buf: [24]u8 = undefined;
+    var tool_id_buf: [24]u8 = undefined;
+    while (iteration < 10) : (iteration += 1) {
+        const at: i64 = @intCast(2 + iteration * 2);
+        try insertHistoryRow(&ctx, try std.fmt.bufPrint(&assistant_id_buf, "a{d}", .{iteration}), "assistant", "Engineer", at);
+        try insertHistoryRow(&ctx, try std.fmt.bufPrint(&tool_id_buf, "t{d}", .{iteration}), "tool", "Engineer", at + 1);
+    }
+
+    const json = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1" });
+    defer testing.allocator.free(json);
+
+    try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"speak\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"agent\":\"Engineer\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"hops\":1") != null);
 }
 
 test "group leave takes one member out and leaves the roster readable" {
