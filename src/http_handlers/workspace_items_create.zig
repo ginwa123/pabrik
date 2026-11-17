@@ -15,6 +15,7 @@ pub const WorkspaceItemsCreateError = error{
     EmptyName,
     MissingPath,
     PathNotString,
+    InvalidPath,
     DatabaseError,
 };
 
@@ -59,6 +60,7 @@ fn useCase(
     const path_val = root.get("path") orelse return error.MissingPath;
     if (path_val != .string) return error.PathNotString;
     const path = path_val.string;
+    if (validateItemPath(path) != null) return error.InvalidPath;
 
     var item_type: []const u8 = "folder";
     if (root.get("item_type")) |type_val| {
@@ -101,7 +103,7 @@ pub fn workspaceItemsCreateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             error.InvalidJson, error.MissingBody,
             error.MissingName, error.NameNotString,
             error.EmptyName,
-            error.MissingPath, error.PathNotString => 400,
+            error.MissingPath, error.PathNotString, error.InvalidPath => 400,
             error.DatabaseError, error.OutOfMemory => 500,
         };
         const message: []const u8 = switch (err) {
@@ -112,6 +114,7 @@ pub fn workspaceItemsCreateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             error.EmptyName => "name required",
             error.MissingPath => "path required",
             error.PathNotString => "path must be a string",
+            error.InvalidPath => "path must not be a root, home reference, or contain ..",
             error.DatabaseError => "Failed to create workspace item",
             error.OutOfMemory => "Out of memory",
         };
@@ -123,4 +126,45 @@ pub fn workspaceItemsCreateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
 
     const json_data = try std.json.Stringify.valueAlloc(allocator, result, .{});
     return res.jsonResponse(.{ .status_code = 201, .data = json_data });
+}
+
+/// Reject over-broad sandbox roots (SEC-23); null means acceptable.
+pub fn validateItemPath(path: []const u8) ?[]const u8 {
+    if (path.len == 0) return "path cannot be empty";
+    if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, "\\")) return "path must not be a filesystem root";
+    if (path.len == 2 and std.ascii.isAlphabetic(path[0]) and path[1] == ':') return "path must not be a drive root";
+    if (path.len == 3 and std.ascii.isAlphabetic(path[0]) and path[1] == ':' and
+        (path[2] == '\\' or path[2] == '/')) return "path must not be a drive root";
+    if (path[0] == '~') return "path must not be a home reference";
+    var it = std.mem.tokenizeAny(u8, path, "/\\");
+    while (it.next()) |seg| {
+        if (std.mem.eql(u8, seg, "..")) return "path must not contain ..";
+    }
+    return null;
+}
+
+const testing = std.testing;
+
+test "validateItemPath rejects a filesystem root" {
+    try testing.expect(validateItemPath("/") != null);
+}
+
+test "validateItemPath rejects a Windows drive root" {
+    try testing.expect(validateItemPath("C:\\") != null);
+}
+
+test "validateItemPath rejects parent traversal segments" {
+    try testing.expect(validateItemPath("/tmp/project/../../etc") != null);
+}
+
+test "validateItemPath rejects an unexpanded home reference" {
+    try testing.expect(validateItemPath("~/.ssh") != null);
+}
+
+test "validateItemPath accepts a normal absolute project path" {
+    try testing.expect(validateItemPath("/tmp/project") == null);
+}
+
+test "validateItemPath accepts a relative project path" {
+    try testing.expect(validateItemPath("src/app") == null);
 }
