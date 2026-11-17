@@ -27,3 +27,5 @@ overrides:
   # SEC-30: patch moderate advisories (same-major patch upgrades).
   '@humanfs/node': 0.16.8
   postcss-selector-parser: 7.1.6
+  # SEC-31: patch vitest advisories (same-major patch upgrade).
+  vitest: 4.1.12
