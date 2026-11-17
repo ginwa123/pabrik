@@ -24,3 +24,6 @@ overrides:
   # SEC-28: patch @vue/server-renderer XSS advisory (upgrade vue + renderer together).
   vue: 3.5.42
   '@vue/server-renderer': 3.5.42
+  # SEC-30: patch moderate advisories (same-major patch upgrades).
+  '@humanfs/node': 0.16.8
+  postcss-selector-parser: 7.1.6
