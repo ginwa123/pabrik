@@ -75,6 +75,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.pabrik.mobile.workspace.WorkspaceDataState
+import com.pabrik.mobile.workspace.WorkspaceDataViewModel
+import com.pabrik.mobile.workspace.WorkspaceSettingsScreen
+import com.pabrik.mobile.workspace.DocumentsScreen
+import com.pabrik.mobile.workspace.NotificationsScreen
+import com.pabrik.mobile.workspace.UserSettingsScreen
+import com.pabrik.mobile.workspace.ItemFeatureScreen
+import com.pabrik.mobile.workspace.FeatureSection
+import com.pabrik.mobile.workspace.FeatureRow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /** Every view in the app is a route, so each one survives a process restart and `adb shell am start -a android.intent.action.VIEW -d pabrik://…` lands on it … */
 object PabrikRoutes {
@@ -280,9 +290,18 @@ fun PabrikNavGraph(
     defaultServerBaseUrl: String = AuthConfig.BUILD_DEFAULT_BASE_URL,
     onChangeServer: (String) -> ServerChange = { ServerChange.Applied(serverBaseUrl) },
     onUseDefaultServer: () -> ServerChange = { ServerChange.Applied(defaultServerBaseUrl) },
+    workspaceDataViewModel: WorkspaceDataViewModel? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val openInspector: () -> Unit = { navController.navigate(PabrikRoutes.NETWORK) }
+
+    val collectedWorkspaceData by workspaceDataViewModel?.uiState?.collectAsStateWithLifecycle()
+        ?: remember { mutableStateOf(WorkspaceDataState()) }
+    val workspaceDataState: WorkspaceDataState = collectedWorkspaceData
+
+    val loadWorkspaceData: (String) -> Unit = { workspaceId ->
+        workspaceDataViewModel?.load(workspaceId)
+    }
 
     // The one create flow in the app, built here because the graph is the only thing both entry points can reach: the drawer's `+` and the project screen's `+`.
     val createTask = rememberCreateTaskController(onCreateTask)
@@ -501,6 +520,13 @@ fun PabrikNavGraph(
                     // The drawer's top-level New Chat.
                     isCreatingChat = homeState.creatingTaskInProjectId != null,
                     onNewChat = onNewChat,
+                    onOpenDocuments = {
+                        homeState.selectedWorkspaceId?.let {
+                            navController.navigate(PabrikRoutes.documents(it))
+                        }
+                    },
+                    onOpenSettings = { navController.navigate(PabrikRoutes.SETTINGS) },
+                    onOpenNotifications = { navController.navigate(PabrikRoutes.NOTIFICATIONS) },
                 )
             }
         }
@@ -727,6 +753,326 @@ fun PabrikNavGraph(
                 },
             )
         }
+
+        composable(
+            route = PabrikRoutes.SETTINGS,
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://settings" }),
+        ) {
+            UserSettingsScreen(
+                userEmail = authState.userEmail,
+                serverBaseUrl = serverBaseUrl,
+                onBack = goBack,
+            )
+        }
+
+        composable(
+            route = PabrikRoutes.WORKSPACE_SETTINGS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://workspace/{workspaceId}/settings" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            WorkspaceSettingsScreen(state = workspaceDataState, onBack = goBack)
+        }
+
+        composable(
+            route = PabrikRoutes.DOCUMENTS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://documents/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            DocumentsScreen(state = workspaceDataState, onBack = goBack)
+        }
+
+        composable(
+            route = PabrikRoutes.DOCUMENT,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+                navArgument(PabrikRoutes.ARG_DOCUMENT_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://doc/{workspaceId}/{documentId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            val documentId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_DOCUMENT_ID).orEmpty()
+            ItemFeatureScreen(
+                featureName = "Document",
+                workspaceId = workspaceId,
+                itemId = documentId,
+                sections = listOf(
+                    FeatureSection("Document", listOf(FeatureRow("ID", documentId))),
+                ),
+                onBack = goBack,
+            )
+        }
+
+        composable(
+            route = PabrikRoutes.NOTIFICATIONS,
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://notifications" }),
+        ) {
+            NotificationsScreen(notifications = emptyList(), onBack = goBack)
+        }
+
+        composable(
+            route = PabrikRoutes.KANBAN_SETTINGS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+                navArgument(PabrikRoutes.ARG_ITEM_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://kanban-settings/{workspaceId}/{itemId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            val itemId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_ITEM_ID).orEmpty()
+            ItemFeatureScreen(
+                featureName = "Kanban settings",
+                workspaceId = workspaceId,
+                itemId = itemId,
+                sections = listOf(
+                    FeatureSection("Overview", listOf(
+                        FeatureRow("Workspace", workspaceId),
+                        FeatureRow("Item", itemId),
+                    )),
+                ),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.AGENT,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+                navArgument(PabrikRoutes.ARG_ITEM_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://agent/{workspaceId}/{itemId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            val itemId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_ITEM_ID).orEmpty()
+            ItemFeatureScreen(
+                featureName = "Agent",
+                workspaceId = workspaceId,
+                itemId = itemId,
+                sections = listOf(
+                    FeatureSection("Overview", listOf(
+                        FeatureRow("Workspace", workspaceId),
+                        FeatureRow("Item", itemId),
+                    )),
+                ),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.DESIGN,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+                navArgument(PabrikRoutes.ARG_ITEM_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://design/{workspaceId}/{itemId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            val itemId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_ITEM_ID).orEmpty()
+            ItemFeatureScreen(
+                featureName = "Design",
+                workspaceId = workspaceId,
+                itemId = itemId,
+                sections = listOf(
+                    FeatureSection("Overview", listOf(
+                        FeatureRow("Workspace", workspaceId),
+                        FeatureRow("Item", itemId),
+                    )),
+                ),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.ROUTINE,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+                navArgument(PabrikRoutes.ARG_ITEM_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://routine/{workspaceId}/{itemId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            val itemId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_ITEM_ID).orEmpty()
+            ItemFeatureScreen(
+                featureName = "Routine",
+                workspaceId = workspaceId,
+                itemId = itemId,
+                sections = listOf(
+                    FeatureSection("Overview", listOf(
+                        FeatureRow("Workspace", workspaceId),
+                        FeatureRow("Item", itemId),
+                    )),
+                ),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.GIT,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+                navArgument(PabrikRoutes.ARG_ITEM_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://git/{workspaceId}/{itemId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            val itemId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_ITEM_ID).orEmpty()
+            ItemFeatureScreen(
+                featureName = "Git",
+                workspaceId = workspaceId,
+                itemId = itemId,
+                sections = listOf(
+                    FeatureSection("Overview", listOf(
+                        FeatureRow("Workspace", workspaceId),
+                        FeatureRow("Item", itemId),
+                    )),
+                ),
+                onBack = goBack,
+            )
+        }
+
+        composable(
+            route = PabrikRoutes.MEMORY,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://memory/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "Memory",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "Memory"),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.SECRETS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://secrets/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "Secrets",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "Secrets"),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.MEMBERS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://members/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "Members",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "Members"),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.SKILLS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://skills/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "Skills",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "Skills"),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.MCP,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://mcp/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "MCP servers",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "MCP servers"),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.LLM_CONFIG,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://llm-config/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "LLM config",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "LLM config"),
+                onBack = goBack,
+            )
+        }
+        composable(
+            route = PabrikRoutes.TOOLS,
+            arguments = listOf(
+                navArgument(PabrikRoutes.ARG_WORKSPACE_ID) { type = NavType.StringType },
+            ),
+            deepLinks = listOf(navDeepLink { uriPattern = "pabrik://tools/{workspaceId}" }),
+        ) { backStackEntry ->
+            val workspaceId = backStackEntry.arguments
+                ?.getString(PabrikRoutes.ARG_WORKSPACE_ID).orEmpty()
+            LaunchedEffect(workspaceId) { loadWorkspaceData(workspaceId) }
+            ItemFeatureScreen(
+                featureName = "Tools",
+                workspaceId = workspaceId,
+                itemId = null,
+                sections = workspaceFeatureSections(workspaceId, workspaceDataState, "Tools"),
+                onBack = goBack,
+            )
+        }
     }
 
     // AFTER the `NavHost`, not before it: a `Box` draws its later children on top, and the board's create form is a full-screen overlay in this composition rather …
@@ -850,3 +1196,51 @@ internal fun NavigationLostScreen(
 private fun chatTitleFor(sessionId: String, chats: List<ChatSummary>): String =
     chats.firstOrNull { chat -> chat.id == sessionId }?.displayTitle
         ?: sessionId.ifBlank { "Chat" }
+
+private fun workspaceFeatureSections(
+    workspaceId: String,
+    state: WorkspaceDataState,
+    featureName: String,
+): List<FeatureSection> = when (featureName) {
+    "Secrets" -> listOf(
+        FeatureSection("Secrets (${state.secrets.size})", state.secrets.map {
+            FeatureRow(it.name, "••••••••", it.description.ifBlank { it.createdAt })
+        }),
+    )
+    "Members" -> listOf(
+        FeatureSection("Members (${state.members.size})", state.members.map {
+            FeatureRow(it.name.ifBlank { it.email }, it.role, it.email)
+        }),
+    )
+    "Skills" -> listOf(
+        FeatureSection("Skills (${state.skills.size})", state.skills.map {
+            FeatureRow(it.name, if (it.isCanAutoImprove) "auto-improve" else "", it.description)
+        }),
+    )
+    "Memory" -> listOf(
+        FeatureSection("Memories (${state.memories.size})", state.memories.map {
+            FeatureRow(it.id, it.tags.joinToString(", "), it.content)
+        }),
+    )
+    "MCP servers" -> listOf(
+        FeatureSection("MCP servers (${state.config?.mcpServers?.size ?: 0})",
+            state.config?.mcpServers?.map {
+                FeatureRow(it.name, it.url)
+            }.orEmpty()),
+    )
+    "LLM config" -> listOf(
+        FeatureSection("Profiles (${state.config?.profiles?.size ?: 0})",
+            state.config?.profiles?.map {
+                FeatureRow(it.name, it.model, it.baseUrl)
+            }.orEmpty()),
+    )
+    "Tools" -> listOf(
+        FeatureSection("Runtime", listOf(
+            FeatureRow("Chat view", state.config?.chatView.orEmpty()),
+            FeatureRow("Active profile", state.config?.activeProfile.orEmpty()),
+        )),
+    )
+    else -> listOf(
+        FeatureSection("Overview", listOf(FeatureRow("Workspace", workspaceId))),
+    )
+}

@@ -57,6 +57,23 @@
                      deep-linkable. -->
                 <data android:scheme="pabrik" android:host="chats" />
                 <data android:scheme="pabrik" android:host="project" />
+                <data android:scheme="pabrik" android:host="documents" />
+                <data android:scheme="pabrik" android:host="notifications" />
+                <data android:scheme="pabrik" android:host="settings" />
+                <data android:scheme="pabrik" android:host="workspace" />
+                <data android:scheme="pabrik" android:host="doc" />
+                <data android:scheme="pabrik" android:host="kanban-settings" />
+                <data android:scheme="pabrik" android:host="agent" />
+                <data android:scheme="pabrik" android:host="design" />
+                <data android:scheme="pabrik" android:host="routine" />
+                <data android:scheme="pabrik" android:host="git" />
+                <data android:scheme="pabrik" android:host="memory" />
+                <data android:scheme="pabrik" android:host="secrets" />
+                <data android:scheme="pabrik" android:host="members" />
+                <data android:scheme="pabrik" android:host="skills" />
+                <data android:scheme="pabrik" android:host="mcp" />
+                <data android:scheme="pabrik" android:host="llm-config" />
+                <data android:scheme="pabrik" android:host="tools" />
             </intent-filter>
         </activity>
 
