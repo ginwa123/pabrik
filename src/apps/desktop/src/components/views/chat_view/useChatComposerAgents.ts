@@ -11,8 +11,10 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   const availableAgents = ref<
     Array<{ name: string; model: string; base_url: string; url_style: string }>
   >([])
-  // Every profile the config names, disabled ones included: the backend's `getAgent` does not filter `enabled`, so a disabled profile still resolves.
+  // Every profile the config names, disabled ones included: a reply is still credited to its author after that agent is switched off.
   const configuredAgentNames = ref<string[]>([])
+  // Only a switched-on profile can be the effective agent — the backend's cascade refuses a disabled one.
+  const enabledAgentNames = ref<string[]>([])
   const configLoaded = ref(false)
   const selectedAgent = ref<string | null>(null)
   // User-chosen default agent from Settings → Agents → "Set active".
@@ -44,6 +46,7 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
           url_style: p.url_style ?? '',
         }))
       configuredAgentNames.value = Object.keys(agents)
+      enabledAgentNames.value = availableAgents.value.map((a) => a.name)
       configLoaded.value = true
       // `active_profile` is the user-chosen default from Settings.
       const raw = (config as { active_profile?: string | null }).active_profile
@@ -57,7 +60,7 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     }
   }
 
-  // Mirrors `Config.zig::resolveEffectiveAgent`: a name only counts when it names a configured profile.
+  // Mirrors `Config.zig::getAgent`: the transcript's vocabulary is every name the config still holds.
   const namesConfiguredAgent = (name: string | null): name is string => {
     if (!name) return false
     const known = configuredAgentNames.value
@@ -65,11 +68,27 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     return known.includes(name)
   }
 
-  const effectiveAgent = computed<string | null>(() => {
+  // Mirrors `Config.zig::resolveEffectiveAgent`: a name only wins a cascade slot when that profile is switched ON.
+  const resolvesToAgent = (name: string | null): name is string => {
+    if (!name) return false
+    if (!configLoaded.value) return true
+    return enabledAgentNames.value.includes(name)
+  }
+
+  const blockedAgent = computed<string | null>(() => {
     const sel = selectedAgent.value
-    if (namesConfiguredAgent(sel)) return sel
+    if (!sel || !configLoaded.value) return null
+    if (!configuredAgentNames.value.includes(sel)) return null
+    return enabledAgentNames.value.includes(sel) ? null : sel
+  })
+
+  const effectiveAgent = computed<string | null>(() => {
+    // A chat pinned to a switched-off agent has nothing answering it — the same refusal the turn runner makes, so the chip never promises another agent.
+    if (blockedAgent.value) return null
+    const sel = selectedAgent.value
+    if (resolvesToAgent(sel)) return sel
     const act = activeAgent.value
-    if (namesConfiguredAgent(act)) return act
+    if (resolvesToAgent(act)) return act
     return null
   })
 
@@ -82,6 +101,8 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   })
 
   const agentChipTooltip = computed(() => {
+    const blocked = blockedAgent.value
+    if (blocked) return `${blocked} is switched off — enable it in Settings → Agents, or pick another agent`
     const name = effectiveAgent.value
     if (!name) return 'Using default (top-level config)'
     if (name === selectedAgent.value) return `Using agent: ${name}`
@@ -115,6 +136,7 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     availableAgents,
     selectedAgent,
     activeAgent,
+    blockedAgent,
     showAgentPicker,
     isUpdatingAgent,
     agentPickerRef,

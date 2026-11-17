@@ -121,7 +121,7 @@ describe('composer agent cascade — effectiveAgent', () => {
     expect(composer.agentChipTooltip.value).toMatch(/top-level/i)
   })
 
-  it('resolves a disabled profile, because the backend does not filter on enabled', async () => {
+  it('never resolves a switched-off profile as the active agent', async () => {
     const { composer } = await loadComposer({
       profiles: {
         '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
@@ -131,6 +131,60 @@ describe('composer agent cascade — effectiveAgent', () => {
     })
 
     expect(composer.availableAgents.value.map((p) => p.name)).toEqual(['300 ribu'])
-    expect(composer.effectiveAgent.value).toBe('off')
+    expect(composer.activeAgent.value).toBe('off')
+    expect(composer.effectiveAgent.value).toBeNull()
+    expect(composer.agentChipTooltip.value).toMatch(/top-level/i)
+  })
+
+  it('blocks a chat pinned to a switched-off selection instead of falling through to another agent', async () => {
+    const { composer } = await loadComposer({
+      profiles: {
+        '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
+        off: { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1', enabled: false },
+      },
+      active_profile: '300 ribu',
+    })
+    composer.selectedAgent.value = 'off'
+
+    expect(composer.effectiveAgent.value).toBeNull()
+    expect(composer.blockedAgent.value).toBe('off')
+    expect(composer.agentChipTooltip.value).toMatch(/switched off/i)
+  })
+
+  it('still credits a switched-off agent as the author of what it already wrote', async () => {
+    const { composer } = await loadComposer({
+      profiles: { off: { model: 'MiniMax-M3', enabled: false } },
+      active_profile: null,
+    })
+
+    // The cascade ignores it, but the transcript must keep naming it as the author of its own replies.
+    expect(composer.effectiveAgent.value).toBeNull()
+    expect(composer.namesConfiguredAgent('off')).toBe(true)
+  })
+
+  it('names the switched-off agent a chat is pinned to instead of claiming the default config', async () => {
+    const { composer } = await loadComposer({
+      profiles: {
+        live: { model: 'MiniMax-M3' },
+        off: { model: 'MiniMax-M3', enabled: false },
+      },
+      active_profile: null,
+    })
+    composer.selectedAgent.value = 'off'
+
+    expect(composer.effectiveAgent.value).toBeNull()
+    expect(composer.blockedAgent.value).toBe('off')
+    expect(composer.agentChipTooltip.value).toMatch(/switched off/i)
+  })
+
+  it('has no blocked agent while the pinned agent is switched on', async () => {
+    const { composer } = await loadComposer({
+      profiles: { live: { model: 'MiniMax-M3' } },
+      active_profile: null,
+    })
+    composer.selectedAgent.value = 'live'
+
+    expect(composer.blockedAgent.value).toBeNull()
+    expect(composer.agentChipTooltip.value).toMatch(/using agent/i)
   })
 })

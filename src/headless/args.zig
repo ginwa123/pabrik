@@ -76,6 +76,11 @@ pub const UsageArgs = struct {
     range: []const u8 = "",
 };
 
+pub const AgentsArgs = struct {
+    /// The per-session selection to resolve, as a session row would carry it. Empty = no selection.
+    profile: []const u8 = "",
+};
+
 pub const McpOAuthOp = enum {
     discover,
     authorize_url,
@@ -338,6 +343,8 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      ops: delete <id> | restore --row-file <path> | feed <id> --feed 0|1\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
+    "  pabrik headless agents [flags]            The configured agents, and which one a call would use\n" ++
+    "      flags: --profile <name> (a session's pinned agent; omit for none)\n" ++
     "  pabrik headless storage <op> [flags]      Read or write the object store\n" ++
     "      ops: put | get | stat | delete\n" ++
     "      flags: --key <k> --body <text> --body-file <path> --root <dir> --backend fs|s3|rustfs\n" ++
@@ -379,6 +386,7 @@ pub const Outcome = union(enum) {
     documents: DocumentsArgs,
     group: GroupArgs,
     usage: UsageArgs,
+    agents: AgentsArgs,
     storage: StorageArgs,
     message: MessageArgs,
     memories: MemoriesArgs,
@@ -410,6 +418,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "documents")) return try parseDocuments(rest);
     if (std.mem.eql(u8, verb, "group")) return try parseGroup(rest);
     if (std.mem.eql(u8, verb, "usage")) return try parseUsage(rest);
+    if (std.mem.eql(u8, verb, "agents")) return try parseAgents(rest);
     if (std.mem.eql(u8, verb, "storage")) return try parseStorage(rest);
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
     if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
@@ -780,6 +789,23 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     }
 
     return .{ .documents = got };
+}
+
+fn parseAgents(argv: []const []const u8) ParseError!Outcome {
+    var got = AgentsArgs{};
+    var i: usize = 0;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--profile")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.profile = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+    return .{ .agents = got };
 }
 
 fn parseUsage(argv: []const []const u8) ParseError!Outcome {
@@ -1442,6 +1468,17 @@ test "parse: usage refuses to guess which workspace was meant" {
     try expectFailure(&.{"usage"}, .usage_requires_flag);
     try expectFailure(&.{ "usage", "--range", "7d" }, .usage_requires_flag);
     try expectFailure(&.{ "usage", "--workspace" }, .missing_value);
+}
+
+test "parse: agents takes an optional --profile, and refuses anything else" {
+    const none = try parse(&.{"agents"});
+    try testing.expectEqualStrings("", none.agents.profile);
+
+    const pinned = try parse(&.{ "agents", "--profile", "retired" });
+    try testing.expectEqualStrings("retired", pinned.agents.profile);
+
+    try expectFailure(&.{ "agents", "--profile" }, .missing_value);
+    try expectFailure(&.{ "agents", "--nope" }, .unknown_subcommand);
 }
 
 test "parse: compaction takes one session id and the force flag" {

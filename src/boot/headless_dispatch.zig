@@ -79,8 +79,37 @@ pub fn dispatchHeadless(
         .mcp_oauth => |a| try runMcpOAuth(allocator, io, environment, a, log_file, db_request),
         .mcp_add => |a| try runMcpAdd(allocator, io, environment, a, log_file, db_request),
         .compaction => |a| try runCompaction(allocator, io, environment, a, log_file, db_request),
+        .agents => |a| try runAgents(allocator, io, environment, a),
     }
     return true;
+}
+
+/// The configured agents and the resolved call, straight from the loaded config — no HTTP, no port.
+fn runAgents(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.AgentsArgs,
+) !void {
+    // Declared HERE, not returned by value: `App.db` / `.event_bus` point into this struct, so it must live in the caller's frame.
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{}) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const report = headless.agents.build(allocator, &backend.llm_config, a.profile) catch |err| {
+        std.log.err("headless: could not read the agents: {s}", .{@errorName(err)});
+        backend.finish(1);
+    };
+    const json = headless.agents.toJson(allocator, report) catch |err| {
+        std.log.err("headless: could not serialise the agents: {s}", .{@errorName(err)});
+        backend.finish(1);
+    };
+
+    try writeStdout(io, json);
+    try writeStdout(io, "\n");
+    backend.finish(0);
 }
 
 /// Boot the backend, run one turn, print the result, tear down.
