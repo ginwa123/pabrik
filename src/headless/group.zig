@@ -169,6 +169,16 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
+fn insertHistoryRow(ctx: *TestCtx, id: []const u8, role: []const u8, agent: []const u8, at: i64) !void {
+    var stamp_buf: [24]u8 = undefined;
+    const stamp = try std.fmt.bufPrint(&stamp_buf, "{d}", .{at});
+    try ctx.db.exec(
+        testing.allocator,
+        "INSERT INTO llm_history (id, session_id, role, agent, response_content, created_at_nano) VALUES (?, 's_1', ?, ?, '', ?)",
+        &.{ id, role, agent, stamp },
+    );
+}
+
 fn join(ctx: *TestCtx, agent: []const u8, role: []const u8, position: u32) ![]u8 {
     return runWithDb(testing.allocator, &ctx.db, .{
         .op = .join,
@@ -280,6 +290,32 @@ test "group next closes the turn when the budget is spent" {
 
     try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"close\"") != null);
     try testing.expect(std.mem.indexOf(u8, json, "\"reason\":\"hop_budget\"") != null);
+}
+
+test "group next keeps one agent working past the hop budget" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const joined = try join(&ctx, "Engineer", "lead", 0);
+    testing.allocator.free(joined);
+
+    try insertHistoryRow(&ctx, "h0", "user", "Engineer", 1);
+    var iteration: u32 = 0;
+    var assistant_id_buf: [24]u8 = undefined;
+    var tool_id_buf: [24]u8 = undefined;
+    while (iteration < 10) : (iteration += 1) {
+        const at: i64 = @intCast(2 + iteration * 2);
+        try insertHistoryRow(&ctx, try std.fmt.bufPrint(&assistant_id_buf, "a{d}", .{iteration}), "assistant", "Engineer", at);
+        try insertHistoryRow(&ctx, try std.fmt.bufPrint(&tool_id_buf, "t{d}", .{iteration}), "tool", "Engineer", at + 1);
+    }
+
+    const json = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1" });
+    defer testing.allocator.free(json);
+
+    try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"speak\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"agent\":\"Engineer\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"hops\":1") != null);
 }
 
 test "group leave takes one member out and leaves the roster readable" {

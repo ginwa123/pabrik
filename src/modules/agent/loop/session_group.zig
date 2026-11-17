@@ -206,20 +206,36 @@ pub fn groupLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []c
     return try allocator.dupe(u8, row.values[0]);
 }
 
-/// How many agent turns the room has taken since the human last spoke.
+/// How many agent turns the room has taken since the human last spoke: a run of rows by one speaker is one turn, however many tool iterations it ran.
 pub fn hopsSinceHuman(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !u32 {
-    var row = try db.queryRow(allocator,
-        \\SELECT COUNT(*) FROM llm_history
+    var rows = try db.query(allocator,
+        \\SELECT COALESCE(CAST(agent AS TEXT), '') FROM llm_history
         \\WHERE session_id = ?
         \\  AND COALESCE(CAST(role AS TEXT), '') = 'assistant'
         \\  AND created_at_nano > COALESCE((
         \\      SELECT MAX(created_at_nano) FROM llm_history
         \\      WHERE session_id = ? AND COALESCE(CAST(role AS TEXT), '') = 'user'
         \\  ), 0)
+        \\ORDER BY created_at_nano ASC
     , &.{ session_id, session_id });
-    defer row.deinit(allocator);
+    defer rows.deinit();
 
-    return std.fmt.parseInt(u32, row.values[0], 10) catch 0;
+    var hops: u32 = 0;
+    var speaker: ?[]u8 = null;
+    defer if (speaker) |held| allocator.free(held);
+
+    while (try rows.next()) |row| {
+        defer row.deinit(allocator);
+        if (speaker) |held| {
+            if (std.mem.eql(u8, held, row.values[0])) continue;
+        }
+        hops += 1;
+        const owned = try allocator.dupe(u8, row.values[0]);
+        if (speaker) |held| allocator.free(held);
+        speaker = owned;
+    }
+
+    return hops;
 }
 
 /// The newest row of the thread, as the router needs it.
@@ -543,6 +559,64 @@ test "a thread that has spent its hops closes instead of routing another turn" {
     defer next.deinit(testing.allocator);
 
     try testing.expectEqual(CloseReason.hop_budget, next.decision.close);
+}
+
+test "one agent's tool iterations are one hop, not one per iteration" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+
+    try insertRow(&ctx, "h0", "user", "Engineer", "lanjutkan", 1);
+    var iteration: u32 = 0;
+    var assistant_id_buf: [24]u8 = undefined;
+    var tool_id_buf: [24]u8 = undefined;
+    while (iteration < 8) : (iteration += 1) {
+        const at: i64 = @intCast(2 + iteration * 2);
+        try insertRow(&ctx, try std.fmt.bufPrint(&assistant_id_buf, "a{d}", .{iteration}), "assistant", "Engineer", "", at);
+        try insertRow(&ctx, try std.fmt.bufPrint(&tool_id_buf, "t{d}", .{iteration}), "tool", "Engineer", "edited", at + 1);
+    }
+
+    try testing.expectEqual(@as(u32, 1), try hopsSinceHuman(testing.allocator, &ctx.db, "s_1"));
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", default_hop_budget)).?;
+    defer next.deinit(testing.allocator);
+
+    switch (next.decision) {
+        .speak => |name| try testing.expectEqualStrings("Engineer", name),
+        .close => |reason| {
+            std.debug.print("a working agent was cut off: the turn closed with {s} after {d} hops\n", .{ @tagName(reason), next.hops });
+            return error.AgentCutOff;
+        },
+    }
+}
+
+test "eight turns handed between two agents still close the room" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+
+    try insertRow(&ctx, "h0", "user", "Engineer", "go", 1);
+    var turn: u32 = 0;
+    var id_buf: [24]u8 = undefined;
+    while (turn < 8) : (turn += 1) {
+        const at: i64 = @intCast(2 + turn);
+        const who: []const u8 = if (turn % 2 == 0) "Engineer" else "Security Engineerr";
+        const said: []const u8 = if (turn % 2 == 0) "over to @Security Engineerr" else "back to @Engineer";
+        try insertRow(&ctx, try std.fmt.bufPrint(&id_buf, "h{d}", .{turn + 1}), "assistant", who, said, at);
+    }
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", default_hop_budget)).?;
+    defer next.deinit(testing.allocator);
+
+    switch (next.decision) {
+        .close => |reason| try testing.expectEqual(CloseReason.hop_budget, reason),
+        .speak => |name| {
+            std.debug.print("the room kept going: {s} was asked to speak after {d} turns\n", .{ name, next.hops });
+            return error.BudgetNotEnforced;
+        },
+    }
 }
 
 test "the group lead is null for a session that never joined a group" {
